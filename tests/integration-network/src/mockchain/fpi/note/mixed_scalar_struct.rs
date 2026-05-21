@@ -76,7 +76,8 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 use miden::*;
 
 use crate::bindings::miden::mixed_scalar_struct_account::miden_mixed_scalar_struct_account::MixedScalarRecord;
-use crate::bindings::MidenMixedScalarStructAccount as CounterContract;
+#[foreign_account(mixed_scalar_struct_account)]
+struct CounterContract;
 
 /// First double-word value used by the mixed scalar record FPI test.
 const FIRST_U64: u64 = 0x0000_0001_0000_0002;

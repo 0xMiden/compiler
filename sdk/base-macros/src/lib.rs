@@ -54,6 +54,7 @@ mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
 mod export_type;
+mod foreign_account;
 mod fpi;
 mod generate;
 mod manifest_paths;
@@ -70,18 +71,15 @@ mod wit_world;
 ///
 /// # Foreign Procedure Invocation (FPI)
 ///
-/// If this account component declares account dependencies under
-/// `[package.metadata.miden.dependencies]` and makes their generated WIT available through
-/// `[package.metadata.component.target.dependencies]`, `#[component]` also generates typed FPI
-/// caller wrappers in `crate::bindings`.
-///
-/// Each wrapper is named after the dependency's account type name, for example
-/// `CounterContract`. Create one with `CounterContract::from_account(account_id)`, then call the
-/// dependency's exported methods with their normal Rust signatures:
+/// Use `#[foreign_account(...)]` on an empty struct to generate typed FPI caller wrappers for
+/// account dependencies. The dependency names are written as Rust identifiers by replacing `-`
+/// with `_`.
 ///
 /// ```rust,ignore
-/// use crate::bindings::CounterContract;
-/// use miden::{AccountId, Felt};
+/// use miden::{foreign_account, AccountId, Felt};
+///
+/// #[foreign_account(counter_contract)]
+/// struct CounterContract;
 ///
 /// #[component]
 /// impl CallerAccount {
@@ -109,6 +107,18 @@ pub fn component(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     component_macro::component(attr, item)
+}
+
+/// Generates typed FPI bindings for account dependencies on an empty wrapper struct.
+///
+/// The attribute accepts Miden dependency names as Rust identifiers. For example, a dependency
+/// named `counter-contract` is requested with `#[foreign_account(counter_contract)]`.
+#[proc_macro_attribute]
+pub fn foreign_account(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    foreign_account::expand(attr, item)
 }
 
 /// Marks a component method as the authentication procedure entrypoint (`#[auth_script]`).
@@ -145,19 +155,15 @@ pub fn export_type(
 ///
 /// # Foreign Procedure Invocation (FPI)
 ///
-/// If this note script declares account dependencies under `[package.metadata.miden.dependencies]`
-/// and makes their generated WIT available through
-/// `[package.metadata.component.target.dependencies]`, `#[note]` also generates typed FPI caller
-/// wrappers in `crate::bindings`.
-///
-///
-/// Each wrapper is named after the dependency's account type name, for example
-/// `CounterContract`. Create one with `CounterContract::from_account(account_id)`, then call the
-/// dependency's exported methods with their normal Rust signatures:
+/// Use `#[foreign_account(...)]` on an empty struct to generate typed FPI caller wrappers for
+/// account dependencies. The dependency names are written as Rust identifiers by replacing `-`
+/// with `_`.
 ///
 /// ```rust,ignore
 /// use miden::*;
-/// use crate::bindings::CounterContract;
+///
+/// #[foreign_account(counter_contract)]
+/// struct CounterContract;
 ///
 /// #[note]
 /// struct CounterCaller {

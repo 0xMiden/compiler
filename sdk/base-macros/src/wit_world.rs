@@ -11,8 +11,11 @@ use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
 use proc_macro2::Span;
 use toml::{Value, value::Table};
+use wit_bindgen_core::wit_parser::{
+    InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeOwner, WorldItem,
+};
 
-use crate::{util::strip_line_comment, wit_builder::WitBuilder};
+use crate::wit_builder::WitBuilder;
 
 /// Parsed package metadata from the consuming crate's manifest.
 pub struct ManifestPackage {
@@ -75,15 +78,16 @@ impl ProjectPackageMetadata {
         })
     }
 
-    /// Resolves fully-qualified imports exported by Miden package dependencies.
-    pub(crate) fn collect_miden_dependency_imports(
+    /// Resolves dependency imports for tests that exercise default project metadata.
+    #[cfg(test)]
+    fn collect_miden_dependency_imports(
         &self,
         error_span: Span,
     ) -> Result<Vec<String>, syn::Error> {
         let mut imports =
             collect_miden_dependencies(&self.manifest_dir, &self.package, error_span)?
                 .into_iter()
-                .map(|dependency| dependency.import)
+                .map(|dependency| dependency.import().to_owned())
                 .collect::<Vec<_>>();
         imports.sort();
         Ok(imports)
@@ -234,7 +238,7 @@ impl ManifestPackage {
         let mut imports = self
             .collect_miden_dependencies(error_span)?
             .into_iter()
-            .map(|dependency| dependency.import)
+            .map(|dependency| dependency.import().to_owned())
             .collect::<Vec<_>>();
         imports.sort();
         Ok(imports)
@@ -256,8 +260,29 @@ pub(crate) struct MidenDependency {
     pub(crate) name: String,
     /// Canonical project root or precompiled package path.
     pub(crate) root: PathBuf,
+    /// Exported WIT interface loaded from the dependency metadata.
+    pub(crate) interface: DependencyInterface,
+}
+
+impl MidenDependency {
+    /// Fully-qualified WIT import path, including package version.
+    pub(crate) fn import(&self) -> &str {
+        &self.interface.import
+    }
+
+    /// WIT type names declared by the imported dependency interface.
+    pub(crate) fn type_names(&self) -> &[String] {
+        &self.interface.types
+    }
+}
+
+/// Exported dependency interface metadata derived from WIT.
+#[derive(Debug)]
+pub(crate) struct DependencyInterface {
     /// Fully-qualified WIT import path, including package version.
     pub(crate) import: String,
+    /// WIT type names owned by the imported interface.
+    pub(crate) types: Vec<String>,
 }
 
 /// Writes a WIT world block with the provided imports and exports.
@@ -315,14 +340,14 @@ fn collect_miden_dependencies(
                 dependencies.push(MidenDependency {
                     name: dependency.name().to_string(),
                     root: dependency_root,
-                    import: qualify_dependency_export(&dependency_wit, error_span)?,
+                    interface: dependency_wit.interface,
                 });
             }
             _ => continue,
         }
     }
 
-    dependencies.sort_by(|a, b| a.import.cmp(&b.import));
+    dependencies.sort_by(|a, b| a.import().cmp(b.import()));
 
     Ok(dependencies)
 }
@@ -404,46 +429,37 @@ fn canonicalize_dependency_wit_path(
     })
 }
 
-/// Parses the first exported WIT world exposed by a dependency root or WIT file.
+/// Parses the first exported WIT interface exposed by a dependency root or WIT file.
 fn parse_dependency_wit(root: &Path) -> Result<DependencyWit, String> {
     if root.is_file() {
-        return parse_wit_file(root)?.ok_or_else(|| {
+        return parse_dependency_wit_path(root)?.ok_or_else(|| {
             format!("WIT file '{}' does not contain a world export", root.display())
         });
     }
 
     let wit_dirs = dependency_wit_candidate_paths(root);
-    for wit_dir in &wit_dirs {
-        if !wit_dir.exists() {
+    let mut parser_errors = Vec::new();
+    for path in &wit_dirs {
+        if !path.exists() {
             continue;
         }
-        let mut entries = fs::read_dir(wit_dir)
-            .map_err(|err| format!("failed to read '{}': {err}", wit_dir.display()))?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| format!("failed to iterate '{}': {err}", wit_dir.display()))?;
-
-        entries.sort_by_key(|entry| entry.file_name());
-
-        for entry in entries {
-            let path = entry.path();
-            if path.is_dir() {
-                if path.file_name().is_some_and(|name| name == "deps") {
-                    continue;
-                }
-                continue;
-            }
-
-            if path.extension().and_then(|ext| ext.to_str()) != Some("wit") {
-                continue;
-            }
-
-            if let Some(info) = parse_wit_file(&path)? {
-                return Ok(info);
+        match parse_dependency_wit_path(path) {
+            Ok(Some(info)) => return Ok(info),
+            Ok(None) => {}
+            Err(err) => {
+                parser_errors.push(format!("'{}': {err}", path.display()));
             }
         }
     }
 
-    Err("no WIT world definition found".to_string())
+    if parser_errors.is_empty() {
+        Err("no WIT world definition found".to_string())
+    } else {
+        Err(format!(
+            "no WIT world definition found; parser errors: {}",
+            parser_errors.join("; ")
+        ))
+    }
 }
 
 /// Returns the WIT paths searched for generated dependency metadata.
@@ -481,94 +497,93 @@ fn dependency_wit_error_message(
     )
 }
 
-/// WIT package identifier plus exported world entries extracted from a dependency.
+/// WIT metadata extracted from a dependency package.
 struct DependencyWit {
-    package: String,
-    version: Option<String>,
-    exports: Vec<String>,
+    interface: DependencyInterface,
 }
 
-/// Parses a single WIT file and returns its exported world metadata.
-fn parse_wit_file(path: &Path) -> Result<Option<DependencyWit>, String> {
-    let contents = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read WIT file '{}': {err}", path.display()))?;
+/// Parses one WIT path and returns dependency metadata when it exports an interface.
+fn parse_dependency_wit_path(path: &Path) -> Result<Option<DependencyWit>, String> {
+    let mut resolve = Resolve::default();
+    resolve
+        .push_str("miden.wit", crate::manifest_paths::SDK_WIT_SOURCE)
+        .map_err(|err| format!("failed to load bundled Miden WIT: {err}"))?;
+    let (package_id, _) = resolve
+        .push_path(path)
+        .map_err(|err| format!("failed to parse WIT path '{}': {err}", path.display()))?;
 
-    let (package, version) = match extract_package_identifier(&contents) {
-        Some(parts) => parts,
-        None => return Ok(None),
+    let Some(interface_id) = first_exported_interface(&resolve, package_id) else {
+        return Ok(None);
     };
 
-    let exports = extract_world_exports(&contents);
-    if exports.is_empty() {
-        return Ok(None);
-    }
-
     Ok(Some(DependencyWit {
-        package,
-        version,
-        exports,
+        interface: dependency_interface_metadata(&resolve, interface_id)?,
     }))
 }
 
-/// Extracts the declared WIT package identifier from a source file.
-fn extract_package_identifier(contents: &str) -> Option<(String, Option<String>)> {
-    for line in contents.lines() {
-        let trimmed = strip_line_comment(line).trim_start();
-        if let Some(rest) = trimmed.strip_prefix("package ") {
-            let token = rest.trim_end_matches(';').trim();
-            if let Some((name, version)) = token.split_once('@') {
-                return Some((name.trim().to_string(), Some(version.trim().to_string())));
-            }
-            return Some((token.to_string(), None));
-        }
-    }
-    None
+/// Returns the first interface exported by any world in the parsed package.
+fn first_exported_interface(resolve: &Resolve, package_id: PackageId) -> Option<InterfaceId> {
+    let package = &resolve.packages[package_id];
+    package.worlds.values().find_map(|world_id| {
+        let world = &resolve.worlds[*world_id];
+        world.exports.values().find_map(|item| match item {
+            WorldItem::Interface { id, .. } => Some(*id),
+            WorldItem::Function(_) | WorldItem::Type { .. } => None,
+        })
+    })
 }
 
-/// Extracts world export declarations from a WIT source file.
-fn extract_world_exports(contents: &str) -> Vec<String> {
-    let mut exports = Vec::new();
-
-    for line in contents.lines() {
-        let trimmed = strip_line_comment(line).trim();
-        if let Some(rest) = trimmed.strip_prefix("export ") {
-            let export = rest.trim_end_matches(';').trim();
-            if !export.is_empty() {
-                exports.push(export.to_string());
-            }
-        }
+/// Builds explicit metadata for an exported dependency interface.
+fn dependency_interface_metadata(
+    resolve: &Resolve,
+    interface_id: InterfaceId,
+) -> Result<DependencyInterface, String> {
+    let interface = &resolve.interfaces[interface_id];
+    let package_id = interface
+        .package
+        .ok_or_else(|| "exported dependency interface is not owned by a WIT package".to_string())?;
+    let package = &resolve.packages[package_id];
+    if package.name.version.is_none() {
+        return Err(format!("WIT package '{}' is missing a version suffix", package.name));
     }
+    let interface_name = interface.name.as_deref().ok_or_else(|| {
+        format!("exported interface in WIT package '{}' is anonymous", package.name)
+    })?;
+    let import = package.name.interface_id(interface_name);
+    let types = interface
+        .types
+        .iter()
+        .filter_map(|(name, type_id)| {
+            if is_dependency_interface_type(resolve, interface_id, *type_id) {
+                Some(name.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    exports
+    Ok(DependencyInterface { import, types })
 }
 
-/// Resolves the dependency's first world export to a fully-qualified import path.
-fn qualify_dependency_export(
-    dependency_wit: &DependencyWit,
-    error_span: Span,
-) -> Result<String, syn::Error> {
-    let export = dependency_wit.exports.first().ok_or_else(|| {
-        syn::Error::new(
-            error_span,
-            format!(
-                "dependency package '{}' did not export any interfaces in its world definition",
-                dependency_wit.package
-            ),
-        )
-    })?;
-
-    if export.contains(':') {
-        return Ok(export.clone());
+/// Returns true when a type belongs to the dependency interface rather than a `use` import.
+fn is_dependency_interface_type(
+    resolve: &Resolve,
+    interface_id: InterfaceId,
+    type_id: wit_bindgen_core::wit_parser::TypeId,
+) -> bool {
+    let ty = &resolve.types[type_id];
+    if !matches!(ty.owner, TypeOwner::Interface(owner) if owner == interface_id) {
+        return false;
     }
 
-    let version = dependency_wit.version.as_deref().ok_or_else(|| {
-        syn::Error::new(
-            error_span,
-            format!("WIT package '{}' is missing a version suffix", dependency_wit.package),
+    if let TypeDefKind::Type(WitType::Id(alias_target)) = ty.kind {
+        matches!(
+            resolve.types[alias_target].owner,
+            TypeOwner::Interface(owner) if owner == interface_id
         )
-    })?;
-
-    Ok(format!("{}/{export}@{version}", dependency_wit.package))
+    } else {
+        true
+    }
 }
 
 #[cfg(test)]
@@ -584,10 +599,7 @@ mod tests {
     use proc_macro2::Span;
     use toml::{Value, value::Table};
 
-    use super::{
-        ProjectPackageMetadata, collect_miden_dependencies, extract_package_identifier,
-        extract_world_exports, parse_dependency_wit, qualify_dependency_export,
-    };
+    use super::{ProjectPackageMetadata, collect_miden_dependencies, parse_dependency_wit};
 
     // This WIT is generated for the basic wallet example at examples/basic-wallet/target/generated-wit/miden-basic-wallet.wit
     const BASIC_WALLET_GENERATED_WIT: &str = r#"// This file is auto-generated by the `#[component]` macro.
@@ -733,12 +745,45 @@ path = "<virtual>"
     }
 
     #[test]
-    fn parses_generated_component_wit_fixture_contents() {
-        let package = extract_package_identifier(BASIC_WALLET_GENERATED_WIT);
-        let exports = extract_world_exports(BASIC_WALLET_GENERATED_WIT);
+    fn parses_exported_interface_type_names_with_wit_parser() {
+        let fixture_root = empty_fixture_root();
+        let wit_dir = fixture_root.join("target/generated-wit");
+        fs::create_dir_all(&wit_dir).expect("generated-wit directory must be created");
+        let wit = r#"
+package miden:typed-account@0.0.1;
 
-        assert_eq!(package, Some(("miden:basic-wallet".into(), Some("0.1.0".into()))));
-        assert_eq!(exports, vec!["basic-wallet"]);
+use miden:base/core-types@1.0.0;
+
+interface typed-account {
+    use core-types.{felt};
+
+    record mixed-scalar-record {
+        value: u32,
+    }
+
+    flags options {
+        enabled,
+    }
+
+    type amount = u64;
+    echo: func(arg: mixed-scalar-record) -> mixed-scalar-record;
+}
+
+world typed-account-world {
+    export typed-account;
+}
+"#;
+        fs::write(wit_dir.join("typed-account.wit"), wit).expect("typed WIT fixture");
+
+        let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
+
+        assert_eq!(dependency_wit.interface.import, "miden:typed-account/typed-account@0.0.1");
+        assert_eq!(
+            dependency_wit.interface.types,
+            vec!["mixed-scalar-record", "options", "amount"]
+        );
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
 
     #[test]
@@ -746,9 +791,8 @@ path = "<virtual>"
         let fixture_root = basic_wallet_fixture_root();
         let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
 
-        assert_eq!(dependency_wit.package, "miden:basic-wallet");
-        assert_eq!(dependency_wit.version.as_deref(), Some("0.1.0"));
-        assert_eq!(dependency_wit.exports, vec!["basic-wallet"]);
+        assert_eq!(dependency_wit.interface.import, "miden:basic-wallet/basic-wallet@0.1.0");
+        assert!(dependency_wit.interface.types.is_empty());
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
@@ -759,21 +803,8 @@ path = "<virtual>"
         let dependency_wit =
             parse_dependency_wit(&fixture_root.join("target/generated-wit")).unwrap();
 
-        assert_eq!(dependency_wit.package, "miden:basic-wallet");
-        assert_eq!(dependency_wit.version.as_deref(), Some("0.1.0"));
-        assert_eq!(dependency_wit.exports, vec!["basic-wallet"]);
-
-        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
-    }
-
-    #[test]
-    fn qualifies_generated_component_export_as_dependency_import() {
-        let fixture_root = basic_wallet_fixture_root();
-        let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
-
-        let import = qualify_dependency_export(&dependency_wit, Span::call_site()).unwrap();
-
-        assert_eq!(import, "miden:basic-wallet/basic-wallet@0.1.0");
+        assert_eq!(dependency_wit.interface.import, "miden:basic-wallet/basic-wallet@0.1.0");
+        assert!(dependency_wit.interface.types.is_empty());
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
@@ -799,7 +830,7 @@ path = "<virtual>"
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].root, package_path);
-        assert_eq!(dependencies[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
+        assert_eq!(dependencies[0].import(), "miden:basic-wallet/basic-wallet@0.1.0");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }

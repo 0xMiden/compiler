@@ -5,7 +5,7 @@ pub mod debug;
 
 pub use miden_base::*;
 pub use miden_base_macros::{
-    auth_script, component, export_type, generate, note, note_script, tx_script,
+    auth_script, component, export_type, foreign_account, generate, note, note_script, tx_script,
 };
 pub use miden_base_sys::bindings::*;
 /// Unified `Felt` and related helpers.

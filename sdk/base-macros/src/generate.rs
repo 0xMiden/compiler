@@ -16,7 +16,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{fpi, manifest_paths, wit_world::ProjectPackageMetadata};
+use crate::{fpi, manifest_paths};
 
 /// Name of the wrapper struct generated to aggregate imported interface methods.
 const WRAPPER_STRUCT_NAME: &str = "Account";
@@ -171,17 +171,47 @@ fn generate_bindings(
     config: &manifest_paths::ResolvedWit,
     world: Option<&str>,
 ) -> Result<TokenStream2, Error> {
-    let inline_src = args.inline.as_ref().map(|src| src.value());
-    let inline_ref = inline_src.as_deref();
-    let mut wit_sources = load_wit_sources(&config.paths, inline_ref)?;
+    generate_bindings_from_sources(
+        &config.paths,
+        args.inline.as_ref().map(|src| src.value()).as_deref(),
+        world,
+        &args.with_entries,
+        &[],
+    )
+}
+
+/// Generates inline WIT bindings and injects FPI imports for the selected dependency interfaces.
+pub(crate) fn generate_inline_fpi_bindings(
+    config: &manifest_paths::ResolvedWit,
+    inline_source: &str,
+    world: &str,
+    fpi_imports: &[String],
+    with_entries: &[(String, WithOption)],
+) -> Result<TokenStream2, Error> {
+    generate_bindings_from_sources(
+        &config.paths,
+        Some(inline_source),
+        Some(world),
+        with_entries,
+        fpi_imports,
+    )
+}
+
+/// Generates WIT bindings from resolved source paths and optional inline source.
+fn generate_bindings_from_sources(
+    paths: &[String],
+    inline_source: Option<&str>,
+    world: Option<&str>,
+    with_entries: &[(String, WithOption)],
+    fpi_imports: &[String],
+) -> Result<TokenStream2, Error> {
+    let mut wit_sources = load_wit_sources(paths, inline_source)?;
 
     let world_id = wit_sources
         .resolve
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
-    let fpi_imports = ProjectPackageMetadata::load_or_default(Span::call_site())?
-        .collect_miden_dependency_imports(Span::call_site())?;
-    fpi::inject_imports(&mut wit_sources.resolve, world_id, &fpi_imports)?;
+    fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
 
     let mut opts = Opts {
         generate_all: true,
@@ -189,7 +219,7 @@ fn generate_bindings(
         default_bindings_module: Some("bindings".to_string()),
         ..Opts::default()
     };
-    push_custom_with_entries(&mut opts, &args.with_entries);
+    push_custom_with_entries(&mut opts, with_entries);
     push_default_with_entries(&mut opts);
 
     let mut generated_files = wit_bindgen_core::Files::default();
@@ -277,8 +307,6 @@ fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2>
         file.items.push(Item::Struct(struct_item));
         file.items.push(Item::Impl(impl_item));
     }
-
-    fpi::augment_bindings(&mut file)?;
 
     Ok(file.into_token_stream())
 }
