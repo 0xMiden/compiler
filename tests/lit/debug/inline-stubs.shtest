@@ -1,7 +1,7 @@
-;; RUN: midenc %s --entrypoint=test_felt_add --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-ADD
-;; RUN: midenc %s --entrypoint=test_felt_assert_eq --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-ASSERT
-;; RUN: midenc %s --entrypoint=test_felt_arithmetic --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-ARITH
-;; RUN: midenc %s --entrypoint=inline_stubs_test::test_felt_add -Zprint-hir-source-locations --emit=hir=- -Canalyze-only 2>&1 | filecheck %s --check-prefix=HIR-LOC
+;; RUN: midenc - --entrypoint=test_felt_add --emit=hir=- -Canalyze-only < %s 2>&1 | filecheck %s --check-prefix=HIR-ADD
+;; RUN: midenc - --entrypoint=test_felt_assert_eq --emit=hir=- -Canalyze-only < %s 2>&1 | filecheck %s --check-prefix=HIR-ASSERT
+;; RUN: midenc - --entrypoint=test_felt_arithmetic --emit=hir=- -Canalyze-only < %s 2>&1 | filecheck %s --check-prefix=HIR-ARITH
+;; RUN: midenc - --entrypoint=inline_stubs_test::test_felt_add -Zprint-hir-source-locations --emit=hir=- -Canalyze-only < %s 2>&1 | filecheck %s --check-prefix=HIR-LOC
 ;;
 ;; This test verifies that linker stubs (intrinsic functions like felt::add, felt::assert_eq)
 ;; are inlined at call sites rather than being emitted as separate function definitions.
