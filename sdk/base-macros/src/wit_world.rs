@@ -25,6 +25,71 @@ pub struct ManifestPackage {
     pub supported_types: Vec<String>,
 }
 
+/// Project package metadata needed to resolve dependency WIT imports.
+pub(crate) struct ProjectPackageMetadata {
+    pub(crate) manifest_dir: PathBuf,
+    pub(crate) package: Arc<miden_project::Package>,
+}
+
+impl ProjectPackageMetadata {
+    /// Loads the current crate's Miden project package, or an empty package if none exists.
+    pub(crate) fn load_or_default(error_span: Span) -> Result<Self, syn::Error> {
+        let manifest_dir =
+            PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string()));
+        Self::load_or_default_from_dir(manifest_dir, error_span)
+    }
+
+    /// Loads a Miden project package from `manifest_dir`, or an empty package if none exists.
+    fn load_or_default_from_dir(
+        manifest_dir: PathBuf,
+        error_span: Span,
+    ) -> Result<Self, syn::Error> {
+        let miden_project_toml_path = manifest_dir.join("miden-project.toml");
+        if !miden_project_toml_path.is_file() {
+            let target = miden_project::Target::r#virtual(
+                Default::default(),
+                "default",
+                ast::Path::new("empty"),
+            );
+            return Ok(Self {
+                manifest_dir,
+                package: Arc::from(miden_project::Package::new("empty", target)),
+            });
+        }
+
+        let source_manager = Arc::new(DefaultSourceManager::default());
+        let project = miden_project::Project::load(&miden_project_toml_path, &source_manager)
+            .map_err(|err| {
+                syn::Error::new(
+                    error_span,
+                    format!(
+                        "Failed to read project manifest from {}: {err}",
+                        miden_project_toml_path.display()
+                    ),
+                )
+            })?;
+
+        Ok(Self {
+            manifest_dir,
+            package: project.package(),
+        })
+    }
+
+    /// Resolves fully-qualified imports exported by Miden package dependencies.
+    pub(crate) fn collect_miden_dependency_imports(
+        &self,
+        error_span: Span,
+    ) -> Result<Vec<String>, syn::Error> {
+        let mut imports =
+            collect_miden_dependencies(&self.manifest_dir, &self.package, error_span)?
+                .into_iter()
+                .map(|dependency| dependency.import)
+                .collect::<Vec<_>>();
+        imports.sort();
+        Ok(imports)
+    }
+}
+
 impl ManifestPackage {
     pub fn load_or_default(call_site_span: Span) -> Result<Self, syn::Error> {
         let manifest_dir =
@@ -520,8 +585,8 @@ mod tests {
     use toml::{Value, value::Table};
 
     use super::{
-        collect_miden_dependencies, extract_package_identifier, extract_world_exports,
-        parse_dependency_wit, qualify_dependency_export,
+        ProjectPackageMetadata, collect_miden_dependencies, extract_package_identifier,
+        extract_world_exports, parse_dependency_wit, qualify_dependency_export,
     };
 
     // This WIT is generated for the basic wallet example at examples/basic-wallet/target/generated-wit/miden-basic-wallet.wit
@@ -616,6 +681,55 @@ world basic-wallet-world {
         let mut metadata = miden_project::MetadataSet::default();
         metadata.insert(MidenSpan::unknown(Arc::<str>::from("miden")), miden_metadata);
         metadata
+    }
+
+    #[test]
+    fn project_package_metadata_defaults_without_miden_project_manifest() {
+        let fixture_root = empty_fixture_root();
+        let metadata = ProjectPackageMetadata::load_or_default_from_dir(
+            fixture_root.clone(),
+            Span::call_site(),
+        )
+        .expect("missing miden-project.toml should use empty dependency metadata");
+
+        let imports = metadata
+            .collect_miden_dependency_imports(Span::call_site())
+            .expect("empty dependency metadata should collect successfully");
+
+        assert!(imports.is_empty());
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn project_package_metadata_allows_executable_project_without_imports() {
+        let fixture_root = empty_fixture_root();
+        fs::write(
+            fixture_root.join("miden-project.toml"),
+            r#"
+[package]
+name = "script"
+version = "0.0.1"
+
+[[bin]]
+name = "script"
+path = "<virtual>"
+"#,
+        )
+        .expect("executable project manifest fixture must be written");
+        let metadata = ProjectPackageMetadata::load_or_default_from_dir(
+            fixture_root.clone(),
+            Span::call_site(),
+        )
+        .expect("executable project metadata should load without a library target");
+
+        let imports = metadata
+            .collect_miden_dependency_imports(Span::call_site())
+            .expect("executable project without dependencies should collect successfully");
+
+        assert!(imports.is_empty());
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
 
     #[test]

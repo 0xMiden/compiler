@@ -16,7 +16,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{fpi, manifest_paths, wit_world::ManifestPackage};
+use crate::{fpi, manifest_paths, wit_world::ProjectPackageMetadata};
 
 /// Name of the wrapper struct generated to aggregate imported interface methods.
 const WRAPPER_STRUCT_NAME: &str = "Account";
@@ -179,7 +179,7 @@ fn generate_bindings(
         .resolve
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
-    let fpi_imports = ManifestPackage::load(Span::call_site())?
+    let fpi_imports = ProjectPackageMetadata::load_or_default(Span::call_site())?
         .collect_miden_dependency_imports(Span::call_site())?;
     fpi::inject_imports(&mut wit_sources.resolve, world_id, &fpi_imports)?;
 
