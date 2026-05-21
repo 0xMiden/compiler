@@ -277,7 +277,7 @@ fn validate_fpi_typed_signature(
     Ok(())
 }
 
-/// Validates that an FPI value type does not contain caller-local pointer-like values.
+/// Validates that an FPI value type can be encoded as protocol felts.
 fn validate_fpi_value_type(
     import_func_path: &SymbolPath,
     location: &str,
@@ -308,19 +308,15 @@ fn validate_fpi_value_type(
             )?;
         }
         Type::Enum(enum_ty) => {
-            for variant in enum_ty.variants() {
-                if let Some(value_ty) = variant.value.as_ref() {
-                    validate_fpi_value_type(
-                        import_func_path,
-                        &format!("{location}::{}", variant.name),
-                        value_ty,
-                    )?;
-                }
+            if !enum_ty.is_c_like() {
+                return Err(midenc_session::diagnostics::Report::msg(format!(
+                    "FPI import `{import_func_path}` {location} contains non-C-like enum \
+                     `{enum_ty}`; typed FPI only supports enums without payload values"
+                )));
             }
+            validate_fpi_value_type(import_func_path, location, enum_ty.discriminant())?;
         }
-        Type::Unknown
-        | Type::Never
-        | Type::I1
+        Type::I1
         | Type::I8
         | Type::U8
         | Type::I16
@@ -329,12 +325,20 @@ fn validate_fpi_value_type(
         | Type::U32
         | Type::I64
         | Type::U64
+        | Type::Felt => {}
+        Type::Unknown
+        | Type::Never
         | Type::I128
         | Type::U128
         | Type::U256
         | Type::F64
-        | Type::Felt
-        | Type::Function(_) => {}
+        | Type::Function(_) => {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import `{import_func_path}` {location} contains unsupported type `{ty}`; \
+                 typed FPI only supports felt-width integers, felt, C-like enums, structs, and \
+                 arrays"
+            )));
+        }
     }
 
     Ok(())
@@ -1294,6 +1298,111 @@ mod tests {
             message.contains("parameter 6.ptr")
                 && message.contains("pointer-like type")
                 && message.contains("list, string, or pointer values"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_unsupported_direct_param_types() {
+        let unsupported_types = vec![
+            Type::Unknown,
+            Type::Never,
+            Type::I128,
+            Type::U128,
+            Type::U256,
+            Type::F64,
+            Type::from(FunctionType::new(CallConv::Wasm, vec![], vec![])),
+        ];
+
+        for (index, unsupported_ty) in unsupported_types.into_iter().enumerate() {
+            let import_func_ty = FunctionType::new(
+                CallConv::Wasm,
+                fpi_params_with_user_args([unsupported_ty]),
+                vec![Type::Felt],
+            );
+            let import_func_path = test_import_path(&format!("fpi-read-unsupported-{index}"));
+
+            let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+                .expect_err("unsupported FPI parameter types must be rejected before flattening");
+            let message = err.to_string();
+
+            assert!(
+                message.contains("parameter 6")
+                    && message.contains("unsupported type")
+                    && message.contains("typed FPI only supports"),
+                "unexpected error: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_unsupported_indirect_param_type() {
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            fpi_params_with_user_args((0..15).map(|_| Type::U32).chain([Type::U128])),
+            vec![Type::Felt],
+        );
+        let import_func_path = test_import_path("fpi-read-unsupported-indirect");
+
+        let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty).expect_err(
+            "unsupported indirect FPI parameter types must be rejected before flattening",
+        );
+        let message = err.to_string();
+
+        assert!(
+            message.contains("parameter 21")
+                && message.contains("unsupported type")
+                && message.contains("typed FPI only supports"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_non_c_like_enum_param() {
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "result".into(),
+                Type::U8,
+                [
+                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("err".into(), Type::I32, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            fpi_params_with_user_args([enum_ty]),
+            vec![Type::Felt],
+        );
+        let import_func_path = test_import_path("fpi-read-non-c-like-enum");
+
+        let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+            .expect_err("non-C-like enum parameters must be rejected before flattening");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("parameter 6")
+                && message.contains("non-C-like enum")
+                && message.contains("enums without payload values"),
+            "unexpected error: {message}"
+        );
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_unsupported_result_type() {
+        let import_func_ty =
+            FunctionType::new(CallConv::Wasm, fpi_params_with_user_args([]), vec![Type::U256]);
+        let import_func_path = test_import_path("fpi-return-unsupported");
+
+        let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+            .expect_err("unsupported FPI result types must be rejected before flattening");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("result 0")
+                && message.contains("unsupported type")
+                && message.contains("typed FPI only supports"),
             "unexpected error: {message}"
         );
     }
