@@ -333,23 +333,44 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::I64Const { value } => state.push1(builder.i64(*value, span)),
 
         /******************************* Unary Operators *************************************/
-        Operator::I32Clz | Operator::I64Clz => {
+        Operator::I32Clz => {
             let val = state.pop1();
             let count = builder.clz(val, span)?;
             // To ensure we match the Wasm semantics, treat the output of clz as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
         }
-        Operator::I32Ctz | Operator::I64Ctz => {
+        Operator::I64Clz => {
+            let val = state.pop1();
+            let count_u32 = builder.clz(val, span)?;
+            // To ensure we match the Wasm semantics, treat the output of clz as an i64
+            let count_u64 = builder.zext(count_u32, Type::U64, span)?;
+            state.push1(builder.bitcast(count_u64, Type::I64, span)?);
+        }
+        Operator::I32Ctz => {
             let val = state.pop1();
             let count = builder.ctz(val, span)?;
             // To ensure we match the Wasm semantics, treat the output of ctz as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
         }
-        Operator::I32Popcnt | Operator::I64Popcnt => {
+        Operator::I64Ctz => {
+            let val = state.pop1();
+            let count_u32 = builder.ctz(val, span)?;
+            // To ensure we match the Wasm semantics, treat the output of ctz as an i64
+            let count_u64 = builder.zext(count_u32, Type::U64, span)?;
+            state.push1(builder.bitcast(count_u64, Type::I64, span)?);
+        }
+        Operator::I32Popcnt => {
             let val = state.pop1();
             let count = builder.popcnt(val, span)?;
             // To ensure we match the Wasm semantics, treat the output of popcnt as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
+        }
+        Operator::I64Popcnt => {
+            let val = state.pop1();
+            let count_u32 = builder.popcnt(val, span)?;
+            // To ensure we match the Wasm semantics, treat the output of popcnt as an i64
+            let count_u64 = builder.zext(count_u32, Type::U64, span)?;
+            state.push1(builder.bitcast(count_u64, Type::I64, span)?);
         }
         Operator::I32Extend8S => {
             let val = state.pop1();
