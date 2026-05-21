@@ -72,8 +72,8 @@ mod wit_world;
 /// # Foreign Procedure Invocation (FPI)
 ///
 /// Use `#[foreign_account(...)]` on an empty struct to generate typed FPI caller wrappers for
-/// account dependencies. The dependency names are written as Rust identifiers by replacing `-`
-/// with `_`.
+/// account dependencies. Dependency names are Rust-style Miden package names: write the Miden
+/// package name as a Rust identifier by replacing `-` with `_`.
 ///
 /// ```rust,ignore
 /// use miden::{foreign_account, AccountId, Felt};
@@ -111,8 +111,9 @@ pub fn component(
 
 /// Generates typed FPI bindings for account dependencies on an empty wrapper struct.
 ///
-/// The attribute accepts Miden dependency names as Rust identifiers. For example, a dependency
-/// named `counter-contract` is requested with `#[foreign_account(counter_contract)]`.
+/// The attribute accepts Rust-style Miden package names. Write the Miden package name as a Rust
+/// identifier by replacing `-` with `_`. For example, a dependency named `counter-contract` is
+/// requested with `#[foreign_account(counter_contract)]`.
 #[proc_macro_attribute]
 pub fn foreign_account(
     attr: proc_macro::TokenStream,
@@ -156,8 +157,8 @@ pub fn export_type(
 /// # Foreign Procedure Invocation (FPI)
 ///
 /// Use `#[foreign_account(...)]` on an empty struct to generate typed FPI caller wrappers for
-/// account dependencies. The dependency names are written as Rust identifiers by replacing `-`
-/// with `_`.
+/// account dependencies. Dependency names are Rust-style Miden package names: write the Miden
+/// package name as a Rust identifier by replacing `-` with `_`.
 ///
 /// ```rust,ignore
 /// use miden::*;

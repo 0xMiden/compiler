@@ -50,10 +50,10 @@ fn expand_inner(
     item: proc_macro2::TokenStream,
 ) -> syn::Result<proc_macro2::TokenStream> {
     let args = syn::parse2::<ForeignAccountArgs>(attr)?;
+    let requested = requested_dependencies(&args)?;
     let account_struct = syn::parse2::<ItemStruct>(item)?;
     validate_empty_struct(&account_struct)?;
 
-    let requested = requested_dependencies(&args)?;
     let dependencies = selected_dependencies(&requested, Span::call_site())?;
     let imports = dependencies
         .iter()
@@ -119,7 +119,8 @@ fn validate_empty_struct(account_struct: &ItemStruct) -> syn::Result<()> {
         Fields::Unnamed(fields) if fields.unnamed.is_empty() => Ok(()),
         _ => Err(Error::new(
             account_struct.fields.span(),
-            "foreign_account must be applied to an empty struct",
+            "foreign_account must be applied to an empty struct; remove all fields because the \
+             macro generates the FPI wrapper methods on that type",
         )),
     }
 }
@@ -129,7 +130,9 @@ fn requested_dependencies(args: &ForeignAccountArgs) -> syn::Result<Vec<String>>
     if args.packages.is_empty() {
         return Err(Error::new(
             Span::call_site(),
-            "foreign_account requires at least one dependency name",
+            "foreign_account requires at least one dependency name written as a Rust-style Miden \
+             package name, for example #[foreign_account(counter_contract)] for package \
+             `counter-contract`",
         ));
     }
 
@@ -207,5 +210,57 @@ fn format_available_dependencies(available: &[String]) -> String {
         "none".to_string()
     } else {
         available.join(", ")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_missing_dependency_names_with_actionable_message() {
+        let args = syn::parse2::<ForeignAccountArgs>(quote::quote!()).unwrap();
+        let err = requested_dependencies(&args).unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains(
+            "foreign_account requires at least one dependency name written as a Rust-style Miden \
+             package name"
+        ));
+        assert!(message.contains("Rust-style Miden package"));
+        assert!(message.contains("#[foreign_account(counter_contract)]"));
+    }
+
+    #[test]
+    fn validates_dependency_names_before_struct_shape() {
+        let err = expand_inner(
+            quote::quote!(),
+            quote::quote! {
+                struct CounterAccount {
+                    account_id: miden::AccountId,
+                }
+            },
+        )
+        .unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains(
+            "foreign_account requires at least one dependency name written as a Rust-style Miden \
+             package name"
+        ));
+    }
+
+    #[test]
+    fn rejects_non_empty_struct_with_actionable_message() {
+        let account_struct = syn::parse_quote! {
+            struct CounterAccount {
+                account_id: miden::AccountId,
+            }
+        };
+        let err = validate_empty_struct(&account_struct).unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("foreign_account must be applied to an empty struct"));
+        assert!(message.contains("remove all fields"));
     }
 }
