@@ -174,14 +174,19 @@ pub proc overflowing_mul # [b, a]
         movup.2 cdrop                     # [-a or a, is_b_signed, b, negate_result]
         swap.2 dup.0 exec.unchecked_neg   # [-b, b, is_b_signed, -a or a, negate_result]
         movup.2 cdrop                     # [-b or b, -a or a, negate_result]
-        u32widening_mul swap.1         # [overflowed, result, negate_result]
+        u32widening_mul swap.1            # [hi, lo, negate_result]
 
-        # if the unsigned op overflowed, we definitely overflowed, but overflow
-        # also occurred if the supposedly unsigned result has its sign bit set,
-        # which could only happen if we overflowed the positive i32 range
-        dup.1 exec.is_signed or           # [overflowed, result, negate_result]
-        swap.1 dup.0 exec.unchecked_neg   # [-result, result, overflowed, negate_result]
-        movup.3 cdrop swap.1              # [overflowed, -result or result]
+        # Overflow occurs when the product of |a| and |b| exceeds the signed i32 range.
+        # Since the i32::MIN edge case is handled above, the maximum representable
+        # positive value is i32::MAX = 2^31 - 1. The u32widening_mul result [hi, lo]
+        # is unsigned, so even when hi == 0, if its sign bit is set (lo >= 2^31),
+        # the product has overflowed.
+        dup.1 exec.is_signed              # [is_signed(lo), hi, lo, negate_result]
+        dup.1 eq.0 not                    # [hi != 0, is_signed(lo), hi, lo, negate_result]
+        or                                # [overflowed, hi, lo, negate_result]
+        swap.1 drop                       # [overflowed, lo, negate_result]
+        swap.1 dup.0 exec.unchecked_neg   # [-lo, lo, overflowed, negate_result]
+        movup.3 cdrop swap.1              # [overflowed, -lo or lo]
     end
 end
 
