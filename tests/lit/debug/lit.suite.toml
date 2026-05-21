@@ -1,5 +1,5 @@
 name = "debug"
-patterns = ["*.shtest", "*.rs"]
+patterns = ["*.shtest", "*.rs", "*.wat"]
 
 working_dir = "."
 
