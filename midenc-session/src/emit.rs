@@ -15,7 +15,7 @@ pub trait Emit {
         &self,
         writer: W,
         mode: OutputMode,
-        session: &Session,
+        _session: &Session,
     ) -> anyhow::Result<()>;
 }
 

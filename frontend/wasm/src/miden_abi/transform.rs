@@ -1,8 +1,8 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Immediate, Op, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
-    dialects::builtin::FunctionRef, interner::symbols,
+    Builder, Immediate, Op, PointerType, SourceSpan, SymbolNameComponent, SymbolPath, Type,
+    ValueRef, dialects::builtin::FunctionRef, interner::symbols,
 };
 
 use super::{stdlib, tx_kernel};
@@ -311,12 +311,12 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> Vec<ValueRef> {
-    let span = import_func_ref.borrow().name().span;
+    let exec_span = import_func_ref.borrow().name().span;
     // Omit the last argument (pointer)
     let args_wo_pointer = &args[0..args.len() - 1];
     let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder
-        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)
+        .exec(import_func_ref, signature, args_wo_pointer.to_vec(), exec_span)
         .expect("failed to build an exec op in return_via_pointer strategy");
 
     let borrow = exec.borrow();
@@ -327,6 +327,10 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     let ptr_arg = *args.last().expect("empty args");
     let ptr_arg_ty = ptr_arg.borrow().ty().clone();
     assert_eq!(ptr_arg_ty, Type::I32);
+    // Use synthetic span for all compiler-generated ABI transformation operations
+    // These operations are part of the return-via-pointer calling convention
+    // and don't correspond to any specific user source code
+    let span = SourceSpan::SYNTHETIC;
     let ptr_u32 = builder.bitcast(ptr_arg, Type::U32, span).expect("failed bitcast to U32");
 
     let result_ty = midenc_hir::StructType::new(results.iter().map(|v| (*v).borrow().ty().clone()));
