@@ -2,12 +2,12 @@ builtin.component private @root_ns:root@1.0.0 {
     builtin.module private @test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae {
         builtin.function public extern("C") @entrypoint(%0: i32) -> i32 {
             hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+            di.debug_declare <{ variable = #di.variable<{ name = "n", file = "test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+0)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "a", file = "test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae.rs", line = 20 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+4)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "b", file = "test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae.rs", line = 21 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+8)]> }>;
             %2 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae::@__stack_pointer : ptr<u8, byte>;
             %3 = hir.bitcast %2 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %4 = hir.load %3;
-            di.debug_value %0 <{ variable = #di.variable<{ name = "n", file = "test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+0)]> }> : (i32);
-            di.debug_declare <{ variable = #di.variable<{ name = "a", file = "test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae.rs", line = 20 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+4)]> }>;
-            di.debug_declare <{ variable = #di.variable<{ name = "b", file = "test_rust_4a512383b70b366e158ab1775d5a9229476df2d2f66794836c3f1deff13c59ae.rs", line = 21 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+8)]> }>;
             %5 = arith.constant 16 : i32;
             %6 = arith.sub %4, %5 <{ overflow = #builtin.overflow<wrapping> }>;
             hir.store_local %6 <{ local = #builtin.local_variable<1, i32> }> : (i32);

@@ -9,6 +9,7 @@ use midenc_hir::{
     dominance::{DominanceInfo, PreOrderDomTreeIter},
     formatter::DisplayValues,
     smallvec,
+    traits::Transparent,
 };
 
 use super::{
@@ -947,6 +948,11 @@ impl<'a> TransformationContext<'a> {
                 while let Some(mut user) = next_use.take() {
                     next_use = user.next();
                     log::trace!(target: "cfg-to-scf", "  checking use of {value} by {}", user.borrow().owner());
+
+                    if user.borrow().owner.borrow().implements::<dyn Transparent>() {
+                        log::trace!(target: "cfg-to-scf", "  use is transparent metadata");
+                        continue;
+                    }
 
                     // Go through all the parent blocks and find the one part of the region of the
                     // loop. If the block is part of the loop, then the value does not escape the

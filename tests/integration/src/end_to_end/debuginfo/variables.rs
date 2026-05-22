@@ -15,6 +15,10 @@ fn debug_rustflags() -> [Cow<'static, str>; 6] {
     ]
 }
 
+fn debug_midenc_flags() -> [String; 2] {
+    ["--debug".to_string(), "full".to_string()]
+}
+
 #[test]
 fn variable_locations_schedule() {
     setup::enable_compiler_instrumentation();
@@ -31,7 +35,7 @@ fn variable_locations_schedule() {
         }
     "#;
 
-    let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
+    let mut builder = CompilerTestBuilder::rust_fn_body(source, debug_midenc_flags());
     builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["expected/debug_variable_locations.hir"]);
@@ -47,7 +51,7 @@ fn debug_simple_params() {
         }
     "#;
 
-    let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
+    let mut builder = CompilerTestBuilder::rust_fn_body(source, debug_midenc_flags());
     builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["expected/debug_simple_params.hir"]);
@@ -64,7 +68,7 @@ fn debug_conditional_assignment() {
         }
     "#;
 
-    let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
+    let mut builder = CompilerTestBuilder::rust_fn_body(source, debug_midenc_flags());
     builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["expected/debug_conditional_assignment.hir"]);
@@ -83,7 +87,7 @@ fn debug_multiple_locals() {
         }
     "#;
 
-    let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
+    let mut builder = CompilerTestBuilder::rust_fn_body(source, debug_midenc_flags());
     builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["expected/debug_multiple_locals.hir"]);
@@ -109,7 +113,7 @@ fn debug_nested_loops() {
         }
     "#;
 
-    let mut builder = CompilerTestBuilder::rust_fn_body(source, []);
+    let mut builder = CompilerTestBuilder::rust_fn_body(source, debug_midenc_flags());
     builder.with_rustflags(debug_rustflags());
     let mut test = builder.build();
     test.expect_ir_unoptimized(expect_file!["expected/debug_nested_loops.hir"]);
