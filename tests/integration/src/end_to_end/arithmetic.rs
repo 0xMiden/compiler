@@ -409,26 +409,51 @@ fn overflowing_mul_u128() {
 
 #[test]
 fn overflowing_mul_i8() {
+    test_overflowing_arith(
+        i8::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::signed_mul_min(),
+    );
     test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn overflowing_mul_i16() {
+    test_overflowing_arith(
+        i16::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::signed_mul_min(),
+    );
     test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn overflowing_mul_i32() {
+    test_overflowing_arith(
+        i32::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::signed_mul_min(),
+    );
     test_overflowing_arith(i32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn overflowing_mul_i64() {
+    test_overflowing_arith(
+        i64::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::signed_mul_min(),
+    );
     test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn overflowing_mul_i128() {
+    test_overflowing_arith(
+        i128::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::signed_mul_min(),
+    );
     test_overflowing_arith(i128::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
 }
 
@@ -719,22 +744,32 @@ fn checked_mul_u64() {
 
 #[test]
 fn checked_mul_i8() {
+    test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
     test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn checked_mul_i16() {
+    test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
     test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn checked_mul_i32() {
+    test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
     test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::full_range());
 }
 
 #[test]
 fn checked_mul_i64() {
     test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::full_range());
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1144 include this check in \
+            `checked_mul_i64` once the issue is resolved"]
+fn checked_mul_i64_edge_cases() {
+    test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
 }
 
 // When dividing by zero, `checked_div` returns `None` and doesn't panic. Therefore the full
@@ -851,6 +886,26 @@ where
         T: num_traits::Signed,
     {
         (any::<T>(), prop_oneof![T::min_value()..=-T::one(), T::one()..=T::max_value(),])
+    }
+
+    /// Returns a strategy with tuples such that `a * b = T::min_value`.
+    ///
+    /// A product with that result can hit edge cases in compiler intrinsics. A strategy covering
+    /// the full range of `T` does not necessarily produce `a * b = T::min_value`.
+    ///
+    /// Whether the Rust code in a test hits a particular intrinsic depends on the compilation
+    /// pipeline. For example, at the time of writing, Rust's `i32::overflowing_mul` does *not*
+    /// lower to the `i32::overflowing_mul` intrinsic. Despite that, using this strategy has helped
+    /// to uncover issues.
+    fn signed_mul_min() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let two = T::one() + T::one();
+        let four = two + two;
+        let eight = four + four;
+        let min = T::min_value();
+        prop::sample::select(vec![(min / two, two), (min / four, four), (min / eight, eight)])
     }
 }
 
