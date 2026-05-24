@@ -3,6 +3,7 @@ mod convert_trivial_if_to_select;
 mod fold_constant_index_switch;
 mod fold_redundant_yields;
 mod if_remove_unused_results;
+mod index_switch_remove_unused_results;
 mod remove_loop_invariant_args_from_before_block;
 //mod remove_loop_invariant_value_yielded;
 mod while_condition_truth;
@@ -16,6 +17,7 @@ pub use self::{
     fold_constant_index_switch::FoldConstantIndexSwitch,
     fold_redundant_yields::FoldRedundantYields,
     if_remove_unused_results::IfRemoveUnusedResults,
+    index_switch_remove_unused_results::IndexSwitchRemoveUnusedResults,
     remove_loop_invariant_args_from_before_block::RemoveLoopInvariantArgsFromBeforeBlock,
     while_condition_truth::WhileConditionTruth,
     while_remove_duplicated_results::WhileRemoveDuplicatedResults,
