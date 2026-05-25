@@ -559,7 +559,8 @@ impl RegionBranchOpInterface for IndexSwitch {
 impl Canonicalizable for IndexSwitch {
     fn get_canonicalization_patterns(rewrites: &mut RewritePatternSet, context: Rc<Context>) {
         rewrites.push(crate::canonicalization::FoldConstantIndexSwitch::new(context.clone()));
-        rewrites.push(crate::canonicalization::FoldRedundantYields::new(context));
+        rewrites.push(crate::canonicalization::FoldRedundantYields::new(context.clone()));
+        rewrites.push(crate::canonicalization::IndexSwitchRemoveUnusedResults::new(context));
     }
 }
 

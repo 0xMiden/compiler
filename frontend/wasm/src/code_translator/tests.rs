@@ -331,6 +331,18 @@ fn i32_popcnt() {
 }
 
 #[test]
+fn i64_popcnt() {
+    check_op(
+        r#"
+            i64.const 1
+            i64.popcnt
+            drop
+        "#,
+        expect_file!["./expected/i64_popcnt.hir"],
+    )
+}
+
+#[test]
 fn i32_clz() {
     check_op(
         r#"

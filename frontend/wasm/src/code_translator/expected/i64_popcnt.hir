@@ -1,6 +1,6 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1 : i64;
-    %1 = arith.clz %0;
+    %1 = arith.popcnt %0;
     %2 = arith.zext %1 <{ ty = #builtin.type<u64> }>;
     %3 = hir.bitcast %2 <{ ty = #builtin.type<i64> }>;
     cf.br ^block5;

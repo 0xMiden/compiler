@@ -235,20 +235,27 @@ fn parse_function_body<B: ?Sized + Builder>(
     debug_assert_eq!(state.control_stack.len(), 1, "State not initialized");
 
     let func_name = builder.name();
-    let mut end_span = SourceSpan::UNKNOWN;
+    let mut end_span = SourceSpan::SYNTHETIC;
     // Track the last valid span to use as a fallback for instructions without DWARF debug info.
-    // This is particularly useful for `unreachable` instructions that follow panic calls,
-    // where the unreachable itself has no source location but should inherit the panic call's span.
     let mut last_valid_span = SourceSpan::UNKNOWN;
     while !reader.eof() {
         let pos = reader.original_position();
         let (op, offset) = reader.read_with_offset().into_diagnostic()?;
         func_validator.op(pos, &op).into_diagnostic()?;
 
-        let offset = (offset as u64)
+        let code_offset = (offset as u64)
             .checked_sub(module.wasm_file.code_section_offset)
             .expect("offset occurs before start of code section");
-        let span = resolve_instruction_span(addr2line, offset, session, config)?;
+
+        // For DWARF lookup, we need different offset calculations depending on context:
+        // - For standalone modules: DWARF addresses are relative to the code section start
+        // - For modules in components: DWARF addresses are absolute (component file offsets)
+        let dwarf_lookup_offset = if module.wasm_file.module_base_offset > 0 {
+            module.wasm_file.module_base_offset + offset as u64
+        } else {
+            code_offset
+        };
+        let span = resolve_instruction_span(addr2line, dwarf_lookup_offset, session, config)?;
         if !span.is_unknown() {
             last_valid_span = span;
         } else {
@@ -257,20 +264,24 @@ fn parse_function_body<B: ?Sized + Builder>(
             );
         }
 
-        // Track the span of every END we observe, so we have a span to assign to the return we
-        // place in the final exit block
-        if let wasmparser::Operator::End = op {
-            end_span = span;
-        }
-
-        let effective_span = if span.is_unknown() && !last_valid_span.is_unknown() {
-            log::debug!(target: "module-parser",
-                "using last valid span as fallback for {:?} at offset {offset} in function {func_name}", op
-            );
-            last_valid_span
+        let effective_span = if span.is_unknown() {
+            if !last_valid_span.is_unknown() {
+                log::debug!(target: "module-parser",
+                    "using last valid span as fallback for {:?} at offset {offset} in function {func_name}", op
+                );
+                last_valid_span
+            } else {
+                SourceSpan::SYNTHETIC
+            }
         } else {
             span
         };
+
+        // Track the span of every END we observe, so we have a span to assign to the return we
+        // place in the final exit block
+        if let wasmparser::Operator::End = op {
+            end_span = effective_span;
+        }
 
         translate_operator(
             &op,
@@ -283,7 +294,7 @@ fn parse_function_body<B: ?Sized + Builder>(
             effective_span,
         )?;
 
-        builder.apply_location_schedule(offset, span);
+        builder.apply_location_schedule(code_offset, effective_span);
     }
 
     // The final `End` operator left us in the exit block where we need to manually add a return

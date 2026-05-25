@@ -1,7 +1,8 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Immediate, Op, OpExt, PointerType, SymbolNameComponent, SymbolPath, Type, ValueRef,
+    Builder, Immediate, Op, OpExt, PointerType, SourceSpan, SymbolNameComponent, SymbolPath, Type,
+    ValueRef,
     dialects::builtin::{
         FunctionRef,
         attributes::{TypeArrayAttr, U32ArrayAttr},
@@ -346,7 +347,7 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
-    store_results_to_pointer(&results, *ptr_arg, builder, span)?;
+    store_results_to_pointer(&results, *ptr_arg, builder)?;
 
     Ok(Vec::new())
 }
@@ -386,7 +387,7 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
 
-    store_results_to_pointer(&results, *ptr_arg, builder, span)?;
+    store_results_to_pointer(&results, *ptr_arg, builder)?;
 
     Ok(Vec::new())
 }
@@ -396,8 +397,11 @@ fn store_results_to_pointer<B: ?Sized + Builder>(
     results: &[ValueRef],
     ptr_arg: ValueRef,
     builder: &mut FunctionBuilderExt<'_, B>,
-    span: midenc_hir::SourceSpan,
 ) -> WasmResult<()> {
+    // Use synthetic span for all compiler-generated ABI transformation operations
+    // These operations are part of the return-via-pointer calling convention
+    // and don't correspond to any specific user source code
+    let span = SourceSpan::SYNTHETIC;
     let ptr_arg_ty = ptr_arg.borrow().ty().clone();
     if ptr_arg_ty != Type::I32 {
         return Err(Report::msg(format!(
