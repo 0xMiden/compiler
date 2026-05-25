@@ -174,14 +174,24 @@ pub proc overflowing_mul # [b, a]
         movup.2 cdrop                     # [-a or a, is_b_signed, b, negate_result]
         swap.2 dup.0 exec.unchecked_neg   # [-b, b, is_b_signed, -a or a, negate_result]
         movup.2 cdrop                     # [-b or b, -a or a, negate_result]
-        u32widening_mul swap.1         # [overflowed, result, negate_result]
+        u32widening_mul swap.1            # [hi, lo, negate_result]
 
-        # if the unsigned op overflowed, we definitely overflowed, but overflow
-        # also occurred if the supposedly unsigned result has its sign bit set,
-        # which could only happen if we overflowed the positive i32 range
-        dup.1 exec.is_signed or           # [overflowed, result, negate_result]
-        swap.1 dup.0 exec.unchecked_neg   # [-result, result, overflowed, negate_result]
-        movup.3 cdrop swap.1              # [overflowed, -result or result]
+        # Overflow occurs when the product of |a| and |b| exceeds the signed i32 range.
+        # A positive result may be at most i32::MAX = 2^31 - 1, while a negative result
+        # of 2^31 is valid because that equals i32::MIN.
+        dup.0 eq.0 not                    # [hi != 0, hi, lo, negate_result]
+        dup.2 exec.is_signed              # [lo >= 2^31, hi != 0, hi, lo, negate_result]
+        or                                # [magnitude > MAX, hi, lo, negate_result]
+        dup.2 push.MIN eq                 # [lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        dup.4                             # [negate_result, lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        and                               # [negate_result && lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        dup.2 eq.0                        # [hi == 0, negate_result && lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        and                               # [allowed_i32_MIN, magnitude > MAX, hi, lo, negate_result]
+        not                               # [!allowed_i32_MIN, magnitude > MAX, hi, lo, negate_result]
+        and                               # [overflowed, hi, lo, negate_result]
+        swap.1 drop                       # [overflowed, lo, negate_result]
+        swap.1 dup.0 exec.unchecked_neg   # [-lo, lo, overflowed, negate_result]
+        movup.3 cdrop swap.1              # [overflowed, result]
     end
 end
 
