@@ -1,13 +1,13 @@
 use miden_assembly::Assembler;
 use miden_core::Felt;
-use miden_debug::Felt as TestFelt;
+use miden_debug::{DebugQuery, Felt as TestFelt};
 use miden_protocol::note::{NoteRecipient, NoteScript, NoteStorage};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_session::diagnostics::Report;
 
 use crate::{
     CompilerTestBuilder,
-    testing::{ExecutionTraceMemoryExt, Initializer, eval_package},
+    testing::{Initializer, eval_package},
 };
 
 #[test]
@@ -96,7 +96,7 @@ end
 
     let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
         let actual: [TestFelt; 4] =
-            trace.read_rust_memory(out_addr).expect("expected output to be written");
+            trace.read_from_rust_memory(out_addr).expect("expected output to be written");
         let expected: [Felt; 4] = expected_digest.into();
         assert_eq!(
             [actual[0].0, actual[1].0, actual[2].0, actual[3].0],

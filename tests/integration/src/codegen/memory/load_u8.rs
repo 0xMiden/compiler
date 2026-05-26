@@ -34,7 +34,7 @@ fn load_u8() {
                 &args,
                 context.session(),
                 |trace| {
-                    let stored = trace.read_rust_memory::<u8>(write_to).ok_or_else(|| {
+                    let stored = trace.read_from_rust_memory::<u8>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!(
                             "expected {value} to have been written to byte address {write_to}, \
                              but read from that address failed"

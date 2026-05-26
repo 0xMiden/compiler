@@ -145,7 +145,7 @@ fn store_u8() {
                     // All assertions in the program passed, so we know each store only affected its target byte
 
                     // Read final memory state for verification
-                    let word0 = trace.read_rust_memory::<u32>(write_to).ok_or_else(|| {
+                    let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!("failed to read from byte address {write_to}"))
                     })?;
 

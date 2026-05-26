@@ -1,4 +1,4 @@
-use super::*;
+se super::*;
 
 /// Tests the memory load intrinsic for aligned and unaligned loads of quad-word values
 fn load_qw_with_offset_impl<T: QuadwordIO>() {

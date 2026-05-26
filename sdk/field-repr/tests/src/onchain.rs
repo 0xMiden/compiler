@@ -5,13 +5,11 @@
 
 use std::borrow::Cow;
 
-use miden_debug::{ExecutionTrace, Felt as TestFelt, FromMidenRepr};
+use miden_debug::{DebugQuery, ExecutionTrace, Felt as TestFelt, FromMidenRepr};
 use miden_field::Felt;
 use miden_field_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::testing::{
-    ExecutionTraceMemoryExt, Initializer, eval_package,
-};
+use midenc_integration_test_support::testing::{Initializer, eval_package};
 
 use crate::build_felt_repr_test;
 
@@ -31,10 +29,10 @@ fn read_vec_felts(
 ) -> Vec<ReprFelt> {
     // Vec metadata layout is: [capacity, ptr, len, ?]
     let data_ptr: u32 = trace
-        .read_rust_memory(vec_meta_addr + 4)
+        .read_from_rust_memory(vec_meta_addr + 4)
         .expect("Failed to read Vec metadata[1] from memory");
     let len = trace
-        .read_rust_memory(vec_meta_addr + 8)
+        .read_from_rust_memory(vec_meta_addr + 8)
         .expect("Failed to read Vec metadata[2] from memory");
 
     assert_eq!(len, expected_len as u32, "Unexpected Vec length");
@@ -44,7 +42,7 @@ fn read_vec_felts(
     for i in 0..len {
         let byte_addr = data_ptr + (i * felt_size_bytes);
         let elem: TestFelt = trace
-            .read_rust_memory(byte_addr)
+            .read_from_rust_memory(byte_addr)
             .unwrap_or_else(|| panic!("Failed to read element {i}"));
         result.push(ReprFelt::new(elem.0.as_canonical_u64()).unwrap());
     }
@@ -111,7 +109,7 @@ fn test_felt_reader() {
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
         let result_word: [TestFelt; 4] = trace
-            .read_rust_memory(out_byte_addr)
+            .read_from_rust_memory(out_byte_addr)
             .expect("Failed to read result from memory");
 
         let result_felts = [

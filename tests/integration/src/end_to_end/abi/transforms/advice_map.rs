@@ -2,7 +2,7 @@ use core::panic;
 use std::sync::Arc;
 
 use miden_core::field::PrimeField64;
-use miden_debug::{Executor, Felt as TestFelt};
+use miden_debug::{DebugQuery, Executor, Felt as TestFelt};
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
@@ -10,7 +10,7 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use midenc_session::STDLIB;
 
-use crate::{CompilerTest, testing::ExecutionTraceMemoryExt};
+use crate::CompilerTest;
 
 #[test]
 fn adv_load_preimage() {
@@ -90,7 +90,7 @@ fn adv_load_preimage() {
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)
     let vec_metadata: [TestFelt; 4] =
-        trace.read_rust_memory(result_ptr).expect("Failed to read vec metadata");
+        trace.read_from_rust_memory(result_ptr).expect("Failed to read vec metadata");
 
     let capacity = vec_metadata[0].0.as_canonical_u64() as usize;
     let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
@@ -101,7 +101,7 @@ fn adv_load_preimage() {
     for i in 0..(vec_len / 4) {
         let word_addr = data_ptr + (i * 4 * 4) as u32;
         let w: [TestFelt; 4] = trace
-            .read_rust_memory(word_addr)
+            .read_from_rust_memory(word_addr)
             .unwrap_or_else(|| panic!("Failed to read word at index {}", i));
         loaded.push(w[0].0);
         loaded.push(w[1].0);

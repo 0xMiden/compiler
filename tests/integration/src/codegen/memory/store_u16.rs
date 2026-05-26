@@ -90,7 +90,7 @@ fn store_u16() {
 
                     // Read final memory state for verification
                     // Since trace reader requires 4-byte alignment, read the full word and extract u16 values
-                    let word0 = trace.read_rust_memory::<u32>(write_to).ok_or_else(|| {
+                    let word0 = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!("failed to read from byte address {write_to}"))
                     })?;
 
@@ -194,13 +194,13 @@ macro_rules! define_unaligned_16bit_store_tests {
                         expected_bytes[offset as usize + 1] = expected[1];
 
                         let word0 =
-                            trace.read_rust_memory::<u32>(write_to).ok_or_else(|| {
+                            trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
                                 TestCaseError::fail(format!(
                                     "failed to read from byte address {write_to}"
                                 ))
                             })?;
                         let word1 =
-                            trace.read_rust_memory::<u32>(write_to + 4).ok_or_else(|| {
+                            trace.read_from_rust_memory::<u32>(write_to + 4).ok_or_else(|| {
                                 TestCaseError::fail(format!(
                                     "failed to read from byte address {}",
                                     write_to + 4
