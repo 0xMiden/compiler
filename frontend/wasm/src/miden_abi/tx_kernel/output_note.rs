@@ -15,9 +15,8 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 
 pub const CREATE: &str = "create";
 pub const ADD_ASSET: &str = "add_asset";
-pub const SET_ATTACHMENT: &str = "set_attachment";
-pub const SET_WORD_ATTACHMENT: &str = "set_word_attachment";
-pub const SET_ARRAY_ATTACHMENT: &str = "set_array_attachment";
+pub const ADD_ATTACHMENT: &str = "add_attachment";
+pub const ADD_WORD_ATTACHMENT: &str = "add_word_attachment";
 pub const GET_ASSETS_INFO: &str = "get_assets_info";
 pub const GET_ASSETS: &str = "get_assets";
 pub const GET_RECIPIENT: &str = "get_recipient";
@@ -51,38 +50,25 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         ),
     );
     output_note.insert(
-        Symbol::from(SET_ATTACHMENT),
+        Symbol::from(ADD_ATTACHMENT),
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, // note_idx
-                Felt, // attachment_scheme
-                Felt, // attachment_kind
-                Felt, Felt, Felt, Felt, // attachment word
-            ],
-            [],
-        ),
-    );
-    output_note.insert(
-        Symbol::from(SET_WORD_ATTACHMENT),
-        FunctionType::new(
-            CallConv::Wasm,
-            [
-                Felt, // note_idx
-                Felt, // attachment_scheme
-                Felt, Felt, Felt, Felt, // attachment word
-            ],
-            [],
-        ),
-    );
-    output_note.insert(
-        Symbol::from(SET_ARRAY_ATTACHMENT),
-        FunctionType::new(
-            CallConv::Wasm,
-            [
-                Felt, // note_idx
                 Felt, // attachment_scheme
                 Felt, Felt, Felt, Felt, // attachment commitment
+                Felt, // note_idx
+            ],
+            [],
+        ),
+    );
+    output_note.insert(
+        Symbol::from(ADD_WORD_ATTACHMENT),
+        FunctionType::new(
+            CallConv::Wasm,
+            [
+                Felt, // attachment_scheme
+                Felt, Felt, Felt, Felt, // attachment word
+                Felt, // note_idx
             ],
             [],
         ),

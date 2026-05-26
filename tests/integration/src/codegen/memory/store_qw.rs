@@ -60,18 +60,18 @@ fn store_qw_unaligned_impl<T: QuadwordIO>(write_val: T) {
         let output = eval_package::<u32, _, _>(
             &package,
             initializers,
-            &[Felt::new(offs as u64)],
+            &[Felt::new_unchecked(offs as u64)],
             context.session(),
             |trace| {
                 let actual = [
-                    trace.read_from_rust_memory::<u32>(write_to).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 4).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 8).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 12).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 16).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 20).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 24).unwrap(),
-                    trace.read_from_rust_memory::<u32>(write_to + 28).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 4).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 8).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 12).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 16).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 20).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 24).unwrap(),
+                    trace.read_rust_memory::<u32>(write_to + 28).unwrap(),
                 ];
 
                 for (index, (actual, expected)) in actual.iter().zip(expected.iter()).enumerate() {

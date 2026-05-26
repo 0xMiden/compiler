@@ -14,7 +14,7 @@ use midenc_session::STDLIB;
 use crate::CompilerTest;
 
 fn felt(value: u64) -> Felt {
-    Felt::new(value)
+    Felt::new_unchecked(value)
 }
 
 fn word(e0: u64, e1: u64, e2: u64, e3: u64) -> Word {

@@ -23,7 +23,7 @@ fn rust_assert_macro_source_location_with_debug_executor() {
 
     // First, test that the function works when assertion passes (x > 100)
     {
-        let args = vec![Felt::new(200)];
+        let args = vec![Felt::new_unchecked(200)];
         let exec = executor_with_std(args, Some(&package));
 
         let trace = exec.execute(&program, test.session.source_manager.clone());
@@ -33,7 +33,7 @@ fn rust_assert_macro_source_location_with_debug_executor() {
 
     // Now test that when assertion fails (x <= 100), we get a panic with source location
     {
-        let args = vec![Felt::new(50)];
+        let args = vec![Felt::new_unchecked(50)];
         let exec = executor_with_std(args, Some(&package));
 
         let program_clone = program.clone();

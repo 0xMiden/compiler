@@ -10,7 +10,7 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use midenc_session::STDLIB;
 
-use crate::CompilerTest;
+use crate::{CompilerTest, testing::ExecutionTraceMemoryExt};
 
 #[test]
 fn adv_load_preimage() {
@@ -42,22 +42,22 @@ fn adv_load_preimage() {
 
     // Create test data: 4 words (16 felts)
     let input: Vec<Felt> = vec![
-        Felt::new(1),
-        Felt::new(2),
-        Felt::new(3),
-        Felt::new(4),
-        Felt::new(5),
-        Felt::new(6),
-        Felt::new(7),
-        Felt::new(8),
-        Felt::new(9),
-        Felt::new(10),
-        Felt::new(11),
-        Felt::new(12),
-        Felt::new(13),
-        Felt::new(14),
-        Felt::new(15),
-        Felt::new(Felt::ORDER_U64 - 1),
+        Felt::new_unchecked(1),
+        Felt::new_unchecked(2),
+        Felt::new_unchecked(3),
+        Felt::new_unchecked(4),
+        Felt::new_unchecked(5),
+        Felt::new_unchecked(6),
+        Felt::new_unchecked(7),
+        Felt::new_unchecked(8),
+        Felt::new_unchecked(9),
+        Felt::new_unchecked(10),
+        Felt::new_unchecked(11),
+        Felt::new_unchecked(12),
+        Felt::new_unchecked(13),
+        Felt::new_unchecked(14),
+        Felt::new_unchecked(15),
+        Felt::new_unchecked(Felt::ORDER_U64 - 1),
     ];
 
     let commitment = miden_core::crypto::hash::Poseidon2::hash_elements(&input);
@@ -66,7 +66,7 @@ fn adv_load_preimage() {
 
     let out_addr = 20u32 * 65536;
     let args = [
-        Felt::new(out_addr as u64),
+        Felt::new_unchecked(out_addr as u64),
         commitment[0],
         commitment[1],
         commitment[2],
@@ -90,7 +90,7 @@ fn adv_load_preimage() {
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)
     let vec_metadata: [TestFelt; 4] =
-        trace.read_from_rust_memory(result_ptr).expect("Failed to read vec metadata");
+        trace.read_rust_memory(result_ptr).expect("Failed to read vec metadata");
 
     let capacity = vec_metadata[0].0.as_canonical_u64() as usize;
     let data_ptr = vec_metadata[1].0.as_canonical_u64() as u32;
@@ -101,7 +101,7 @@ fn adv_load_preimage() {
     for i in 0..(vec_len / 4) {
         let word_addr = data_ptr + (i * 4 * 4) as u32;
         let w: [TestFelt; 4] = trace
-            .read_from_rust_memory(word_addr)
+            .read_rust_memory(word_addr)
             .unwrap_or_else(|| panic!("Failed to read word at index {}", i));
         loaded.push(w[0].0);
         loaded.push(w[1].0);

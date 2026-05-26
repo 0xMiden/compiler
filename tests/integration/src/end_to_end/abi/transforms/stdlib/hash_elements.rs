@@ -53,7 +53,7 @@ fn hash_elements() {
             felts: (&wide_ptr).into(),
         }];
 
-        let args = [Felt::new(wide_ptr_addr as u64)];
+        let args = [Felt::new_unchecked(wide_ptr_addr as u64)];
 
         eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();

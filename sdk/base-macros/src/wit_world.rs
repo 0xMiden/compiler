@@ -25,7 +25,6 @@ pub struct ManifestPackage {
     pub package: Arc<miden_project::Package>,
     pub target: miden_project::Target,
     pub description: Arc<str>,
-    pub supported_types: Vec<String>,
 }
 
 /// Project package metadata needed to resolve dependency WIT imports.
@@ -113,7 +112,6 @@ impl ManifestPackage {
                 package: Arc::from(miden_project::Package::new("empty", target.clone())),
                 target,
                 description: Default::default(),
-                supported_types: vec![],
             });
         }
 
@@ -184,18 +182,6 @@ impl ManifestPackage {
                 .unwrap_or_default()
         });
 
-        let supported_types = package
-            .metadata()
-            .get("miden")
-            .and_then(|meta| meta.get("supported-types"))
-            .and_then(|st| st.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect::<Vec<String>>()
-            })
-            .unwrap_or_default();
-
         Ok(Self {
             manifest_dir,
             package_table,
@@ -203,7 +189,6 @@ impl ManifestPackage {
             package,
             target,
             description,
-            supported_types,
         })
     }
 

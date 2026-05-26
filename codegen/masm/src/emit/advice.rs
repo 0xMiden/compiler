@@ -5,7 +5,7 @@ use super::{OpEmitter, masm};
 impl OpEmitter<'_> {
     /// Pop one felt from the advice stack to the operand stack.
     pub fn advice_pop(&mut self, span: SourceSpan) {
-        self.emit(masm::Instruction::AdvPush(1u8.into()), span);
+        self.emit(masm::Instruction::AdvPush, span);
         self.push(Type::Felt);
     }
 
@@ -47,10 +47,7 @@ mod tests {
         emitter.advice_pop(span);
 
         assert_eq!(emitter.stack_len(), 1);
-        assert_eq!(
-            &block[0],
-            &Op::Inst(masm::Span::new(span, masm::Instruction::AdvPush(1u8.into())))
-        );
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::AdvPush)));
     }
 
     #[test]

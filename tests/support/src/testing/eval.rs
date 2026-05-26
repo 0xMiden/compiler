@@ -96,8 +96,8 @@ where
     for initializer in initializers {
         num_initializers += 1;
 
-        // The harness uses `adv_push.2` to place `[num_words, dest_ptr]` on the operand stack, so
-        // we provide `[dest_ptr, num_words]` on the advice stack.
+        // The harness uses two `adv_push` instructions to place `[num_words, dest_ptr]` on the
+        // operand stack, so we provide `[dest_ptr, num_words]` on the advice stack.
         let dest_ptr = initializer.element_addr();
 
         let reverse_word_elements =
@@ -126,8 +126,8 @@ where
             Initializer::MemoryWords { words, .. } => words.into_owned(),
         };
 
-        advice_stack.push(Felt::new(dest_ptr as u64));
-        advice_stack.push(Felt::new(words.len() as u64));
+        advice_stack.push(Felt::new_unchecked(dest_ptr as u64));
+        advice_stack.push(Felt::new_unchecked(words.len() as u64));
 
         for word in words {
             if reverse_word_elements {
@@ -142,7 +142,7 @@ where
         }
     }
 
-    advice_stack.insert(0, Felt::new(num_initializers));
+    advice_stack.insert(0, Felt::new_unchecked(num_initializers));
     advice_stack.extend(user_advice_stack);
 
     let mut exec = Executor::new(args.to_vec());

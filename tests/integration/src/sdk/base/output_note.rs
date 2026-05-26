@@ -150,21 +150,6 @@ fn rust_sdk_output_note_add_asset_binding() {
 }
 
 #[test]
-fn rust_sdk_output_note_set_attachment_binding() {
-    run_output_note_binding_test(
-        "rust_sdk_output_note_set_attachment_binding",
-        "pub fn binding(&self) -> Felt {
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
-        let attachment_scheme = Felt::new(0).unwrap();
-        let attachment_kind = Felt::new(0).unwrap();
-        let attachment = Word::from([Felt::new(0).unwrap(); 4]);
-        output_note::set_attachment(idx, attachment_scheme, attachment_kind, attachment);
-        Felt::new(0).unwrap()
-    }",
-    );
-}
-
-#[test]
 fn rust_sdk_output_note_set_word_attachment_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_set_word_attachment_binding",

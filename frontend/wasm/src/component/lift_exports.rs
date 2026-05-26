@@ -80,12 +80,11 @@ pub fn generate_export_lifting_function(
     let core_export_func_ref = core_module_builder
         .get_function(core_export_func_path.name().as_str())
         .expect("failed to find the core module export function");
-    // Make the lowered core WASM export private so only the lifted wrapper is
-    // publicly exported from the component. This prevents double-exports and
-    // ensures all external callers go through the Canonical ABI–correct
-    // wrapper generated here.
+    // Make the lowered core WASM export internal so only the lifted wrapper is
+    // publicly exported from the component, while still allowing the wrapper to
+    // call across the nested core module symbol table boundary.
     core_module_builder
-        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Private);
+        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
     if needs_transformation(&cross_ctx_export_sig_flat) {

@@ -6,7 +6,7 @@ use midenc_hir::{
 
 use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
 
-pub const BUILD_RECIPIENT: &str = "build_recipient";
+pub const COMPUTE_AND_STORE_RECIPIENT: &str = "compute_and_store_recipient";
 
 fn module_path() -> SymbolPath {
     let parts = [
@@ -22,7 +22,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut note: FunctionTypeMap = Default::default();
     note.insert(
-        Symbol::from(BUILD_RECIPIENT),
+        Symbol::from(COMPUTE_AND_STORE_RECIPIENT),
         FunctionType::new(
             CallConv::Wasm,
             [

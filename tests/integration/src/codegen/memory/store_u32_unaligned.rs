@@ -39,12 +39,12 @@ fn store_u32_unaligned() {
         let output = eval_package::<u32, _, _>(
             &package,
             initializers,
-            &[Felt::new(offs as u64)],
+            &[Felt::new_unchecked(offs as u64)],
             context.session(),
             |trace| {
                 // Get the overwritten words.
-                let word0 = trace.read_from_rust_memory::<u32>(write_to).unwrap();
-                let word1 = trace.read_from_rust_memory::<u32>(write_to + 4).unwrap();
+                let word0 = trace.read_rust_memory::<u32>(write_to).unwrap();
+                let word1 = trace.read_rust_memory::<u32>(write_to + 4).unwrap();
 
                 eprintln!("word0: 0x{word0:0>8x}");
                 eprintln!("word1: 0x{word1:0>8x}");

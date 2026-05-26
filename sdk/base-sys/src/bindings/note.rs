@@ -11,7 +11,7 @@ const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::note::build_recipient"]
+    #[link_name = "miden::protocol::note::compute_and_store_recipient"]
     fn extern_note_build_recipient(
         storage_ptr: *mut Felt,
         num_storage_items: usize,
@@ -29,8 +29,9 @@ unsafe extern "C" {
 
 /// Builds a note recipient from the provided serial number, script root, and storage elements.
 ///
-/// This maps to `miden::protocol::note::build_recipient`, which also inserts the provided storage
-/// into the advice map under the storage commitment used by the returned recipient digest.
+/// This maps to `miden::protocol::note::compute_and_store_recipient`, which also inserts the
+/// provided storage into the advice map under the storage commitment used by the returned
+/// recipient digest.
 ///
 /// Panics if `storage` contains more than 1024 elements.
 pub fn build_recipient(serial_num: Word, script_root: Word, storage: Vec<Felt>) -> Recipient {

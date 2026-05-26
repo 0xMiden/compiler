@@ -53,7 +53,7 @@ impl OpEmitter<'_> {
     pub fn is_const_flag_set_u32(&mut self, flags: u32, span: SourceSpan) {
         self.emit(masm::Instruction::Dup0, span);
         self.const_mask_u32(flags, span);
-        self.emit(masm::Instruction::EqImm(Felt::new(flags as u64).into()), span);
+        self.emit(masm::Instruction::EqImm(Felt::new_unchecked(flags as u64).into()), span);
     }
 
     /// Emits code to check if all bits of `mask` are set in `input`.
@@ -147,7 +147,7 @@ impl OpEmitter<'_> {
         self.emit_all(
             [
                 masm::Instruction::Dup0,
-                masm::Instruction::EqImm(Felt::new(value as u64).into()),
+                masm::Instruction::EqImm(Felt::new_unchecked(value as u64).into()),
                 Self::assert_with_message_inst(
                     format!("expected u32 value to equal {value}"),
                     span,
@@ -509,11 +509,13 @@ impl OpEmitter<'_> {
         self.emit(
             match overflow {
                 Overflow::Unchecked if imm == 1 => masm::Instruction::AddImm(Felt::ONE.into()),
-                Overflow::Unchecked => masm::Instruction::AddImm(Felt::new(imm as u64).into()),
+                Overflow::Unchecked => {
+                    masm::Instruction::AddImm(Felt::new_unchecked(imm as u64).into())
+                }
                 Overflow::Checked => {
                     return self.emit_all(
                         [
-                            masm::Instruction::AddImm(Felt::new(imm as u64).into()),
+                            masm::Instruction::AddImm(Felt::new_unchecked(imm as u64).into()),
                             masm::Instruction::U32Assert,
                         ],
                         span,
@@ -592,11 +594,13 @@ impl OpEmitter<'_> {
         }
         self.emit(
             match overflow {
-                Overflow::Unchecked => masm::Instruction::SubImm(Felt::new(imm as u64).into()),
+                Overflow::Unchecked => {
+                    masm::Instruction::SubImm(Felt::new_unchecked(imm as u64).into())
+                }
                 Overflow::Checked => {
                     return self.emit_all(
                         [
-                            masm::Instruction::SubImm(Felt::new(imm as u64).into()),
+                            masm::Instruction::SubImm(Felt::new_unchecked(imm as u64).into()),
                             masm::Instruction::U32Assert,
                         ],
                         span,
@@ -685,12 +689,14 @@ impl OpEmitter<'_> {
                 self.emit(
                     match overflow {
                         Overflow::Unchecked => {
-                            masm::Instruction::MulImm(Felt::new(imm as u64).into())
+                            masm::Instruction::MulImm(Felt::new_unchecked(imm as u64).into())
                         }
                         Overflow::Checked => {
                             return self.emit_all(
                                 [
-                                    masm::Instruction::MulImm(Felt::new(imm as u64).into()),
+                                    masm::Instruction::MulImm(
+                                        Felt::new_unchecked(imm as u64).into(),
+                                    ),
                                     masm::Instruction::U32Assert,
                                 ],
                                 span,

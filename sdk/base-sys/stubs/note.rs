@@ -1,7 +1,7 @@
 use core::ffi::c_void;
 
 /// Note interface stubs.
-#[unsafe(export_name = "miden::protocol::note::build_recipient")]
+#[unsafe(export_name = "miden::protocol::note::compute_and_store_recipient")]
 #[optimize(none)]
 #[inline(never)]
 pub extern "C" fn note_build_recipient_plain(

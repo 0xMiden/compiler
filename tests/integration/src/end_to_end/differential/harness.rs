@@ -70,8 +70,10 @@ pub(super) fn run_case(name: &str, source: &str) {
     TestRunner::new(cfg)
         .run(&(any::<u32>(), any::<u32>()), |(a, b)| {
             let native_out = unsafe { entry(a, b) };
-            let exec =
-                executor_with_std(vec![Felt::new(a as u64), Felt::new(b as u64)], Some(&package));
+            let exec = executor_with_std(
+                vec![Felt::new_unchecked(a as u64), Felt::new_unchecked(b as u64)],
+                Some(&package),
+            );
             let masm_out: u32 =
                 exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
             prop_assert_eq!(

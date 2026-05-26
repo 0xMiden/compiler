@@ -27,14 +27,14 @@ fn load_sw() {
                 bytes: &value_bytes,
             }];
 
-            let args = [Felt::new(write_to as u64)];
+            let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u32, _, _>(
                 &package,
                 initializers,
                 &args,
                 context.session(),
                 |trace| {
-                    let stored = trace.read_from_rust_memory::<u32>(write_to).ok_or_else(|| {
+                    let stored = trace.read_rust_memory::<u32>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!(
                             "expected {value} to have been written to byte address {write_to}, \
                              but read from that address failed"

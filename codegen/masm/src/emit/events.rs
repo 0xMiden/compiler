@@ -62,7 +62,7 @@ mod tests {
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
         let span = SourceSpan::default();
-        emitter.emit_event_imm(Felt::new(42), span);
+        emitter.emit_event_imm(Felt::new_unchecked(42), span);
 
         assert_eq!(emitter.stack_len(), 0);
         assert_eq!(
@@ -71,7 +71,7 @@ mod tests {
                 span,
                 masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(
                     span,
-                    Felt::new(42),
+                    Felt::new_unchecked(42),
                 )))
             ))
         );
@@ -89,7 +89,7 @@ mod tests {
         }
 
         let span = SourceSpan::default();
-        emitter.system_event(Felt::new(7), 4, span);
+        emitter.system_event(Felt::new_unchecked(7), 4, span);
 
         assert_eq!(emitter.stack_len(), 4);
         assert_eq!(
@@ -98,7 +98,7 @@ mod tests {
                 span,
                 masm::Instruction::EmitImm(masm::Immediate::Value(masm::Span::new(
                     span,
-                    Felt::new(7),
+                    Felt::new_unchecked(7),
                 )))
             ))
         );

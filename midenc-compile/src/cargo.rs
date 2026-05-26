@@ -133,7 +133,9 @@ pub fn load_cargo_based_source_dependencies(
             )));
         };
         match &dependency.provenance {
-            miden_project::ProjectDependencyNodeProvenance::Preassembled { path, selected } => {
+            miden_project::ProjectDependencyNodeProvenance::Preassembled {
+                path, selected, ..
+            } => {
                 log::debug!(target: "cargo-miden", "resolved dependency {}@{selected} to preassembled package at {}", &dependency.name, path.display());
             }
             miden_project::ProjectDependencyNodeProvenance::Registry {

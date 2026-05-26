@@ -44,7 +44,7 @@ fn load_qw_with_offset_impl<T: QuadwordIO>() {
         let output = eval_package::<T, _, _>(
             &package,
             initializers,
-            &[Felt::new(offs as u64)],
+            &[Felt::new_unchecked(offs as u64)],
             context.session(),
             |_trace| Ok(()),
         )
@@ -101,7 +101,7 @@ where
                 felts: Cow::Borrowed(&value_felts),
             }];
 
-            let args = [Felt::new(write_to as u64)];
+            let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<T, _, _>(
                 &package,
                 initializers,
@@ -135,7 +135,7 @@ where
                     prop_assert_eq!(e2, (uvalue >> 64) as u64 & 0xffffffff);
                     prop_assert_eq!(e3, (uvalue >> 96) as u64 & 0xffffffff);
 
-                    let stored = trace.read_from_rust_memory::<T>(write_to).ok_or_else(|| {
+                    let stored = trace.read_rust_memory::<T>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!(
                             "expected {value} to have been written to byte address {write_to}, \
                              but read from that address failed"

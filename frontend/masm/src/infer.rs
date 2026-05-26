@@ -520,10 +520,14 @@ impl<'a> InferState<'a> {
                 self.push(Type::Felt);
                 Ok(())
             }
-            AdvPush(count) => {
-                let count = immediate_value(count)?;
-                validate_advice_read_count(count, span)?;
-                for _ in 0..count {
+            AdvPush => {
+                validate_advice_read_count(1, span)?;
+                self.push(Type::Felt);
+                Ok(())
+            }
+            AdvPushW => {
+                validate_advice_read_count(4, span)?;
+                for _ in 0..4 {
                     self.push(Type::Felt);
                 }
                 Ok(())

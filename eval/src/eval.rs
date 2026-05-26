@@ -1512,9 +1512,9 @@ macro_rules! comparison_with {
             (Immediate::U64(x), Immediate::U64(y)) => Immediate::U64($comparator(x, y)),
             (Immediate::I128(x), Immediate::I128(y)) => Immediate::I128($comparator(x, y)),
             (Immediate::U128(x), Immediate::U128(y)) => Immediate::U128($comparator(x, y)),
-            (Immediate::Felt(x), Immediate::Felt(y)) => {
-                Immediate::Felt(Felt::new($comparator(x.as_canonical_u64(), y.as_canonical_u64())))
-            }
+            (Immediate::Felt(x), Immediate::Felt(y)) => Immediate::Felt(Felt::new_unchecked(
+                $comparator(x.as_canonical_u64(), y.as_canonical_u64()),
+            )),
             _ => unreachable!(),
         }
     }};
@@ -1799,7 +1799,7 @@ impl Eval for arith::Neg {
             Immediate::U64(x) => Immediate::U64(!x),
             Immediate::I128(x) => Immediate::I128(-x),
             Immediate::U128(x) => Immediate::U128(!x),
-            Immediate::Felt(x) => Immediate::Felt(Felt::new(!x.as_canonical_u64())),
+            Immediate::Felt(x) => Immediate::Felt(Felt::new_unchecked(!x.as_canonical_u64())),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",

@@ -43,35 +43,24 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::output_note::get_metadata"]
     pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::set_attachment"]
-    pub fn extern_output_note_set_attachment(
-        note_idx: NoteIdx,
+    #[link_name = "miden::protocol::output_note::add_word_attachment"]
+    pub fn extern_output_note_add_word_attachment(
         attachment_scheme: Felt,
-        attachment_kind: Felt,
         attachment_f0: Felt,
         attachment_f1: Felt,
         attachment_f2: Felt,
         attachment_f3: Felt,
+        note_idx: NoteIdx,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::set_word_attachment"]
-    pub fn extern_output_note_set_word_attachment(
-        note_idx: NoteIdx,
+    #[link_name = "miden::protocol::output_note::add_attachment"]
+    pub fn extern_output_note_add_attachment(
         attachment_scheme: Felt,
         attachment_f0: Felt,
         attachment_f1: Felt,
         attachment_f2: Felt,
         attachment_f3: Felt,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::output_note::set_array_attachment"]
-    pub fn extern_output_note_set_array_attachment(
         note_idx: NoteIdx,
-        attachment_scheme: Felt,
-        attachment_f0: Felt,
-        attachment_f1: Felt,
-        attachment_f2: Felt,
-        attachment_f3: Felt,
     );
 }
 
@@ -119,36 +108,16 @@ pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
     }
 }
 
-/// Sets the attachment of the output note specified by `note_idx`.
-pub fn set_attachment(
-    note_idx: NoteIdx,
-    attachment_scheme: Felt,
-    attachment_kind: Felt,
-    attachment: Word,
-) {
-    unsafe {
-        extern_output_note_set_attachment(
-            note_idx,
-            attachment_scheme,
-            attachment_kind,
-            attachment[0],
-            attachment[1],
-            attachment[2],
-            attachment[3],
-        );
-    }
-}
-
 /// Sets the attachment of the output note specified by `note_idx` to the provided word.
 pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
     unsafe {
-        extern_output_note_set_word_attachment(
-            note_idx,
+        extern_output_note_add_word_attachment(
             attachment_scheme,
             attachment[0],
             attachment[1],
             attachment[2],
             attachment[3],
+            note_idx,
         );
     }
 }
@@ -158,13 +127,13 @@ pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachmen
 /// The advice map must contain an entry for the attachment elements committed to by `attachment`.
 pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
     unsafe {
-        extern_output_note_set_array_attachment(
-            note_idx,
+        extern_output_note_add_attachment(
             attachment_scheme,
             attachment[0],
             attachment[1],
             attachment[2],
             attachment[3],
+            note_idx,
         );
     }
 }

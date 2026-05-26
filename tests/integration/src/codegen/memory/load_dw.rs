@@ -28,7 +28,7 @@ fn load_dw() {
                 felts: Cow::Borrowed(&value_felts),
             }];
 
-            let args = [Felt::new(write_to as u64)];
+            let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u64, _, _>(
                 &package,
                 initializers,
@@ -50,7 +50,7 @@ fn load_dw() {
                     prop_assert_eq!(lo, value & 0xffffffff);
                     prop_assert_eq!(hi, value >> 32);
 
-                    let stored = trace.read_from_rust_memory::<u64>(write_to).ok_or_else(|| {
+                    let stored = trace.read_rust_memory::<u64>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!(
                             "expected {value} to have been written to byte address {write_to}, \
                              but read from that address failed"

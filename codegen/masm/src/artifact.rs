@@ -119,14 +119,16 @@ impl Rodata {
 
         let mut felts = Vec::with_capacity(bytes.len() / 4);
         let mut iter = bytes.iter().copied().array_chunks::<4>();
-        felts.extend(iter.by_ref().map(|chunk| Felt::new(u32::from_le_bytes(chunk) as u64)));
+        felts.extend(
+            iter.by_ref().map(|chunk| Felt::new_unchecked(u32::from_le_bytes(chunk) as u64)),
+        );
         let remainder = iter.into_remainder();
         if remainder.len() > 0 {
             let mut chunk = [0u8; 4];
             for (i, byte) in remainder.enumerate() {
                 chunk[i] = byte;
             }
-            felts.push(Felt::new(u32::from_le_bytes(chunk) as u64));
+            felts.push(Felt::new_unchecked(u32::from_le_bytes(chunk) as u64));
         }
 
         let size_in_felts = bytes.len().div_ceil(4);
@@ -271,7 +273,7 @@ impl MasmComponent {
 
         // Step 1: Get the number of initializers to run
         // => [inits] on operand stack
-        block.push(Op::Inst(Span::new(span, Inst::AdvPush(1.into()))));
+        block.push(Op::Inst(Span::new(span, Inst::AdvPush)));
 
         // Step 2: Evaluate the initial state of the loop condition `inits > 0`
         // => [inits, inits]
@@ -292,7 +294,8 @@ impl MasmComponent {
 
         // Step 3b: Copy initializer data to memory
         // => [num_words, dest_ptr, inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush(2.into()))));
+        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
+        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
         // => [C, B, A, dest_ptr, inits'] on operand stack
         loop_body
             .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));

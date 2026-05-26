@@ -48,7 +48,7 @@ fn i64_load16_s() {
         let output = eval_package::<u64, _, _>(
             &package,
             initializers,
-            &[Felt::new(mem_addr as u64)],
+            &[Felt::new_unchecked(mem_addr as u64)],
             context.session(),
             |_trace| Ok(()),
         )

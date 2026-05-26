@@ -8,5 +8,5 @@ CHECK: exec.support::dirty
 CHECK: unconstrained value is passed as a call argument here
 
 CHECK-LABEL: lib/mod.masm
-CHECK: adv_push.1
+CHECK: adv_push
 CHECK: advice data is obtained here which is later used unconstrained

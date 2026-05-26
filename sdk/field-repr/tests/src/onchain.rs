@@ -9,7 +9,9 @@ use miden_debug::{ExecutionTrace, Felt as TestFelt, FromMidenRepr};
 use miden_field::Felt;
 use miden_field_repr::{Felt as ReprFelt, FeltReader, FromFeltRepr, ToFeltRepr};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::testing::{Initializer, eval_package};
+use midenc_integration_test_support::testing::{
+    ExecutionTraceMemoryExt, Initializer, eval_package,
+};
 
 use crate::build_felt_repr_test;
 
@@ -18,7 +20,7 @@ fn to_core_felts(felts: &[ReprFelt]) -> Vec<miden_core::Felt> {
     felts
         .iter()
         .copied()
-        .map(|felt| miden_core::Felt::new(felt.as_canonical_u64()))
+        .map(|felt| miden_core::Felt::new_unchecked(felt.as_canonical_u64()))
         .collect()
 }
 
@@ -29,10 +31,10 @@ fn read_vec_felts(
 ) -> Vec<ReprFelt> {
     // Vec metadata layout is: [capacity, ptr, len, ?]
     let data_ptr: u32 = trace
-        .read_from_rust_memory(vec_meta_addr + 4)
+        .read_rust_memory(vec_meta_addr + 4)
         .expect("Failed to read Vec metadata[1] from memory");
     let len = trace
-        .read_from_rust_memory(vec_meta_addr + 8)
+        .read_rust_memory(vec_meta_addr + 8)
         .expect("Failed to read Vec metadata[2] from memory");
 
     assert_eq!(len, expected_len as u32, "Unexpected Vec length");
@@ -42,7 +44,7 @@ fn read_vec_felts(
     for i in 0..len {
         let byte_addr = data_ptr + (i * felt_size_bytes);
         let elem: TestFelt = trace
-            .read_from_rust_memory(byte_addr)
+            .read_rust_memory(byte_addr)
             .unwrap_or_else(|| panic!("Failed to read element {i}"));
         result.push(ReprFelt::new(elem.0.as_canonical_u64()).unwrap());
     }
@@ -89,10 +91,10 @@ fn test_felt_reader() {
     let out_byte_addr = out_elem_addr * 4;
 
     let input_word: Vec<miden_core::Felt> = vec![
-        miden_core::Felt::new(serialized[0].as_canonical_u64()),
-        miden_core::Felt::new(serialized[1].as_canonical_u64()),
-        miden_core::Felt::new(0),
-        miden_core::Felt::new(0),
+        miden_core::Felt::new_unchecked(serialized[0].as_canonical_u64()),
+        miden_core::Felt::new_unchecked(serialized[1].as_canonical_u64()),
+        miden_core::Felt::new_unchecked(0),
+        miden_core::Felt::new_unchecked(0),
     ];
 
     let initializers = [Initializer::MemoryFelts {
@@ -103,13 +105,13 @@ fn test_felt_reader() {
     // `Word` parameters/returns are passed by reference under `-Z wasm_c_abi=spec`:
     // `(sret_ptr, input_ptr)`.
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
         let result_word: [TestFelt; 4] = trace
-            .read_from_rust_memory(out_byte_addr)
+            .read_rust_memory(out_byte_addr)
             .expect("Failed to read result from memory");
 
         let result_felts = [
@@ -165,8 +167,8 @@ fn test_two_felts_struct_round_trip() {
     let out_byte_addr = out_elem_addr * 4;
 
     let input_felts: Vec<miden_core::Felt> = vec![
-        miden_core::Felt::new(serialized[0].as_canonical_u64()),
-        miden_core::Felt::new(serialized[1].as_canonical_u64()),
+        miden_core::Felt::new_unchecked(serialized[0].as_canonical_u64()),
+        miden_core::Felt::new_unchecked(serialized[1].as_canonical_u64()),
     ];
 
     let initializers = [Initializer::MemoryFelts {
@@ -175,8 +177,8 @@ fn test_two_felts_struct_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -251,8 +253,8 @@ fn test_five_felts_struct_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -337,8 +339,8 @@ fn test_minimal_u64_bug() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -422,8 +424,8 @@ fn test_mixed_types_no_u64_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -524,8 +526,8 @@ fn test_nested_struct_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -601,8 +603,8 @@ fn test_enum_unit_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -663,8 +665,8 @@ fn test_enum_tuple_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -758,8 +760,8 @@ fn test_struct_with_enum_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -848,8 +850,8 @@ fn test_enum_nested_with_struct_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -925,8 +927,8 @@ fn test_struct_with_option_round_trip() {
         felts: Cow::from(to_core_felts(&input_none)),
     }];
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, serialized_none.len());
@@ -1001,8 +1003,8 @@ fn test_struct_with_vec_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
@@ -1059,8 +1061,8 @@ fn test_tuple_struct_round_trip() {
     }];
 
     let args = [
-        miden_core::Felt::new(out_byte_addr as u64),
-        miden_core::Felt::new(in_byte_addr as u64),
+        miden_core::Felt::new_unchecked(out_byte_addr as u64),
+        miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
     let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {

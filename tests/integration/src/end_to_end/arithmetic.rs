@@ -12,7 +12,7 @@ use proptest::{
 use super::support::NumericStrategy;
 use crate::{
     CompilerTest,
-    testing::{eval_package, run_masm_vs_rust},
+    testing::{ExecutionTraceMemoryExt, eval_package, run_masm_vs_rust},
 };
 
 macro_rules! test_bin_op {
@@ -86,7 +86,7 @@ macro_rules! test_wide_bin_op {
 
                     eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
                         let vm_out_bytes: [u8; 16] =
-                            trace.read_from_rust_memory(out_addr)
+                            trace.read_rust_memory(out_addr)
                                 .expect("output was not written");
 
                         let rs_out_bytes = rs_out.to_le_bytes();
@@ -911,8 +911,7 @@ fn test_overflowing_arith<T>(
             let ty_byte_size = std::mem::size_of::<T>();
             assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
             // At most 17 bytes are written to memory: ty_byte_size <= 16 and 1 byte for the bool.
-            let x: [u8; 17] =
-                trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let x: [u8; 17] = trace.read_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
 
             let rs_out_bytes =
@@ -970,8 +969,7 @@ where
             let ty_byte_size = std::mem::size_of::<T>();
             // At most 16 bytes are written to memory.
             assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
-            let x: [u8; 16] =
-                trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let x: [u8; 16] = trace.read_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size].to_vec(); // only take what's written
             let rs_out_bytes = rust_out.to_le_bytes();
 
@@ -1031,7 +1029,7 @@ fn test_checked_arith<T>(
             let ty_byte_size = std::mem::size_of::<T>();
             assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
-            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let x: [u8; 9] = trace.read_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
 
             let rs_out_bytes =

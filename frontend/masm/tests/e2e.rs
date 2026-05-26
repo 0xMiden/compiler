@@ -170,7 +170,7 @@ fn e2e_roundtrip_advice_push() {
     assert_roundtrip_outputs_with_advice(
         r#"
 pub proc entry(a: felt) -> felt
-    adv_push.1
+    adv_push
     add
 end
 "#,
@@ -193,7 +193,7 @@ fn assert_roundtrip_outputs_with_advice(
     let context = e2e_context();
     let original = assemble_original_program(source, &context);
     let roundtripped = assemble_roundtripped_program(source, context.clone());
-    let inputs = inputs.iter().copied().map(Felt::new).collect::<Vec<_>>();
+    let inputs = inputs.iter().copied().map(Felt::new_unchecked).collect::<Vec<_>>();
 
     let original_outputs = execute_program(&original, &inputs, advice, num_outputs);
     let roundtripped_outputs = execute_program(&roundtripped, &inputs, advice, num_outputs);
@@ -311,5 +311,5 @@ fn execute_program(
     let trace =
         execute_sync(program, stack_inputs, advice_inputs, &mut host, ExecutionOptions::default())
             .expect("program should execute");
-    trace.stack_outputs().get_num_elements(num_outputs).to_vec()
+    trace.stack.get_num_elements(num_outputs).to_vec()
 }

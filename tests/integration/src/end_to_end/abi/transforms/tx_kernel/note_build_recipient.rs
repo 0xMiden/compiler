@@ -7,7 +7,7 @@ use midenc_session::diagnostics::Report;
 
 use crate::{
     CompilerTestBuilder,
-    testing::{Initializer, eval_package},
+    testing::{ExecutionTraceMemoryExt, Initializer, eval_package},
 };
 
 #[test]
@@ -24,10 +24,14 @@ end
         .expect("failed to assemble note script program");
     let note_script = NoteScript::new(note_script_program);
 
-    let serial_num =
-        miden_core::Word::new([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
-    let input1 = Felt::new(5);
-    let input2 = Felt::new(6);
+    let serial_num = miden_core::Word::new([
+        Felt::new_unchecked(1),
+        Felt::new_unchecked(2),
+        Felt::new_unchecked(3),
+        Felt::new_unchecked(4),
+    ]);
+    let input1 = Felt::new_unchecked(5);
+    let input2 = Felt::new_unchecked(6);
     let storage = NoteStorage::new(vec![input1, input2]).expect("invalid note storage");
     let note_recipient = NoteRecipient::new(serial_num, note_script.clone(), storage);
     let expected_digest = note_recipient.digest();
@@ -50,7 +54,7 @@ end
     let package = test.compile_package();
 
     let inputs = [input1, input2];
-    let script_root: miden_core::Word = note_script.root();
+    let script_root: miden_core::Word = note_script.root().into();
 
     // The Rust extern "C" ABI for this entrypoint uses byval pointers for the `Word`,
     // and `Vec` arguments. We initialize all three arguments in a single contiguous payload and
@@ -74,15 +78,15 @@ end
         Felt::from(inputs.len() as u32),
         Felt::from(vec_data_ptr),
         Felt::from(inputs.len() as u32),
-        Felt::new(0),
+        Felt::new_unchecked(0),
     ]);
     init_felts.extend_from_slice(&inputs);
 
     let args = [
-        Felt::new(out_addr as u64),
-        Felt::new(serial_num_ptr as u64),
-        Felt::new(script_root_ptr as u64),
-        Felt::new(vec_ptr as u64),
+        Felt::new_unchecked(out_addr as u64),
+        Felt::new_unchecked(serial_num_ptr as u64),
+        Felt::new_unchecked(script_root_ptr as u64),
+        Felt::new_unchecked(vec_ptr as u64),
     ];
 
     let initializers = [Initializer::MemoryFelts {
@@ -92,7 +96,7 @@ end
 
     let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
         let actual: [TestFelt; 4] =
-            trace.read_from_rust_memory(out_addr).expect("expected output to be written");
+            trace.read_rust_memory(out_addr).expect("expected output to be written");
         let expected: [Felt; 4] = expected_digest.into();
         assert_eq!(
             [actual[0].0, actual[1].0, actual[2].0, actual[3].0],

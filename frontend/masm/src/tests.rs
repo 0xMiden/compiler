@@ -202,7 +202,8 @@ fn supported_instruction_matrix_lifts() {
         instruction_case("sdepth", &["felt", "felt"], &felt_types(3), "sdepth"),
         instruction_case("caller", &[], &["[felt; 4]"], "caller"),
         instruction_case("clk", &[], &["felt"], "clk"),
-        instruction_case("adv_push", &[], &felt_types(3), "adv_push.3"),
+        instruction_case("adv_push", &[], &felt_types(3), "adv_push\nadv_push\nadv_push"),
+        instruction_case("adv_pushw", &[], &felt_types(4), "adv_pushw"),
         instruction_case("adv_loadw", &felt_types(4), &felt_types(4), "adv_loadw"),
         instruction_case("adv_pipe", &felt_types(13), &felt_types(13), "adv_pipe"),
         instruction_case("emit", &["felt"], &["felt"], "emit"),
@@ -691,7 +692,9 @@ fn lifts_advice_and_event_ops_to_first_class_hir_ops() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc advice_values() -> (felt, felt, felt)
-    adv_push.3
+    adv_push
+    adv_push
+    adv_push
 end
 
 pub proc advice_word(a: felt, b: felt, c: felt, d: felt) -> (felt, felt, felt, felt)
@@ -959,14 +962,14 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
 
 #[test]
 fn instruction_inventory_classifies_all_masm_instruction_variants() {
-    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 234);
+    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 235);
     assert_eq!(INFER_ONLY_INSTRUCTION_VARIANT_COUNT, 1);
     assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 3);
     assert_eq!(
         LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT
             + INFER_ONLY_INSTRUCTION_VARIANT_COUNT
             + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
-        238
+        239
     );
     assert_eq!(instruction_semantics(&Instruction::Nop), InstructionSemantics::LiftAndInfer);
     assert_eq!(
@@ -1104,7 +1107,8 @@ fn infers_advice_and_event_signatures() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc advice_values
-    adv_push.2
+    adv_push
+    adv_push
 end
 
 pub proc advice_word
@@ -2923,7 +2927,7 @@ fn advice_taint_reports_raw_advice_used_by_u32_arithmetic() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     push.1
     u32wrapping_add
 end
@@ -2946,7 +2950,7 @@ fn advice_taint_diagnostics_include_actionable_context() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     push.1
     u32wrapping_add
 end
@@ -3109,7 +3113,7 @@ fn advice_taint_treats_u32assert_as_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     u32assert
     push.1
     u32wrapping_add
@@ -3132,7 +3136,7 @@ fn advice_taint_treats_u32assertw_as_multi_value_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32, u32)
-    adv_push.4
+    adv_pushw
     u32assertw
     u32wrapping_add
 end
@@ -3154,7 +3158,7 @@ fn advice_taint_sanitizes_only_the_asserted_alias() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     dup.0
     u32assert
     swap.1
@@ -3178,7 +3182,7 @@ fn advice_taint_suppresses_straight_line_duplicate_uses() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     push.1
     u32wrapping_add
     push.2
@@ -3202,7 +3206,7 @@ fn advice_taint_reports_first_unconstrained_use_per_control_flow_path() -> Resul
     let output = disassemble_source(
         r#"
 pub proc entry(lhs: u32, rhs: u32, cond: felt) -> u32
-    adv_push.1
+    adv_push
     swap.1
     if.true
         u32assert
@@ -3230,7 +3234,7 @@ fn advice_taint_reports_later_sink_for_raw_branch_path_not_reported_earlier() ->
     let output = disassemble_source(
         r#"
 pub proc entry(cond: felt) -> u32
-    adv_push.1
+    adv_push
     swap.1
     if.true
         push.1
@@ -3259,7 +3263,7 @@ fn advice_taint_propagates_raw_advice_returned_from_callee() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-    adv_push.1
+    adv_push
 end
 
 pub proc entry(rhs: u32) -> u32
@@ -3285,7 +3289,7 @@ fn advice_taint_propagates_raw_advice_through_multi_hop_exec_chain() -> Result<(
     let output = disassemble_source(
         r#"
 proc source() -> felt
-    adv_push.1
+    adv_push
 end
 
 proc forward() -> felt
@@ -3315,7 +3319,7 @@ fn advice_taint_propagates_raw_advice_returned_from_call() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-    adv_push.1
+    adv_push
 end
 
 pub proc entry(rhs: u32) -> u32
@@ -3345,7 +3349,7 @@ proc consume(value: felt, rhs: u32) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     exec.consume
 end
 "#,
@@ -3371,7 +3375,7 @@ proc consume(value: felt, rhs: u32) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     call.consume
 end
 "#,
@@ -3397,10 +3401,10 @@ proc consume(value: felt, rhs: u32) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     u32assert
     exec.consume
-    adv_push.1
+    adv_push
     exec.consume
 end
 "#,
@@ -3426,7 +3430,7 @@ proc consume(value: felt, rhs: u32) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     exec.consume
 end
 "#,
@@ -3459,7 +3463,7 @@ fn advice_taint_diagnostics_include_call_result_context() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-    adv_push.1
+    adv_push
 end
 
 pub proc entry(rhs: u32) -> u32
@@ -3496,7 +3500,7 @@ fn advice_taint_propagates_raw_advice_through_local_store_load() -> Result<()> {
         r#"
 @locals(1)
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     loc_store.0
     loc_load.0
     u32wrapping_add
@@ -3512,7 +3516,7 @@ fn advice_taint_propagates_raw_advice_through_memory_store_load() -> Result<()> 
     assert_advice_taint_sinks(
         r#"
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     mem_store.0
     mem_load.0
     u32wrapping_add
@@ -3529,7 +3533,7 @@ fn advice_taint_propagates_storage_load_taint_through_solver_to_later_store() ->
         r#"
 @locals(1)
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     loc_store.0
     loc_load.0
     push.0
@@ -3551,7 +3555,7 @@ fn advice_taint_joins_local_store_taint_across_branches() -> Result<()> {
 @locals(1)
 pub proc entry(rhs: u32, cond: i1) -> u32
     if.true
-        adv_push.1
+        adv_push
         loc_store.0
     else
         push.0
@@ -3572,7 +3576,7 @@ fn advice_taint_joins_memory_store_taint_across_branches() -> Result<()> {
         r#"
 pub proc entry(rhs: u32, cond: i1) -> u32
     if.true
-        adv_push.1
+        adv_push
         mem_store.0
     else
         push.0
@@ -3593,7 +3597,7 @@ fn advice_taint_propagates_raw_advice_through_dynamic_memory_store_load() -> Res
         r#"
 pub proc entry(rhs: u32, addr: u32) -> u32
     dup.0
-    adv_push.1
+    adv_push
     swap.1
     mem_store
     mem_load
@@ -3610,7 +3614,7 @@ fn advice_taint_propagates_memory_written_by_local_callee() -> Result<()> {
     assert_advice_taint_sinks(
         r#"
 proc writer()
-    adv_push.1
+    adv_push
     mem_store.0
 end
 
@@ -3635,7 +3639,7 @@ proc reader(rhs: u32) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     mem_store.0
     call.reader
 end
@@ -3655,7 +3659,7 @@ pub proc reader(rhs: u32) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     mem_store.0
     call.reader
 end
@@ -3674,7 +3678,7 @@ proc reader() -> felt
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     mem_store.0
     exec.reader
     u32wrapping_add
@@ -3694,7 +3698,7 @@ proc reader() -> felt
 end
 
 proc dirty(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     mem_store.0
     exec.reader
     u32wrapping_add
@@ -3729,7 +3733,7 @@ proc clean(raw: felt) -> u32
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     exec.clean
     u32wrapping_add
 end
@@ -3758,7 +3762,7 @@ proc passthrough(value: felt) -> felt
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     exec.passthrough
     drop
     push.0
@@ -3791,7 +3795,7 @@ proc outer(value: felt) -> felt
 end
 
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     exec.outer
     drop
     push.0
@@ -3955,7 +3959,7 @@ fn advice_taint_does_not_retaint_constrained_external_result_from_tainted_argume
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry(rhs: u32) -> u32
-    adv_push.1
+    adv_push
     exec.::dep::clean
     u32wrapping_add
 end
@@ -3988,7 +3992,7 @@ fn advice_taint_reports_raw_advice_passed_to_external_u32_parameter() -> Result<
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry
-    adv_push.1
+    adv_push
     exec.::dep::consume
 end
 "#,
@@ -4029,7 +4033,7 @@ fn advice_taint_allows_raw_advice_passed_to_external_felt_parameter() -> Result<
     let output = disassemble_source_with_external_signatures(
         r#"
 pub proc entry
-    adv_push.1
+    adv_push
     exec.::dep::consume
 end
 "#,
@@ -4081,7 +4085,7 @@ fn advice_taint_reports_public_function_returning_raw_advice() -> Result<()> {
     let output = disassemble_source(
         r#"
 proc source() -> felt
-    adv_push.1
+    adv_push
 end
 
 pub proc entry() -> felt
@@ -4132,7 +4136,7 @@ fn advice_taint_does_not_report_private_function_returning_raw_advice() -> Resul
     let output = disassemble_source(
         r#"
 proc source() -> felt
-    adv_push.1
+    adv_push
 end
 
 pub proc entry() -> felt
@@ -4156,7 +4160,7 @@ fn advice_taint_does_not_report_sanitized_public_return() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     u32assert
 end
 "#,
@@ -4215,12 +4219,12 @@ fn advice_taint_reports_raw_advice_used_by_unary_u32_operation() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc pop_count() -> u32
-    adv_push.1
+    adv_push
     u32popcnt
 end
 
 pub proc bitwise_not() -> u32
-    adv_push.1
+    adv_push
     u32not
 end
 "#,
@@ -4241,7 +4245,9 @@ fn advice_taint_reports_raw_advice_used_by_widening_u32_operation() -> Result<()
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32)
-    adv_push.2
+    adv_pushw
+    drop
+    drop
     u32widening_mul
 end
 "#,
@@ -4262,7 +4268,8 @@ fn advice_taint_treats_u32assert2_as_widening_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32)
-    adv_push.2
+    adv_push
+    adv_push
     u32assert2
     u32widening_mul
 end
@@ -4284,12 +4291,14 @@ fn advice_taint_reports_raw_advice_used_by_u32_add3_and_madd() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc add3() -> u32
-    adv_push.3
+    adv_pushw
+    drop
     u32wrapping_add3
 end
 
 pub proc madd() -> u32
-    adv_push.3
+    adv_pushw
+    drop
     u32wrapping_madd
 end
 "#,
@@ -4317,7 +4326,7 @@ fn advice_taint_treats_u32test_assert_as_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     u32test
     assert
     push.1
@@ -4344,7 +4353,7 @@ fn advice_taint_treats_u32testw_assert_as_word_sanitizer() -> Result<()> {
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32, u32)
-    adv_push.4
+    adv_pushw
     u32testw
     assert
     u32wrapping_add
@@ -4370,7 +4379,7 @@ fn advice_taint_treats_error_annotated_u32test_assert_as_sanitizer() -> Result<(
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     u32test
     assert.err="u32"
     push.1
@@ -4398,7 +4407,7 @@ fn advice_taint_treats_stack_preserving_u32test_assert_as_sanitizer() -> Result<
     let output = disassemble_source(
         r#"
 pub proc entry() -> u32
-    adv_push.1
+    adv_push
     u32test
     dup.0
     assert.err="u32"
@@ -4428,7 +4437,7 @@ fn advice_taint_treats_stack_preserving_u32testw_assert_as_sanitizer() -> Result
     let output = disassemble_source(
         r#"
 pub proc entry() -> (u32, u32, u32)
-    adv_push.4
+    adv_pushw
     u32testw
     dup.0
     assert

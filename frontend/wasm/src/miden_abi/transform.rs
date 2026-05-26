@@ -126,7 +126,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 module if module == symbols::Note => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::note::BUILD_RECIPIENT => {
+                        tx_kernel::note::COMPUTE_AND_STORE_RECIPIENT => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -213,9 +213,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::output_note::CREATE => Some(TransformStrategy::NoTransform),
                         tx_kernel::output_note::ADD_ASSET => Some(TransformStrategy::NoTransform),
-                        tx_kernel::output_note::SET_ATTACHMENT
-                        | tx_kernel::output_note::SET_WORD_ATTACHMENT
-                        | tx_kernel::output_note::SET_ARRAY_ATTACHMENT => {
+                        tx_kernel::output_note::ADD_ATTACHMENT
+                        | tx_kernel::output_note::ADD_WORD_ATTACHMENT => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::output_note::GET_ASSETS => Some(TransformStrategy::ListReturn),

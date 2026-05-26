@@ -3,11 +3,10 @@ use alloc::{collections::BTreeMap, format, sync::Arc};
 #[cfg(feature = "std")]
 use miden_assembly_syntax::Report;
 use miden_assembly_syntax::diagnostics::{Diagnostic, miette};
-use miden_core::LexicographicWord;
 use miden_mast_package::Package;
 use miden_package_registry::{
-    PackageId, PackageIndex, PackageProvider, PackageRecord, PackageRegistry, PackageStore,
-    PackageVersions,
+    PackageCache, PackageId, PackageIndex, PackageProvider, PackageRecord, PackageRegistry,
+    PackageStore, PackageVersions,
 };
 use miden_project::VersionRequirement;
 
@@ -141,9 +140,8 @@ impl HybridPackageRegistry {
                 let versions = entry.get_mut();
                 match versions.entry(package.version.clone()) {
                     BTreeMapEntry::Occupied(mut prev) => {
-                        let prev_digest = prev.get().digest().copied().map(LexicographicWord::new);
-                        let digest = LexicographicWord::new(package.digest());
-                        if prev_digest.is_none_or(|prev_digest| prev_digest == digest) {
+                        let prev_digest = prev.get().digest().copied();
+                        if prev_digest.is_none_or(|prev_digest| prev_digest == package.digest()) {
                             prev.insert(record);
                         } else {
                             log::trace!(target: "package-registry", "package already installed: {}@{version}", &package.name);
@@ -212,7 +210,7 @@ impl PackageProvider for HybridPackageRegistry {
     ) -> Result<Arc<Package>, Report> {
         let found = self.artifacts.get(package).and_then(|versions| versions.get(&version.version));
         match found {
-            Some(artifact) if version.digest != Some(LexicographicWord::new(artifact.digest())) => {
+            Some(artifact) if version.digest != Some(artifact.digest()) => {
                 Err(Report::msg(format!(
                     "cannot load {package}@{version}: a specific digest was requested, but \
                      differs from the available version"
@@ -226,9 +224,18 @@ impl PackageProvider for HybridPackageRegistry {
     }
 }
 
-impl PackageStore for HybridPackageRegistry {
+impl PackageCache for HybridPackageRegistry {
     type Error = Report;
 
+    fn cache_package(
+        &mut self,
+        package: Arc<Package>,
+    ) -> Result<miden_project::Version, Self::Error> {
+        self.install_if_missing(package).map_err(Report::from)
+    }
+}
+
+impl PackageStore for HybridPackageRegistry {
     fn publish_package(
         &mut self,
         package: Arc<Package>,

@@ -26,7 +26,7 @@ fn run_select_test(ty: Type, a: Immediate, a_result: &[u64], b: Immediate, b_res
         eval_package::<u32, _, _>(
             &package,
             None,
-            &[Felt::new(cond_val as u64)],
+            &[Felt::new_unchecked(cond_val as u64)],
             context.session(),
             |trace| {
                 let outputs = trace.outputs().as_int_vec();
@@ -98,9 +98,9 @@ fn select_i1() {
 fn select_felt() {
     run_select_test(
         Type::Felt,
-        Immediate::Felt(Felt::new(1111111111111111)),
+        Immediate::Felt(Felt::new_unchecked(1111111111111111)),
         &[1111111111111111_u64],
-        Immediate::Felt(Felt::new(2222222222222222)),
+        Immediate::Felt(Felt::new_unchecked(2222222222222222)),
         &[2222222222222222_u64],
     );
 }

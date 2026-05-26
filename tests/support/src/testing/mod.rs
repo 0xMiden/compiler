@@ -9,8 +9,9 @@ use std::sync::Arc;
 
 use miden_assembly::serde::Serializable;
 use miden_core::Felt;
-use miden_debug::Executor;
+use miden_debug::{DebugQuery, ExecutionTrace, Executor, FromMidenRepr};
 use miden_mast_package::Package;
+use miden_processor::ContextId;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
 use midenc_session::STDLIB;
@@ -23,6 +24,30 @@ pub use self::{
     },
     initializer::Initializer,
 };
+
+/// Extension helpers for reading Rust-layout values from debug execution traces.
+pub trait ExecutionTraceMemoryExt {
+    /// Reads a felt from a Miden element address in the root VM context.
+    fn read_memory_element(&self, addr: u32) -> Option<Felt>;
+
+    /// Reads a value from a Rust byte address in the root VM context.
+    fn read_rust_memory<T>(&self, addr: u32) -> Option<T>
+    where
+        T: core::any::Any + FromMidenRepr;
+}
+
+impl ExecutionTraceMemoryExt for ExecutionTrace {
+    fn read_memory_element(&self, addr: u32) -> Option<Felt> {
+        self.read_memory_element_in_context(addr, ContextId::root(), self.current_clock())
+    }
+
+    fn read_rust_memory<T>(&self, addr: u32) -> Option<T>
+    where
+        T: core::any::Any + FromMidenRepr,
+    {
+        self.read_from_rust_memory_in_context(addr, ContextId::root(), self.current_clock())
+    }
+}
 
 /// Creates an executor with standard library and base library loaded.
 ///

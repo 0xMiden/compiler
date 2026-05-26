@@ -218,9 +218,9 @@ impl OpEmitter<'_> {
                 let (hi, lo) = int64::to_raw_parts(imm);
                 self.emit_all(
                     [
-                        masm::Instruction::EqImm(Felt::new(hi as u64).into()),
+                        masm::Instruction::EqImm(Felt::new_unchecked(hi as u64).into()),
                         Self::assert_with_message_inst(message.clone(), span),
-                        masm::Instruction::EqImm(Felt::new(lo as u64).into()),
+                        masm::Instruction::EqImm(Felt::new_unchecked(lo as u64).into()),
                         Self::assert_with_message_inst(message, span),
                     ],
                     span,
