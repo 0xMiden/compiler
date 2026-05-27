@@ -1,8 +1,7 @@
 use super::*;
 
 /// Tests the memory load intrinsic for aligned and unaligned loads of quad-word values
-#[test]
-fn load_qw_with_offset() {
+fn load_qw_with_offset_impl<T: QuadwordIO>() {
     setup::enable_compiler_instrumentation();
 
     // Use the start of the 17th page (1 page after the 16 pages reserved for the Rust stack).
@@ -11,14 +10,14 @@ fn load_qw_with_offset() {
     // Generate a `test` module with `main` function that invokes `load_qw` when lowered to MASM.
     // The parameter is the offset to be applied to the base address (`read_from`).
     // Compile once outside the test loop.
-    let (package, context) = compile_test_module([Type::U32], [Type::I128], |builder| {
+    let (package, context) = compile_test_module([Type::U32], [T::hir_type()], |builder| {
         let block = builder.current_block();
 
         let offs = block.borrow().arguments()[0] as ValueRef;
         let base_addr = builder.u32(read_from, SourceSpan::default());
         let read_addr = builder.add(base_addr, offs, SourceSpan::default()).unwrap();
         let ptr = builder
-            .inttoptr(read_addr, Type::from(PointerType::new(Type::I128)), SourceSpan::default())
+            .inttoptr(read_addr, Type::from(PointerType::new(T::hir_type())), SourceSpan::default())
             .unwrap();
         let loaded = builder.load(ptr, SourceSpan::default()).unwrap();
 
@@ -38,11 +37,11 @@ fn load_qw_with_offset() {
         }];
 
         let start = offs as usize;
-        let expected = i128::from_le_bytes(
+        let expected = T::from_le_bytes_arr(
             initial_bytes[start..start + 16].try_into().expect("expected a 16-byte window"),
         );
 
-        let output = eval_package::<i128, _, _>(
+        let output = eval_package::<T, _, _>(
             &package,
             initializers,
             &[Felt::new(offs as u64)],
@@ -57,6 +56,16 @@ fn load_qw_with_offset() {
     for offs in 0..=15 {
         run_test(offs);
     }
+}
+
+#[test]
+fn load_qw_with_offset_i128() {
+    load_qw_with_offset_impl::<i128>();
+}
+
+#[test]
+fn load_qw_with_offset_u128() {
+    load_qw_with_offset_impl::<u128>();
 }
 
 /// Tests the memory load intrinsic for aligned loads of quad-word (i.e. 128-bit) values

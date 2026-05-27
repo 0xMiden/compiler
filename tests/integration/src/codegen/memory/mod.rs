@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use miden_debug::ToMidenRepr;
+use miden_debug::{FromMidenRepr, ToMidenRepr};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -37,4 +37,30 @@ pub fn random_word_aligned_addr() -> impl Strategy<Value = u32> {
     // Page 17..256, word offset 0..1024 within that page
     (17u32..256, 0u32..1024)
         .prop_map(|(page, word)| ((page * u16::MAX as u32) + (word * 4)).next_multiple_of(16))
+}
+
+/// Enables test helpers generic over 128 bit integer types.
+pub trait QuadwordIO: FromMidenRepr + PartialEq + Clone + std::fmt::Debug {
+    fn hir_type() -> Type;
+    fn from_le_bytes_arr(bytes: [u8; 16]) -> Self;
+}
+
+impl QuadwordIO for i128 {
+    fn hir_type() -> Type {
+        Type::I128
+    }
+
+    fn from_le_bytes_arr(bytes: [u8; 16]) -> Self {
+        i128::from_le_bytes(bytes)
+    }
+}
+
+impl QuadwordIO for u128 {
+    fn hir_type() -> Type {
+        Type::U128
+    }
+
+    fn from_le_bytes_arr(bytes: [u8; 16]) -> Self {
+        u128::from_le_bytes(bytes)
+    }
 }
