@@ -159,7 +159,7 @@ impl OpEmitter<'_> {
                     ptr_ty.pointee()
                 );
                 match &ty {
-                    Type::I128 => self.load_quad_word(None, span),
+                    Type::I128 | Type::U128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word_int(None, span),
                     Type::Felt => self.load_felt(None, span),
                     Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(None, span),
@@ -184,7 +184,7 @@ impl OpEmitter<'_> {
     pub fn load_imm(&mut self, addr: u32, ty: Type, span: SourceSpan) {
         let ptr = NativePtr::from_ptr(addr);
         match &ty {
-            Type::I128 => self.load_quad_word(Some(ptr), span),
+            Type::I128 | Type::U128 => self.load_quad_word(Some(ptr), span),
             Type::I64 | Type::U64 => self.load_double_word_int(Some(ptr), span),
             Type::Felt => self.load_felt(Some(ptr), span),
             Type::I32 | Type::U32 | Type::Ptr(_) => self.load_word(Some(ptr), span),
@@ -656,7 +656,7 @@ impl OpEmitter<'_> {
                     ptr_ty.pointee()
                 );
                 match value_ty {
-                    Type::I128 => self.store_quad_word(None, span),
+                    Type::I128 | Type::U128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word_int(None, span),
                     Type::Felt => self.store_felt(None, span),
                     Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(None, span),
@@ -684,7 +684,7 @@ impl OpEmitter<'_> {
         assert!(!value_ty.is_zst(), "cannot store a zero-sized type in memory");
         let ptr = NativePtr::from_ptr(addr);
         match value_ty {
-            Type::I128 => self.store_quad_word(Some(ptr), span),
+            Type::I128 | Type::U128 => self.store_quad_word(Some(ptr), span),
             Type::I64 | Type::U64 => self.store_double_word_int(Some(ptr), span),
             Type::Felt => self.store_felt(Some(ptr), span),
             Type::I32 | Type::U32 | Type::Ptr(_) => self.store_word(Some(ptr), span),
