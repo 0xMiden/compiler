@@ -2432,8 +2432,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug"
-version = "0.8.0"
-source = "git+https://github.com/0xMiden/miden-debug?branch=fix_read_from_rust_memory#b311238c5caffe471429cf4dc5a606c615f351d9"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4c581bad965d49515f04ca370b4a20e8987f8c6051e39ac290a3128844e602ac"
 dependencies = [
  "clap",
  "compact_str",
@@ -2461,7 +2462,8 @@ dependencies = [
 [[package]]
 name = "miden-debug-dap"
 version = "0.8.0"
-source = "git+https://github.com/0xMiden/miden-debug?branch=fix_read_from_rust_memory#b311238c5caffe471429cf4dc5a606c615f351d9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "15af4ae2bc3fa05c24447260849ed4a314ec314f4009202d086e4df22076b9e8"
 dependencies = [
  "serde",
  "serde_json",
@@ -2470,8 +2472,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-engine"
-version = "0.8.0"
-source = "git+https://github.com/0xMiden/miden-debug?branch=fix_read_from_rust_memory#b311238c5caffe471429cf4dc5a606c615f351d9"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "67dd805d5456e0c00c8d89bd9ce16105f55a55ca3bee8b67459e554588d0dbb2"
 dependencies = [
  "clap",
  "glob",
