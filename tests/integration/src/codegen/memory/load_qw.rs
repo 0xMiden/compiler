@@ -37,7 +37,7 @@ fn load_qw_with_offset_impl<T: QuadwordIO>() {
         }];
 
         let start = offs as usize;
-        let expected = T::from_le_bytes_arr(
+        let expected = T::from_le_bytes(
             initial_bytes[start..start + 16].try_into().expect("expected a 16-byte window"),
         );
 

@@ -1,12 +1,8 @@
-use midenc_hir::Immediate;
-
 use super::*;
 
-#[test]
-fn store_u128_unaligned() {
+fn store_qw_unaligned_impl<T: QuadwordIO>(write_val: T) {
     // Use the start of the 17th page (1 page after the 16 pages reserved for the Rust stack).
     let write_to = 17 * 2u32.pow(16);
-    let write_val = 0x00112233_44556677_8899aabb_ccddeeff_i128;
 
     // Signature of the test module:
     //
@@ -19,10 +15,14 @@ fn store_u128_unaligned() {
         let base_addr = builder.u32(write_to, SourceSpan::default());
         let write_addr = builder.add(base_addr, idx_val, SourceSpan::default()).unwrap();
         let ptr = builder
-            .inttoptr(write_addr, Type::from(PointerType::new(Type::I128)), SourceSpan::default())
+            .inttoptr(
+                write_addr,
+                Type::from(PointerType::new(T::hir_type())),
+                SourceSpan::default(),
+            )
             .unwrap();
 
-        let write_val = builder.imm(Immediate::I128(write_val), SourceSpan::default());
+        let write_val = builder.imm(T::as_immediate(&write_val), SourceSpan::default());
         builder.store(ptr, write_val, SourceSpan::default()).unwrap();
 
         let result = builder.u32(1, SourceSpan::default());
@@ -86,4 +86,14 @@ fn store_u128_unaligned() {
     for offs in 0..=3 {
         run_test(offs);
     }
+}
+
+#[test]
+fn store_qw_unaligned_i128() {
+    store_qw_unaligned_impl(0x00112233_44556677_8899aabb_ccddeeff_i128);
+}
+
+#[test]
+fn store_qw_unaligned_u128() {
+    store_qw_unaligned_impl(0x00112233_44556677_8899aabb_ccddeeff_u128);
 }

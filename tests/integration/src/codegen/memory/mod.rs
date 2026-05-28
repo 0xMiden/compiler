@@ -4,7 +4,7 @@ use miden_debug::{FromMidenRepr, ToMidenRepr};
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
-    Builder, Felt, PointerType, SourceSpan, Type, ValueRef,
+    Builder, Felt, Immediate, PointerType, SourceSpan, Type, ValueRef,
     dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
 };
 use proptest::{
@@ -23,7 +23,7 @@ mod load_u16;
 mod load_u64_unaligned;
 mod load_u8;
 mod regressions;
-mod store_u128_unaligned;
+mod store_qw;
 mod store_u16;
 mod store_u32_unaligned;
 mod store_u64_unaligned;
@@ -42,7 +42,9 @@ pub fn random_word_aligned_addr() -> impl Strategy<Value = u32> {
 /// Enables test helpers generic over 128 bit integer types.
 pub trait QuadwordIO: FromMidenRepr + PartialEq + Clone + std::fmt::Debug {
     fn hir_type() -> Type;
-    fn from_le_bytes_arr(bytes: [u8; 16]) -> Self;
+    fn from_le_bytes(bytes: [u8; 16]) -> Self;
+    fn to_le_bytes(&self) -> [u8; 16];
+    fn as_immediate(&self) -> Immediate;
 }
 
 impl QuadwordIO for i128 {
@@ -50,8 +52,16 @@ impl QuadwordIO for i128 {
         Type::I128
     }
 
-    fn from_le_bytes_arr(bytes: [u8; 16]) -> Self {
+    fn from_le_bytes(bytes: [u8; 16]) -> Self {
         i128::from_le_bytes(bytes)
+    }
+
+    fn to_le_bytes(&self) -> [u8; 16] {
+        i128::to_le_bytes(*self)
+    }
+
+    fn as_immediate(&self) -> Immediate {
+        Immediate::I128(*self)
     }
 }
 
@@ -60,7 +70,15 @@ impl QuadwordIO for u128 {
         Type::U128
     }
 
-    fn from_le_bytes_arr(bytes: [u8; 16]) -> Self {
+    fn from_le_bytes(bytes: [u8; 16]) -> Self {
         u128::from_le_bytes(bytes)
+    }
+
+    fn to_le_bytes(&self) -> [u8; 16] {
+        u128::to_le_bytes(*self)
+    }
+
+    fn as_immediate(&self) -> Immediate {
+        Immediate::U128(*self)
     }
 }
