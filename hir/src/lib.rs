@@ -63,6 +63,7 @@ pub mod adt;
 pub mod any;
 pub mod attributes;
 pub mod constants;
+pub mod conversion;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
