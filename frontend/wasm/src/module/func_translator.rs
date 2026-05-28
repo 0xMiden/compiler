@@ -276,6 +276,7 @@ fn parse_function_body<B: ?Sized + Builder>(
         } else {
             span
         };
+        builder.record_debug_span(effective_span);
 
         if state.reachable && !builder.is_unreachable() {
             builder.apply_location_schedule(code_offset, effective_span, &state.stack);
