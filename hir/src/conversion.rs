@@ -1,4 +1,5 @@
 mod diagnostics;
+mod driver;
 mod legalization_graph;
 mod pattern;
 mod pattern_set;
@@ -7,6 +8,6 @@ mod target;
 mod type_converter;
 
 pub use self::{
-    diagnostics::*, legalization_graph::*, pattern::*, pattern_set::*, rewriter::*, target::*,
-    type_converter::*,
+    diagnostics::*, driver::*, legalization_graph::*, pattern::*, pattern_set::*, rewriter::*,
+    target::*, type_converter::*,
 };

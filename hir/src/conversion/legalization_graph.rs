@@ -33,7 +33,7 @@ impl<'a> LegalizationGraph<'a> {
         while changed {
             changed = false;
             for (root, patterns) in patterns.op_specific_patterns().iter() {
-                if target_is_terminal(target, root) {
+                if matches!(target.static_legality(root), StaticLegality::Legal) {
                     continue;
                 }
 
@@ -320,6 +320,31 @@ mod tests {
         let graph = LegalizationGraph::new(&target, &frozen);
 
         assert!(graph.is_legalizable(&constant));
+    }
+
+    #[test]
+    fn retains_patterns_rooted_on_dynamic_legality() {
+        let context = Rc::new(Context::default());
+        let (_, add, mul) = names(&context);
+        let mut target = ConversionTarget::new(context.clone());
+        target
+            .add_dynamically_legal_op::<Add, _>(|_| DynamicLegalityResult::illegal())
+            .add_legal_op::<Mul>();
+
+        let mut patterns = ConversionPatternSet::new(context.clone());
+        patterns.push(TestConversionPattern::new(
+            context.clone(),
+            "add-to-mul",
+            add.clone(),
+            [mul],
+            1,
+        ));
+        let frozen = FrozenConversionPatternSet::new(patterns);
+
+        let graph = LegalizationGraph::new(&target, &frozen);
+
+        assert!(graph.is_legalizable(&add));
+        assert_eq!(graph.legalizer_patterns(&add).len(), 1);
     }
 
     #[test]
