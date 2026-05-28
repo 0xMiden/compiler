@@ -17,11 +17,13 @@ pub struct MatchFailure {
 }
 
 impl MatchFailure {
+    /// Return the operation that failed to match a conversion pattern.
     #[inline]
     pub const fn op(&self) -> OperationRef {
         self.op
     }
 
+    /// Return the diagnostic reason recorded by the pattern.
     #[inline]
     pub const fn reason(&self) -> &Report {
         &self.reason
@@ -29,6 +31,10 @@ impl MatchFailure {
 }
 
 /// Mutations observed while applying a conversion pattern.
+///
+/// The conversion driver uses this summary to legalize newly inserted or modified operations after
+/// a pattern succeeds. The lists contain each operation at most once, while `mutation_count`
+/// counts all listener notifications.
 #[derive(Default)]
 pub struct TrackedMutations {
     inserted_ops: Vec<OperationRef>,
@@ -41,41 +47,49 @@ pub struct TrackedMutations {
 }
 
 impl TrackedMutations {
+    /// Return operations inserted while the pattern ran.
     #[inline]
     pub fn inserted_ops(&self) -> &[OperationRef] {
         &self.inserted_ops
     }
 
+    /// Return operations modified while the pattern ran.
     #[inline]
     pub fn modified_ops(&self) -> &[OperationRef] {
         &self.modified_ops
     }
 
+    /// Return operations replaced while the pattern ran.
     #[inline]
     pub fn replaced_ops(&self) -> &[OperationRef] {
         &self.replaced_ops
     }
 
+    /// Return operations erased while the pattern ran.
     #[inline]
     pub fn erased_ops(&self) -> &[OperationRef] {
         &self.erased_ops
     }
 
+    /// Return framework-owned materialization operations created while the pattern ran.
     #[inline]
     pub fn materialized_ops(&self) -> &[OperationRef] {
         &self.materialized_ops
     }
 
+    /// Return the number of block insertion/erasure notifications observed.
     #[inline]
     pub const fn block_mutations(&self) -> usize {
         self.block_mutations
     }
 
+    /// Return the total number of mutation notifications observed.
     #[inline]
     pub const fn mutation_count(&self) -> usize {
         self.mutation_count
     }
 
+    /// Return true when any IR mutation notification was observed.
     #[inline]
     pub const fn has_mutations(&self) -> bool {
         self.mutation_count > 0
@@ -189,6 +203,10 @@ fn push_unique(ops: &mut Vec<OperationRef>, op: OperationRef) {
 }
 
 /// Rewriter used by conversion patterns.
+///
+/// This wraps the normal [`PatternRewriter`] with mutation tracking and type-conversion
+/// materialization support. Conversion patterns should perform all IR changes through this
+/// rewriter so the driver can validate the pattern contract and legalize generated operations.
 pub struct ConversionPatternRewriter {
     inner: PatternRewriter<Rc<ConversionTrackingListener>>,
     tracking: Rc<ConversionTrackingListener>,
@@ -197,11 +215,17 @@ pub struct ConversionPatternRewriter {
 }
 
 impl ConversionPatternRewriter {
+    /// Create a conversion rewriter without type-conversion support.
     #[inline]
     pub fn new(context: Rc<Context>) -> Self {
         Self::new_with_type_converter(context, None)
     }
 
+    /// Create a conversion rewriter with an optional type converter.
+    ///
+    /// The type converter is used by helpers such as [`Self::replace_op`] to insert source
+    /// materializations when replacement values have converted result types but existing users
+    /// still expect the original result types.
     #[inline]
     pub fn new_with_type_converter(
         context: Rc<Context>,
@@ -250,6 +274,9 @@ impl ConversionPatternRewriter {
     }
 
     /// Erase framework materializations that are still unused.
+    ///
+    /// Drivers call this after a pattern fails to match so temporary casts inserted while building
+    /// converted operands do not remain in the IR.
     pub fn erase_unused_materializations(&mut self) -> Result<(), Report> {
         let materialized_ops = self.tracking.mutations.borrow().materialized_ops.clone();
         for op in materialized_ops.into_iter().rev() {
@@ -261,6 +288,10 @@ impl ConversionPatternRewriter {
     }
 
     /// Replace `op` with the provided same-type replacement values.
+    ///
+    /// The number of replacement values must match `op`'s result count. If a replacement value has
+    /// the converted result type while existing uses require the original result type, this method
+    /// asks the configured [`TypeConverter`] to materialize a source conversion.
     pub fn replace_op(
         &mut self,
         op: OperationRef,
@@ -281,6 +312,9 @@ impl ConversionPatternRewriter {
     }
 
     /// Create a new operation before `op`, then replace `op` with the new operation's results.
+    ///
+    /// This is a convenience for the common single-operation legalization case. It uses
+    /// [`Self::replace_op`] for result replacement, so the same materialization behavior applies.
     pub fn replace_op_with_new_op<T, Args>(
         &mut self,
         op: OperationRef,
@@ -305,35 +339,47 @@ impl ConversionPatternRewriter {
     }
 
     /// Erase an operation with no remaining uses.
+    ///
+    /// Callers are responsible for ensuring the operation can be erased without leaving dangling
+    /// uses or invalid control-flow edges.
     #[inline]
     pub fn erase_op(&mut self, op: OperationRef) -> Result<(), Report> {
         self.inner.erase_op(op);
         Ok(())
     }
 
+    /// Record a non-fatal reason why the current pattern did not match `op`.
+    ///
+    /// A pattern can call this before returning `Ok(false)`. The driver includes collected match
+    /// failures in diagnostics when no candidate pattern can legalize an operation.
     pub fn notify_match_failure(&mut self, op: OperationRef, reason: Report) {
         self.match_failures.push(MatchFailure { op, reason });
     }
 
+    /// Return match failures recorded since the last clear/take.
     #[inline]
     pub fn match_failures(&self) -> &[MatchFailure] {
         &self.match_failures
     }
 
+    /// Remove all recorded match failures.
     #[inline]
     pub fn clear_match_failures(&mut self) {
         self.match_failures.clear();
     }
 
+    /// Take and clear all recorded match failures.
     pub fn take_match_failures(&mut self) -> Vec<MatchFailure> {
         core::mem::take(&mut self.match_failures)
     }
 
+    /// Return the total number of mutation notifications observed by this rewriter.
     #[inline]
     pub fn mutation_count(&self) -> usize {
         self.tracking.mutation_count()
     }
 
+    /// Take and clear tracked mutation state.
     pub fn take_tracked_mutations(&mut self) -> TrackedMutations {
         self.tracking.take_mutations()
     }

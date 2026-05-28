@@ -14,24 +14,34 @@ type DynamicLegalityFn = Rc<dyn Fn(&Operation) -> DynamicLegalityResult>;
 
 /// Describes whether an operation instance is legal for a conversion target.
 pub enum Legality {
+    /// The operation is statically legal.
     Legal,
+    /// The operation is statically illegal.
     Illegal,
+    /// The target has no rule for the operation.
     Unknown,
+    /// A dynamic legality predicate accepted this operation instance.
     DynamicLegal,
+    /// A dynamic legality predicate rejected this operation instance.
+    ///
+    /// The optional reason is intended for user-facing conversion diagnostics.
     DynamicIllegal { reason: Option<Report> },
 }
 
 impl Legality {
+    /// Return true when this result permits the operation to remain in converted IR.
     #[inline]
     pub const fn is_legal(&self) -> bool {
         matches!(self, Self::Legal | Self::DynamicLegal)
     }
 
+    /// Return true when this result explicitly rejects the operation.
     #[inline]
     pub const fn is_illegal(&self) -> bool {
         matches!(self, Self::Illegal | Self::DynamicIllegal { .. })
     }
 
+    /// Return true when no target rule matched the operation.
     #[inline]
     pub const fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)
@@ -41,17 +51,24 @@ impl Legality {
 /// Describes the best legality answer available from operation metadata alone.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum StaticLegality {
+    /// The operation name is accepted without inspecting a concrete operation instance.
     Legal,
+    /// The operation name is rejected without inspecting a concrete operation instance.
     Illegal,
+    /// No matching rule is known for the operation name.
     Unknown,
+    /// A dynamic predicate must inspect each operation instance to decide legality.
     Dynamic,
 }
 
 /// Policy used when an operation has no op, dialect, or interface rule.
 #[derive(Clone)]
 pub enum UnknownOpPolicy {
+    /// Treat otherwise-unmatched operations as legal.
     Legal,
+    /// Treat otherwise-unmatched operations as illegal.
     Illegal,
+    /// Decide legality for otherwise-unmatched operations with a callback.
     Dynamic(DynamicLegalityFn),
 }
 
@@ -78,8 +95,11 @@ impl UnknownOpPolicy {
 /// A legality rule for a dialect, operation, or interface.
 #[derive(Clone)]
 pub enum LegalityRule {
+    /// Matching operations are legal.
     Legal,
+    /// Matching operations are illegal.
     Illegal,
+    /// Matching operations are checked by a callback.
     Dynamic(DynamicLegalityFn),
 }
 
@@ -103,15 +123,25 @@ impl LegalityRule {
     }
 }
 
+/// Legality rule attached to an operation interface.
+///
+/// Interface rules are evaluated after exact operation rules and dialect rules. They are useful
+/// for broad predicates such as "all operations implementing this lowering interface are legal",
+/// but targets that need exceptions should use explicit operation or dialect rules for those
+/// exceptions because those rules take precedence.
 #[derive(Clone)]
 pub struct InterfaceLegalityRule {
     trait_id: TypeId,
     rule: LegalityRule,
 }
 
+/// Rule controlling whether an operation's nested regions are skipped by conversion.
 #[derive(Clone)]
 pub enum RecursiveLegalityRule {
+    /// If the operation itself is legal, all nested operations are considered legal.
     Legal,
+    /// If the operation itself is legal, the callback decides whether nested operations are
+    /// considered legal for this instance.
     Dynamic(DynamicLegalityFn),
 }
 
@@ -126,6 +156,17 @@ impl RecursiveLegalityRule {
 }
 
 /// Defines the set of operations accepted by a dialect conversion.
+///
+/// A target answers legality queries using this precedence:
+///
+/// 1. Exact operation rule.
+/// 2. Dialect rule.
+/// 3. Interface rule, in registration order.
+/// 4. Unknown operation policy.
+///
+/// Conversion targets are owned by concrete passes. The generic driver consumes a target together
+/// with a set of conversion patterns and requires every visited operation to become legal, except
+/// for operations nested under recursively legal operations.
 pub struct ConversionTarget {
     context: Rc<Context>,
     unknown_op_policy: UnknownOpPolicy,
@@ -136,6 +177,7 @@ pub struct ConversionTarget {
 }
 
 impl ConversionTarget {
+    /// Create a target whose default unknown-operation policy is illegal.
     pub fn new(context: Rc<Context>) -> Self {
         Self {
             context,
@@ -147,24 +189,34 @@ impl ConversionTarget {
         }
     }
 
+    /// Return the context used to resolve dialect and operation registrations.
     #[inline]
     pub fn context(&self) -> Rc<Context> {
         Rc::clone(&self.context)
     }
 
+    /// Set the fallback policy used when no operation, dialect, or interface rule matches.
     pub fn set_unknown_op_policy(&mut self, policy: UnknownOpPolicy) -> &mut Self {
         self.unknown_op_policy = policy;
         self
     }
 
+    /// Mark every operation in dialect `D` legal unless a more-specific operation rule overrides
+    /// it.
     pub fn add_legal_dialect<D: DialectRegistration>(&mut self) -> &mut Self {
         self.set_dialect_rule::<D>(LegalityRule::Legal)
     }
 
+    /// Mark every operation in dialect `D` illegal unless a more-specific operation rule overrides
+    /// it.
     pub fn add_illegal_dialect<D: DialectRegistration>(&mut self) -> &mut Self {
         self.set_dialect_rule::<D>(LegalityRule::Illegal)
     }
 
+    /// Mark operations in dialect `D` legal or illegal according to `callback`.
+    ///
+    /// The callback is evaluated for each matching operation instance, so it may inspect traits,
+    /// attributes, operand/result types, regions, or any other operation metadata.
     pub fn add_dynamically_legal_dialect<D, F>(&mut self, callback: F) -> &mut Self
     where
         D: DialectRegistration,
@@ -173,6 +225,8 @@ impl ConversionTarget {
         self.set_dialect_rule::<D>(LegalityRule::Dynamic(Rc::new(callback)))
     }
 
+    /// Mark operations in dialect `D` dynamically legal when their operation registration
+    /// implements `Trait`.
     pub fn add_dynamically_legal_dialect_if_op_interface<D, Trait>(&mut self) -> &mut Self
     where
         D: DialectRegistration,
@@ -183,14 +237,20 @@ impl ConversionTarget {
         })
     }
 
+    /// Mark operation `Op` legal.
     pub fn add_legal_op<Op: OpRegistration>(&mut self) -> &mut Self {
         self.set_op_rule::<Op>(LegalityRule::Legal)
     }
 
+    /// Mark operation `Op` illegal.
     pub fn add_illegal_op<Op: OpRegistration>(&mut self) -> &mut Self {
         self.set_op_rule::<Op>(LegalityRule::Illegal)
     }
 
+    /// Mark operation `Op` legal or illegal according to `callback`.
+    ///
+    /// This is the most precise legality hook and takes precedence over dialect and interface
+    /// rules.
     pub fn add_dynamically_legal_op<Op, F>(&mut self, callback: F) -> &mut Self
     where
         Op: OpRegistration,
@@ -199,6 +259,10 @@ impl ConversionTarget {
         self.set_op_rule::<Op>(LegalityRule::Dynamic(Rc::new(callback)))
     }
 
+    /// Mark all operations whose registration implements `Trait` legal.
+    ///
+    /// This is intentionally broad. Prefer operation or dialect rules when the target needs
+    /// explicit exceptions.
     pub fn add_legal_op_interface<Trait>(&mut self) -> &mut Self
     where
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
@@ -206,6 +270,8 @@ impl ConversionTarget {
         self.set_interface_rule::<Trait>(LegalityRule::Legal)
     }
 
+    /// Mark all operations whose registration implements `Trait` dynamically legal according to
+    /// `callback`.
     pub fn add_dynamically_legal_op_interface<Trait, F>(&mut self, callback: F) -> &mut Self
     where
         Trait: ?Sized + Pointee<Metadata = DynMetadata<Trait>> + 'static,
@@ -214,12 +280,19 @@ impl ConversionTarget {
         self.set_interface_rule::<Trait>(LegalityRule::Dynamic(Rc::new(callback)))
     }
 
+    /// Mark operation `Op` recursively legal.
+    ///
+    /// Recursive legality only applies when `Op` itself is legal. When it applies, conversion
+    /// skips all nested operations under that operation.
     pub fn mark_op_recursively_legal<Op: OpRegistration>(&mut self) -> &mut Self {
         let name = self.registered_op_name::<Op>();
         self.recursive_legality.insert(name, RecursiveLegalityRule::Legal);
         self
     }
 
+    /// Mark operation `Op` recursively legal when `callback` accepts a concrete instance.
+    ///
+    /// The operation itself must still be legal for recursive legality to apply.
     pub fn mark_op_recursively_legal_if<Op, F>(&mut self, callback: F) -> &mut Self
     where
         Op: OpRegistration,
@@ -231,6 +304,7 @@ impl ConversionTarget {
         self
     }
 
+    /// Evaluate operation-instance legality using the target precedence rules.
     pub fn legality(&self, op: &Operation) -> Legality {
         let name = op.name();
         if let Some(rule) = self.op_actions.get(&name) {
@@ -250,6 +324,10 @@ impl ConversionTarget {
         self.unknown_op_policy.evaluate(op)
     }
 
+    /// Evaluate operation-name legality without inspecting a concrete operation instance.
+    ///
+    /// Dynamic rules return [`StaticLegality::Dynamic`]. This is used by legalization path
+    /// discovery to decide which generated operations may be terminal targets.
     pub fn static_legality(&self, name: &OperationName) -> StaticLegality {
         if let Some(rule) = self.op_actions.get(name) {
             return rule.static_legality();
@@ -268,11 +346,13 @@ impl ConversionTarget {
         self.unknown_op_policy.static_legality()
     }
 
+    /// Return true when `op` is legal for this target.
     #[inline]
     pub fn is_legal(&self, op: &Operation) -> bool {
         self.legality(op).is_legal()
     }
 
+    /// Return true when `op` is legal and its nested operations may be skipped.
     pub fn is_recursively_legal(&self, op: &Operation) -> bool {
         let name = op.name();
         let Some(rule) = self.recursive_legality.get(&name) else {

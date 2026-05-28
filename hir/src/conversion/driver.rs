@@ -14,12 +14,17 @@ use crate::{
 
 /// Dialect conversion mode.
 ///
-/// Only full conversion is implemented in Phase 4. The additional variants reserve the API shape
-/// for the partial and analysis modes described by the design document.
+/// Only full conversion is implemented today. The additional variants reserve the API shape for
+/// the partial and analysis modes described by the design document.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ConversionMode {
+    /// Require every operation under the root to be legal after conversion.
     Full,
+    /// Reserved for MLIR-style partial conversion, where already-legal operations may remain
+    /// without forcing every unknown operation to legalize.
     Partial,
+    /// Reserved for analysis-only conversion that reports whether conversion could succeed without
+    /// mutating IR.
     Analysis,
 }
 
@@ -33,41 +38,57 @@ pub struct ConversionConfig {
 }
 
 impl ConversionConfig {
+    /// Return the configured conversion mode.
     #[inline]
     pub const fn mode(&self) -> ConversionMode {
         self.mode
     }
 
+    /// Return whether the converted root is recursively verified after legality succeeds.
     #[inline]
     pub const fn verify_after_conversion(&self) -> bool {
         self.verify_after_conversion
     }
 
+    /// Return whether temporary `builtin.unrealized_conversion_cast` operations are reconciled.
     #[inline]
     pub const fn reconcile_unrealized_casts(&self) -> bool {
         self.reconcile_unrealized_casts
     }
 
+    /// Return the maximum number of pattern applications allowed during conversion.
     #[inline]
     pub const fn max_iterations(&self) -> usize {
         self.max_iterations
     }
 
+    /// Set the conversion mode.
+    ///
+    /// The current driver accepts only [`ConversionMode::Full`]; other modes are reserved API.
     pub fn with_mode(&mut self, mode: ConversionMode) -> &mut Self {
         self.mode = mode;
         self
     }
 
+    /// Enable or disable recursive IR verification after conversion.
     pub fn with_verify_after_conversion(&mut self, yes: bool) -> &mut Self {
         self.verify_after_conversion = yes;
         self
     }
 
+    /// Enable or disable reconciliation of temporary unrealized conversion casts.
+    ///
+    /// When enabled, the driver may leave these casts in the IR during pattern application to keep
+    /// operands/results type-correct, but unreconciled casts must still be legal according to the
+    /// final conversion target.
     pub fn with_reconcile_unrealized_casts(&mut self, yes: bool) -> &mut Self {
         self.reconcile_unrealized_casts = yes;
         self
     }
 
+    /// Set the maximum number of successful pattern applications.
+    ///
+    /// This guards against rewrite cycles in conversion patterns.
     pub fn with_max_iterations(&mut self, max_iterations: usize) -> &mut Self {
         self.max_iterations = max_iterations;
         self
@@ -93,11 +114,13 @@ pub struct ConversionResult {
 }
 
 impl ConversionResult {
+    /// Return true when at least one pattern application or cast reconciliation changed the IR.
     #[inline]
     pub const fn changed(&self) -> bool {
         self.changed
     }
 
+    /// Return the number of successful conversion pattern applications.
     #[inline]
     pub const fn converted_ops(&self) -> usize {
         self.converted_ops
@@ -108,6 +131,11 @@ impl ConversionResult {
 ///
 /// Full conversion requires every operation under `root` to be legal for `target`, except for
 /// operations nested under recursively legal operations.
+///
+/// Patterns are tried according to the legalization graph derived from the target and each
+/// pattern's generated-op metadata. A pattern that returns `Ok(false)` must not mutate IR, and a
+/// pattern that returns `Ok(true)` must mutate IR. Violating either contract is reported as a
+/// conversion error because this driver intentionally does not roll changes back.
 pub fn apply_full_conversion(
     root: OperationRef,
     target: ConversionTarget,

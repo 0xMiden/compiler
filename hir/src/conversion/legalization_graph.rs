@@ -6,6 +6,13 @@ use super::{ConversionPattern, ConversionTarget, FrozenConversionPatternSet, Sta
 use crate::OperationName;
 
 /// Pattern graph used to decide which conversions may reach a target.
+///
+/// The graph is built from a conversion target and a frozen pattern set. It keeps only patterns
+/// whose declared generated operations can themselves reach terminal legal operations, which lets
+/// the driver orchestrate transitive conversion such as A -> B -> C when only C is legal.
+///
+/// This is primarily driver infrastructure, but it is public so tests, diagnostics, and future
+/// tooling can inspect legalization reachability.
 pub struct LegalizationGraph<'a> {
     target: &'a ConversionTarget,
     legalizer_patterns: BTreeMap<OperationName, SmallVec<[Rc<dyn ConversionPattern>; 2]>>,
@@ -13,6 +20,11 @@ pub struct LegalizationGraph<'a> {
 }
 
 impl<'a> LegalizationGraph<'a> {
+    /// Build a legalization graph for `target` using the already-frozen `patterns`.
+    ///
+    /// Any-op patterns are conservatively retained for all roots because their generated
+    /// operation set is not root-specific. Operation-specific patterns are retained only when all
+    /// declared generated operations are legalizable.
     pub fn new(target: &'a ConversionTarget, patterns: &FrozenConversionPatternSet) -> Self {
         let any_op_patterns = patterns.any_op_patterns().iter().cloned().collect();
         let mut this = Self {
@@ -56,6 +68,8 @@ impl<'a> LegalizationGraph<'a> {
         this
     }
 
+    /// Return true when `name` is legal, dynamically legal, or has at least one possible
+    /// legalization pattern.
     #[inline]
     pub fn is_legalizable(&self, name: &OperationName) -> bool {
         target_is_terminal(self.target, name)
@@ -63,6 +77,9 @@ impl<'a> LegalizationGraph<'a> {
             || !self.any_op_patterns.is_empty()
     }
 
+    /// Return operation-specific legalizer patterns for `name`.
+    ///
+    /// The returned patterns are sorted by estimated legalization depth and then pattern benefit.
     #[inline]
     pub fn legalizer_patterns(&self, name: &OperationName) -> &[Rc<dyn ConversionPattern>] {
         self.legalizer_patterns
@@ -71,6 +88,7 @@ impl<'a> LegalizationGraph<'a> {
             .unwrap_or(&[])
     }
 
+    /// Return any-op conversion patterns retained by the graph.
     #[inline]
     pub fn any_op_patterns(&self) -> &[Rc<dyn ConversionPattern>] {
         &self.any_op_patterns

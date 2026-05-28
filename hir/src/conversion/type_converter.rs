@@ -23,27 +23,36 @@ pub enum TypeConversion {
     One(Type),
     /// The source value is represented by multiple target values.
     ///
-    /// This is reserved by the API, but the Phase 5 driver rejects it when default boundary
+    /// This is reserved by the API, but current driver helpers reject it when default boundary
     /// materialization would be required.
     Many(SmallVec<[Type; 2]>),
     /// The source value is removed.
     ///
-    /// This is reserved by the API, but the Phase 5 driver rejects it when default boundary
+    /// This is reserved by the API, but current driver helpers reject it when default boundary
     /// materialization would be required.
     Drop,
 }
 
 impl TypeConversion {
+    /// Build a 1:1 type conversion result.
     #[inline]
     pub fn one(ty: Type) -> Self {
         Self::One(ty)
     }
 
+    /// Build a 1:N type conversion result.
+    ///
+    /// The current production driver reserves this shape but rejects it in helpers that require
+    /// 1:1 conversion.
     #[inline]
     pub fn many(types: impl IntoIterator<Item = Type>) -> Self {
         Self::Many(types.into_iter().collect())
     }
 
+    /// Build a conversion result that drops the source value.
+    ///
+    /// The current production driver reserves this shape but rejects it in helpers that require
+    /// 1:1 conversion.
     #[inline]
     pub const fn drop() -> Self {
         Self::Drop
@@ -51,6 +60,14 @@ impl TypeConversion {
 }
 
 /// Converts source IR types and values to target IR types and values.
+///
+/// A type converter is attached to conversion patterns that need operand/result type remapping.
+/// Conversion callbacks are tried in registration order. If no type callback handles a type, the
+/// converter treats it as an identity conversion.
+///
+/// The initial driver supports 1:1 boundary materialization. `Many` and `Drop` results are
+/// accepted by the data model for future ABI/aggregate-lowering work, but callers must use the
+/// explicit `*_1_to_1` helpers when they need current driver compatibility.
 #[derive(Clone, Default)]
 pub struct TypeConverter {
     conversions: Vec<TypeConversionFn>,
@@ -60,11 +77,16 @@ pub struct TypeConverter {
 }
 
 impl TypeConverter {
+    /// Create an empty converter that defaults to identity conversion.
     #[inline]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a type conversion callback.
+    ///
+    /// Return `Some` to handle the source type, or `None` to let later callbacks try. Callbacks are
+    /// evaluated in insertion order.
     #[inline]
     pub fn add_conversion<F>(&mut self, callback: F) -> &mut Self
     where
@@ -74,6 +96,10 @@ impl TypeConverter {
         self
     }
 
+    /// Add a value-specific conversion callback.
+    ///
+    /// Value callbacks are checked before type-only callbacks and may inspect the value's defining
+    /// operation, uses, attributes, or type.
     #[inline]
     pub fn add_value_conversion<F>(&mut self, callback: F) -> &mut Self
     where
@@ -83,6 +109,10 @@ impl TypeConverter {
         self
     }
 
+    /// Add a source materialization callback.
+    ///
+    /// Source materializations convert a replacement value back to the original source type when
+    /// replacing an operation whose old result still has live users expecting that source type.
     #[inline]
     pub fn add_source_materialization<F>(&mut self, callback: F) -> &mut Self
     where
@@ -98,6 +128,11 @@ impl TypeConverter {
         self
     }
 
+    /// Add a target materialization callback.
+    ///
+    /// Target materializations convert an existing operand value to the type expected by a
+    /// conversion pattern. If no callback handles the request, the converter creates
+    /// `builtin.unrealized_conversion_cast`.
     #[inline]
     pub fn add_target_materialization<F>(&mut self, callback: F) -> &mut Self
     where
@@ -131,21 +166,32 @@ impl TypeConverter {
             .or_else(|| self.convert_type(value.borrow().ty()))
     }
 
+    /// Return true when `ty` converts to itself.
     #[inline]
     pub fn is_legal_type(&self, ty: &Type) -> bool {
         matches!(self.convert_type(ty), Some(TypeConversion::One(converted)) if converted == *ty)
     }
 
+    /// Convert `ty` and require a 1:1 result.
+    ///
+    /// This returns an error for `Many`, `Drop`, or an unhandled conversion.
     pub fn convert_type_1_to_1(&self, ty: &Type) -> Result<Type, Report> {
         self.require_1_to_1(self.convert_type(ty), || format!("type '{ty}'"))
     }
 
+    /// Convert `value` and require a 1:1 result.
+    ///
+    /// Value-specific callbacks are considered before type callbacks.
     pub fn convert_value_1_to_1(&self, value: ValueRef) -> Result<Type, Report> {
         self.require_1_to_1(self.convert_value(value), || {
             format!("value '{}' of type '{}'", value.borrow(), value.borrow().ty())
         })
     }
 
+    /// Materialize a conversion from target IR back to a source type.
+    ///
+    /// Registered source materializers are tried first. If none applies, an
+    /// `builtin.unrealized_conversion_cast` is inserted and marked as framework-owned.
     pub fn materialize_source_conversion(
         &self,
         rewriter: &mut ConversionPatternRewriter,
@@ -163,6 +209,10 @@ impl TypeConverter {
         )
     }
 
+    /// Materialize a conversion from source IR to a target type.
+    ///
+    /// Registered target materializers are tried first. If none applies, an
+    /// `builtin.unrealized_conversion_cast` is inserted and marked as framework-owned.
     pub fn materialize_target_conversion(
         &self,
         rewriter: &mut ConversionPatternRewriter,

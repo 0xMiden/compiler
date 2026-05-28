@@ -6,12 +6,17 @@ use super::ConversionPattern;
 use crate::{Context, OperationName, patterns::PatternKind};
 
 /// Mutable collection of conversion patterns.
+///
+/// Build one of these in a concrete legalization pass, populate it with source-to-target
+/// conversion patterns, then pass it to the conversion driver. The driver freezes the set before
+/// use so it can index patterns by root operation name.
 pub struct ConversionPatternSet {
     context: Rc<Context>,
     patterns: Vec<Box<dyn ConversionPattern>>,
 }
 
 impl ConversionPatternSet {
+    /// Create an empty pattern set for `context`.
     pub fn new(context: Rc<Context>) -> Self {
         Self {
             context,
@@ -19,6 +24,7 @@ impl ConversionPatternSet {
         }
     }
 
+    /// Create a pattern set from boxed conversion patterns.
     pub fn from_iter<P>(context: Rc<Context>, patterns: P) -> Self
     where
         P: IntoIterator<Item = Box<dyn ConversionPattern>>,
@@ -29,20 +35,24 @@ impl ConversionPatternSet {
         }
     }
 
+    /// Return the context associated with this pattern set.
     #[inline]
     pub fn context(&self) -> Rc<Context> {
         Rc::clone(&self.context)
     }
 
+    /// Return the mutable set's patterns in insertion order.
     #[inline]
     pub fn patterns(&self) -> &[Box<dyn ConversionPattern>] {
         &self.patterns
     }
 
+    /// Add one conversion pattern to this set.
     pub fn push(&mut self, pattern: impl ConversionPattern + 'static) {
         self.patterns.push(Box::new(pattern));
     }
 
+    /// Extend this set with boxed conversion patterns.
     pub fn extend<P>(&mut self, patterns: P)
     where
         P: IntoIterator<Item = Box<dyn ConversionPattern>>,
@@ -52,6 +62,10 @@ impl ConversionPatternSet {
 }
 
 /// Immutable conversion pattern set indexed by root kind.
+///
+/// Freezing expands trait-rooted patterns to the operations that are registered in the context at
+/// freeze time. Callers that rely on trait-rooted conversion patterns must register the relevant
+/// dialects before freezing the set.
 pub struct FrozenConversionPatternSet {
     context: Rc<Context>,
     patterns: Vec<Rc<dyn ConversionPattern>>,
@@ -60,6 +74,7 @@ pub struct FrozenConversionPatternSet {
 }
 
 impl FrozenConversionPatternSet {
+    /// Freeze and index a mutable conversion pattern set.
     pub fn new(patterns: ConversionPatternSet) -> Self {
         let ConversionPatternSet { context, patterns } = patterns;
         let mut this = Self {
@@ -102,16 +117,22 @@ impl FrozenConversionPatternSet {
         this
     }
 
+    /// Return the context used to freeze this set.
     #[inline]
     pub fn context(&self) -> Rc<Context> {
         Rc::clone(&self.context)
     }
 
+    /// Return all frozen patterns in insertion order.
     #[inline]
     pub fn patterns(&self) -> &[Rc<dyn ConversionPattern>] {
         &self.patterns
     }
 
+    /// Return patterns indexed by concrete root operation name.
+    ///
+    /// This includes operation-rooted patterns and trait-rooted patterns expanded against
+    /// registered operation metadata.
     #[inline]
     pub fn op_specific_patterns(
         &self,
@@ -119,15 +140,21 @@ impl FrozenConversionPatternSet {
         &self.op_specific_patterns
     }
 
+    /// Return patterns that may match any operation.
     #[inline]
     pub fn any_op_patterns(&self) -> &[Rc<dyn ConversionPattern>] {
         &self.any_op_patterns
     }
 }
 
+/// Callback type used by conversion providers to populate a pattern set.
 pub type PopulateConversionPatternsFn = fn(Rc<Context>, &mut ConversionPatternSet);
 
 /// Inventory-friendly description of a conversion pattern provider.
+///
+/// Providers are lightweight metadata records. Concrete passes may discover registered providers,
+/// filter them by source/target dialect metadata, and invoke [`Self::populate`] to add their
+/// patterns to a pass-owned [`ConversionPatternSet`].
 pub struct ConversionPatternProviderInfo {
     name: &'static str,
     source_dialect: Option<&'static str>,
@@ -136,6 +163,11 @@ pub struct ConversionPatternProviderInfo {
 }
 
 impl ConversionPatternProviderInfo {
+    /// Create provider metadata for inventory registration.
+    ///
+    /// `source_dialect` may be `None` for generic providers. `target_dialects` is descriptive
+    /// metadata for pass-level filtering and diagnostics; it does not by itself make any dialect
+    /// legal.
     pub const fn new(
         name: &'static str,
         source_dialect: Option<&'static str>,
@@ -150,26 +182,31 @@ impl ConversionPatternProviderInfo {
         }
     }
 
+    /// Return the provider's human-readable name.
     #[inline]
     pub const fn name(&self) -> &'static str {
         self.name
     }
 
+    /// Return the provider's source dialect, if it is specific to one dialect.
     #[inline]
     pub const fn source_dialect(&self) -> Option<&'static str> {
         self.source_dialect
     }
 
+    /// Return the provider's declared target dialect namespaces.
     #[inline]
     pub const fn target_dialects(&self) -> &'static [&'static str] {
         self.target_dialects
     }
 
+    /// Populate `patterns` with this provider's conversion patterns.
     #[inline]
     pub fn populate(&self, context: Rc<Context>, patterns: &mut ConversionPatternSet) {
         (self.populate)(context, patterns);
     }
 
+    /// Iterate over provider metadata registered with `inventory`.
     #[inline]
     pub fn registered() -> impl Iterator<Item = &'static ConversionPatternProviderInfo> {
         inventory::iter::<ConversionPatternProviderInfo>()

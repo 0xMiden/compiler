@@ -11,6 +11,11 @@ use crate::{
 };
 
 /// Describes how a block/callable signature maps original inputs to converted inputs.
+///
+/// The current utilities support applying 1:1 block argument type updates in place. The mapping
+/// model also records replace/drop decisions for future or dialect-specific signature rewrites,
+/// but callers using those mappings must rewrite the affected block predecessors, call operands,
+/// and region successor operands themselves.
 #[derive(Debug)]
 pub struct SignatureConversion {
     converted_types: SmallVec<[Type; 4]>,
@@ -18,6 +23,7 @@ pub struct SignatureConversion {
 }
 
 impl SignatureConversion {
+    /// Create an empty signature conversion.
     pub fn new() -> Self {
         Self {
             converted_types: SmallVec::new(),
@@ -25,6 +31,10 @@ impl SignatureConversion {
         }
     }
 
+    /// Build a 1:1 signature conversion for a block's current arguments.
+    ///
+    /// Each block argument is converted with [`TypeConverter::convert_value_1_to_1`]. The result
+    /// can be applied in place with [`Self::apply_to_block_arguments_1_to_1`].
     pub fn for_block_1_to_1(
         block: BlockRef,
         type_converter: &TypeConverter,
@@ -44,16 +54,19 @@ impl SignatureConversion {
         Ok(conversion)
     }
 
+    /// Return the converted input types in new signature order.
     #[inline]
     pub fn converted_types(&self) -> &[Type] {
         &self.converted_types
     }
 
+    /// Return mappings from old inputs to the converted signature.
     #[inline]
     pub fn mappings(&self) -> &[InputMapping] {
         &self.mappings
     }
 
+    /// Keep old input `old_index` as one converted input with `new_type`.
     pub fn keep_input(&mut self, old_index: usize, new_type: Type) -> &mut Self {
         let new_index = self.converted_types.len();
         self.converted_types.push(new_type);
@@ -65,6 +78,11 @@ impl SignatureConversion {
         self
     }
 
+    /// Replace old input `old_index` with existing values.
+    ///
+    /// This records the mapping only. Generic in-place block argument conversion does not support
+    /// replacement mappings, so dialect-specific rewrites must update uses and control-flow
+    /// operands consistently before relying on this mapping.
     pub fn replace_input(
         &mut self,
         old_index: usize,
@@ -77,6 +95,10 @@ impl SignatureConversion {
         self
     }
 
+    /// Drop old input `old_index` from the converted signature.
+    ///
+    /// This records the mapping only. Dropping a live block argument or callable parameter also
+    /// requires updating all branch/call/region successor operands that feed it.
     pub fn drop_input(&mut self, old_index: usize) -> &mut Self {
         self.mappings.push(InputMapping::Drop { old_index });
         self
@@ -148,21 +170,33 @@ impl Default for SignatureConversion {
 /// Mapping from one original input to the converted signature.
 #[derive(Clone, Debug)]
 pub enum InputMapping {
+    /// Preserve one original input as one converted input.
     Keep {
+        /// Index of the original input.
         old_index: usize,
+        /// First index of this input in the converted signature.
         new_index: usize,
+        /// Number of converted inputs produced for this original input.
         new_count: usize,
     },
+    /// Replace an original input with existing values.
     Replace {
+        /// Index of the original input.
         old_index: usize,
+        /// Values that replace the original input.
         values: SmallVec<[ValueRef; 2]>,
     },
+    /// Remove an original input from the converted signature.
     Drop {
+        /// Index of the original input.
         old_index: usize,
     },
 }
 
 /// Convert a builtin ABI signature 1:1, preserving ABI metadata on each parameter/result.
+///
+/// This updates only parameter and result types. Calling convention and other ABI metadata remain
+/// unchanged.
 pub fn convert_signature_1_to_1(
     signature: &Signature,
     type_converter: &TypeConverter,
@@ -178,6 +212,9 @@ pub fn convert_signature_1_to_1(
 }
 
 /// Return the converted callable signature for `op`, if it implements `CallableOpInterface`.
+///
+/// The operation is not mutated. Concrete conversion patterns can use the returned signature to
+/// rewrite dialect-specific callable storage.
 pub fn converted_callable_signature_1_to_1(
     op: OperationRef,
     type_converter: &TypeConverter,
@@ -207,6 +244,9 @@ pub fn converted_resolved_call_signature_1_to_1(
 }
 
 /// Verify that a call-like operation's operands/results match its resolved callable signature.
+///
+/// Non-call operations are accepted. This helper is intended for conversion patterns or post-pass
+/// checks that need interface-level validation without knowing the concrete call dialect.
 pub fn verify_call_signature_operands_and_results(op: OperationRef) -> Result<(), Report> {
     let op = op.borrow();
     let Some(call) = op.as_trait::<dyn CallOpInterface>() else {
@@ -258,6 +298,8 @@ pub fn verify_call_signature_operands_and_results(op: OperationRef) -> Result<()
 }
 
 /// Verify that a branch operation's successor operand lists still match destination block arity.
+///
+/// Non-branch operations are accepted. Type compatibility is delegated to the branch interface.
 pub fn verify_branch_successor_operand_arities(op: OperationRef) -> Result<(), Report> {
     let op = op.borrow();
     let Some(branch) = op.as_trait::<dyn BranchOpInterface>() else {
@@ -288,6 +330,9 @@ pub fn verify_branch_successor_operand_arities(op: OperationRef) -> Result<(), R
 }
 
 /// Verify entry successor operands for a region-branching operation.
+///
+/// Non-region-branch operations are accepted. This checks only the structural entry successor
+/// operand lists exposed through the interface.
 pub fn verify_region_branch_successor_operand_arities(op: OperationRef) -> Result<(), Report> {
     let op = op.borrow();
     let Some(region_branch) = op.as_trait::<dyn RegionBranchOpInterface>() else {
@@ -311,6 +356,9 @@ pub fn verify_region_branch_successor_operand_arities(op: OperationRef) -> Resul
 }
 
 /// Verify region successor operands forwarded by a region-branch terminator operation.
+///
+/// Non-region-branch terminators are accepted. For matching terminators, the parent operation must
+/// implement [`RegionBranchOpInterface`] so successor type compatibility can be checked.
 pub fn verify_region_branch_terminator_successor_operand_arities(
     op: OperationRef,
 ) -> Result<(), Report> {
