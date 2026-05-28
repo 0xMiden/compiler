@@ -10,6 +10,7 @@ mod emit;
 mod emitter;
 mod events;
 pub mod intrinsics;
+mod legalization;
 mod linker;
 mod lower;
 mod opt;
@@ -40,6 +41,7 @@ pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
     events::{TRACE_FRAME_END, TRACE_FRAME_START, TRACE_PRINT_LN, TraceEvent},
+    legalization::{LegalizeForMasm, masm_legalization_target, populate_masm_legalization_target},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},
 };
