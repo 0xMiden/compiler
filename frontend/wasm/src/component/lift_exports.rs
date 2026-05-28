@@ -5,7 +5,7 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
+    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, ValueRange, ValueRef,
     Visibility,
     dialects::{
         builtin::{
@@ -64,7 +64,6 @@ pub fn generate_export_lifting_function(
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
-    let export_func_ident = Ident::new(export_func_name.to_string().into(), SourceSpan::default());
     let export_metadata = ComponentExportMetadata {
         ty: &export_func_ty,
         param_names: export_param_names,
@@ -80,6 +79,9 @@ pub fn generate_export_lifting_function(
     let core_export_func_ref = core_module_builder
         .get_function(core_export_func_path.name().as_str())
         .expect("failed to find the core module export function");
+    let export_func_span = core_export_func_ref.borrow().span();
+    let export_func_ident =
+        Ident::new(midenc_hir::interner::Symbol::intern(export_func_name), export_func_span);
     // Make the lowered core WASM export internal so only the lifted wrapper is
     // publicly exported from the component, while still allowing the wrapper to
     // call across the nested core module symbol table boundary.

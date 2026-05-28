@@ -4,11 +4,13 @@ use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use miden_core::operations::DebugVarLocation;
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{
         builtin,
-        debuginfo::attributes::{decode_frame_base_local_index, encode_frame_base_local_offset},
+        debuginfo::attributes::{
+            SubprogramAttr, decode_frame_base_local_index, encode_frame_base_local_offset,
+        },
     },
     interner,
     pass::AnalysisManager,
@@ -671,14 +673,8 @@ impl MasmFunctionBuilder {
                 .into_report()
         })?;
 
-        let sig = function.signature();
-        let args = sig.params.iter().map(|param| masm::TypeExpr::from(param.ty.clone())).collect();
-        let results = sig
-            .results
-            .iter()
-            .map(|result| masm::TypeExpr::from(result.ty.clone()))
-            .collect();
-        let signature = masm::FunctionType::new(sig.cc, args, results);
+        let signature =
+            semantic_debug_signature(function).unwrap_or_else(|| lowered_signature(function));
 
         Ok(Self {
             span: function.span(),
@@ -813,6 +809,73 @@ impl MasmFunctionBuilder {
         procedure.extend_invoked(invoked);
 
         Ok(procedure)
+    }
+}
+
+fn lowered_signature(function: &builtin::Function) -> masm::FunctionType {
+    let sig = function.signature();
+    let args = sig.params.iter().map(|param| masm_type_expr_from_hir(&param.ty)).collect();
+    let results = sig.results.iter().map(|result| masm_type_expr_from_hir(&result.ty)).collect();
+    masm::FunctionType::new(sig.cc, args, results)
+}
+
+fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::FunctionType> {
+    let subprogram = function
+        .as_operation()
+        .get_attribute("di.subprogram")?
+        .try_downcast_attr::<SubprogramAttr>()
+        .ok()?;
+    let subprogram = subprogram.borrow();
+    let Type::Function(ty) = subprogram.ty.as_ref()? else {
+        return None;
+    };
+
+    let args = ty.params().iter().map(masm_type_expr_from_hir).collect();
+    let results = ty.results().iter().map(masm_type_expr_from_hir).collect();
+    Some(masm::FunctionType::new(ty.calling_convention(), args, results))
+}
+
+fn masm_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
+    match ty {
+        Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
+            masm_type_expr_from_hir(array.element_type()),
+            array.len(),
+        )),
+        Type::Struct(struct_ty) => {
+            let name = struct_ty.name().and_then(|name| masm::Ident::new(name.as_ref()).ok());
+            let fields = struct_ty.fields().iter().enumerate().map(|(index, field)| {
+                let name = field
+                    .name
+                    .as_deref()
+                    .map(masm::Ident::new)
+                    .and_then(Result::ok)
+                    .unwrap_or_else(|| masm::Ident::new(format!("field{index}")).unwrap());
+                masm::StructField {
+                    span: SourceSpan::UNKNOWN,
+                    name,
+                    ty: masm_type_expr_from_hir(&field.ty),
+                }
+            });
+            masm::TypeExpr::Struct(
+                masm::StructType::new(name, fields)
+                    .with_repr(Span::unknown(struct_ty.repr()))
+                    .with_span(SourceSpan::UNKNOWN),
+            )
+        }
+        Type::Ptr(ptr) => {
+            masm::TypeExpr::Ptr(masm::PointerType::new(masm_type_expr_from_hir(ptr.pointee())))
+        }
+        Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
+            masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
+        )),
+        Type::List(element_ty) => masm::TypeExpr::Ptr(
+            masm::PointerType::new(masm_type_expr_from_hir(element_ty))
+                .with_address_space(masm::types::AddressSpace::Byte),
+        ),
+        Type::I128 | Type::U128 => masm::TypeExpr::Array(masm::ArrayType::new(Type::U32.into(), 4)),
+        Type::I64 | Type::U64 => masm::TypeExpr::Array(masm::ArrayType::new(Type::U32.into(), 2)),
+        Type::Unknown | Type::Never | Type::F64 => panic!("unrepresentable type value: {ty}"),
+        ty => masm::TypeExpr::Primitive(Span::unknown(ty.clone())),
     }
 }
 
