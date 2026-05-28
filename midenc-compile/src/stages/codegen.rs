@@ -2,13 +2,13 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use miden_assembly::ast::Module;
 use midenc_codegen_masm::{
-    self as masm, MasmComponent, ToMasmComponent,
+    self as masm, LegalizeForMasm, MasmComponent, ToMasmComponent,
     intrinsics::{
         ADVICE_INTRINSICS_MODULE_NAME, I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME,
         MEM_INTRINSICS_MODULE_NAME,
     },
 };
-use midenc_hir::pass::AnalysisManager;
+use midenc_hir::pass::{AnalysisManager, IRPrintingConfig, Nesting, OpPassManager, PassManager};
 use midenc_session::OutputType;
 
 use super::*;
@@ -40,6 +40,8 @@ impl Stage for CodegenStage {
         log::debug!("lowering miden component to masm");
 
         let anchor = component.map(|c| c.as_operation_ref()).unwrap_or(world.as_operation_ref());
+        legalize_for_masm(anchor, context.clone())?;
+
         let analysis_manager = AnalysisManager::new(anchor, None);
         let mut masm_component = match component {
             Some(component) => {
@@ -73,6 +75,16 @@ impl Stage for CodegenStage {
             account_component_metadata_bytes,
         })
     }
+}
+
+fn legalize_for_masm(anchor: midenc_hir::OperationRef, context: Rc<Context>) -> CompilerResult<()> {
+    let ir_print_config = IRPrintingConfig::try_from(context.session().options.as_ref())?;
+    let mut pm = PassManager::new(context, OpPassManager::ANY, Nesting::Implicit)
+        .enable_ir_printing(ir_print_config);
+    pm.add_pass(Box::new(LegalizeForMasm));
+    pm.run(anchor)?;
+
+    Ok(())
 }
 
 fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Arc<Module>> {
