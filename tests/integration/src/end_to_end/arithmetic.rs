@@ -284,177 +284,200 @@ test_func_two_arg!(max, core::cmp::max, u8, u8, u8);
 
 #[test]
 fn overflowing_add_u8() {
-    test_overflowing_arith(u8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(u8::overflowing_add, "overflowing_add", NumericStrategy::add_unsigned());
 }
 
 #[test]
 fn overflowing_add_u16() {
-    test_overflowing_arith(u16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u16::overflowing_add,
+        "overflowing_add",
+        NumericStrategy::add_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_add_u32() {
-    test_overflowing_arith(u32::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u32::overflowing_add,
+        "overflowing_add",
+        NumericStrategy::add_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_add_u64() {
-    test_overflowing_arith(u64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u64::overflowing_add,
+        "overflowing_add",
+        NumericStrategy::add_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_add_u128() {
-    test_overflowing_arith(u128::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u128::overflowing_add,
+        "overflowing_add",
+        NumericStrategy::add_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_add_i8() {
-    test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn overflowing_add_i16() {
-    test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn overflowing_add_i32() {
-    test_overflowing_arith(i32::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(i32::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn overflowing_add_i64() {
-    test_overflowing_arith(i64::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(i64::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn overflowing_add_i128() {
-    test_overflowing_arith(i128::overflowing_add, "overflowing_add", NumericStrategy::full_range());
+    test_overflowing_arith(i128::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn overflowing_sub_u8() {
-    test_overflowing_arith(u8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(u8::overflowing_sub, "overflowing_sub", NumericStrategy::sub_unsigned());
 }
 
 #[test]
 fn overflowing_sub_u16() {
-    test_overflowing_arith(u16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u16::overflowing_sub,
+        "overflowing_sub",
+        NumericStrategy::sub_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_sub_u32() {
-    test_overflowing_arith(u32::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u32::overflowing_sub,
+        "overflowing_sub",
+        NumericStrategy::sub_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_sub_u64() {
-    test_overflowing_arith(u64::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u64::overflowing_sub,
+        "overflowing_sub",
+        NumericStrategy::sub_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_sub_u128() {
-    test_overflowing_arith(u128::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u128::overflowing_sub,
+        "overflowing_sub",
+        NumericStrategy::sub_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_sub_i8() {
-    test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn overflowing_sub_i16() {
-    test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn overflowing_sub_i32() {
-    test_overflowing_arith(i32::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(i32::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn overflowing_sub_i64() {
-    test_overflowing_arith(i64::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(i64::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn overflowing_sub_i128() {
-    test_overflowing_arith(i128::overflowing_sub, "overflowing_sub", NumericStrategy::full_range());
+    test_overflowing_arith(i128::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn overflowing_mul_u8() {
-    test_overflowing_arith(u8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(u8::overflowing_mul, "overflowing_mul", NumericStrategy::mul_unsigned());
 }
 
 #[test]
 fn overflowing_mul_u16() {
-    test_overflowing_arith(u16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u16::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::mul_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_mul_u32() {
-    test_overflowing_arith(u32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u32::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::mul_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_mul_u64() {
-    test_overflowing_arith(u64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u64::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::mul_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_mul_u128() {
-    test_overflowing_arith(u128::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(
+        u128::overflowing_mul,
+        "overflowing_mul",
+        NumericStrategy::mul_unsigned(),
+    );
 }
 
 #[test]
 fn overflowing_mul_i8() {
-    test_overflowing_arith(
-        i8::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::signed_mul_min(),
-    );
-    test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
 fn overflowing_mul_i16() {
-    test_overflowing_arith(
-        i16::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::signed_mul_min(),
-    );
-    test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
 fn overflowing_mul_i32() {
-    test_overflowing_arith(
-        i32::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::signed_mul_min(),
-    );
-    test_overflowing_arith(i32::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(i32::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
 fn overflowing_mul_i64() {
-    test_overflowing_arith(
-        i64::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::signed_mul_min(),
-    );
-    test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
 fn overflowing_mul_i128() {
-    test_overflowing_arith(
-        i128::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::signed_mul_min(),
-    );
-    test_overflowing_arith(i128::overflowing_mul, "overflowing_mul", NumericStrategy::full_range());
+    test_overflowing_arith(i128::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
@@ -462,7 +485,7 @@ fn overflowing_div_u8() {
     test_overflowing_arith(
         u8::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::div_unsigned_overflowing(),
     );
 }
 
@@ -471,7 +494,7 @@ fn overflowing_div_u16() {
     test_overflowing_arith(
         u16::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::div_unsigned_overflowing(),
     );
 }
 
@@ -480,7 +503,7 @@ fn overflowing_div_u32() {
     test_overflowing_arith(
         u32::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::div_unsigned_overflowing(),
     );
 }
 
@@ -489,7 +512,7 @@ fn overflowing_div_u64() {
     test_overflowing_arith(
         u64::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::div_unsigned_overflowing(),
     );
 }
 
@@ -498,7 +521,7 @@ fn overflowing_div_u128() {
     test_overflowing_arith(
         u128::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::div_unsigned_overflowing(),
     );
 }
 
@@ -507,7 +530,7 @@ fn overflowing_div_i8() {
     test_overflowing_arith(
         i8::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::div_signed_overflowing(),
     );
 }
 
@@ -516,7 +539,7 @@ fn overflowing_div_i16() {
     test_overflowing_arith(
         i16::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::div_signed_overflowing(),
     );
 }
 
@@ -525,7 +548,7 @@ fn overflowing_div_i32() {
     test_overflowing_arith(
         i32::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::div_signed_overflowing(),
     );
 }
 
@@ -534,7 +557,7 @@ fn overflowing_div_i64() {
     test_overflowing_arith(
         i64::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::div_signed_overflowing(),
     );
 }
 
@@ -543,7 +566,7 @@ fn overflowing_div_i128() {
     test_overflowing_arith(
         i128::overflowing_div,
         "overflowing_div",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::div_signed_overflowing(),
     );
 }
 
@@ -552,7 +575,7 @@ fn overflowing_rem_u8() {
     test_overflowing_arith(
         u8::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::rem_unsigned_overflowing(),
     );
 }
 
@@ -561,7 +584,7 @@ fn overflowing_rem_u16() {
     test_overflowing_arith(
         u16::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::rem_unsigned_overflowing(),
     );
 }
 
@@ -570,7 +593,7 @@ fn overflowing_rem_u32() {
     test_overflowing_arith(
         u32::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::rem_unsigned_overflowing(),
     );
 }
 
@@ -579,7 +602,7 @@ fn overflowing_rem_u64() {
     test_overflowing_arith(
         u64::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::rem_unsigned_overflowing(),
     );
 }
 
@@ -588,7 +611,7 @@ fn overflowing_rem_u128() {
     test_overflowing_arith(
         u128::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_unsigned(),
+        NumericStrategy::rem_unsigned_overflowing(),
     );
 }
 
@@ -598,7 +621,7 @@ fn overflowing_rem_i8() {
     test_overflowing_arith(
         i8::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::rem_signed_overflowing(),
     );
 }
 
@@ -608,7 +631,7 @@ fn overflowing_rem_i16() {
     test_overflowing_arith(
         i16::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::rem_signed_overflowing(),
     );
 }
 
@@ -618,7 +641,7 @@ fn overflowing_rem_i32() {
     test_overflowing_arith(
         i32::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::rem_signed_overflowing(),
     );
 }
 
@@ -628,7 +651,7 @@ fn overflowing_rem_i64() {
     test_overflowing_arith(
         i64::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::rem_signed_overflowing(),
     );
 }
 
@@ -638,225 +661,219 @@ fn overflowing_rem_i128() {
     test_overflowing_arith(
         i128::overflowing_rem,
         "overflowing_rem",
-        NumericStrategy::non_zero_rhs_signed(),
+        NumericStrategy::rem_signed_overflowing(),
     );
 }
 
 #[test]
 fn checked_add_u8() {
-    test_checked_arith(u8::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(u8::checked_add, "checked_add", NumericStrategy::add_unsigned());
 }
 
 #[test]
 fn checked_add_u16() {
-    test_checked_arith(u16::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(u16::checked_add, "checked_add", NumericStrategy::add_unsigned());
 }
 
 #[test]
 fn checked_add_u32() {
-    test_checked_arith(u32::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(u32::checked_add, "checked_add", NumericStrategy::add_unsigned());
 }
 
 #[test]
 fn checked_add_u64() {
-    test_checked_arith(u64::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(u64::checked_add, "checked_add", NumericStrategy::add_unsigned());
 }
 
 #[test]
 fn checked_add_i8() {
-    test_checked_arith(i8::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(i8::checked_add, "checked_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn checked_add_i16() {
-    test_checked_arith(i16::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(i16::checked_add, "checked_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn checked_add_i32() {
-    test_checked_arith(i32::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(i32::checked_add, "checked_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn checked_add_i64() {
-    test_checked_arith(i64::checked_add, "checked_add", NumericStrategy::full_range());
+    test_checked_arith(i64::checked_add, "checked_add", NumericStrategy::add_signed());
 }
 
 #[test]
 fn checked_sub_u8() {
-    test_checked_arith(u8::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(u8::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
 }
 
 #[test]
 fn checked_sub_u16() {
-    test_checked_arith(u16::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(u16::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
 }
 
 #[test]
 fn checked_sub_u32() {
-    test_checked_arith(u32::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(u32::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
 }
 
 #[test]
 fn checked_sub_u64() {
-    test_checked_arith(u64::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(u64::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
 }
 
 #[test]
 fn checked_sub_i8() {
-    test_checked_arith(i8::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(i8::checked_sub, "checked_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn checked_sub_i16() {
-    test_checked_arith(i16::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(i16::checked_sub, "checked_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn checked_sub_i32() {
-    test_checked_arith(i32::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(i32::checked_sub, "checked_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn checked_sub_i64() {
-    test_checked_arith(i64::checked_sub, "checked_sub", NumericStrategy::full_range());
+    test_checked_arith(i64::checked_sub, "checked_sub", NumericStrategy::sub_signed());
 }
 
 #[test]
 fn checked_mul_u8() {
-    test_checked_arith(u8::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(u8::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
 }
 
 #[test]
 fn checked_mul_u16() {
-    test_checked_arith(u16::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(u16::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
 }
 
 #[test]
 fn checked_mul_u32() {
-    test_checked_arith(u32::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(u32::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
 }
 
 #[test]
 fn checked_mul_u64() {
-    test_checked_arith(u64::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(u64::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
 }
 
 #[test]
 fn checked_mul_i8() {
-    test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
-    test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
 fn checked_mul_i16() {
-    test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
-    test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
 fn checked_mul_i32() {
-    test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
-    test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::mul_signed());
 }
 
 #[test]
+fn checked_mul_i64_happy_path() {
+    test_checked_arith(i64::checked_mul, "checked_mul", (any::<i64>(), any::<i64>()));
+}
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1144 once this is resolved, remove \
+            checked_mul_i64_happy_path"]
 fn checked_mul_i64() {
-    test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::full_range());
+    test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::mul_signed());
 }
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1144 include this check in \
-            `checked_mul_i64` once the issue is resolved"]
-fn checked_mul_i64_edge_cases() {
-    test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::signed_mul_min());
-}
-
-// When dividing by zero, `checked_div` returns `None` and doesn't panic. Therefore the full
-// range strategy can be used.
 
 #[test]
 fn checked_div_u8() {
-    test_checked_arith(u8::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(u8::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
 }
 
 #[test]
 fn checked_div_u16() {
-    test_checked_arith(u16::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(u16::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
 }
 
 #[test]
 fn checked_div_u32() {
-    test_checked_arith(u32::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(u32::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
 }
 
 #[test]
 fn checked_div_u64() {
-    test_checked_arith(u64::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(u64::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
 }
 
 #[test]
 fn checked_div_i8() {
-    test_checked_arith(i8::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(i8::checked_div, "checked_div", NumericStrategy::div_signed_checked());
 }
 
 #[test]
 fn checked_div_i16() {
-    test_checked_arith(i16::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(i16::checked_div, "checked_div", NumericStrategy::div_signed_checked());
 }
 
 #[test]
 fn checked_div_i32() {
-    test_checked_arith(i32::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(i32::checked_div, "checked_div", NumericStrategy::div_signed_checked());
 }
 
 #[test]
 fn checked_div_i64() {
-    test_checked_arith(i64::checked_div, "checked_div", NumericStrategy::full_range());
+    test_checked_arith(i64::checked_div, "checked_div", NumericStrategy::div_signed_checked());
 }
 
 #[test]
 fn checked_rem_u8() {
-    test_checked_arith(u8::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(u8::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
 }
 
 #[test]
 fn checked_rem_u16() {
-    test_checked_arith(u16::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(u16::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
 }
 
 #[test]
 fn checked_rem_u32() {
-    test_checked_arith(u32::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(u32::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
 }
 
 #[test]
 fn checked_rem_u64() {
-    test_checked_arith(u64::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(u64::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
 }
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
 fn checked_rem_i8() {
-    test_checked_arith(i8::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(i8::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
 fn checked_rem_i16() {
-    test_checked_arith(i16::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(i16::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
 
 #[test]
 #[ignore = "Mod is not supported for signed int"]
 fn checked_rem_i32() {
-    test_checked_arith(i32::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(i32::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
 
 #[test]
 #[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
 fn checked_rem_i64() {
-    test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::full_range());
+    test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
 
 struct NumericStrategy<T> {
@@ -865,48 +882,479 @@ struct NumericStrategy<T> {
 
 impl<T> NumericStrategy<T>
 where
-    T: PrimInt + Arbitrary,
+    T: PrimInt + Arbitrary + 'static,
     std::ops::RangeInclusive<T>: Strategy<Value = T>,
 {
-    fn full_range() -> impl Strategy<Value = (T, T)> {
-        (any::<T>(), any::<T>())
-    }
-
-    /// Returns a strategy with unrestricted lhs and non-zero rhs.
-    fn non_zero_rhs_unsigned() -> impl Strategy<Value = (T, T)>
+    fn add_unsigned() -> impl Strategy<Value = (T, T)>
     where
         T: Unsigned,
     {
-        (any::<T>(), T::one()..=T::max_value())
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.half, v.half)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.half_plus_one, v.half_plus_one)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.three, v.three)),
+        ]
     }
 
-    /// Returns a strategy with unrestricted lhs and non-zero rhs.
-    fn non_zero_rhs_signed() -> impl Strategy<Value = (T, T)>
+    fn add_signed() -> impl Strategy<Value = (T, T)>
     where
         T: num_traits::Signed,
     {
-        (any::<T>(), prop_oneof![T::min_value()..=-T::one(), T::one()..=T::max_value(),])
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((v.min, v.min)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+        ]
     }
 
-    /// Returns a strategy with tuples such that `a * b = T::min_value`.
-    ///
-    /// A product with that result can hit edge cases in compiler intrinsics. A strategy covering
-    /// the full range of `T` does not necessarily produce `a * b = T::min_value`.
-    ///
-    /// Whether the Rust code in a test hits a particular intrinsic depends on the compilation
-    /// pipeline. For example, at the time of writing, Rust's `i32::overflowing_mul` does *not*
-    /// lower to the `i32::overflowing_mul` intrinsic. Despite that, using this strategy has helped
-    /// to uncover issues.
-    fn signed_mul_min() -> impl Strategy<Value = (T, T)>
+    fn sub_unsigned() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.half, v.half)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.one, v.one)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.two, v.max)),
+        ]
+    }
+
+    fn sub_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, v.max)),
+            1 => Just((v.max, v.min)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.min, v.min)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.max)),
+        ]
+    }
+
+    fn mul_unsigned() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.two, v.half)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.half_plus_one)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.one)),
+            1 => Just((v.two, v.two)),
+            1 => Just((v.three, v.three)),
+            1 => Just((v.half, v.half)),
+            1 => Just((v.sqrt_max, v.sqrt_max)),
+            1 => Just((v.sqrt_max, v.sqrt_max_plus_one)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max_plus_one)),
+            1 => Just((v.max_div_three, v.three)),
+            1 => Just((v.three, v.max_div_three)),
+            1 => Just((v.max_div_three_plus_one, v.three)),
+            1 => Just((v.three, v.max_div_three_plus_one)),
+            1 => Just((v.max_div_four, v.four)),
+            1 => Just((v.four, v.max_div_four)),
+            1 => Just((v.max_div_four_plus_one, v.four)),
+            1 => Just((v.four, v.max_div_four_plus_one)),
+        ]
+    }
+
+    fn mul_signed() -> impl Strategy<Value = (T, T)>
     where
         T: num_traits::Signed + 'static,
     {
-        let two = T::one() + T::one();
-        let four = two + two;
-        let eight = four + four;
-        let min = T::min_value();
-        prop::sample::select(vec![(min / two, two), (min / four, four), (min / eight, eight)])
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let neg_two = v.zero - v.two;
+        let neg_three = v.zero - v.three;
+        let neg_four = v.zero - v.four;
+        let neg_sqrt_max = v.zero - v.sqrt_max;
+        let neg_sqrt_max_plus_one = v.zero - v.sqrt_max_plus_one;
+        let neg_max_div_two = v.zero - v.half;
+        let neg_max_div_two_plus_one = v.zero - v.half_plus_one;
+        let neg_max_div_three = v.zero - v.max_div_three;
+        let neg_max_div_three_plus_one = v.zero - v.max_div_three_plus_one;
+        let neg_max_div_four = v.zero - v.max_div_four;
+        let neg_max_div_four_plus_one = v.zero - v.max_div_four_plus_one;
+        let min_div_two = v.min / v.two;
+        let min_div_two_minus_one = min_div_two - v.one;
+        let min_div_three = v.min / v.three;
+        let min_div_three_minus_one = min_div_three - v.one;
+        let min_div_four = v.min / v.four;
+        let min_div_four_minus_one = min_div_four - v.one;
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.two, v.half)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.half_plus_one)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.one, v.min)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.one)),
+            1 => Just((v.two, v.two)),
+            1 => Just((v.three, v.three)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+            1 => Just((v.sqrt_max, v.sqrt_max)),
+            1 => Just((v.sqrt_max, v.sqrt_max_plus_one)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max_plus_one)),
+            1 => Just((neg_sqrt_max, neg_sqrt_max)),
+            1 => Just((neg_sqrt_max, neg_sqrt_max_plus_one)),
+            1 => Just((neg_sqrt_max_plus_one, neg_sqrt_max)),
+            1 => Just((neg_sqrt_max_plus_one, neg_sqrt_max_plus_one)),
+            1 => Just((v.max_div_three, v.three)),
+            1 => Just((v.three, v.max_div_three)),
+            1 => Just((v.max_div_three_plus_one, v.three)),
+            1 => Just((v.three, v.max_div_three_plus_one)),
+            1 => Just((v.max_div_four, v.four)),
+            1 => Just((v.four, v.max_div_four)),
+            1 => Just((v.max_div_four_plus_one, v.four)),
+            1 => Just((v.four, v.max_div_four_plus_one)),
+            1 => Just((neg_max_div_two, neg_two)),
+            1 => Just((neg_two, neg_max_div_two)),
+            1 => Just((neg_max_div_two_plus_one, neg_two)),
+            1 => Just((neg_two, neg_max_div_two_plus_one)),
+            1 => Just((neg_max_div_three, neg_three)),
+            1 => Just((neg_three, neg_max_div_three)),
+            1 => Just((neg_max_div_three_plus_one, neg_three)),
+            1 => Just((neg_three, neg_max_div_three_plus_one)),
+            1 => Just((neg_max_div_four, neg_four)),
+            1 => Just((neg_four, neg_max_div_four)),
+            1 => Just((neg_max_div_four_plus_one, neg_four)),
+            1 => Just((neg_four, neg_max_div_four_plus_one)),
+            1 => Just((min_div_two, v.two)),
+            1 => Just((v.two, min_div_two)),
+            1 => Just((min_div_two_minus_one, v.two)),
+            1 => Just((v.two, min_div_two_minus_one)),
+            1 => Just((min_div_three, v.three)),
+            1 => Just((v.three, min_div_three)),
+            1 => Just((min_div_three_minus_one, v.three)),
+            1 => Just((v.three, min_div_three_minus_one)),
+            1 => Just((min_div_four, v.four)),
+            1 => Just((v.four, min_div_four)),
+            1 => Just((min_div_four_minus_one, v.four)),
+            1 => Just((v.four, min_div_four_minus_one)),
+        ]
     }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    fn div_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+        ]
+    }
+
+    fn div_unsigned_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.three, v.max)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    fn div_signed_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.zero)),
+        ]
+    }
+
+    fn div_signed_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            75 => (any::<T>(), v.min..=neg_one),
+            75 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((neg_one, v.max)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    fn rem_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+        ]
+    }
+
+    fn rem_unsigned_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.max)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    fn rem_signed_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.zero)),
+        ]
+    }
+
+    fn rem_signed_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            75 => (any::<T>(), v.min..=neg_one),
+            75 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((neg_one, v.max)),
+        ]
+    }
+}
+
+/// Common values frequently used in [`NumericStrategy`].
+struct NumericStrategyValues<T: PrimInt> {
+    zero: T,
+    one: T,
+    two: T,
+    three: T,
+    four: T,
+    half: T,
+    half_plus_one: T,
+    sqrt_max: T,
+    sqrt_max_plus_one: T,
+    max_div_three: T,
+    max_div_three_plus_one: T,
+    max_div_four: T,
+    max_div_four_plus_one: T,
+    max: T,
+    min: T,
+    /// Only signed types can have negative values.
+    neg_one: Option<T>,
+}
+
+impl<T: PrimInt> NumericStrategyValues<T> {
+    fn new() -> Self {
+        let two = T::one() + T::one();
+        let three = two + T::one();
+        let four = two + two;
+        let max = T::max_value();
+        let sqrt_max = integer_sqrt(max);
+        let is_signed = T::min_value() < T::zero();
+        Self {
+            zero: T::zero(),
+            one: T::one(),
+            two,
+            three,
+            four,
+            max,
+            min: T::min_value(),
+            half: max / two,
+            half_plus_one: max / two + T::one(),
+            sqrt_max,
+            sqrt_max_plus_one: sqrt_max + T::one(),
+            max_div_three: max / three,
+            max_div_three_plus_one: max / three + T::one(),
+            max_div_four: max / four,
+            max_div_four_plus_one: max / four + T::one(),
+            neg_one: is_signed.then(|| T::zero() - T::one()),
+        }
+    }
+}
+
+fn integer_sqrt<T: PrimInt>(n: T) -> T {
+    let zero = T::zero();
+    let one = T::one();
+    let two = one + one;
+    let mut low = one;
+    let mut high = n;
+    let mut result = zero;
+
+    while low <= high {
+        let mid = low + (high - low) / two;
+        if mid <= n / mid {
+            result = mid;
+            low = mid + one;
+        } else {
+            high = mid - one;
+        }
+    }
+
+    result
 }
 
 fn test_overflowing_arith<T>(
