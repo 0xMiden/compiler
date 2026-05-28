@@ -8,7 +8,7 @@ use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
 };
 use proptest::{
-    prelude::{Strategy, any},
+    prelude::{Arbitrary, Strategy, any},
     prop_assert_eq,
     test_runner::{TestCaseError, TestError, TestRunner},
 };
@@ -40,7 +40,9 @@ pub fn random_word_aligned_addr() -> impl Strategy<Value = u32> {
 }
 
 /// Enables test helpers generic over 128 bit integer types.
-pub trait QuadwordIO: FromMidenRepr + PartialEq + Clone + std::fmt::Debug {
+pub trait QuadwordIO:
+    FromMidenRepr + PartialEq + Clone + Copy + std::fmt::Display + std::fmt::Debug
+{
     fn hir_type() -> Type;
     fn from_le_bytes(bytes: [u8; 16]) -> Self;
     fn to_le_bytes(&self) -> [u8; 16];
