@@ -5,8 +5,12 @@ use smallvec::SmallVec;
 use super::{
     ConversionPattern, ConversionPatternRewriter, ConversionPatternSet, ConversionTarget,
     ConvertedOperands, FrozenConversionPatternSet, Legality, LegalizationGraph, TrackedMutations,
+    TypeConverter,
 };
-use crate::{OperationName, OperationRef, Report, ValueRef, WalkResult};
+use crate::{
+    OperationName, OperationRef, Report, Spanned, ValueRef, WalkResult,
+    dialects::builtin::UnrealizedConversionCast,
+};
 
 /// Dialect conversion mode.
 ///
@@ -23,6 +27,7 @@ pub enum ConversionMode {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ConversionConfig {
     mode: ConversionMode,
+    reconcile_unrealized_casts: bool,
     verify_after_conversion: bool,
     max_iterations: usize,
 }
@@ -36,6 +41,11 @@ impl ConversionConfig {
     #[inline]
     pub const fn verify_after_conversion(&self) -> bool {
         self.verify_after_conversion
+    }
+
+    #[inline]
+    pub const fn reconcile_unrealized_casts(&self) -> bool {
+        self.reconcile_unrealized_casts
     }
 
     #[inline]
@@ -53,6 +63,11 @@ impl ConversionConfig {
         self
     }
 
+    pub fn with_reconcile_unrealized_casts(&mut self, yes: bool) -> &mut Self {
+        self.reconcile_unrealized_casts = yes;
+        self
+    }
+
     pub fn with_max_iterations(&mut self, max_iterations: usize) -> &mut Self {
         self.max_iterations = max_iterations;
         self
@@ -63,6 +78,7 @@ impl Default for ConversionConfig {
     fn default() -> Self {
         Self {
             mode: ConversionMode::Full,
+            reconcile_unrealized_casts: true,
             verify_after_conversion: true,
             max_iterations: 1024,
         }
@@ -138,6 +154,11 @@ impl FullConversionDriver<'_> {
             }
         }
 
+        if self.config.reconcile_unrealized_casts() {
+            self.result.changed |= self.reconcile_unrealized_conversion_casts()?;
+        }
+        self.verify_full_conversion_legality()?;
+
         if self.config.verify_after_conversion() {
             self.root.borrow().recursively_verify()?;
         }
@@ -162,6 +183,9 @@ impl FullConversionDriver<'_> {
     }
 
     fn legalize_operation(&mut self, op: OperationRef) -> Result<(), Report> {
+        if self.config.reconcile_unrealized_casts() && is_unrealized_conversion_cast(op) {
+            return Ok(());
+        }
         if self.target.is_recursively_legal(&op.borrow()) || self.target.is_legal(&op.borrow()) {
             return Ok(());
         }
@@ -178,20 +202,25 @@ impl FullConversionDriver<'_> {
 
         let mut match_failures = vec![];
         for pattern in candidates {
-            let operand_groups = converted_operands_for(op);
-            let operands = ConvertedOperands::new(&operand_groups);
-            let mut rewriter = ConversionPatternRewriter::new(Rc::clone(&self.context));
+            let type_converter = pattern.type_converter().cloned();
+            let mut rewriter = ConversionPatternRewriter::new_with_type_converter(
+                Rc::clone(&self.context),
+                type_converter.clone(),
+            );
             if op.parent().is_some() {
                 rewriter.set_insertion_point_before(op);
             }
 
+            let operand_groups =
+                converted_operands_for(op, type_converter.as_ref(), &mut rewriter)?;
+            let mutation_count_before_pattern = rewriter.mutation_count();
+            let operands = ConvertedOperands::new(&operand_groups);
             let applied = pattern.match_and_rewrite(op, operands, &mut rewriter);
             let mutation_count = rewriter.mutation_count();
-            let mutations = rewriter.take_tracked_mutations();
 
             match applied {
                 Err(err) => {
-                    if mutations.has_mutations() {
+                    if mutation_count > mutation_count_before_pattern {
                         return Err(pattern_mutated_then_failed_error(
                             pattern.as_ref(),
                             op,
@@ -199,22 +228,25 @@ impl FullConversionDriver<'_> {
                             err,
                         ));
                     }
+                    rewriter.erase_unused_materializations()?;
                     return Err(err);
                 }
                 Ok(false) => {
-                    if mutations.has_mutations() {
+                    if mutation_count > mutation_count_before_pattern {
                         return Err(pattern_mutated_without_success_error(
                             pattern.as_ref(),
                             op,
                             mutation_count,
                         ));
                     }
+                    rewriter.erase_unused_materializations()?;
                     collect_match_failures(&mut match_failures, &mut rewriter);
                 }
                 Ok(true) => {
-                    if !mutations.has_mutations() {
+                    if mutation_count == mutation_count_before_pattern {
                         return Err(pattern_succeeded_without_mutation_error(pattern.as_ref(), op));
                     }
+                    let mutations = rewriter.take_tracked_mutations();
                     self.note_pattern_application(pattern.as_ref())?;
                     self.validate_generated_ops(pattern.as_ref(), &mutations)?;
                     self.result.changed = true;
@@ -260,6 +292,9 @@ impl FullConversionDriver<'_> {
         mutations: &TrackedMutations,
     ) -> Result<(), Report> {
         for op in mutations.inserted_ops() {
+            if mutations.materialized_ops().iter().any(|materialized| materialized == op) {
+                continue;
+            }
             let name = op.borrow().name();
             if !pattern.generated_ops().iter().any(|generated| generated == &name) {
                 return Err(Report::msg(format!(
@@ -276,10 +311,105 @@ impl FullConversionDriver<'_> {
     fn legalize_tracked_ops(&mut self, mutations: &TrackedMutations) -> Result<(), Report> {
         for op in mutations.inserted_ops().iter().chain(mutations.modified_ops().iter()).copied() {
             if self.is_live(op) {
+                if self.config.reconcile_unrealized_casts() && is_unrealized_conversion_cast(op) {
+                    continue;
+                }
                 self.legalize_operation(op)?;
             }
         }
         Ok(())
+    }
+
+    fn reconcile_unrealized_conversion_casts(&mut self) -> Result<bool, Report> {
+        let mut reconciled = false;
+        loop {
+            let mut changed = false;
+            let casts = self.collect_unrealized_conversion_casts()?;
+            if casts.is_empty() {
+                return Ok(reconciled);
+            }
+
+            let mut rewriter = ConversionPatternRewriter::new(Rc::clone(&self.context));
+            for cast in casts {
+                if !self.is_live(cast) {
+                    continue;
+                }
+                if !cast.borrow().is_used() {
+                    rewriter.erase_op(cast)?;
+                    reconciled = true;
+                    changed = true;
+                    continue;
+                }
+
+                let Some((input, result)) = unrealized_conversion_cast_values(cast) else {
+                    continue;
+                };
+                let input_ty = input.borrow().ty().clone();
+                let result_ty = result.borrow().ty().clone();
+                if input_ty == result_ty {
+                    rewriter.replace_op(cast, &[input])?;
+                    reconciled = true;
+                    changed = true;
+                    continue;
+                }
+
+                let Some(previous_cast) = input
+                    .borrow()
+                    .get_defining_op()
+                    .filter(|op| is_unrealized_conversion_cast(*op))
+                else {
+                    continue;
+                };
+                let Some((previous_input, _)) = unrealized_conversion_cast_values(previous_cast)
+                else {
+                    continue;
+                };
+                if *previous_input.borrow().ty() == result_ty {
+                    rewriter.replace_op(cast, &[previous_input])?;
+                    if self.is_live(previous_cast) && !previous_cast.borrow().is_used() {
+                        rewriter.erase_op(previous_cast)?;
+                    }
+                    reconciled = true;
+                    changed = true;
+                }
+            }
+
+            if !changed {
+                return Ok(reconciled);
+            }
+        }
+    }
+
+    fn collect_unrealized_conversion_casts(&self) -> Result<Vec<OperationRef>, Report> {
+        let mut casts = vec![];
+        self.root
+            .borrow()
+            .prewalk(|op| {
+                if is_unrealized_conversion_cast(op.as_operation_ref()) {
+                    casts.push(op.as_operation_ref());
+                }
+                WalkResult::<Report>::Continue(())
+            })
+            .into_result()?;
+        Ok(casts)
+    }
+
+    fn verify_full_conversion_legality(&self) -> Result<(), Report> {
+        self.root
+            .borrow()
+            .prewalk(|op| {
+                if self.target.is_recursively_legal(op) {
+                    return WalkResult::<Report>::Skip;
+                }
+
+                if self.target.is_legal(op) {
+                    WalkResult::<Report>::Continue(())
+                } else {
+                    let op_ref = op.as_operation_ref();
+                    WalkResult::Break(self.no_legalization_path_error(op_ref))
+                }
+            })
+            .into_result()
     }
 
     fn no_legalization_path_error(&self, op: OperationRef) -> Report {
@@ -303,12 +433,46 @@ impl FullConversionDriver<'_> {
     }
 }
 
-fn converted_operands_for(op: OperationRef) -> Vec<SmallVec<[ValueRef; 2]>> {
-    op.borrow()
-        .operands()
-        .groups()
-        .map(|group| group.iter().map(|operand| operand.borrow().as_value_ref()).collect())
-        .collect()
+fn converted_operands_for(
+    op: OperationRef,
+    type_converter: Option<&TypeConverter>,
+    rewriter: &mut ConversionPatternRewriter,
+) -> Result<Vec<SmallVec<[ValueRef; 2]>>, Report> {
+    let (span, operand_groups) = {
+        let op = op.borrow();
+        let span = op.span();
+        let operand_groups = op
+            .operands()
+            .groups()
+            .map(|group| {
+                group
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<SmallVec<[ValueRef; 2]>>()
+            })
+            .collect::<Vec<_>>();
+        (span, operand_groups)
+    };
+
+    let mut converted = vec![];
+    for group in operand_groups {
+        let mut converted_group = SmallVec::<[ValueRef; 2]>::new();
+        for value in group {
+            let Some(type_converter) = type_converter else {
+                converted_group.push(value);
+                continue;
+            };
+            let converted_ty = type_converter.convert_value_1_to_1(value)?;
+            converted_group.push(type_converter.materialize_target_conversion(
+                rewriter,
+                value,
+                converted_ty,
+                span,
+            )?);
+        }
+        converted.push(converted_group);
+    }
+    Ok(converted)
 }
 
 fn collect_match_failures(failures: &mut Vec<String>, rewriter: &mut ConversionPatternRewriter) {
@@ -318,6 +482,16 @@ fn collect_match_failures(failures: &mut Vec<String>, rewriter: &mut ConversionP
             .into_iter()
             .map(|failure| format!("{}: {}", failure.op().borrow().name(), failure.reason())),
     );
+}
+
+fn is_unrealized_conversion_cast(op: OperationRef) -> bool {
+    op.try_downcast_op::<UnrealizedConversionCast>().is_ok()
+}
+
+fn unrealized_conversion_cast_values(op: OperationRef) -> Option<(ValueRef, ValueRef)> {
+    let cast = op.try_downcast_op::<UnrealizedConversionCast>().ok()?;
+    let cast = cast.borrow();
+    Some((cast.operand().as_value_ref(), cast.result().as_value_ref()))
 }
 
 fn legality_failure_reason(target: &ConversionTarget, op: &crate::Operation) -> Option<String> {
@@ -399,9 +573,12 @@ mod tests {
     use crate::{
         Context, Immediate, Op, OperationRef, Overflow, Report, SourceSpan, Spanned, Type,
         ValueRef,
-        conversion::{ConvertedOperands, DynamicLegalityResult, UnknownOpPolicy},
+        conversion::{
+            ConvertedOperands, DynamicLegalityResult, TypeConversion, TypeConverter,
+            UnknownOpPolicy,
+        },
         dialects::{
-            builtin::BuiltinOpBuilder,
+            builtin::{BuiltinOpBuilder, UnrealizedConversionCast},
             test::{Add, Constant, Mul, Shl, TestDialect, TestOpBuilder},
         },
         patterns::{Pattern, PatternBenefit, PatternInfo, PatternKind},
@@ -441,6 +618,54 @@ mod tests {
         ) -> Result<bool, Report> {
             let Some((span, lhs, rhs)) = add_parts(op, operands) else {
                 rewriter.notify_match_failure(op, Report::msg("expected test.add"));
+                return Ok(false);
+            };
+
+            rewriter.replace_op_with_new_op::<Mul, _>(op, span, (lhs, rhs, Overflow::Checked))?;
+            Ok(true)
+        }
+    }
+
+    struct AddToMulWithTypeConversion {
+        info: PatternInfo,
+        type_converter: TypeConverter,
+    }
+
+    impl AddToMulWithTypeConversion {
+        fn new(context: Rc<Context>, type_converter: TypeConverter) -> Self {
+            let dialect = context.get_or_register_dialect::<TestDialect>();
+            let mut info = PatternInfo::new(
+                context,
+                "add-to-mul-with-type-conversion",
+                PatternKind::Operation(dialect.expect_registered_name::<Add>()),
+                PatternBenefit::new(1),
+            );
+            info.with_generated_ops([dialect.expect_registered_name::<Mul>()]);
+            Self {
+                info,
+                type_converter,
+            }
+        }
+    }
+
+    impl Pattern for AddToMulWithTypeConversion {
+        fn info(&self) -> &PatternInfo {
+            &self.info
+        }
+    }
+
+    impl ConversionPattern for AddToMulWithTypeConversion {
+        fn type_converter(&self) -> Option<&TypeConverter> {
+            Some(&self.type_converter)
+        }
+
+        fn match_and_rewrite(
+            &self,
+            op: OperationRef,
+            operands: ConvertedOperands<'_>,
+            rewriter: &mut ConversionPatternRewriter,
+        ) -> Result<bool, Report> {
+            let Some((span, lhs, rhs)) = add_parts(op, operands) else {
                 return Ok(false);
             };
 
@@ -669,6 +894,37 @@ mod tests {
         target
     }
 
+    fn u32_to_i32_converter() -> TypeConverter {
+        let mut converter = TypeConverter::new();
+        converter.add_conversion(|ty| {
+            if ty == &Type::U32 {
+                Some(TypeConversion::One(Type::I32))
+            } else {
+                None
+            }
+        });
+        converter
+    }
+
+    fn cast_chain_function(name: &'static str, middle: Type, result: Type) -> Test {
+        let mut test = Test::new(name, &[Type::U32], core::slice::from_ref(&result));
+        {
+            let mut builder = test.function_builder();
+            let block = builder.current_block();
+            let arg = block.borrow().arguments()[0] as ValueRef;
+            let first = builder
+                .builder_mut()
+                .unrealized_conversion_cast(arg, middle, SourceSpan::default())
+                .unwrap();
+            let second = builder
+                .builder_mut()
+                .unrealized_conversion_cast(first, result, SourceSpan::default())
+                .unwrap();
+            builder.ret(Some(second), SourceSpan::default()).unwrap();
+        }
+        test
+    }
+
     #[test]
     fn full_conversion_rewrites_illegal_op_to_legal_op() {
         let test = add_function("full_conversion_rewrites_illegal_op_to_legal_op");
@@ -763,6 +1019,110 @@ builtin.function public extern(\"C\") @full_conversion_rewrites_illegal_op_to_le
         let output = test.function().borrow().as_operation().to_string();
         assert!(output.contains("test.mul"));
         assert!(!output.contains("test.add"));
+    }
+
+    #[test]
+    fn full_conversion_materializes_1_to_1_type_conversions() {
+        let test = add_function("full_conversion_materializes_1_to_1_type_conversions");
+        let target = target_with_test_ops(test.context_rc(), |target| {
+            target.add_legal_op::<Mul>().add_legal_op::<UnrealizedConversionCast>();
+        });
+        let mut patterns = ConversionPatternSet::new(test.context_rc());
+        patterns.push(AddToMulWithTypeConversion::new(test.context_rc(), u32_to_i32_converter()));
+
+        let result = apply_full_conversion(
+            test.function().as_operation_ref(),
+            target,
+            patterns,
+            ConversionConfig::default(),
+        )
+        .unwrap();
+
+        assert_eq!(result.converted_ops(), 1);
+        let output = test.function().borrow().as_operation().to_string();
+        assert!(output.contains("builtin.unrealized_conversion_cast"));
+        assert!(output.contains("#builtin.type<i32>"));
+        assert!(output.contains("#builtin.type<u32>"));
+        assert!(output.contains("test.mul"));
+        assert!(!output.contains("test.add"));
+    }
+
+    #[test]
+    fn full_conversion_rejects_non_1_to_1_operand_materialization() {
+        let test = add_function("full_conversion_rejects_non_1_to_1_operand_materialization");
+        let target = target_with_test_ops(test.context_rc(), |target| {
+            target.add_legal_op::<Mul>();
+        });
+        let mut converter = TypeConverter::new();
+        converter.add_conversion(|ty| {
+            if ty == &Type::U32 {
+                Some(TypeConversion::Many(smallvec::smallvec![Type::I32, Type::I32]))
+            } else {
+                None
+            }
+        });
+        let mut patterns = ConversionPatternSet::new(test.context_rc());
+        patterns.push(AddToMulWithTypeConversion::new(test.context_rc(), converter));
+
+        let err = apply_full_conversion(
+            test.function().as_operation_ref(),
+            target,
+            patterns,
+            ConversionConfig::default(),
+        )
+        .unwrap_err();
+
+        assert!(format!("{err}").contains("1:1"));
+    }
+
+    #[test]
+    fn full_conversion_reconciles_identity_unrealized_casts() {
+        let test = cast_chain_function(
+            "full_conversion_reconciles_identity_unrealized_casts",
+            Type::U32,
+            Type::U32,
+        );
+        let mut target = ConversionTarget::new(test.context_rc());
+        target
+            .set_unknown_op_policy(UnknownOpPolicy::Legal)
+            .add_illegal_op::<UnrealizedConversionCast>();
+
+        let result = apply_full_conversion(
+            test.function().as_operation_ref(),
+            target,
+            ConversionPatternSet::new(test.context_rc()),
+            ConversionConfig::default(),
+        )
+        .unwrap();
+
+        assert!(result.changed());
+        let output = test.function().borrow().as_operation().to_string();
+        assert!(!output.contains("builtin.unrealized_conversion_cast"));
+    }
+
+    #[test]
+    fn full_conversion_reconciles_reversible_unrealized_cast_chains() {
+        let test = cast_chain_function(
+            "full_conversion_reconciles_reversible_unrealized_cast_chains",
+            Type::I32,
+            Type::U32,
+        );
+        let mut target = ConversionTarget::new(test.context_rc());
+        target
+            .set_unknown_op_policy(UnknownOpPolicy::Legal)
+            .add_illegal_op::<UnrealizedConversionCast>();
+
+        let result = apply_full_conversion(
+            test.function().as_operation_ref(),
+            target,
+            ConversionPatternSet::new(test.context_rc()),
+            ConversionConfig::default(),
+        )
+        .unwrap();
+
+        assert!(result.changed());
+        let output = test.function().borrow().as_operation().to_string();
+        assert!(!output.contains("builtin.unrealized_conversion_cast"));
     }
 
     #[test]

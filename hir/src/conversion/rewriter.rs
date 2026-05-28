@@ -1,11 +1,12 @@
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{format, rc::Rc, vec::Vec};
 use core::cell::RefCell;
 
 use smallvec::SmallVec;
 
+use super::TypeConverter;
 use crate::{
     BlockRef, BuildableOp, Builder, BuilderExt, Context, Listener, ListenerType, OperationRef,
-    ProgramPoint, RegionRef, Report, SourceSpan, UnsafeIntrusiveEntityRef, ValueRef,
+    ProgramPoint, RegionRef, Report, SourceSpan, Spanned, Type, UnsafeIntrusiveEntityRef, ValueRef,
     patterns::{PatternRewriter, Rewriter, RewriterListener},
 };
 
@@ -34,6 +35,7 @@ pub struct TrackedMutations {
     modified_ops: Vec<OperationRef>,
     replaced_ops: Vec<OperationRef>,
     erased_ops: Vec<OperationRef>,
+    materialized_ops: Vec<OperationRef>,
     block_mutations: usize,
     mutation_count: usize,
 }
@@ -57,6 +59,11 @@ impl TrackedMutations {
     #[inline]
     pub fn erased_ops(&self) -> &[OperationRef] {
         &self.erased_ops
+    }
+
+    #[inline]
+    pub fn materialized_ops(&self) -> &[OperationRef] {
+        &self.materialized_ops
     }
 
     #[inline]
@@ -116,6 +123,11 @@ impl ConversionTrackingListener {
         let mut mutations = self.mutations.borrow_mut();
         push_unique(&mut mutations.erased_ops, op);
         mutations.mutation_count += 1;
+    }
+
+    fn record_materialized_op(&self, op: OperationRef) {
+        let mut mutations = self.mutations.borrow_mut();
+        push_unique(&mut mutations.materialized_ops, op);
     }
 
     fn record_block_mutation(&self) {
@@ -180,17 +192,27 @@ fn push_unique(ops: &mut Vec<OperationRef>, op: OperationRef) {
 pub struct ConversionPatternRewriter {
     inner: PatternRewriter<Rc<ConversionTrackingListener>>,
     tracking: Rc<ConversionTrackingListener>,
+    type_converter: Option<TypeConverter>,
     match_failures: Vec<MatchFailure>,
 }
 
 impl ConversionPatternRewriter {
     #[inline]
     pub fn new(context: Rc<Context>) -> Self {
+        Self::new_with_type_converter(context, None)
+    }
+
+    #[inline]
+    pub fn new_with_type_converter(
+        context: Rc<Context>,
+        type_converter: Option<TypeConverter>,
+    ) -> Self {
         let tracking = Rc::new(ConversionTrackingListener::new());
         let inner = PatternRewriter::new_with_listener(context, Rc::clone(&tracking));
         Self {
             inner,
             tracking,
+            type_converter,
             match_failures: Vec::new(),
         }
     }
@@ -221,6 +243,23 @@ impl ConversionPatternRewriter {
         core::ops::FnOnce::call_once(builder, args)
     }
 
+    /// Mark `op` as a framework-owned materialization operation.
+    #[inline]
+    pub fn mark_materialization_op(&mut self, op: OperationRef) {
+        self.tracking.record_materialized_op(op);
+    }
+
+    /// Erase framework materializations that are still unused.
+    pub fn erase_unused_materializations(&mut self) -> Result<(), Report> {
+        let materialized_ops = self.tracking.mutations.borrow().materialized_ops.clone();
+        for op in materialized_ops.into_iter().rev() {
+            if op.parent().is_some() && !op.borrow().is_used() {
+                self.inner.erase_op(op);
+            }
+        }
+        Ok(())
+    }
+
     /// Replace `op` with the provided same-type replacement values.
     pub fn replace_op(
         &mut self,
@@ -231,6 +270,7 @@ impl ConversionPatternRewriter {
             return Err(Report::msg("replacement value count does not match operation results"));
         }
 
+        let replacement_values = self.materialize_source_replacements(op, replacement_values)?;
         let values = replacement_values
             .iter()
             .copied()
@@ -253,7 +293,14 @@ impl ConversionPatternRewriter {
     {
         self.set_insertion_point_before(op);
         let replacement = self.create_op::<T, Args>(span, args)?;
-        self.inner.replace_op(op, replacement.as_operation_ref());
+        let replacement_values = replacement
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|result| result.borrow().as_value_ref())
+            .collect::<SmallVec<[ValueRef; 2]>>();
+        self.replace_op(op, &replacement_values)?;
         Ok(replacement)
     }
 
@@ -289,6 +336,62 @@ impl ConversionPatternRewriter {
 
     pub fn take_tracked_mutations(&mut self) -> TrackedMutations {
         self.tracking.take_mutations()
+    }
+
+    fn materialize_source_replacements(
+        &mut self,
+        op: OperationRef,
+        replacement_values: &[ValueRef],
+    ) -> Result<SmallVec<[ValueRef; 2]>, Report> {
+        let original_results = op
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|result| {
+                let value = result.borrow().as_value_ref();
+                let value_ref = value.borrow();
+                let ty = value_ref.ty().clone();
+                let is_used = value_ref.is_used();
+                drop(value_ref);
+                (value, ty, is_used)
+            })
+            .collect::<SmallVec<[(ValueRef, Type, bool); 2]>>();
+
+        let mut replacements = SmallVec::<[ValueRef; 2]>::new();
+        for ((original, original_ty, is_used), replacement) in
+            original_results.into_iter().zip(replacement_values.iter().copied())
+        {
+            let replacement_ty = replacement.borrow().ty().clone();
+            if replacement_ty == original_ty || !is_used {
+                replacements.push(replacement);
+                continue;
+            }
+
+            let Some(type_converter) = self.type_converter.clone() else {
+                return Err(Report::msg(
+                    "replacement value type does not match original result type and no type \
+                     converter is available",
+                ));
+            };
+            let expected_ty = type_converter.convert_value_1_to_1(original)?;
+            if expected_ty != replacement_ty {
+                return Err(Report::msg(format!(
+                    "replacement value type '{}' does not match converted result type '{}'",
+                    replacement_ty, expected_ty
+                )));
+            }
+
+            self.set_insertion_point_before(op);
+            replacements.push(type_converter.materialize_source_conversion(
+                self,
+                replacement,
+                original_ty,
+                op.borrow().span(),
+            )?);
+        }
+
+        Ok(replacements)
     }
 }
 
