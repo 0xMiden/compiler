@@ -353,6 +353,61 @@ match second {
     run_variant_case("two_felts", account_source, note_body);
 }
 
+/// Tests a variant with one unit case and one felt case.
+#[test]
+fn variant_with_unit_and_felt_payloads() {
+    let account_source = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{Felt, component, export_type, felt};
+
+/// Request variants with and without payloads.
+#[export_type]
+pub enum Request {
+    /// Carries no value.
+    Empty,
+    /// Carries a single felt value.
+    Value(Felt),
+}
+
+/// Response variants with and without payloads.
+#[export_type]
+pub enum Response {
+    /// Returns no value.
+    Empty,
+    /// Returns a single felt value.
+    Value(Felt),
+}
+
+#[component]
+struct CanonabiAccount;
+
+#[component]
+impl CanonabiAccount {
+    /// Transforms a unit or felt variant into the matching result variant.
+    pub fn roundtrip(&self, request: Request) -> Response {
+        match request {
+            Request::Empty => Response::Empty,
+            Request::Value(value) => Response::Value(value + felt!(5)),
+        }
+    }
+}
+"#;
+    let note_body = r#"let empty = roundtrip(Request::Empty);
+match empty {
+    Response::Empty => (),
+    _ => assert_eq!(felt!(0), felt!(1)),
+}
+
+let value = roundtrip(Request::Value(felt!(37)));
+match value {
+    Response::Value(value) => assert_eq!(value, felt!(42)),
+    _ => assert_eq!(felt!(0), felt!(1)),
+}"#;
+
+    run_variant_case("unit_felt", account_source, note_body);
+}
+
 /// Tests a variant with one felt case and one word case.
 #[test]
 fn variant_with_felt_and_word_payloads() {
@@ -417,6 +472,83 @@ match elements {
 }"#;
 
     run_variant_case("felt_word", account_source, note_body);
+}
+
+/// Tests a variant with felt, word, and unit cases.
+#[test]
+fn variant_with_felt_word_and_unit_cases() {
+    let account_source = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{Felt, Word, component, export_type, felt};
+
+/// Request variants carrying a scalar, a word, or no value.
+#[export_type]
+pub enum Request {
+    /// Carries a single felt value.
+    Scalar(Felt),
+    /// Carries a full word value.
+    Vector(Word),
+    /// Carries no value.
+    Empty,
+}
+
+/// Response variants carrying a scalar, a word, or no value.
+#[export_type]
+pub enum Response {
+    /// Returns a single felt value.
+    Scalar(Felt),
+    /// Returns a full word value.
+    Vector(Word),
+    /// Returns no value.
+    Empty,
+}
+
+#[component]
+struct CanonabiAccount;
+
+#[component]
+impl CanonabiAccount {
+    /// Transforms a scalar, word, or unit variant into the matching result variant.
+    pub fn roundtrip(&self, request: Request) -> Response {
+        match request {
+            Request::Scalar(value) => Response::Scalar(value + felt!(8)),
+            Request::Vector(word) => Response::Vector(Word::new([
+                word.a + felt!(2),
+                word.b + felt!(4),
+                word.c + felt!(6),
+                word.d + felt!(8),
+            ])),
+            Request::Empty => Response::Empty,
+        }
+    }
+}
+"#;
+    let note_body = r#"let scalar = roundtrip(Request::Scalar(felt!(13)));
+match scalar {
+    Response::Scalar(value) => assert_eq!(value, felt!(21)),
+    _ => assert_eq!(felt!(0), felt!(1)),
+}
+
+let word = Word::new([felt!(3), felt!(6), felt!(9), felt!(12)]);
+let vector = roundtrip(Request::Vector(word));
+match vector {
+    Response::Vector(value) => {
+        assert_eq!(value.a, felt!(5));
+        assert_eq!(value.b, felt!(10));
+        assert_eq!(value.c, felt!(15));
+        assert_eq!(value.d, felt!(20));
+    }
+    _ => assert_eq!(felt!(0), felt!(1)),
+}
+
+let empty = roundtrip(Request::Empty);
+match empty {
+    Response::Empty => (),
+    _ => assert_eq!(felt!(0), felt!(1)),
+}"#;
+
+    run_variant_case("felt_word_unit", account_source, note_body);
 }
 
 /// Tests a variant with one word case and one u64 case.
@@ -544,6 +676,178 @@ match wide {
 }"#;
 
     run_variant_case("u8_u64", account_source, note_body);
+}
+
+/// Tests variants whose record payloads have different flat shapes and field orders.
+#[test]
+fn variant_with_different_struct_payload_shapes() {
+    let account_source = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, export_type};
+
+/// Payload with a 64-bit field before a 32-bit field.
+#[derive(Clone, Copy, Debug)]
+#[export_type]
+pub struct PayloadA {
+    /// Wide field first.
+    pub x: u64,
+    /// Narrow field second.
+    pub y: u32,
+}
+
+/// Payload with a 32-bit field before a 64-bit field.
+#[derive(Clone, Copy, Debug)]
+#[export_type]
+pub struct PayloadB {
+    /// Narrow field first.
+    pub x: u32,
+    /// Wide field second.
+    pub y: u64,
+}
+
+/// Request variants carrying differently shaped records.
+#[export_type]
+pub enum Request {
+    /// Carries the first payload layout.
+    A(PayloadA),
+    /// Carries the second payload layout.
+    B(PayloadB),
+}
+
+/// Response variants carrying differently shaped records.
+#[export_type]
+pub enum Response {
+    /// Returns the first payload layout.
+    A(PayloadA),
+    /// Returns the second payload layout.
+    B(PayloadB),
+}
+
+#[component]
+struct CanonabiAccount;
+
+#[component]
+impl CanonabiAccount {
+    /// Transforms the active record payload using its own field layout.
+    pub fn roundtrip(&self, request: Request) -> Response {
+        match request {
+            Request::A(payload) => Response::A(PayloadA {
+                x: payload.x + 17,
+                y: payload.y + 19,
+            }),
+            Request::B(payload) => Response::B(PayloadB {
+                x: payload.x + 23,
+                y: payload.y + 29,
+            }),
+        }
+    }
+}
+"#;
+    let note_body = r#"let payload_a = PayloadA { x: 1_000, y: 70 };
+let result_a = roundtrip(Request::A(payload_a));
+match result_a {
+    Response::A(value) => {
+        if value.x != 1_017 { assert_eq!(felt!(0), felt!(1)); }
+        if value.y != 89 { assert_eq!(felt!(0), felt!(1)); }
+    }
+    _ => assert_eq!(felt!(0), felt!(1)),
+}
+
+let payload_b = PayloadB { x: 90, y: 2_000 };
+let result_b = roundtrip(Request::B(payload_b));
+match result_b {
+    Response::B(value) => {
+        if value.x != 113 { assert_eq!(felt!(0), felt!(1)); }
+        if value.y != 2_029 { assert_eq!(felt!(0), felt!(1)); }
+    }
+    _ => assert_eq!(felt!(0), felt!(1)),
+}"#;
+
+    run_variant_case("different_struct_shapes", account_source, note_body);
+}
+
+/// Tests nested variants used as outer variant payloads.
+#[test]
+fn variant_with_nested_variant_payloads() {
+    let account_source = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{Felt, Word, component, export_type, felt};
+
+/// Inner variants carried by the outer request and response variants.
+#[derive(Clone, Copy, Debug)]
+#[export_type]
+pub enum Inner {
+    /// Carries a single felt value.
+    One(Felt),
+    /// Carries a full word value.
+    Many(Word),
+}
+
+/// Request variants with either no payload or an inner variant payload.
+#[export_type]
+pub enum Request {
+    /// Carries no value.
+    None,
+    /// Carries a nested variant.
+    Some(Inner),
+}
+
+/// Response variants with either no payload or an inner variant payload.
+#[export_type]
+pub enum Response {
+    /// Returns no value.
+    None,
+    /// Returns a nested variant.
+    Some(Inner),
+}
+
+#[component]
+struct CanonabiAccount;
+
+#[component]
+impl CanonabiAccount {
+    /// Transforms a nested variant payload and returns it through the outer variant.
+    pub fn roundtrip(&self, request: Request) -> Response {
+        match request {
+            Request::None => Response::None,
+            Request::Some(Inner::One(value)) => Response::Some(Inner::One(value + felt!(9))),
+            Request::Some(Inner::Many(word)) => Response::Some(Inner::Many(Word::new([
+                word.a + felt!(3),
+                word.b + felt!(6),
+                word.c + felt!(9),
+                word.d + felt!(12),
+            ]))),
+        }
+    }
+}
+"#;
+    let note_body = r#"let none = roundtrip(Request::None);
+match none {
+    Response::None => (),
+    _ => assert_eq!(felt!(0), felt!(1)),
+}
+
+let one = roundtrip(Request::Some(Inner::One(felt!(24))));
+match one {
+    Response::Some(Inner::One(value)) => assert_eq!(value, felt!(33)),
+    _ => assert_eq!(felt!(0), felt!(1)),
+}
+
+let word = Word::new([felt!(2), felt!(4), felt!(6), felt!(8)]);
+let many = roundtrip(Request::Some(Inner::Many(word)));
+match many {
+    Response::Some(Inner::Many(value)) => {
+        assert_eq!(value.a, felt!(5));
+        assert_eq!(value.b, felt!(10));
+        assert_eq!(value.c, felt!(15));
+        assert_eq!(value.d, felt!(20));
+    }
+    _ => assert_eq!(felt!(0), felt!(1)),
+}"#;
+
+    run_variant_case("nested_variant", account_source, note_body);
 }
 
 /// Tests variants whose payloads are mixed-scalar records.

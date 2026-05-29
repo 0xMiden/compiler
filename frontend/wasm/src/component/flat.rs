@@ -527,6 +527,30 @@ mod tests {
     }
 
     #[test]
+    fn test_flatten_type_payload_enum_joins_record_field_orders() {
+        let context = Rc::new(Context::default());
+        let payload_a = Type::from(StructType::new([Type::U64, Type::U32]));
+        let payload_b = Type::from(StructType::new([Type::U32, Type::U64]));
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("a".into(), payload_a, Some(0)),
+                    Variant::new("b".into(), payload_b, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I64);
+        assert_eq!(result[2].ty, Type::I64);
+    }
+
+    #[test]
     fn test_flatten_type_payload_enum_joins_u8_and_u64() {
         let context = Rc::new(Context::default());
         let enum_ty = Type::Enum(Arc::new(
@@ -545,6 +569,32 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[1].ty, Type::I64);
+    }
+
+    #[test]
+    fn test_flatten_type_c_like_enum_discriminant_boundary() {
+        let context = Rc::new(Context::default());
+        let cases_255 = (0..255)
+            .map(|index| Variant::c_like(format!("case-{index}").into(), Some(index)))
+            .collect::<Vec<_>>();
+        let enum_255 =
+            Type::Enum(Arc::new(EnumType::new("enum255".into(), Type::U8, cases_255).unwrap()));
+
+        let result = flatten_type(&context, &enum_255).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
+
+        let cases_256 = (0..256)
+            .map(|index| Variant::c_like(format!("case-{index}").into(), Some(index)))
+            .collect::<Vec<_>>();
+        let enum_256 =
+            Type::Enum(Arc::new(EnumType::new("enum256".into(), Type::U16, cases_256).unwrap()));
+
+        let result = flatten_type(&context, &enum_256).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
     }
 
     #[test]

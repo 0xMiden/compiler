@@ -2254,3 +2254,83 @@ pub fn interface_type_to_ir(ty: &InterfaceType, component_types: &ComponentTypes
         InterfaceType::Borrow(_) => todo!(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::Context;
+    use wasmparser::Validator;
+
+    use super::*;
+    use crate::{
+        WasmTranslationConfig,
+        component::{ComponentItem, ComponentParser},
+        supported_component_model_features,
+    };
+
+    #[test]
+    fn variant_discriminant_size_boundary() {
+        let cases_255 = (0..255).map(|_| None::<&CanonicalAbiInfo>);
+        let (info_255, _) = VariantInfo::new(cases_255);
+        assert_eq!(info_255.size, DiscriminantSize::Size1);
+        assert_eq!(discriminant_size_to_ir(info_255.size), Type::U8);
+
+        let cases_256 = (0..256).map(|_| None::<&CanonicalAbiInfo>);
+        let (info_256, _) = VariantInfo::new(cases_256);
+        assert_eq!(info_256.size, DiscriminantSize::Size2);
+        assert_eq!(discriminant_size_to_ir(info_256.size), Type::U16);
+    }
+
+    #[test]
+    fn component_enum_type_lowers_to_hir_enum() {
+        let component = wat::parse_str(
+            r#"
+            (component
+                (type $color (enum "red" "green" "blue"))
+                (export "color" (type $color))
+            )
+            "#,
+        )
+        .expect("component wat should compile");
+        let context = Context::default();
+        let config = WasmTranslationConfig::default();
+        let mut validator = Validator::new_with_features(supported_component_model_features());
+        let mut types = ComponentTypesBuilder::default();
+        let parser = ComponentParser::new(&config, context.session(), &mut validator, &mut types);
+
+        let parsed = parser.parse(&component).expect("component should parse");
+        let color_id = parsed
+            .root_component
+            .exports
+            .get("color")
+            .and_then(|item| match item {
+                ComponentItem::Type(id) => Some(*id),
+                _ => None,
+            })
+            .expect("component should export the enum type");
+        let type_def = types
+            .convert_type(parsed.root_component.types_ref(), color_id)
+            .expect("component enum type should lower");
+        let component_types = types.finish();
+        let TypeDef::Interface(color_ty) = type_def else {
+            panic!("expected exported component enum type");
+        };
+
+        let InterfaceType::Enum(enum_idx) = color_ty else {
+            panic!("expected parsed WIT enum to produce InterfaceType::Enum");
+        };
+        let enum_ty = &component_types.enums[enum_idx];
+        assert_eq!(
+            enum_ty.names.iter().map(String::as_str).collect::<Vec<_>>(),
+            ["red", "green", "blue",]
+        );
+        assert_eq!(enum_ty.info.size, DiscriminantSize::Size1);
+
+        let ir_ty = interface_type_to_ir(&color_ty, &component_types);
+        let Type::Enum(ir_enum) = ir_ty else {
+            panic!("expected InterfaceType::Enum to lower to HIR EnumType");
+        };
+        assert!(ir_enum.is_c_like());
+        assert_eq!(ir_enum.discriminant(), &Type::U8);
+        assert_eq!(ir_enum.variants().len(), 3);
+    }
+}
