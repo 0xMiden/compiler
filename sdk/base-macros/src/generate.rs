@@ -1,4 +1,8 @@
-use std::{collections::HashMap, env, fs, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    env, fs,
+    path::PathBuf,
+};
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
@@ -12,7 +16,10 @@ use syn::{
 };
 use wit_bindgen_core::{
     WorldGenerator,
-    wit_parser::{PackageId, Resolve, UnresolvedPackageGroup},
+    wit_parser::{
+        Function, Handle, InterfaceId, PackageId, Resolve, Type as WitType, TypeDefKind, TypeId,
+        TypeOwner, UnresolvedPackageGroup, WorldId, WorldItem,
+    },
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
@@ -20,6 +27,8 @@ use crate::{fpi, manifest_paths};
 
 /// Name of the wrapper struct generated to aggregate imported interface methods.
 const WRAPPER_STRUCT_NAME: &str = "Account";
+/// Fully-qualified WIT interface path for Miden SDK core types.
+const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -220,7 +229,9 @@ fn generate_bindings_from_sources(
         ..Opts::default()
     };
     push_custom_with_entries(&mut opts, with_entries);
-    push_default_with_entries(&mut opts);
+    if world_uses_miden_core_types(&wit_sources.resolve, world_id) {
+        push_default_with_entries(&mut opts);
+    }
 
     let mut generated_files = wit_bindgen_core::Files::default();
     let mut generator = opts.build();
@@ -385,20 +396,173 @@ fn push_custom_with_entries(opts: &mut Opts, entries: &[(String, WithOption)]) {
 
 /// Pushes default `with` entries that map Miden base types to SDK types.
 fn push_default_with_entries(opts: &mut Opts) {
-    opts.with
-        .push(("miden:base/core-types@1.0.0".to_string(), WithOption::Generate));
-    push_path_entry(opts, "miden:base/core-types@1.0.0/felt", "::miden::Felt");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/word", "::miden::Word");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/asset", "::miden::Asset");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/account-id", "::miden::AccountId");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/tag", "::miden::Tag");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/note-type", "::miden::NoteType");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/recipient", "::miden::Recipient");
-    push_path_entry(opts, "miden:base/core-types@1.0.0/note-idx", "::miden::NoteIdx");
+    opts.with.push((CORE_TYPES_INTERFACE.to_string(), WithOption::Generate));
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/felt"), "::miden::Felt");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/word"), "::miden::Word");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset"), "::miden::Asset");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/account-id"), "::miden::AccountId");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/tag"), "::miden::Tag");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-type"), "::miden::NoteType");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/recipient"), "::miden::Recipient");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-idx"), "::miden::NoteIdx");
 }
 
 fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
+}
+
+/// Returns true when the selected world references Miden SDK core types.
+fn world_uses_miden_core_types(resolve: &Resolve, world_id: WorldId) -> bool {
+    let world = &resolve.worlds[world_id];
+    world
+        .imports
+        .values()
+        .chain(world.exports.values())
+        .any(|item| world_item_uses_interface(resolve, item, CORE_TYPES_INTERFACE))
+}
+
+/// Returns true when a world item references a type from `interface_path`.
+fn world_item_uses_interface(resolve: &Resolve, item: &WorldItem, interface_path: &str) -> bool {
+    match item {
+        WorldItem::Interface { id, .. } => interface_uses_interface(resolve, *id, interface_path),
+        WorldItem::Function(function) => function_uses_interface(resolve, function, interface_path),
+        WorldItem::Type { id, .. } => {
+            type_id_uses_interface(resolve, *id, interface_path, &mut HashSet::new())
+        }
+    }
+}
+
+/// Returns true when an interface or any of its signatures/types references `interface_path`.
+fn interface_uses_interface(
+    resolve: &Resolve,
+    interface_id: InterfaceId,
+    interface_path: &str,
+) -> bool {
+    let interface = &resolve.interfaces[interface_id];
+    if interface_matches(resolve, interface_id, interface_path) {
+        return true;
+    }
+
+    let mut visited = HashSet::new();
+    interface.functions.values().any(|function| {
+        function_uses_interface_with_visited(resolve, function, interface_path, &mut visited)
+    }) || interface
+        .types
+        .values()
+        .any(|id| type_id_uses_interface(resolve, *id, interface_path, &mut visited))
+}
+
+/// Returns true when a function signature references `interface_path`.
+fn function_uses_interface(resolve: &Resolve, function: &Function, interface_path: &str) -> bool {
+    function_uses_interface_with_visited(resolve, function, interface_path, &mut HashSet::new())
+}
+
+/// Returns true when a function signature references `interface_path`.
+fn function_uses_interface_with_visited(
+    resolve: &Resolve,
+    function: &Function,
+    interface_path: &str,
+    visited: &mut HashSet<TypeId>,
+) -> bool {
+    function
+        .params
+        .iter()
+        .any(|param| type_uses_interface(resolve, &param.ty, interface_path, visited))
+        || function
+            .result
+            .as_ref()
+            .is_some_and(|ty| type_uses_interface(resolve, ty, interface_path, visited))
+}
+
+/// Returns true when a WIT type references `interface_path`.
+fn type_uses_interface(
+    resolve: &Resolve,
+    ty: &WitType,
+    interface_path: &str,
+    visited: &mut HashSet<TypeId>,
+) -> bool {
+    match ty {
+        WitType::Id(id) => type_id_uses_interface(resolve, *id, interface_path, visited),
+        _ => false,
+    }
+}
+
+/// Returns true when a WIT type definition references `interface_path`.
+fn type_id_uses_interface(
+    resolve: &Resolve,
+    type_id: TypeId,
+    interface_path: &str,
+    visited: &mut HashSet<TypeId>,
+) -> bool {
+    if !visited.insert(type_id) {
+        return false;
+    }
+
+    let def = &resolve.types[type_id];
+    if type_owner_uses_interface(resolve, def.owner, interface_path) {
+        return true;
+    }
+
+    match &def.kind {
+        TypeDefKind::Record(record) => record
+            .fields
+            .iter()
+            .any(|field| type_uses_interface(resolve, &field.ty, interface_path, visited)),
+        TypeDefKind::Tuple(tuple) => tuple
+            .types
+            .iter()
+            .any(|ty| type_uses_interface(resolve, ty, interface_path, visited)),
+        TypeDefKind::Variant(variant) => variant
+            .cases
+            .iter()
+            .filter_map(|case| case.ty.as_ref())
+            .any(|ty| type_uses_interface(resolve, ty, interface_path, visited)),
+        TypeDefKind::Option(ty)
+        | TypeDefKind::List(ty)
+        | TypeDefKind::FixedLengthList(ty, _)
+        | TypeDefKind::Type(ty)
+        | TypeDefKind::Future(Some(ty))
+        | TypeDefKind::Stream(Some(ty)) => {
+            type_uses_interface(resolve, ty, interface_path, visited)
+        }
+        TypeDefKind::Result(result) => result
+            .ok
+            .as_ref()
+            .into_iter()
+            .chain(result.err.as_ref())
+            .any(|ty| type_uses_interface(resolve, ty, interface_path, visited)),
+        TypeDefKind::Map(key, value) => {
+            type_uses_interface(resolve, key, interface_path, visited)
+                || type_uses_interface(resolve, value, interface_path, visited)
+        }
+        TypeDefKind::Handle(Handle::Own(id) | Handle::Borrow(id)) => {
+            type_id_uses_interface(resolve, *id, interface_path, visited)
+        }
+        TypeDefKind::Resource
+        | TypeDefKind::Flags(_)
+        | TypeDefKind::Enum(_)
+        | TypeDefKind::Future(None)
+        | TypeDefKind::Stream(None)
+        | TypeDefKind::Unknown => false,
+    }
+}
+
+/// Returns true when a type owner belongs to `interface_path`.
+fn type_owner_uses_interface(resolve: &Resolve, owner: TypeOwner, interface_path: &str) -> bool {
+    match owner {
+        TypeOwner::World(_) => false,
+        TypeOwner::Interface(id) => interface_matches(resolve, id, interface_path),
+        TypeOwner::None => false,
+    }
+}
+
+/// Returns true when an interface ID matches a fully-qualified WIT interface path.
+fn interface_matches(resolve: &Resolve, interface_id: InterfaceId, interface_path: &str) -> bool {
+    let interface = &resolve.interfaces[interface_id];
+    let (Some(package_id), Some(name)) = (interface.package, interface.name.as_deref()) else {
+        return false;
+    };
+    resolve.packages[package_id].name.interface_id(name) == interface_path
 }
 
 /// A collected wrapper method along with its source module path.
@@ -1065,6 +1229,70 @@ mod tests {
         assert_eq!(parsed.with_entries.len(), 2);
         assert_eq!(parsed.with_entries[0].0, "miden:a/b");
         assert_eq!(parsed.with_entries[1].0, "miden:c/d");
+    }
+
+    /// Parses a test WIT world with the bundled SDK WIT available in the resolver.
+    fn parse_test_world(source: &str) -> (Resolve, WorldId) {
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let group = UnresolvedPackageGroup::parse("inline", source).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        (resolve, world)
+    }
+
+    #[test]
+    fn test_world_uses_miden_core_types_rejects_primitive_only_world() {
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:primitive-variant@0.1.0;
+
+interface primitive-variant {
+    variant request {
+        tiny(u8),
+        wide(u64),
+    }
+
+    roundtrip: func(request: request) -> request;
+}
+
+world primitive-variant-world {
+    export primitive-variant;
+}
+"#,
+        );
+
+        assert!(!world_uses_miden_core_types(&resolve, world));
+    }
+
+    #[test]
+    fn test_world_uses_miden_core_types_detects_imported_payload() {
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:core-type-variant@0.1.0;
+
+use miden:base/core-types@1.0.0;
+
+interface core-type-variant {
+    use core-types.{word};
+
+    variant request {
+        elements(word),
+        amount(u64),
+    }
+
+    roundtrip: func(request: request) -> request;
+}
+
+world core-type-variant-world {
+    export core-type-variant;
+}
+"#,
+        );
+
+        assert!(world_uses_miden_core_types(&resolve, world));
     }
 
     /// Integration test verifying that `augment_generated_bindings` produces valid Rust code.

@@ -772,7 +772,7 @@ fn parse_component_method(
 
                 let user_ty = (*pat_type.ty).clone();
                 let type_ref = map_type_to_type_ref(&pat_type.ty, exported_types)?;
-                if type_ref.requires_import {
+                if type_ref.requires_core_type_import() {
                     type_imports.insert(type_ref.wit_name.clone());
                 }
 
@@ -797,7 +797,7 @@ fn parse_component_method(
         ReturnType::Type(_, ty) if is_unit_type(ty) => MethodReturn::Unit,
         ReturnType::Type(_, ty) => {
             let type_ref = map_type_to_type_ref(ty, exported_types)?;
-            if type_ref.requires_import {
+            if type_ref.requires_core_type_import() {
                 type_imports.insert(type_ref.wit_name.clone());
             }
             MethodReturn::Type {
@@ -1001,7 +1001,6 @@ mod tests {
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
             is_custom: true,
-            requires_import: false,
             path: vec!["StructA".into()],
         };
 
@@ -1016,7 +1015,6 @@ mod tests {
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
             is_custom: true,
-            requires_import: false,
             path: vec!["StructA".into()],
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];
@@ -1035,7 +1033,6 @@ mod tests {
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
             is_custom: true,
-            requires_import: false,
             path: vec!["super".into(), "StructA".into()],
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];

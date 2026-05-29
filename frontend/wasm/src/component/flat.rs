@@ -7,7 +7,7 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    CallConv, Context, FunctionType, PointerType, StructType, Type,
+    CallConv, Context, EnumType, FunctionType, PointerType, StructType, Type,
     diagnostics::{Diagnostic, miette},
     dialects::builtin::attributes::{AbiParam, Signature},
 };
@@ -66,13 +66,7 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
         Type::Felt => vec![AbiParam::new(Type::Felt)],
-        Type::Enum(enum_ty) => {
-            assert!(
-                enum_ty.is_c_like(),
-                "non-C-like enums are not yet supported in canonical ABI flattening: {enum_ty}"
-            );
-            flatten_type(context, enum_ty.discriminant())?
-        }
+        Type::Enum(enum_ty) => flatten_enum_type(context, enum_ty)?,
         Type::Struct(struct_ty) => struct_ty
             .fields()
             .iter()
@@ -202,6 +196,61 @@ fn push_flattened_type_layout(
 fn canonical_layout_offset(base: u32, relative: u32, ty: &Type) -> Result<u32, CanonicalTypeError> {
     base.checked_add(relative)
         .ok_or_else(|| CanonicalTypeError::LayoutOverflow { ty: ty.clone() })
+}
+
+/// Flattens a HIR enum according to the component-model variant flattening rules.
+fn flatten_enum_type(
+    context: &Rc<Context>,
+    enum_ty: &EnumType,
+) -> Result<Vec<AbiParam>, CanonicalTypeError> {
+    let mut flat = flatten_type(context, enum_ty.discriminant())?;
+    if enum_ty.is_c_like() {
+        return Ok(flat);
+    }
+
+    let mut payload = Vec::<AbiParam>::new();
+    for variant in enum_ty.variants() {
+        let Some(value_ty) = variant.value.as_ref() else {
+            continue;
+        };
+        let flattened = flatten_type(context, value_ty)?;
+        for (index, param) in flattened.into_iter().enumerate() {
+            if let Some(joined) = payload.get_mut(index) {
+                *joined = join_abi_param(joined, &param)?;
+            } else {
+                payload.push(param);
+            }
+        }
+    }
+
+    flat.extend(payload);
+    Ok(flat)
+}
+
+/// Joins two flattened ABI parameters at the same variant payload position.
+fn join_abi_param(left: &AbiParam, right: &AbiParam) -> Result<AbiParam, CanonicalTypeError> {
+    let ty = join_flat_types(&left.ty, &right.ty)?;
+    if left.ty == ty && right.ty == ty && left.extension() == right.extension() {
+        return Ok(left.clone());
+    }
+    Ok(AbiParam::new(ty))
+}
+
+/// Joins two component flat types at the same variant payload position.
+pub(crate) fn join_flat_types(left: &Type, right: &Type) -> Result<Type, CanonicalTypeError> {
+    if left == right {
+        return Ok(left.clone());
+    }
+
+    match (left, right) {
+        (Type::I32, Type::I64) | (Type::I64, Type::I32) => Ok(Type::I64),
+        (Type::I32, Type::Felt) | (Type::Felt, Type::I32) => Ok(Type::I32),
+        (Type::I64, Type::Felt) | (Type::Felt, Type::I64) => Ok(Type::I64),
+        (Type::I64, Type::F64) | (Type::F64, Type::I64) => Ok(Type::I64),
+        (Type::Ptr(_), Type::I32) | (Type::I32, Type::Ptr(_)) => Ok(Type::I32),
+        (Type::Ptr(_), Type::Ptr(_)) => Ok(Type::I32),
+        _ => Err(CanonicalTypeError::Unsupported(left.clone())),
+    }
 }
 
 /// Flattens the given list of CanonABI types into a list of ABI parameters.
@@ -410,22 +459,92 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "non-C-like enums are not yet supported in canonical ABI flattening"]
-    fn test_flatten_type_non_c_like_enum_panics() {
+    fn test_flatten_type_payload_enum() {
         let context = Rc::new(Context::default());
         let enum_ty = Type::Enum(Arc::new(
             EnumType::new(
                 "result".into(),
                 Type::U8,
                 [
-                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("ok".into(), Type::Felt, Some(0)),
                     Variant::new("err".into(), Type::I32, Some(1)),
                 ],
             )
             .unwrap(),
         ));
 
-        let _ = flatten_type(&context, &enum_ty);
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
+        assert_eq!(result[1].ty, Type::I32);
+        assert_eq!(result[1].extension(), ArgumentExtension::None);
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_missing_trailing_payloads() {
+        let context = Rc::new(Context::default());
+        let word_ty = Type::from(StructType::new([Type::Felt, Type::Felt, Type::Felt, Type::Felt]));
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("scalar".into(), Type::Felt, Some(0)),
+                    Variant::new("word".into(), word_ty, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].ty, Type::I32);
+        assert!(result[1..].iter().all(|param| param.ty == Type::Felt));
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_word_and_u64() {
+        let context = Rc::new(Context::default());
+        let word_ty = Type::from(StructType::new([Type::Felt, Type::Felt, Type::Felt, Type::Felt]));
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("word".into(), word_ty, Some(0)),
+                    Variant::new("amount".into(), Type::U64, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I64);
+        assert!(result[2..].iter().all(|param| param.ty == Type::Felt));
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_u8_and_u64() {
+        let context = Rc::new(Context::default());
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("tiny".into(), Type::U8, Some(0)),
+                    Variant::new("wide".into(), Type::U64, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I64);
     }
 
     #[test]

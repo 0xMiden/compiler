@@ -27,7 +27,7 @@ fn allows_sdk_type_without_export_attribute() {
     let type_ref = map_type_to_type_ref(&ty, &exported).expect("asset should resolve");
     assert_eq!(type_ref.wit_name, "asset");
     assert!(!type_ref.is_custom);
-    assert!(type_ref.requires_import);
+    assert!(type_ref.requires_core_type_import());
     let exported_names = HashSet::new();
     ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
         .expect("core types require no export");
@@ -41,7 +41,7 @@ fn allows_wit_primitive_type_without_export_attribute() {
     let type_ref = map_type_to_type_ref(&ty, &exported).expect("u64 should resolve");
     assert_eq!(type_ref.wit_name, "u64");
     assert!(!type_ref.is_custom);
-    assert!(!type_ref.requires_import);
+    assert!(!type_ref.requires_core_type_import());
     let exported_names = HashSet::new();
     ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
         .expect("primitive types require no export");
@@ -65,9 +65,41 @@ fn struct_fields_allow_wit_primitive_types() {
     };
     for field in fields {
         assert!(!field.ty.is_custom);
-        assert!(!field.ty.requires_import);
+        assert!(!field.ty.requires_core_type_import());
         ensure_custom_type_defined(&field.ty, &exported_names, Span::call_site())
             .expect("primitive fields should not need #[export_type]");
+    }
+}
+
+#[test]
+fn maps_rust_primitive_types_to_wit_types() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let exported_names = HashSet::new();
+    for (rust_type, wit_type) in [
+        ("bool", "bool"),
+        ("i8", "s8"),
+        ("u8", "u8"),
+        ("i16", "s16"),
+        ("u16", "u16"),
+        ("i32", "s32"),
+        ("u32", "u32"),
+        ("i64", "s64"),
+        ("u64", "u64"),
+        ("f32", "f32"),
+        ("f64", "f64"),
+        ("char", "char"),
+    ] {
+        let ty: Type = syn::parse_str(rust_type).unwrap();
+        let type_ref = map_type_to_type_ref(&ty, &exported).expect("primitive should resolve");
+        assert_eq!(type_ref.wit_name, wit_type);
+        assert!(!type_ref.is_custom, "{rust_type} should not be custom");
+        assert!(
+            !type_ref.requires_core_type_import(),
+            "{rust_type} should not require a core type import"
+        );
+        ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+            .expect("primitive types require no export");
     }
 }
 

@@ -12,7 +12,9 @@ use core::{hash::Hash, ops::Index};
 use anyhow::{Result, bail};
 use cranelift_entity::{EntityRef, PrimaryMap};
 use indexmap::IndexMap;
-use midenc_hir::{FxHashMap, SmallVec};
+use midenc_hir::{
+    CallConv, EnumType, FunctionType, FxHashMap, SmallVec, StructType, Type, Variant,
+};
 use wasmparser::{
     collections::IndexSet,
     component_types,
@@ -21,6 +23,7 @@ use wasmparser::{
 };
 
 use self::resources::ResourcesBuilder;
+use super::flat::join_flat_types;
 use crate::{
     indices,
     module::types::{
@@ -1347,6 +1350,300 @@ impl VariantInfo {
     }
 }
 
+/// Component function type plus the canonical ABI type trees needed for load/store lowering.
+#[derive(Clone, Debug)]
+pub struct ComponentFunctionType {
+    /// The HIR function type used to build component wrapper signatures.
+    pub ir: FunctionType,
+    /// Canonical ABI type trees for the function parameters.
+    pub params: Box<[CanonicalAbiType]>,
+    /// Canonical ABI type trees for the function results.
+    pub results: Box<[CanonicalAbiType]>,
+}
+
+/// Canonical ABI lowering metadata for one component-model type.
+#[derive(Clone, Debug)]
+pub struct CanonicalAbiType {
+    /// The HIR type used when emitting typed memory operations.
+    pub ir: Type,
+    /// Canonical ABI layout information for this type.
+    pub abi: CanonicalAbiInfo,
+    /// Recursive load/store shape for this type.
+    pub kind: CanonicalAbiTypeKind,
+}
+
+/// Recursive load/store shape for a canonical ABI type.
+#[derive(Clone, Debug)]
+pub enum CanonicalAbiTypeKind {
+    /// A scalar value that can be loaded or stored directly.
+    Scalar,
+    /// A record-like value with canonical ABI field offsets.
+    Record {
+        /// Fields with offsets in 32-bit linear memory.
+        fields: Box<[CanonicalAbiField]>,
+    },
+    /// A variant-like value with a discriminant and optional payload storage.
+    Variant {
+        /// Canonical ABI discriminant type.
+        discriminant: Box<CanonicalAbiType>,
+        /// Offset of the payload area in 32-bit linear memory.
+        payload_offset32: u32,
+        /// Canonical ABI type trees for each variant case payload.
+        cases: Box<[Option<CanonicalAbiType>]>,
+        /// Joined flat payload slot types for this variant.
+        payload_flat_types: Box<[Type]>,
+    },
+    /// A component-model type that is not supported by the current load/store lowering.
+    Unsupported,
+}
+
+/// One record field with its canonical ABI offset.
+#[derive(Clone, Debug)]
+pub struct CanonicalAbiField {
+    /// Offset of this field in 32-bit linear memory.
+    pub offset32: u32,
+    /// Canonical ABI type tree for this field.
+    pub ty: CanonicalAbiType,
+}
+
+impl ComponentFunctionType {
+    /// Builds a component function type from a parsed component-model function type.
+    pub fn from_component_type(ty: &TypeFunc, component_types: &ComponentTypes) -> Self {
+        let params_types = component_types[ty.params].clone().types;
+        let results_types = component_types[ty.results].clone().types;
+        let params = params_types
+            .iter()
+            .map(|ty| interface_type_to_ir(ty, component_types))
+            .collect();
+        let results = results_types
+            .iter()
+            .map(|ty| interface_type_to_ir(ty, component_types))
+            .collect();
+        let params_abi = params_types
+            .iter()
+            .map(|ty| CanonicalAbiType::from_interface_type(ty, component_types))
+            .collect();
+        let results_abi = results_types
+            .iter()
+            .map(|ty| CanonicalAbiType::from_interface_type(ty, component_types))
+            .collect();
+        Self {
+            ir: FunctionType {
+                params,
+                results,
+                abi: CallConv::ComponentModel,
+            },
+            params: params_abi,
+            results: results_abi,
+        }
+    }
+}
+
+impl CanonicalAbiType {
+    /// Builds canonical ABI load/store metadata from a component-model interface type.
+    pub fn from_interface_type(ty: &InterfaceType, component_types: &ComponentTypes) -> Self {
+        match ty {
+            InterfaceType::Bool
+            | InterfaceType::S8
+            | InterfaceType::U8
+            | InterfaceType::S16
+            | InterfaceType::U16
+            | InterfaceType::S32
+            | InterfaceType::U32
+            | InterfaceType::S64
+            | InterfaceType::U64
+            | InterfaceType::Float32 => Self::scalar(
+                interface_type_to_ir(ty, component_types),
+                component_types.canonical_abi(ty).clone(),
+            ),
+            InterfaceType::Record(idx) => {
+                let record = &component_types[*idx];
+                Self::record(
+                    interface_type_to_ir(ty, component_types),
+                    record.abi.clone(),
+                    record.fields.iter().map(|field| &field.ty),
+                    component_types,
+                )
+            }
+            InterfaceType::Tuple(idx) => {
+                let tuple = &component_types[*idx];
+                Self::record(
+                    interface_type_to_ir(ty, component_types),
+                    tuple.abi.clone(),
+                    tuple.types.iter(),
+                    component_types,
+                )
+            }
+            InterfaceType::Variant(idx) => {
+                let variant = &component_types[*idx];
+                Self::variant(
+                    interface_type_to_ir(ty, component_types),
+                    variant.abi.clone(),
+                    &variant.info,
+                    variant.cases.iter().map(|case| case.ty.as_ref()),
+                    component_types,
+                )
+            }
+            InterfaceType::Enum(idx) => {
+                let enum_ty = &component_types[*idx];
+                Self::variant(
+                    interface_type_to_ir(ty, component_types),
+                    enum_ty.abi.clone(),
+                    &enum_ty.info,
+                    (0..enum_ty.names.len()).map(|_| None),
+                    component_types,
+                )
+            }
+            InterfaceType::Option(idx) => {
+                let option = &component_types[*idx];
+                Self::variant(
+                    interface_type_to_ir(ty, component_types),
+                    option.abi.clone(),
+                    &option.info,
+                    [None, Some(&option.ty)],
+                    component_types,
+                )
+            }
+            InterfaceType::Result(idx) => {
+                let result = &component_types[*idx];
+                Self::variant(
+                    interface_type_to_ir(ty, component_types),
+                    result.abi.clone(),
+                    &result.info,
+                    [result.ok.as_ref(), result.err.as_ref()],
+                    component_types,
+                )
+            }
+            InterfaceType::List(idx) => {
+                let element = interface_type_to_ir(&component_types[*idx].element, component_types);
+                Self::unsupported(
+                    Type::List(Arc::new(element)),
+                    component_types.canonical_abi(ty).clone(),
+                )
+            }
+            InterfaceType::String
+            | InterfaceType::Char
+            | InterfaceType::Float64
+            | InterfaceType::ErrorContext
+            | InterfaceType::Flags(_)
+            | InterfaceType::Own(_)
+            | InterfaceType::Borrow(_) => Self::unsupported(
+                interface_type_to_ir(ty, component_types),
+                component_types.canonical_abi(ty).clone(),
+            ),
+        }
+    }
+
+    fn scalar(ir: Type, abi: CanonicalAbiInfo) -> Self {
+        Self {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Scalar,
+        }
+    }
+
+    fn unsupported(ir: Type, abi: CanonicalAbiInfo) -> Self {
+        Self {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Unsupported,
+        }
+    }
+
+    fn record<'a>(
+        ir: Type,
+        abi: CanonicalAbiInfo,
+        fields: impl Iterator<Item = &'a InterfaceType>,
+        component_types: &ComponentTypes,
+    ) -> Self {
+        let mut offset = 0u32;
+        let fields = fields
+            .map(|field| {
+                let ty = CanonicalAbiType::from_interface_type(field, component_types);
+                let offset32 = ty.abi.next_field32(&mut offset);
+                CanonicalAbiField { offset32, ty }
+            })
+            .collect();
+        Self {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Record { fields },
+        }
+    }
+
+    fn variant<'a>(
+        ir: Type,
+        abi: CanonicalAbiInfo,
+        info: &VariantInfo,
+        cases: impl IntoIterator<Item = Option<&'a InterfaceType>>,
+        component_types: &ComponentTypes,
+    ) -> Self {
+        let discriminant = Box::new(CanonicalAbiType::scalar(
+            discriminant_size_to_ir(info.size),
+            CanonicalAbiInfo::scalar(info.size.byte_size()),
+        ));
+        let cases = cases
+            .into_iter()
+            .map(|ty| ty.map(|ty| CanonicalAbiType::from_interface_type(ty, component_types)))
+            .collect::<Box<[_]>>();
+        let payload_flat_types = Self::joined_variant_payload_flat_types(&cases);
+
+        Self {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Variant {
+                discriminant,
+                payload_offset32: info.payload_offset32,
+                cases,
+                payload_flat_types,
+            },
+        }
+    }
+
+    /// Returns this type's flattened canonical ABI value types.
+    pub fn flat_types(&self) -> Box<[Type]> {
+        match &self.kind {
+            CanonicalAbiTypeKind::Scalar => Box::new([canonical_flat_scalar_type(&self.ir)]),
+            CanonicalAbiTypeKind::Record { fields } => {
+                fields.iter().flat_map(|field| field.ty.flat_types().into_vec()).collect()
+            }
+            CanonicalAbiTypeKind::Variant {
+                discriminant,
+                payload_flat_types,
+                ..
+            } => core::iter::once(canonical_flat_scalar_type(&discriminant.ir))
+                .chain(payload_flat_types.iter().cloned())
+                .collect(),
+            CanonicalAbiTypeKind::Unsupported => Box::new([]),
+        }
+    }
+
+    fn joined_variant_payload_flat_types(cases: &[Option<CanonicalAbiType>]) -> Box<[Type]> {
+        let mut payload = Vec::<Type>::new();
+        for case in cases.iter().flatten() {
+            for (index, ty) in case.flat_types().iter().enumerate() {
+                if let Some(joined) = payload.get_mut(index) {
+                    *joined = join_flat_types(joined, ty)
+                        .expect("component variant payload types should be joinable");
+                } else {
+                    payload.push(ty.clone());
+                }
+            }
+        }
+        payload.into_boxed_slice()
+    }
+}
+
+/// Returns the canonical flat ABI type for a scalar HIR type.
+fn canonical_flat_scalar_type(ty: &Type) -> Type {
+    match ty {
+        Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => Type::I32,
+        Type::I64 | Type::U64 => Type::I64,
+        Type::Felt => Type::Felt,
+        ty => ty.clone(),
+    }
+}
+
 /// Shape of a "record" type in interface types.
 ///
 /// This is equivalent to a `struct` in Rust.
@@ -1787,54 +2084,172 @@ impl TypeInformation {
     }
 }
 
-pub fn interface_type_to_ir(
+/// Converts a component-model discriminant size into the corresponding HIR integer type.
+fn discriminant_size_to_ir(size: DiscriminantSize) -> Type {
+    match size {
+        DiscriminantSize::Size1 => Type::U8,
+        DiscriminantSize::Size2 => Type::U16,
+        DiscriminantSize::Size4 => Type::U32,
+    }
+}
+
+/// Returns the HIR name for a component model type, falling back to a generated name.
+fn interface_type_ir_name(
     ty: &InterfaceType,
     component_types: &ComponentTypes,
-) -> midenc_hir::Type {
+    fallback: impl FnOnce() -> String,
+) -> Arc<str> {
+    component_types
+        .interface_type_name(ty)
+        .map(Arc::from)
+        .unwrap_or_else(|| Arc::from(fallback()))
+}
+
+/// Converts a component-model record into the corresponding HIR struct type.
+fn record_type_to_ir(
+    ty: &InterfaceType,
+    idx: TypeRecordIndex,
+    component_types: &ComponentTypes,
+) -> Type {
+    let fields = component_types.records[idx]
+        .fields
+        .iter()
+        .map(|f| (Arc::<str>::from(f.name.as_str()), interface_type_to_ir(&f.ty, component_types)));
+    let struct_ty = if let Some(name) = component_types.interface_type_name(ty) {
+        StructType::named(Arc::from(name), fields)
+    } else {
+        StructType::new(fields)
+    };
+    Type::from(struct_ty)
+}
+
+/// Converts a component-model variant into the corresponding HIR enum type.
+fn variant_type_to_ir(
+    ty: &InterfaceType,
+    idx: TypeVariantIndex,
+    component_types: &ComponentTypes,
+) -> Type {
+    let variant_ty = &component_types.variants[idx];
+    let name = interface_type_ir_name(ty, component_types, || format!("variant{}", idx.index()));
+    let variants = variant_ty.cases.iter().enumerate().map(|(index, case)| {
+        let name = Arc::<str>::from(case.name.as_str());
+        let discriminant = Some(index as u128);
+        match case.ty {
+            Some(payload) => {
+                Variant::new(name, interface_type_to_ir(&payload, component_types), discriminant)
+            }
+            None => Variant::c_like(name, discriminant),
+        }
+    });
+    Type::Enum(Arc::new(
+        EnumType::new(name, discriminant_size_to_ir(variant_ty.info.size), variants)
+            .expect("component variant should map to a valid HIR enum type"),
+    ))
+}
+
+/// Converts a component-model enum into the corresponding C-like HIR enum type.
+fn enum_type_to_ir(
+    ty: &InterfaceType,
+    idx: TypeEnumIndex,
+    component_types: &ComponentTypes,
+) -> Type {
+    let enum_ty = &component_types.enums[idx];
+    let name = interface_type_ir_name(ty, component_types, || format!("enum{}", idx.index()));
+    let variants =
+        enum_ty.names.iter().enumerate().map(|(index, name)| {
+            Variant::c_like(Arc::<str>::from(name.as_str()), Some(index as u128))
+        });
+    Type::Enum(Arc::new(
+        EnumType::new(name, discriminant_size_to_ir(enum_ty.info.size), variants)
+            .expect("component enum should map to a valid HIR enum type"),
+    ))
+}
+
+/// Converts a component-model option into the corresponding HIR enum type.
+fn option_type_to_ir(
+    ty: &InterfaceType,
+    idx: TypeOptionIndex,
+    component_types: &ComponentTypes,
+) -> Type {
+    let option_ty = &component_types.options[idx];
+    let name = interface_type_ir_name(ty, component_types, || format!("option{}", idx.index()));
+    let variants = [
+        Variant::c_like(Arc::from("none"), Some(0)),
+        Variant::new(
+            Arc::from("some"),
+            interface_type_to_ir(&option_ty.ty, component_types),
+            Some(1),
+        ),
+    ];
+    Type::Enum(Arc::new(
+        EnumType::new(name, discriminant_size_to_ir(option_ty.info.size), variants)
+            .expect("component option should map to a valid HIR enum type"),
+    ))
+}
+
+/// Converts a component-model result into the corresponding HIR enum type.
+fn result_type_to_ir(
+    ty: &InterfaceType,
+    idx: TypeResultIndex,
+    component_types: &ComponentTypes,
+) -> Type {
+    let result_ty = &component_types.results[idx];
+    let name = interface_type_ir_name(ty, component_types, || format!("result{}", idx.index()));
+    let variants = [
+        match result_ty.ok {
+            Some(ok) => {
+                Variant::new(Arc::from("ok"), interface_type_to_ir(&ok, component_types), Some(0))
+            }
+            None => Variant::c_like(Arc::from("ok"), Some(0)),
+        },
+        match result_ty.err {
+            Some(err) => {
+                Variant::new(Arc::from("err"), interface_type_to_ir(&err, component_types), Some(1))
+            }
+            None => Variant::c_like(Arc::from("err"), Some(1)),
+        },
+    ];
+    Type::Enum(Arc::new(
+        EnumType::new(name, discriminant_size_to_ir(result_ty.info.size), variants)
+            .expect("component result should map to a valid HIR enum type"),
+    ))
+}
+
+/// Converts a component-model interface type into the corresponding HIR type.
+pub fn interface_type_to_ir(ty: &InterfaceType, component_types: &ComponentTypes) -> Type {
     match ty {
-        InterfaceType::Bool => midenc_hir::Type::I1,
-        InterfaceType::S8 => midenc_hir::Type::I8,
-        InterfaceType::U8 => midenc_hir::Type::U8,
-        InterfaceType::S16 => midenc_hir::Type::I16,
-        InterfaceType::U16 => midenc_hir::Type::U16,
-        InterfaceType::S32 => midenc_hir::Type::I32,
-        InterfaceType::U32 => midenc_hir::Type::U32,
-        InterfaceType::S64 => midenc_hir::Type::I64,
-        InterfaceType::U64 => midenc_hir::Type::U64,
-        InterfaceType::Float32 => midenc_hir::Type::Felt,
+        InterfaceType::Bool => Type::I1,
+        InterfaceType::S8 => Type::I8,
+        InterfaceType::U8 => Type::U8,
+        InterfaceType::S16 => Type::I16,
+        InterfaceType::U16 => Type::U16,
+        InterfaceType::S32 => Type::I32,
+        InterfaceType::U32 => Type::U32,
+        InterfaceType::S64 => Type::I64,
+        InterfaceType::U64 => Type::U64,
+        InterfaceType::Float32 => Type::Felt,
         InterfaceType::Float64 => todo!(),
         InterfaceType::Char => todo!(),
         InterfaceType::String => todo!(),
         InterfaceType::ErrorContext => todo!("the async proposal is not currently supported"),
-        InterfaceType::Record(idx) => {
-            let fields = component_types.records[*idx].fields.iter().map(|f| {
-                (Arc::<str>::from(f.name.as_str()), interface_type_to_ir(&f.ty, component_types))
-            });
-            let struct_ty = if let Some(name) = component_types.interface_type_name(ty) {
-                midenc_hir::StructType::named(Arc::from(name), fields)
-            } else {
-                midenc_hir::StructType::new(fields)
-            };
-            midenc_hir::Type::from(struct_ty)
-        }
-        // TODO: This is a stub to make `enum` in WIT generation work. Use proper type when ready.
-        InterfaceType::Variant(_) => midenc_hir::Type::U32,
+        InterfaceType::Record(idx) => record_type_to_ir(ty, *idx, component_types),
+        InterfaceType::Variant(idx) => variant_type_to_ir(ty, *idx, component_types),
         InterfaceType::List(idx) => {
             let element_ty =
                 interface_type_to_ir(&component_types.lists[*idx].element, component_types);
-            midenc_hir::Type::List(Arc::new(element_ty))
+            Type::List(Arc::new(element_ty))
         }
         InterfaceType::Tuple(tuple_idx) => {
             let tys = component_types.tuples[*tuple_idx]
                 .types
                 .iter()
                 .map(|t| interface_type_to_ir(t, component_types));
-            midenc_hir::Type::from(midenc_hir::StructType::new(tys))
+            Type::from(StructType::new(tys))
         }
         InterfaceType::Flags(_) => todo!(),
-        InterfaceType::Enum(_) => todo!(),
-        InterfaceType::Option(_) => todo!(),
-        InterfaceType::Result(_) => todo!(),
+        InterfaceType::Enum(idx) => enum_type_to_ir(ty, *idx, component_types),
+        InterfaceType::Option(idx) => option_type_to_ir(ty, *idx, component_types),
+        InterfaceType::Result(idx) => result_type_to_ir(ty, *idx, component_types),
         InterfaceType::Own(_) => todo!(),
         InterfaceType::Borrow(_) => todo!(),
     }

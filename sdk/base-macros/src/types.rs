@@ -8,6 +8,7 @@ static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{ItemStruct, Type, spanned::Spanned};
+use wit_bindgen_core::wit_parser::Type as WitType;
 
 use crate::manifest_paths::SDK_WIT_SOURCE;
 
@@ -15,8 +16,14 @@ use crate::manifest_paths::SDK_WIT_SOURCE;
 pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
     pub(crate) is_custom: bool,
-    pub(crate) requires_import: bool,
     pub(crate) path: Vec<String>,
+}
+
+impl TypeRef {
+    /// Returns true when this type must be imported from the SDK core-types WIT interface.
+    pub(crate) fn requires_core_type_import(&self) -> bool {
+        !self.is_custom && sdk_core_type_names().contains(&self.wit_name)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -110,30 +117,28 @@ pub(crate) fn map_type_to_type_ref(
 
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
-            if let Some(wit_name) = wit_primitive_type_name(&ident) {
+            let wit_name = ident.to_kebab_case();
+
+            if let Some(wit_type) = rust_type_to_wit_type(&ident) {
                 return Ok(TypeRef {
-                    wit_name: wit_name.to_string(),
+                    wit_name: wit_type_name(wit_type).to_string(),
                     is_custom: false,
-                    requires_import: false,
                     path: path_segments,
                 });
             }
 
             if exported_types.contains_key(&ident) {
                 return Ok(TypeRef {
-                    wit_name: ident.to_kebab_case(),
+                    wit_name,
                     is_custom: true,
-                    requires_import: false,
                     path: path_segments,
                 });
             }
 
-            let wit_name = ident.to_kebab_case();
             if sdk_core_type_names().contains(&wit_name) {
                 return Ok(TypeRef {
                     wit_name,
                     is_custom: false,
-                    requires_import: true,
                     path: path_segments,
                 });
             }
@@ -141,7 +146,6 @@ pub(crate) fn map_type_to_type_ref(
             Ok(TypeRef {
                 wit_name,
                 is_custom: true,
-                requires_import: false,
                 path: path_segments,
             })
         }
@@ -152,19 +156,43 @@ pub(crate) fn map_type_to_type_ref(
     }
 }
 
-/// Returns the WIT primitive name for Rust scalar types supported by component lowering.
-fn wit_primitive_type_name(rust_name: &str) -> Option<&'static str> {
-    match rust_name {
-        "bool" => Some("bool"),
-        "u8" => Some("u8"),
-        "u16" => Some("u16"),
-        "u32" => Some("u32"),
-        "u64" => Some("u64"),
-        "i8" => Some("s8"),
-        "i16" => Some("s16"),
-        "i32" => Some("s32"),
-        "i64" => Some("s64"),
+/// Converts a Rust primitive type identifier into the equivalent WIT primitive type.
+fn rust_type_to_wit_type(ident: &str) -> Option<WitType> {
+    match ident {
+        "bool" => Some(WitType::Bool),
+        "i8" => Some(WitType::S8),
+        "u8" => Some(WitType::U8),
+        "i16" => Some(WitType::S16),
+        "u16" => Some(WitType::U16),
+        "i32" => Some(WitType::S32),
+        "u32" => Some(WitType::U32),
+        "i64" => Some(WitType::S64),
+        "u64" => Some(WitType::U64),
+        "f32" => Some(WitType::F32),
+        "f64" => Some(WitType::F64),
+        "char" => Some(WitType::Char),
         _ => None,
+    }
+}
+
+/// Returns the canonical WIT syntax for a WIT type.
+fn wit_type_name(ty: WitType) -> &'static str {
+    match ty {
+        WitType::Bool => "bool",
+        WitType::U8 => "u8",
+        WitType::U16 => "u16",
+        WitType::U32 => "u32",
+        WitType::U64 => "u64",
+        WitType::S8 => "s8",
+        WitType::S16 => "s16",
+        WitType::S32 => "s32",
+        WitType::S64 => "s64",
+        WitType::F32 => "f32",
+        WitType::F64 => "f64",
+        WitType::Char => "char",
+        WitType::String => "string",
+        WitType::ErrorContext => "error-context",
+        WitType::Id(_) => unreachable!("named WIT type ids are not primitive syntax"),
     }
 }
 

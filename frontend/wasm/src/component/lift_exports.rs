@@ -18,6 +18,7 @@ use midenc_hir::{
 use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 
 use super::{
+    ComponentFunctionType,
     canon_abi_utils::load,
     flat::{CanonicalAbiMode, flatten_function_type, flatten_types, needs_transformation},
 };
@@ -30,6 +31,7 @@ use crate::{
 
 struct ComponentExportMetadata<'a> {
     ty: &'a FunctionType,
+    results: &'a [super::CanonicalAbiType],
     param_names: &'a [String],
     protocol_export_kind: Option<ProtocolExportKind>,
 }
@@ -38,7 +40,7 @@ struct ComponentExportMetadata<'a> {
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
-    export_func_ty: FunctionType,
+    export_func_ty: ComponentFunctionType,
     export_param_names: &[String],
     core_export_func_path: SymbolPath,
     protocol_export_kind: Option<ProtocolExportKind>,
@@ -46,7 +48,7 @@ pub fn generate_export_lifting_function(
 ) -> WasmResult<()> {
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
-        flatten_function_type(&context, &export_func_ty, CanonicalAbiMode::Export).map_err(
+        flatten_function_type(&context, &export_func_ty.ir, CanonicalAbiMode::Export).map_err(
             |e| {
                 let message = format!(
                     "Component export lifting generation. Signature for exported function \
@@ -65,7 +67,8 @@ pub fn generate_export_lifting_function(
     }
 
     let export_metadata = ComponentExportMetadata {
-        ty: &export_func_ty,
+        ty: &export_func_ty.ir,
+        results: &export_func_ty.results,
         param_names: export_param_names,
         protocol_export_kind,
     };
@@ -240,9 +243,9 @@ fn generate_lifting_with_transformation(
         1,
         "expected a single result in the component-level export function"
     );
-    let result_type = &export_metadata.ty.results[0];
+    let result_abi_type = &export_metadata.results[0];
 
-    load(&mut fb, result_ptr, result_type, &mut return_values, span)?;
+    load(&mut fb, result_ptr, result_abi_type, &mut return_values, span)?;
 
     assert!(
         return_values.len() <= 16,

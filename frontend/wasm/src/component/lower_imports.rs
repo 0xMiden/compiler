@@ -17,6 +17,7 @@ use midenc_hir::{
 };
 
 use super::{
+    ComponentFunctionType,
     canon_abi_utils::store,
     flat::{
         CanonicalAbiMode, flatten_function_type, flatten_types, flattened_types_layout,
@@ -52,20 +53,19 @@ pub fn generate_import_lowering_function(
     world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
     import_func_path: SymbolPath,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
     let context = module_builder.builder().context_rc();
     let import_lowered_sig =
-        flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import).wrap_err_with(
-            || {
+        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
+            .wrap_err_with(|| {
                 format!(
                     "failed to generate component import lowering: signature of \
                      '{import_func_path}' requires flattening"
                 )
-            },
-        )?;
+            })?;
 
     let core_func_ref = module_builder
         .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
@@ -90,7 +90,7 @@ pub fn generate_import_lowering_function(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    if is_fpi_import(&import_func_path, import_func_ty)? {
+    if is_fpi_import(&import_func_path, &import_func_ty.ir)? {
         return generate_fpi_lowering(
             import_func_ty,
             &import_lowered_sig,
@@ -134,7 +134,7 @@ pub fn generate_import_lowering_function(
 /// Generates a lowering function for FPI imports backed by `execute_foreign_procedure`.
 #[allow(clippy::too_many_arguments)]
 fn generate_fpi_lowering(
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     import_lowered_sig: &Signature,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -144,16 +144,16 @@ fn generate_fpi_lowering(
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
     let context = core_func_ref.borrow().as_operation().context_rc();
-    validate_fpi_typed_signature(&core_func_path, import_func_ty)?;
+    validate_fpi_typed_signature(&core_func_path, &import_func_ty.ir)?;
     let shape = plan_fpi_call(
         &context,
-        import_func_ty,
+        &import_func_ty.ir,
         import_lowered_sig,
         &core_func_path,
         &core_func_sig,
         args.len(),
     )?;
-    let lowered = lower_fpi_canonical_args(&shape, import_func_ty, fb, args, span)
+    let lowered = lower_fpi_canonical_args(&shape, &import_func_ty.ir, fb, args, span)
         .wrap_err_with(|| format!("failed to lower FPI import arguments for `{core_func_path}`"))?;
 
     let prefix_locals =
@@ -769,7 +769,7 @@ fn is_fpi_proc_root_type(ty: &Type) -> bool {
 fn generate_lowering_with_transformation(
     world_builder: &mut WorldBuilder,
     import_func_path: &SymbolPath,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
     import_func_sig_flat: Signature,
@@ -808,14 +808,15 @@ fn generate_lowering_with_transformation(
     // The import function should have the lifted signature (returns tuple)
     // not the lowered signature with pointer parameter
     let context = world_builder.context_rc();
-    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import)
-        .wrap_err_with(|| {
-            format!("failed to flatten import function signature for '{import_func_path}'")
-        })?;
+    let import_func_sig =
+        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
+            .wrap_err_with(|| {
+                format!("failed to flatten import function signature for '{import_func_path}'")
+            })?;
 
     // Extract the actual result types from the import function type
     let flattened_results =
-        flatten_types(&context, &import_func_ty.results).wrap_err_with(|| {
+        flatten_types(&context, &import_func_ty.ir.results).wrap_err_with(|| {
             format!("failed to flatten result types for import function '{import_func_path}'")
         })?;
 
@@ -912,7 +913,7 @@ fn generate_lowering_with_transformation(
 fn generate_direct_lowering(
     world_builder: &mut WorldBuilder,
     import_func_path: &SymbolPath,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
     core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
@@ -934,10 +935,11 @@ fn generate_direct_lowering(
     let mut component_builder = ComponentBuilder::new(component_ref);
 
     let context = world_builder.context_rc();
-    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import)
-        .wrap_err_with(|| {
-            format!("failed to flatten import function signature for '{import_func_path}'")
-        })?;
+    let import_func_sig =
+        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
+            .wrap_err_with(|| {
+                format!("failed to flatten import function signature for '{import_func_path}'")
+            })?;
     let import_func_ref = component_builder
         .define_function(
             import_func_path.name().into(),

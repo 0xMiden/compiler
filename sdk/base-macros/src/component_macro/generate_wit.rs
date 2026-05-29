@@ -114,7 +114,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
                         &exported_type_names,
                         Span::call_site().into(),
                     )?;
-                    if field.ty.requires_import {
+                    if field.ty.requires_core_type_import() {
                         combined_core_imports.insert(field.ty.wit_name.clone());
                     }
                 }
@@ -127,7 +127,7 @@ pub(super) fn build_component_wit(spec: ComponentWitSpec<'_>) -> Result<String, 
                             &exported_type_names,
                             Span::call_site().into(),
                         )?;
-                        if payload.requires_import {
+                        if payload.requires_core_type_import() {
                             combined_core_imports.insert(payload.wit_name.clone());
                         }
                     }
