@@ -104,6 +104,51 @@ fn maps_rust_primitive_types_to_wit_types() {
 }
 
 #[test]
+fn maps_rust_option_type_to_wit_option() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let exported_names = HashSet::new();
+    let ty: Type = syn::parse_str("Option<u64>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("option should resolve");
+
+    assert_eq!(type_ref.wit_name, "option<u64>");
+    assert!(!type_ref.is_custom);
+    assert!(!type_ref.requires_core_type_import());
+    ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect("primitive option should require no export");
+}
+
+#[test]
+fn option_type_tracks_nested_core_type_imports() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let ty: Type = syn::parse_str("Option<Word>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("option should resolve");
+    let mut imports = Vec::new();
+
+    type_ref.add_required_core_type_imports(&mut imports);
+
+    assert_eq!(type_ref.wit_name, "option<word>");
+    assert_eq!(imports, vec!["word"]);
+}
+
+#[test]
+fn option_type_validates_nested_custom_type() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let ty: Type = syn::parse_str("Option<LocalType>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("option should resolve");
+    let exported_names = HashSet::new();
+    let err = ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect_err("expected unresolved type error");
+
+    assert!(
+        err.to_string().contains("add #[export_type]"),
+        "error message missing hint: {err}"
+    );
+}
+
+#[test]
 fn struct_field_missing_export_type_hint() {
     reset_export_type_registry_for_tests();
     let item: syn::ItemStruct = parse_quote! {

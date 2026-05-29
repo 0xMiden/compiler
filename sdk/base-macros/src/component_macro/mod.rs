@@ -564,6 +564,10 @@ fn record_type_path(
     type_ref: &TypeRef,
     module_prefix_segments: Option<&[String]>,
 ) {
+    for dependency in &type_ref.dependencies {
+        record_type_path(paths, dependency, module_prefix_segments);
+    }
+
     if !type_ref.is_custom {
         return;
     }
@@ -772,9 +776,7 @@ fn parse_component_method(
 
                 let user_ty = (*pat_type.ty).clone();
                 let type_ref = map_type_to_type_ref(&pat_type.ty, exported_types)?;
-                if type_ref.requires_core_type_import() {
-                    type_imports.insert(type_ref.wit_name.clone());
-                }
+                type_ref.add_required_core_type_imports(&mut type_imports);
 
                 params.push(MethodParam {
                     ident: ident.clone(),
@@ -797,9 +799,7 @@ fn parse_component_method(
         ReturnType::Type(_, ty) if is_unit_type(ty) => MethodReturn::Unit,
         ReturnType::Type(_, ty) => {
             let type_ref = map_type_to_type_ref(ty, exported_types)?;
-            if type_ref.requires_core_type_import() {
-                type_imports.insert(type_ref.wit_name.clone());
-            }
+            type_ref.add_required_core_type_imports(&mut type_imports);
             MethodReturn::Type {
                 user_ty: ty.clone(),
                 type_ref,
@@ -1002,6 +1002,7 @@ mod tests {
             wit_name: "struct-a".into(),
             is_custom: true,
             path: vec!["StructA".into()],
+            dependencies: Vec::new(),
         };
 
         record_type_path(&mut paths, &type_ref, None);
@@ -1016,6 +1017,7 @@ mod tests {
             wit_name: "struct-a".into(),
             is_custom: true,
             path: vec!["StructA".into()],
+            dependencies: Vec::new(),
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];
 
@@ -1034,6 +1036,7 @@ mod tests {
             wit_name: "struct-a".into(),
             is_custom: true,
             path: vec!["super".into(), "StructA".into()],
+            dependencies: Vec::new(),
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];
 

@@ -688,6 +688,7 @@ pub(crate) fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[s
 
                 // Skip primitive types and common std types
                 if is_primitive_or_std_type(&name) {
+                    syn::visit_mut::visit_type_path_mut(self, type_path);
                     return;
                 }
 
@@ -1191,6 +1192,26 @@ mod tests {
 
         assert!(result.contains("crate :: bindings :: miden :: basic_wallet :: receive_asset"));
         assert!(result.contains("asset"));
+    }
+
+    #[test]
+    fn test_wrapper_method_qualifies_custom_type_inside_option() {
+        let func: ItemFn = parse_quote! {
+            pub fn roundtrip(payload: Option<OptionPayload>) -> Option<OptionPayload> {
+                unimplemented!()
+            }
+        };
+        let path = vec![
+            syn::Ident::new("miden", Span::call_site()),
+            syn::Ident::new("account", Span::call_site()),
+            syn::Ident::new("interface", Span::call_site()),
+        ];
+
+        let method = build_wrapper_method(&func, &path).unwrap();
+        let signature = method.sig.to_token_stream().to_string().replace(' ', "");
+
+        assert!(signature.contains("payload:Option<miden::account::interface::OptionPayload>"));
+        assert!(signature.contains("->Option<miden::account::interface::OptionPayload>"));
     }
 
     #[test]

@@ -17,12 +17,23 @@ pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
     pub(crate) is_custom: bool,
     pub(crate) path: Vec<String>,
+    pub(crate) dependencies: Vec<TypeRef>,
 }
 
 impl TypeRef {
     /// Returns true when this type must be imported from the SDK core-types WIT interface.
     pub(crate) fn requires_core_type_import(&self) -> bool {
         !self.is_custom && sdk_core_type_names().contains(&self.wit_name)
+    }
+
+    /// Appends all SDK core-types imports referenced by this type.
+    pub(crate) fn add_required_core_type_imports(&self, imports: &mut impl Extend<String>) {
+        if self.requires_core_type_import() {
+            imports.extend([self.wit_name.clone()]);
+        }
+        for dependency in &self.dependencies {
+            dependency.add_required_core_type_imports(imports);
+        }
     }
 }
 
@@ -99,14 +110,6 @@ pub(crate) fn map_type_to_type_ref(
             let last = path.path.segments.last().ok_or_else(|| {
                 syn::Error::new(ty.span(), "unsupported type in component interface")
             })?;
-
-            if !last.arguments.is_empty() {
-                return Err(syn::Error::new(
-                    last.span(),
-                    "generic type arguments are not supported in exported types",
-                ));
-            }
-
             let ident = last.ident.to_string();
             if ident.is_empty() {
                 return Err(syn::Error::new(
@@ -117,6 +120,27 @@ pub(crate) fn map_type_to_type_ref(
 
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
+
+            if !last.arguments.is_empty() {
+                if ident == "Option" {
+                    let inner = single_generic_type_argument(last)?;
+                    let inner = map_type_to_type_ref(inner, exported_types)?;
+                    let wit_name = format!("option<{}>", inner.wit_name);
+
+                    return Ok(TypeRef {
+                        wit_name,
+                        is_custom: false,
+                        path: path_segments,
+                        dependencies: vec![inner],
+                    });
+                }
+
+                return Err(syn::Error::new(
+                    last.span(),
+                    "generic type arguments are not supported in exported types",
+                ));
+            }
+
             let wit_name = ident.to_kebab_case();
 
             if let Some(wit_type) = rust_type_to_wit_type(&ident) {
@@ -124,6 +148,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name: wit_type_name(wit_type).to_string(),
                     is_custom: false,
                     path: path_segments,
+                    dependencies: Vec::new(),
                 });
             }
 
@@ -132,6 +157,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name,
                     is_custom: true,
                     path: path_segments,
+                    dependencies: Vec::new(),
                 });
             }
 
@@ -140,6 +166,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name,
                     is_custom: false,
                     path: path_segments,
+                    dependencies: Vec::new(),
                 });
             }
 
@@ -147,12 +174,30 @@ pub(crate) fn map_type_to_type_ref(
                 wit_name,
                 is_custom: true,
                 path: path_segments,
+                dependencies: Vec::new(),
             })
         }
         _ => Err(syn::Error::new(
             ty.span(),
             "unsupported type in component interface; only paths are supported",
         )),
+    }
+}
+
+/// Returns the single type argument from a supported generic Rust type path segment.
+fn single_generic_type_argument(segment: &syn::PathSegment) -> Result<&Type, syn::Error> {
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(
+            segment.arguments.span(),
+            "generic type arguments must be angle-bracketed",
+        ));
+    };
+    if args.args.len() != 1 {
+        return Err(syn::Error::new(args.span(), "Option<T> must have exactly one type argument"));
+    }
+    match args.args.first().expect("argument count checked above") {
+        syn::GenericArgument::Type(ty) => Ok(ty),
+        other => Err(syn::Error::new(other.span(), "Option<T> only supports type arguments")),
     }
 }
 
@@ -342,6 +387,9 @@ pub(crate) fn ensure_custom_type_defined(
                  #[export_type] to its definition"
             ),
         ));
+    }
+    for dependency in &type_ref.dependencies {
+        ensure_custom_type_defined(dependency, exported_type_names, span)?;
     }
     Ok(())
 }

@@ -11,6 +11,8 @@ use midenc_integration_test_support::{
     testing::executor_with_std,
 };
 
+mod option;
+
 /// Names and package identifiers used by one generated account/note pair.
 struct CanonAbiProjectNames {
     /// The Rust crate name of the account project.
@@ -244,8 +246,7 @@ fn read_generated_wit(project: &Project) -> String {
 }
 
 /// Asserts that exported Rust enums are encoded as WIT variants.
-fn assert_generated_wit_uses_variants(project: &Project) {
-    let wit = read_generated_wit(project);
+fn assert_generated_wit_uses_variants(wit: &str) {
     assert!(
         wit.contains("variant request {"),
         "generated WIT did not define `request` as a variant:\n{wit}"
@@ -265,14 +266,20 @@ fn assert_generated_wit_uses_variants(project: &Project) {
 }
 
 /// Runs a generated account/note pair by executing the compiled note script directly.
-fn run_variant_case(case: &str, account_source: &str, note_body: &str) {
+fn run_canonabi_case(
+    case: &str,
+    account_source: &str,
+    note_body: &str,
+    assert_generated_wit: impl FnOnce(&str),
+) {
     let names = CanonAbiProjectNames::new(case);
     let account_project = build_account_project(&names, account_source);
     let account_root = account_project.root();
     let mut account_test = build_generated_test(&account_root);
     let account_package = account_test.compile_package();
     assert!(account_package.is_library());
-    assert_generated_wit_uses_variants(&account_project);
+    let generated_wit = read_generated_wit(&account_project);
+    assert_generated_wit(&generated_wit);
 
     let note_project = build_note_project(&names, &account_root, note_body);
     let mut note_test = build_generated_test(note_project.root());
@@ -286,6 +293,11 @@ fn run_variant_case(case: &str, account_source: &str, note_body: &str) {
     exec.with_dependencies(note_package.manifest.dependencies())
         .expect("failed to add generated note dependencies");
     let _trace = exec.execute(&program, note_test.session.source_manager.clone());
+}
+
+/// Runs a generated variant account/note pair.
+fn run_variant_case(case: &str, account_source: &str, note_body: &str) {
+    run_canonabi_case(case, account_source, note_body, assert_generated_wit_uses_variants);
 }
 
 /// Indents every line of `source` by `spaces`.
