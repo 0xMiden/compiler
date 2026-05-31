@@ -1559,7 +1559,7 @@ fn debug_var_location_from_expression(
             .and_then(|value| emitter.stack.find(value))
             .map(|pos| emitter.stack.effective_index(pos) as u8)
             .map(DebugVarLocation::Stack),
-        [first] => match first {
+        [first] | [first, ExpressionOp::StackValue] => match first {
             ExpressionOp::WasmStack(offset) => Some(DebugVarLocation::Stack(*offset as u8)),
             ExpressionOp::WasmLocal(idx) => {
                 // WASM locals are always stored in memory via FMP in Miden.
@@ -1590,6 +1590,8 @@ fn debug_var_location_from_expression(
         _ => Some(DebugVarLocation::Expression(expr.to_bytes())),
     }
 }
+
+const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
 
 fn apply_debug_var_metadata(
     debug_var: &mut miden_core::operations::DebugVarInfo,
@@ -1717,9 +1719,19 @@ impl HirLowering for debuginfo::DebugKill {
         ValueRange::Empty
     }
 
-    fn emit(&self, _emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        // TODO(pauls): Either add new decorator, or emit a special trace event for kills, and
-        // map debug variable name to the event out of band
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        use miden_core::operations::{DebugVarInfo, DebugVarLocation};
+
+        let var = self.variable();
+        let mut debug_var = DebugVarInfo::new(
+            var.name.to_string(),
+            DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec()),
+        );
+        apply_debug_var_metadata(&mut debug_var, var.as_value());
+
+        let inst = masm::Instruction::DebugVar(debug_var);
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+
         Ok(())
     }
 }

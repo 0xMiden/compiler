@@ -75,6 +75,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::LocalGet { local_index } => {
             let local = builder.get_local(Variable::from_u32(*local_index));
             let val = builder.load_local(local, span)?;
+            builder.emit_debug_values_for_wasm_local(*local_index, val, span);
             state.push1(val);
         }
         Operator::LocalSet { local_index } => {
@@ -97,6 +98,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             };
             builder.store_local(local, val, span)?;
             builder.emit_dbg_value_for_var(var, val, span);
+            builder.emit_debug_values_for_wasm_local(*local_index, val, span);
         }
         Operator::LocalTee { local_index } => {
             let var = Variable::from_u32(*local_index);
@@ -118,6 +120,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             };
             builder.store_local(local, val, span)?;
             builder.emit_dbg_value_for_var(var, val, span);
+            builder.emit_debug_values_for_wasm_local(*local_index, val, span);
         }
         /********************************** Globals ****************************************/
         Operator::GlobalGet { global_index } => {
