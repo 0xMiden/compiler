@@ -135,6 +135,20 @@ pub(crate) fn map_type_to_type_ref(
                     });
                 }
 
+                if ident == "Result" {
+                    let args = generic_type_arguments(last, "Result<T, E>", 2)?;
+                    let ok = map_result_argument_type_to_type_ref(args[0], exported_types)?;
+                    let err = map_result_argument_type_to_type_ref(args[1], exported_types)?;
+                    let wit_name = format!("result<{}, {}>", ok.wit_name, err.wit_name);
+
+                    return Ok(TypeRef {
+                        wit_name,
+                        is_custom: false,
+                        path: path_segments,
+                        dependencies: vec![ok, err],
+                    });
+                }
+
                 return Err(syn::Error::new(
                     last.span(),
                     "generic type arguments are not supported in exported types",
@@ -186,18 +200,54 @@ pub(crate) fn map_type_to_type_ref(
 
 /// Returns the single type argument from a supported generic Rust type path segment.
 fn single_generic_type_argument(segment: &syn::PathSegment) -> Result<&Type, syn::Error> {
+    let args = generic_type_arguments(segment, "Option<T>", 1)?;
+    Ok(args[0])
+}
+
+/// Returns type arguments from a supported generic Rust type path segment.
+fn generic_type_arguments<'a>(
+    segment: &'a syn::PathSegment,
+    type_name: &str,
+    expected_len: usize,
+) -> Result<Vec<&'a Type>, syn::Error> {
     let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
         return Err(syn::Error::new(
             segment.arguments.span(),
             "generic type arguments must be angle-bracketed",
         ));
     };
-    if args.args.len() != 1 {
-        return Err(syn::Error::new(args.span(), "Option<T> must have exactly one type argument"));
+    if args.args.len() != expected_len {
+        let plural = if expected_len == 1 { "" } else { "s" };
+        return Err(syn::Error::new(
+            args.span(),
+            format!("{type_name} must have exactly {expected_len} type argument{plural}"),
+        ));
     }
-    match args.args.first().expect("argument count checked above") {
-        syn::GenericArgument::Type(ty) => Ok(ty),
-        other => Err(syn::Error::new(other.span(), "Option<T> only supports type arguments")),
+    args.args
+        .iter()
+        .map(|arg| match arg {
+            syn::GenericArgument::Type(ty) => Ok(ty),
+            other => Err(syn::Error::new(
+                other.span(),
+                format!("{type_name} only supports type arguments"),
+            )),
+        })
+        .collect()
+}
+
+/// Converts one Rust `Result` type argument into its WIT representation.
+fn map_result_argument_type_to_type_ref(
+    ty: &Type,
+    exported_types: &HashMap<String, ExportedTypeDef>,
+) -> Result<TypeRef, syn::Error> {
+    match ty {
+        Type::Tuple(tuple) if tuple.elems.is_empty() => Ok(TypeRef {
+            wit_name: "_".to_string(),
+            is_custom: false,
+            path: Vec::new(),
+            dependencies: Vec::new(),
+        }),
+        _ => map_type_to_type_ref(ty, exported_types),
     }
 }
 

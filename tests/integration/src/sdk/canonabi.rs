@@ -12,6 +12,7 @@ use midenc_integration_test_support::{
 };
 
 mod option;
+mod result;
 mod variant;
 
 /// Names and package identifiers used by one generated account/note pair.

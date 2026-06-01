@@ -149,6 +149,61 @@ fn option_type_validates_nested_custom_type() {
 }
 
 #[test]
+fn maps_rust_result_type_to_wit_result() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let exported_names = HashSet::new();
+    let ty: Type = syn::parse_str("Result<u64, Felt>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("result should resolve");
+
+    assert_eq!(type_ref.wit_name, "result<u64, felt>");
+    assert!(!type_ref.is_custom);
+    assert!(!type_ref.requires_core_type_import());
+    ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect("result should require no unresolved custom export");
+}
+
+#[test]
+fn result_type_tracks_nested_core_type_imports() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let ty: Type = syn::parse_str("Result<Word, Felt>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("result should resolve");
+    let mut imports = Vec::new();
+
+    type_ref.add_required_core_type_imports(&mut imports);
+
+    assert_eq!(type_ref.wit_name, "result<word, felt>");
+    assert_eq!(imports, vec!["word", "felt"]);
+}
+
+#[test]
+fn result_type_validates_nested_custom_type() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let ty: Type = syn::parse_str("Result<u64, LocalType>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("result should resolve");
+    let exported_names = HashSet::new();
+    let err = ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect_err("expected unresolved type error");
+
+    assert!(
+        err.to_string().contains("add #[export_type]"),
+        "error message missing hint: {err}"
+    );
+}
+
+#[test]
+fn result_type_maps_unit_argument_to_wit_placeholder() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+    let ty: Type = syn::parse_str("Result<(), Felt>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("result should resolve");
+
+    assert_eq!(type_ref.wit_name, "result<_, felt>");
+}
+
+#[test]
 fn struct_field_missing_export_type_hint() {
     reset_export_type_registry_for_tests();
     let item: syn::ItemStruct = parse_quote! {
