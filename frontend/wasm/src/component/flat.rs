@@ -12,6 +12,9 @@ use midenc_hir::{
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 
+const MAX_FLAT_PARAMS: usize = 16;
+const MAX_FLAT_RESULTS: usize = 1;
+
 /// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CanonicalAbiMode {
@@ -46,6 +49,31 @@ pub struct CanonicalFlatLayoutEntry {
     pub offset: u32,
     /// Source type to load from memory for this flattened value.
     pub ty: Type,
+}
+
+/// Identifies the wrapper transformation required by canonical ABI flattening.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CanonicalAbiTransformation {
+    /// The component function can be lowered or lifted directly.
+    None,
+    /// The component function parameters are passed through a tuple pointer.
+    ParamTuple,
+    /// The component function result is passed through an out pointer.
+    ResultOutPtr,
+    /// The component function requires both tupled parameters and an out-pointer result.
+    Both,
+}
+
+impl CanonicalAbiTransformation {
+    /// Returns true when the transformation includes tupled parameter passing.
+    pub fn has_param_tuple(self) -> bool {
+        matches!(self, Self::ParamTuple | Self::Both)
+    }
+
+    /// Returns true when any transformation is required.
+    pub fn is_needed(self) -> bool {
+        !matches!(self, Self::None)
+    }
 }
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
@@ -267,6 +295,30 @@ pub fn flatten_types(
         .collect())
 }
 
+/// Classifies the canonical ABI transformation required by a component function type.
+pub fn classify_function_type(
+    context: &Rc<Context>,
+    func_ty: &FunctionType,
+) -> Result<CanonicalAbiTransformation, CanonicalTypeError> {
+    assert!(
+        func_ty.abi.is_wasm_canonical_abi(),
+        "unexpected function abi: {:?}",
+        &func_ty.abi
+    );
+
+    let flat_params = flatten_types(context, &func_ty.params)?;
+    let flat_results = flatten_types(context, &func_ty.results)?;
+    let needs_param_tuple = flat_params.len() > MAX_FLAT_PARAMS;
+    let needs_result_out_ptr = flat_results.len() > MAX_FLAT_RESULTS;
+
+    Ok(match (needs_param_tuple, needs_result_out_ptr) {
+        (false, false) => CanonicalAbiTransformation::None,
+        (true, false) => CanonicalAbiTransformation::ParamTuple,
+        (false, true) => CanonicalAbiTransformation::ResultOutPtr,
+        (true, true) => CanonicalAbiTransformation::Both,
+    })
+}
+
 /// Flattens the given CanonABI function type
 pub fn flatten_function_type(
     context: &Rc<Context>,
@@ -285,8 +337,6 @@ pub fn flatten_function_type(
         "unexpected function abi: {:?}",
         &func_ty.abi
     );
-    const MAX_FLAT_PARAMS: usize = 16;
-    const MAX_FLAT_RESULTS: usize = 1;
     let mut flat_params = flatten_types(context, &func_ty.params)?;
     let mut flat_results = flatten_types(context, &func_ty.results)?;
     if flat_params.len() > MAX_FLAT_PARAMS {
@@ -322,20 +372,6 @@ pub fn flatten_function_type(
         results: flat_results,
         cc: CallConv::ComponentModel,
     })
-}
-
-/// Checks if the given function signature needs to be transformed, i.e., if it contains a pointer
-pub fn needs_transformation(sig: &Signature) -> bool {
-    let pointer_in_params = sig.params().iter().any(|param| param.is_sret_param());
-    let pointer_in_results = sig.results().iter().any(|result| result.is_sret_param());
-
-    // Check if the total size of parameters exceeds 16 felts (the maximum stack elements
-    // accessible to the callee using the `call` instruction)
-    let params_size_in_felts: usize =
-        sig.params().iter().map(|param| param.ty.size_in_felts()).sum();
-    let exceeds_felt_limit = params_size_in_felts > 16;
-
-    pointer_in_params || pointer_in_results || exceeds_felt_limit
 }
 
 /// Asserts that the given core Wasm signature is equivalent to the given flattened signature
@@ -865,46 +901,50 @@ mod tests {
     }
 
     #[test]
-    fn test_needs_transformation() {
+    fn test_classify_function_type() {
         let context = Rc::new(Context::default());
 
-        // No transformation needed - simple types
-        let sig = Signature {
-            params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::Felt)],
-            results: vec![AbiParam::new(Type::I32)],
-            cc: CallConv::ComponentModel,
+        let component_func = |params, results| {
+            let mut func_ty = FunctionType::new(CallConv::Fast, params, results);
+            func_ty.abi = CallConv::ComponentModel;
+            func_ty
         };
-        assert!(!needs_transformation(&sig));
 
-        // Transformation needed - pointer in params
-        let mut sig_with_ptr = sig.clone();
-        sig_with_ptr.params[0].mark_sret(&context);
-        assert!(needs_transformation(&sig_with_ptr));
+        // No transformation needed - simple types.
+        let func_ty = component_func(vec![Type::I32, Type::Felt], vec![Type::I32]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiTransformation::None
+        );
 
-        // Transformation needed - pointer in results
-        let sig = Signature {
-            params: vec![AbiParam::new(Type::I32)],
-            results: vec![AbiParam::sret(Type::from(PointerType::new(Type::I32)), &context)],
-            cc: CallConv::ComponentModel,
-        };
-        assert!(needs_transformation(&sig));
+        // Parameter tuple needed - more than 16 flattened parameters.
+        let func_ty = component_func(vec![Type::I32; 17], vec![]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiTransformation::ParamTuple
+        );
 
-        // Transformation needed - exceeds 16 felts
-        let params = vec![AbiParam::new(Type::Felt); 17];
-        let sig = Signature {
-            params,
-            results: vec![],
-            cc: CallConv::ComponentModel,
-        };
-        assert!(needs_transformation(&sig));
+        // Result out-pointer needed - result flattens to more than one value.
+        let result = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let func_ty = component_func(vec![Type::I32], vec![result]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiTransformation::ResultOutPtr
+        );
 
-        // Edge case - exactly 16 felts
-        let params = vec![AbiParam::new(Type::Felt); 16];
-        let sig = Signature {
-            params,
-            results: vec![],
-            cc: CallConv::ComponentModel,
-        };
-        assert!(!needs_transformation(&sig));
+        // Both transformations needed.
+        let result = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let func_ty = component_func(vec![Type::I32; 17], vec![result]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiTransformation::Both
+        );
+
+        // Edge case - exactly 16 flattened parameters.
+        let func_ty = component_func(vec![Type::Felt; 16], vec![]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiTransformation::None
+        );
     }
 }

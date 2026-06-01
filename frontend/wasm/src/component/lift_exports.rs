@@ -20,7 +20,7 @@ use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 use super::{
     ComponentFunctionType,
     canon_abi_utils::load,
-    flat::{CanonicalAbiMode, flatten_function_type, flatten_types, needs_transformation},
+    flat::{CanonicalAbiMode, classify_function_type, flatten_function_type, flatten_types},
 };
 use crate::{
     error::WasmResult,
@@ -66,6 +66,13 @@ pub fn generate_export_lifting_function(
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
+    let transformation = classify_function_type(&context, &export_func_ty.ir).map_err(|e| {
+        let message = format!(
+            "Component export lifting generation. Signature for exported function \
+             {core_export_func_path} requires classification. Error: {e}"
+        );
+        diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
+    })?;
     let export_metadata = ComponentExportMetadata {
         ty: &export_func_ty.ir,
         results: &export_func_ty.results,
@@ -92,7 +99,7 @@ pub fn generate_export_lifting_function(
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
-    if needs_transformation(&cross_ctx_export_sig_flat) {
+    if transformation.is_needed() {
         generate_lifting_with_transformation(
             component_builder,
             export_func_ident,

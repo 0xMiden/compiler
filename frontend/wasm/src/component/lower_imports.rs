@@ -15,13 +15,14 @@ use midenc_hir::{
         attributes::Signature,
     },
 };
+use midenc_session::diagnostics::Report;
 
 use super::{
     ComponentFunctionType,
     canon_abi_utils::store,
     flat::{
-        CanonicalAbiMode, flatten_function_type, flatten_types, flattened_types_layout,
-        needs_transformation,
+        CanonicalAbiMode, CanonicalAbiTransformation, classify_function_type,
+        flatten_function_type, flatten_types, flattened_types_layout,
     },
 };
 use crate::{
@@ -66,6 +67,26 @@ pub fn generate_import_lowering_function(
                      '{import_func_path}' requires flattening"
                 )
             })?;
+    // FPI imports bypass canonical ABI classification: oversized argument lists take the
+    // FPI indirect lowering path instead of tupled parameters.
+    let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
+    let transformation = if is_fpi {
+        None
+    } else {
+        let transformation =
+            classify_function_type(&context, &import_func_ty.ir).wrap_err_with(|| {
+                format!(
+                    "failed to generate component import lowering: signature of \
+                     '{import_func_path}' requires classification"
+                )
+            })?;
+        if transformation.has_param_tuple() {
+            return Err(Report::msg(format!(
+                "tuple-parameter import lowering is not supported for '{import_func_path}'"
+            )));
+        }
+        Some(transformation)
+    };
 
     let core_func_ref = module_builder
         .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
@@ -90,7 +111,7 @@ pub fn generate_import_lowering_function(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    if is_fpi_import(&import_func_path, &import_func_ty.ir)? {
+    let Some(transformation) = transformation else {
         return generate_fpi_lowering(
             import_func_ty,
             &import_lowered_sig,
@@ -101,10 +122,21 @@ pub fn generate_import_lowering_function(
             &args,
             span,
         );
-    }
+    };
 
-    if needs_transformation(&import_lowered_sig) {
-        generate_lowering_with_transformation(
+    match transformation {
+        CanonicalAbiTransformation::None => generate_direct_lowering(
+            world_builder,
+            &import_func_path,
+            import_func_ty,
+            core_func_path,
+            core_func_sig,
+            core_func_ref,
+            &mut fb,
+            &args,
+            span,
+        ),
+        CanonicalAbiTransformation::ResultOutPtr => generate_lowering_with_transformation(
             world_builder,
             &import_func_path,
             import_func_ty,
@@ -115,19 +147,10 @@ pub fn generate_import_lowering_function(
             &mut fb,
             &args,
             span,
-        )
-    } else {
-        generate_direct_lowering(
-            world_builder,
-            &import_func_path,
-            import_func_ty,
-            core_func_path,
-            core_func_sig,
-            core_func_ref,
-            &mut fb,
-            &args,
-            span,
-        )
+        ),
+        CanonicalAbiTransformation::ParamTuple | CanonicalAbiTransformation::Both => {
+            unreachable!("tuple-parameter import lowering was rejected earlier")
+        }
     }
 }
 
@@ -982,7 +1005,10 @@ mod tests {
     use std::sync::Arc;
 
     use midenc_hir::{
-        CallConv, Context, EnumType, StructType, SymbolNameComponent, Variant, interner::Symbol,
+        BuilderExt, CallConv, Context, EnumType, FunctionType, PointerType, SourceSpan,
+        StructType, SymbolName, SymbolNameComponent, SymbolPath, Type, Variant,
+        dialects::builtin::{ModuleBuilder, World, WorldBuilder, attributes::AbiParam},
+        interner::Symbol,
     };
 
     use super::*;
@@ -1409,5 +1435,68 @@ mod tests {
         let message = err.to_string();
 
         assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
+    }
+
+    fn component_import_path(function: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(SymbolName::intern("miden:test@1.0.0")),
+            SymbolNameComponent::Leaf(SymbolName::intern(function)),
+        ])
+    }
+
+    fn core_function_path(function: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(SymbolName::intern("core")),
+            SymbolNameComponent::Leaf(SymbolName::intern(function)),
+        ])
+    }
+
+    #[test]
+    fn rejects_import_lowering_with_tupled_params_and_no_result() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder
+            .declare_module("core".into())
+            .expect("failed to declare core module");
+        let mut module_builder = ModuleBuilder::new(module);
+
+        let mut ir = FunctionType::new(CallConv::Fast, vec![Type::I32; 17], vec![]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([]),
+            results: Box::new([]),
+        };
+
+        let tuple = Type::from(StructType::new(vec![Type::I32; 17]));
+        let core_func_sig = Signature {
+            params: vec![AbiParam::sret(Type::from(PointerType::new(tuple)), &context)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("too_many_params"),
+            &import_func_ty,
+            core_function_path("too_many_params"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected tuple-parameter import lowering to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("tuple-parameter import lowering"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
     }
 }
