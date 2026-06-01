@@ -16,9 +16,9 @@ use miden_mast_package::{Package, PackageExport, TargetType};
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorage, AccountStorageMode, AccountType, StorageSlot, StorageSlotName,
+        AccountStorage, AccountType, StorageSlot, StorageSlotName,
     },
-    asset::Asset,
+    asset::{Asset, AssetAmount},
     note::{NoteScript, PartialNote},
     transaction::{TransactionMeasurements, TransactionScript},
 };
@@ -76,6 +76,7 @@ pub(crate) fn note_script_root(package: &Package) -> Word {
     NoteScript::from_package(package)
         .expect("compiled package should contain exactly one note script export")
         .root()
+        .into()
 }
 
 /// Builds a transaction script from a compiled transaction-script package.
@@ -123,6 +124,8 @@ pub(crate) fn assert_account_has_fungible_asset(
     expected_faucet_id: AccountId,
     expected_amount: u64,
 ) {
+    let expected_amount =
+        AssetAmount::new(expected_amount).expect("expected amount should be a valid asset amount");
     let found_asset = account.vault().assets().find_map(|asset| match asset {
         Asset::Fungible(fungible_asset) if fungible_asset.faucet_id() == expected_faucet_id => {
             Some(fungible_asset)
@@ -136,7 +139,7 @@ pub(crate) fn assert_account_has_fungible_asset(
             expected_amount,
             "Found asset from faucet {expected_faucet_id} but amount {} doesn't match expected \
              {expected_amount}",
-            fungible_asset.amount()
+            fungible_asset.amount().as_u64()
         ),
         None => {
             panic!("Account does not contain a fungible asset from faucet {expected_faucet_id}")
@@ -192,6 +195,7 @@ pub(crate) fn build_asset_transfer_tx(
     let tx_script = transaction_script_from_package(&tx_script_package);
 
     let serial_num = rng.draw_word();
+    let faucet_id = asset.faucet_id();
 
     let asset: Asset = asset.into();
     let output_note = NoteBuilder::new(sender_id, rng)
@@ -208,7 +212,7 @@ pub(crate) fn build_asset_transfer_tx(
     // This must match the input layout expected by `examples/basic-wallet-tx-script`.
     let mut commitment_input: Vec<Felt> = vec![
         // The output's note tag
-        Felt::new(0u64),
+        Felt::ZERO,
         // The output's note type
         Felt::from(NoteType::Public),
     ];
@@ -227,6 +231,7 @@ pub(crate) fn build_asset_transfer_tx(
     let tx_context_builder = chain
         .build_tx_context(sender_id, &[], &[])
         .unwrap()
+        .foreign_accounts(vec![chain.get_foreign_account_inputs(faucet_id).unwrap()])
         .tx_script(tx_script)
         .tx_script_args(commitment_key)
         .extend_advice_map([(commitment_key, commitment_input)])
@@ -281,8 +286,7 @@ pub(crate) fn build_existing_counter_account_builder_with_auth_package(
     auth_storage_slots: Vec<StorageSlot>,
     seed: [u8; 32],
 ) -> AccountBuilder {
-    let metadata =
-        AccountComponentMetadata::new("auth", [AccountType::RegularAccountUpdatableCode]);
+    let metadata = AccountComponentMetadata::new("auth");
     let auth_component = AccountComponent::new(
         auth_component_package.mast.as_ref().clone(),
         auth_storage_slots,
@@ -291,8 +295,7 @@ pub(crate) fn build_existing_counter_account_builder_with_auth_package(
     .unwrap();
 
     AccountBuilder::new(seed)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(auth_component)
         .with_component(BasicWallet)
         .with_component(counter_component)

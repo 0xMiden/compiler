@@ -2,7 +2,7 @@
 //!
 //! These helpers are intended for snapshot-style assertions using `midenc_expect_test::expect!`.
 
-use miden_protocol::{note::NoteId, transaction::TransactionMeasurements};
+use miden_protocol::transaction::TransactionMeasurements;
 
 /// Returns the measured prologue cycles as a string.
 pub(crate) fn prologue_cycles(measurements: &TransactionMeasurements) -> &str {
@@ -19,15 +19,14 @@ pub(crate) fn auth_procedure_cycles(measurements: &TransactionMeasurements) -> &
     cycles_str(measurements.auth_procedure)
 }
 
-/// Returns the measured note-execution cycles for `note_id` as a string.
-pub(crate) fn note_cycles(measurements: &TransactionMeasurements, note_id: NoteId) -> &str {
-    let (_, num_cycles) = measurements
-        .note_execution
-        .iter()
-        .find(|(executed_note_id, _)| executed_note_id == &note_id)
-        .unwrap_or_else(|| {
-            panic!("No note-execution measurement found for note id {}", note_id.to_hex())
-        });
+/// Returns the measured note-execution cycles for a transaction with exactly one input note.
+pub(crate) fn single_note_cycles(measurements: &TransactionMeasurements) -> &str {
+    let [(_, num_cycles)] = measurements.note_execution.as_slice() else {
+        panic!(
+            "expected exactly one note-execution measurement, found {}",
+            measurements.note_execution.len()
+        );
+    };
 
     cycles_str(*num_cycles)
 }

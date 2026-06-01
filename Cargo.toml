@@ -27,8 +27,7 @@ members = [
     "tools/*",
     "tests/support",
     "tests/integration",
-    # Temporarily omitted until miden-client publishes a protocol 0.15-compatible release.
-    #"tests/integration-network",
+    "tests/integration-network",
 ]
 exclude = [
     "sdk/.cargo",
@@ -173,7 +172,7 @@ miden-stdlib-sys = { version = "0.12.0", path = "sdk/stdlib-sys" }
 #miden-assembly-syntax = { path = "../miden-vm/assembly-syntax" }
 #miden-core = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
 #miden-core = { path = "../miden-vm/core" }
-# miden-client = { git = "https://github.com/0xMiden/miden-client", rev = "0a5add565d1388f77cd182f3639c16aa8f7ec674" }
+miden-client = { git = "https://github.com/0xMiden/miden-client", branch = "igamigo-protocol-0.15" }
 # miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "main" }
 #miden-debug-types = { path = "../miden-vm/crates/debug/types" }
 #miden-processor = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }

@@ -6,7 +6,7 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_protocol::{
-    account::{AccountBuilder, AccountStorageMode, AccountType, auth::AuthScheme},
+    account::{AccountBuilder, AccountType, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::testing::note::NoteBuilder;
@@ -16,7 +16,7 @@ use midenc_expect_test::expect;
 use super::super::support::{
     COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, auth_procedure_cycles,
     build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-    counter_storage_slot_name, execute_tx, note_cycles, note_script_root,
+    counter_storage_slot_name, execute_tx, note_script_root, single_note_cycles,
 };
 
 /// Tests the counter contract with a "no-auth" authentication component.
@@ -61,8 +61,7 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
     // Create a separate sender account using only the BasicWallet component
     let seed = [1_u8; 32];
     let sender_builder = AccountBuilder::new(seed)
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(miden_client::account::component::BasicWallet);
     let sender_account = builder
         .add_account_from_builder(
@@ -101,8 +100,8 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
         .build_tx_context(counter_account.clone(), &[counter_note.id()], &[])
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, tx_context_builder);
-    expect!["1782"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["10581"].assert_eq(note_cycles(&tx_measurements, counter_note.id()));
+    expect!["1774"].assert_eq(auth_procedure_cycles(&tx_measurements));
+    expect!["10604"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(
