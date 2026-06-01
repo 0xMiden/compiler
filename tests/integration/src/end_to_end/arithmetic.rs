@@ -616,7 +616,7 @@ fn overflowing_rem_u128() {
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1152"]
 fn overflowing_rem_i8() {
     test_overflowing_arith(
         i8::overflowing_rem,
@@ -626,7 +626,7 @@ fn overflowing_rem_i8() {
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1152"]
 fn overflowing_rem_i16() {
     test_overflowing_arith(
         i16::overflowing_rem,
@@ -636,7 +636,7 @@ fn overflowing_rem_i16() {
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1152"]
 fn overflowing_rem_i32() {
     test_overflowing_arith(
         i32::overflowing_rem,
@@ -656,7 +656,6 @@ fn overflowing_rem_i64() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1110"]
 fn overflowing_rem_i128() {
     test_overflowing_arith(
         i128::overflowing_rem,
@@ -853,19 +852,19 @@ fn checked_rem_u64() {
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1152"]
 fn checked_rem_i8() {
     test_checked_arith(i8::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1152"]
 fn checked_rem_i16() {
     test_checked_arith(i16::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
 
 #[test]
-#[ignore = "Mod is not supported for signed int"]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1152"]
 fn checked_rem_i32() {
     test_checked_arith(i32::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
