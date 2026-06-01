@@ -67,15 +67,16 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let first = roundtrip(Request::First(felt!(11)));
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let first = roundtrip(Request::First(max));
 match first {
-    Response::First(value) => assert_eq!(value, felt!(12)),
+    Response::First(value) => assert_eq!(value, felt!(0)),
     _ => assert_eq!(felt!(0), felt!(1)),
 }
 
-let second = roundtrip(Request::Second(felt!(20)));
+let second = roundtrip(Request::Second(max));
 match second {
-    Response::Second(value) => assert_eq!(value, felt!(22)),
+    Response::Second(value) => assert_eq!(value, felt!(1)),
     _ => assert_eq!(felt!(0), felt!(1)),
 }"#;
 
@@ -128,9 +129,10 @@ match empty {
     _ => assert_eq!(felt!(0), felt!(1)),
 }
 
-let value = roundtrip(Request::Value(felt!(37)));
+let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let value = roundtrip(Request::Value(max));
 match value {
-    Response::Value(value) => assert_eq!(value, felt!(42)),
+    Response::Value(value) => assert_eq!(value, felt!(4)),
     _ => assert_eq!(felt!(0), felt!(1)),
 }"#;
 
@@ -182,20 +184,21 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let scalar = roundtrip(Request::Scalar(felt!(7)));
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let scalar = roundtrip(Request::Scalar(max));
 match scalar {
-    Response::Scalar(value) => assert_eq!(value, felt!(10)),
+    Response::Scalar(value) => assert_eq!(value, felt!(2)),
     _ => assert_eq!(felt!(0), felt!(1)),
 }
 
-let word = Word::new([felt!(1), felt!(2), felt!(3), felt!(4)]);
+let word = Word::new([max, max, max, max]);
 let elements = roundtrip(Request::Elements(word));
 match elements {
     Response::Elements(value) => {
-        assert_eq!(value.a, felt!(2));
-        assert_eq!(value.b, felt!(4));
-        assert_eq!(value.c, felt!(6));
-        assert_eq!(value.d, felt!(8));
+        assert_eq!(value.a, felt!(0));
+        assert_eq!(value.b, felt!(1));
+        assert_eq!(value.c, felt!(2));
+        assert_eq!(value.d, felt!(3));
     }
     _ => assert_eq!(felt!(0), felt!(1)),
 }"#;
@@ -253,20 +256,21 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let scalar = roundtrip(Request::Scalar(felt!(13)));
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let scalar = roundtrip(Request::Scalar(max));
 match scalar {
-    Response::Scalar(value) => assert_eq!(value, felt!(21)),
+    Response::Scalar(value) => assert_eq!(value, felt!(7)),
     _ => assert_eq!(felt!(0), felt!(1)),
 }
 
-let word = Word::new([felt!(3), felt!(6), felt!(9), felt!(12)]);
+let word = Word::new([max, max, max, max]);
 let vector = roundtrip(Request::Vector(word));
 match vector {
     Response::Vector(value) => {
-        assert_eq!(value.a, felt!(5));
-        assert_eq!(value.b, felt!(10));
-        assert_eq!(value.c, felt!(15));
-        assert_eq!(value.d, felt!(20));
+        assert_eq!(value.a, felt!(1));
+        assert_eq!(value.b, felt!(3));
+        assert_eq!(value.c, felt!(5));
+        assert_eq!(value.d, felt!(7));
     }
     _ => assert_eq!(felt!(0), felt!(1)),
 }
@@ -325,14 +329,15 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let word = Word::new([felt!(1), felt!(2), felt!(3), felt!(4)]);
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let word = Word::new([max, max, max, max]);
 let elements = roundtrip(Request::Elements(word));
 match elements {
     Response::Elements(value) => {
-        assert_eq!(value.a, felt!(11));
-        assert_eq!(value.b, felt!(22));
-        assert_eq!(value.c, felt!(33));
-        assert_eq!(value.d, felt!(44));
+        assert_eq!(value.a, felt!(9));
+        assert_eq!(value.b, felt!(19));
+        assert_eq!(value.c, felt!(29));
+        assert_eq!(value.d, felt!(39));
     }
     _ => assert_eq!(felt!(0), felt!(1)),
 }
@@ -558,20 +563,21 @@ match none {
     _ => assert_eq!(felt!(0), felt!(1)),
 }
 
-let one = roundtrip(Request::Some(Inner::One(felt!(24))));
+let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let one = roundtrip(Request::Some(Inner::One(max)));
 match one {
-    Response::Some(Inner::One(value)) => assert_eq!(value, felt!(33)),
+    Response::Some(Inner::One(value)) => assert_eq!(value, felt!(8)),
     _ => assert_eq!(felt!(0), felt!(1)),
 }
 
-let word = Word::new([felt!(2), felt!(4), felt!(6), felt!(8)]);
+let word = Word::new([max, max, max, max]);
 let many = roundtrip(Request::Some(Inner::Many(word)));
 match many {
     Response::Some(Inner::Many(value)) => {
-        assert_eq!(value.a, felt!(5));
-        assert_eq!(value.b, felt!(10));
-        assert_eq!(value.c, felt!(15));
-        assert_eq!(value.d, felt!(20));
+        assert_eq!(value.a, felt!(2));
+        assert_eq!(value.b, felt!(5));
+        assert_eq!(value.c, felt!(8));
+        assert_eq!(value.d, felt!(11));
     }
     _ => assert_eq!(felt!(0), felt!(1)),
 }"#;
@@ -651,9 +657,10 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let first = MixedPayload {
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let first = MixedPayload {
     amount: 100,
-    value: felt!(10),
+    value: max,
     count: 20,
     small: 30,
     tiny: 40,
@@ -663,7 +670,7 @@ let first_result = roundtrip(Request::First(first));
 match first_result {
     Response::First(value) => {
         if value.amount != 107 { assert_eq!(felt!(0), felt!(1)); }
-        assert_eq!(value.value, felt!(17));
+        assert_eq!(value.value, felt!(6));
         if value.count != 27 { assert_eq!(felt!(0), felt!(1)); }
         if value.small != 37 { assert_eq!(felt!(0), felt!(1)); }
         if value.tiny != 47 { assert_eq!(felt!(0), felt!(1)); }
@@ -674,7 +681,7 @@ match first_result {
 
 let second = MixedPayload {
     amount: 200,
-    value: felt!(20),
+    value: max,
     count: 30,
     small: 40,
     tiny: 50,
@@ -684,7 +691,7 @@ let second_result = roundtrip(Request::Second(second));
 match second_result {
     Response::Second(value) => {
         if value.amount != 211 { assert_eq!(felt!(0), felt!(1)); }
-        assert_eq!(value.value, felt!(31));
+        assert_eq!(value.value, felt!(10));
         if value.count != 41 { assert_eq!(felt!(0), felt!(1)); }
         if value.small != 51 { assert_eq!(felt!(0), felt!(1)); }
         if value.tiny != 61 { assert_eq!(felt!(0), felt!(1)); }

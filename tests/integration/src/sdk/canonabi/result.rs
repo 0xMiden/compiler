@@ -24,9 +24,10 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let ok = roundtrip(Ok(felt!(35)));
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let ok = roundtrip(Ok(max));
 match ok {
-    Ok(value) => assert_eq!(value, felt!(42)),
+    Ok(value) => assert_eq!(value, felt!(6)),
     Err(_) => assert_eq!(felt!(0), felt!(1)),
 }
 
@@ -39,6 +40,90 @@ match err {
 }"#;
 
     run_canonabi_case("result_felt_u64", account_source, note_body, |wit| {
+        assert!(
+            wit.contains("roundtrip: func(value: result<felt, u64>) -> result<felt, u64>;"),
+            "generated WIT did not use result<felt, u64>:\n{wit}"
+        );
+    });
+}
+
+/// Tests that mixed felt and u32 result payloads preserve full field elements.
+#[test]
+fn result_with_large_felt_ok_and_u32_error_payloads() {
+    let account_source = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{Felt, component};
+
+#[component]
+struct CanonabiAccount;
+
+#[component]
+impl CanonabiAccount {
+    /// Returns the result unchanged across the canonical ABI boundary.
+    pub fn roundtrip(&self, value: Result<Felt, u32>) -> Result<Felt, u32> {
+        value
+    }
+}
+"#;
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let ok = roundtrip(Ok(max));
+match ok {
+    Ok(value) => assert_eq!(value, max),
+    Err(_) => assert_eq!(felt!(0), felt!(1)),
+}
+
+let err = roundtrip(Err(4_294_967_295));
+match err {
+    Ok(_) => assert_eq!(felt!(0), felt!(1)),
+    Err(value) => {
+        if value != 4_294_967_295 { assert_eq!(felt!(0), felt!(1)); }
+    }
+}"#;
+
+    run_canonabi_case("result_large_felt_u32", account_source, note_body, |wit| {
+        assert!(
+            wit.contains("roundtrip: func(value: result<felt, u32>) -> result<felt, u32>;"),
+            "generated WIT did not use result<felt, u32>:\n{wit}"
+        );
+    });
+}
+
+/// Tests that felt payloads joined with u64 payloads are not truncated to 32 bits.
+#[test]
+fn result_with_large_felt_ok_and_u64_error_payloads() {
+    let account_source = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{Felt, component};
+
+#[component]
+struct CanonabiAccount;
+
+#[component]
+impl CanonabiAccount {
+    /// Returns the result unchanged across the canonical ABI boundary.
+    pub fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64> {
+        value
+    }
+}
+"#;
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let ok = roundtrip(Ok(max));
+match ok {
+    Ok(value) => assert_eq!(value, max),
+    Err(_) => assert_eq!(felt!(0), felt!(1)),
+}
+
+let err = roundtrip(Err(4_294_967_301));
+match err {
+    Ok(_) => assert_eq!(felt!(0), felt!(1)),
+    Err(value) => {
+        if value != 4_294_967_301 { assert_eq!(felt!(0), felt!(1)); }
+    }
+}"#;
+
+    run_canonabi_case("result_large_felt_u64", account_source, note_body, |wit| {
         assert!(
             wit.contains("roundtrip: func(value: result<felt, u64>) -> result<felt, u64>;"),
             "generated WIT did not use result<felt, u64>:\n{wit}"
@@ -73,22 +158,23 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let word = Word::new([felt!(5), felt!(6), felt!(7), felt!(8)]);
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let word = Word::new([max, max, max, max]);
 let ok = roundtrip(Ok(word));
 match ok {
     Ok(value) => {
-        assert_eq!(value.a, felt!(6));
-        assert_eq!(value.b, felt!(8));
-        assert_eq!(value.c, felt!(10));
-        assert_eq!(value.d, felt!(12));
+        assert_eq!(value.a, felt!(0));
+        assert_eq!(value.b, felt!(1));
+        assert_eq!(value.c, felt!(2));
+        assert_eq!(value.d, felt!(3));
     }
     Err(_) => assert_eq!(felt!(0), felt!(1)),
 }
 
-let err = roundtrip(Err(felt!(37)));
+let err = roundtrip(Err(max));
 match err {
     Ok(_) => assert_eq!(felt!(0), felt!(1)),
-    Err(value) => assert_eq!(value, felt!(42)),
+    Err(value) => assert_eq!(value, felt!(4)),
 }"#;
 
     run_canonabi_case("result_word_felt", account_source, note_body, |wit| {
@@ -160,16 +246,17 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let ok_payload = crate::ResultOkPayload {
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let ok_payload = crate::ResultOkPayload {
     amount: 100,
-    value: felt!(20),
+    value: max,
     flag: false,
 };
 let ok = roundtrip(Ok(ok_payload));
 match ok {
     Ok(value) => {
         if value.amount != 111 { assert_eq!(felt!(0), felt!(1)); }
-        assert_eq!(value.value, felt!(31));
+        assert_eq!(value.value, felt!(10));
         if !value.flag { assert_eq!(felt!(0), felt!(1)); }
     }
     Err(_) => assert_eq!(felt!(0), felt!(1)),
@@ -247,15 +334,16 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let ok_payload = crate::ResultFieldPayload {
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let ok_payload = crate::ResultFieldPayload {
     amount: 10,
-    outcome: Ok(felt!(20)),
+    outcome: Ok(max),
     flag: false,
 };
 let ok = roundtrip(ok_payload);
 if ok.amount != 13 { assert_eq!(felt!(0), felt!(1)); }
 match ok.outcome {
-    Ok(value) => assert_eq!(value, felt!(24)),
+    Ok(value) => assert_eq!(value, felt!(3)),
     Err(_) => assert_eq!(felt!(0), felt!(1)),
 }
 if !ok.flag { assert_eq!(felt!(0), felt!(1)); }

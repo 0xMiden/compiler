@@ -30,9 +30,10 @@ match none {
     Some(_) => assert_eq!(felt!(0), felt!(1)),
 }
 
-let some = roundtrip(Some(felt!(35)));
+let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let some = roundtrip(Some(max));
 match some {
-    Some(value) => assert_eq!(value, felt!(42)),
+    Some(value) => assert_eq!(value, felt!(6)),
     None => assert_eq!(felt!(0), felt!(1)),
 }"#;
 
@@ -77,14 +78,15 @@ match none {
     Some(_) => assert_eq!(felt!(0), felt!(1)),
 }
 
-let word = Word::new([felt!(5), felt!(6), felt!(7), felt!(8)]);
+let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let word = Word::new([max, max, max, max]);
 let some = roundtrip(Some(word));
 match some {
     Some(value) => {
-        assert_eq!(value.a, felt!(6));
-        assert_eq!(value.b, felt!(8));
-        assert_eq!(value.c, felt!(10));
-        assert_eq!(value.d, felt!(12));
+        assert_eq!(value.a, felt!(0));
+        assert_eq!(value.b, felt!(1));
+        assert_eq!(value.c, felt!(2));
+        assert_eq!(value.d, felt!(3));
     }
     None => assert_eq!(felt!(0), felt!(1)),
 }"#;
@@ -154,9 +156,10 @@ match none {
     Some(_) => assert_eq!(felt!(0), felt!(1)),
 }
 
+let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
 let payload = crate::OptionPayload {
     amount: 100,
-    value: felt!(20),
+    value: max,
     count: 30,
     small: 40,
     tiny: 50,
@@ -166,7 +169,7 @@ let some = roundtrip(Some(payload));
 match some {
     Some(value) => {
         if value.amount != 111 { assert_eq!(felt!(0), felt!(1)); }
-        assert_eq!(value.value, felt!(31));
+        assert_eq!(value.value, felt!(10));
         if value.count != 41 { assert_eq!(felt!(0), felt!(1)); }
         if value.small != 51 { assert_eq!(felt!(0), felt!(1)); }
         if value.tiny != 61 { assert_eq!(felt!(0), felt!(1)); }
@@ -227,15 +230,16 @@ impl CanonabiAccount {
     }
 }
 "#;
-    let note_body = r#"let some_payload = crate::OptionFieldPayload {
+    let note_body = r#"let max = Felt::new(u64::MAX - u32::MAX as u64).unwrap();
+let some_payload = crate::OptionFieldPayload {
     amount: 10,
-    maybe: Some(felt!(20)),
+    maybe: Some(max),
     flag: false,
 };
 let some = roundtrip(some_payload);
 if some.amount != 13 { assert_eq!(felt!(0), felt!(1)); }
 match some.maybe {
-    Some(value) => assert_eq!(value, felt!(24)),
+    Some(value) => assert_eq!(value, felt!(3)),
     None => assert_eq!(felt!(0), felt!(1)),
 }
 if !some.flag { assert_eq!(felt!(0), felt!(1)); }
