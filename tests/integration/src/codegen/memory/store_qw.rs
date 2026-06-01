@@ -1,5 +1,3 @@
-use miden_debug::DebugQuery;
-
 use super::*;
 
 fn store_qw_unaligned_impl<T: QuadwordIO>(write_val: T) {

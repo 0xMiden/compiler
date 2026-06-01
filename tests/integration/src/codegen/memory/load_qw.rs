@@ -1,4 +1,4 @@
-se super::*;
+use super::*;
 
 /// Tests the memory load intrinsic for aligned and unaligned loads of quad-word values
 fn load_qw_with_offset_impl<T: QuadwordIO>() {
@@ -135,7 +135,7 @@ where
                     prop_assert_eq!(e2, (uvalue >> 64) as u64 & 0xffffffff);
                     prop_assert_eq!(e3, (uvalue >> 96) as u64 & 0xffffffff);
 
-                    let stored = trace.read_rust_memory::<T>(write_to).ok_or_else(|| {
+                    let stored = trace.read_from_rust_memory::<T>(write_to).ok_or_else(|| {
                         TestCaseError::fail(format!(
                             "expected {value} to have been written to byte address {write_to}, \
                              but read from that address failed"
