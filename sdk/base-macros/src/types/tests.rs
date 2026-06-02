@@ -86,7 +86,6 @@ fn maps_rust_primitive_types_to_wit_types() {
         ("u32", "u32"),
         ("i64", "s64"),
         ("u64", "u64"),
-        ("f32", "f32"),
     ] {
         let ty: Type = syn::parse_str(rust_type).unwrap();
         let type_ref = map_type_to_type_ref(&ty, &exported).expect("primitive should resolve");
@@ -106,7 +105,7 @@ fn rejects_unsupported_component_primitives() {
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
 
-    for rust_type in ["f64", "char"] {
+    for rust_type in ["f32", "f64", "char"] {
         let ty: Type = syn::parse_str(rust_type).unwrap();
         let err = map_type_to_type_ref(&ty, &exported)
             .expect_err("unsupported primitive should be rejected");
@@ -123,7 +122,7 @@ fn rejects_unsupported_component_primitives_nested_in_option_or_result() {
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
 
-    for rust_type in ["Option<char>", "Result<f64, u32>", "Result<u32, char>"] {
+    for rust_type in ["Option<f32>", "Option<char>", "Result<f64, u32>", "Result<u32, char>"] {
         let ty: Type = syn::parse_str(rust_type).unwrap();
         let err = map_type_to_type_ref(&ty, &exported)
             .expect_err("nested unsupported primitive should be rejected");

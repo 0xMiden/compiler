@@ -255,7 +255,7 @@ fn map_result_argument_type_to_type_ref(
 
 /// Rejects Rust primitives that WIT can express but the Wasm frontend cannot lower yet.
 fn reject_unsupported_component_primitive(ident: &str, span: Span) -> Result<(), syn::Error> {
-    if matches!(ident, "f64" | "char") {
+    if matches!(ident, "f32" | "f64" | "char") {
         return Err(syn::Error::new(
             span,
             format!("`{ident}` is not supported in component interfaces yet"),
