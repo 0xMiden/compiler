@@ -55,7 +55,10 @@ pub fn load<B: ?Sized + Builder>(
         }
 
         CanonicalAbiTypeKind::Unsupported if matches!(&ty.ir, Type::List(_)) => {
-            unimplemented!("List types are not yet supported in cross-context calls")
+            return Err(WasmError::Unsupported(
+                "list types are not yet supported in cross-context calls".to_string(),
+            )
+            .into());
         }
 
         CanonicalAbiTypeKind::Unsupported => {
@@ -117,7 +120,10 @@ pub fn store<B: ?Sized + Builder>(
         }
 
         CanonicalAbiTypeKind::Unsupported if matches!(&ty.ir, Type::List(_)) => {
-            unimplemented!("List types are not yet supported in cross-context calls")
+            return Err(WasmError::Unsupported(
+                "list types are not yet supported in cross-context calls".to_string(),
+            )
+            .into());
         }
 
         CanonicalAbiTypeKind::Unsupported => {

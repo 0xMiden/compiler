@@ -1413,11 +1413,11 @@ impl ComponentFunctionType {
         let results_types = component_types[ty.results].clone().types;
         let params = params_types
             .iter()
-            .map(|ty| interface_type_to_ir(ty, component_types))
+            .map(|ty| interface_type_to_ir_for_component_signature(ty, component_types))
             .collect();
         let results = results_types
             .iter()
-            .map(|ty| interface_type_to_ir(ty, component_types))
+            .map(|ty| interface_type_to_ir_for_component_signature(ty, component_types))
             .collect();
         let params_abi = params_types
             .iter()
@@ -1439,9 +1439,124 @@ impl ComponentFunctionType {
     }
 }
 
+/// Converts an interface type into HIR for a component wrapper signature.
+fn interface_type_to_ir_for_component_signature(
+    ty: &InterfaceType,
+    component_types: &ComponentTypes,
+) -> Type {
+    match ty {
+        InterfaceType::Record(_)
+        | InterfaceType::Tuple(_)
+        | InterfaceType::Variant(_)
+        | InterfaceType::Option(_)
+        | InterfaceType::Result(_)
+            if interface_type_requires_unsupported_canonical_abi(ty, component_types) =>
+        {
+            Type::Unknown
+        }
+        InterfaceType::String
+        | InterfaceType::Char
+        | InterfaceType::Float64
+        | InterfaceType::ErrorContext
+        | InterfaceType::Flags(_)
+        | InterfaceType::Own(_)
+        | InterfaceType::Borrow(_) => unsupported_interface_type_to_ir(ty, component_types),
+        _ => interface_type_to_ir(ty, component_types),
+    }
+}
+
+/// Returns true if this interface type cannot be lowered by the current canonical ABI wrappers.
+fn interface_type_requires_unsupported_canonical_abi(
+    ty: &InterfaceType,
+    component_types: &ComponentTypes,
+) -> bool {
+    match ty {
+        InterfaceType::Bool
+        | InterfaceType::S8
+        | InterfaceType::U8
+        | InterfaceType::S16
+        | InterfaceType::U16
+        | InterfaceType::S32
+        | InterfaceType::U32
+        | InterfaceType::S64
+        | InterfaceType::U64
+        | InterfaceType::Float32
+        | InterfaceType::Enum(_) => false,
+        InterfaceType::Record(idx) => component_types[*idx].fields.iter().any(|field| {
+            interface_type_requires_unsupported_canonical_abi(&field.ty, component_types)
+        }),
+        InterfaceType::Tuple(idx) => component_types[*idx]
+            .types
+            .iter()
+            .any(|ty| interface_type_requires_unsupported_canonical_abi(ty, component_types)),
+        InterfaceType::Variant(idx) => component_types[*idx]
+            .cases
+            .iter()
+            .filter_map(|case| case.ty.as_ref())
+            .any(|ty| interface_type_requires_unsupported_canonical_abi(ty, component_types)),
+        InterfaceType::Option(idx) => interface_type_requires_unsupported_canonical_abi(
+            &component_types[*idx].ty,
+            component_types,
+        ),
+        InterfaceType::Result(idx) => component_types[*idx]
+            .ok
+            .iter()
+            .chain(component_types[*idx].err.iter())
+            .any(|ty| interface_type_requires_unsupported_canonical_abi(ty, component_types)),
+        InterfaceType::List(_)
+        | InterfaceType::String
+        | InterfaceType::Char
+        | InterfaceType::Float64
+        | InterfaceType::ErrorContext
+        | InterfaceType::Flags(_)
+        | InterfaceType::Own(_)
+        | InterfaceType::Borrow(_) => true,
+    }
+}
+
+/// Converts an unsupported interface type into the nearest HIR type for diagnostics.
+fn unsupported_interface_type_to_ir(ty: &InterfaceType, component_types: &ComponentTypes) -> Type {
+    match ty {
+        InterfaceType::List(idx) => Type::List(Arc::new(unsupported_interface_type_to_ir(
+            &component_types[*idx].element,
+            component_types,
+        ))),
+        InterfaceType::Float64 => Type::F64,
+        InterfaceType::Bool
+        | InterfaceType::S8
+        | InterfaceType::U8
+        | InterfaceType::S16
+        | InterfaceType::U16
+        | InterfaceType::S32
+        | InterfaceType::U32
+        | InterfaceType::S64
+        | InterfaceType::U64
+        | InterfaceType::Float32
+        | InterfaceType::Enum(_) => interface_type_to_ir(ty, component_types),
+        InterfaceType::Record(_)
+        | InterfaceType::Tuple(_)
+        | InterfaceType::Variant(_)
+        | InterfaceType::Option(_)
+        | InterfaceType::Result(_)
+        | InterfaceType::String
+        | InterfaceType::Char
+        | InterfaceType::ErrorContext
+        | InterfaceType::Flags(_)
+        | InterfaceType::Own(_)
+        | InterfaceType::Borrow(_) => Type::Unknown,
+    }
+}
+
 impl CanonicalAbiType {
     /// Builds canonical ABI load/store metadata from a component-model interface type.
     pub fn from_interface_type(ty: &InterfaceType, component_types: &ComponentTypes) -> Self {
+        if interface_type_requires_unsupported_canonical_abi(ty, component_types) {
+            return Self::unsupported(
+                unsupported_interface_type_to_ir(ty, component_types),
+                component_types.canonical_abi(ty).clone(),
+            );
+        }
+
         match ty {
             InterfaceType::Bool
             | InterfaceType::S8
@@ -1514,23 +1629,14 @@ impl CanonicalAbiType {
                     component_types,
                 )
             }
-            InterfaceType::List(idx) => {
-                let element = interface_type_to_ir(&component_types[*idx].element, component_types);
-                Self::unsupported(
-                    Type::List(Arc::new(element)),
-                    component_types.canonical_abi(ty).clone(),
-                )
-            }
             InterfaceType::String
+            | InterfaceType::List(_)
             | InterfaceType::Char
             | InterfaceType::Float64
             | InterfaceType::ErrorContext
             | InterfaceType::Flags(_)
             | InterfaceType::Own(_)
-            | InterfaceType::Borrow(_) => Self::unsupported(
-                interface_type_to_ir(ty, component_types),
-                component_types.canonical_abi(ty).clone(),
-            ),
+            | InterfaceType::Borrow(_) => unreachable!("unsupported types are handled earlier"),
         }
     }
 
@@ -2332,5 +2438,48 @@ mod tests {
         assert!(ir_enum.is_c_like());
         assert_eq!(ir_enum.discriminant(), &Type::U8);
         assert_eq!(ir_enum.variants().len(), 3);
+    }
+
+    #[test]
+    fn option_with_list_payload_is_unsupported_for_canonical_abi_lowering() {
+        let component = wat::parse_str(
+            r#"
+            (component
+                (type $bytes (list u8))
+                (type $maybe-bytes (option $bytes))
+                (export "maybe-bytes" (type $maybe-bytes))
+            )
+            "#,
+        )
+        .expect("component wat should compile");
+        let context = Context::default();
+        let config = WasmTranslationConfig::default();
+        let mut validator = Validator::new_with_features(supported_component_model_features());
+        let mut types = ComponentTypesBuilder::default();
+        let parser = ComponentParser::new(&config, context.session(), &mut validator, &mut types);
+
+        let parsed = parser.parse(&component).expect("component should parse");
+        let maybe_bytes_id = parsed
+            .root_component
+            .exports
+            .get("maybe-bytes")
+            .and_then(|item| match item {
+                ComponentItem::Type(id) => Some(*id),
+                _ => None,
+            })
+            .expect("component should export the option type");
+        let type_def = types
+            .convert_type(parsed.root_component.types_ref(), maybe_bytes_id)
+            .expect("component option type should lower");
+        let component_types = types.finish();
+        let TypeDef::Interface(maybe_bytes_ty) = type_def else {
+            panic!("expected exported component option type");
+        };
+
+        let abi_ty = CanonicalAbiType::from_interface_type(&maybe_bytes_ty, &component_types);
+        assert!(
+            matches!(abi_ty.kind, CanonicalAbiTypeKind::Unsupported),
+            "option<list<u8>> should be unsupported instead of dropping the payload shape"
+        );
     }
 }
