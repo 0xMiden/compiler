@@ -151,27 +151,13 @@ fn load_variant_payload<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> WasmResult<()> {
     if payload_flat_types.is_empty() {
+        validate_variant_discriminant(fb, discriminant, cases.len(), span)?;
         return Ok(());
     }
 
     let payload_addr = offset_addr(fb, ptr, payload_offset32, span)?;
     let join_block = fb.create_block_with_params(payload_flat_types.iter().cloned(), span);
-    let case_blocks = (0..cases.len()).map(|_| fb.create_block()).collect::<Vec<_>>();
-    let default_block = fb.create_block();
-    let selector = switch_selector(fb, discriminant, span)?;
-    let switch_cases = case_blocks
-        .iter()
-        .enumerate()
-        .map(|(index, block)| SwitchCase::create(index as u32, *block, Vec::new()));
-    fb.switch(selector, switch_cases, default_block, [], span)?;
-
-    for block in &case_blocks {
-        fb.seal_block(*block);
-    }
-    fb.seal_block(default_block);
-
-    fb.switch_to_block(default_block);
-    fb.unreachable(span);
+    let case_blocks = switch_variant_cases(fb, discriminant, cases.len(), span)?;
 
     for (block, case) in case_blocks.into_iter().zip(cases) {
         fb.switch_to_block(block);
@@ -199,6 +185,7 @@ fn store_variant_payload<B: ?Sized + Builder>(
     span: SourceSpan,
 ) -> WasmResult<()> {
     if payload_flat_types.is_empty() {
+        validate_variant_discriminant(fb, discriminant, cases.len(), span)?;
         return Ok(());
     }
 
@@ -208,7 +195,32 @@ fn store_variant_payload<B: ?Sized + Builder>(
         .collect::<Vec<_>>();
     let payload_addr = offset_addr(fb, ptr, payload_offset32, span)?;
     let join_block = fb.create_block();
-    let case_blocks = (0..cases.len()).map(|_| fb.create_block()).collect::<Vec<_>>();
+    let case_blocks = switch_variant_cases(fb, discriminant, cases.len(), span)?;
+
+    for (block, case) in case_blocks.into_iter().zip(cases) {
+        fb.switch_to_block(block);
+        if let Some(case_ty) = case {
+            let case_flat_types = case_ty.flat_types();
+            let case_values = project_flat_values(fb, &payload_values, &case_flat_types, span)?;
+            let mut case_values = case_values.into_iter();
+            store(fb, payload_addr, case_ty, &mut case_values, span)?;
+        }
+        fb.br(join_block, [], span)?;
+    }
+
+    fb.seal_block(join_block);
+    fb.switch_to_block(join_block);
+    Ok(())
+}
+
+/// Emits a switch over a canonical ABI variant discriminant and returns one block per case.
+fn switch_variant_cases<B: ?Sized + Builder>(
+    fb: &mut FunctionBuilderExt<B>,
+    discriminant: ValueRef,
+    case_count: usize,
+    span: SourceSpan,
+) -> WasmResult<Vec<BlockRef>> {
+    let case_blocks = (0..case_count).map(|_| fb.create_block()).collect::<Vec<_>>();
     let default_block = fb.create_block();
     let selector = switch_selector(fb, discriminant, span)?;
     let switch_cases = case_blocks
@@ -225,14 +237,21 @@ fn store_variant_payload<B: ?Sized + Builder>(
     fb.switch_to_block(default_block);
     fb.unreachable(span);
 
-    for (block, case) in case_blocks.into_iter().zip(cases) {
+    Ok(case_blocks)
+}
+
+/// Emits a discriminant range check for a canonical ABI variant with no flat payload.
+fn validate_variant_discriminant<B: ?Sized + Builder>(
+    fb: &mut FunctionBuilderExt<B>,
+    discriminant: ValueRef,
+    case_count: usize,
+    span: SourceSpan,
+) -> WasmResult<()> {
+    let join_block = fb.create_block();
+    let case_blocks = switch_variant_cases(fb, discriminant, case_count, span)?;
+
+    for block in case_blocks {
         fb.switch_to_block(block);
-        if let Some(case_ty) = case {
-            let case_flat_types = case_ty.flat_types();
-            let case_values = project_flat_values(fb, &payload_values, &case_flat_types, span)?;
-            let mut case_values = case_values.into_iter();
-            store(fb, payload_addr, case_ty, &mut case_values, span)?;
-        }
         fb.br(join_block, [], span)?;
     }
 
@@ -467,4 +486,155 @@ fn offset_addr<B: ?Sized + Builder>(
 
     let offset = fb.i32(offset as i32, span);
     fb.add_unchecked(ptr, offset, span)
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{rc::Rc, sync::Arc};
+    use core::cell::RefCell;
+
+    use midenc_dialect_cf as cf;
+    use midenc_dialect_ub as ub;
+    use midenc_hir::{
+        BuilderExt, CallConv, Context, EnumType, FunctionType, Ident, Op, Operation, SourceSpan,
+        Type, ValueRef, Variant, Visibility, WalkResult,
+        dialects::builtin::{
+            BuiltinOpBuilder, ModuleBuilder, World, WorldBuilder, attributes::Signature,
+        },
+    };
+
+    use super::*;
+    use crate::module::function_builder_ext::{
+        FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
+    };
+
+    /// Builds canonical ABI metadata for a variant with two unit cases.
+    fn unit_only_variant_type() -> CanonicalAbiType {
+        let cases = [None, None];
+        let info = super::super::VariantInfo::new_static(&cases);
+        let abi = super::super::CanonicalAbiInfo::variant_static(&cases);
+        let ir = Type::Enum(Arc::new(
+            EnumType::new(
+                "unit-only".into(),
+                Type::U8,
+                [
+                    Variant::c_like("first".into(), Some(0)),
+                    Variant::c_like("second".into(), Some(1)),
+                ],
+            )
+            .expect("unit-only enum should be valid"),
+        ));
+
+        CanonicalAbiType {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Variant {
+                discriminant: Box::new(CanonicalAbiType {
+                    ir: Type::U8,
+                    abi: super::super::CanonicalAbiInfo::SCALAR1,
+                    kind: CanonicalAbiTypeKind::Scalar,
+                }),
+                payload_offset32: info.payload_offset32,
+                cases: Box::new([None, None]),
+                payload_flat_types: Box::new([]),
+            },
+        }
+    }
+
+    /// Builds a function containing canonical ABI load/store IR and returns operation counts.
+    fn count_variant_validation_ops(
+        name: &'static str,
+        params: Vec<Type>,
+        build: impl FnOnce(
+            &mut FunctionBuilderExt<'_, midenc_hir::OpBuilder<SSABuilderListener>>,
+            &[ValueRef],
+        ),
+    ) -> (usize, usize) {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder.declare_module("test".into()).expect("failed to declare module");
+        let mut module_builder = ModuleBuilder::new(module);
+        let signature =
+            Signature::new(&context, FunctionType::new(CallConv::Fast, params, vec![]).params, []);
+        let function = module_builder
+            .define_function(Ident::with_empty_span(name.into()), Visibility::Public, signature)
+            .expect("failed to define function");
+
+        {
+            let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+            let mut op_builder = midenc_hir::OpBuilder::new(context)
+                .with_listener(SSABuilderListener::new(func_ctx));
+            let mut fb = FunctionBuilderExt::new(function, &mut op_builder);
+            let entry_block = fb.current_block();
+            fb.seal_block(entry_block);
+            let args: Vec<ValueRef> = entry_block
+                .borrow()
+                .arguments()
+                .iter()
+                .copied()
+                .map(|arg| arg as ValueRef)
+                .collect();
+
+            build(&mut fb, &args);
+
+            let exit_block = fb.create_block();
+            fb.br(exit_block, [], SourceSpan::default()).expect("failed to branch to exit");
+            fb.seal_block(exit_block);
+            fb.switch_to_block(exit_block);
+            fb.ret([], SourceSpan::default()).expect("failed to return");
+        }
+
+        let mut switch_count = 0;
+        let mut unreachable_count = 0;
+        function
+            .borrow()
+            .as_operation()
+            .prewalk(|op: &Operation| {
+                if op.is::<cf::Switch>() {
+                    switch_count += 1;
+                }
+                if op.is::<ub::Unreachable>() {
+                    unreachable_count += 1;
+                }
+                WalkResult::<()>::Continue(())
+            })
+            .into_result()
+            .expect("operation walk should not fail");
+
+        (switch_count, unreachable_count)
+    }
+
+    #[test]
+    fn load_validates_unit_only_variant_discriminant() {
+        let ty = unit_only_variant_type();
+        let (switch_count, unreachable_count) =
+            count_variant_validation_ops("load_unit_variant", vec![Type::I32], |fb, args| {
+                let mut values = SmallVec::<[ValueRef; 8]>::new();
+                load(fb, args[0], &ty, &mut values, SourceSpan::default())
+                    .expect("variant load should build");
+            });
+
+        assert_eq!(switch_count, 1, "unit-only variant load should validate the tag");
+        assert_eq!(unreachable_count, 1, "invalid unit-only variant tag should be unreachable");
+    }
+
+    #[test]
+    fn store_validates_unit_only_variant_discriminant() {
+        let ty = unit_only_variant_type();
+        let (switch_count, unreachable_count) = count_variant_validation_ops(
+            "store_unit_variant",
+            vec![Type::I32, Type::I32],
+            |fb, args| {
+                let mut values = [args[1]].into_iter();
+                store(fb, args[0], &ty, &mut values, SourceSpan::default())
+                    .expect("variant store should build");
+            },
+        );
+
+        assert_eq!(switch_count, 1, "unit-only variant store should validate the tag");
+        assert_eq!(unreachable_count, 1, "invalid unit-only variant tag should be unreachable");
+    }
 }
