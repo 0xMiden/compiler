@@ -166,7 +166,7 @@ fn declare_parameters<B: ?Sized + Builder>(
         let param_value = entry_block.borrow().arguments()[i];
         builder.def_var(var, param_value);
         builder.register_parameter(var, param_value);
-        builder.store_local(local, param_value, SourceSpan::UNKNOWN).unwrap();
+        builder.store_local(local, param_value, SourceSpan::SYNTHETIC).unwrap();
     }
     next_local
 }
@@ -277,6 +277,10 @@ fn parse_function_body<B: ?Sized + Builder>(
             span
         };
 
+        if state.reachable && !builder.is_unreachable() {
+            builder.apply_location_schedule(code_offset, effective_span, &state.stack);
+        }
+
         // Track the span of every END we observe, so we have a span to assign to the return we
         // place in the final exit block
         if let wasmparser::Operator::End = op {
@@ -293,8 +297,6 @@ fn parse_function_body<B: ?Sized + Builder>(
             &session.diagnostics,
             effective_span,
         )?;
-
-        builder.apply_location_schedule(code_offset, effective_span);
     }
 
     // The final `End` operator left us in the exit block where we need to manually add a return

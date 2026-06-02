@@ -420,6 +420,10 @@ impl CallOpInterface for Syscall {
 mod tests {
     use midenc_hir::{
         CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        conversion::{
+            TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
+            verify_call_signature_operands_and_results,
+        },
         diagnostics::Uri,
         dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
         parse::{self, ParserConfig},
@@ -450,6 +454,40 @@ builtin.module public @test {
             source,
         )
         .expect("hir.exec parser should type operands from signature params");
+    }
+
+    #[test]
+    fn conversion_helpers_resolve_and_convert_call_signatures() {
+        let mut test =
+            Test::named("conversion_helpers_resolve_and_convert_call_signatures").in_module("test");
+        let callee = test.define_function("callee", &[Type::U32], &[Type::U32]);
+        test.with_function("caller", &[Type::U32], &[]);
+
+        let signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+        let call = {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let arg = entry.borrow().arguments()[0].borrow().as_value_ref();
+            builder.call(callee, signature, [arg], SourceSpan::default()).unwrap()
+        };
+
+        verify_call_signature_operands_and_results(call.as_operation_ref()).unwrap();
+
+        let mut converter = TypeConverter::new();
+        converter.add_conversion(|ty| {
+            if ty == &Type::U32 {
+                Some(TypeConversion::One(Type::I32))
+            } else {
+                None
+            }
+        });
+        let converted =
+            converted_resolved_call_signature_1_to_1(call.as_operation_ref(), &converter)
+                .unwrap()
+                .expect("call should resolve to a callable signature");
+
+        assert_eq!(converted.params()[0].ty, Type::I32);
+        assert_eq!(converted.results()[0].ty, Type::I32);
     }
 
     #[test]

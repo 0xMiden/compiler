@@ -136,6 +136,17 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
     }
 }
 
+/// Erase all `di.value` operations that use `old_value`.
+///
+/// Use this when a transform removes `old_value` and cannot preserve a meaningful source-level
+/// location for it. If the transform can recover the source value from another live SSA value, use
+/// [`salvage_debug_info`] instead.
+pub fn erase_debug_info(old_value: &ValueRef) {
+    for mut debug_op in debug_value_users(old_value) {
+        debug_op.borrow_mut().erase();
+    }
+}
+
 /// Apply a salvage action to a single debug value operation.
 fn apply_salvage_action<B: ?Sized + Builder>(
     debug_op: &mut OperationRef,

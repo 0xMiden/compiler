@@ -130,6 +130,7 @@ where
 }
 
 const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
+const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
 
 fn decode_frame_base_local_offset(encoded: u32) -> Option<i16> {
     if encoded & FRAME_BASE_LOCAL_MARKER == 0 {
@@ -141,7 +142,9 @@ fn decode_frame_base_local_offset(encoded: u32) -> Option<i16> {
 }
 
 fn format_debug_var_location(location: &DebugVarLocation) -> String {
-    if let DebugVarLocation::FrameBase {
+    if is_debug_var_kill_location(location) {
+        "di.debug_kill".to_string()
+    } else if let DebugVarLocation::FrameBase {
         global_index,
         byte_offset,
     } = location
@@ -151,6 +154,13 @@ fn format_debug_var_location(location: &DebugVarLocation) -> String {
     } else {
         location.to_string()
     }
+}
+
+fn is_debug_var_kill_location(location: &DebugVarLocation) -> bool {
+    matches!(
+        location,
+        DebugVarLocation::Expression(expression) if expression == DEBUG_VAR_KILL_SENTINEL
+    )
 }
 
 /// Holds the three debug info sections with helper accessors.
@@ -675,5 +685,17 @@ fn print_locations(mast_forest: &MastForest, debug_sections: &DebugSections, ver
         for (idx, info) in debug_vars.iter().enumerate() {
             println!("    [{:4}] {}", idx, info);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_debug_kill_sentinel() {
+        let location = DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec());
+
+        assert_eq!(format_debug_var_location(&location), "di.debug_kill");
     }
 }

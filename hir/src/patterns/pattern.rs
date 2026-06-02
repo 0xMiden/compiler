@@ -127,7 +127,7 @@ pub trait Pattern {
     /// If the pattern does not use a trait id for deciding the root match, this returns `None`
     #[inline(always)]
     fn get_root_trait(&self) -> Option<TypeId> {
-        self.info().get_root_trait()
+        self.info().root_trait()
     }
 }
 
@@ -168,6 +168,15 @@ impl PatternInfo {
     #[inline(always)]
     pub fn with_bounded_rewrite_recursion(&mut self, yes: bool) -> &mut Self {
         self.has_bounded_recursion = yes;
+        self
+    }
+
+    /// Add the set of operations that may be generated when this pattern is applied.
+    pub fn with_generated_ops<I>(&mut self, generated_ops: I) -> &mut Self
+    where
+        I: IntoIterator<Item = OperationName>,
+    {
+        self.generated_ops.extend(generated_ops);
         self
     }
 
