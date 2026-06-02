@@ -138,6 +138,39 @@ pub fn store<B: ?Sized + Builder>(
     Ok(())
 }
 
+/// Validates variant discriminants in a sequence of flattened canonical ABI values.
+pub fn validate_flat_variants<B: ?Sized + Builder>(
+    fb: &mut FunctionBuilderExt<B>,
+    tys: &[CanonicalAbiType],
+    values: &[ValueRef],
+    span: SourceSpan,
+) -> WasmResult<()> {
+    let mut offset = 0usize;
+    for ty in tys {
+        let flat_types = ty.flat_types();
+        let end = offset + flat_types.len();
+        let Some(flat_values) = values.get(offset..end) else {
+            return Err(WasmError::Unsupported(format!(
+                "not enough flattened canonical ABI values for {:?}",
+                ty.ir
+            ))
+            .into());
+        };
+        validate_flat_type(fb, ty, flat_values, span)?;
+        offset = end;
+    }
+
+    if offset != values.len() {
+        return Err(WasmError::Unsupported(format!(
+            "unused flattened canonical ABI values: expected {offset}, got {}",
+            values.len()
+        ))
+        .into());
+    }
+
+    Ok(())
+}
+
 /// Loads the active case payload of a canonical ABI variant.
 #[allow(clippy::too_many_arguments)]
 fn load_variant_payload<B: ?Sized + Builder>(
@@ -258,6 +291,71 @@ fn validate_variant_discriminant<B: ?Sized + Builder>(
     fb.seal_block(join_block);
     fb.switch_to_block(join_block);
     Ok(())
+}
+
+/// Validates variant discriminants inside one flattened canonical ABI value.
+fn validate_flat_type<B: ?Sized + Builder>(
+    fb: &mut FunctionBuilderExt<B>,
+    ty: &CanonicalAbiType,
+    values: &[ValueRef],
+    span: SourceSpan,
+) -> WasmResult<()> {
+    let expected_len = ty.flat_types().len();
+    if values.len() != expected_len {
+        return Err(WasmError::Unsupported(format!(
+            "flattened canonical ABI value for {:?} has {} values, expected {expected_len}",
+            ty.ir,
+            values.len()
+        ))
+        .into());
+    }
+
+    match &ty.kind {
+        CanonicalAbiTypeKind::Scalar => Ok(()),
+        CanonicalAbiTypeKind::Record { fields } => {
+            let mut offset = 0usize;
+            for field in fields {
+                let len = field.ty.flat_types().len();
+                validate_flat_type(fb, &field.ty, &values[offset..offset + len], span)?;
+                offset += len;
+            }
+            Ok(())
+        }
+        CanonicalAbiTypeKind::Variant {
+            cases,
+            payload_flat_types,
+            ..
+        } => {
+            let discriminant = values[0];
+            if payload_flat_types.is_empty() {
+                return validate_variant_discriminant(fb, discriminant, cases.len(), span);
+            }
+
+            let payload_values = &values[1..];
+            let join_block = fb.create_block();
+            let case_blocks = switch_variant_cases(fb, discriminant, cases.len(), span)?;
+
+            for (block, case) in case_blocks.into_iter().zip(cases) {
+                fb.switch_to_block(block);
+                if let Some(case_ty) = case {
+                    let case_flat_types = case_ty.flat_types();
+                    let case_values =
+                        project_flat_values(fb, payload_values, &case_flat_types, span)?;
+                    validate_flat_type(fb, case_ty, &case_values, span)?;
+                }
+                fb.br(join_block, [], span)?;
+            }
+
+            fb.seal_block(join_block);
+            fb.switch_to_block(join_block);
+            Ok(())
+        }
+        CanonicalAbiTypeKind::Unsupported => Err(WasmError::Unsupported(format!(
+            "unsupported type in flattened canonical ABI validation: {:?}",
+            ty.ir
+        ))
+        .into()),
+    }
 }
 
 /// Loads the flattened payload values for one variant case.
@@ -636,5 +734,21 @@ mod tests {
 
         assert_eq!(switch_count, 1, "unit-only variant store should validate the tag");
         assert_eq!(unreachable_count, 1, "invalid unit-only variant tag should be unreachable");
+    }
+
+    #[test]
+    fn validate_flat_variants_checks_unit_only_variant_discriminant() {
+        let ty = unit_only_variant_type();
+        let (switch_count, unreachable_count) = count_variant_validation_ops(
+            "validate_flat_unit_variant",
+            vec![Type::I32],
+            |fb, args| {
+                validate_flat_variants(fb, &[ty], &[args[0]], SourceSpan::default())
+                    .expect("flat variant validation should build");
+            },
+        );
+
+        assert_eq!(switch_count, 1, "direct flat variant should validate the tag");
+        assert_eq!(unreachable_count, 1, "invalid direct flat variant tag should be unreachable");
     }
 }

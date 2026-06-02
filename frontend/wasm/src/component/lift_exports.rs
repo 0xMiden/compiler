@@ -19,7 +19,7 @@ use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
 
 use super::{
     ComponentFunctionType,
-    canon_abi_utils::load,
+    canon_abi_utils::{load, validate_flat_variants},
     flat::{CanonicalAbiMode, classify_function_type, flatten_function_type, flatten_types},
 };
 use crate::{
@@ -31,6 +31,7 @@ use crate::{
 
 struct ComponentExportMetadata<'a> {
     ty: &'a FunctionType,
+    params: &'a [super::CanonicalAbiType],
     results: &'a [super::CanonicalAbiType],
     param_names: &'a [String],
     protocol_export_kind: Option<ProtocolExportKind>,
@@ -75,6 +76,7 @@ pub fn generate_export_lifting_function(
     })?;
     let export_metadata = ComponentExportMetadata {
         ty: &export_func_ty.ir,
+        params: &export_func_ty.params,
         results: &export_func_ty.results,
         param_names: export_param_names,
         protocol_export_kind,
@@ -340,23 +342,26 @@ fn generate_direct_lifting(
         .map(|ba| ba as ValueRef)
         .collect();
 
+    validate_flat_variants(&mut fb, export_metadata.params, &args, span)?;
+
     let exec = fb
         .exec(core_export_func_ref, core_export_func_sig, args, span)
         .expect("failed to build an exec op");
 
     let borrow = exec.borrow();
-    let results = ValueRange::<2>::from(borrow.results().all());
+    let results = ValueRange::<2>::from(borrow.results().all()).iter().collect::<Vec<_>>();
     assert!(
         results.len() <= 1,
         "For direct lifting of the component export function {export_func_ident} expected a \
          single result or none"
     );
+    validate_flat_variants(&mut fb, export_metadata.results, &results, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span).expect("failed br");
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
-    let returning_onty_first = results.iter().take(1);
+    let returning_onty_first = results.iter().copied().take(1);
     fb.ret(returning_onty_first, span).expect("failed ret");
 
     Ok(())

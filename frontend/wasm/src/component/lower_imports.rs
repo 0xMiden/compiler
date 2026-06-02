@@ -19,7 +19,7 @@ use midenc_session::diagnostics::Report;
 
 use super::{
     CanonicalAbiType, CanonicalAbiTypeKind, ComponentFunctionType,
-    canon_abi_utils::store,
+    canon_abi_utils::{store, validate_flat_variants},
     flat::{
         CanonicalAbiMode, CanonicalAbiTransformation, classify_function_type,
         flatten_function_type, flatten_types, flattened_types_layout,
@@ -961,6 +961,8 @@ fn generate_direct_lowering(
 
     let mut component_builder = ComponentBuilder::new(component_ref);
 
+    validate_flat_variants(fb, &import_func_ty.params, args, span)?;
+
     let context = world_builder.context_rc();
     let import_func_sig =
         flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
@@ -988,6 +990,7 @@ fn generate_direct_lowering(
         "For direct lowering the component import function {import_func_path} expected a single \
          result or none"
     );
+    validate_flat_variants(fb, &import_func_ty.results, &results, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span)?;
