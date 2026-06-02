@@ -52,7 +52,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-#[foreign_account(no_arg_account)]
+#[account(no_arg_account)]
 struct CounterContract;
 
 /// Note script input containing the foreign counter account id.

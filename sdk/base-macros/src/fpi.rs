@@ -334,7 +334,7 @@ pub(crate) fn augment_foreign_account_bindings(
     if modules.is_empty() {
         return Err(Error::new(
             account_struct.ident.span(),
-            "foreign_account did not find any callable exports in the selected packages",
+            "account did not find any callable exports in the selected packages",
         ));
     }
 
@@ -392,8 +392,8 @@ pub(crate) fn augment_foreign_account_bindings(
                 return Err(Error::new(
                     method.sig.ident.span(),
                     format!(
-                        "foreign_account method name collision on `{method_name}`: generated from \
-                         both `{existing_path}` and `{}`",
+                        "account method name collision on `{method_name}`: generated from both \
+                         `{existing_path}` and `{}`",
                         module.path_string
                     ),
                 ));

@@ -216,7 +216,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-#[foreign_account(multiple_packages_first_account, multiple_packages_second_account)]
+#[account(multiple_packages_first_account, multiple_packages_second_account)]
 struct ForeignCounters;
 
 /// Note script input containing the foreign account id.

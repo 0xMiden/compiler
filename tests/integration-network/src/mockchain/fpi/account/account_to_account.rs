@@ -180,9 +180,9 @@ const CALLER_ACCOUNT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, felt, foreign_account, AccountId, Felt, Word};
+use miden::{account, component, felt, AccountId, Felt, Word};
 
-#[foreign_account(account_to_account_callee_account)]
+#[account(account_to_account_callee_account)]
 struct CalleeAccount;
 
 /// Account component which forwards reads to another account through FPI.

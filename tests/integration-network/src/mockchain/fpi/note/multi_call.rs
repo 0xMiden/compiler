@@ -234,7 +234,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 use miden::*;
 
 use crate::bindings::miden::multi_call_account::miden_multi_call_account::KeyPair;
-#[foreign_account(multi_call_account)]
+#[account(multi_call_account)]
 struct CounterContract;
 
 /// Note script input containing the foreign counter account id.

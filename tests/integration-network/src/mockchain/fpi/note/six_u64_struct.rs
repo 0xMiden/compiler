@@ -62,7 +62,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 use miden::*;
 
 use crate::bindings::miden::six_u64_struct_account::miden_six_u64_struct_account::SixU64Record;
-#[foreign_account(six_u64_struct_account)]
+#[account(six_u64_struct_account)]
 struct CounterContract;
 
 /// First double-word value used by the six-`u64` record FPI test.

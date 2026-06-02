@@ -101,7 +101,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 use miden::*;
 
 use crate::bindings::miden::sixteen_flattened_params_struct_account::miden_sixteen_flattened_params_struct_account::SixteenFlattenedParams;
-#[foreign_account(sixteen_flattened_params_struct_account)]
+#[account(sixteen_flattened_params_struct_account)]
 struct CounterContract;
 
 /// Byte-sized value used by the sixteen-felt record FPI test.
