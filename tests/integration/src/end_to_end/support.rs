@@ -1,3 +1,8 @@
+use std::marker::PhantomData;
+
+use num_traits::{PrimInt, Unsigned};
+use proptest::prelude::*;
+
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 
 pub(super) fn cargo_toml(name: &str) -> String {
@@ -49,4 +54,640 @@ pub(super) fn miden_project_toml(name: &str) -> String {
                 miden-core = "*"
             "#,
     )
+}
+
+/// A strategy for generating pairs of numeric values, biased toward edge cases like
+/// zero, one, max, min, half, etc. Particularly useful for testing overflowing,
+/// checked, and wrapping arithmetic operations.
+pub struct NumericStrategy<T> {
+    _marker: PhantomData<T>,
+}
+
+impl<T> NumericStrategy<T>
+where
+    T: PrimInt + Arbitrary + 'static,
+    std::ops::RangeInclusive<T>: Strategy<Value = T>,
+{
+    pub fn add_unsigned() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.half, v.half)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.half_plus_one, v.half_plus_one)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.three, v.three)),
+        ]
+    }
+
+    pub fn add_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((v.min, v.min)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+        ]
+    }
+
+    pub fn sub_unsigned() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.half, v.half)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.one, v.one)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.two, v.max)),
+        ]
+    }
+
+    pub fn sub_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, v.max)),
+            1 => Just((v.max, v.min)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.min, v.min)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.max)),
+        ]
+    }
+
+    pub fn mul_unsigned() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.two, v.half)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.half_plus_one)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.one)),
+            1 => Just((v.two, v.two)),
+            1 => Just((v.three, v.three)),
+            1 => Just((v.half, v.half)),
+            1 => Just((v.sqrt_max, v.sqrt_max)),
+            1 => Just((v.sqrt_max, v.sqrt_max_plus_one)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max_plus_one)),
+            1 => Just((v.max_div_three, v.three)),
+            1 => Just((v.three, v.max_div_three)),
+            1 => Just((v.max_div_three_plus_one, v.three)),
+            1 => Just((v.three, v.max_div_three_plus_one)),
+            1 => Just((v.max_div_four, v.four)),
+            1 => Just((v.four, v.max_div_four)),
+            1 => Just((v.max_div_four_plus_one, v.four)),
+            1 => Just((v.four, v.max_div_four_plus_one)),
+        ]
+    }
+
+    pub fn mul_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let neg_two = v.zero - v.two;
+        let neg_three = v.zero - v.three;
+        let neg_four = v.zero - v.four;
+        let neg_sqrt_max = v.zero - v.sqrt_max;
+        let neg_sqrt_max_plus_one = v.zero - v.sqrt_max_plus_one;
+        let neg_max_div_two = v.zero - v.half;
+        let neg_max_div_two_plus_one = v.zero - v.half_plus_one;
+        let neg_max_div_three = v.zero - v.max_div_three;
+        let neg_max_div_three_plus_one = v.zero - v.max_div_three_plus_one;
+        let neg_max_div_four = v.zero - v.max_div_four;
+        let neg_max_div_four_plus_one = v.zero - v.max_div_four_plus_one;
+        let min_div_two = v.min / v.two;
+        let min_div_two_minus_one = min_div_two - v.one;
+        let min_div_three = v.min / v.three;
+        let min_div_three_minus_one = min_div_three - v.one;
+        let min_div_four = v.min / v.four;
+        let min_div_four_minus_one = min_div_four - v.one;
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.two, v.half)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.half_plus_one)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.one, v.min)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.one)),
+            1 => Just((v.two, v.two)),
+            1 => Just((v.three, v.three)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.two, v.min)),
+            1 => Just((v.min, neg_two)),
+            1 => Just((neg_two, v.min)),
+            1 => Just((v.max, neg_two)),
+            1 => Just((neg_two, v.max)),
+            1 => Just((v.sqrt_max, v.sqrt_max)),
+            1 => Just((v.sqrt_max, v.sqrt_max_plus_one)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max)),
+            1 => Just((v.sqrt_max_plus_one, v.sqrt_max_plus_one)),
+            1 => Just((neg_sqrt_max, neg_sqrt_max)),
+            1 => Just((neg_sqrt_max, neg_sqrt_max_plus_one)),
+            1 => Just((neg_sqrt_max_plus_one, neg_sqrt_max)),
+            1 => Just((neg_sqrt_max_plus_one, neg_sqrt_max_plus_one)),
+            1 => Just((v.max_div_three, v.three)),
+            1 => Just((v.three, v.max_div_three)),
+            1 => Just((v.max_div_three_plus_one, v.three)),
+            1 => Just((v.three, v.max_div_three_plus_one)),
+            1 => Just((v.max_div_four, v.four)),
+            1 => Just((v.four, v.max_div_four)),
+            1 => Just((v.max_div_four_plus_one, v.four)),
+            1 => Just((v.four, v.max_div_four_plus_one)),
+            1 => Just((neg_max_div_two, neg_two)),
+            1 => Just((neg_two, neg_max_div_two)),
+            1 => Just((neg_max_div_two_plus_one, neg_two)),
+            1 => Just((neg_two, neg_max_div_two_plus_one)),
+            1 => Just((neg_max_div_three, neg_three)),
+            1 => Just((neg_three, neg_max_div_three)),
+            1 => Just((neg_max_div_three_plus_one, neg_three)),
+            1 => Just((neg_three, neg_max_div_three_plus_one)),
+            1 => Just((neg_max_div_four, neg_four)),
+            1 => Just((neg_four, neg_max_div_four)),
+            1 => Just((neg_max_div_four_plus_one, neg_four)),
+            1 => Just((neg_four, neg_max_div_four_plus_one)),
+            1 => Just((min_div_two, v.two)),
+            1 => Just((v.two, min_div_two)),
+            1 => Just((min_div_two_minus_one, v.two)),
+            1 => Just((v.two, min_div_two_minus_one)),
+            1 => Just((min_div_three, v.three)),
+            1 => Just((v.three, min_div_three)),
+            1 => Just((min_div_three_minus_one, v.three)),
+            1 => Just((v.three, min_div_three_minus_one)),
+            1 => Just((min_div_four, v.four)),
+            1 => Just((v.four, min_div_four)),
+            1 => Just((min_div_four_minus_one, v.four)),
+            1 => Just((v.four, min_div_four_minus_one)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    pub fn div_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+        ]
+    }
+
+    pub fn div_unsigned_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.max)),
+            1 => Just((v.three, v.max)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    pub fn div_signed_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.zero)),
+        ]
+    }
+
+    pub fn div_signed_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            75 => (any::<T>(), v.min..=neg_one),
+            75 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((neg_one, v.max)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    pub fn rem_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+        ]
+    }
+
+    pub fn rem_unsigned_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.half, v.two)),
+            1 => Just((v.half_plus_one, v.two)),
+            1 => Just((v.two, v.max)),
+        ]
+    }
+
+    /// Checked remainder and division don't panic on zero rhs.
+    pub fn rem_signed_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.zero)),
+        ]
+    }
+
+    pub fn rem_signed_overflowing() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            75 => (any::<T>(), v.min..=neg_one),
+            75 => (any::<T>(), v.one..=v.max),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((neg_one, v.min)),
+            1 => Just((neg_one, v.max)),
+        ]
+    }
+
+    pub fn is_signed() -> impl Strategy<Value = T>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        prop_oneof![
+            150 => any::<T>(),
+            1 => Just(v.zero),
+            1 => Just(v.one),
+            1 => Just(v.neg_one.unwrap()),
+            1 => Just(v.max),
+            1 => Just(v.min),
+            1 => Just(v.half),
+            1 => Just(v.half_plus_one),
+        ]
+    }
+
+    /// Does *not* return `T::min_value` because it traps miden vm.
+    pub fn unchecked_neg() -> impl Strategy<Value = T>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let min_plus_one = v.min + T::one();
+        prop_oneof![
+            150 => (v.min+T::one())..=v.max,
+            1 => Just(v.zero),
+            1 => Just(v.one),
+            1 => Just(neg_one),
+            1 => Just(v.max),
+            1 => Just(v.half),
+            1 => Just(v.half_plus_one),
+            1 => Just(min_plus_one),
+        ]
+    }
+
+    pub fn comparison_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), any::<T>()),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.one)),
+            1 => Just((neg_one, neg_one)),
+            1 => Just((v.max, v.max)),
+            1 => Just((v.min, v.min)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.one, v.zero)),
+            1 => Just((neg_one, v.zero)),
+            1 => Just((v.zero, neg_one)),
+            1 => Just((v.max, neg_one)),
+            1 => Just((neg_one, v.max)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.one, v.min)),
+            1 => Just((v.min, v.max)),
+            1 => Just((v.max, v.min)),
+            1 => Just((v.half, v.half_plus_one)),
+            1 => Just((v.half_plus_one, v.half)),
+            1 => Just((v.zero, v.max)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.zero, v.min)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.one, v.max)),
+            1 => Just((v.max, v.one)),
+        ]
+    }
+
+    pub fn pow2() -> impl Strategy<Value = T>
+    where
+        T: PrimInt + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let thirty = T::from(30).unwrap();
+        prop_oneof![
+            150 => v.zero..=thirty,
+            1 => Just(v.zero),
+            1 => Just(v.one),
+            1 => Just(thirty),
+        ]
+    }
+
+    pub fn ipow_signed() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let thirty = T::from(30).unwrap();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), v.zero..=thirty),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.one, v.zero)),
+            1 => Just((neg_one, v.zero)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.one, v.one)),
+            1 => Just((neg_one, v.one)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.zero, v.two)),
+            1 => Just((v.one, v.two)),
+            1 => Just((neg_one, v.two)),
+            1 => Just((v.max, v.two)),
+            1 => Just((v.min, v.two)),
+            1 => Just((v.zero, thirty)),
+            1 => Just((v.one, thirty)),
+            1 => Just((neg_one, thirty)),
+            1 => Just((v.max, thirty)),
+            1 => Just((v.min, thirty)),
+        ]
+    }
+
+    pub fn shr_signed_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let thirty_one = T::from(31).unwrap();
+        let thirty_two = T::from(32).unwrap();
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            150 => (any::<T>(), v.zero..=thirty_one),
+            1 => (any::<T>(), any::<T>()),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, thirty_one)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.max, thirty_one)),
+            1 => Just((neg_one, v.one)),
+            1 => Just((neg_one, thirty_one)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, thirty_one)),
+            1 => Just((v.one, thirty_one)),
+            1 => Just((v.min, thirty_two)),
+            1 => Just((v.max, thirty_two)),
+            1 => Just((v.zero, neg_one)),
+            1 => Just((v.zero, thirty_two)),
+        ]
+    }
+}
+
+/// Common values frequently used in [`NumericStrategy`].
+pub struct NumericStrategyValues<T: PrimInt> {
+    pub zero: T,
+    pub one: T,
+    pub two: T,
+    pub three: T,
+    pub four: T,
+    pub half: T,
+    pub half_plus_one: T,
+    pub sqrt_max: T,
+    pub sqrt_max_plus_one: T,
+    pub max_div_three: T,
+    pub max_div_three_plus_one: T,
+    pub max_div_four: T,
+    pub max_div_four_plus_one: T,
+    pub max: T,
+    pub min: T,
+    /// Only signed types can have negative values.
+    pub neg_one: Option<T>,
+}
+
+impl<T: PrimInt> NumericStrategyValues<T> {
+    pub fn new() -> Self {
+        let two = T::one() + T::one();
+        let three = two + T::one();
+        let four = two + two;
+        let max = T::max_value();
+        let sqrt_max = integer_sqrt(max);
+        let is_signed = T::min_value() < T::zero();
+        Self {
+            zero: T::zero(),
+            one: T::one(),
+            two,
+            three,
+            four,
+            max,
+            min: T::min_value(),
+            half: max / two,
+            half_plus_one: max / two + T::one(),
+            sqrt_max,
+            sqrt_max_plus_one: sqrt_max + T::one(),
+            max_div_three: max / three,
+            max_div_three_plus_one: max / three + T::one(),
+            max_div_four: max / four,
+            max_div_four_plus_one: max / four + T::one(),
+            neg_one: is_signed.then(|| T::zero() - T::one()),
+        }
+    }
+}
+
+pub fn integer_sqrt<T: PrimInt>(n: T) -> T {
+    let zero = T::zero();
+    let one = T::one();
+    let two = one + one;
+    let mut low = one;
+    let mut high = n;
+    let mut result = zero;
+
+    while low <= high {
+        let mid = low + (high - low) / two;
+        if mid <= n / mid {
+            result = mid;
+            low = mid + one;
+        } else {
+            high = mid - one;
+        }
+    }
+
+    result
 }
