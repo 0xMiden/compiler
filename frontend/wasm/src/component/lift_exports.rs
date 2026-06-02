@@ -382,6 +382,10 @@ fn annotate_component_export_debug_signature(
     export_func_ty: &FunctionType,
     export_param_names: &[String],
 ) {
+    assert!(
+        export_func_ty.abi.is_wasm_canonical_abi(),
+        "component export debug signatures must be derived from Component Model ABI function types",
+    );
     let context = {
         let export_func = export_func_ref.borrow();
         export_func.as_operation().context_rc()

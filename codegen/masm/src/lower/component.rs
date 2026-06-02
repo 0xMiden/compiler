@@ -830,9 +830,51 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
         return None;
     };
 
-    let args = ty.params().iter().map(masm_type_expr_from_hir).collect();
-    let results = ty.results().iter().map(masm_type_expr_from_hir).collect();
+    let args = ty.params().iter().map(masm_component_type_expr_from_hir).collect();
+    let results = ty.results().iter().map(masm_component_type_expr_from_hir).collect();
     Some(masm::FunctionType::new(ty.calling_convention(), args, results))
+}
+
+fn masm_component_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
+    match ty {
+        Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
+            masm_component_type_expr_from_hir(array.element_type()),
+            array.len(),
+        )),
+        Type::Struct(struct_ty) => {
+            let name = struct_ty.name().and_then(|name| masm::Ident::new(name.as_ref()).ok());
+            let fields = struct_ty.fields().iter().enumerate().map(|(index, field)| {
+                let name = field
+                    .name
+                    .as_deref()
+                    .map(masm::Ident::new)
+                    .and_then(Result::ok)
+                    .unwrap_or_else(|| masm::Ident::new(format!("field{index}")).unwrap());
+                masm::StructField {
+                    span: SourceSpan::UNKNOWN,
+                    name,
+                    ty: masm_component_type_expr_from_hir(&field.ty),
+                }
+            });
+            masm::TypeExpr::Struct(
+                masm::StructType::new(name, fields)
+                    .with_repr(Span::unknown(struct_ty.repr()))
+                    .with_span(SourceSpan::UNKNOWN),
+            )
+        }
+        Type::Ptr(ptr) => masm::TypeExpr::Ptr(masm::PointerType::new(
+            masm_component_type_expr_from_hir(ptr.pointee()),
+        )),
+        Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
+            masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
+        )),
+        Type::List(element_ty) => masm::TypeExpr::Ptr(
+            masm::PointerType::new(masm_component_type_expr_from_hir(element_ty))
+                .with_address_space(masm::types::AddressSpace::Byte),
+        ),
+        Type::Unknown | Type::Never | Type::F64 => panic!("unrepresentable type value: {ty}"),
+        ty => masm::TypeExpr::Primitive(Span::unknown(ty.clone())),
+    }
 }
 
 fn masm_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
