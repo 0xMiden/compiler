@@ -18,7 +18,7 @@ use midenc_hir::{
 use midenc_session::diagnostics::Report;
 
 use super::{
-    ComponentFunctionType,
+    CanonicalAbiType, CanonicalAbiTypeKind, ComponentFunctionType,
     canon_abi_utils::store,
     flat::{
         CanonicalAbiMode, CanonicalAbiTransformation, classify_function_type,
@@ -59,6 +59,13 @@ pub fn generate_import_lowering_function(
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
     let context = module_builder.builder().context_rc();
+    // FPI imports bypass canonical ABI validation and classification: they use their own
+    // typed-signature checks, and oversized argument lists take the FPI indirect lowering
+    // path instead of tupled parameters.
+    let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
+    if !is_fpi {
+        reject_unsupported_import_canonical_abi_types(&import_func_path, import_func_ty)?;
+    }
     let import_lowered_sig =
         flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
             .wrap_err_with(|| {
@@ -67,9 +74,6 @@ pub fn generate_import_lowering_function(
                      '{import_func_path}' requires flattening"
                 )
             })?;
-    // FPI imports bypass canonical ABI classification: oversized argument lists take the
-    // FPI indirect lowering path instead of tupled parameters.
-    let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
     let transformation = if is_fpi {
         None
     } else {
@@ -999,10 +1003,46 @@ fn generate_direct_lowering(
     })
 }
 
+/// Rejects component import signatures containing unsupported canonical ABI shapes.
+fn reject_unsupported_import_canonical_abi_types(
+    import_func_path: &SymbolPath,
+    import_func_ty: &ComponentFunctionType,
+) -> WasmResult<()> {
+    for ty in import_func_ty.params.iter().chain(import_func_ty.results.iter()) {
+        if contains_unsupported_canonical_abi_type(ty) {
+            return Err(Report::msg(format!(
+                "component import lowering for '{import_func_path}' has unsupported canonical ABI \
+                 type {:?}",
+                ty.ir
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// Returns true if a canonical ABI type tree contains an unsupported lowering shape.
+fn contains_unsupported_canonical_abi_type(ty: &CanonicalAbiType) -> bool {
+    match &ty.kind {
+        CanonicalAbiTypeKind::Scalar => false,
+        CanonicalAbiTypeKind::Record { fields } => {
+            fields.iter().any(|field| contains_unsupported_canonical_abi_type(&field.ty))
+        }
+        CanonicalAbiTypeKind::Variant {
+            discriminant,
+            cases,
+            ..
+        } => {
+            contains_unsupported_canonical_abi_type(discriminant)
+                || cases.iter().flatten().any(contains_unsupported_canonical_abi_type)
+        }
+        CanonicalAbiTypeKind::Unsupported => true,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use alloc::rc::Rc;
-    use std::sync::Arc;
+    use alloc::{rc::Rc, sync::Arc};
 
     use midenc_hir::{
         BuilderExt, CallConv, Context, EnumType, FunctionType, PointerType, SourceSpan,
@@ -1012,6 +1052,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::component::{CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind};
 
     fn test_import_path(name: &str) -> SymbolPath {
         SymbolPath::from_iter([
@@ -1494,6 +1535,60 @@ mod tests {
             Err(err) => {
                 assert!(
                     err.to_string().contains("tuple-parameter import lowering"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_direct_import_lowering_with_unsupported_list_param() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder
+            .declare_module("core".into())
+            .expect("failed to declare core module");
+        let mut module_builder = ModuleBuilder::new(module);
+
+        let list_ty = Type::List(Arc::new(Type::U8));
+        let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty.clone()], vec![]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([CanonicalAbiType {
+                ir: list_ty,
+                abi: CanonicalAbiInfo::POINTER_PAIR,
+                kind: CanonicalAbiTypeKind::Unsupported,
+            }]),
+            results: Box::new([]),
+        };
+
+        let core_func_sig = Signature {
+            params: vec![
+                AbiParam::sret(Type::from(PointerType::new(Type::U8)), &context),
+                AbiParam::new(Type::I32),
+            ],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("list_param"),
+            &import_func_ty,
+            core_function_path("list_param"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected direct list import lowering to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("unsupported canonical ABI"),
                     "unexpected diagnostic: {err}"
                 );
             }
