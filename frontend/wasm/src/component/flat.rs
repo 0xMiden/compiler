@@ -295,6 +295,12 @@ pub fn flatten_types(
         .collect())
 }
 
+/// Returns true when flattened parameters exceed the direct cross-context call budget.
+fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
+    flat_params.len() > MAX_FLAT_PARAMS
+        || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>() > MAX_FLAT_PARAMS
+}
+
 /// Classifies the canonical ABI transformation required by a component function type.
 pub fn classify_function_type(
     context: &Rc<Context>,
@@ -308,7 +314,7 @@ pub fn classify_function_type(
 
     let flat_params = flatten_types(context, &func_ty.params)?;
     let flat_results = flatten_types(context, &func_ty.results)?;
-    let needs_param_tuple = flat_params.len() > MAX_FLAT_PARAMS;
+    let needs_param_tuple = flat_params_need_tuple(&flat_params);
     let needs_result_out_ptr = flat_results.len() > MAX_FLAT_RESULTS;
 
     Ok(match (needs_param_tuple, needs_result_out_ptr) {
@@ -339,7 +345,7 @@ pub fn flatten_function_type(
     );
     let mut flat_params = flatten_types(context, &func_ty.params)?;
     let mut flat_results = flatten_types(context, &func_ty.results)?;
-    if flat_params.len() > MAX_FLAT_PARAMS {
+    if flat_params_need_tuple(&flat_params) {
         // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
         //
         // When there are too many flat values, in general, a single `i32` pointer can be passed instead
@@ -832,6 +838,16 @@ mod tests {
         assert_eq!(sig.params().len(), 1);
         assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
         assert!(sig.params()[0].is_sret_param());
+
+        // Nine i64 params fit the Canon ABI flat-value count but exceed the 16-felt call budget.
+        let params = vec![Type::I64; 9];
+        let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
+
+        assert_eq!(sig.params().len(), 1);
+        assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
+        assert!(sig.params()[0].is_sret_param());
     }
 
     #[test]
@@ -945,6 +961,13 @@ mod tests {
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
             CanonicalAbiTransformation::None
+        );
+
+        // Parameter tuple needed - at most 16 flattened parameters can still exceed 16 felts.
+        let func_ty = component_func(vec![Type::I64; 9], vec![]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiTransformation::ParamTuple
         );
     }
 }

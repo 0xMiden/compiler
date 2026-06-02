@@ -340,6 +340,24 @@ fn plan_fpi_call(
     let has_arg_ptr = flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS;
     let has_output_ptr = flattened_results.len() > CANONICAL_ABI_MAX_FLAT_RESULTS;
 
+    if !has_arg_ptr {
+        // The generated wrapper receives all its parameters on the operand stack, so the direct
+        // call shape is limited by the stack's addressable window, independent of the FPI
+        // protocol's own input limit. Check this before comparing against the lowered core
+        // signature: over-budget direct shapes are tupled by canonical ABI flattening, which
+        // would otherwise surface as a confusing shape mismatch.
+        let stack_felts =
+            flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
+                + usize::from(has_output_ptr);
+        if stack_felts > FPI_DIRECT_MAX_STACK_FELTS {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
+                 expanding 64-bit values and result pointers, but direct FPI calls support at \
+                 most {FPI_DIRECT_MAX_STACK_FELTS}"
+            )));
+        }
+    }
+
     let expected_params = if has_arg_ptr {
         1 + usize::from(has_output_ptr)
     } else {
@@ -356,21 +374,6 @@ fn plan_fpi_call(
         return Err(midenc_session::diagnostics::Report::msg(
             "FPI import with more than 16 flattened params must lower to an argument pointer",
         ));
-    }
-    if !has_arg_ptr {
-        // The generated wrapper receives all its parameters on the operand stack, so the direct
-        // call shape is limited by the stack's addressable window, independent of the FPI
-        // protocol's own input limit.
-        let stack_felts =
-            flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
-                + usize::from(has_output_ptr);
-        if stack_felts > FPI_DIRECT_MAX_STACK_FELTS {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
-                 expanding 64-bit values and result pointers, but direct FPI calls support at \
-                 most {FPI_DIRECT_MAX_STACK_FELTS}"
-            )));
-        }
     }
     if has_output_ptr {
         let output_param = &import_lowered_sig.params()[expected_params - 1];
