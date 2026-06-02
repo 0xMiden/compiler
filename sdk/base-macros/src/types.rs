@@ -121,6 +121,8 @@ pub(crate) fn map_type_to_type_ref(
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
 
+            reject_unsupported_component_primitive(&ident, last.span())?;
+
             if !last.arguments.is_empty() {
                 if ident == "Option" {
                     let inner = single_generic_type_argument(last)?;
@@ -251,6 +253,18 @@ fn map_result_argument_type_to_type_ref(
     }
 }
 
+/// Rejects Rust primitives that WIT can express but the Wasm frontend cannot lower yet.
+fn reject_unsupported_component_primitive(ident: &str, span: Span) -> Result<(), syn::Error> {
+    if matches!(ident, "f64" | "char") {
+        return Err(syn::Error::new(
+            span,
+            format!("`{ident}` is not supported in component interfaces yet"),
+        ));
+    }
+
+    Ok(())
+}
+
 /// Converts a Rust primitive type identifier into the equivalent WIT primitive type.
 fn rust_type_to_wit_type(ident: &str) -> Option<WitType> {
     match ident {
@@ -264,8 +278,6 @@ fn rust_type_to_wit_type(ident: &str) -> Option<WitType> {
         "i64" => Some(WitType::S64),
         "u64" => Some(WitType::U64),
         "f32" => Some(WitType::F32),
-        "f64" => Some(WitType::F64),
-        "char" => Some(WitType::Char),
         _ => None,
     }
 }
