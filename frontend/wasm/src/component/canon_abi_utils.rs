@@ -500,7 +500,16 @@ fn convert_flat_value<B: ?Sized + Builder>(
         },
         Type::I64 => match source_ty {
             Type::U64 => fb.bitcast(value, Type::I64, span)?,
-            Type::Felt | Type::I32 | Type::U32 => fb.cast(value, Type::I64, span)?,
+            Type::I32 => {
+                let value = fb.bitcast(value, Type::U32, span)?;
+                let value = fb.zext(value, Type::U64, span)?;
+                fb.bitcast(value, Type::I64, span)?
+            }
+            Type::U32 => {
+                let value = fb.zext(value, Type::U64, span)?;
+                fb.bitcast(value, Type::I64, span)?
+            }
+            Type::Felt => fb.cast(value, Type::I64, span)?,
             _ => fb.cast(value, Type::I64, span)?,
         },
         Type::Felt => match source_ty {
@@ -591,6 +600,7 @@ mod tests {
     use alloc::{rc::Rc, sync::Arc};
     use core::cell::RefCell;
 
+    use midenc_dialect_arith as arith;
     use midenc_dialect_cf as cf;
     use midenc_dialect_ub as ub;
     use midenc_hir::{
@@ -705,6 +715,63 @@ mod tests {
         (switch_count, unreachable_count)
     }
 
+    /// Builds one flat-value conversion and returns the number of zero-extension ops it emits.
+    fn count_conversion_zext_ops(source_ty: Type, target_ty: Type) -> usize {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder.declare_module("test".into()).expect("failed to declare module");
+        let mut module_builder = ModuleBuilder::new(module);
+        let signature = Signature::new(
+            &context,
+            FunctionType::new(CallConv::Fast, vec![source_ty], vec![]).params,
+            [],
+        );
+        let function = module_builder
+            .define_function(
+                Ident::with_empty_span("convert_flat".into()),
+                Visibility::Public,
+                signature,
+            )
+            .expect("failed to define function");
+
+        {
+            let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
+            let mut op_builder = midenc_hir::OpBuilder::new(context)
+                .with_listener(SSABuilderListener::new(func_ctx));
+            let mut fb = FunctionBuilderExt::new(function, &mut op_builder);
+            let entry_block = fb.current_block();
+            fb.seal_block(entry_block);
+            let args = block_arguments(entry_block);
+
+            convert_flat_value(&mut fb, args[0], &target_ty, SourceSpan::default())
+                .expect("flat conversion should build");
+
+            let exit_block = fb.create_block();
+            fb.br(exit_block, [], SourceSpan::default()).expect("failed to branch to exit");
+            fb.seal_block(exit_block);
+            fb.switch_to_block(exit_block);
+            fb.ret([], SourceSpan::default()).expect("failed to return");
+        }
+
+        let mut zext_count = 0;
+        function
+            .borrow()
+            .as_operation()
+            .prewalk(|op: &Operation| {
+                if op.is::<arith::Zext>() {
+                    zext_count += 1;
+                }
+                WalkResult::<()>::Continue(())
+            })
+            .into_result()
+            .expect("operation walk should not fail");
+
+        zext_count
+    }
+
     #[test]
     fn load_validates_unit_only_variant_discriminant() {
         let ty = unit_only_variant_type();
@@ -750,5 +817,12 @@ mod tests {
 
         assert_eq!(switch_count, 1, "direct flat variant should validate the tag");
         assert_eq!(unreachable_count, 1, "invalid direct flat variant tag should be unreachable");
+    }
+
+    #[test]
+    fn convert_flat_i32_to_i64_zero_extends() {
+        let zext_count = count_conversion_zext_ops(Type::I32, Type::I64);
+
+        assert_eq!(zext_count, 1, "joined i64 payload slot should zero-extend i32 payload");
     }
 }
