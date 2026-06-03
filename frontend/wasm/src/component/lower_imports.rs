@@ -21,8 +21,9 @@ use super::{
     CanonicalAbiType, CanonicalAbiTypeKind, ComponentFunctionType,
     canon_abi_utils::{store, validate_flat_variants},
     flat::{
-        CanonicalAbiMode, CanonicalAbiTransformation, classify_function_type,
-        flat_params_need_tuple, flatten_function_type, flatten_types, flattened_types_layout,
+        CanonicalAbiMode, CanonicalAbiTransformation, check_core_wasm_signature_equivalence,
+        classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
+        flattened_types_layout,
     },
 };
 use crate::{
@@ -986,6 +987,12 @@ fn generate_direct_lowering(
             .wrap_err_with(|| {
                 format!("failed to flatten import function signature for '{import_func_path}'")
             })?;
+    check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig).map_err(|message| {
+        Report::msg(format!(
+            "component import lowering for '{import_func_path}' has core Wasm signature mismatch: \
+             {message}"
+        ))
+    })?;
     let import_func_ref = component_builder
         .define_function(
             import_func_path.name().into(),
@@ -995,7 +1002,7 @@ fn generate_direct_lowering(
         .expect("failed to define the import function");
 
     let call = fb
-        .call(import_func_ref, core_func_sig.clone(), args.to_vec(), span)
+        .call(import_func_ref, import_func_sig, args.to_vec(), span)
         .expect("failed to build an exec op");
 
     let borrow = call.borrow();
@@ -1528,6 +1535,14 @@ mod tests {
         }
     }
 
+    fn scalar_u64_type() -> CanonicalAbiType {
+        CanonicalAbiType {
+            ir: Type::U64,
+            abi: CanonicalAbiInfo::SCALAR8,
+            kind: CanonicalAbiTypeKind::Scalar,
+        }
+    }
+
     #[test]
     fn rejects_import_lowering_with_tupled_params_and_no_result() {
         let context = Rc::new(Context::default());
@@ -1719,6 +1734,52 @@ mod tests {
             unreachable_count, 2,
             "invalid transformed import result tag should be unreachable before storing"
         );
+    }
+
+    #[test]
+    fn rejects_direct_import_lowering_with_mismatched_core_result_signature() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder
+            .declare_module("core".into())
+            .expect("failed to declare core module");
+        let mut module_builder = ModuleBuilder::new(module);
+
+        let result_ty = scalar_u64_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([]),
+            results: Box::new([result_ty]),
+        };
+        let core_func_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("mismatched_result"),
+            &import_func_ty,
+            core_function_path("mismatched_result"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched direct import signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
     }
 
     #[test]
