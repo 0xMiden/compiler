@@ -234,6 +234,8 @@ fn generate_lifting_with_transformation(
     // 1. Load the data from that pointer into the "flattened" representation (primitive types)
     // 2. Return it as individual values (tuple)
 
+    validate_flat_variants(&mut fb, export_metadata.params, &args, span)?;
+
     let exec = fb.exec(core_export_func_ref, core_export_func_sig, args, span)?;
 
     let borrow = exec.borrow();
@@ -429,4 +431,94 @@ fn annotate_component_export_debug_signature(
     let op = export_func.as_operation_mut();
     op.set_attribute("di.compile_unit", cu_attr);
     op.set_attribute("di.subprogram", sp_attr);
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+
+    use midenc_hir::{
+        BuilderExt, CallConv, Context, FunctionType, Ident, SourceSpan, SymbolName,
+        SymbolNameComponent, SymbolPath, Type, Visibility,
+        dialects::builtin::{
+            ModuleBuilder, World, WorldBuilder,
+            attributes::{AbiParam, Signature},
+        },
+        version::Version,
+    };
+    use midenc_session::DiagnosticsHandler;
+
+    use super::*;
+    use crate::component::test_support::{
+        component_function, count_validation_ops, two_field_record_type, unit_only_variant_type,
+    };
+
+    fn component_export_path(function: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Component(SymbolName::intern("core")),
+            SymbolNameComponent::Leaf(SymbolName::intern(function)),
+        ])
+    }
+
+    #[test]
+    fn transformed_export_lifting_validates_flat_variant_params() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let component = world_builder
+            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
+            .expect("failed to define component");
+        let mut component_builder = ComponentBuilder::new(component);
+        let core_module = component_builder
+            .define_module(Ident::with_empty_span("core".into()))
+            .expect("failed to define core module");
+        let mut module_builder = ModuleBuilder::new(core_module);
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            vec![variant_ty.ir.clone()],
+            vec![result_ty.ir.clone()],
+        );
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([variant_ty]),
+            results: Box::new([result_ty.clone()]),
+        };
+        let core_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context)],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("roundtrip_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        generate_export_lifting_function(
+            &mut component_builder,
+            "roundtrip",
+            export_func_ty,
+            &["value".to_string()],
+            component_export_path("roundtrip_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        )
+        .expect("export lifting should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(component_function(&component_builder, "roundtrip"));
+        assert_eq!(switch_count, 1, "transformed export params should validate the tag");
+        assert_eq!(
+            unreachable_count, 1,
+            "invalid transformed export param tag should be unreachable"
+        );
+    }
 }

@@ -876,6 +876,8 @@ fn generate_lowering_with_transformation(
     let output_ptr = args.last().expect("expected pointer argument");
     let args_without_ptr: Vec<_> = args[..args.len() - 1].to_vec();
 
+    validate_flat_variants(fb, &import_func_ty.params, &args_without_ptr, span)?;
+
     // Call the import function - it will return a tuple to the flattened result
     let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
 
@@ -1058,7 +1060,10 @@ mod tests {
     };
 
     use super::*;
-    use crate::component::{CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind};
+    use crate::component::{
+        CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
+        test_support::{count_validation_ops, two_field_record_type, unit_only_variant_type},
+    };
 
     fn test_import_path(name: &str) -> SymbolPath {
         SymbolPath::from_iter([
@@ -1545,6 +1550,56 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn transformed_import_lowering_validates_flat_variant_params() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder
+            .declare_module("core".into())
+            .expect("failed to declare core module");
+        let mut module_builder = ModuleBuilder::new(module);
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            vec![variant_ty.ir.clone()],
+            vec![result_ty.ir.clone()],
+        );
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([variant_ty]),
+            results: Box::new([result_ty.clone()]),
+        };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("roundtrip"),
+            &import_func_ty,
+            core_function_path("roundtrip"),
+            core_func_sig,
+        )
+        .expect("import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(switch_count, 1, "transformed import params should validate the tag");
+        assert_eq!(
+            unreachable_count, 1,
+            "invalid transformed import param tag should be unreachable"
+        );
     }
 
     #[test]
