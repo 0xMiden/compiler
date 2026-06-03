@@ -296,7 +296,7 @@ pub fn flatten_types(
 }
 
 /// Returns true when flattened parameters exceed the direct cross-context call budget.
-fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
+pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
     flat_params.len() > MAX_FLAT_PARAMS
         || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>() > MAX_FLAT_PARAMS
 }

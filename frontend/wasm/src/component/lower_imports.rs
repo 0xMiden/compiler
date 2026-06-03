@@ -22,7 +22,7 @@ use super::{
     canon_abi_utils::{store, validate_flat_variants},
     flat::{
         CanonicalAbiMode, CanonicalAbiTransformation, classify_function_type,
-        flatten_function_type, flatten_types, flattened_types_layout,
+        flat_params_need_tuple, flatten_function_type, flatten_types, flattened_types_layout,
     },
 };
 use crate::{
@@ -85,9 +85,11 @@ pub fn generate_import_lowering_function(
                 )
             })?;
         if transformation.has_param_tuple() {
-            return Err(Report::msg(format!(
-                "tuple-parameter import lowering is not supported for '{import_func_path}'"
-            )));
+            return reject_tuple_parameter_import_lowering(&import_func_path);
+        }
+        if flat_params_need_tuple(import_lowered_sig.params()) {
+            // Import flattening appends a result out-pointer after tuple classification.
+            return reject_tuple_parameter_import_lowering(&import_func_path);
         }
         Some(transformation)
     };
@@ -760,6 +762,13 @@ fn is_fpi_proc_root_type(ty: &Type) -> bool {
             if struct_ty.fields().len() == 4
                 && struct_ty.fields().iter().all(|field| is_fpi_felt_type(&field.ty))
     )
+}
+
+/// Rejects component import signatures that require tuple-parameter lowering.
+fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> WasmResult<T> {
+    Err(Report::msg(format!(
+        "tuple-parameter import lowering is not supported for '{import_func_path}'"
+    )))
 }
 
 /// Generates a lowering function for component imports that require transformation.
@@ -1505,6 +1514,14 @@ mod tests {
         ])
     }
 
+    fn scalar_i32_type() -> CanonicalAbiType {
+        CanonicalAbiType {
+            ir: Type::I32,
+            abi: CanonicalAbiInfo::SCALAR4,
+            kind: CanonicalAbiTypeKind::Scalar,
+        }
+    }
+
     #[test]
     fn rejects_import_lowering_with_tupled_params_and_no_result() {
         let context = Rc::new(Context::default());
@@ -1543,6 +1560,54 @@ mod tests {
 
         match result {
             Ok(_) => panic!("expected tuple-parameter import lowering to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("tuple-parameter import lowering"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_import_lowering_when_result_out_pointer_exceeds_param_budget() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder
+            .declare_module("core".into())
+            .expect("failed to declare core module");
+        let mut module_builder = ModuleBuilder::new(module);
+
+        let result_ty = two_field_record_type();
+        let mut ir =
+            FunctionType::new(CallConv::Fast, vec![Type::I32; 16], vec![result_ty.ir.clone()]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: (0..16).map(|_| scalar_i32_type()).collect::<Vec<_>>().into_boxed_slice(),
+            results: Box::new([result_ty]),
+        };
+
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I32); 17],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("too_many_params_with_result"),
+            &import_func_ty,
+            core_function_path("too_many_params_with_result"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected import out-pointer overflow to be rejected"),
             Err(err) => {
                 assert!(
                     err.to_string().contains("tuple-parameter import lowering"),
