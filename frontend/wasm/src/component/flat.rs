@@ -386,21 +386,53 @@ pub fn assert_core_wasm_signature_equivalence(
     wasm_core_sig: &Signature,
     flattened_sig: &Signature,
 ) {
-    assert_eq!(
-        wasm_core_sig.params().len(),
-        flattened_sig.params().len(),
-        "expected the same number of params"
-    );
-    assert_eq!(
-        wasm_core_sig.results().len(),
-        flattened_sig.results().len(),
-        "expected the same number of results"
-    );
-    for (wasm_core_param, flattened_param) in
-        wasm_core_sig.params().iter().zip(flattened_sig.params())
-    {
-        assert_eq!(wasm_core_param.ty, flattened_param.ty, "expected the same param type");
+    if let Err(message) = check_core_wasm_signature_equivalence(wasm_core_sig, flattened_sig) {
+        panic!("{message}");
     }
+}
+
+/// Checks that the given core Wasm signature is equivalent to the flattened component signature.
+///
+/// This compares the canonical ABI parameter/result shape, but not the wrapper calling convention.
+pub fn check_core_wasm_signature_equivalence(
+    wasm_core_sig: &Signature,
+    flattened_sig: &Signature,
+) -> Result<(), String> {
+    if wasm_core_sig.params().len() != flattened_sig.params().len() {
+        return Err(format!(
+            "expected {} params, got {}",
+            flattened_sig.params().len(),
+            wasm_core_sig.params().len()
+        ));
+    }
+    if wasm_core_sig.results().len() != flattened_sig.results().len() {
+        return Err(format!(
+            "expected {} results, got {}",
+            flattened_sig.results().len(),
+            wasm_core_sig.results().len()
+        ));
+    }
+
+    for (index, (wasm_core_param, flattened_param)) in
+        wasm_core_sig.params().iter().zip(flattened_sig.params()).enumerate()
+    {
+        if wasm_core_param != flattened_param {
+            return Err(format!(
+                "expected param {index} to be {flattened_param}, got {wasm_core_param}"
+            ));
+        }
+    }
+    for (index, (wasm_core_result, flattened_result)) in
+        wasm_core_sig.results().iter().zip(flattened_sig.results()).enumerate()
+    {
+        if wasm_core_result != flattened_result {
+            return Err(format!(
+                "expected result {index} to be {flattened_result}, got {wasm_core_result}"
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -480,6 +512,60 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].ty, Type::Felt);
         assert_eq!(result[0].extension(), ArgumentExtension::None);
+    }
+
+    #[test]
+    fn test_signature_equivalence_checks_result_types() {
+        let core_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        let flattened_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I64)],
+            cc: CallConv::ComponentModel,
+        };
+
+        let err = check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect_err("result type mismatch should be rejected");
+        assert!(err.contains("result 0"), "unexpected diagnostic: {err}");
+    }
+
+    #[test]
+    fn test_signature_equivalence_checks_abi_attributes() {
+        let context = Rc::new(Context::default());
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+        let flattened_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let err = check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect_err("ABI attribute mismatch should be rejected");
+        assert!(err.contains("param 0"), "unexpected diagnostic: {err}");
+    }
+
+    #[test]
+    fn test_signature_equivalence_allows_calling_convention_difference() {
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::new(Type::I64)],
+            cc: CallConv::C,
+        };
+        let flattened_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::new(Type::I64)],
+            cc: CallConv::ComponentModel,
+        };
+
+        check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect("calling convention difference should be allowed");
     }
 
     #[test]

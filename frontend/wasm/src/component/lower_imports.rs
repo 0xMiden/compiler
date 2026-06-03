@@ -7,8 +7,8 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    AddressSpace, AsValueRange, Builder, FunctionType, Op, PointerType, SourceSpan, SymbolPath,
-    Type, ValueRef, Visibility,
+    AddressSpace, Builder, FunctionType, Op, PointerType, SourceSpan, SymbolPath, Type, ValueRef,
+    Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
@@ -891,7 +891,10 @@ fn generate_lowering_with_transformation(
     let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
 
     let borrow = call.borrow();
-    let results = borrow.results().as_value_range().into_owned();
+    let results_storage = borrow.results();
+    let results: Vec<ValueRef> =
+        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    validate_flat_variants(fb, &import_func_ty.results, &results, span)?;
 
     // Store values recursively based on the component-level type
     // This follows the canonical ABI store algorithm from:
@@ -1071,7 +1074,10 @@ mod tests {
     use super::*;
     use crate::component::{
         CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
-        test_support::{count_validation_ops, two_field_record_type, unit_only_variant_type},
+        test_support::{
+            count_validation_ops, scalar_payload_variant_type, two_field_record_type,
+            unit_only_variant_type,
+        },
     };
 
     fn test_import_path(name: &str) -> SymbolPath {
@@ -1664,6 +1670,54 @@ mod tests {
         assert_eq!(
             unreachable_count, 1,
             "invalid transformed import param tag should be unreachable"
+        );
+    }
+
+    #[test]
+    fn transformed_import_lowering_validates_flat_variant_results_before_store() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let module = world_builder
+            .declare_module("core".into())
+            .expect("failed to declare core module");
+        let mut module_builder = ModuleBuilder::new(module);
+
+        let result_ty = scalar_payload_variant_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([]),
+            results: Box::new([result_ty]),
+        };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("variant_result"),
+            &import_func_ty,
+            core_function_path("variant_result"),
+            core_func_sig,
+        )
+        .expect("import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(
+            switch_count, 2,
+            "transformed import results should validate the tag before storing"
+        );
+        assert_eq!(
+            unreachable_count, 2,
+            "invalid transformed import result tag should be unreachable before storing"
         );
     }
 

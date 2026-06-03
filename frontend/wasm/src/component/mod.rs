@@ -65,6 +65,44 @@ pub(super) mod test_support {
         }
     }
 
+    /// Builds canonical ABI metadata for a two-case variant with scalar payloads.
+    pub fn scalar_payload_variant_type() -> CanonicalAbiType {
+        let payload_ty = CanonicalAbiType {
+            ir: Type::I32,
+            abi: CanonicalAbiInfo::SCALAR4,
+            kind: CanonicalAbiTypeKind::Scalar,
+        };
+        let case_abis = [Some(CanonicalAbiInfo::SCALAR4), Some(CanonicalAbiInfo::SCALAR4)];
+        let info = VariantInfo::new_static(&case_abis);
+        let abi = CanonicalAbiInfo::variant_static(&case_abis);
+        let ir = Type::Enum(Arc::new(
+            EnumType::new(
+                "scalar-payload".into(),
+                Type::U8,
+                [
+                    Variant::new("first".into(), Type::I32, Some(0)),
+                    Variant::new("second".into(), Type::I32, Some(1)),
+                ],
+            )
+            .expect("scalar-payload enum should be valid"),
+        ));
+
+        CanonicalAbiType {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Variant {
+                discriminant: Box::new(CanonicalAbiType {
+                    ir: Type::U8,
+                    abi: CanonicalAbiInfo::SCALAR1,
+                    kind: CanonicalAbiTypeKind::Scalar,
+                }),
+                payload_offset32: info.payload_offset32,
+                cases: Box::new([Some(payload_ty.clone()), Some(payload_ty)]),
+                payload_flat_types: Box::new([Type::I32]),
+            },
+        }
+    }
+
     /// Builds canonical ABI metadata for a two-field record result.
     pub fn two_field_record_type() -> CanonicalAbiType {
         let field_ty = CanonicalAbiType {
