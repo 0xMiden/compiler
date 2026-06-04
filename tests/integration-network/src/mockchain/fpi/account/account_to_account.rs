@@ -209,8 +209,11 @@ use miden::*;
 
 /// Native (active) account of the note: the caller account component, whose `read_foreign_count`
 /// method is invoked directly on the active account.
+///
+/// Deliberately named `Account` — the name of the removed auto-generated wrapper — as regression
+/// coverage that user-defined `#[account(...)]` wrappers may use it.
 #[account(account_to_account_caller_account)]
-struct CallerAccount;
+struct Account;
 
 /// Note script input containing the foreign callee account id.
 #[note]
@@ -223,7 +226,7 @@ struct AccountToAccountNote {
 impl AccountToAccountNote {
     /// Checks that the active caller account can read the foreign callee account through FPI.
     #[note_script]
-    pub fn run(self, _arg: Word, account: &mut CallerAccount) {
+    pub fn run(self, _arg: Word, account: &mut Account) {
         let count = account.read_foreign_count(self.callee_account_id);
         assert_eq(count, felt!(314));
     }
