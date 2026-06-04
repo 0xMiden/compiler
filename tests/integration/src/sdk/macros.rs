@@ -376,5 +376,12 @@ impl MyNote {
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(stderr.contains("AccountWrapper"), "unexpected stderr: {stderr}");
+    assert!(
+        stderr.contains("`NotAnAccount` is not an account wrapper"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("define a struct with `#[account(...)]`"),
+        "unexpected stderr: {stderr}"
+    );
 }
