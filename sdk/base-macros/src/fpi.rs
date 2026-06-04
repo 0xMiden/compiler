@@ -38,6 +38,31 @@ pub(crate) const RUST_FUNCTION_PREFIX: &str = "fpi_";
 
 const NEW_METHOD: &str = "new";
 
+/// Method names of the `ActiveAccount` trait (`sdk/base-sys/src/bindings/active_account.rs`).
+///
+/// Dependency functions mapping to these names are rejected: the generated inherent method would
+/// shadow the built-in trait method during Rust method resolution, silently changing what e.g.
+/// `account.get_id()` means and bypassing the foreign-binding guard. Keep in sync with the trait.
+const ACTIVE_ACCOUNT_METHODS: &[&str] = &[
+    "get_id",
+    "get_nonce",
+    "get_initial_commitment",
+    "compute_commitment",
+    "get_code_commitment",
+    "get_initial_storage_commitment",
+    "compute_storage_commitment",
+    "get_asset",
+    "get_initial_asset",
+    "get_balance",
+    "get_initial_balance",
+    "has_non_fungible_asset",
+    "get_initial_vault_root",
+    "get_vault_root",
+    "get_num_procedures",
+    "get_procedure_root",
+    "has_procedure",
+];
+
 /// Adds `fpi-` functions to imported Miden dependency interfaces in the selected world.
 pub(crate) fn inject_imports(
     resolve: &mut Resolve,
@@ -594,6 +619,17 @@ fn method_ident(func: &ItemFn) -> syn::Result<syn::Ident> {
             ),
         ));
     }
+    if ACTIVE_ACCOUNT_METHODS.contains(&method_name) {
+        return Err(Error::new(
+            func.sig.ident.span(),
+            format!(
+                "dependency function `{}` collides with the built-in `ActiveAccount` method \
+                 `{method_name}`; the generated wrapper method would shadow it. Rename the \
+                 dependency function",
+                method_name.to_kebab_case()
+            ),
+        ));
+    }
 
     Ok(syn::Ident::new(method_name, func.sig.ident.span()))
 }
@@ -1070,6 +1106,27 @@ mod tests {
 
         assert!(message.contains("reserved wrapper method `new`"));
         assert!(message.contains("must not be named `new`"));
+    }
+
+    #[test]
+    fn method_ident_rejects_active_account_collision() {
+        let func: ItemFn = parse_quote! {
+            pub fn fpi_get_id(
+                account_id_prefix: ::miden::Felt,
+                account_id_suffix: ::miden::Felt,
+                foreign_proc_root: ::miden::Word,
+            ) {}
+        };
+
+        let err =
+            method_ident(&func).expect_err("FPI methods must not shadow `ActiveAccount` built-ins");
+        let message = err.to_string();
+
+        assert!(message.contains("`get-id`"), "unexpected error: {message}");
+        assert!(
+            message.contains("`ActiveAccount` method `get_id`"),
+            "unexpected error: {message}"
+        );
     }
 
     fn test_function(name: &str) -> Function {

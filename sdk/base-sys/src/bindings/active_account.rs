@@ -273,6 +273,9 @@ pub fn has_procedure(proc_root: Word) -> bool {
 /// Trait that provides active account operations for components.
 ///
 /// This trait is automatically implemented for types marked with the `#[component]` macro.
+///
+/// NOTE: when adding methods, also update `ACTIVE_ACCOUNT_METHODS` in
+/// `sdk/base-macros/src/fpi.rs`, which rejects dependency functions that would shadow them.
 pub trait ActiveAccount {
     /// Guard hook invoked by every active-account operation before it runs.
     ///
