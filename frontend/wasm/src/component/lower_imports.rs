@@ -12,7 +12,7 @@ use midenc_hir::{
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
-        attributes::Signature,
+        attributes::{AbiParam, Signature},
     },
 };
 use midenc_session::diagnostics::Report;
@@ -47,8 +47,6 @@ const FPI_EXEC_RESULTS: usize = ExecFpi::EXECUTOR_RESULT_FELTS;
 const FPI_DIRECT_MAX_STACK_FELTS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
-
-type AbiParam = midenc_hir::dialects::builtin::attributes::AbiParam;
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
 pub fn generate_import_lowering_function(
@@ -824,11 +822,25 @@ fn generate_lowering_with_transformation(
          last parameter a pointer"
     );
 
-    assert!(
-        core_func_sig.results().is_empty(),
-        "The lowered core function {core_func_path} should not have results when using \
-         out-pointer pattern"
-    );
+    // The lowered core function takes the flattened parameters with the result out-pointer
+    // passed as a core Wasm i32 pointer, and returns nothing.
+    let mut expected_core_params = import_func_sig_flat.params().to_vec();
+    *expected_core_params
+        .last_mut()
+        .expect("flattened import params cannot be empty") = AbiParam::new(Type::I32);
+    let expected_core_sig = Signature {
+        params: expected_core_params,
+        results: vec![],
+        cc: core_func_sig.cc,
+    };
+    check_core_wasm_signature_equivalence(&core_func_sig, &expected_core_sig).map_err(
+        |message| {
+            Report::msg(format!(
+                "component import lowering for '{import_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        },
+    )?;
 
     let id = ComponentId::try_from(import_func_path)
         .wrap_err("path does not start with a valid component id")?;
@@ -1708,6 +1720,51 @@ mod tests {
 
         match result {
             Ok(_) => panic!("expected mismatched direct import signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_transformed_import_lowering_with_mismatched_core_params() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            vec![variant_ty.ir.clone()],
+            vec![result_ty.ir.clone()],
+        );
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([variant_ty]),
+            results: Box::new([result_ty]),
+        };
+        // The flattened import parameters are an i32 discriminant plus the i32 result
+        // out-pointer, but the core import declares an i64 discriminant.
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I64), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("mismatched_params"),
+            &import_func_ty,
+            core_function_path("mismatched_params"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched transformed import signature to be rejected"),
             Err(err) => {
                 assert!(
                     err.to_string().contains("core Wasm signature"),
