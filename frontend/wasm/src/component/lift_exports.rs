@@ -467,16 +467,10 @@ fn annotate_component_export_debug_signature(
 
 #[cfg(test)]
 mod tests {
-    use alloc::rc::Rc;
-
     use midenc_hir::{
-        BuilderExt, CallConv, Context, FunctionType, Ident, SourceSpan, SymbolName,
-        SymbolNameComponent, SymbolPath, Type, Visibility,
-        dialects::builtin::{
-            ModuleBuilder, World, WorldBuilder,
-            attributes::{AbiParam, Signature},
-        },
-        version::Version,
+        CallConv, FunctionType, Ident, SymbolName, SymbolNameComponent, SymbolPath, Type,
+        Visibility,
+        dialects::builtin::attributes::{AbiParam, Signature},
     };
     use midenc_session::DiagnosticsHandler;
 
@@ -484,7 +478,8 @@ mod tests {
     use crate::component::{
         CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
         test_support::{
-            component_function, count_validation_ops, two_field_record_type, unit_only_variant_type,
+            component_function, component_with_core_module, count_validation_ops,
+            two_field_record_type, unit_only_variant_type,
         },
     };
 
@@ -505,19 +500,7 @@ mod tests {
 
     #[test]
     fn transformed_export_lifting_validates_flat_variant_params() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let component = world_builder
-            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
-            .expect("failed to define component");
-        let mut component_builder = ComponentBuilder::new(component);
-        let core_module = component_builder
-            .define_module(Ident::with_empty_span("core".into()))
-            .expect("failed to define core module");
-        let mut module_builder = ModuleBuilder::new(core_module);
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();
@@ -568,19 +551,7 @@ mod tests {
 
     #[test]
     fn rejects_direct_export_lifting_with_mismatched_core_signature() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let component = world_builder
-            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
-            .expect("failed to define component");
-        let mut component_builder = ComponentBuilder::new(component);
-        let core_module = component_builder
-            .define_module(Ident::with_empty_span("core".into()))
-            .expect("failed to define core module");
-        let mut module_builder = ModuleBuilder::new(core_module);
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
 
         let result_ty = scalar_u64_type();
         let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
@@ -627,19 +598,7 @@ mod tests {
 
     #[test]
     fn rejects_transformed_export_lifting_with_mismatched_core_params() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let component = world_builder
-            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
-            .expect("failed to define component");
-        let mut component_builder = ComponentBuilder::new(component);
-        let core_module = component_builder
-            .define_module(Ident::with_empty_span("core".into()))
-            .expect("failed to define core module");
-        let mut module_builder = ModuleBuilder::new(core_module);
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();

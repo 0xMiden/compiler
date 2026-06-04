@@ -597,26 +597,15 @@ fn offset_addr<B: ?Sized + Builder>(
 
 #[cfg(test)]
 mod tests {
-    use alloc::rc::Rc;
-    use core::cell::RefCell;
-
     use midenc_dialect_arith as arith;
-    use midenc_dialect_cf as cf;
-    use midenc_dialect_ub as ub;
-    use midenc_hir::{
-        BuilderExt, CallConv, Context, FunctionType, Ident, Op, Operation, SourceSpan, Type,
-        ValueRef, Visibility, WalkResult,
-        dialects::builtin::{
-            BuiltinOpBuilder, ModuleBuilder, World, WorldBuilder, attributes::Signature,
-        },
-    };
+    use midenc_hir::{SourceSpan, Type, ValueRef};
 
     use super::*;
     use crate::{
-        component::test_support::unit_only_variant_type,
-        module::function_builder_ext::{
-            FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
+        component::test_support::{
+            build_module_function, count_ops, count_validation_ops, unit_only_variant_type,
         },
+        module::function_builder_ext::SSABuilderListener,
     };
 
     /// Builds a function containing canonical ABI load/store IR and returns operation counts.
@@ -628,118 +617,19 @@ mod tests {
             &[ValueRef],
         ),
     ) -> (usize, usize) {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder.declare_module("test".into()).expect("failed to declare module");
-        let mut module_builder = ModuleBuilder::new(module);
-        let signature =
-            Signature::new(&context, FunctionType::new(CallConv::Fast, params, vec![]).params, []);
-        let function = module_builder
-            .define_function(Ident::with_empty_span(name.into()), Visibility::Public, signature)
-            .expect("failed to define function");
-
-        {
-            let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
-            let mut op_builder = midenc_hir::OpBuilder::new(context)
-                .with_listener(SSABuilderListener::new(func_ctx));
-            let mut fb = FunctionBuilderExt::new(function, &mut op_builder);
-            let entry_block = fb.current_block();
-            fb.seal_block(entry_block);
-            let args: Vec<ValueRef> = entry_block
-                .borrow()
-                .arguments()
-                .iter()
-                .copied()
-                .map(|arg| arg as ValueRef)
-                .collect();
-
-            build(&mut fb, &args);
-
-            let exit_block = fb.create_block();
-            fb.br(exit_block, [], SourceSpan::default()).expect("failed to branch to exit");
-            fb.seal_block(exit_block);
-            fb.switch_to_block(exit_block);
-            fb.ret([], SourceSpan::default()).expect("failed to return");
-        }
-
-        let mut switch_count = 0;
-        let mut unreachable_count = 0;
-        function
-            .borrow()
-            .as_operation()
-            .prewalk(|op: &Operation| {
-                if op.is::<cf::Switch>() {
-                    switch_count += 1;
-                }
-                if op.is::<ub::Unreachable>() {
-                    unreachable_count += 1;
-                }
-                WalkResult::<()>::Continue(())
-            })
-            .into_result()
-            .expect("operation walk should not fail");
-
-        (switch_count, unreachable_count)
+        let (_context, function) = build_module_function(name, params, build);
+        count_validation_ops(function)
     }
 
     /// Builds one flat-value conversion and returns the number of zero-extension ops it emits.
     fn count_conversion_zext_ops(source_ty: Type, target_ty: Type) -> usize {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder.declare_module("test".into()).expect("failed to declare module");
-        let mut module_builder = ModuleBuilder::new(module);
-        let signature = Signature::new(
-            &context,
-            FunctionType::new(CallConv::Fast, vec![source_ty], vec![]).params,
-            [],
-        );
-        let function = module_builder
-            .define_function(
-                Ident::with_empty_span("convert_flat".into()),
-                Visibility::Public,
-                signature,
-            )
-            .expect("failed to define function");
+        let (_context, function) =
+            build_module_function("convert_flat", vec![source_ty], |fb, args| {
+                convert_flat_value(fb, args[0], &target_ty, SourceSpan::default())
+                    .expect("flat conversion should build");
+            });
 
-        {
-            let func_ctx = Rc::new(RefCell::new(FunctionBuilderContext::new(context.clone())));
-            let mut op_builder = midenc_hir::OpBuilder::new(context)
-                .with_listener(SSABuilderListener::new(func_ctx));
-            let mut fb = FunctionBuilderExt::new(function, &mut op_builder);
-            let entry_block = fb.current_block();
-            fb.seal_block(entry_block);
-            let args = block_arguments(entry_block);
-
-            convert_flat_value(&mut fb, args[0], &target_ty, SourceSpan::default())
-                .expect("flat conversion should build");
-
-            let exit_block = fb.create_block();
-            fb.br(exit_block, [], SourceSpan::default()).expect("failed to branch to exit");
-            fb.seal_block(exit_block);
-            fb.switch_to_block(exit_block);
-            fb.ret([], SourceSpan::default()).expect("failed to return");
-        }
-
-        let mut zext_count = 0;
-        function
-            .borrow()
-            .as_operation()
-            .prewalk(|op: &Operation| {
-                if op.is::<arith::Zext>() {
-                    zext_count += 1;
-                }
-                WalkResult::<()>::Continue(())
-            })
-            .into_result()
-            .expect("operation walk should not fail");
-
-        zext_count
+        count_ops(function, |op| op.is::<arith::Zext>())
     }
 
     #[test]

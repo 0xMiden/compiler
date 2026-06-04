@@ -1065,12 +1065,11 @@ fn contains_unsupported_canonical_abi_type(ty: &CanonicalAbiType) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{rc::Rc, sync::Arc};
+    use alloc::sync::Arc;
 
     use midenc_hir::{
-        BuilderExt, CallConv, Context, EnumType, FunctionType, PointerType, SourceSpan,
-        StructType, SymbolName, SymbolNameComponent, SymbolPath, Type, Variant,
-        dialects::builtin::{ModuleBuilder, World, WorldBuilder, attributes::AbiParam},
+        CallConv, Context, EnumType, FunctionType, PointerType, StructType, SymbolName,
+        SymbolNameComponent, SymbolPath, Type, Variant, dialects::builtin::attributes::AbiParam,
         interner::Symbol,
     };
 
@@ -1079,7 +1078,7 @@ mod tests {
         CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
         test_support::{
             count_validation_ops, scalar_payload_variant_type, two_field_record_type,
-            unit_only_variant_type,
+            unit_only_variant_type, world_with_core_module,
         },
     };
 
@@ -1541,15 +1540,7 @@ mod tests {
 
     #[test]
     fn rejects_import_lowering_with_tupled_params_and_no_result() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder
-            .declare_module("core".into())
-            .expect("failed to declare core module");
-        let mut module_builder = ModuleBuilder::new(module);
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let mut ir = FunctionType::new(CallConv::Fast, vec![Type::I32; 17], vec![]);
         ir.abi = CallConv::ComponentModel;
@@ -1588,15 +1579,7 @@ mod tests {
 
     #[test]
     fn rejects_import_lowering_when_result_out_pointer_exceeds_param_budget() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder
-            .declare_module("core".into())
-            .expect("failed to declare core module");
-        let mut module_builder = ModuleBuilder::new(module);
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = two_field_record_type();
         let mut ir =
@@ -1636,15 +1619,7 @@ mod tests {
 
     #[test]
     fn transformed_import_lowering_validates_flat_variant_params() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder
-            .declare_module("core".into())
-            .expect("failed to declare core module");
-        let mut module_builder = ModuleBuilder::new(module);
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();
@@ -1686,15 +1661,7 @@ mod tests {
 
     #[test]
     fn transformed_import_lowering_validates_flat_variant_results_before_store() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder
-            .declare_module("core".into())
-            .expect("failed to declare core module");
-        let mut module_builder = ModuleBuilder::new(module);
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = scalar_payload_variant_type();
         let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
@@ -1734,15 +1701,7 @@ mod tests {
 
     #[test]
     fn rejects_direct_import_lowering_with_mismatched_core_result_signature() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder
-            .declare_module("core".into())
-            .expect("failed to declare core module");
-        let mut module_builder = ModuleBuilder::new(module);
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = scalar_u64_type();
         let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
@@ -1780,15 +1739,7 @@ mod tests {
 
     #[test]
     fn rejects_direct_import_lowering_with_unsupported_list_param() {
-        let context = Rc::new(Context::default());
-        let mut builder = midenc_hir::OpBuilder::new(context.clone());
-        let world =
-            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
-        let mut world_builder = WorldBuilder::new(world);
-        let module = world_builder
-            .declare_module("core".into())
-            .expect("failed to declare core module");
-        let mut module_builder = ModuleBuilder::new(module);
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let list_ty = Type::List(Arc::new(Type::U8));
         let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty.clone()], vec![]);
