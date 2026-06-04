@@ -380,20 +380,12 @@ pub fn flatten_function_type(
     })
 }
 
-/// Asserts that the given core Wasm signature is equivalent to the given flattened signature
-/// This checks that we flattened the Wasm CM function type correctly.
-pub fn assert_core_wasm_signature_equivalence(
-    wasm_core_sig: &Signature,
-    flattened_sig: &Signature,
-) {
-    if let Err(message) = check_core_wasm_signature_equivalence(wasm_core_sig, flattened_sig) {
-        panic!("{message}");
-    }
-}
-
 /// Checks that the given core Wasm signature is equivalent to the flattened component signature.
 ///
-/// This compares the canonical ABI parameter/result shape, but not the wrapper calling convention.
+/// This compares the canonical ABI parameter/result shape (arity and core types), but not the
+/// wrapper calling convention. Extension attributes (zext/sext) are ignored: core Wasm signatures
+/// are built from bare core types and never carry them, while flattening annotates small scalars
+/// with the extension expected from the wrapper.
 pub fn check_core_wasm_signature_equivalence(
     wasm_core_sig: &Signature,
     flattened_sig: &Signature,
@@ -416,18 +408,20 @@ pub fn check_core_wasm_signature_equivalence(
     for (index, (wasm_core_param, flattened_param)) in
         wasm_core_sig.params().iter().zip(flattened_sig.params()).enumerate()
     {
-        if wasm_core_param != flattened_param {
+        if wasm_core_param.ty != flattened_param.ty {
             return Err(format!(
-                "expected param {index} to be {flattened_param}, got {wasm_core_param}"
+                "expected param {index} to be {}, got {}",
+                flattened_param.ty, wasm_core_param.ty
             ));
         }
     }
     for (index, (wasm_core_result, flattened_result)) in
         wasm_core_sig.results().iter().zip(flattened_sig.results()).enumerate()
     {
-        if wasm_core_result != flattened_result {
+        if wasm_core_result.ty != flattened_result.ty {
             return Err(format!(
-                "expected result {index} to be {flattened_result}, got {wasm_core_result}"
+                "expected result {index} to be {}, got {}",
+                flattened_result.ty, wasm_core_result.ty
             ));
         }
     }
@@ -533,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn test_signature_equivalence_checks_abi_attributes() {
+    fn test_signature_equivalence_ignores_extension_attributes() {
         let context = Rc::new(Context::default());
         let core_sig = Signature {
             params: vec![AbiParam::new(Type::I32)],
@@ -546,9 +540,10 @@ mod tests {
             cc: CallConv::ComponentModel,
         };
 
-        let err = check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
-            .expect_err("ABI attribute mismatch should be rejected");
-        assert!(err.contains("param 0"), "unexpected diagnostic: {err}");
+        // Core Wasm signatures are built from bare core types and never carry the
+        // zext/sext annotations that flattening adds for small scalars.
+        check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect("extension attribute difference should be allowed");
     }
 
     #[test]

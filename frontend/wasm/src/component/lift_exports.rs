@@ -5,22 +5,28 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, ValueRange, ValueRef,
+    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
     Visibility,
     dialects::{
         builtin::{
             BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
-            attributes::{Signature, UnitAttr},
+            attributes::{AbiParam, Signature, UnitAttr},
         },
         debuginfo::attributes::{CompileUnit, CompileUnitAttr, Subprogram, SubprogramAttr},
     },
 };
-use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
+use midenc_session::{
+    DiagnosticsHandler,
+    diagnostics::{Report, Severity},
+};
 
 use super::{
     ComponentFunctionType,
     canon_abi_utils::{load, validate_flat_variants},
-    flat::{CanonicalAbiMode, classify_function_type, flatten_function_type, flatten_types},
+    flat::{
+        CanonicalAbiMode, check_core_wasm_signature_equivalence, classify_function_type,
+        flatten_function_type, flatten_types,
+    },
 };
 use crate::{
     error::WasmResult,
@@ -178,6 +184,22 @@ fn generate_lifting_with_transformation(
          have a pointer in the result",
     );
 
+    // The lowered core function implementing a transformed export takes the flattened
+    // parameters directly and returns a single i32 pointer to the result data.
+    let expected_core_sig = Signature {
+        params: cross_ctx_export_sig_flat.params().to_vec(),
+        results: vec![AbiParam::new(Type::I32)],
+        cc: core_export_func_sig.cc,
+    };
+    check_core_wasm_signature_equivalence(&core_export_func_sig, &expected_core_sig).map_err(
+        |message| {
+            Report::msg(format!(
+                "component export lifting for '{core_export_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        },
+    )?;
+
     // Extract flattened result types from the exported component-level function type
     let context = { core_export_func_ref.borrow().as_operation().context_rc() };
     let flattened_results = flatten_types(&context, &export_metadata.ty.results).map_err(|e| {
@@ -312,6 +334,16 @@ fn generate_direct_lifting(
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
 ) -> WasmResult<()> {
+    // The lowered core function implementing a direct export must already have the
+    // flattened canonical ABI shape, since the wrapper forwards its arguments verbatim.
+    check_core_wasm_signature_equivalence(&core_export_func_sig, &cross_ctx_export_sig_flat)
+        .map_err(|message| {
+            Report::msg(format!(
+                "component export lifting for '{export_func_ident}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        })?;
+
     let export_func_ref = component_builder.define_function(
         export_func_ident,
         Visibility::Public,
@@ -449,8 +481,11 @@ mod tests {
     use midenc_session::DiagnosticsHandler;
 
     use super::*;
-    use crate::component::test_support::{
-        component_function, count_validation_ops, two_field_record_type, unit_only_variant_type,
+    use crate::component::{
+        CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
+        test_support::{
+            component_function, count_validation_ops, two_field_record_type, unit_only_variant_type,
+        },
     };
 
     fn component_export_path(function: &str) -> SymbolPath {
@@ -458,6 +493,14 @@ mod tests {
             SymbolNameComponent::Component(SymbolName::intern("core")),
             SymbolNameComponent::Leaf(SymbolName::intern(function)),
         ])
+    }
+
+    fn scalar_u64_type() -> CanonicalAbiType {
+        CanonicalAbiType {
+            ir: Type::U64,
+            abi: CanonicalAbiInfo::SCALAR8,
+            kind: CanonicalAbiTypeKind::Scalar,
+        }
     }
 
     #[test]
@@ -489,8 +532,9 @@ mod tests {
             params: Box::new([variant_ty]),
             results: Box::new([result_ty.clone()]),
         };
+        // Lowered core export signatures carry bare core types without extension attributes.
         let core_sig = Signature {
-            params: vec![AbiParam::zext(Type::I32, &context)],
+            params: vec![AbiParam::new(Type::I32)],
             results: vec![AbiParam::new(Type::I32)],
             cc: CallConv::ComponentModel,
         };
@@ -520,5 +564,129 @@ mod tests {
             unreachable_count, 1,
             "invalid transformed export param tag should be unreachable"
         );
+    }
+
+    #[test]
+    fn rejects_direct_export_lifting_with_mismatched_core_signature() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let component = world_builder
+            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
+            .expect("failed to define component");
+        let mut component_builder = ComponentBuilder::new(component);
+        let core_module = component_builder
+            .define_module(Ident::with_empty_span("core".into()))
+            .expect("failed to define core module");
+        let mut module_builder = ModuleBuilder::new(core_module);
+
+        let result_ty = scalar_u64_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([]),
+            results: Box::new([result_ty]),
+        };
+        // The flattened export signature returns a single i64, but the core export returns i32.
+        let core_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("mismatched_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        let result = generate_export_lifting_function(
+            &mut component_builder,
+            "mismatched",
+            export_func_ty,
+            &[],
+            component_export_path("mismatched_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched direct export signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_transformed_export_lifting_with_mismatched_core_params() {
+        let context = Rc::new(Context::default());
+        let mut builder = midenc_hir::OpBuilder::new(context.clone());
+        let world =
+            builder.create::<World, ()>(SourceSpan::default())().expect("failed to create world");
+        let mut world_builder = WorldBuilder::new(world);
+        let component = world_builder
+            .define_component("miden".into(), "test".into(), Version::new(1, 0, 0))
+            .expect("failed to define component");
+        let mut component_builder = ComponentBuilder::new(component);
+        let core_module = component_builder
+            .define_module(Ident::with_empty_span("core".into()))
+            .expect("failed to define core module");
+        let mut module_builder = ModuleBuilder::new(core_module);
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            vec![variant_ty.ir.clone()],
+            vec![result_ty.ir.clone()],
+        );
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([variant_ty]),
+            results: Box::new([result_ty]),
+        };
+        // The flattened export parameter is a single i32 discriminant, but the core export
+        // takes i64.
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I64)],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("mismatched_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        let result = generate_export_lifting_function(
+            &mut component_builder,
+            "mismatched",
+            export_func_ty,
+            &["value".to_string()],
+            component_export_path("mismatched_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched transformed export signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
     }
 }
