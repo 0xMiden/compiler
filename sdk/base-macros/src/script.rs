@@ -104,7 +104,7 @@ pub(crate) fn expand(
 
     // Parse the optional second parameter (injected wrapper struct).
     // The trait requires `fn run(arg: Word)`, so if the user declares a second parameter,
-    // it will be instantiated via `Default::default()` and passed to the user's function.
+    // it will be instantiated via `AccountWrapper::native()` and passed to the user's function.
     let injected_param = match parse_injected_param(&input_fn) {
         Ok(param) => param,
         Err(err) => return err.into_compile_error().into(),
@@ -162,7 +162,7 @@ pub(crate) fn expand(
 ///
 /// The trait requires `fn run(arg: Word)`. If the user declares a second parameter,
 /// it is treated as an "injected" wrapper struct that will be instantiated via
-/// `Default::default()` and passed to the user's function.
+/// `AccountWrapper::native()` and passed to the user's function.
 ///
 /// Only up to 2 parameters are supported: `(arg: Word)` or `(arg: Word, account: &mut MyAccount)`
 /// where `MyAccount` is an `#[account(...)]` type (`&MyAccount` is accepted as well).
