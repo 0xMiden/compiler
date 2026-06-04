@@ -597,57 +597,27 @@ fn offset_addr<B: ?Sized + Builder>(
 
 #[cfg(test)]
 mod tests {
-    use alloc::{rc::Rc, sync::Arc};
+    use alloc::rc::Rc;
     use core::cell::RefCell;
 
     use midenc_dialect_arith as arith;
     use midenc_dialect_cf as cf;
     use midenc_dialect_ub as ub;
     use midenc_hir::{
-        BuilderExt, CallConv, Context, EnumType, FunctionType, Ident, Op, Operation, SourceSpan,
-        Type, ValueRef, Variant, Visibility, WalkResult,
+        BuilderExt, CallConv, Context, FunctionType, Ident, Op, Operation, SourceSpan, Type,
+        ValueRef, Visibility, WalkResult,
         dialects::builtin::{
             BuiltinOpBuilder, ModuleBuilder, World, WorldBuilder, attributes::Signature,
         },
     };
 
     use super::*;
-    use crate::module::function_builder_ext::{
-        FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
+    use crate::{
+        component::test_support::unit_only_variant_type,
+        module::function_builder_ext::{
+            FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
+        },
     };
-
-    /// Builds canonical ABI metadata for a variant with two unit cases.
-    fn unit_only_variant_type() -> CanonicalAbiType {
-        let cases = [None, None];
-        let info = super::super::VariantInfo::new_static(&cases);
-        let abi = super::super::CanonicalAbiInfo::variant_static(&cases);
-        let ir = Type::Enum(Arc::new(
-            EnumType::new(
-                "unit-only".into(),
-                Type::U8,
-                [
-                    Variant::c_like("first".into(), Some(0)),
-                    Variant::c_like("second".into(), Some(1)),
-                ],
-            )
-            .expect("unit-only enum should be valid"),
-        ));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Variant {
-                discriminant: Box::new(CanonicalAbiType {
-                    ir: Type::U8,
-                    abi: super::super::CanonicalAbiInfo::SCALAR1,
-                    kind: CanonicalAbiTypeKind::Scalar,
-                }),
-                payload_offset32: info.payload_offset32,
-                cases: Box::new([None, None]),
-                payload_flat_types: Box::new([]),
-            },
-        }
-    }
 
     /// Builds a function containing canonical ABI load/store IR and returns operation counts.
     fn count_variant_validation_ops(
