@@ -549,15 +549,40 @@ fn foreign_account_struct(account_struct: &ItemStruct) -> syn::Result<ItemStruct
     let attrs = &account_struct.attrs;
     let vis = &account_struct.vis;
     let ident = &account_struct.ident;
+    // User attributes are re-emitted as-is, so drop macro-added derives the user already
+    // requested (matched by the trait's final path segment) to avoid duplicate impls.
+    let user_derives = user_derived_names(attrs);
+    let added_derives = ["Clone", "Copy", "Debug", "Default"]
+        .into_iter()
+        .filter(|name| !user_derives.contains(*name))
+        .map(|name| syn::Ident::new(name, Span::call_site()))
+        .collect::<Vec<_>>();
+    let derive_attr = (!added_derives.is_empty()).then(|| quote!(#[derive(#(#added_derives),*)]));
     syn::parse2(quote! {
         #(#attrs)*
-        #[derive(Clone, Copy, Debug, Default)]
+        #derive_attr
         #vis struct #ident {
             /// `Some` when this binding targets a foreign account (FPI); `None` for the
             /// transaction's native (active) account.
             foreign_account_id: ::core::option::Option<::miden::AccountId>,
         }
     })
+}
+
+/// Returns the trait names (final path segments) the user already derives on the marker struct.
+fn user_derived_names(attrs: &[Attribute]) -> HashSet<String> {
+    attrs
+        .iter()
+        .filter(|attr| attr.path().is_ident("derive"))
+        .filter_map(|attr| {
+            attr.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+            )
+            .ok()
+        })
+        .flatten()
+        .filter_map(|path| path.segments.last().map(|segment| segment.ident.to_string()))
+        .collect()
 }
 
 /// Creates the inherent impl block shared by all generated foreign account methods.
@@ -1106,6 +1131,26 @@ mod tests {
 
         assert!(message.contains("reserved wrapper method `new`"));
         assert!(message.contains("must not be named `new`"));
+    }
+
+    #[test]
+    fn foreign_account_struct_skips_duplicate_user_derives() {
+        let marker: ItemStruct = parse_quote! {
+            #[derive(Clone, PartialEq)]
+            struct Wallet;
+        };
+
+        let expanded = foreign_account_struct(&marker).unwrap();
+        let rendered = expanded.to_token_stream().to_string();
+
+        // User derives are kept verbatim; macro-added ones already covered are dropped.
+        for derived in ["Clone", "PartialEq", "Copy", "Debug", "Default"] {
+            assert_eq!(
+                rendered.matches(derived).count(),
+                1,
+                "expected exactly one `{derived}` in expansion: {rendered}"
+            );
+        }
     }
 
     #[test]
