@@ -604,14 +604,18 @@ fn foreign_account_impl(account_struct: &ItemStruct) -> ItemImpl {
     }
 }
 
-/// Builds the `ActiveAccount` guard impl that rejects active-account ops on a foreign binding.
-fn active_account_impl(account_struct: &ItemStruct) -> ItemImpl {
+/// Builds the SDK trait impls for the account wrapper struct.
+///
+/// Emits the `ActiveAccount` guard impl that rejects active-account ops on a foreign binding,
+/// and the `AccountWrapper` marker impl through which the note/tx-script macros instantiate
+/// the entrypoint account parameter.
+fn active_account_impl(account_struct: &ItemStruct) -> TokenStream2 {
     let ident = &account_struct.ident;
     let message = format!(
         "active-account operation called on `{ident}` while it is bound to a foreign account; \
          active-account methods are only valid for the transaction's native account"
     );
-    parse_quote! {
+    quote! {
         impl ::miden::active_account::ActiveAccount for #ident {
             #[inline(always)]
             fn __assert_active_account(&self) {
@@ -620,6 +624,8 @@ fn active_account_impl(account_struct: &ItemStruct) -> ItemImpl {
                 }
             }
         }
+
+        impl ::miden::active_account::AccountWrapper for #ident {}
     }
 }
 
