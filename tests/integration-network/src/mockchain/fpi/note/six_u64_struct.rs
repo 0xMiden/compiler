@@ -93,7 +93,7 @@ impl CounterCaller {
     /// Checks that six `u64` fields cross the direct FPI boundary in both directions.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let result = count_acc.echo_six_u64_record(SixU64Record {
             first: FIRST,
             second: SECOND,

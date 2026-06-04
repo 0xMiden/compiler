@@ -193,7 +193,7 @@ struct CallerAccount;
 impl CallerAccount {
     /// Reads a counter value from the provided foreign account.
     pub fn read_foreign_count(&self, callee_account_id: AccountId) -> Felt {
-        let callee = CalleeAccount::from_account(callee_account_id);
+        let callee = CalleeAccount::new(callee_account_id);
         let key = Word::new([felt!(13), felt!(21), felt!(34), felt!(55)]);
         callee.get_count(key)
     }
@@ -207,7 +207,10 @@ const NOTE_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::Account;
+/// Native (active) account of the note: the caller account component, whose `read_foreign_count`
+/// method is invoked directly on the active account.
+#[account(account_to_account_caller_account)]
+struct CallerAccount;
 
 /// Note script input containing the foreign callee account id.
 #[note]
@@ -220,7 +223,7 @@ struct AccountToAccountNote {
 impl AccountToAccountNote {
     /// Checks that the active caller account can read the foreign callee account through FPI.
     #[note_script]
-    pub fn run(self, _arg: Word, account: &mut Account) {
+    pub fn run(self, _arg: Word, account: &mut CallerAccount) {
         let count = account.read_foreign_count(self.callee_account_id);
         assert_eq(count, felt!(314));
     }

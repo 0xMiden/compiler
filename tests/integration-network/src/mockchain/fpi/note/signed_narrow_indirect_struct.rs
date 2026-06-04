@@ -138,7 +138,7 @@ impl CounterCaller {
     /// Checks that negative signed narrow fields cross the indirect FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let result = count_acc.echo_signed_narrow_record(SignedNarrowRecord {
             felt0: felt!(201),
             felt1: felt!(202),

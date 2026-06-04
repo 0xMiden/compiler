@@ -11,7 +11,10 @@
 
 use miden::{intrinsics::advice::adv_push_mapvaln, *};
 
-use crate::bindings::Account;
+/// Native account of the transaction script: exposes the `basic-wallet` component methods (e.g.
+/// `move_asset_to_note`) gathered from the `basic_wallet` package.
+#[account(basic_wallet)]
+struct Wallet;
 
 // Input layout constants
 const TAG_INDEX: usize = 0;
@@ -22,7 +25,7 @@ const ASSET_START: usize = 6;
 const ASSET_END: usize = 14;
 
 #[tx_script]
-fn run(arg: Word, account: &mut Account) {
+fn run(arg: Word, account: &mut Wallet) {
     let num_felts = adv_push_mapvaln(arg);
     let num_felts_u64 = num_felts.as_canonical_u64();
     assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));

@@ -239,7 +239,7 @@ impl CounterCaller {
     /// Checks that four `Word` values in one record cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let first_key = Word::new([felt!(17), felt!(34), felt!(51), felt!(68)]);
         let second_key = Word::new([felt!(85), felt!(102), felt!(119), felt!(136)]);
         let third_key = Word::new([felt!(153), felt!(170), felt!(187), felt!(204)]);

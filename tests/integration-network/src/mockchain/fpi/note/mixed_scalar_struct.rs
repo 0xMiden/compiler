@@ -105,7 +105,7 @@ impl CounterCaller {
     /// Checks that a mixed scalar record crosses the FPI boundary in both directions.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let result = count_acc.echo_mixed_scalar_record(MixedScalarRecord {
             first_u64: FIRST_U64,
             second_u64: SECOND_U64,

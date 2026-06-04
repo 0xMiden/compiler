@@ -197,7 +197,7 @@ impl CounterCaller {
     /// Checks that a `Word` argument and return value cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let key = Word::new([felt!(101), felt!(202), felt!(303), felt!(404)]);
         let expected = Word::new([felt!(987), felt!(654), felt!(321), felt!(111)]);
         let count = count_acc.get_count_by_key(key);
