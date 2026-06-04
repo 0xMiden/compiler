@@ -23,7 +23,7 @@ use wasmparser::{
 };
 
 use self::resources::ResourcesBuilder;
-use super::flat::join_flat_types;
+use super::flat::{canonical_flat_scalar_type, join_flat_types, join_variant_payloads};
 use crate::{
     indices,
     module::types::{
@@ -1707,6 +1707,11 @@ impl CanonicalAbiType {
     }
 
     /// Returns this type's flattened canonical ABI value types.
+    ///
+    /// Must stay in agreement with [`super::flat::flatten_type`], which produces the
+    /// signature-level flattening for the same types: `validate_flat_variants` slices argument
+    /// lists of those signatures using the lengths returned here. Both are built on the shared
+    /// scalar mapping and variant payload join rules in the `flat` module.
     pub fn flat_types(&self) -> Box<[Type]> {
         match &self.kind {
             CanonicalAbiTypeKind::Scalar => Box::new([canonical_flat_scalar_type(&self.ir)]),
@@ -1725,28 +1730,10 @@ impl CanonicalAbiType {
     }
 
     fn joined_variant_payload_flat_types(cases: &[Option<CanonicalAbiType>]) -> Box<[Type]> {
-        let mut payload = Vec::<Type>::new();
-        for case in cases.iter().flatten() {
-            for (index, ty) in case.flat_types().iter().enumerate() {
-                if let Some(joined) = payload.get_mut(index) {
-                    *joined = join_flat_types(joined, ty)
-                        .expect("component variant payload types should be joinable");
-                } else {
-                    payload.push(ty.clone());
-                }
-            }
-        }
-        payload.into_boxed_slice()
-    }
-}
-
-/// Returns the canonical flat ABI type for a scalar HIR type.
-fn canonical_flat_scalar_type(ty: &Type) -> Type {
-    match ty {
-        Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => Type::I32,
-        Type::I64 | Type::U64 => Type::I64,
-        Type::Felt => Type::Felt,
-        ty => ty.clone(),
+        let case_payloads = cases.iter().flatten().map(|case| case.flat_types().into_vec());
+        join_variant_payloads(case_payloads, join_flat_types)
+            .expect("component variant payload types should be joinable")
+            .into_boxed_slice()
     }
 }
 

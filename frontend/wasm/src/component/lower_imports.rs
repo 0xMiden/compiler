@@ -138,6 +138,7 @@ pub fn generate_import_lowering_function(
             import_func_ty,
             core_func_path,
             core_func_sig,
+            import_lowered_sig,
             core_func_ref,
             &mut fb,
             &args,
@@ -848,11 +849,6 @@ fn generate_lowering_with_transformation(
     // The import function should have the lifted signature (returns tuple)
     // not the lowered signature with pointer parameter
     let context = world_builder.context_rc();
-    let import_func_sig =
-        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
-            .wrap_err_with(|| {
-                format!("failed to flatten import function signature for '{import_func_path}'")
-            })?;
 
     // Extract the actual result types from the import function type
     let flattened_results =
@@ -861,11 +857,12 @@ fn generate_lowering_with_transformation(
         })?;
 
     // Remove the pointer parameter that was added for the flattened signature
-    let params_without_ptr = import_func_sig.params[..import_func_sig.params.len() - 1].to_vec();
+    let params_without_ptr =
+        import_func_sig_flat.params[..import_func_sig_flat.params.len() - 1].to_vec();
     let new_import_func_sig = Signature {
         params: params_without_ptr,
-        results: flattened_results.clone(),
-        cc: import_func_sig.cc,
+        results: flattened_results,
+        cc: import_func_sig_flat.cc,
     };
     let import_func_ref = component_builder
         .define_function(
@@ -943,6 +940,8 @@ fn generate_lowering_with_transformation(
 /// * `core_func_sig` - The lowered signature of the core function, which should be compatible with
 ///   the component import (no transformation needed).
 ///
+/// * `import_func_sig_flat` - The flattened signature of the component import.
+///
 /// * `core_func_ref` - Reference to the core function being built.
 ///
 /// * `args` - The arguments to pass directly to the component import function.
@@ -961,6 +960,7 @@ fn generate_direct_lowering(
     import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
+    import_func_sig_flat: Signature,
     core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     args: &[ValueRef],
@@ -981,28 +981,24 @@ fn generate_direct_lowering(
 
     validate_flat_variants(fb, &import_func_ty.params, args, span)?;
 
-    let context = world_builder.context_rc();
-    let import_func_sig =
-        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
-            .wrap_err_with(|| {
-                format!("failed to flatten import function signature for '{import_func_path}'")
-            })?;
-    check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig).map_err(|message| {
-        Report::msg(format!(
-            "component import lowering for '{import_func_path}' has core Wasm signature mismatch: \
-             {message}"
-        ))
-    })?;
+    check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig_flat).map_err(
+        |message| {
+            Report::msg(format!(
+                "component import lowering for '{import_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        },
+    )?;
     let import_func_ref = component_builder
         .define_function(
             import_func_path.name().into(),
             Visibility::Internal,
-            import_func_sig.clone(),
+            import_func_sig_flat.clone(),
         )
         .expect("failed to define the import function");
 
     let call = fb
-        .call(import_func_ref, import_func_sig, args.to_vec(), span)
+        .call(import_func_ref, import_func_sig_flat, args.to_vec(), span)
         .expect("failed to build an exec op");
 
     let borrow = call.borrow();

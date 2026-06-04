@@ -12,8 +12,7 @@ use midenc_hir::{
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 
-const MAX_FLAT_PARAMS: usize = 16;
-const MAX_FLAT_RESULTS: usize = 1;
+use super::types::{MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
 
 /// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -77,23 +76,24 @@ impl CanonicalAbiTransformation {
 }
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
+///
+/// Must stay in agreement with [`super::CanonicalAbiType::flat_types`], which flattens the same
+/// types from the canonical ABI metadata tree; both are built on [`canonical_flat_scalar_type`]
+/// and the variant payload join rules in this module.
 pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     Ok(match ty {
-        Type::I1 => vec![AbiParam::zext(Type::I32, context)],
-        Type::I8 => vec![AbiParam::sext(Type::I32, context)],
-        Type::U8 => vec![AbiParam::zext(Type::I32, context)],
-        Type::I16 => vec![AbiParam::sext(Type::I32, context)],
-        Type::U16 => vec![AbiParam::zext(Type::I32, context)],
-        Type::I32 => vec![AbiParam::new(Type::I32)],
-        Type::U32 => vec![AbiParam::new(Type::I32)],
-        Type::I64 => vec![AbiParam::new(Type::I64)],
-        Type::U64 => vec![AbiParam::new(Type::I64)],
+        Type::I1 | Type::U8 | Type::U16 => {
+            vec![AbiParam::zext(canonical_flat_scalar_type(ty), context)]
+        }
+        Type::I8 | Type::I16 => vec![AbiParam::sext(canonical_flat_scalar_type(ty), context)],
+        Type::I32 | Type::U32 | Type::I64 | Type::U64 | Type::Felt => {
+            vec![AbiParam::new(canonical_flat_scalar_type(ty))]
+        }
         Type::I128 | Type::U128 | Type::U256 => {
             unimplemented!("flattening of {ty} in canonical abi")
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
-        Type::Felt => vec![AbiParam::new(Type::Felt)],
         Type::Enum(enum_ty) => flatten_enum_type(context, enum_ty)?,
         Type::Struct(struct_ty) => struct_ty
             .fields()
@@ -226,6 +226,19 @@ fn canonical_layout_offset(base: u32, relative: u32, ty: &Type) -> Result<u32, C
         .ok_or_else(|| CanonicalTypeError::LayoutOverflow { ty: ty.clone() })
 }
 
+/// Returns the canonical flat core type for a scalar HIR type.
+///
+/// This is the single source of truth for the canonical ABI scalar mapping shared by
+/// [`flatten_type`] and [`super::CanonicalAbiType::flat_types`].
+pub(crate) fn canonical_flat_scalar_type(ty: &Type) -> Type {
+    match ty {
+        Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => Type::I32,
+        Type::I64 | Type::U64 => Type::I64,
+        Type::Felt => Type::Felt,
+        ty => ty.clone(),
+    }
+}
+
 /// Flattens a HIR enum according to the component-model variant flattening rules.
 fn flatten_enum_type(
     context: &Rc<Context>,
@@ -236,23 +249,36 @@ fn flatten_enum_type(
         return Ok(flat);
     }
 
-    let mut payload = Vec::<AbiParam>::new();
-    for variant in enum_ty.variants() {
-        let Some(value_ty) = variant.value.as_ref() else {
-            continue;
-        };
-        let flattened = flatten_type(context, value_ty)?;
-        for (index, param) in flattened.into_iter().enumerate() {
-            if let Some(joined) = payload.get_mut(index) {
-                *joined = join_abi_param(joined, &param)?;
+    let cases = enum_ty
+        .variants()
+        .iter()
+        .filter_map(|variant| variant.value.as_ref())
+        .map(|value_ty| flatten_type(context, value_ty))
+        .try_collect::<Vec<Vec<AbiParam>>>()?;
+    flat.extend(join_variant_payloads(cases, join_abi_param)?);
+    Ok(flat)
+}
+
+/// Joins flattened variant case payloads positionally per the canonical ABI variant rule.
+///
+/// Each case payload contributes its flat values at the same positions; overlapping positions
+/// are unified with `join`. This is the single payload-join driver shared by
+/// [`flatten_enum_type`] and [`super::CanonicalAbiType::flat_types`].
+pub(crate) fn join_variant_payloads<T>(
+    cases: impl IntoIterator<Item = Vec<T>>,
+    mut join: impl FnMut(&T, &T) -> Result<T, CanonicalTypeError>,
+) -> Result<Vec<T>, CanonicalTypeError> {
+    let mut payload = Vec::<T>::new();
+    for case in cases {
+        for (index, item) in case.into_iter().enumerate() {
+            if index < payload.len() {
+                payload[index] = join(&payload[index], &item)?;
             } else {
-                payload.push(param);
+                payload.push(item);
             }
         }
     }
-
-    flat.extend(payload);
-    Ok(flat)
+    Ok(payload)
 }
 
 /// Joins two flattened ABI parameters at the same variant payload position.
