@@ -53,6 +53,7 @@ pub fn generate_export_lifting_function(
     protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
+    reject_unsupported_export_canonical_abi_types(&core_export_func_path, &export_func_ty)?;
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
         flatten_function_type(&context, &export_func_ty.ir, CanonicalAbiMode::Export).map_err(
@@ -401,6 +402,24 @@ fn generate_direct_lifting(
     Ok(())
 }
 
+/// Rejects component export signatures containing unsupported canonical ABI shapes.
+fn reject_unsupported_export_canonical_abi_types(
+    core_export_func_path: &SymbolPath,
+    export_func_ty: &ComponentFunctionType,
+) -> WasmResult<()> {
+    for ty in export_func_ty.params.iter().chain(export_func_ty.results.iter()) {
+        if ty.contains_unsupported() {
+            return Err(Report::msg(format!(
+                "component export lifting for '{core_export_func_path}' has unsupported canonical \
+                 ABI type {:?}",
+                ty.ir
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 /// Marks lifted protocol exports with the attributes required by downstream consumers.
 fn annotate_protocol_export(
     mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
@@ -467,6 +486,8 @@ fn annotate_component_export_debug_signature(
 
 #[cfg(test)]
 mod tests {
+    use alloc::sync::Arc;
+
     use midenc_hir::{
         CallConv, FunctionType, Ident, SymbolName, SymbolNameComponent, SymbolPath, Type,
         Visibility,
@@ -643,6 +664,56 @@ mod tests {
             Err(err) => {
                 assert!(
                     err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_export_lifting_with_unsupported_list_param() {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+
+        let list_ty = Type::List(Arc::new(Type::U8));
+        let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty.clone()], vec![]);
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType {
+            ir,
+            params: Box::new([CanonicalAbiType {
+                ir: list_ty,
+                abi: CanonicalAbiInfo::POINTER_PAIR,
+                kind: CanonicalAbiTypeKind::Unsupported,
+            }]),
+            results: Box::new([]),
+        };
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("list_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        let result = generate_export_lifting_function(
+            &mut component_builder,
+            "list_param",
+            export_func_ty,
+            &["value".to_string()],
+            component_export_path("list_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        );
+
+        match result {
+            Ok(_) => panic!("expected list export lifting to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("unsupported canonical ABI"),
                     "unexpected diagnostic: {err}"
                 );
             }

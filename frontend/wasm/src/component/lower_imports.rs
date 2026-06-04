@@ -18,7 +18,7 @@ use midenc_hir::{
 use midenc_session::diagnostics::Report;
 
 use super::{
-    CanonicalAbiType, CanonicalAbiTypeKind, ComponentFunctionType,
+    ComponentFunctionType,
     canon_abi_utils::{store, validate_flat_variants},
     flat::{
         CanonicalAbiMode, CanonicalAbiTransformation, check_core_wasm_signature_equivalence,
@@ -85,11 +85,10 @@ pub fn generate_import_lowering_function(
                      '{import_func_path}' requires classification"
                 )
             })?;
-        if transformation.has_param_tuple() {
-            return reject_tuple_parameter_import_lowering(&import_func_path);
-        }
-        if flat_params_need_tuple(import_lowered_sig.params()) {
-            // Import flattening appends a result out-pointer after tuple classification.
+        // Import flattening appends a result out-pointer after tuple classification, so the
+        // final flattened parameter list can exceed the budget even when classification
+        // reported no parameter tuple.
+        if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
             return reject_tuple_parameter_import_lowering(&import_func_path);
         }
         Some(transformation)
@@ -1032,7 +1031,7 @@ fn reject_unsupported_import_canonical_abi_types(
     import_func_ty: &ComponentFunctionType,
 ) -> WasmResult<()> {
     for ty in import_func_ty.params.iter().chain(import_func_ty.results.iter()) {
-        if contains_unsupported_canonical_abi_type(ty) {
+        if ty.contains_unsupported() {
             return Err(Report::msg(format!(
                 "component import lowering for '{import_func_path}' has unsupported canonical ABI \
                  type {:?}",
@@ -1042,25 +1041,6 @@ fn reject_unsupported_import_canonical_abi_types(
     }
 
     Ok(())
-}
-
-/// Returns true if a canonical ABI type tree contains an unsupported lowering shape.
-fn contains_unsupported_canonical_abi_type(ty: &CanonicalAbiType) -> bool {
-    match &ty.kind {
-        CanonicalAbiTypeKind::Scalar => false,
-        CanonicalAbiTypeKind::Record { fields } => {
-            fields.iter().any(|field| contains_unsupported_canonical_abi_type(&field.ty))
-        }
-        CanonicalAbiTypeKind::Variant {
-            discriminant,
-            cases,
-            ..
-        } => {
-            contains_unsupported_canonical_abi_type(discriminant)
-                || cases.iter().flatten().any(contains_unsupported_canonical_abi_type)
-        }
-        CanonicalAbiTypeKind::Unsupported => true,
-    }
 }
 
 #[cfg(test)]

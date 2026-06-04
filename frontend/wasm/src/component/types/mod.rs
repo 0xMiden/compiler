@@ -1735,6 +1735,25 @@ impl CanonicalAbiType {
             .expect("component variant payload types should be joinable")
             .into_boxed_slice()
     }
+
+    /// Returns true if this canonical ABI type tree contains an unsupported lowering shape.
+    pub fn contains_unsupported(&self) -> bool {
+        match &self.kind {
+            CanonicalAbiTypeKind::Scalar => false,
+            CanonicalAbiTypeKind::Record { fields } => {
+                fields.iter().any(|field| field.ty.contains_unsupported())
+            }
+            CanonicalAbiTypeKind::Variant {
+                discriminant,
+                cases,
+                ..
+            } => {
+                discriminant.contains_unsupported()
+                    || cases.iter().flatten().any(Self::contains_unsupported)
+            }
+            CanonicalAbiTypeKind::Unsupported => true,
+        }
+    }
 }
 
 /// Shape of a "record" type in interface types.
