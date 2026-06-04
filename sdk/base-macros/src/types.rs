@@ -266,6 +266,9 @@ fn reject_unsupported_component_primitive(ident: &str, span: Span) -> Result<(),
 }
 
 /// Converts a Rust primitive type identifier into the equivalent WIT primitive type.
+///
+/// `f32`, `f64`, and `char` intentionally have no mapping; they are rejected earlier by
+/// [`reject_unsupported_component_primitive`].
 fn rust_type_to_wit_type(ident: &str) -> Option<WitType> {
     match ident {
         "bool" => Some(WitType::Bool),
@@ -277,12 +280,11 @@ fn rust_type_to_wit_type(ident: &str) -> Option<WitType> {
         "u32" => Some(WitType::U32),
         "i64" => Some(WitType::S64),
         "u64" => Some(WitType::U64),
-        "f32" => Some(WitType::F32),
         _ => None,
     }
 }
 
-/// Returns the canonical WIT syntax for a WIT type.
+/// Returns the canonical WIT syntax for a WIT type produced by [`rust_type_to_wit_type`].
 fn wit_type_name(ty: WitType) -> &'static str {
     match ty {
         WitType::Bool => "bool",
@@ -294,11 +296,9 @@ fn wit_type_name(ty: WitType) -> &'static str {
         WitType::S16 => "s16",
         WitType::S32 => "s32",
         WitType::S64 => "s64",
-        WitType::F32 => "f32",
-        WitType::F64 => "f64",
-        WitType::Char => "char",
-        WitType::String => "string",
-        WitType::ErrorContext => "error-context",
+        WitType::F32 | WitType::F64 | WitType::Char | WitType::String | WitType::ErrorContext => {
+            unreachable!("`{ty:?}` has no Rust mapping in component interfaces")
+        }
         WitType::Id(_) => unreachable!("named WIT type ids are not primitive syntax"),
     }
 }
