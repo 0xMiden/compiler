@@ -739,6 +739,7 @@ impl MasmFunctionBuilder {
             };
             let span = SourceSpan::default();
             // Add init call to the emitter's target before emitting the function body
+            emitter.invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
             emitter
                 .target
                 .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(init))));
@@ -761,6 +762,7 @@ impl MasmFunctionBuilder {
                 InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
             };
             let span = SourceSpan::default();
+            invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
             body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(truncate_stack))));
         }
         let Self {
@@ -862,9 +864,10 @@ fn masm_component_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
                     .with_span(SourceSpan::UNKNOWN),
             )
         }
-        Type::Ptr(ptr) => masm::TypeExpr::Ptr(masm::PointerType::new(
-            masm_component_type_expr_from_hir(ptr.pointee()),
-        )),
+        Type::Ptr(ptr) => masm::TypeExpr::Ptr(
+            masm::PointerType::new(masm_component_type_expr_from_hir(ptr.pointee()))
+                .with_address_space(ptr.addrspace()),
+        ),
         Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
             masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
         )),
@@ -904,9 +907,10 @@ fn masm_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
                     .with_span(SourceSpan::UNKNOWN),
             )
         }
-        Type::Ptr(ptr) => {
-            masm::TypeExpr::Ptr(masm::PointerType::new(masm_type_expr_from_hir(ptr.pointee())))
-        }
+        Type::Ptr(ptr) => masm::TypeExpr::Ptr(
+            masm::PointerType::new(masm_type_expr_from_hir(ptr.pointee()))
+                .with_address_space(ptr.addrspace()),
+        ),
         Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
             masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
         )),
@@ -1010,6 +1014,30 @@ fn patch_debug_var_locals_in_block(
                     stack_pointer_addr,
                 );
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::PointerType;
+
+    use super::*;
+
+    #[test]
+    fn hir_to_masm_pointer_conversion_preserves_address_space() {
+        for addrspace in [masm::types::AddressSpace::Byte, masm::types::AddressSpace::Element] {
+            let ty = Type::from(PointerType::new_with_address_space(Type::U32, addrspace));
+
+            let masm::TypeExpr::Ptr(ptr) = masm_component_type_expr_from_hir(&ty) else {
+                panic!("expected pointer type expression");
+            };
+            assert_eq!(ptr.address_space(), addrspace);
+
+            let masm::TypeExpr::Ptr(ptr) = masm_type_expr_from_hir(&ty) else {
+                panic!("expected pointer type expression");
+            };
+            assert_eq!(ptr.address_space(), addrspace);
         }
     }
 }
