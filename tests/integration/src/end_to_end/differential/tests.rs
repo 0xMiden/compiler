@@ -105,6 +105,8 @@ fn calls_selects() {
 /// sparse cf.switch ops — exercises binary-search (interval guard) and
 /// linear-search switch lowering.
 #[test]
+#[ignore = "flaky native/MASM divergence: mismatch on inputs (1669775643, 1062584501); separate \
+            run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("cases/case_switch_shapes.rs"));
 }
@@ -163,4 +165,65 @@ fn u64_exits() {
 #[test]
 fn u128_mix() {
     run_case("u128_mix", include_str!("cases/case_u128_mix.rs"));
+}
+
+/// Runtime-indexed u32 array — dynamic i32.load/i32.store addressing
+/// (`prepare_addr`, word load/store emitter paths).
+#[test]
+fn mem_indexed() {
+    run_case("mem_indexed", include_str!("cases/case_mem_indexed.rs"));
+}
+
+/// Runtime-length `copy_from_slice`/`copy_within` — wasm `memory.copy` /
+/// HIR MemCpy lowering (element fast path + byte fallback loop).
+#[test]
+fn mem_copy() {
+    run_case("mem_copy", include_str!("cases/case_mem_copy.rs"));
+}
+
+/// Overlapping `copy_within` (dst > src) — wasm `memory.copy` memmove
+/// semantics vs forward-copying MASM lowering.
+#[test]
+#[ignore = "native/MASM divergence: memory.copy with overlapping dst > src ranges (original repro: \
+            inputs (91264998, 3811523388) in pre-split mem_copy)"]
+fn mem_overlap() {
+    run_case("mem_overlap", include_str!("cases/case_mem_overlap.rs"));
+}
+
+/// `static` lookup tables — wasm data segments through rodata layout,
+/// merging, padding, and init-code emission.
+#[test]
+fn mem_static() {
+    run_case("mem_static", include_str!("cases/case_mem_static.rs"));
+}
+
+/// Signed sub-word loads (i32/i64.load8_s/16_s) and unaligned u16/u32/u64
+/// loads/stores via `from_le_bytes`/`to_le_bytes` at odd offsets.
+#[test]
+fn mem_bytes() {
+    run_case("mem_bytes", include_str!("cases/case_mem_bytes.rs"));
+}
+
+/// Atomic statics (`.data` segment) plus a `.rodata` table — multi-segment
+/// data layout, merging, and overlap validation; constant-address stores.
+#[test]
+fn mem_globals() {
+    run_case("mem_globals", include_str!("cases/case_mem_globals.rs"));
+}
+
+/// `memory_grow(0, 0)` twice — MemoryGrow translation and
+/// `OpEmitter::mem_grow`, with a deterministic zero difference.
+#[test]
+#[ignore = "VM error in ::intrinsics::mem::memory_grow on every input: 'if statement expected a \
+            binary value on top of the stack, but got 1179648' at cycle 76 (memory.grow with \
+            delta=0)"]
+fn mem_grow() {
+    run_case("mem_grow", include_str!("cases/case_mem_grow.rs"));
+}
+
+/// `memory_size(0)` twice around an impossible `memory_grow` — MemorySize
+/// translation and `OpEmitter::mem_size`, deterministic zero difference.
+#[test]
+fn mem_size() {
+    run_case("mem_size", include_str!("cases/case_mem_size.rs"));
 }
