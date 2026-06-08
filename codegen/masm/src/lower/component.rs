@@ -816,8 +816,12 @@ impl MasmFunctionBuilder {
 
 fn lowered_signature(function: &builtin::Function) -> masm::FunctionType {
     let sig = function.signature();
-    let args = sig.params.iter().map(|param| masm_type_expr_from_hir(&param.ty)).collect();
-    let results = sig.results.iter().map(|result| masm_type_expr_from_hir(&result.ty)).collect();
+    let args = sig.params.iter().map(|param| masm::TypeExpr::from(param.ty.clone())).collect();
+    let results = sig
+        .results
+        .iter()
+        .map(|result| masm::TypeExpr::from(result.ty.clone()))
+        .collect();
     masm::FunctionType::new(sig.cc, args, results)
 }
 
@@ -832,15 +836,21 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
         return None;
     };
 
-    let args = ty.params().iter().map(masm_component_type_expr_from_hir).collect();
-    let results = ty.results().iter().map(masm_component_type_expr_from_hir).collect();
+    let args = ty.params().iter().map(component_abi_type_expr_from_hir).collect();
+    let results = ty.results().iter().map(component_abi_type_expr_from_hir).collect();
     Some(masm::FunctionType::new(ty.calling_convention(), args, results))
 }
 
-fn masm_component_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
+/// Convert HIR types from a Component Model/WIT signature into MASM syntax types.
+///
+/// This intentionally differs from `From<Type> for TypeExpr`, which describes the lowered MASM
+/// representation and expands wide integer primitives like `u64`/`u128` into 32-bit limb arrays.
+/// Component export metadata should preserve the Component ABI shape instead, including nominal
+/// struct and field names used by debuggers and typed clients.
+fn component_abi_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
     match ty {
         Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
-            masm_component_type_expr_from_hir(array.element_type()),
+            component_abi_type_expr_from_hir(array.element_type()),
             array.len(),
         )),
         Type::Struct(struct_ty) => {
@@ -855,7 +865,7 @@ fn masm_component_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
                 masm::StructField {
                     span: SourceSpan::UNKNOWN,
                     name,
-                    ty: masm_component_type_expr_from_hir(&field.ty),
+                    ty: component_abi_type_expr_from_hir(&field.ty),
                 }
             });
             masm::TypeExpr::Struct(
@@ -865,61 +875,16 @@ fn masm_component_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
             )
         }
         Type::Ptr(ptr) => masm::TypeExpr::Ptr(
-            masm::PointerType::new(masm_component_type_expr_from_hir(ptr.pointee()))
+            masm::PointerType::new(component_abi_type_expr_from_hir(ptr.pointee()))
                 .with_address_space(ptr.addrspace()),
         ),
         Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
             masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
         )),
         Type::List(element_ty) => masm::TypeExpr::Ptr(
-            masm::PointerType::new(masm_component_type_expr_from_hir(element_ty))
+            masm::PointerType::new(component_abi_type_expr_from_hir(element_ty))
                 .with_address_space(masm::types::AddressSpace::Byte),
         ),
-        Type::Unknown | Type::Never | Type::F64 => panic!("unrepresentable type value: {ty}"),
-        ty => masm::TypeExpr::Primitive(Span::unknown(ty.clone())),
-    }
-}
-
-fn masm_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
-    match ty {
-        Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
-            masm_type_expr_from_hir(array.element_type()),
-            array.len(),
-        )),
-        Type::Struct(struct_ty) => {
-            let name = struct_ty.name().and_then(|name| masm::Ident::new(name.as_ref()).ok());
-            let fields = struct_ty.fields().iter().enumerate().map(|(index, field)| {
-                let name = field
-                    .name
-                    .as_deref()
-                    .map(masm::Ident::new)
-                    .and_then(Result::ok)
-                    .unwrap_or_else(|| masm::Ident::new(format!("field{index}")).unwrap());
-                masm::StructField {
-                    span: SourceSpan::UNKNOWN,
-                    name,
-                    ty: masm_type_expr_from_hir(&field.ty),
-                }
-            });
-            masm::TypeExpr::Struct(
-                masm::StructType::new(name, fields)
-                    .with_repr(Span::unknown(struct_ty.repr()))
-                    .with_span(SourceSpan::UNKNOWN),
-            )
-        }
-        Type::Ptr(ptr) => masm::TypeExpr::Ptr(
-            masm::PointerType::new(masm_type_expr_from_hir(ptr.pointee()))
-                .with_address_space(ptr.addrspace()),
-        ),
-        Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
-            masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
-        )),
-        Type::List(element_ty) => masm::TypeExpr::Ptr(
-            masm::PointerType::new(masm_type_expr_from_hir(element_ty))
-                .with_address_space(masm::types::AddressSpace::Byte),
-        ),
-        Type::I128 | Type::U128 => masm::TypeExpr::Array(masm::ArrayType::new(Type::U32.into(), 4)),
-        Type::I64 | Type::U64 => masm::TypeExpr::Array(masm::ArrayType::new(Type::U32.into(), 2)),
         Type::Unknown | Type::Never | Type::F64 => panic!("unrepresentable type value: {ty}"),
         ty => masm::TypeExpr::Primitive(Span::unknown(ty.clone())),
     }
@@ -1020,24 +985,72 @@ fn patch_debug_var_locals_in_block(
 
 #[cfg(test)]
 mod tests {
-    use midenc_hir::PointerType;
+    use alloc::sync::Arc;
+
+    use midenc_hir::{PointerType, StructType, TypeRepr};
 
     use super::*;
 
     #[test]
-    fn hir_to_masm_pointer_conversion_preserves_address_space() {
+    fn type_expr_from_hir_pointer_conversion_preserves_address_space() {
         for addrspace in [masm::types::AddressSpace::Byte, masm::types::AddressSpace::Element] {
             let ty = Type::from(PointerType::new_with_address_space(Type::U32, addrspace));
 
-            let masm::TypeExpr::Ptr(ptr) = masm_component_type_expr_from_hir(&ty) else {
+            let masm::TypeExpr::Ptr(ptr) = component_abi_type_expr_from_hir(&ty) else {
                 panic!("expected pointer type expression");
             };
             assert_eq!(ptr.address_space(), addrspace);
 
-            let masm::TypeExpr::Ptr(ptr) = masm_type_expr_from_hir(&ty) else {
+            let masm::TypeExpr::Ptr(ptr) = masm::TypeExpr::from(ty) else {
                 panic!("expected pointer type expression");
             };
             assert_eq!(ptr.address_space(), addrspace);
         }
+    }
+
+    #[test]
+    fn component_abi_type_conversion_preserves_wide_primitives() {
+        let masm::TypeExpr::Primitive(ty) = component_abi_type_expr_from_hir(&Type::U64) else {
+            panic!("expected primitive component ABI type");
+        };
+        assert_eq!(ty.inner(), &Type::U64);
+
+        let masm::TypeExpr::Array(ty) = masm::TypeExpr::from(Type::U64) else {
+            panic!("expected lowered MASM type");
+        };
+        assert_eq!(ty.arity, 2);
+        let masm::TypeExpr::Primitive(element_ty) = ty.elem.as_ref() else {
+            panic!("expected primitive array element type");
+        };
+        assert_eq!(element_ty.inner(), &Type::U32);
+    }
+
+    #[test]
+    fn component_abi_type_conversion_preserves_nominal_struct_metadata() {
+        let ty = Type::Struct(Arc::new(StructType::from_parts(
+            Some(Arc::from("miden:base/core-types@1.0.0/account-id")),
+            TypeRepr::Default,
+            [
+                (Arc::<str>::from("prefix"), Type::Felt),
+                (Arc::<str>::from("suffix"), Type::Felt),
+            ],
+        )));
+
+        let masm::TypeExpr::Struct(struct_ty) = component_abi_type_expr_from_hir(&ty) else {
+            panic!("expected struct component ABI type");
+        };
+        assert_eq!(
+            struct_ty.name.as_ref().map(|name| name.as_str()),
+            Some("miden:base/core-types@1.0.0/account-id"),
+        );
+        assert_eq!(struct_ty.fields[0].name.as_str(), "prefix");
+        assert_eq!(struct_ty.fields[1].name.as_str(), "suffix");
+
+        let masm::TypeExpr::Struct(struct_ty) = masm::TypeExpr::from(ty) else {
+            panic!("expected lowered struct type");
+        };
+        assert!(struct_ty.name.is_none());
+        assert_eq!(struct_ty.fields[0].name.as_str(), "field0");
+        assert_eq!(struct_ty.fields[1].name.as_str(), "field1");
     }
 }
