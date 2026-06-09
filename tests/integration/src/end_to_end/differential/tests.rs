@@ -1,6 +1,6 @@
 //! Differential cases. One `#[test]` per file under `cases/`, driven by `run_case`.
 
-use super::harness::run_case;
+use super::harness::{run_case, run_case_with_inputs};
 
 #[test]
 fn add() {
@@ -109,6 +109,20 @@ fn calls_selects() {
             run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("cases/case_switch_shapes.rs"));
+}
+
+/// Deterministic reproducer for the `switch_shapes` divergence: pins the
+/// exact `(input1, input2)` pair the fuzzer flagged, so the bug fails
+/// reliably on that input rather than only when proptest happens to draw it.
+#[test]
+#[ignore = "MASM VM aborts on pinned input (1669775643, 1062584501): 'value does not fit in i32'; \
+            deterministic reproducer for the switch_shapes divergence"]
+fn switch_shapes_repro() {
+    run_case_with_inputs(
+        "switch_shapes_repro",
+        include_str!("cases/case_switch_shapes.rs"),
+        &[(1669775643, 1062584501)],
+    );
 }
 
 /// Loop with multiple `continue` backedges and a mid-body break — exercises
