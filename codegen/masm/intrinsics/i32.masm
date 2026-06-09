@@ -226,10 +226,16 @@ pub proc checked_div # [b, a]
     # divide
     u32div            # [|a / b|, is_a_signed, is_b_signed]
 
-    # if the signs differ, negate the result
+    # if the signs differ, negate the result. Division overflows only for
+    # i32::MIN / -1, which corresponds to `signs_differ == 0` and `|a/b| == MIN`
     movdn.2 neq                 # [signs_differ, |a / b|]
-    dup.1 exec.unchecked_neg    # [-|a / b|, signs_differ, |a / b|]
-    swap.1 cdrop                # [result]
+    if.true
+        # no overflow if the signs differ
+        exec.unchecked_neg      # [result]
+    else
+        # trap on overflow
+        dup.0 push.MIN eq assertz       # [|a / b|]
+    end
 end
 
 # Given two i32 values in two's complement representation, compare them,
