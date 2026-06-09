@@ -91,12 +91,26 @@ pub(super) fn run_case(name: &str, source: &str) {
 /// Prepended to every case source before compilation — supplies the
 /// crate-level `#![no_std]` attribute and a minimal `#[panic_handler]` so each
 /// case file only has to contain the entrypoint function and its helpers.
+///
+/// The `rust_eh_personality` stub is required for the native `cdylib`: even
+/// though the case is built with `panic = "abort"`, the precompiled `core`
+/// library is built with `panic = "unwind"`, so any case that references
+/// `core`'s panic machinery (an impossible trap, a guarded index, …) links in
+/// unwind tables that reference `rust_eh_personality`. Without `std` nothing
+/// defines that symbol, leaving the `cdylib` with an undefined symbol that
+/// `dlopen` rejects on Linux (macOS tolerates it). The no-op definition makes
+/// the library self-contained; it is never invoked, because panics abort. It is
+/// gated to non-wasm so the `cargo-miden` (wasm → MASM) build is unchanged.
 const CASE_HEADER: &str = r#"#![no_std]
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     loop {}
 }
+
+#[cfg(not(target_family = "wasm"))]
+#[unsafe(no_mangle)]
+extern "C" fn rust_eh_personality() {}
 
 "#;
 
