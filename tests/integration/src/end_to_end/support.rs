@@ -255,6 +255,8 @@ where
             1 => Just((v.two, v.min)),
             1 => Just((v.min, neg_two)),
             1 => Just((neg_two, v.min)),
+            1 => Just((v.min, v.three)),
+            1 => Just((v.min, neg_three)),
             1 => Just((v.max, neg_two)),
             1 => Just((neg_two, v.max)),
             1 => Just((v.sqrt_max, v.sqrt_max)),

@@ -141,29 +141,33 @@ pub proc overflowing_mul # [b, a]
     # if either operand are MIN, then the following rules apply
     #
     # 1. If the other operand is 1, then there is no overflow and the result is MIN
-    # 2. If the other operand is -1, then there is overflow and the result is MIN
-    # 3. If the other operand is 0, then there is no overflow and the result is zero
-    # 4. For any other value, there is overflow, and the result is zero
+    # 2. If the other operand is 0, then there is no overflow and the result is zero
+    # 3. For any other value, there is overflow, and the result is MIN if the other
+    #    operand is odd, or zero otherwise.
     if.true
-        # if either are 0, rule 3 applies
-        dup.0 eq.0           # [is_b_0, b, a]
-        dup.2 eq.0           # [is_a_0, is_b_0, b, a]
-        or                   # [is_either_0, b, a]
-        movdn.2              # [b, a, is_either_0]
+        # check if either operand is odd
+        dup.0 push.1 u32and # [b_odd, b, a]
+        dup.2 push.1 u32and # [a_odd, b_odd, b, a]
+        or                  # [result_is_MIN, b, a]
+        movdn.2             # [b, a, result_is_MIN]
 
-        # if either are 1, rule 1 applies
-        dup.0 eq.1  # [is_b_1, b, a, is_either_0]
-        dup.2 eq.1  # [is_a_1, is_b_1, b, a, is_either_0]
-        or          # [is_either_1, b, a, is_either_0]
-        # either are -1, rule 2 applies
-        movup.2 push.NEG1 eq # [is_a_neg1, is_either_1, b, is_either_0]
-        movup.2 push.NEG1 eq # [is_b_neg1, is_a_neg1, is_either_1, is_either_0]
-        or                   # [is_either_neg1, is_either_1, is_either_0]
-        # choose between rule 1/2 or rule 3/4 result
-        dup.1 or           # [result_is_MIN, is_either_1, is_either_0]
+        # check if either operand is 0
+        dup.0 eq.0           # [is_b_0, b, a, result_is_MIN]
+        dup.2 eq.0           # [is_a_0, is_b_0, b, a, result_is_MIN]
+        or                   # [is_either_0, b, a, result_is_MIN]
+        movdn.2              # [b, a, is_either_0, result_is_MIN]
+
+        # check if either operand is 1
+        eq.1        # [is_b_1, a, is_either_0, result_is_MIN]
+        swap.1 eq.1 # [is_a_1, is_b_1, is_either_0, result_is_MIN]
+        or          # [is_either_1, is_either_0, result_is_MIN]
+
+        # choose between the MIN and zero result
+        movup.2           # [result_is_MIN, is_either_1, is_either_0]
         push.MIN push.0    # [0, MIN, result_is_MIN, is_either_1, is_either_0]
         swap.2 cdrop       # [result, is_either_1, is_either_0]
-        # overflow occurred if the other operand is -1, i.e. it's neither 1 nor 0
+
+        # overflow occurred unless the other operand is 1 or 0
         swap.2 or         # [is_either_0_or_1, result]
         not               # [overflowed, result]
     else
