@@ -484,7 +484,6 @@ fn i32_checked_sub() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1161"]
 fn i32_checked_mul() {
     let proc_body = r#"
     # Stack: [b, a]
