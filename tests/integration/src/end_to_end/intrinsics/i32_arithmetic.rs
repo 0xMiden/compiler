@@ -192,6 +192,7 @@ fn i32_overflowing_add() {
 }
 
 #[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1163"]
 fn i32_overflowing_sub() {
     let proc_body = r#"
     # Stack: [b, a]

@@ -89,9 +89,7 @@ pub proc overflowing_sub # [b, a]
         # special handling to account for the fact that `b` was `i32::MIN`
 
         # NOTE: We treat `b` as unsigned, since we're supposed to be negating it
-        # We `push -> swap -> drop` to avoid the stack shrinking below its min depth. When shrinking
-        # below min depth, the processor expands the stack and we would need to clean that up.
-        push.MAX swap.1 drop  # [i32::MAX, a]
+        drop push.MAX         # [i32::MAX, a]
         dup.1 exec.is_signed  # [is_a_signed, i32::MAX, a]
         dup.0 eq.0            # [is_same_sign, is_a_signed, i32::MAX, a]
 
