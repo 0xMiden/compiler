@@ -3839,6 +3839,7 @@ dependencies = [
  "log",
  "miden-assembly",
  "miden-core",
+ "miden-core-lib",
  "miden-debug 0.7.1",
  "miden-mast-package",
  "miden-processor",

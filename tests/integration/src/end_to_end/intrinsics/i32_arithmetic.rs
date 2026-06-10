@@ -2,6 +2,7 @@ use std::{fmt, sync::Arc};
 
 use miden_assembly::{Assembler, DefaultSourceManager, Parse, ParseOptions, ast::ModuleKind};
 use miden_core::Felt;
+use miden_core_lib::CoreLibrary;
 use miden_processor::{
     DefaultHost, ExecutionError, ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync,
     operation::OperationError,
@@ -22,6 +23,7 @@ const I32_INTRINSICS_MASM: &str = include_str!("../../../../../codegen/masm/intr
 /// call these intrinsics by their fully-qualified path.
 fn assemble_test_program(procedure_body: &str) -> miden_processor::Program {
     let source_manager = Arc::new(DefaultSourceManager::default());
+    let core_library = CoreLibrary::default();
 
     // Parse the intrinsic module with its fully-qualified path
     let i32_intrinsics = I32_INTRINSICS_MASM
@@ -40,16 +42,29 @@ fn assemble_test_program(procedure_body: &str) -> miden_processor::Program {
         )
         .expect("failed to parse test module");
 
-    // Assemble the executable program, statically linking both modules
-    let mut assembler = Assembler::new(source_manager);
+    let mut assembler = Assembler::new(source_manager.clone());
     assembler
         .compile_and_statically_link(i32_intrinsics)
         .expect("failed to statically link i32 intrinsics");
-    assembler
-        .compile_and_statically_link(test_module)
-        .expect("failed to statically link test module");
-    assembler
-        .assemble_program("begin\n    exec.::test::test_i32_intrinsic\nend\n")
+
+    let library = assembler
+        .assemble_library([test_module])
+        .expect("failed to assemble test library");
+    Assembler::new(source_manager)
+        .with_static_library(library)
+        .expect("failed to link library")
+        .with_static_library(core_library.library())
+        .expect("failed to link core library")
+        .assemble_program(
+            r#"
+use miden::core::sys
+
+begin
+    exec.::test::test_i32_intrinsic
+    exec.sys::truncate_stack
+end
+"#,
+        )
         .expect("failed to assemble program")
 }
 
@@ -192,7 +207,6 @@ fn i32_overflowing_add() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1163"]
 fn i32_overflowing_sub() {
     let proc_body = r#"
     # Stack: [b, a]
