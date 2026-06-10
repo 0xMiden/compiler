@@ -896,7 +896,7 @@ fn test_overflowing_arith<T>(
         CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
     let package = test.compile_package();
 
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
         let rust_out = op(a, b);
 
         // Write the operation result to 20 * PAGE_SIZE.
@@ -1013,7 +1013,7 @@ fn test_checked_arith<T>(
         CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
     let package = test.compile_package();
 
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
         let rust_out = match op(a, b) {
             Some(value) => (value, true),
             None => (T::zero(), false),
