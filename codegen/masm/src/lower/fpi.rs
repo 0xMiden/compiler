@@ -1,4 +1,32 @@
 //! Foreign procedure invocation lowering support.
+//!
+//! FPI calls are ultimately executed by the transaction kernel procedure
+//! `miden::protocol::tx::execute_foreign_procedure`. Its protocol ABI is fixed-width: each call
+//! receives 22 felt operands. The first 6 operands are the account/procedure prefix
+//! (`AccountId`, procedure root, and FPI context), and the remaining 16 operands are the flattened
+//! procedure inputs. The executor returns one felt for each possible procedure input slot.
+//!
+//! Lowering handles two call shapes produced by earlier frontend/component ABI lowering:
+//!
+//! - Direct FPI calls target `execute_foreign_procedure` itself and carry the already-flattened
+//!   operands directly on the `hir.exec`. The frontend omits unused trailing procedure input slots
+//!   so the generic operand scheduler only solves for the real operands. After scheduling those
+//!   operands, this module pads the stack with zero felts until it reaches the 22-felt executor
+//!   width. The 16-operand boundary needs one backend scratch local because MASM stack shuffling can
+//!   address only 15 existing operands directly.
+//! - Indirect FPI calls target the compiler-internal
+//!   `miden::protocol::tx::execute_foreign_procedure_indirect` marker. Those calls must have one
+//!   `i32` operand pointing at a canonical ABI tuple, plus `fpi.flattened_arg_offsets` and
+//!   `fpi.flattened_arg_types` attributes describing how to reload each flattened felt from that
+//!   tuple. The marker exists because canonical ABI passes more than 16 flattened parameters
+//!   through memory, while FPI itself is still limited to 16 procedure input felts. This path
+//!   expands the tuple loads, sign-extends signed narrow integer fields, bitcasts loaded values to
+//!   felts, pads to 22 operands, and then emits a normal `execute_foreign_procedure` call.
+//!
+//! The backend assumes FPI has already been recognized and normalized by frontend/component
+//! lowering. In particular, only the two exact executor symbol paths above receive this special
+//! handling, indirect calls must provide the layout attributes, and all flattened argument entries
+//! must be single-felt values that the protocol executor can consume.
 
 use midenc_dialect_hir as hir;
 use midenc_hir::{

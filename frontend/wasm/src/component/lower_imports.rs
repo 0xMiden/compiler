@@ -239,6 +239,9 @@ enum FpiExecArgs {
     /// Fully flattened FPI arguments: account id prefix, account id suffix, root word, then inputs.
     Direct(Vec<ValueRef>),
     /// Canonical ABI argument tuple pointer plus its flattened value layout.
+    ///
+    /// This is still limited by the FPI protocol's 16 procedure input felts; the pointer exists
+    /// because canonical ABI lowers calls with more than 16 flattened parameters through memory.
     Indirect {
         /// Pointer to the canonical ABI argument tuple.
         arg_ptr: ValueRef,
@@ -355,6 +358,8 @@ fn lower_fpi_canonical_args(
 ) -> WasmResult<LoweredFpiAbi> {
     let flattened_params = flatten_types(context, &import_func_ty.params)?;
     let flattened_results = flatten_types(context, &import_func_ty.results)?;
+    // Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
+    // MASM backend reloads that tuple and still emits the fixed-width felt-only FPI executor call.
     let has_arg_ptr = flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS;
     let has_output_ptr = flattened_results.len() > CANONICAL_ABI_MAX_FLAT_RESULTS;
 
