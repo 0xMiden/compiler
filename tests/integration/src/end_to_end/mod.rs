@@ -7,4 +7,4 @@ mod examples;
 mod intrinsics;
 mod memory;
 mod regressions;
-mod support;
+pub(crate) mod support;
