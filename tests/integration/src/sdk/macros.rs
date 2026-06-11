@@ -389,3 +389,205 @@ impl MyNote {
         "unexpected stderr: {stderr}"
     );
 }
+
+/// Builds a generated account-component project whose component trait is named `TestComponent`
+/// (WIT interface `test-component`, matching the generated `[lib].namespace`).
+fn account_component_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
+    let sdk_path = sdk_crate_path();
+    let namespace = base::account_component_namespace(name, "test-component");
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]
+"#,
+        sdk_path = sdk_path.display(),
+    );
+
+    project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build()
+}
+
+#[test]
+fn component_trait_requires_the_component_attribute() {
+    // The trait is missing `#[component]`: the implementation expansion references the hidden
+    // marker constant the trait expansion would have injected, so rustc reports it as a missing
+    // associated item instead of silently skipping the trait-side validation.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_trait_requires_the_component_attribute", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected compilation to fail without `#[component]` on the trait"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("__MIDEN_COMPONENT_TRAIT_MARKER"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn component_trait_may_live_in_a_nested_module() {
+    // All generation happens at the `impl` expansion, so the component trait can be declared in
+    // any module, e.g. to let it share a name with the storage struct.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+pub mod api {
+    use miden::{component, Felt};
+
+    #[component]
+    pub trait TestComponent {
+        fn value(&self) -> Felt;
+    }
+}
+
+#[component]
+impl api::TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_trait_may_live_in_a_nested_module", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected a component trait in a nested module to compile: {stderr}"
+    );
+}
+
+#[test]
+fn component_trait_methods_reject_default_bodies() {
+    // Exports are derived from the `impl` block, so a defaulted trait method that is not
+    // overridden there would silently disappear from the component's interface.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    fn value(&self) -> Felt {
+        felt!(0)
+    }
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_trait_methods_reject_default_bodies", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected default trait method bodies to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("component trait methods cannot have default bodies"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_traits_reject_generic_parameters() {
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent<T> {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_traits_reject_generic_parameters", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected generic component traits to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("component traits cannot be generic"),
+        "unexpected stderr: {stderr}"
+    );
+}
