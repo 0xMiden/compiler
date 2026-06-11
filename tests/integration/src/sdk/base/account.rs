@@ -2,26 +2,23 @@ use super::*;
 
 #[allow(clippy::uninlined_format_args)]
 fn run_account_binding_test_with_struct(name: &str, account_struct: &str, method: &str) {
+    // The storage struct is the `TestAccount` declaration renamed to `TestAccountStorage`; the
+    // component trait keeps the `TestAccount` name.
+    let storage_struct = account_struct.replace("struct TestAccount", "struct TestAccountStorage");
+    let component =
+        account_component_source(&storage_struct, "TestAccountStorage", "TestAccount", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::*;
 
-#[component]
-{account_struct}
-
-#[component]
-impl TestAccount {{
-    {method}
-}}
-",
-        account_struct = account_struct,
-        method = method
+{component}
+"
     );
 
     let sdk_path = sdk_crate_path();
-    let namespace = component_namespace(name);
+    let namespace = account_component_namespace(name, "test-account");
     let miden_project_toml = format!(
         r#"
 [package]

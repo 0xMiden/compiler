@@ -476,7 +476,9 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",
+ "heck",
  "liquid",
+ "liquid-core",
  "log",
  "miden-mast-package",
  "midenc-compile",

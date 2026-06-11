@@ -159,20 +159,27 @@ const FIRST_COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, felt, Felt, StorageMap, Word};
+use miden::{component, component_storage, felt, Felt, StorageMap, Word};
 
 /// Account component whose storage map holds the first counter value.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding the counter value.
     #[storage(description = "first counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose storage map holds the first counter value.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the first counter value.
-    pub fn get_first_count(&self) -> Felt {
+    fn get_first_count(&self) -> Felt;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the first counter value.
+    fn get_first_count(&self) -> Felt {
         let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
         self.count_map.get(key)
     }
@@ -184,20 +191,27 @@ const SECOND_COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, felt, Felt, StorageMap, Word};
+use miden::{component, component_storage, felt, Felt, StorageMap, Word};
 
 /// Account component whose storage map holds the second counter value.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding the counter value.
     #[storage(description = "second counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose storage map holds the second counter value.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the second counter value.
-    pub fn get_second_count(&self) -> Felt {
+    fn get_second_count(&self) -> Felt;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the second counter value.
+    fn get_second_count(&self) -> Felt {
         let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
         self.count_map.get(key)
     }

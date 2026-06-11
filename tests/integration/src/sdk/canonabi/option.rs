@@ -8,15 +8,20 @@ fn option_with_felt_payload() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, felt};
+use miden::{Felt, component, component_storage, felt};
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms an optional felt value.
-    pub fn roundtrip(&self, value: Option<Felt>) -> Option<Felt> {
+    fn roundtrip(&self, value: Option<Felt>) -> Option<Felt>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, value: Option<Felt>) -> Option<Felt> {
         match value {
             Some(value) => Some(value + felt!(7)),
             None => None,
@@ -51,15 +56,20 @@ fn option_with_word_payload() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Word, component, felt};
+use miden::{Word, component, component_storage, felt};
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms an optional word value.
-    pub fn roundtrip(&self, value: Option<Word>) -> Option<Word> {
+    fn roundtrip(&self, value: Option<Word>) -> Option<Word>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, value: Option<Word>) -> Option<Word> {
         match value {
             Some(word) => Some(Word::new([
                 word.a + felt!(1),
@@ -109,7 +119,7 @@ fn option_with_record_payload() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Payload used inside an option.
 #[derive(Clone, Copy, Debug)]
@@ -129,13 +139,18 @@ pub struct OptionPayload {
     pub flag: bool,
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms an optional record payload.
-    pub fn roundtrip(&self, payload: Option<OptionPayload>) -> Option<OptionPayload> {
+    fn roundtrip(&self, payload: Option<OptionPayload>) -> Option<OptionPayload>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, payload: Option<OptionPayload>) -> Option<OptionPayload> {
         match payload {
             Some(payload) => Some(OptionPayload {
                 amount: payload.amount + 11,
@@ -198,7 +213,7 @@ fn record_with_option_field() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Payload whose record layout contains an option field.
 #[derive(Clone, Copy, Debug)]
@@ -212,13 +227,18 @@ pub struct OptionFieldPayload {
     pub flag: bool,
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a record with an optional field.
-    pub fn roundtrip(&self, payload: OptionFieldPayload) -> OptionFieldPayload {
+    fn roundtrip(&self, payload: OptionFieldPayload) -> OptionFieldPayload;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, payload: OptionFieldPayload) -> OptionFieldPayload {
         OptionFieldPayload {
             amount: payload.amount + 3,
             maybe: match payload.maybe {

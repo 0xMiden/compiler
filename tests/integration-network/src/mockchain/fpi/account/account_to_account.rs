@@ -156,20 +156,27 @@ const CALLEE_ACCOUNT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, Felt, StorageMap, Word};
+use miden::{component, component_storage, Felt, StorageMap, Word};
 
 /// Account component whose storage map holds one counter value.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding the counter value.
     #[storage(description = "callee account counter storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose storage map holds one counter value.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the counter value stored under the provided key.
-    pub fn get_count(&self, key: Word) -> Felt {
+    fn get_count(&self, key: Word) -> Felt;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the counter value stored under the provided key.
+    fn get_count(&self, key: Word) -> Felt {
         self.count_map.get(key)
     }
 }
@@ -180,19 +187,26 @@ const CALLER_ACCOUNT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{account, component, felt, AccountId, Felt, Word};
+use miden::{account, component, component_storage, felt, AccountId, Felt, Word};
 
 #[account(account_to_account_callee_account)]
 struct CalleeAccount;
 
 /// Account component which forwards reads to another account through FPI.
+#[component_storage]
+struct CallerAccountStorage;
+
+/// Account component which forwards reads to another account through FPI.
 #[component]
-struct CallerAccount;
+trait CallerAccount {
+    /// Reads a counter value from the provided foreign account.
+    fn read_foreign_count(&self, callee_account_id: AccountId) -> Felt;
+}
 
 #[component]
-impl CallerAccount {
+impl CallerAccount for CallerAccountStorage {
     /// Reads a counter value from the provided foreign account.
-    pub fn read_foreign_count(&self, callee_account_id: AccountId) -> Felt {
+    fn read_foreign_count(&self, callee_account_id: AccountId) -> Felt {
         let callee = CalleeAccount::new(callee_account_id);
         let key = Word::new([felt!(13), felt!(21), felt!(34), felt!(55)]);
         callee.get_count(key)

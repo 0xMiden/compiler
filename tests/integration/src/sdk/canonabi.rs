@@ -23,7 +23,7 @@ struct CanonAbiProjectNames {
     account_slug: String,
     /// The Rust module generated for the account package in note bindings.
     account_package_module: String,
-    /// The Rust module generated for the account interface in note bindings.
+    /// The Rust module generated for the shared account interface in note bindings.
     account_interface_module: String,
     /// The Rust crate name of the note project.
     note_crate: String,
@@ -38,7 +38,7 @@ impl CanonAbiProjectNames {
         let account_crate = format!("canonabi_{case}_account");
         let account_slug = account_crate.replace('_', "-");
         let account_package_module = account_slug.replace('-', "_");
-        let account_interface_module = format!("miden_{account_package_module}");
+        let account_interface_module = "canonabi_component".to_string();
         let note_crate = format!("canonabi_{case}_note");
         let note_slug = note_crate.replace('_', "-");
 
@@ -94,7 +94,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:{account_slug}/miden-{account_slug}@0.1.0"
+namespace = "miden:{account_slug}/canonabi-component@0.1.0"
 
 [dependencies]
 miden-core = "*"

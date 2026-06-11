@@ -6,7 +6,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use heck::ToUpperCamelCase;
 use liquid::{Object, Parser, model::Value};
+use liquid_core::{Display_filter, Filter, FilterReflection, ParseFilter, Runtime, ValueView};
 use tempfile::TempDir;
 use toml_edit::DocumentMut;
 use walkdir::WalkDir;
@@ -81,6 +83,7 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     variables.insert("project-name".into(), Value::scalar(project_name.clone()));
 
     let parser = liquid::ParserBuilder::with_stdlib()
+        .filter(UpperCamelCase)
         .build()
         .context("Failed to initialise Liquid template parser")?;
 
@@ -142,7 +145,7 @@ version = \"{}\"
             manifest.push_str("kind = \"account-component\"\n");
             manifest.push_str(&format!(
                 "namespace = \"{}\"\n\n",
-                component_namespace(package_name, package_version)
+                account_component_namespace(package_name, package_version)
             ));
         }
         "note" | "note-script" => {
@@ -251,9 +254,23 @@ fn toml_str<'a>(document: &'a DocumentMut, path: &[&str]) -> Option<&'a str> {
     item.as_str()
 }
 
+/// Builds the default `[lib].namespace` for a note/note-script project.
+///
+/// Notes export a package-derived interface (`miden-<package>`), matching the `#[note]` macro.
 fn component_namespace(package_name: &str, version: &str) -> String {
     let package = package_name.replace('_', "-");
     format!("miden:{package}/miden-{package}@{}", toml_escape(version))
+}
+
+/// Builds the default `[lib].namespace` for an account-component project.
+///
+/// The exported WIT interface is derived from the component trait name. By default the trait is
+/// expected to share the package name (kebab-case), so the interface segment defaults to the
+/// package name. Projects whose trait uses a different name should commit a `miden-project.toml`
+/// with a matching `[lib].namespace`.
+fn account_component_namespace(package_name: &str, version: &str) -> String {
+    let package = package_name.replace('_', "-");
+    format!("miden:{package}/{package}@{}", toml_escape(version))
 }
 
 fn component_package_name(package: &str) -> Option<&str> {
@@ -604,10 +621,9 @@ fn render_file(
             let template = parser
                 .parse(content)
                 .with_context(|| format!("Failed to parse template '{}'", source.display()))?;
-            let mut rendered = template
+            let rendered = template
                 .render(variables)
                 .with_context(|| format!("Failed to render template '{}'", source.display()))?;
-            apply_template_compatibility_fixes(&mut rendered);
             fs::write(destination, rendered).with_context(|| {
                 format!("Failed to write rendered file '{}'", destination.display())
             })?;
@@ -628,13 +644,31 @@ fn render_file(
     Ok(())
 }
 
-fn apply_template_compatibility_fixes(rendered: &mut String) {
-    // rust-templates v0.30.0 references the add-contract helper through the old generated binding
-    // module name. Keep that template tag usable until the upstream template is updated.
-    *rendered = rendered.replace(
-        "bindings::miden::add_contract::add_contract::add",
-        "bindings::miden::add_contract::miden_add_contract::add",
-    );
+/// Liquid `upper_camel_case` filter matching cargo-generate's filter of the same name.
+///
+/// Templates use it to derive Rust type names from the project name — in particular the component
+/// trait name, which must kebab-match the interface segment of the generated `[lib].namespace`.
+#[derive(Clone, ParseFilter, FilterReflection)]
+#[filter(
+    name = "upper_camel_case",
+    description = "Converts a string to UpperCamelCase.",
+    parsed(UpperCamelCaseFilter)
+)]
+struct UpperCamelCase;
+
+#[derive(Debug, Default, Display_filter)]
+#[name = "upper_camel_case"]
+struct UpperCamelCaseFilter;
+
+impl Filter for UpperCamelCaseFilter {
+    fn evaluate(
+        &self,
+        input: &dyn ValueView,
+        _runtime: &dyn Runtime,
+    ) -> liquid_core::Result<liquid_core::Value> {
+        let input = input.to_kstr();
+        Ok(liquid_core::Value::scalar(input.as_str().to_upper_camel_case()))
+    }
 }
 
 fn initialise_git_repo(project_dir: &Path) -> Result<()> {

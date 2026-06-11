@@ -1,6 +1,6 @@
-use miden_base_macros::component;
+use miden_base_macros::component_storage;
 
-#[component]
+#[component_storage]
 struct Contract {
     counter: u32,
 }

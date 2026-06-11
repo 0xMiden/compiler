@@ -10,7 +10,7 @@
 
 use miden::*;
 
-use crate::bindings::miden::counter_contract::miden_counter_contract as counter_contract;
+use crate::bindings::miden::counter_contract::counter_contract;
 
 #[note]
 struct CounterNote;

@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [lib]
 kind = "account-component"
-namespace = "miden:basic-wallet/miden-basic-wallet@0.1.0"
+namespace = "miden:basic-wallet/basic-wallet@0.1.0"
 
 [dependencies]
 miden-core = "*"

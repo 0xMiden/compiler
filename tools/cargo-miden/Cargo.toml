@@ -35,7 +35,9 @@ clap.workspace = true
 anyhow.workspace = true
 path-absolutize = "^3.1"
 toml_edit.workspace = true
+heck.workspace = true
 liquid = "0.26"
+liquid-core = "0.26"
 tempfile.workspace = true
 walkdir = "2.5"
 

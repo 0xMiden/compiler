@@ -172,7 +172,7 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Felt, StorageMap, Word};
+use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
 /// Three storage keys passed through the FPI boundary.
 #[export_type]
@@ -186,17 +186,24 @@ pub struct KeyTriple {
 }
 
 /// Account component whose storage map holds counter values.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding counter values.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose storage map holds counter values.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the sum of the counter values stored under `keys`.
-    pub fn get_count_sum_by_keys(&self, keys: KeyTriple) -> Felt {
+    fn get_count_sum_by_keys(&self, keys: KeyTriple) -> Felt;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the sum of the counter values stored under `keys`.
+    fn get_count_sum_by_keys(&self, keys: KeyTriple) -> Felt {
         self.count_map.get(keys.first_key)
             + self.count_map.get(keys.second_key)
             + self.count_map.get(keys.third_key)
@@ -211,7 +218,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::three_words_struct_account::miden_three_words_struct_account::KeyTriple;
+use crate::bindings::miden::three_words_struct_account::counter_contract::KeyTriple;
 #[account(three_words_struct_account)]
 struct CounterContract;
 

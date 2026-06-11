@@ -35,20 +35,39 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, Felt, StorageMap, Word};
+use miden::{component, component_storage, Felt, StorageMap, Word};
 
 /// Account component whose FPI method accepts ten felt arguments.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding the counter value.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose FPI method accepts ten felt arguments.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the counter value plus all six extra felt arguments.
-    pub fn get_count_by_ten_felts(
+    fn get_count_by_ten_felts(
+        &self,
+        key0: Felt,
+        key1: Felt,
+        key2: Felt,
+        key3: Felt,
+        add0: Felt,
+        add1: Felt,
+        add2: Felt,
+        add3: Felt,
+        add4: Felt,
+        add5: Felt,
+    ) -> Felt;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the counter value plus all six extra felt arguments.
+    fn get_count_by_ten_felts(
         &self,
         key0: Felt,
         key1: Felt,

@@ -69,7 +69,7 @@ fn component_macros_account_and_note() {
 fn auth_components_require_an_auth_script_method() {
     let name = "auth_components_require_an_auth_script_method";
     let sdk_path = sdk_crate_path();
-    let namespace = component_namespace(name);
+    let namespace = format!("miden:{}/auth-component@0.0.1", name.replace('_', "-"));
     let component_package = format!("miden:{}", name.replace('_', "-"));
     let miden_project_toml = format!(
         r#"
@@ -114,14 +114,19 @@ project-kind = "authentication-component"
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, Word};
+use miden::{component, component_storage, Word};
+
+#[component_storage]
+struct AuthComponentStorage;
 
 #[component]
-struct AuthComponent;
+trait AuthComponent {
+    fn auth_procedure(&self, _arg: Word);
+}
 
 #[component]
-impl AuthComponent {
-    pub fn auth_procedure(&self, _arg: Word) {}
+impl AuthComponent for AuthComponentStorage {
+    fn auth_procedure(&self, _arg: Word) {}
 }
 "#;
 
@@ -146,8 +151,8 @@ impl AuthComponent {
 }
 
 #[test]
-fn auth_script_requires_a_component_impl() {
-    let name = "auth_script_requires_a_component_impl";
+fn auth_script_requires_a_component_trait() {
+    let name = "auth_script_requires_a_component_trait";
     let sdk_path = sdk_crate_path();
     let namespace = component_namespace(name);
     let component_package = format!("miden:{}", name.replace('_', "-"));
@@ -191,17 +196,16 @@ project-kind = "authentication-component"
         component_package = component_package,
     );
 
+    // `#[auth_script]` is applied to a trait method, but the trait is not annotated with
+    // `#[component]`, so the helper marker attribute is left unconsumed and rejected by rustc.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{auth_script, component, Word};
+use miden::{auth_script, Word};
 
-#[component]
-struct AuthComponent;
-
-impl AuthComponent {
+trait AuthComponent {
     #[auth_script]
-    pub fn auth_procedure(&self, _arg: Word) {}
+    fn auth_procedure(&mut self, _arg: Word);
 }
 "#;
 
@@ -214,7 +218,7 @@ impl AuthComponent {
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(
         !output.status.success(),
-        "expected auth-script compilation to fail outside a `#[component]` impl"
+        "expected auth-script compilation to fail outside a `#[component]` trait"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
 

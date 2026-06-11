@@ -35,20 +35,27 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, Felt, StorageMap, Word};
+use miden::{component, component_storage, Felt, StorageMap, Word};
 
 /// Account component whose storage map holds one counter value.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding the counter value.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose storage map holds one counter value.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the counter value stored under `key`.
-    pub fn get_count_by_key(&self, key: Word) -> Felt {
+    fn get_count_by_key(&self, key: Word) -> Felt;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the counter value stored under `key`.
+    fn get_count_by_key(&self, key: Word) -> Felt {
         self.count_map.get(key)
     }
 }
