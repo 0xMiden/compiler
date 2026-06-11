@@ -1,7 +1,10 @@
 use std::marker::PhantomData;
 
 use num_traits::{PrimInt, Unsigned};
-use proptest::prelude::*;
+use proptest::{
+    prelude::*,
+    test_runner::{Config, TestRunner},
+};
 
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 
@@ -59,8 +62,29 @@ pub(super) fn miden_project_toml(name: &str) -> String {
 /// A strategy for generating pairs of numeric values, biased toward edge cases like
 /// zero, one, max, min, half, etc. Particularly useful for testing overflowing,
 /// checked, and wrapping arithmetic operations.
+///
+/// Associated strategies should distribute weights such that each edge case is likely to be
+/// executed when run with a runner created by [`Self::test_runner`].
 pub struct NumericStrategy<T> {
     _marker: PhantomData<T>,
+}
+
+impl<T> NumericStrategy<T> {
+    /// Returns a test runner that generates enough cases to make each [`NumericStrategy`] edge case
+    /// likely to be exercised.
+    ///
+    /// With 512 generated cases, each individual weight-1 edge case in the largest strategy is hit
+    /// with ~99.9% probability. For the largest current strategy (71 weight-1 edge cases plus a
+    /// weight-2 random arm), the chance of hitting all edge cases in one run is ~94%. For a smaller
+    /// 20-edge-case strategy with the same weight-2 random arm, the chance of hitting all edge
+    /// cases is >99.99%.
+    ///
+    /// Intuition: a specific edge case is very unlikely to be missed, but there are many edge
+    /// cases that could be the one missed. The expected number of missed edge cases in the largest
+    /// strategy is about 71 * (72 / 73)^512 = 0.06.
+    pub(super) fn test_runner() -> TestRunner {
+        TestRunner::new(Config::with_cases(512))
+    }
 }
 
 impl<T> NumericStrategy<T>
@@ -74,7 +98,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.one)),
             1 => Just((v.one, v.max)),
             1 => Just((v.max, v.max)),
@@ -100,7 +124,7 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.one)),
             1 => Just((v.one, v.max)),
             1 => Just((v.max, v.max)),
@@ -125,7 +149,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.zero, v.one)),
             1 => Just((v.zero, v.max)),
             1 => Just((v.max, v.max)),
@@ -148,7 +172,7 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.min, v.one)),
             1 => Just((v.min, v.max)),
             1 => Just((v.max, v.min)),
@@ -171,7 +195,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            2 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.two)),
             1 => Just((v.two, v.max)),
             1 => Just((v.max, v.max)),
@@ -227,7 +251,7 @@ where
         let min_div_four = v.min / v.four;
         let min_div_four_minus_one = min_div_four - v.one;
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            2 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.two)),
             1 => Just((v.two, v.max)),
             1 => Just((v.max, v.max)),
@@ -309,7 +333,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, v.two)),
             1 => Just((v.max, v.max)),
@@ -331,7 +355,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), v.one..=v.max),
+            5 => (any::<T>(), v.one..=v.max),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, v.two)),
             1 => Just((v.max, v.max)),
@@ -353,7 +377,7 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, neg_one)),
             1 => Just((v.min, v.one)),
@@ -375,8 +399,8 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            75 => (any::<T>(), v.min..=neg_one),
-            75 => (any::<T>(), v.one..=v.max),
+            3 => (any::<T>(), v.min..=neg_one),
+            3 => (any::<T>(), v.one..=v.max),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, neg_one)),
             1 => Just((v.min, v.one)),
@@ -397,7 +421,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, v.two)),
             1 => Just((v.max, v.max)),
@@ -418,7 +442,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => (any::<T>(), v.one..=v.max),
+            5 => (any::<T>(), v.one..=v.max),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, v.two)),
             1 => Just((v.max, v.max)),
@@ -439,7 +463,7 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            5 => (any::<T>(), any::<T>()),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, neg_one)),
             1 => Just((v.min, v.one)),
@@ -461,8 +485,8 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            75 => (any::<T>(), v.min..=neg_one),
-            75 => (any::<T>(), v.one..=v.max),
+            3 => (any::<T>(), v.min..=neg_one),
+            3 => (any::<T>(), v.one..=v.max),
             1 => Just((v.max, v.one)),
             1 => Just((v.max, neg_one)),
             1 => Just((v.min, v.one)),
@@ -482,7 +506,7 @@ where
     {
         let v = NumericStrategyValues::<T>::new();
         prop_oneof![
-            150 => any::<T>(),
+            5 => any::<T>(),
             1 => Just(v.zero),
             1 => Just(v.one),
             1 => Just(v.neg_one.unwrap()),
@@ -502,7 +526,7 @@ where
         let neg_one = v.neg_one.unwrap();
         let min_plus_one = v.min + T::one();
         prop_oneof![
-            150 => (v.min+T::one())..=v.max,
+            5 => (v.min+T::one())..=v.max,
             1 => Just(v.zero),
             1 => Just(v.one),
             1 => Just(neg_one),
@@ -520,7 +544,7 @@ where
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), any::<T>()),
+            2 => (any::<T>(), any::<T>()),
             1 => Just((v.zero, v.zero)),
             1 => Just((v.one, v.one)),
             1 => Just((neg_one, neg_one)),
@@ -554,7 +578,7 @@ where
         let v = NumericStrategyValues::<T>::new();
         let thirty = T::from(30).unwrap();
         prop_oneof![
-            150 => v.zero..=thirty,
+            5 => v.zero..=thirty,
             1 => Just(v.zero),
             1 => Just(v.one),
             1 => Just(thirty),
@@ -569,7 +593,7 @@ where
         let thirty = T::from(30).unwrap();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), v.zero..=thirty),
+            2 => (any::<T>(), v.zero..=thirty),
             1 => Just((v.zero, v.zero)),
             1 => Just((v.one, v.zero)),
             1 => Just((neg_one, v.zero)),
@@ -602,8 +626,8 @@ where
         let thirty_two = T::from(32).unwrap();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            150 => (any::<T>(), v.zero..=thirty_one),
-            1 => (any::<T>(), any::<T>()),
+            3 => (any::<T>(), v.zero..=thirty_one),
+            3 => (any::<T>(), any::<T>()),
             1 => Just((v.min, v.zero)),
             1 => Just((v.min, v.one)),
             1 => Just((v.min, thirty_one)),
