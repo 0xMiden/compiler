@@ -531,11 +531,11 @@ fn i32_checked_div() {
         NumericStrategy::<i32>::div_signed_checked(),
         binary_i32op_inputs_to_stack,
         |(a, b): &(i32, i32)| {
-            // TODO(#1162) verify MIN/-1 traps VM
             if *b == 0 {
                 Err(TrapExpectation::DivideByZero)
+            } else if *a == i32::MIN && *b == -1 {
+                Err(TrapExpectation::FailedAssertionOverflow)
             } else {
-                // TODO(#1162) use checked_div
                 Ok(vec![a.wrapping_div(*b)])
             }
         },
@@ -561,44 +561,4 @@ fn i32_checked_shr() {
             }
         },
     );
-}
-
-// TODO(#1162): remove once #1162 is fixed and handle MIN/-1 in `i32_checked_div` above
-/// This test reproduces #1162
-#[test]
-fn i32_checked_div_min_by_neg1_i1162_reproducer() {
-    let proc_body = r#"
-    # Stack: [b, a]
-    exec.::intrinsics::i32::checked_div
-    # Stack: [result]
-"#;
-    let program = assemble_test_program(proc_body);
-
-    // i32::MIN / -1 overflows in two's complement
-    let a: i32 = i32::MIN;
-    let b: i32 = -1;
-    let inputs = binary_i32op_inputs_to_stack(&(a, b));
-    let stack_inputs = StackInputs::new(&inputs).expect("invalid stack inputs");
-
-    let vm_result = execute_sync(
-        &program,
-        stack_inputs,
-        AdviceInputs::default(),
-        &mut DefaultHost::default(),
-        ExecutionOptions::default(),
-    );
-
-    match vm_result {
-        Ok(trace) => {
-            let outputs: Vec<i32> = trace
-                .stack_outputs()
-                .iter()
-                .map(|f| f.as_canonical_u64() as u32 as i32)
-                .collect();
-            println!("Despite overflow in checked_div VM succeeded with outputs: {:?}", outputs);
-        }
-        Err(vm_err) => {
-            panic!("VM was expected to succeed but there was an err {vm_err}");
-        }
-    }
 }
