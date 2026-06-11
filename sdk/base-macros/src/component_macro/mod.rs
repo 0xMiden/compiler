@@ -44,6 +44,13 @@ const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
 /// [`render_trait_marker_check`]), so forgetting `#[component]` on the trait surfaces as a
 /// missing-item error naming this constant instead of silently skipping the trait-side validation.
 const COMPONENT_TRAIT_MARKER_CONST: &str = "__MIDEN_COMPONENT_TRAIT_MARKER";
+/// Name of the hidden inherent constant injected by `#[component_storage]`.
+///
+/// The trait implementation expansion references this constant on the storage type (see
+/// [`render_storage_marker_check`]), so forgetting `#[component_storage]` on the storage struct
+/// surfaces as a missing-item error naming this constant instead of silently producing a
+/// component without storage metadata, account trait impls, or runtime boilerplate.
+const COMPONENT_STORAGE_MARKER_CONST: &str = "__MIDEN_COMPONENT_STORAGE_MARKER";
 
 /// Receiver kinds supported by the derived guest trait implementation.
 #[derive(Clone, Copy)]
@@ -254,6 +261,16 @@ fn expand_component_storage(
                 &storage_namespace,
                 &component_interface,
             )?;
+            // Checked after field validation so type errors take priority; slot names derived
+            // from the synthesized placeholder metadata must never reach a build.
+            if !fields.named.is_empty() && !metadata.has_miden_project_toml {
+                return Err(syn::Error::new(
+                    struct_name.span(),
+                    "`#[component_storage]` with `#[storage]` fields requires a \
+                     `miden-project.toml` next to the crate's `Cargo.toml`: storage slot names \
+                     derive from the `[lib].namespace` interface segment",
+                ));
+            }
             generate_default_impl(struct_name, &field_inits)
         }
         syn::Fields::Unit => quote! {
@@ -266,7 +283,7 @@ fn expand_component_storage(
         _ => {
             return Err(syn::Error::new(
                 input_struct.fields.span(),
-                "The `component` macro only supports unit structs or structs with named fields.",
+                "`#[component_storage]` only supports unit structs or structs with named fields.",
             ));
         }
     };
@@ -280,10 +297,18 @@ fn expand_component_storage(
     let link_section = generate_link_section(&metadata_bytes);
     let runtime_boilerplate = runtime_boilerplate();
 
+    // Hidden handshake constant consumed by the `#[component]` impl expansion (see
+    // `render_storage_marker_check`).
+    let marker_ident = format_ident!("{}", COMPONENT_STORAGE_MARKER_CONST);
+
     Ok(quote! {
         #runtime_boilerplate
         #input_struct
         #default_impl
+        impl #struct_name {
+            #[doc(hidden)]
+            pub const #marker_ident: () = ();
+        }
         impl ::miden::native_account::NativeAccount for #struct_name {}
         impl ::miden::active_account::ActiveAccount for #struct_name {}
         #link_section
@@ -462,9 +487,12 @@ fn expand_component_trait_impl(
 
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
     let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
-    // Must match `expand_component_trait`'s trait-derived interface name; the trait-side
-    // validation guarantees this is also the interface declared in `[lib].namespace`.
+    // The generated WIT interface is named after the trait *as spelled here*. The trait-side
+    // validation only covers the declared trait name, so an impl that spells the trait through an
+    // alias (`use api::Foo as Bar; impl Bar for ...`) would silently generate an interface named
+    // after the alias — validate the impl-side spelling against `[lib].namespace` as well.
     let interface_name = trait_ident.to_string().to_kebab_case();
+    validate_namespace_matches_interface(&metadata, &package_name, &interface_name, &trait_ident)?;
     let interface_module = interface_name.to_snake_case();
     let world_name = format!("{interface_name}-world");
 
@@ -544,6 +572,7 @@ fn expand_component_trait_impl(
         .collect();
 
     let marker_check = render_trait_marker_check(&component_type, &trait_path);
+    let storage_marker_check = render_storage_marker_check(&component_type);
 
     Ok(quote! {
         ::miden::generate!(inline = #inline_literal, with = { #(#custom_with_entries)* });
@@ -557,6 +586,7 @@ fn expand_component_trait_impl(
             #(#guest_methods)*
         }
         #marker_check
+        #storage_marker_check
         // Use the fully-qualified component type here so the export macro works even when
         // the impl block was declared through a module-qualified path (e.g. `impl Foo for super::Bar`).
         self::bindings::export!(#component_type);
@@ -572,6 +602,19 @@ fn render_trait_marker_check(component_type: &Type, trait_path: &syn::Path) -> T
     let marker_ident = format_ident!("{}", COMPONENT_TRAIT_MARKER_CONST);
     quote! {
         const _: () = <#component_type as #trait_path>::#marker_ident;
+    }
+}
+
+/// Emits a compile-time check that the storage type carries the `#[component_storage]` attribute.
+///
+/// The storage expansion injects a hidden inherent constant; referencing it here turns a forgotten
+/// `#[component_storage]` on the storage struct into a missing-item error naming the constant,
+/// instead of silently building a component without storage metadata, account trait impls, or
+/// runtime boilerplate.
+fn render_storage_marker_check(component_type: &Type) -> TokenStream2 {
+    let marker_ident = format_ident!("{}", COMPONENT_STORAGE_MARKER_CONST);
+    quote! {
+        const _: () = <#component_type>::#marker_ident;
     }
 }
 

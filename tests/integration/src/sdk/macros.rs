@@ -655,3 +655,147 @@ impl TestComponent for TestComponentStorage {
         "unexpected stderr: {stderr}"
     );
 }
+
+#[test]
+fn component_impl_rejects_a_trait_alias_mismatching_the_namespace() {
+    // The WIT interface is named after the trait as spelled in the impl, so an alias would
+    // silently generate an interface named after the alias; the impl-side namespace validation
+    // must reject it even though the declared trait name validates fine.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+pub mod api {
+    use miden::{component, Felt};
+
+    #[component]
+    pub trait TestComponent {
+        fn value(&self) -> Felt;
+    }
+}
+
+use api::TestComponent as Alias;
+
+#[component]
+impl Alias for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project(
+        "component_impl_rejects_a_trait_alias_mismatching_the_namespace",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected an aliased component trait impl to fail namespace validation"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("produces WIT interface `alias`"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn component_impl_requires_component_storage_on_the_storage_struct() {
+    // Without `#[component_storage]` the struct has no metadata link section, account trait
+    // impls, or runtime boilerplate; the impl expansion references a hidden marker constant so
+    // the omission fails loudly instead of building a component without storage metadata.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, felt, Felt};
+
+#[derive(Default)]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project(
+        "component_impl_requires_component_storage_on_the_storage_struct",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected compilation to fail without `#[component_storage]` on the storage struct"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("__MIDEN_COMPONENT_STORAGE_MARKER"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_storage_fields_require_a_miden_project_manifest() {
+    // Storage slot names derive from the `[lib].namespace` interface segment; without a
+    // `miden-project.toml` they would silently be derived from placeholder metadata
+    // (`empty::empty::<field>`).
+    let name = "component_storage_fields_require_a_miden_project_manifest";
+    let sdk_path = sdk_crate_path();
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.miden]
+project-kind = "account"
+"#,
+        sdk_path = sdk_path.display(),
+    );
+
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, StorageValue, Word};
+
+#[component_storage]
+struct TestComponentStorage {
+    #[storage(description = "some value")]
+    value: StorageValue<Word>,
+}
+"#;
+
+    let cargo_proj =
+        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected storage fields without a miden-project.toml to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("storage slot names derive from the `[lib].namespace`"),
+        "unexpected stderr: {stderr}"
+    );
+}
