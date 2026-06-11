@@ -533,7 +533,30 @@ fn i32_checked_div() {
             } else if *a == i32::MIN && *b == -1 {
                 Err(TrapExpectation::FailedAssertionOverflow)
             } else {
-                Ok(vec![a.wrapping_div(*b)])
+                Ok(vec![a.checked_div(*b).unwrap()])
+            }
+        },
+    );
+}
+
+#[test]
+fn i32_checked_mod() {
+    let proc_body = r#"
+    # Stack: [b, a]
+    exec.::intrinsics::i32::checked_mod
+    # Stack: [result]
+"#;
+    test_i32_intrinsic(
+        proc_body,
+        NumericStrategy::<i32>::rem_signed_checked(),
+        binary_i32op_inputs_to_stack,
+        |(a, b): &(i32, i32)| {
+            if *b == 0 {
+                Err(TrapExpectation::DivideByZero)
+            } else if *a == i32::MIN && *b == -1 {
+                Err(TrapExpectation::FailedAssertionOverflow)
+            } else {
+                Ok(vec![a.checked_rem(*b).unwrap()])
             }
         },
     );
