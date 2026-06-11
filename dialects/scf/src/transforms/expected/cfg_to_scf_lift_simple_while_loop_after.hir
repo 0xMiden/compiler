@@ -19,6 +19,6 @@ builtin.function public extern("C") @cfg_to_scf_lift_simple_while_loop(%0: u32) 
     } after {
     ^block9(%29: u32, %30: u32, %31: u32):
         scf.yield %29, %30, %31 : (u32, u32, u32);
-    } : (u32, u32, u32);
+    } : (u32, u32, u32) -> (u32, u32, u32);
     builtin.ret %25 : (u32);
 };

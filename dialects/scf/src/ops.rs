@@ -172,6 +172,8 @@ pub struct While {
     before: Region,
     #[region]
     after: Region,
+    #[results]
+    returns: AnyType,
 }
 
 impl While {
@@ -423,10 +425,12 @@ impl OpParser for IndexSwitch {
 
         state
             .add_attribute("cases", parser.context_rc().create_attribute::<U32ArrayAttr, _>(cases));
+        // The default region is declared first on the operation; case regions follow it (see
+        // `get_case_region`).
+        state.add_region(fallback_region);
         for region in regions {
             state.add_region(region);
         }
-        state.add_region(fallback_region);
 
         parser.parse_optional_attribute_dict(&mut state.attrs)?;
         parser.parse_colon_type_list(&mut state.results)?;

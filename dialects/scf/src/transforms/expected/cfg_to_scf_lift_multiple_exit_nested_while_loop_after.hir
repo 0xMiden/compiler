@@ -34,7 +34,7 @@ builtin.function public extern("C") @cfg_to_scf_lift_multiple_exit_nested_while_
             } after {
             ^block32(%192: u32, %193: u32, %194: u32, %195: u32, %196: u32, %197: u32, %198: u32):
                 scf.yield %192, %193 : (u32, u32);
-            } : (u32, u32);
+            } : (u32, u32) -> (u32, u32, u32, u32, u32, u32, u32);
             %115, %116, %117, %118 = scf.index_switch %189 
             case 1 {
                 scf.yield %186, %186, %187, %188 : (u32, u32, u32, u32);
@@ -52,11 +52,11 @@ builtin.function public extern("C") @cfg_to_scf_lift_multiple_exit_nested_while_
     } after {
     ^block28(%149: u32, %150: u32, %151: u32, %152: u32):
         scf.yield %149, %150 : (u32, u32);
-    } : (u32, u32);
+    } : (u32, u32) -> (u32, u32, u32, u32);
     %200 = arith.eq %146, %26;
     cf.cond_br %200 ^block7, ^block4 : (i1);
 ^block4:
     builtin.ret %145 : (u32);
 ^block7:
-    builtin.ret_imm #builtin.number<4294967295>;
+    builtin.ret_imm 4294967295 : u32;
 };

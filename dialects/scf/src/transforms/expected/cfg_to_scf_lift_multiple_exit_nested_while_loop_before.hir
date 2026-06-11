@@ -25,5 +25,5 @@ builtin.function public extern("C") @cfg_to_scf_lift_multiple_exit_nested_while_
     %11 = arith.incr %3;
     cf.br ^block1:(%11, %6);
 ^block7:
-    builtin.ret_imm #builtin.number<4294967295>;
+    builtin.ret_imm 4294967295 : u32;
 };
