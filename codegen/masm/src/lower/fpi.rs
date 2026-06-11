@@ -179,9 +179,8 @@ mod tests {
         let span = function_ref.span();
         let exec = {
             let mut builder = test.function_builder();
-            let prefix_locals = (0..hir::ExecFpi::PREFIX_FELTS)
-                .map(|_| builder.alloc_local(Type::Felt))
-                .collect::<Vec<_>>();
+            let prefix_locals: [LocalVariable; hir::ExecFpi::PREFIX_FELTS] =
+                core::array::from_fn(|_| builder.alloc_local(Type::Felt));
             let entry = builder.entry_block();
             let args = {
                 let entry = entry.borrow();

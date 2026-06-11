@@ -930,17 +930,16 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     /// order (account id suffix, account id prefix, procedure root felts), stored to before this
     /// op; `inputs` are the flattened procedure input felts (at most
     /// [`crate::ops::ExecFpi::MAX_INPUT_FELTS`]).
-    fn exec_fpi<L, A>(
+    fn exec_fpi<A>(
         &mut self,
-        prefix_locals: L,
+        prefix_locals: [LocalVariable; crate::ops::ExecFpi::PREFIX_FELTS],
         inputs: A,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ExecFpi>, Report>
     where
-        L: IntoIterator<Item = LocalVariable>,
         A: IntoIterator<Item = ValueRef>,
     {
-        let prefix_locals = Array::from_iter(prefix_locals);
+        let prefix_locals = Array::from(prefix_locals);
         let op_builder = self.builder_mut().create::<crate::ops::ExecFpi, (_, A)>(span);
         op_builder(prefix_locals, inputs)
     }

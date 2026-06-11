@@ -8,7 +8,7 @@ use midenc_session::diagnostics::Report;
 
 use super::{stdlib, tx_kernel};
 use crate::{
-    component::lower_imports::store_fpi_prefix_locals, error::WasmResult,
+    error::WasmResult, fpi::store_fpi_prefix_locals,
     module::function_builder_ext::FunctionBuilderExt,
 };
 
