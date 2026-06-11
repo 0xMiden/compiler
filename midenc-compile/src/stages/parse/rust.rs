@@ -243,8 +243,11 @@ trim-paths = [\"diagnostics\", \"object\"]
     let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
 
     let mut cargo = std::process::Command::new(cargo_path);
-    // Ensure we specify the nightly toolchain if a specific cargo wasn't set
-    if cargo_env.is_none() {
+    // Ensure we specify the nightly toolchain if a specific cargo wasn't set. An inherited
+    // RUSTUP_TOOLCHAIN (e.g. from the rust-toolchain.toml override of the invoking project) takes
+    // precedence: forcing the generic `nightly` channel would bypass that pin, and the build
+    // below runs from a temporary directory where directory-based overrides do not apply.
+    if cargo_env.is_none() && std::env::var_os("RUSTUP_TOOLCHAIN").is_none() {
         cargo.arg("+nightly");
     }
     cargo.env("RUSTFLAGS", rustflags);
