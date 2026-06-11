@@ -181,7 +181,7 @@ pub fn expand_auth_script(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     if !attr.is_empty() {
-        return syn::Error::new(Span2::call_site(), "this attribute does not accept arguments")
+        return syn::Error::new(Span2::call_site(), "#[auth_script] does not accept arguments")
             .into_compile_error()
             .into();
     }

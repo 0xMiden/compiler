@@ -85,6 +85,10 @@ mod wit_world;
 /// the interface name) and to the matching `impl Trait for Storage` block (the behavior). Storage
 /// lives on a separate `#[component_storage]` struct.
 ///
+/// Both the trait and the implementation block must carry `#[component]`. A missing trait
+/// annotation surfaces as a missing-item error naming `__MIDEN_COMPONENT_TRAIT_MARKER` — a hidden
+/// associated constant the trait expansion injects and the implementation expansion checks for.
+///
 /// **NOTE:** Mark each type used in an exported method with the `#[export_type]` attribute macro.
 ///
 /// # Foreign Procedure Invocation (FPI)
