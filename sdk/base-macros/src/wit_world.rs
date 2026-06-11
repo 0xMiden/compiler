@@ -606,11 +606,24 @@ world basic-wallet-world {
 }
 "#;
 
-    fn basic_wallet_fixture_root() -> PathBuf {
-        let unique = SystemTime::now()
+    /// Returns a fixture directory name unique across both threads and test processes: a bare
+    /// timestamp can collide when parallel tests hit the same clock tick, causing one test to
+    /// observe (or remove) another's fixture tree.
+    fn unique_fixture_suffix() -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("system time must be after unix epoch")
             .as_nanos();
+        let pid = std::process::id();
+        let count = COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("{pid}-{nanos}-{count}")
+    }
+
+    fn basic_wallet_fixture_root() -> PathBuf {
+        let unique = unique_fixture_suffix();
         let root = std::env::temp_dir().join(format!("miden-base-macros-wit-world-{unique}"));
         let generated_wit_dir = root.join("target/generated-wit");
         fs::create_dir_all(&generated_wit_dir).expect("generated-wit directory must be created");
@@ -620,10 +633,7 @@ world basic-wallet-world {
     }
 
     fn empty_fixture_root() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time must be after unix epoch")
-            .as_nanos();
+        let unique = unique_fixture_suffix();
         let root = std::env::temp_dir().join(format!("miden-base-macros-empty-wit-world-{unique}"));
         fs::create_dir_all(&root).expect("empty fixture directory must be created");
         root
