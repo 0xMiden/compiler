@@ -1,24 +1,19 @@
 use midenc_dialect_arith::ArithOpBuilder;
-use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    Builder, Immediate, Op, OpExt, PointerType, SourceSpan, SymbolNameComponent, SymbolPath, Type,
-    ValueRef,
-    dialects::builtin::{
-        FunctionRef,
-        attributes::{TypeArrayAttr, U32ArrayAttr},
-    },
-    interner::symbols,
+    AddressSpace, Builder, Immediate, Op, PointerType, SourceSpan, SymbolNameComponent, SymbolPath,
+    Type, ValueRef, dialects::builtin::FunctionRef, interner::symbols,
 };
 use midenc_session::diagnostics::Report;
 
 use super::{stdlib, tx_kernel};
 use crate::{
-    FPI_FLATTENED_ARG_OFFSETS_ATTR, FPI_FLATTENED_ARG_TYPES_ATTR, error::WasmResult,
+    component::lower_imports::store_fpi_prefix_locals, error::WasmResult,
     module::function_builder_ext::FunctionBuilderExt,
 };
 
-const RAW_FPI_FLATTENED_ARG_COUNT: u32 = 22;
-const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = RAW_FPI_FLATTENED_ARG_COUNT as usize;
+const RAW_FPI_FLATTENED_ARG_COUNT: u32 = ExecFpi::EXECUTOR_INPUT_FELTS as u32;
+const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = ExecFpi::EXECUTOR_INPUT_FELTS;
 
 /// The strategy to use for transforming a function call
 enum TransformStrategy {
@@ -26,7 +21,7 @@ enum TransformStrategy {
     ListReturn,
     /// The Miden ABI function returns on the stack and we want to return via a pointer argument
     ReturnViaPointer,
-    /// The Miden ABI function is the compiler-internal indirect FPI executor.
+    /// The import is the raw FPI binding, which passes the executor ABI through one pointer.
     FpiIndirectReturnViaPointer,
     /// No transformation needed
     NoTransform,
@@ -352,7 +347,11 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     Ok(Vec::new())
 }
 
-/// The indirect FPI executor returns felts on the stack and needs its input layout attributes set.
+/// The raw FPI executor passes the full felt-only executor ABI through one invocation pointer.
+///
+/// The generated stub reloads the 22 invocation felts from memory, stores the 6-felt prefix into
+/// function locals, and emits the same `hir.exec_fpi` form used by typed FPI imports, so raw FPI
+/// calls reach the backend with no special shape.
 pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
     args: &[ValueRef],
@@ -364,23 +363,33 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
             "indirect FPI return strategy expects one input tuple pointer and one output pointer",
         ));
     };
-    if args_wo_pointer.len() != 1 {
+    let [invocation_ptr] = *args_wo_pointer else {
         return Err(Report::msg(format!(
             "indirect FPI return strategy expects exactly one input tuple pointer before the \
              output pointer, but received {} input operands",
             args_wo_pointer.len()
         )));
+    };
+
+    // The Rust binding stores the invocation as 22 consecutive felts: account id prefix, account
+    // id suffix, the procedure root word, and the 16 padded procedure input felts.
+    let felt_ptr_ty =
+        Type::from(PointerType::new_with_address_space(Type::Felt, AddressSpace::Byte));
+    let mut fpi_args = Vec::with_capacity(RAW_FPI_FLATTENED_ARG_COUNT_USIZE);
+    for index in 0..RAW_FPI_FLATTENED_ARG_COUNT {
+        let addr = if index == 0 {
+            invocation_ptr
+        } else {
+            let byte_offset = builder.i32((index * 4) as i32, span);
+            builder.add_unchecked(invocation_ptr, byte_offset, span)?
+        };
+        let typed_ptr = builder.inttoptr(addr, felt_ptr_ty.clone(), span)?;
+        fpi_args.push(builder.load(typed_ptr, span)?);
     }
-    let signature = import_func_ref.borrow().get_signature().clone();
-    let mut exec = builder.exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)?;
-    let context = import_func_ref.borrow().as_operation().context_rc();
-    let offsets_attr = context.create_attribute::<U32ArrayAttr, _>(
-        (0..RAW_FPI_FLATTENED_ARG_COUNT).map(|index| index * 4).collect::<Vec<_>>(),
-    );
-    exec.borrow_mut().set_attribute(FPI_FLATTENED_ARG_OFFSETS_ATTR, offsets_attr);
-    let types_attr = context
-        .create_attribute::<TypeArrayAttr, _>(vec![Type::Felt; RAW_FPI_FLATTENED_ARG_COUNT_USIZE]);
-    exec.borrow_mut().set_attribute(FPI_FLATTENED_ARG_TYPES_ATTR, types_attr);
+
+    let prefix_locals = store_fpi_prefix_locals(builder, &fpi_args[..ExecFpi::PREFIX_FELTS], span)?;
+    let procedure_inputs = fpi_args[ExecFpi::PREFIX_FELTS..].iter().copied();
+    let exec = builder.exec_fpi(prefix_locals, procedure_inputs, span)?;
 
     let borrow = exec.borrow();
     let results_storage = borrow.results();

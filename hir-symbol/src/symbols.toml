@@ -129,6 +129,7 @@ output_note = {}
 faucet = {}
 falcon512_poseidon2 = {}
 tx = {}
+execute_foreign_procedure = {}
 poseidon2 = {}
 collections = {}
 smt = {}

@@ -14,7 +14,7 @@ use midenc_hir::{
 use midenc_session::diagnostics::{Report, Severity, Spanned};
 use smallvec::smallvec;
 
-use super::{fpi, *};
+use super::*;
 use crate::{
     Constraint, emit::OpEmitter, emitter::BlockEmitter, masm, opt::operands::SolverOptions,
 };
@@ -937,57 +937,8 @@ impl HirLowering for arith::Sext {
 }
 
 impl HirLowering for hir::Exec {
-    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let op = self.as_operation();
-        let args = self.required_operands();
-        if args.is_empty() {
-            return Ok(());
-        }
-
-        // FPI calls target `execute_foreign_procedure`, whose protocol ABI always expects 22
-        // inputs. The frontend passes only the real operands so the generic scheduler does not have
-        // to solve a 22-operand call; we synthesize the unused zero slots here after those operands
-        // are scheduled.
-        let is_fpi = fpi::is_execute_foreign_procedure_path(self.callee().path());
-        let actual_arg_count = args.len();
-        if is_fpi {
-            fpi::validate_direct_operand_count(actual_arg_count)?;
-        }
-
-        let constraints = emitter.constraints_for(op, &args);
-        let args = args.into_smallvec();
-        emitter
-            .schedule_operands(
-                &args,
-                &constraints,
-                op.span(),
-                SolverOptions {
-                    strict: true,
-                    ..Default::default()
-                },
-            )
-            .unwrap_or_else(|err| {
-                panic!(
-                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
-                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                    op.name(),
-                    &emitter.stack,
-                )
-            });
-
-        if is_fpi {
-            fpi::append_padding(emitter, self, actual_arg_count, self.span())?;
-        }
-
-        Ok(())
-    }
-
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};
-
-        if fpi::is_execute_foreign_procedure_indirect_path(self.callee().path()) {
-            return fpi::emit_indirect(self, emitter);
-        }
 
         let callee = self.resolve().ok_or_else(|| {
             let context = self.as_operation().context();

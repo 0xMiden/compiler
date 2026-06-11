@@ -3,10 +3,8 @@ use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use miden_core::operations::DebugVarLocation;
-use midenc_dialect_hir as hir;
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, Operation, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
-    WalkResult,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{
         builtin,
@@ -643,22 +641,6 @@ struct MasmFunctionBuilder {
     num_locals: u16,
 }
 
-/// Returns true when lowering this function needs one backend scratch local for FPI padding.
-fn function_requires_fpi_padding_scratch(function: &builtin::Function) -> bool {
-    function
-        .as_operation()
-        .prewalk(|op: &Operation| -> WalkResult<(), ()> {
-            let needs_scratch =
-                op.downcast_ref::<hir::Exec>().is_some_and(super::fpi::requires_padding_scratch);
-            if needs_scratch {
-                WalkResult::Break(())
-            } else {
-                WalkResult::Continue(())
-            }
-        })
-        .was_interrupted()
-}
-
 impl MasmFunctionBuilder {
     pub fn new(function: &builtin::Function) -> Result<Self, Report> {
         use midenc_hir::{Symbol, Visibility};
@@ -675,7 +657,7 @@ impl MasmFunctionBuilder {
             Visibility::Private => masm::Visibility::Private,
         };
         let locals_required = function.locals().iter().map(|ty| ty.size_in_felts()).sum::<usize>();
-        let mut num_locals = u16::try_from(locals_required).map_err(|_| {
+        let num_locals = u16::try_from(locals_required).map_err(|_| {
             let context = function.as_operation().context();
             context
                 .diagnostics()
@@ -688,21 +670,6 @@ impl MasmFunctionBuilder {
                 )
                 .into_report()
         })?;
-        if function_requires_fpi_padding_scratch(function) {
-            num_locals = num_locals.checked_add(1).ok_or_else(|| {
-                let context = function.as_operation().context();
-                context
-                    .diagnostics()
-                    .diagnostic(miden_assembly::diagnostics::Severity::Error)
-                    .with_message("cannot emit masm for function")
-                    .with_primary_label(
-                        function.span(),
-                        "local storage exceeds procedure limit after reserving an FPI padding \
-                         scratch slot",
-                    )
-                    .into_report()
-            })?;
-        }
 
         let sig = function.signature();
         let args = sig.params.iter().map(|param| masm::TypeExpr::from(param.ty.clone())).collect();

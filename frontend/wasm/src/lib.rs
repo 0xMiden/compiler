@@ -34,11 +34,6 @@ use wasmparser::WasmFeatures;
 pub use self::emit::wasm_to_wat;
 pub use self::{config::*, emit::WatEmit, error::WasmError};
 
-/// HIR exec-op attribute storing byte offsets for flattened indirect FPI arguments.
-pub(crate) const FPI_FLATTENED_ARG_OFFSETS_ATTR: &str = "fpi.flattened_arg_offsets";
-/// HIR exec-op attribute storing load types for flattened indirect FPI arguments.
-pub(crate) const FPI_FLATTENED_ARG_TYPES_ATTR: &str = "fpi.flattened_arg_types";
-
 /// The output of the frontend Wasm translation stage
 pub struct FrontendOutput {
     /// The IR component translated from the Wasm

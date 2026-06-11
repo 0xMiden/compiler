@@ -1,7 +1,12 @@
 use alloc::format;
 
 use midenc_hir::{
-    derive::operation, dialects::builtin::attributes::SignatureAttr, print::AsmPrinter, traits::*,
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::{LocalVariableArrayAttr, SignatureAttr},
+    effects::*,
+    interner::symbols,
+    print::AsmPrinter,
+    traits::*,
     *,
 };
 
@@ -121,6 +126,90 @@ impl OpParser for Exec {
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
 
         state.operands.push(operand_values);
+
+        Ok(())
+    }
+}
+
+/// Invoke a foreign account procedure via the transaction kernel FPI executor.
+///
+/// This op is the canonical HIR form of a foreign procedure invocation, targeting
+/// `miden::protocol::tx::execute_foreign_procedure`. Its operands are the flattened procedure
+/// input felts (at most [`ExecFpi::MAX_INPUT_FELTS`]), while `prefix_locals` references the six
+/// function locals holding the executor prefix in protocol order: account id suffix, account id
+/// prefix, and the four procedure root felts. The locals must be stored before this op executes.
+///
+/// Keeping the prefix in locals means lowering only ever schedules the procedure inputs on the
+/// operand stack: it pads them with zeroes to [`ExecFpi::MAX_INPUT_FELTS`], then loads the six
+/// locals on top to form the full [`ExecFpi::EXECUTOR_INPUT_FELTS`]-felt executor ABI without any
+/// stack shuffling beyond the addressable 16-element window.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct ExecFpi {
+    #[attr]
+    prefix_locals: LocalVariableArrayAttr,
+    #[operands]
+    inputs: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+impl ExecFpi {
+    /// Total number of felt operands expected by the executor.
+    pub const EXECUTOR_INPUT_FELTS: usize = Self::PREFIX_FELTS + Self::MAX_INPUT_FELTS;
+    /// Number of felts returned by the executor, one per procedure input slot.
+    pub const EXECUTOR_RESULT_FELTS: usize = 16;
+    /// Maximum number of flattened procedure input felts accepted by the executor.
+    pub const MAX_INPUT_FELTS: usize = 16;
+    /// Number of executor prefix felts referenced by `prefix_locals`.
+    pub const PREFIX_FELTS: usize = 6;
+
+    /// Returns the symbol path of the transaction kernel FPI executor.
+    pub fn executor_symbol_path() -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(symbols::Miden),
+            SymbolNameComponent::Component(symbols::Protocol),
+            SymbolNameComponent::Component(symbols::Tx),
+            SymbolNameComponent::Leaf(symbols::ExecuteForeignProcedure),
+        ])
+    }
+}
+
+impl InferTypeOpInterface for ExecFpi {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        if self.inputs().len() > Self::MAX_INPUT_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_fpi: expected at most {} procedure input operand(s), but got {}",
+                Self::MAX_INPUT_FELTS,
+                self.inputs().len()
+            )));
+        }
+
+        let num_prefix_locals = self.get_prefix_locals().len();
+        if num_prefix_locals != Self::PREFIX_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_fpi: expected {} prefix local(s), but got {num_prefix_locals}",
+                Self::PREFIX_FELTS,
+            )));
+        }
+
+        if self.op.results.is_empty() {
+            let span = self.span();
+            let owner = self.as_operation_ref();
+            for i in 0..Self::EXECUTOR_RESULT_FELTS {
+                let value = context.make_result(span, Type::Felt, owner, i as u8);
+                self.op.results.push(value);
+            }
+        } else {
+            for result in self.op.results.iter_mut() {
+                result.borrow_mut().set_type(Type::Felt);
+            }
+        }
 
         Ok(())
     }

@@ -1,15 +1,16 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, FxHashMap, Op, OperationName, OperationRef, ProgramPoint,
-    RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Symbol, TraceTarget, ValueRef,
+    Backward, CallOpInterface, EntityMut, FxHashMap, FxHashSet, Op, OperationName, OperationRef,
+    ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Symbol,
+    TraceTarget, ValueRef,
     dialects::builtin::{Function, attributes::LocalVariable},
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
 };
 
-use crate::{LoadLocal, StoreLocal};
+use crate::{ExecFpi, LoadLocal, StoreLocal};
 
 #[derive(Default)]
 pub struct Local2Reg;
@@ -86,8 +87,14 @@ impl Pass for Local2Reg {
         let mut loaded = FxHashMap::<LocalVariable, SmallVec<[OperationRef; 2]>>::default();
         let mut stored =
             FxHashMap::<LocalVariable, SmallVec<[(OperationRef, ValueRef); 2]>>::default();
+        // Locals whose values are read through op attributes rather than `LoadLocal`; their
+        // stores are live even though no load op refers to them, and they cannot be promoted.
+        let mut pinned = FxHashSet::<LocalVariable>::default();
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
             let operation = op.borrow();
+            if let Some(exec_fpi) = operation.downcast_ref::<ExecFpi>() {
+                pinned.extend(exec_fpi.get_prefix_locals().iter().copied());
+            }
             if let Some(load) = operation.downcast_ref::<LoadLocal>() {
                 let local = *load.get_local();
                 log::trace!(
@@ -112,6 +119,14 @@ impl Pass for Local2Reg {
 
         let mut changed = PostPassStatus::Unchanged;
         'next_local: for local in locals {
+            if pinned.contains(&local) {
+                log::trace!(
+                    target: &trace_target,
+                    sym = trace_target.relevant_symbol();
+                    "ignoring {local}: read through an op attribute",
+                );
+                continue;
+            }
             if let Some(loads) = loaded.get(&local) {
                 if loads.len() > 1 {
                     // Ignore locals that are loaded multiple times for now

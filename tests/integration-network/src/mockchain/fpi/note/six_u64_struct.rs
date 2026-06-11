@@ -2,9 +2,12 @@
 
 use super::super::common::build_fpi_test_packages;
 
-/// Rejects FPI signatures whose direct canonical form expands past the direct stack window.
+/// Rejects FPI signatures whose direct wrapper call would not fit on the operand stack.
+///
+/// The record expands to 20 operand stack felts (6 prefix felts, six double-felt `u64` fields,
+/// one felt, and the canonical ABI output pointer), which no MASM call can pass at once.
 #[test]
-#[should_panic(expected = "direct FPI lowering supports at most 16")]
+#[should_panic(expected = "direct FPI calls support at most 16")]
 pub fn six_u64_struct_rejects_direct_width() {
     let _ =
         build_fpi_test_packages("six_u64_struct", COUNTER_CONTRACT_SOURCE, COUNTER_CALLER_SOURCE);

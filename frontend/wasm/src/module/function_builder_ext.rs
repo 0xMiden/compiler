@@ -548,6 +548,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         self.func_ctx.borrow().locals[&var]
     }
 
+    /// Allocates a function-local storage slot of the given type, without binding it to an SSA
+    /// variable.
+    pub fn alloc_local(&mut self, ty: Type) -> LocalVariable {
+        self.inner.alloc_local(ty)
+    }
+
     pub fn declare_local(&mut self, var: Variable, ty: Type) -> LocalVariable {
         let mut ctx = self.func_ctx.borrow_mut();
         assert_eq!(

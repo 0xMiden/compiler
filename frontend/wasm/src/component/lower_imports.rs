@@ -5,16 +5,15 @@ use core::cell::RefCell;
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    AsValueRange, Builder, CallConv, FunctionType, Op, OpExt, SourceSpan, SymbolNameComponent,
-    SymbolPath, Type, ValueRef, Visibility,
+    AddressSpace, AsValueRange, Builder, FunctionType, Op, PointerType, SourceSpan, SymbolPath,
+    Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ComponentId, FunctionRef, ModuleBuilder, WorldBuilder,
-        attributes::{Signature, TypeArrayAttr, U32ArrayAttr},
+        BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
+        attributes::{LocalVariable, Signature},
     },
-    interner::Symbol,
 };
 
 use super::{
@@ -25,21 +24,23 @@ use super::{
     },
 };
 use crate::{
-    FPI_FLATTENED_ARG_OFFSETS_ATTR, FPI_FLATTENED_ARG_TYPES_ATTR,
     callable::CallableFunction,
     error::WasmResult,
-    miden_abi::tx_kernel::tx,
     module::function_builder_ext::{
         FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
     },
 };
 
 const FPI_IMPORT_PREFIX: &str = "fpi-";
-const FPI_ABI_PREFIX_ARGS: usize = 6;
-const FPI_DIRECT_MAX_FLAT_PARAMS: usize = 16;
-const FPI_EXEC_INPUTS: usize = 16;
-const FPI_EXEC_TOTAL_INPUTS: usize = FPI_ABI_PREFIX_ARGS + FPI_EXEC_INPUTS;
-const FPI_EXEC_RESULTS: usize = 16;
+const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
+const FPI_EXEC_INPUTS: usize = ExecFpi::MAX_INPUT_FELTS;
+const FPI_EXEC_RESULTS: usize = ExecFpi::EXECUTOR_RESULT_FELTS;
+/// Maximum operand stack felts a direct FPI wrapper call may require.
+///
+/// Calls pass all their operands on the MASM operand stack, whose directly addressable window is
+/// 16 elements, so the generated wrapper cannot be invoked with more than 16 felts of flattened
+/// parameters (including the canonical ABI output pointer, when present).
+const FPI_DIRECT_MAX_STACK_FELTS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
 const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
 
@@ -90,7 +91,6 @@ pub fn generate_import_lowering_function(
 
     if is_fpi_import(&import_func_path, import_func_ty)? {
         return generate_fpi_lowering(
-            world_builder,
             import_func_ty,
             &import_lowered_sig,
             core_func_path,
@@ -133,7 +133,6 @@ pub fn generate_import_lowering_function(
 /// Generates a lowering function for FPI imports backed by `execute_foreign_procedure`.
 #[allow(clippy::too_many_arguments)]
 fn generate_fpi_lowering(
-    world_builder: &mut WorldBuilder,
     import_func_ty: &FunctionType,
     import_lowered_sig: &Signature,
     core_func_path: SymbolPath,
@@ -143,7 +142,7 @@ fn generate_fpi_lowering(
     args: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
-    let context = world_builder.context_rc();
+    let context = core_func_ref.borrow().as_operation().context_rc();
     validate_fpi_typed_signature(&core_func_path, import_func_ty)?;
     let fpi_abi =
         lower_fpi_canonical_args(&context, import_func_ty, import_lowered_sig, fb, args, span)
@@ -152,45 +151,10 @@ fn generate_fpi_lowering(
             })?;
     validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)?;
 
-    let exec = match &fpi_abi.args {
-        FpiExecArgs::Direct(fpi_args) => {
-            let exec_func_ref = declare_execute_foreign_procedure(world_builder)?;
-
-            let mut exec_args = Vec::with_capacity(FPI_EXEC_TOTAL_INPUTS);
-            let account_id_prefix = fpi_args[0];
-            let account_id_suffix = fpi_args[1];
-            let foreign_proc_root = &fpi_args[2..6];
-            let procedure_inputs = &fpi_args[FPI_ABI_PREFIX_ARGS..];
-
-            exec_args.push(account_id_suffix);
-            exec_args.push(account_id_prefix);
-            exec_args.extend(foreign_proc_root.iter().copied());
-            exec_args.extend(procedure_inputs.iter().copied());
-
-            let exec_sig = Signature::with_convention(
-                &context,
-                CallConv::Wasm,
-                vec![Type::Felt; exec_args.len()],
-                vec![Type::Felt; FPI_EXEC_RESULTS],
-            );
-            fb.exec(exec_func_ref, exec_sig, exec_args, span)?
-        }
-        FpiExecArgs::Indirect { arg_ptr, layout } => {
-            let exec_func_ref = declare_execute_foreign_procedure_indirect(world_builder)?;
-            let exec_sig = Signature::with_convention(
-                &context,
-                CallConv::Wasm,
-                vec![arg_ptr.borrow().ty().clone()],
-                vec![Type::Felt; FPI_EXEC_RESULTS],
-            );
-            let mut exec = fb.exec(exec_func_ref, exec_sig, [*arg_ptr], span)?;
-            let offsets_attr = context.create_attribute::<U32ArrayAttr, _>(layout.offsets.clone());
-            exec.borrow_mut().set_attribute(FPI_FLATTENED_ARG_OFFSETS_ATTR, offsets_attr);
-            let types_attr = context.create_attribute::<TypeArrayAttr, _>(layout.types.clone());
-            exec.borrow_mut().set_attribute(FPI_FLATTENED_ARG_TYPES_ATTR, types_attr);
-            exec
-        }
-    };
+    let prefix_locals =
+        store_fpi_prefix_locals(fb, &fpi_abi.fpi_args[..FPI_ABI_PREFIX_ARGS], span)?;
+    let procedure_inputs = fpi_abi.fpi_args[FPI_ABI_PREFIX_ARGS..].iter().copied();
+    let exec = fb.exec_fpi(prefix_locals, procedure_inputs, span)?;
     let results: Vec<ValueRef> = {
         let borrow = exec.borrow();
         borrow.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
@@ -224,45 +188,40 @@ fn generate_fpi_lowering(
 
 /// Lowered arguments for an FPI import after accounting for canonical ABI pointers.
 struct LoweredFpiAbi {
-    /// Arguments to pass to the protocol executor.
-    args: FpiExecArgs,
+    /// Felt-only protocol arguments: the 6 wrapper-order prefix felts (account id prefix, account
+    /// id suffix, procedure root), followed by the flattened procedure input felts.
+    fpi_args: Vec<ValueRef>,
     /// Optional canonical ABI pointer where multi-felt results must be stored.
     output_ptr: Option<ValueRef>,
-    /// Canonical ABI flat parameters for the import function.
-    flattened_params: Vec<AbiParam>,
     /// Canonical ABI flat results for the import function.
     flattened_results: Vec<AbiParam>,
 }
 
-/// Protocol executor argument source for an FPI import.
-enum FpiExecArgs {
-    /// Fully flattened FPI arguments: account id prefix, account id suffix, root word, then inputs.
-    Direct(Vec<ValueRef>),
-    /// Canonical ABI argument tuple pointer plus its flattened value layout.
-    ///
-    /// This is still limited by the FPI protocol's 16 procedure input felts; the pointer exists
-    /// because canonical ABI lowers calls with more than 16 flattened parameters through memory.
-    Indirect {
-        /// Pointer to the canonical ABI argument tuple.
-        arg_ptr: ValueRef,
-        /// Canonical tuple load layout for the flattened FPI arguments.
-        layout: FpiFlatArgLayout,
-    },
-}
+/// Stores the wrapper-order FPI prefix felts into freshly allocated felt locals.
+///
+/// `prefix_felts` is the wrapper-order prefix (account id prefix, account id suffix, procedure
+/// root felts), while the returned locals are in executor operand order (account id suffix,
+/// account id prefix, procedure root felts), ready to be referenced by `hir.exec_fpi`.
+pub(crate) fn store_fpi_prefix_locals<B: ?Sized + Builder>(
+    fb: &mut FunctionBuilderExt<'_, B>,
+    prefix_felts: &[ValueRef],
+    span: SourceSpan,
+) -> WasmResult<[LocalVariable; ExecFpi::PREFIX_FELTS]> {
+    let &[account_id_prefix, account_id_suffix, root0, root1, root2, root3] = prefix_felts else {
+        return Err(midenc_session::diagnostics::Report::msg(format!(
+            "FPI lowering expected {} prefix felts, but received {}",
+            ExecFpi::PREFIX_FELTS,
+            prefix_felts.len()
+        )));
+    };
 
-/// Canonical tuple memory layout for flattened indirect FPI arguments.
-struct FpiFlatArgLayout {
-    /// Byte offsets, relative to the canonical ABI tuple pointer, for each flattened FPI argument.
-    offsets: Vec<u32>,
-    /// Types to load at each flattened FPI argument offset.
-    types: Vec<Type>,
-}
-
-impl FpiFlatArgLayout {
-    /// Returns the number of flattened FPI arguments described by this layout.
-    fn len(&self) -> usize {
-        self.types.len()
+    let executor_order = [account_id_suffix, account_id_prefix, root0, root1, root2, root3];
+    let mut prefix_locals = [LocalVariable::default(); ExecFpi::PREFIX_FELTS];
+    for (local, value) in prefix_locals.iter_mut().zip(executor_order) {
+        *local = fb.alloc_local(Type::Felt);
+        fb.store_local(*local, value, span)?;
     }
+    Ok(prefix_locals)
 }
 
 /// Validates that a typed FPI import signature contains only self-contained value types.
@@ -358,8 +317,8 @@ fn lower_fpi_canonical_args(
 ) -> WasmResult<LoweredFpiAbi> {
     let flattened_params = flatten_types(context, &import_func_ty.params)?;
     let flattened_results = flatten_types(context, &import_func_ty.results)?;
-    // Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
-    // MASM backend reloads that tuple and still emits the fixed-width felt-only FPI executor call.
+    // Canonical ABI passes more than 16 flattened parameters indirectly through one pointer; the
+    // generated wrapper reloads that tuple so every FPI call lowers to the same felt-only form.
     let has_arg_ptr = flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS;
     let has_output_ptr = flattened_results.len() > CANONICAL_ABI_MAX_FLAT_RESULTS;
 
@@ -381,6 +340,21 @@ fn lower_fpi_canonical_args(
             "FPI import with more than 16 flattened params must lower to an argument pointer",
         ));
     }
+    if !has_arg_ptr {
+        // The generated wrapper receives all its parameters on the operand stack, so the direct
+        // call shape is limited by the stack's addressable window, independent of the FPI
+        // protocol's own input limit.
+        let stack_felts =
+            flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
+                + usize::from(has_output_ptr);
+        if stack_felts > FPI_DIRECT_MAX_STACK_FELTS {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import lowers to {stack_felts} operand stack felts after expanding 64-bit \
+                 values and result pointers, but direct FPI calls support at most \
+                 {FPI_DIRECT_MAX_STACK_FELTS}"
+            )));
+        }
+    }
     if has_output_ptr {
         let output_param = &import_lowered_sig.params()[expected_params - 1];
         if !output_param.ty.is_pointer() {
@@ -399,29 +373,20 @@ fn lower_fpi_canonical_args(
     } else {
         None
     };
-    let args = if has_arg_ptr {
+    let fpi_args = if has_arg_ptr {
         let arg_ptr = *args.first().ok_or_else(|| {
             midenc_session::diagnostics::Report::msg(
                 "FPI import with more than 16 flattened params did not receive an argument pointer",
             )
         })?;
-        FpiExecArgs::Indirect {
-            arg_ptr,
-            layout: fpi_flat_arg_layout(&import_func_ty.params)?,
-        }
+        lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.params, span)?
     } else {
-        FpiExecArgs::Direct(lower_fpi_direct_args(
-            fb,
-            &flattened_params,
-            &args[..flattened_params.len()],
-            span,
-        )?)
+        lower_fpi_direct_args(fb, &flattened_params, &args[..flattened_params.len()], span)?
     };
 
     Ok(LoweredFpiAbi {
-        args,
+        fpi_args,
         output_ptr,
-        flattened_params,
         flattened_results,
     })
 }
@@ -446,6 +411,58 @@ fn lower_fpi_direct_args(
         push_fpi_arg_felts(fb, &param.ty, *arg, &mut fpi_args, span)?;
     }
     Ok(fpi_args)
+}
+
+/// Loads the felt-only protocol argument list from a canonical ABI argument tuple pointer.
+///
+/// Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
+/// generated wrapper reloads every flattened value here, so all FPI calls reach the backend in
+/// the same direct, felt-only form.
+fn lower_fpi_indirect_args(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    arg_ptr: ValueRef,
+    params: &[Type],
+    span: SourceSpan,
+) -> WasmResult<Vec<ValueRef>> {
+    let mut fpi_args = Vec::new();
+    for entry in flattened_types_layout(params)? {
+        let value = load_fpi_tuple_value(fb, arg_ptr, entry.offset, &entry.ty, span)?;
+        push_fpi_arg_felts(fb, &entry.ty, value, &mut fpi_args, span)?;
+    }
+    Ok(fpi_args)
+}
+
+/// Loads one canonical ABI tuple value and converts it to its flattened core form.
+fn load_fpi_tuple_value(
+    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
+    arg_ptr: ValueRef,
+    byte_offset: u32,
+    ty: &Type,
+    span: SourceSpan,
+) -> WasmResult<ValueRef> {
+    let addr = if byte_offset == 0 {
+        arg_ptr
+    } else {
+        let byte_offset = i32::try_from(byte_offset).map_err(|_| {
+            midenc_session::diagnostics::Report::msg(format!(
+                "FPI argument layout contains byte offset {byte_offset}, which does not fit in i32"
+            ))
+        })?;
+        let byte_offset = fb.i32(byte_offset, span);
+        fb.add_unchecked(arg_ptr, byte_offset, span)?
+    };
+    let ptr_ty = Type::from(PointerType::new_with_address_space(ty.clone(), AddressSpace::Byte));
+    let typed_ptr = fb.inttoptr(addr, ptr_ty, span)?;
+    let value = fb.load(typed_ptr, span)?;
+
+    // Narrow integers are stored in their memory width; extend them to the 32-bit form canonical
+    // ABI flattening produces, so the felt conversion sees the correct value (signed values must
+    // be sign-extended).
+    match ty {
+        Type::I8 | Type::I16 => Ok(fb.sext(value, Type::I32, span)?),
+        Type::I1 | Type::U8 | Type::U16 => Ok(fb.zext(value, Type::U32, span)?),
+        _ => Ok(value),
+    }
 }
 
 /// Appends the FPI felt representation for one canonical ABI flat value.
@@ -553,64 +570,6 @@ fn fpi_flat_type_felt_count(ty: &Type) -> WasmResult<usize> {
                 "unsupported flattened FPI value type `{other}`"
             )));
         }
-    })
-}
-
-/// Returns the canonical ABI tuple layout for flattened FPI argument values.
-fn fpi_flat_arg_layout(params: &[Type]) -> WasmResult<FpiFlatArgLayout> {
-    let mut layout = FpiFlatArgLayout {
-        offsets: Vec::new(),
-        types: Vec::new(),
-    };
-
-    for entry in flattened_types_layout(params)? {
-        push_fpi_flat_arg_layout_entry(entry.offset, &entry.ty, &mut layout)?;
-    }
-
-    Ok(layout)
-}
-
-/// Appends the FPI protocol layout for one canonical ABI flattened memory value.
-fn push_fpi_flat_arg_layout_entry(
-    offset: u32,
-    ty: &Type,
-    layout: &mut FpiFlatArgLayout,
-) -> WasmResult<()> {
-    match ty {
-        Type::I1
-        | Type::I8
-        | Type::U8
-        | Type::I16
-        | Type::U16
-        | Type::I32
-        | Type::U32
-        | Type::Felt => {
-            layout.offsets.push(offset);
-            layout.types.push(ty.clone());
-        }
-        Type::I64 | Type::U64 => {
-            // FPI transmits 64-bit integers as two felt-compatible 32-bit limbs.
-            layout.offsets.push(fpi_layout_offset(offset, 4, ty)?);
-            layout.types.push(Type::U32);
-            layout.offsets.push(offset);
-            layout.types.push(Type::U32);
-        }
-        other => {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "unsupported flattened FPI argument layout type `{other}`"
-            )));
-        }
-    }
-
-    Ok(())
-}
-
-/// Adds a relative byte offset within an FPI canonical ABI layout.
-fn fpi_layout_offset(base: u32, relative: u32, ty: &Type) -> WasmResult<u32> {
-    base.checked_add(relative).ok_or_else(|| {
-        midenc_session::diagnostics::Report::msg(format!(
-            "FPI argument layout offset for `{ty}` overflowed u32"
-        ))
     })
 }
 
@@ -728,10 +687,7 @@ fn validate_fpi_core_signature(
     core_func_sig: &Signature,
     fpi_abi: &LoweredFpiAbi,
 ) -> WasmResult<()> {
-    let flattened_arg_count = match &fpi_abi.args {
-        FpiExecArgs::Direct(args) => args.len(),
-        FpiExecArgs::Indirect { layout, .. } => layout.len(),
-    };
+    let flattened_arg_count = fpi_abi.fpi_args.len();
     let procedure_input_count = flattened_arg_count.saturating_sub(FPI_ABI_PREFIX_ARGS);
     if flattened_arg_count < FPI_ABI_PREFIX_ARGS {
         return Err(midenc_session::diagnostics::Report::msg(format!(
@@ -742,15 +698,6 @@ fn validate_fpi_core_signature(
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` passes {procedure_input_count} flattened procedure \
              input felts, but `execute_foreign_procedure` supports at most {FPI_EXEC_INPUTS}"
-        )));
-    }
-    if matches!(fpi_abi.args, FpiExecArgs::Direct(_))
-        && flattened_arg_count > FPI_DIRECT_MAX_FLAT_PARAMS
-    {
-        return Err(midenc_session::diagnostics::Report::msg(format!(
-            "FPI import `{core_func_path}` lowers to {flattened_arg_count} flattened parameter \
-             felts after expanding 64-bit values, but direct FPI lowering supports at most \
-             {FPI_DIRECT_MAX_FLAT_PARAMS}"
         )));
     }
     let fpi_result_count = fpi_flat_value_count(&fpi_abi.flattened_results)?;
@@ -775,13 +722,8 @@ fn validate_fpi_core_signature(
         )));
     }
 
-    let all_fpi_params_are_supported = match &fpi_abi.args {
-        FpiExecArgs::Direct(args) => args.iter().all(|arg| arg.borrow().ty() == &Type::Felt),
-        FpiExecArgs::Indirect { .. } => fpi_abi
-            .flattened_params
-            .iter()
-            .all(|param| fpi_flat_type_felt_count(&param.ty).is_ok()),
-    };
+    let all_fpi_params_are_supported =
+        fpi_abi.fpi_args.iter().all(|arg| arg.borrow().ty() == &Type::Felt);
     if !all_fpi_params_are_supported {
         return Err(midenc_session::diagnostics::Report::msg(format!(
             "FPI import `{core_func_path}` must lower to supported felt-width parameter types"
@@ -789,79 +731,6 @@ fn validate_fpi_core_signature(
     }
 
     Ok(())
-}
-
-/// Declares the tx kernel FPI executor and returns its HIR function reference and signature.
-fn declare_execute_foreign_procedure(world_builder: &mut WorldBuilder) -> WasmResult<FunctionRef> {
-    let exec_path = execute_foreign_procedure_path();
-    let context = world_builder.context_rc();
-    let signature = Signature::with_convention(
-        &context,
-        CallConv::Wasm,
-        vec![Type::Felt; FPI_EXEC_TOTAL_INPUTS],
-        vec![Type::Felt; FPI_EXEC_RESULTS],
-    );
-    let import_module_ref = world_builder
-        .declare_module_tree(&exec_path.without_leaf())
-        .wrap_err("failed to create tx module for FPI imports")?;
-    let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-    let function_name = exec_path.name().as_str();
-    let function_ref = if let Some(function_ref) = import_module_builder.get_function(function_name)
-    {
-        function_ref
-    } else {
-        import_module_builder
-            .define_function(exec_path.name().into(), Visibility::Public, signature.clone())
-            .wrap_err("failed to create FPI executor function ref")?
-    };
-
-    Ok(function_ref)
-}
-
-/// Declares the compiler-internal indirect FPI executor used for canonical ABI argument pointers.
-fn declare_execute_foreign_procedure_indirect(
-    world_builder: &mut WorldBuilder,
-) -> WasmResult<FunctionRef> {
-    let exec_path = execute_foreign_procedure_indirect_path();
-    let context = world_builder.context_rc();
-    let signature = Signature::with_convention(
-        &context,
-        CallConv::Wasm,
-        vec![Type::I32],
-        vec![Type::Felt; FPI_EXEC_RESULTS],
-    );
-    let import_module_ref = world_builder
-        .declare_module_tree(&exec_path.without_leaf())
-        .wrap_err("failed to create tx module for indirect FPI imports")?;
-    let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-    let function_name = exec_path.name().as_str();
-    let function_ref = if let Some(function_ref) = import_module_builder.get_function(function_name)
-    {
-        function_ref
-    } else {
-        import_module_builder
-            .define_function(exec_path.name().into(), Visibility::Public, signature)
-            .wrap_err("failed to create indirect FPI executor function ref")?
-    };
-
-    Ok(function_ref)
-}
-
-/// Fully-qualified MASM path for `miden::protocol::tx::execute_foreign_procedure`.
-fn execute_foreign_procedure_path() -> SymbolPath {
-    SymbolPath::from_iter(
-        tx::MODULE_PREFIX
-            .iter()
-            .copied()
-            .chain([SymbolNameComponent::Leaf(Symbol::intern(tx::EXECUTE_FOREIGN_PROCEDURE))]),
-    )
-}
-
-/// Compiler-internal path for indirect FPI calls lowered specially by the MASM backend.
-fn execute_foreign_procedure_indirect_path() -> SymbolPath {
-    SymbolPath::from_iter(tx::MODULE_PREFIX.iter().copied().chain([SymbolNameComponent::Leaf(
-        Symbol::intern(tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT),
-    )]))
 }
 
 /// Generates a lowering function for component imports that require transformation.
@@ -1111,7 +980,9 @@ mod tests {
     use alloc::rc::Rc;
     use std::sync::Arc;
 
-    use midenc_hir::{Context, EnumType, PointerType, StructType, Variant};
+    use midenc_hir::{
+        CallConv, Context, EnumType, StructType, SymbolNameComponent, Variant, interner::Symbol,
+    };
 
     use super::*;
 
@@ -1412,17 +1283,15 @@ mod tests {
         );
     }
 
+    fn felt_fpi_args(context: &Rc<Context>, count: usize) -> Vec<ValueRef> {
+        let block = context.create_block_with_params((0..count).map(|_| Type::Felt));
+        block.borrow().arguments().iter().map(|arg| *arg as ValueRef).collect()
+    }
+
     #[test]
     fn validate_fpi_core_signature_rejects_too_many_procedure_inputs() {
         let context = Rc::new(Context::default());
-        let arg_block = context.create_block_with_params([Type::I32]);
-        let arg_ptr = arg_block.borrow().arguments()[0] as ValueRef;
         let flattened_arg_count = FPI_ABI_PREFIX_ARGS + FPI_EXEC_INPUTS + 1;
-        let import_func_ty = FunctionType::new(
-            CallConv::Wasm,
-            vec![Type::Felt; flattened_arg_count],
-            vec![Type::Felt],
-        );
         let core_func_path = SymbolPath::from_iter([
             SymbolNameComponent::Root,
             SymbolNameComponent::Component(Symbol::intern("miden")),
@@ -1436,13 +1305,9 @@ mod tests {
             vec![Type::Felt; FPI_EXEC_RESULTS],
         );
         let fpi_abi = LoweredFpiAbi {
-            args: FpiExecArgs::Indirect {
-                arg_ptr,
-                layout: fpi_flat_arg_layout(&import_func_ty.params).unwrap(),
-            },
+            fpi_args: felt_fpi_args(&context, flattened_arg_count),
             output_ptr: None,
-            flattened_params: flatten_types(&context, &import_func_ty.params).unwrap(),
-            flattened_results: flatten_types(&context, &import_func_ty.results).unwrap(),
+            flattened_results: flatten_types(&context, &[Type::Felt]).unwrap(),
         };
 
         let err = validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)
@@ -1459,25 +1324,13 @@ mod tests {
     }
 
     #[test]
-    fn validate_fpi_core_signature_rejects_too_many_direct_flat_params() {
+    fn validate_fpi_core_signature_accepts_full_width_procedure_inputs() {
         let context = Rc::new(Context::default());
-        let flattened_arg_count = FPI_ABI_PREFIX_ARGS + 12;
-        let block = context.create_block_with_params((0..flattened_arg_count).map(|_| Type::Felt));
-        let args = block
-            .borrow()
-            .arguments()
-            .iter()
-            .map(|arg| *arg as ValueRef)
-            .collect::<Vec<_>>();
-        let import_func_ty = FunctionType::new(
-            CallConv::Wasm,
-            vec![Type::Felt; flattened_arg_count],
-            vec![Type::Felt],
-        );
+        let flattened_arg_count = FPI_ABI_PREFIX_ARGS + FPI_EXEC_INPUTS;
         let core_func_path = SymbolPath::from_iter([
             SymbolNameComponent::Root,
             SymbolNameComponent::Component(Symbol::intern("miden")),
-            SymbolNameComponent::Component(Symbol::intern("too-many-direct-args-account")),
+            SymbolNameComponent::Component(Symbol::intern("full-width-args-account")),
             SymbolNameComponent::Leaf(Symbol::intern("fpi-get-count")),
         ]);
         let core_func_sig = Signature::with_convention(
@@ -1487,76 +1340,13 @@ mod tests {
             vec![Type::Felt; FPI_EXEC_RESULTS],
         );
         let fpi_abi = LoweredFpiAbi {
-            args: FpiExecArgs::Direct(args),
+            fpi_args: felt_fpi_args(&context, flattened_arg_count),
             output_ptr: None,
-            flattened_params: flatten_types(&context, &import_func_ty.params).unwrap(),
-            flattened_results: flatten_types(&context, &import_func_ty.results).unwrap(),
+            flattened_results: flatten_types(&context, &[Type::Felt]).unwrap(),
         };
 
-        let err = validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)
-            .expect_err("expected FPI validation to reject more than sixteen direct input felts");
-        let message = err.to_string();
-
-        assert!(
-            message.contains("lowers to 18 flattened parameter felts")
-                && message.contains("direct FPI lowering supports at most 16"),
-            "unexpected error message: {message}"
-        );
-    }
-
-    #[test]
-    fn validate_fpi_core_signature_rejects_struct_with_too_many_flattened_params() {
-        let context = Rc::new(Context::default());
-        let arg_block = context.create_block_with_params([Type::I32]);
-        let arg_ptr = arg_block.borrow().arguments()[0] as ValueRef;
-        let too_many_flattened_params = Type::from(StructType::new(
-            (0..8)
-                .map(|_| Type::Felt)
-                .chain([Type::U8, Type::U16])
-                .chain((0..8).map(|_| Type::U32)),
-        ));
-        let import_func_ty = FunctionType::new(
-            CallConv::Wasm,
-            (0..FPI_ABI_PREFIX_ARGS)
-                .map(|_| Type::Felt)
-                .chain([too_many_flattened_params])
-                .collect::<Vec<_>>(),
-            vec![Type::Felt],
-        );
-        let flattened_params = flatten_types(&context, &import_func_ty.params).unwrap();
-        let flattened_arg_count = fpi_flat_value_count(&flattened_params).unwrap();
-        let core_func_path = SymbolPath::from_iter([
-            SymbolNameComponent::Root,
-            SymbolNameComponent::Component(Symbol::intern("miden")),
-            SymbolNameComponent::Component(Symbol::intern("too-many-flattened-params-account")),
-            SymbolNameComponent::Leaf(Symbol::intern("fpi-read-too-many-flattened-params")),
-        ]);
-        let core_func_sig = Signature::with_convention(
-            &context,
-            CallConv::Wasm,
-            vec![Type::I32],
-            vec![Type::Felt; FPI_EXEC_RESULTS],
-        );
-        let fpi_abi = LoweredFpiAbi {
-            args: FpiExecArgs::Indirect {
-                arg_ptr,
-                layout: fpi_flat_arg_layout(&import_func_ty.params).unwrap(),
-            },
-            output_ptr: None,
-            flattened_params,
-            flattened_results: flatten_types(&context, &import_func_ty.results).unwrap(),
-        };
-
-        let err = validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)
-            .expect_err("expected FPI validation to reject an eighteen-felt procedure input");
-        let message = err.to_string();
-
-        assert_eq!(flattened_arg_count, FPI_ABI_PREFIX_ARGS + 18);
-        assert!(
-            message.contains("passes 18 flattened procedure input felts")
-                && message.contains("`execute_foreign_procedure` supports at most 16"),
-            "unexpected error message: {message}"
-        );
+        validate_fpi_core_signature(&core_func_path, &core_func_sig, &fpi_abi)
+            .expect("sixteen procedure input felts are within the protocol limit");
     }
 
     #[test]
@@ -1565,7 +1355,7 @@ mod tests {
         let block = context.create_block_with_params(
             (0..FPI_ABI_PREFIX_ARGS).map(|_| Type::Felt).chain([Type::I32]),
         );
-        let args = block
+        let fpi_args = block
             .borrow()
             .arguments()
             .iter()
@@ -1591,9 +1381,8 @@ mod tests {
             vec![],
         );
         let fpi_abi = LoweredFpiAbi {
-            args: FpiExecArgs::Direct(args),
+            fpi_args,
             output_ptr: Some(output_ptr),
-            flattened_params: flatten_types(&context, &import_func_ty.params).unwrap(),
             flattened_results: flatten_types(&context, &import_func_ty.results).unwrap(),
         };
 
@@ -1609,7 +1398,7 @@ mod tests {
     }
 
     #[test]
-    fn fpi_flat_arg_layout_rejects_non_c_like_enum() {
+    fn flattened_types_layout_rejects_non_c_like_enum() {
         let enum_ty = Type::Enum(Arc::new(
             EnumType::new(
                 "result".into(),
@@ -1622,26 +1411,12 @@ mod tests {
             .unwrap(),
         ));
 
-        let err = match fpi_flat_arg_layout(&[enum_ty]) {
+        let err = match flattened_types_layout(&[enum_ty]) {
             Ok(_) => panic!("non-C-like enum layouts must return a diagnostic"),
             Err(err) => err,
         };
         let message = err.to_string();
 
         assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
-    }
-
-    #[test]
-    fn fpi_flat_arg_layout_reports_offset_overflow() {
-        let mut layout = FpiFlatArgLayout {
-            offsets: Vec::new(),
-            types: Vec::new(),
-        };
-
-        let err = push_fpi_flat_arg_layout_entry(u32::MAX, &Type::U64, &mut layout)
-            .expect_err("overflowing FPI layout offsets must return a diagnostic");
-        let message = err.to_string();
-
-        assert!(message.contains("overflowed u32"), "unexpected error: {message}");
     }
 }
