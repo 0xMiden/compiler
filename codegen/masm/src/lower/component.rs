@@ -726,17 +726,10 @@ impl MasmFunctionBuilder {
         if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
-            let init = if let Some(id) = link_info.component() {
-                let component_path = id.to_library_path();
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified =
-                    masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            } else {
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified = masm::QualifiedProcedureName::new("::init", name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            };
+            // Resolve `init` symbolically within the containing module instead of through a
+            // fully-qualified component path, which depends on the (user-editable)
+            // `[lib].namespace` matching the component's library identity.
+            let init = InvocationTarget::Symbol("init".parse().unwrap());
             let span = SourceSpan::default();
             // Add init call to the emitter's target before emitting the function body
             emitter.invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
