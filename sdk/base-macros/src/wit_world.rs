@@ -25,6 +25,9 @@ pub struct ManifestPackage {
     pub package: Arc<miden_project::Package>,
     pub target: miden_project::Target,
     pub description: Arc<str>,
+    /// Whether the crate has a `miden-project.toml`; when false, the package and target metadata
+    /// above are synthesized placeholders.
+    pub has_miden_project_toml: bool,
 }
 
 /// Project package metadata needed to resolve dependency WIT imports.
@@ -112,6 +115,7 @@ impl ManifestPackage {
                 package: Arc::from(miden_project::Package::new("empty", target.clone())),
                 target,
                 description: Default::default(),
+                has_miden_project_toml: false,
             });
         }
 
@@ -189,6 +193,7 @@ impl ManifestPackage {
             package,
             target,
             description,
+            has_miden_project_toml: true,
         })
     }
 

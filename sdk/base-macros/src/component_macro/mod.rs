@@ -320,6 +320,16 @@ fn expand_component_trait(
     }
 
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
+    // Without a project manifest the synthesized metadata would fail the namespace validation
+    // below with a baffling message about an interface named `empty`; name the real problem.
+    if !metadata.has_miden_project_toml {
+        return Err(syn::Error::new(
+            trait_ident.span(),
+            "`#[component]` requires a `miden-project.toml` next to the crate's `Cargo.toml`, \
+             with `kind = \"account-component\"` and a `[lib].namespace` declaring the \
+             component's interface",
+        ));
+    }
     let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
     // The WIT interface name is derived from the component trait name. It must match the interface
     // segment of `[lib].namespace` in `miden-project.toml`, which is the library identity the
