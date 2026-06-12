@@ -367,9 +367,10 @@ fn expand_component_trait(
         ));
     }
     let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
-    // The WIT interface name is derived from the component trait name. It must match the interface
-    // segment of `[lib].namespace` in `miden-project.toml`, which is the library identity the
-    // project assembler uses to resolve component-level procedures (e.g. `init`) during linking.
+    // The WIT interface name is derived from the component trait name, and `[lib].namespace` in
+    // `miden-project.toml` must equal the full `miden:<package>/<interface>@<version>` id built
+    // from it — that namespace is the library identity the project assembler uses to resolve
+    // component-level procedures (e.g. `init`) during linking.
     let interface_name = trait_ident.to_string().to_kebab_case();
     validate_namespace_matches_interface(&metadata, &package_name, &interface_name, &trait_ident)?;
 
@@ -639,8 +640,10 @@ fn render_storage_marker_check(component_type: &Type) -> TokenStream2 {
     }
 }
 
-/// Validates that the component's WIT interface name (derived from the trait) matches the interface
-/// segment of `[lib].namespace` in `miden-project.toml`.
+/// Validates that `[lib].namespace` in `miden-project.toml` equals the full component id derived
+/// from the manifest and the trait: `miden:<package>/<interface>@<version>` (package from the
+/// kebab-cased `[package].name`, interface from the kebab-cased trait name, version from the
+/// manifest).
 ///
 /// The project assembler ties the component's library identity to `[lib].namespace`, overriding the
 /// component root module's path with it during assembly. A mismatch otherwise surfaces only as a
@@ -667,7 +670,9 @@ fn validate_namespace_matches_interface(
                 "component trait `{trait_ident}` produces WIT interface `{interface_name}` in \
                  package `{package_name}` version `{version}`, but `[lib].namespace` in \
                  `miden-project.toml` declares `{namespace}`. Update `[lib].namespace` to \
-                 `{expected_namespace}`."
+                 `{expected_namespace}`. WARNING: storage slot ids derive from the namespace's \
+                 interface segment — changing it re-keys the storage of an already-deployed \
+                 component."
             ),
         ));
     }
