@@ -69,7 +69,7 @@ fn component_macros_account_and_note() {
 fn auth_components_require_an_auth_script_method() {
     let name = "auth_components_require_an_auth_script_method";
     let sdk_path = sdk_crate_path();
-    let namespace = format!("miden:{}/auth-component@0.0.1", name.replace('_', "-"));
+    let namespace = base::account_component_namespace(name, "auth-component");
     let component_package = format!("miden:{}", name.replace('_', "-"));
     let miden_project_toml = format!(
         r#"

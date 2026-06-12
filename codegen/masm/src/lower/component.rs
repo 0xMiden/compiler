@@ -739,12 +739,9 @@ impl MasmFunctionBuilder {
             // generated procedure at definition time ("symbol conflict: found duplicate
             // definitions"), so it cannot silently shadow this target.
             let init = InvocationTarget::Symbol("init".parse().unwrap());
-            let span = SourceSpan::default();
-            // Add init call to the emitter's target before emitting the function body
-            emitter.invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
-            emitter
-                .target
-                .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(init))));
+            // Add init call to the emitter's target before emitting the function body; `emit`
+            // also registers the invocation so the assembler can resolve the symbolic target.
+            emitter.emitter().emit(masm::Instruction::Exec(init), SourceSpan::default());
         }
 
         let mut body = emitter.emit(&entry.borrow());
