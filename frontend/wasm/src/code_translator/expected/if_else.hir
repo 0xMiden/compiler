@@ -7,10 +7,10 @@ builtin.function public extern("C") @test_wrapper() {
     builtin.ret;
 ^block6:
     %4 = arith.constant 3 : i32;
-    cf.br ^block7:(%4);
+    cf.br ^block7(%4, i32);
 ^block7(%3: i32):
     cf.br ^block5;
 ^block8:
     %5 = arith.constant 5 : i32;
-    cf.br ^block7:(%5);
+    cf.br ^block7(%5, i32);
 };

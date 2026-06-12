@@ -385,6 +385,11 @@ where
         }
 
         self.parse_comma_separated_list(Delimiter::None, Some("SSA use list"), |parser| {
+            // Stop at the first non-value token: a use list may be followed by further
+            // comma-separated items, such as the type list in an SSA use-and-type list.
+            if !parser.token_stream_mut().is_next(|tok| matches!(tok, Token::PercentIdent(_))) {
+                return Ok(false);
+            }
             let result = parser.parse_ssa_use(/*allow_result_number*/ true)?;
             results.push(result);
             Ok(true)
@@ -407,9 +412,10 @@ where
             })?
             .into_parts();
 
-        // If we have an attribute ID, it is a result number.
+        // If we have an all-digit attribute ID, it is a result number; any other hash
+        // identifier belongs to a following attribute (e.g. a keyed successor key).
         let result_num = self.parser.token_stream_mut().next_if_map(|tok| match tok {
-            Token::HashIdent(num) => Some(num),
+            Token::HashIdent(num) if num.bytes().all(|b| b.is_ascii_digit()) => Some(num),
             _ => None,
         })?;
         if let Some(result_num) = result_num {
@@ -528,7 +534,8 @@ where
         }
 
         let mut types = SmallVec::<[Type; 4]>::new_const();
-        self.parser.token_stream_mut().expect(Token::Comma)?;
+        // The comma separating the uses from their types was consumed by the use list loop
+        // when it stopped at the first type token.
         self.parser.parse_type_list_no_parens(&mut types)?;
 
         if value_ids.len() != types.len() {
@@ -933,6 +940,7 @@ where
                     block,
                     key: None,
                     operand_group: (i + 1) as u8,
+                    successor_group: 0,
                 },
             ));
         } else if self.parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Lbracket)) {
@@ -947,6 +955,7 @@ where
                     block,
                     key: None,
                     operand_group: (i + 1) as u8,
+                    successor_group: 0,
                 }
             }));
         }

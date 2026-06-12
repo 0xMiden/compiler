@@ -141,15 +141,16 @@ impl quote::ToTokens for DeriveOpParser {
 
         let mut successors = quote! {};
         if !format.successor_groups.is_empty() {
-            // Tracks whether a statically-known successor parse has been emitted, so that
-            // subsequent ones consume the `, ` separator the printer places between successors.
-            let mut emitted_static_successor = false;
-            for succ_group in format.successor_groups.iter() {
+            for (succ_group_index, succ_group) in format.successor_groups.iter().enumerate() {
                 let field_name = &succ_group.field_name;
                 let field_name_str =
                     syn::Lit::Str(syn::LitStr::new(&format!("{field_name}"), field_name.span()));
                 let base_operand_group_lit = syn::Lit::Int(syn::LitInt::new(
                     &format!("{}", succ_group.base_operand_group),
+                    field_name.span(),
+                ));
+                let succ_group_index_lit = syn::Lit::Int(syn::LitInt::new(
+                    &succ_group_index.to_string(),
                     field_name.span(),
                 ));
                 let delimiter: syn::Expr = if succ_group.requires_delimiter {
@@ -160,23 +161,30 @@ impl quote::ToTokens for DeriveOpParser {
                 if let Some(key_ty) = succ_group.keyed.as_ref() {
                     successors.extend(quote! {
                             next_operand_group = 0;
-                            parser.parse_comma_separated_list(#delimiter, Some(#field_name_str), |parser| {
+                            // Keyed successors print as a bare comma-separated list of
+                            // `#key -> ^block(...)` entries; stop when the next token cannot
+                            // start a key, e.g. at the label of a following static successor.
+                            parser.parse_comma_separated_list(Delimiter::None, Some(#field_name_str), |parser| {
+                                if !parser.token_stream_mut().is_next(|tok| matches!(tok, ::midenc_hir::parse::Token::HashIdent(_))) {
+                                    return Ok(false);
+                                }
                                 let key_ty = <<#key_ty as ::midenc_hir::KeyedSuccessor>::KeyStorage as ::midenc_hir::attributes::MaybeInferAttributeType>::maybe_infer_type()
                                     .unwrap_or(::midenc_hir::Type::Unknown);
                                 let key = parser.parse_typed_attribute::<<#key_ty as ::midenc_hir::KeyedSuccessor>::KeyStorage>(&key_ty)?.into_inner();
                                 parser.parse_arrow()?;
-                                let operand_group = #base_operand_group_lit + next_operand_group;
-                                next_operand_group += 1;
-                                if gathered_operands.len() == operand_group {
+                                // The first successor uses the operand group reserved for this
+                                // field; additional ones append new groups at the end, since
+                                // successors reference their operand group by explicit index.
+                                let operand_group = if next_operand_group == 0 {
+                                    #base_operand_group_lit
+                                } else {
                                     gathered_operands.push(Default::default());
                                     state.operands.push(Default::default());
-                                } else {
-                                    assert!(gathered_operands.len() < operand_group);
-                                    gathered_operands.insert(operand_group, Default::default());
-                                    state.operands.insert(operand_group, Default::default());
-                                }
+                                    state.operands.len() - 1
+                                };
+                                next_operand_group += 1;
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_keyed_successor(key, block_ref.into_inner(), operand_group as u8);
+                                state.add_keyed_successor(key, block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
 
                                 Ok(true)
                             })?;
@@ -185,25 +193,29 @@ impl quote::ToTokens for DeriveOpParser {
                     successors.extend(quote! {
                             next_operand_group = 0;
                             parser.parse_comma_separated_list(#delimiter, Some(#field_name_str), |parser| {
-                                let operand_group = #base_operand_group_lit + next_operand_group;
-                                next_operand_group += 1;
-                                if gathered_operands.len() == operand_group {
+                                // The first successor uses the operand group reserved for this
+                                // field; additional ones append new groups at the end, since
+                                // successors reference their operand group by explicit index.
+                                let operand_group = if next_operand_group == 0 {
+                                    #base_operand_group_lit
+                                } else {
                                     gathered_operands.push(Default::default());
                                     state.operands.push(Default::default());
-                                } else {
-                                    assert!(gathered_operands.len() < operand_group);
-                                    gathered_operands.insert(operand_group, Default::default());
-                                    state.operands.insert(operand_group, Default::default());
-                                }
+                                    state.operands.len() - 1
+                                };
+                                next_operand_group += 1;
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_successor(block_ref.into_inner(), operand_group as u8);
+                                state.add_successor(block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
 
                                 Ok(true)
                             })?;
                         });
                 } else {
                     for (succ_index, _) in succ_group.successors.iter().enumerate() {
-                        if emitted_static_successor {
+                        // The printer separates this successor from whatever precedes it
+                        // (an earlier successor group or a prior successor in this group)
+                        // with `, `; consume that separator if present.
+                        if succ_group_index > 0 || succ_group.index > 0 || succ_index > 0 {
                             successors.extend(quote! {
                                 parser.parse_optional_comma()?;
                             });
@@ -219,10 +231,9 @@ impl quote::ToTokens for DeriveOpParser {
                                     state.operands.push(Default::default());
                                 }
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_successor(block_ref.into_inner(), operand_group as u8);
+                                state.add_successor(block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
                             }
                         });
-                        emitted_static_successor = true;
                     }
                 }
             }
@@ -299,7 +310,10 @@ impl quote::ToTokens for DeriveOpParser {
         } else {
             resolve_operands.extend(quote! {
                 let total_operand_types = sig_params.len();
-                let total_operands = gathered_operands.iter().map(|group| group.len()).sum::<usize>() + state.operands.iter().map(|group| group.len()).sum::<usize>();
+                // Only operands gathered by name are resolved against the type signature;
+                // successor operands (already resolved with their inline types) are not
+                // part of the printed signature.
+                let total_operands = gathered_operands.iter().map(|group| group.len()).sum::<usize>();
                 if total_operand_types != total_operands {
                     return Err(ParserError::OperandAndTypeListMismatch {
                         span: state.span,

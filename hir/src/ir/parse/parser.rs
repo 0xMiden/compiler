@@ -1457,18 +1457,6 @@ pub trait ParserExt<'input>: Parser<'input> {
         T: AttributeRegistration,
     {
         let name = self.context().get_registered_attribute_name::<T>();
-        let default_dialect = *self.state().default_dialect_stack.last().unwrap();
-        let allow_dialect_elision = name.dialect() == default_dialect;
-        let tok =
-            self.token_stream_mut()
-                .expect_if(&format!("{name} attribute"), |tok| match tok {
-                    Token::HashIdent(id) => {
-                        id == name.dialect().as_str()
-                            || allow_dialect_elision && id == name.name().as_str()
-                    }
-                    _ => false,
-                })?;
-
         let attr = self.parse_extended_attribute(ty)?;
 
         if attr.borrow().is::<T>() {

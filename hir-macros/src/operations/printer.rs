@@ -137,12 +137,7 @@ impl quote::ToTokens for DeriveOpPrinter {
                             p.print_attribute_value(&*key_attr_ref.borrow());
                             p += ::midenc_hir::formatter::const_text(" -> ");
                             p += ::midenc_hir::formatter::display(dest.borrow().id());
-                            if operands.is_empty() {
-                                continue;
-                            }
-                            p += ::midenc_hir::formatter::const_text(":(");
-                            p.print_value_uses(operands.as_value_range());
-                            p += ::midenc_hir::formatter::const_text(")");
+                            p.print_successor_arguments(operands.as_value_range());
                         }
                         *printer += ::midenc_hir::formatter::indent(4, p.finish());
                     });
@@ -157,12 +152,7 @@ impl quote::ToTokens for DeriveOpPrinter {
                             let target = succ.successor();
                             let target_operands = succ.successor_operands();
                             *printer += ::midenc_hir::formatter::display(target.borrow().id());
-                            if target_operands.is_empty() {
-                                continue;
-                            }
-                            *printer += ::midenc_hir::formatter::const_text(":(");
-                            printer.print_value_uses(target_operands);
-                            *printer += ::midenc_hir::formatter::const_text(")");
+                            printer.print_successor_arguments(target_operands);
                         }
                         printer.print_rbracket();
                     });
@@ -176,12 +166,7 @@ impl quote::ToTokens for DeriveOpPrinter {
                             let target = succ.successor();
                             let target_operands = succ.successor_operands();
                             *printer += ::midenc_hir::formatter::display(target.borrow().id());
-                            if target_operands.is_empty() {
-                                continue;
-                            }
-                            *printer += ::midenc_hir::formatter::const_text(":(");
-                            printer.print_value_uses(target_operands);
-                            *printer += ::midenc_hir::formatter::const_text(")");
+                            printer.print_successor_arguments(target_operands);
                         }
                     });
                 } else {
@@ -208,11 +193,7 @@ impl quote::ToTokens for DeriveOpPrinter {
                                 let target = succ.successor();
                                 let target_operands = &succ.arguments;
                                 *printer += ::midenc_hir::formatter::display(target.borrow().id());
-                                if !target_operands.is_empty() {
-                                    *printer += ::midenc_hir::formatter::const_text(":(");
-                                    printer.print_value_uses(target_operands.as_value_range());
-                                    *printer += ::midenc_hir::formatter::const_text(")");
-                                }
+                                printer.print_successor_arguments(target_operands.as_value_range());
                             }
                         });
                     }

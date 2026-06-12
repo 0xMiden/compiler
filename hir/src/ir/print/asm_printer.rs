@@ -201,6 +201,27 @@ impl<'a> AsmPrinter<'a> {
         self.document += doc;
     }
 
+    /// Prints a successor argument list: the operand uses followed by their types, e.g.
+    /// `(%0, %1, u32, u32)`, matching the grammar accepted by `parse_successor_and_use_list`.
+    ///
+    /// Prints nothing when `values` is empty, as the parser treats the entire list as optional.
+    pub fn print_successor_arguments<const N: usize>(&mut self, values: ValueRange<'_, N>) {
+        use crate::formatter::*;
+
+        if values.is_empty() {
+            return;
+        }
+        let types = values
+            .iter()
+            .map(|value| Cow::Owned(value.borrow().ty().clone()))
+            .collect::<crate::SmallVec<[_; 4]>>();
+        self.document += const_text("(");
+        self.print_value_uses(values);
+        self.document += const_text(", ");
+        self.print_types(types);
+        self.document += const_text(")");
+    }
+
     /// Prints zero or more comma-separated value ids and their types in parentheses.
     ///
     /// This is intended for use in parameter lists (e.g. block arguments).

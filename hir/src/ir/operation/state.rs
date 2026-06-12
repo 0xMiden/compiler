@@ -28,6 +28,9 @@ pub struct PendingSuccessorInfo {
     pub block: BlockRef,
     pub key: Option<AttributeRef>,
     pub operand_group: u8,
+    /// The successor group this successor belongs to, matching the grouping expected by the
+    /// operation's successor accessors (e.g. a `cf.switch`'s cases vs. its fallback).
+    pub successor_group: u8,
 }
 
 impl OperationState {
@@ -70,19 +73,27 @@ impl OperationState {
         self.regions.push(region);
     }
 
-    pub fn add_successor(&mut self, block: BlockRef, operand_group: u8) {
+    pub fn add_successor(&mut self, block: BlockRef, operand_group: u8, successor_group: u8) {
         self.successors.push(PendingSuccessorInfo {
             block,
             key: None,
             operand_group,
+            successor_group,
         });
     }
 
-    pub fn add_keyed_successor(&mut self, key: AttributeRef, block: BlockRef, operand_group: u8) {
+    pub fn add_keyed_successor(
+        &mut self,
+        key: AttributeRef,
+        block: BlockRef,
+        operand_group: u8,
+        successor_group: u8,
+    ) {
         self.successors.push(PendingSuccessorInfo {
             block,
             key: Some(key),
             operand_group,
+            successor_group,
         });
     }
 }
