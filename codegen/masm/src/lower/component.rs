@@ -847,6 +847,9 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
 /// representation and expands wide integer primitives like `u64`/`u128` into 32-bit limb arrays.
 /// Component export metadata should preserve the Component ABI shape instead, including nominal
 /// struct and field names used by debuggers and typed clients.
+///
+/// TODO(pauls): Remove once miden-vm#XXXX is merged and ships in the next stable release,
+/// expected to be v0.24.
 fn component_abi_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
     match ty {
         Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
