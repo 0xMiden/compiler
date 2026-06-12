@@ -982,3 +982,40 @@ struct TestComponentStorage<T> {
         "unexpected stderr: {stderr}"
     );
 }
+
+#[test]
+fn auth_script_in_a_plain_impl_block_is_rejected() {
+    // A non-pub method with a body parses as a `TraitItemFn` (the body reads as a default), so
+    // without an explicit check the macro would append its helper marker and the user would see
+    // rustc's "cannot find attribute" error instead of the placement guidance.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{auth_script, component_storage, Word};
+
+#[component_storage]
+struct TestComponentStorage;
+
+struct PlainAuth;
+
+impl PlainAuth {
+    #[auth_script]
+    fn check_signature(&mut self, _arg: Word) {}
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("auth_script_in_a_plain_impl_block_is_rejected", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected `#[auth_script]` in a plain impl block to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("not the implementation block"), "unexpected stderr: {stderr}");
+    assert!(
+        !stderr.contains("cannot find attribute `miden_auth_script_requires_component`"),
+        "unexpected stderr: {stderr}"
+    );
+}

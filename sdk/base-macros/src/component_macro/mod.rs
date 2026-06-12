@@ -225,6 +225,20 @@ pub fn expand_auth_script(
         }
     };
 
+    // `TraitItemFn` parses any visibility-less method with a body (the body reads as a default),
+    // which is exactly what new-style impl blocks contain — so the dedicated `ImplItemFn` branch
+    // above is unreachable for them. A body is never valid on an `#[auth_script]` declaration
+    // (component traits reject default bodies), so reject it here with the placement guidance.
+    if item_fn.default.is_some() {
+        return syn::Error::new(
+            item_fn.sig.span(),
+            "`#[auth_script]` must be applied to a method inside a `#[component]` `trait`, not \
+             the implementation block",
+        )
+        .into_compile_error()
+        .into();
+    }
+
     // Preserve a helper attribute for `#[component]` to consume. If the surrounding trait forgets
     // `#[component]`, rustc rejects this unknown helper attribute instead of silently compiling a
     // method that emits no auth metadata.
