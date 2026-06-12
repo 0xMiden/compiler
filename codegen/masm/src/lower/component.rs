@@ -729,6 +729,15 @@ impl MasmFunctionBuilder {
             // Resolve `init` symbolically within the containing module instead of through a
             // fully-qualified component path, which depends on the (user-editable)
             // `[lib].namespace` matching the component's library identity.
+            //
+            // INVARIANT: this relies on the canonical-ABI export wrappers being emitted into the
+            // root component module — the same module where `MasmComponentBuilder` defines
+            // `init` (`self.component.modules[0]`); the inner lifted functions in interface and
+            // core child modules carry no init prologue. If export wrappers ever move into child
+            // modules, this symbol stops resolving and the init target must be threaded in as a
+            // qualified path instead. A user-exported method named `init` collides with the
+            // generated procedure at definition time ("symbol conflict: found duplicate
+            // definitions"), so it cannot silently shadow this target.
             let init = InvocationTarget::Symbol("init".parse().unwrap());
             let span = SourceSpan::default();
             // Add init call to the emitter's target before emitting the function body
