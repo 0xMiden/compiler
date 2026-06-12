@@ -1,5 +1,9 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
+use miden_assembly::{Assembler, DefaultSourceManager, Parse, ParseOptions, ast::ModuleKind};
+use miden_core::Felt;
+use miden_core_lib::CoreLibrary;
+use miden_processor::{ExecutionError, Program, operation::OperationError};
 use num_traits::{PrimInt, Unsigned};
 use proptest::{
     prelude::*,
@@ -7,6 +11,97 @@ use proptest::{
 };
 
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
+
+const I32_INTRINSICS_MASM: &str = include_str!("../../../../codegen/masm/intrinsics/i32.masm");
+
+/// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
+/// as entry point.
+///
+/// The intrinsics module `codegen/masm/intrinsics/i32.masm` is statically linked so the body can
+/// call these intrinsics by their fully-qualified path.
+pub(super) fn assemble_test_program(procedure_body: &str) -> Program {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let core_library = CoreLibrary::default();
+
+    // Parse the intrinsic module with its fully-qualified path
+    let i32_intrinsics = I32_INTRINSICS_MASM
+        .parse_with_options(
+            source_manager.clone(),
+            ParseOptions::new(ModuleKind::Library, "::intrinsics::i32"),
+        )
+        .expect("failed to parse i32 intrinsics module");
+
+    // Parse the test module with its fully-qualified path
+    let test_module_source = format!("pub proc test_i32_intrinsic\n{procedure_body}\nend");
+    let test_module = test_module_source
+        .parse_with_options(
+            source_manager.clone(),
+            ParseOptions::new(ModuleKind::Library, "::test"),
+        )
+        .expect("failed to parse test module");
+
+    let mut assembler = Assembler::new(source_manager.clone());
+    assembler
+        .compile_and_statically_link(i32_intrinsics)
+        .expect("failed to statically link i32 intrinsics");
+
+    let library = assembler
+        .assemble_library([test_module])
+        .expect("failed to assemble test library");
+    Assembler::new(source_manager)
+        .with_static_library(library)
+        .expect("failed to link library")
+        .with_static_library(core_library.library())
+        .expect("failed to link core library")
+        .assemble_program(
+            r#"
+use miden::core::sys
+
+begin
+    exec.::test::test_i32_intrinsic
+    exec.sys::truncate_stack
+end
+"#,
+        )
+        .expect("failed to assemble program")
+}
+
+/// Describes the trap expected by the execution of an intrinsic.
+///
+/// Variants mirror [`OperationError`] variants that can be produced by i32 intrinsics.
+#[derive(Debug, Clone)]
+pub(super) enum TrapExpectation {
+    /// Expect `FailedAssertion { err_code: 0, err_msg: None }`, produced by overflow traps.
+    FailedAssertionOverflow,
+    DivideByZero,
+}
+
+impl TrapExpectation {
+    /// Returns `Ok(())` if `vm_err` matches the expectation.
+    pub(super) fn check(&self, vm_err: &ExecutionError) -> Result<(), String> {
+        match (self, vm_err) {
+            (
+                TrapExpectation::FailedAssertionOverflow,
+                ExecutionError::OperationError {
+                    err:
+                        OperationError::FailedAssertion {
+                            err_code,
+                            err_msg: None,
+                        },
+                    ..
+                },
+            ) if *err_code == Felt::ZERO => Ok(()),
+            (
+                TrapExpectation::DivideByZero,
+                ExecutionError::OperationError {
+                    err: OperationError::DivideByZero,
+                    ..
+                },
+            ) => Ok(()),
+            _ => Err(format!("expected err {:?} but VM produced: {:?}", self, vm_err)),
+        }
+    }
+}
 
 pub(super) fn cargo_toml(name: &str) -> String {
     let sdk_alloc_path = sdk_alloc_crate_path();
