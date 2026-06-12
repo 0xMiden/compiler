@@ -799,3 +799,156 @@ struct TestComponentStorage {
         "unexpected stderr: {stderr}"
     );
 }
+
+/// Builds a generated account-component project like [`account_component_project`], but with an
+/// explicitly provided `[lib].namespace`.
+fn account_component_project_with_namespace(
+    name: &str,
+    namespace: &str,
+    lib_rs: &str,
+) -> crate::cargo_proj::Project {
+    let sdk_path = sdk_crate_path();
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]
+"#,
+        sdk_path = sdk_path.display(),
+    );
+
+    project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build()
+}
+
+/// Component source whose trait yields WIT interface `test-component`, shared by the namespace
+/// negative tests.
+const NAMESPACE_TEST_COMPONENT: &str = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+#[test]
+fn component_namespace_rejects_a_mismatching_package() {
+    // The interface segment matches the trait, but the package segment diverges from the
+    // manifest's package name; only full namespace equality catches it.
+    let name = "component_namespace_rejects_a_mismatching_package";
+    let namespace = "miden:wrong-package/test-component@0.0.1";
+    let cargo_proj =
+        account_component_project_with_namespace(name, namespace, NAMESPACE_TEST_COMPONENT);
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected a wrong package segment to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("declares `miden:wrong-package/"), "unexpected stderr: {stderr}");
+    assert!(
+        stderr.contains(&format!(
+            "Update `[lib].namespace` to `miden:{}/test-component@0.0.1`",
+            name.replace('_', "-")
+        )),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_namespace_rejects_a_mismatching_version() {
+    let name = "component_namespace_rejects_a_mismatching_version";
+    let namespace = format!("miden:{}/test-component@9.9.9", name.replace('_', "-"));
+    let cargo_proj =
+        account_component_project_with_namespace(name, &namespace, NAMESPACE_TEST_COMPONENT);
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected a wrong namespace version to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("@9.9.9`"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("Update `[lib].namespace` to"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn auth_script_on_an_impl_method_is_rejected() {
+    // The outer `#[component]` impl expansion sees the raw `#[auth_script]` tokens before the
+    // standalone attribute macro runs; it must hard-error rather than silently strip the marker.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{auth_script, component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    #[auth_script]
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project("auth_script_on_an_impl_method_is_rejected", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected `#[auth_script]` on an impl method to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("not the implementation block"), "unexpected stderr: {stderr}");
+}

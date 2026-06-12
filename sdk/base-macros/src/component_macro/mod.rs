@@ -507,8 +507,16 @@ fn expand_component_trait_impl(
         let ImplItem::Fn(method) = item else {
             continue;
         };
-        // `#[auth_script]` belongs on the trait method; defensively strip any stray marker here.
-        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+        // This outer `#[component]` expansion sees the raw `#[auth_script]` tokens before the
+        // standalone attribute macro would run, so stripping the marker here would silently
+        // discard a misplaced annotation; reject it with the same guidance instead.
+        if has_auth_script_marker_attr(&method.attrs) {
+            return Err(syn::Error::new(
+                method.sig.ident.span(),
+                "`#[auth_script]` must be applied to a method inside a `#[component]` `trait`, \
+                 not the implementation block",
+            ));
+        }
         let (parsed_method, imports) =
             parse_component_signature(&method.sig, &method.attrs, &exported_types_by_rust)?;
         type_imports.extend(imports);
@@ -632,17 +640,21 @@ fn validate_namespace_matches_interface(
     trait_ident: &syn::Ident,
 ) -> Result<(), syn::Error> {
     let namespace = declared_namespace(metadata);
-    let declared_interface = namespace_interface_segment(metadata);
+    // Require full equality, not just the interface segment: the generated WIT and `with`
+    // mappings use the manifest's package name and version, so a namespace with a divergent
+    // package or version would let the declared library identity drift from the generated WIT
+    // paths even though the interface segment matches.
+    let version = metadata.package.version();
+    let expected_namespace = format!("{package_name}/{interface_name}@{version}");
 
-    if declared_interface != interface_name {
-        let version = metadata.package.version();
+    if namespace != expected_namespace {
         return Err(syn::Error::new(
             trait_ident.span(),
             format!(
-                "component trait `{trait_ident}` produces WIT interface `{interface_name}`, but \
-                 `[lib].namespace` in `miden-project.toml` declares interface \
-                 `{declared_interface}` (namespace `{namespace}`). Update `[lib].namespace` to \
-                 `{package_name}/{interface_name}@{version}` to match the trait name."
+                "component trait `{trait_ident}` produces WIT interface `{interface_name}` in \
+                 package `{package_name}` version `{version}`, but `[lib].namespace` in \
+                 `miden-project.toml` declares `{namespace}`. Update `[lib].namespace` to \
+                 `{expected_namespace}`."
             ),
         ));
     }
