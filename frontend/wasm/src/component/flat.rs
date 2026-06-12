@@ -12,7 +12,7 @@ use midenc_hir::{
     dialects::builtin::attributes::{AbiParam, Signature},
 };
 
-use super::types::{MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
+use super::types::{MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
 
 /// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -324,7 +324,8 @@ pub fn flatten_types(
 /// Returns true when flattened parameters exceed the direct cross-context call budget.
 pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
     flat_params.len() > MAX_FLAT_PARAMS
-        || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>() > MAX_FLAT_PARAMS
+        || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
+            > MAX_DIRECT_STACK_FELTS
 }
 
 /// Classifies the canonical ABI transformation required by a component function type.

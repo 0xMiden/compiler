@@ -50,6 +50,15 @@ pub const MAX_FLAT_PARAMS: usize = 16;
 /// are transferred through memory.
 pub const MAX_FLAT_RESULTS: usize = 1;
 
+/// Maximum operand stack felts a direct cross-context wrapper call may require.
+///
+/// Calls pass all their operands on the MASM operand stack, whose directly addressable window
+/// is 16 elements, so a generated wrapper cannot be invoked with more than 16 felts of flattened
+/// parameters (including the canonical ABI output pointer, when present). This is a Miden VM
+/// constraint, distinct from the spec's count-based [`MAX_FLAT_PARAMS`]: a signature can stay
+/// within 16 flat values while 64-bit values expand it past 16 stack felts.
+pub const MAX_DIRECT_STACK_FELTS: usize = 16;
+
 indices! {
     // ========================================================================
     // Like Core WebAssembly, the Component Model places each definition into

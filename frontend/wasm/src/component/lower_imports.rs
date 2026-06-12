@@ -18,7 +18,7 @@ use midenc_hir::{
 use midenc_session::diagnostics::Report;
 
 use super::{
-    ComponentFunctionType,
+    ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS,
     canon_abi_utils::{store, validate_flat_variants},
     flat::{
         CanonicalAbiMode, CanonicalAbiTransformation, check_core_wasm_signature_equivalence,
@@ -39,14 +39,6 @@ const FPI_IMPORT_PREFIX: &str = "fpi-";
 const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
 const FPI_EXEC_INPUTS: usize = ExecFpi::MAX_INPUT_FELTS;
 const FPI_EXEC_RESULTS: usize = ExecFpi::EXECUTOR_RESULT_FELTS;
-/// Maximum operand stack felts a direct FPI wrapper call may require.
-///
-/// Calls pass all their operands on the MASM operand stack, whose directly addressable window is
-/// 16 elements, so the generated wrapper cannot be invoked with more than 16 felts of flattened
-/// parameters (including the canonical ABI output pointer, when present).
-const FPI_DIRECT_MAX_STACK_FELTS: usize = 16;
-const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
-const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
 pub fn generate_import_lowering_function(
@@ -338,8 +330,8 @@ fn plan_fpi_call(
     let flattened_results = flatten_types(context, &import_func_ty.results)?;
     // Canonical ABI passes more than 16 flattened parameters indirectly through one pointer; the
     // generated wrapper reloads that tuple so every FPI call lowers to the same felt-only form.
-    let has_arg_ptr = flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS;
-    let has_output_ptr = flattened_results.len() > CANONICAL_ABI_MAX_FLAT_RESULTS;
+    let has_arg_ptr = flattened_params.len() > MAX_FLAT_PARAMS;
+    let has_output_ptr = flattened_results.len() > MAX_FLAT_RESULTS;
 
     if !has_arg_ptr {
         // The generated wrapper receives all its parameters on the operand stack, so the direct
@@ -350,11 +342,11 @@ fn plan_fpi_call(
         let stack_felts =
             flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
                 + usize::from(has_output_ptr);
-        if stack_felts > FPI_DIRECT_MAX_STACK_FELTS {
+        if stack_felts > MAX_DIRECT_STACK_FELTS {
             return Err(midenc_session::diagnostics::Report::msg(format!(
                 "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
                  expanding 64-bit values and result pointers, but direct FPI calls support at \
-                 most {FPI_DIRECT_MAX_STACK_FELTS}"
+                 most {MAX_DIRECT_STACK_FELTS}"
             )));
         }
     }
@@ -1207,7 +1199,7 @@ mod tests {
             .expect_err("list parameters must not lower directly across typed FPI");
         let message = err.to_string();
 
-        assert!(flattened_params.len() <= CANONICAL_ABI_MAX_FLAT_PARAMS);
+        assert!(flattened_params.len() <= MAX_FLAT_PARAMS);
         assert!(
             message.contains("parameter 6")
                 && message.contains("pointer-like type")
@@ -1232,7 +1224,7 @@ mod tests {
             .expect_err("string-like list values must not lower indirectly across typed FPI");
         let message = err.to_string();
 
-        assert!(flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS);
+        assert!(flattened_params.len() > MAX_FLAT_PARAMS);
         assert!(
             message.contains("parameter 21")
                 && message.contains("pointer-like type")
