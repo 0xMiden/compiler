@@ -2,11 +2,7 @@ use super::*;
 
 #[allow(clippy::uninlined_format_args)]
 fn run_account_binding_test_with_struct(name: &str, account_struct: &str, method: &str) {
-    // The storage struct is the `TestAccount` declaration renamed to `TestAccountStorage`; the
-    // component trait keeps the `TestAccount` name.
-    let storage_struct = account_struct.replace("struct TestAccount", "struct TestAccountStorage");
-    let component =
-        account_component_source(&storage_struct, "TestAccountStorage", "TestAccount", method);
+    let component = account_component_source_with_storage(account_struct, "TestAccount", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
@@ -75,7 +71,7 @@ debug = false
 
 #[allow(clippy::uninlined_format_args)]
 fn run_account_binding_test(name: &str, method: &str) {
-    run_account_binding_test_with_struct(name, "struct TestAccount;", method)
+    run_account_binding_test_with_struct(name, "struct TestAccountStorage;", method)
 }
 
 #[test]
@@ -261,7 +257,7 @@ fn account_was_procedure_called_binding() {
 fn account_storage_get_initial_item_binding() {
     run_account_binding_test_with_struct(
         "account_storage_get_initial_item_binding",
-        r#"struct TestAccount {
+        r#"struct TestAccountStorage {
     #[storage(description = "test value")]
     value: StorageValue<Word>,
 }"#,
@@ -275,7 +271,7 @@ fn account_storage_get_initial_item_binding() {
 fn account_storage_get_initial_map_item_binding() {
     run_account_binding_test_with_struct(
         "account_storage_get_initial_map_item_binding",
-        r#"struct TestAccount {
+        r#"struct TestAccountStorage {
     #[storage(description = "test map")]
     map: StorageMap<Word, Word>,
 }"#,

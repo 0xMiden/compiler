@@ -592,12 +592,9 @@ impl TestComponent for TestComponentStorage {
     );
 }
 
-#[test]
-fn component_trait_requires_a_miden_project_manifest() {
-    // Without a `miden-project.toml` there is no `[lib].namespace` to validate the component's
-    // interface against; the macro must name the missing manifest instead of failing the
-    // namespace check against synthesized placeholder metadata.
-    let name = "component_trait_requires_a_miden_project_manifest";
+/// Builds a generated account project that deliberately has no `miden-project.toml`, for tests
+/// of the missing-manifest diagnostics.
+fn manifestless_account_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
     let cargo_toml = format!(
         r#"
@@ -619,6 +616,15 @@ project-kind = "account"
         sdk_path = sdk_path.display(),
     );
 
+    project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build()
+}
+
+#[test]
+fn component_trait_requires_a_miden_project_manifest() {
+    // Without a `miden-project.toml` there is no `[lib].namespace` to validate the component's
+    // interface against; the macro must name the missing manifest instead of failing the
+    // namespace check against synthesized placeholder metadata.
+    let name = "component_trait_requires_a_miden_project_manifest";
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -640,8 +646,7 @@ impl TestComponent for TestComponentStorage {
 }
 "#;
 
-    let cargo_proj =
-        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+    let cargo_proj = manifestless_account_project(name, lib_rs);
 
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(
@@ -754,27 +759,6 @@ fn component_storage_fields_require_a_miden_project_manifest() {
     // `miden-project.toml` they would silently be derived from placeholder metadata
     // (`empty::empty::<field>`).
     let name = "component_storage_fields_require_a_miden_project_manifest";
-    let sdk_path = sdk_crate_path();
-    let cargo_toml = format!(
-        r#"
-[package]
-name = "{name}"
-version = "0.0.1"
-edition = "2024"
-authors = []
-
-[lib]
-crate-type = ["cdylib"]
-
-[dependencies]
-miden = {{ path = "{sdk_path}" }}
-
-[package.metadata.miden]
-project-kind = "account"
-"#,
-        sdk_path = sdk_path.display(),
-    );
-
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -787,8 +771,7 @@ struct TestComponentStorage {
 }
 "#;
 
-    let cargo_proj =
-        project(name).file("Cargo.toml", &cargo_toml).file("src/lib.rs", lib_rs).build();
+    let cargo_proj = manifestless_account_project(name, lib_rs);
 
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(

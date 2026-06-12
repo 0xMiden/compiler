@@ -2,12 +2,7 @@ use super::*;
 
 #[allow(clippy::uninlined_format_args)]
 fn run_input_note_binding_test(name: &str, method: &str) {
-    let component = account_component_source(
-        "struct TestInputNoteStorage;",
-        "TestInputNoteStorage",
-        "TestInputNote",
-        method,
-    );
+    let component = account_component_source("TestInputNote", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]

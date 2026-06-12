@@ -4,12 +4,7 @@ use super::*;
 /// Compiles a minimal `miden` account component which calls the specified `output_note` method, and
 /// compares the generated WAT/HIR/MASM output to the checked-in expectations.
 fn run_output_note_binding_test(name: &str, method: &str) {
-    let component = account_component_source(
-        "struct TestOutputNoteStorage;",
-        "TestOutputNoteStorage",
-        "TestOutputNote",
-        method,
-    );
+    let component = account_component_source("TestOutputNote", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]

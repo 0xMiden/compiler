@@ -2,12 +2,7 @@ use super::*;
 
 #[allow(clippy::uninlined_format_args)]
 fn run_asset_binding_test(name: &str, method: &str) {
-    let component = account_component_source(
-        "struct TestAssetStorage;",
-        "TestAssetStorage",
-        "TestAsset",
-        method,
-    );
+    let component = account_component_source("TestAsset", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
