@@ -654,6 +654,9 @@ impl TestComponent for TestComponentStorage {
         stderr.contains("requires a `miden-project.toml`"),
         "unexpected stderr: {stderr}"
     );
+    // The impl-side expansion must report the same friendly error, not a namespace mismatch
+    // against the synthesized placeholder metadata.
+    assert!(!stderr.contains("miden:empty"), "unexpected stderr: {stderr}");
 }
 
 #[test]
