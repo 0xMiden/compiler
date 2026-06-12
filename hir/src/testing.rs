@@ -1,8 +1,8 @@
-use alloc::{boxed::Box, rc::Rc};
+use alloc::{boxed::Box, format, rc::Rc, string::String};
 
 use crate::{
     BlockRef, Builder, Context, Ident, OpBuilder, Type,
-    diagnostics::Report,
+    diagnostics::{Report, Uri},
     dialects::builtin::{
         BuiltinOpBuilder, Function, FunctionBuilder, FunctionRef, ModuleRef,
         attributes::{Signature, Visibility},
@@ -237,4 +237,34 @@ impl Test {
         pm.enable_verifier(verify);
         pm.run(self.function().as_operation_ref())
     }
+}
+
+/// Parse `source` as a [Function] and assert that its printed form is a parse/print fixpoint:
+/// the printed output must re-parse, and re-print identically.
+///
+/// Returns the parsed function and its printed form, for structural assertions and snapshot
+/// comparisons by the caller. The returned [FunctionRef] is only valid for as long as `context`
+/// is kept alive by the caller.
+pub fn parse_function_fixpoint(
+    context: &Rc<Context>,
+    name: &str,
+    source: &str,
+) -> Result<(FunctionRef, String), Report> {
+    let config = crate::parse::ParserConfig::new(context.clone());
+    let function = crate::parse::parse::<Function>(config, Uri::new(name), source)?;
+    let printed = format!("{}", function.as_operation_ref().borrow());
+
+    // Re-parse in a fresh context so printed value numbering starts from zero again; the
+    // context must outlive the re-printing below, as entity references do not keep it alive.
+    let reparse_context = Rc::new(Context::default());
+    let config = crate::parse::ParserConfig::new(reparse_context.clone());
+    let reparsed = crate::parse::parse::<Function>(
+        config,
+        Uri::new(format!("{name}.reparsed").as_str()),
+        printed.as_str(),
+    )?;
+    let reprinted = format!("{}", reparsed.as_operation_ref().borrow());
+    assert_eq!(printed, reprinted, "printed form of '{name}' is not a parse/print fixpoint");
+
+    Ok((function, printed))
 }

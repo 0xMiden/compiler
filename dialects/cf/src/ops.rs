@@ -313,7 +313,13 @@ impl Foldable for Select {
 mod tests {
     use alloc::vec;
 
-    use midenc_hir::{Type, testing::Test};
+    use midenc_expect_test::expect;
+    use midenc_hir::{
+        Type,
+        diagnostics::Report,
+        dialects::builtin::Ret,
+        testing::{Test, parse_function_fixpoint},
+    };
 
     use super::*;
     use crate::ControlFlowOpBuilder;
@@ -373,5 +379,249 @@ mod tests {
 
         assert_eq!(switch_op.fallback().successor(), fallback);
         assert_eq!(switch_op.cases().len(), 0);
+    }
+
+    /// The value returned by the `builtin.ret` terminating `block`.
+    fn returned_value(block: BlockRef) -> ValueRef {
+        let block = block.borrow();
+        let terminator = block.terminator().expect("expected block to have a terminator");
+        let ret = terminator
+            .try_downcast_op::<Ret>()
+            .expect("expected block to terminate with builtin.ret");
+        let ret = ret.borrow();
+        let values = ret.values();
+        let operand = values.iter().next().expect("expected builtin.ret to have an operand");
+        operand.borrow().as_value_ref()
+    }
+
+    /// Statically-known successor lists (`cf.cond_br %c ^a, ^b`) parse with the `, ` separator
+    /// the printer emits between successors, and the condition operand stays attached to the
+    /// operation rather than leaking into the first successor's operand group.
+    #[test]
+    fn parse_cond_br_with_bare_successors() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
+    cf.cond_br %c ^yes, ^no : (i1);
+^yes:
+    builtin.ret %a : (u32);
+^no:
+    builtin.ret %b : (u32);
+};";
+        let (function, printed) = parse_function_fixpoint(&context, "parse_cond_br.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @branch(%0: i1, %1: u32, %2: u32) -> u32 {
+                cf.cond_br %0 ^block2, ^block3 : (i1);
+            ^block2:
+                builtin.ret %1 : (u32);
+            ^block3:
+                builtin.ret %2 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let arg_c = entry.arguments()[0] as ValueRef;
+        let arg_a = entry.arguments()[1] as ValueRef;
+        let arg_b = entry.arguments()[2] as ValueRef;
+
+        let cond_br = entry
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<CondBr>()
+            .expect("expected entry block to terminate with cf.cond_br");
+        let cond_br = cond_br.borrow();
+        assert_eq!(cond_br.condition().as_value_ref(), arg_c);
+        let then_dest = cond_br.then_dest();
+        let else_dest = cond_br.else_dest();
+        assert!(then_dest.arguments.is_empty());
+        assert!(else_dest.arguments.is_empty());
+        assert_eq!(returned_value(then_dest.successor()), arg_a);
+        assert_eq!(returned_value(else_dest.successor()), arg_b);
+
+        Ok(())
+    }
+
+    /// Successor argument lists (`^block(%v, ...)`) parse and attach to the operand group of
+    /// the successor they follow, and the target block's own arguments bind as usual.
+    #[test]
+    fn parse_cond_br_with_successor_arguments() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @branch_args(%c: i1, %a: u32, %b: u32) -> u32 {
+    cf.cond_br %c ^one(%a, u32), ^two(%a, %b, u32, u32) : (i1);
+^one(%x: u32):
+    builtin.ret %x : (u32);
+^two(%y: u32, %z: u32):
+    builtin.ret %z : (u32);
+};";
+        let (function, printed) =
+            parse_function_fixpoint(&context, "parse_cond_br_args.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @branch_args(%0: i1, %1: u32, %2: u32) -> u32 {
+                cf.cond_br %0 ^block2(%1, u32), ^block3(%1, %2, u32, u32) : (i1);
+            ^block2(%3: u32):
+                builtin.ret %3 : (u32);
+            ^block3(%4: u32, %5: u32):
+                builtin.ret %5 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let arg_a = entry.arguments()[1] as ValueRef;
+        let arg_b = entry.arguments()[2] as ValueRef;
+
+        let cond_br = entry
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<CondBr>()
+            .expect("expected entry block to terminate with cf.cond_br");
+        let cond_br = cond_br.borrow();
+
+        let then_dest = cond_br.then_dest();
+        let then_args = then_dest
+            .arguments
+            .iter()
+            .map(|o| o.borrow().as_value_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(then_args, [arg_a]);
+
+        let else_dest = cond_br.else_dest();
+        let else_args = else_dest
+            .arguments
+            .iter()
+            .map(|o| o.borrow().as_value_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(else_args, [arg_a, arg_b]);
+
+        // The successor blocks' own arguments are bound and usable: `^two` returns its second
+        // block argument.
+        let else_block = else_dest.successor();
+        let expected = else_block.borrow().arguments()[1] as ValueRef;
+        assert_eq!(returned_value(else_block), expected);
+
+        Ok(())
+    }
+
+    /// Block labels register in the parser's block name map when defined: a branch may
+    /// reference a block defined earlier in the region (backward reference), and a labeled
+    /// definition must unify with targets forward-declared by earlier branches without
+    /// dropping the parsed block body.
+    #[test]
+    fn parse_backward_block_references() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @looped(%start: i1) -> i1 {
+    cf.br ^header(%start, i1);
+^header(%v: i1):
+    cf.cond_br %v ^header(%v, i1), ^exit : (i1);
+^exit:
+    builtin.ret %v : (i1);
+};";
+        let (function, printed) =
+            parse_function_fixpoint(&context, "parse_backward_refs.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @looped(%0: i1) -> i1 {
+                cf.br ^block2(%0, i1);
+            ^block2(%1: i1):
+                cf.cond_br %1 ^block2(%1, i1), ^block3 : (i1);
+            ^block3:
+                builtin.ret %1 : (i1);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let body = function.body();
+        assert_eq!(body.body().iter().count(), 3, "expected all three blocks to be parsed");
+
+        let entry = body.entry();
+        let br = entry
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<Br>()
+            .expect("expected entry block to terminate with cf.br");
+        let header = br.borrow().target().successor();
+
+        // The labeled definition must populate the forward-declared block, not a placeholder.
+        let header_block = header.borrow();
+        assert_eq!(header_block.num_arguments(), 1);
+        assert_eq!(header_block.body().iter().count(), 1, "header block body must not be empty");
+
+        // The backward reference resolves to that same block, forwarding its argument.
+        let cond_br = header_block
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<CondBr>()
+            .expect("expected header block to terminate with cf.cond_br");
+        let cond_br = cond_br.borrow();
+        let then_dest = cond_br.then_dest();
+        assert_eq!(then_dest.successor(), header);
+        let loop_args = then_dest
+            .arguments
+            .iter()
+            .map(|o| o.borrow().as_value_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(loop_args, [header_block.arguments()[0] as ValueRef]);
+
+        Ok(())
+    }
+
+    /// Keyed successor groups (`cf.switch`) parse: each case key maps to its own successor and
+    /// operand group, and the trailing successor is the fallback.
+    #[test]
+    fn parse_switch_with_keyed_successors() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @select(%sel: u32, %a: u32, %b: u32) -> u32 {
+    cf.switch %sel #builtin.u32<1> -> ^one(%a, u32), ^fallback : (u32);
+^one(%x: u32):
+    builtin.ret %x : (u32);
+^fallback:
+    builtin.ret %b : (u32);
+};";
+        let (function, printed) = parse_function_fixpoint(&context, "parse_switch.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @select(%0: u32, %1: u32, %2: u32) -> u32 {
+                cf.switch %0 #builtin.u32<1> -> ^block2(%1, u32), ^block3 : (u32);
+            ^block2(%3: u32):
+                builtin.ret %3 : (u32);
+            ^block3:
+                builtin.ret %2 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let arg_a = entry.arguments()[1] as ValueRef;
+        let arg_b = entry.arguments()[2] as ValueRef;
+
+        let switch_op = entry
+            .terminator()
+            .unwrap()
+            .try_downcast_op::<Switch>()
+            .expect("expected entry block to terminate with cf.switch");
+        let switch_op = switch_op.borrow();
+
+        let cases = switch_op.cases();
+        assert_eq!(cases.len(), 1);
+        let case = cases.iter().next().unwrap();
+        assert_eq!(*case.key(), 1);
+        let case_args =
+            case.arguments().iter().map(|o| o.borrow().as_value_ref()).collect::<Vec<_>>();
+        assert_eq!(case_args, [arg_a]);
+        // The case target returns its own block argument, fed by the case's operand.
+        let case_block = case.block();
+        let expected = case_block.borrow().arguments()[0] as ValueRef;
+        assert_eq!(returned_value(case_block), expected);
+
+        let fallback = switch_op.fallback();
+        assert!(fallback.arguments.is_empty());
+        assert_eq!(returned_value(fallback.successor()), arg_b);
+
+        Ok(())
     }
 }
