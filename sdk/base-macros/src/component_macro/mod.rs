@@ -241,6 +241,10 @@ fn expand_component_storage(
 ) -> Result<TokenStream2, syn::Error> {
     let struct_name = &input_struct.ident;
 
+    // The expansion emits bare-ident impls (`Default`, the account traits, the marker constant),
+    // which cannot compile for a generic struct; reject it here like the sibling expansions do.
+    reject_generics(&input_struct.generics, "component storage structs cannot be generic")?;
+
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
     let mut acc_builder = AccountComponentMetadataBuilder::new(
         metadata.package.name().to_string(),
@@ -329,15 +333,7 @@ fn expand_component_trait(
 ) -> Result<TokenStream2, syn::Error> {
     let trait_ident = input_trait.ident.clone();
 
-    if input_trait.generics.lt_token.is_some()
-        || !input_trait.generics.params.is_empty()
-        || input_trait.generics.where_clause.is_some()
-    {
-        return Err(syn::Error::new(
-            input_trait.generics.span(),
-            "component traits cannot be generic",
-        ));
-    }
+    reject_generics(&input_trait.generics, "component traits cannot be generic")?;
     if !input_trait.supertraits.is_empty() {
         return Err(syn::Error::new(
             input_trait.supertraits.span(),
@@ -456,15 +452,7 @@ fn expand_component_trait_impl(
         ));
     };
 
-    if impl_block.generics.lt_token.is_some()
-        || !impl_block.generics.params.is_empty()
-        || impl_block.generics.where_clause.is_some()
-    {
-        return Err(syn::Error::new(
-            impl_block.generics.span(),
-            "component trait implementations cannot be generic",
-        ));
-    }
+    reject_generics(&impl_block.generics, "component trait implementations cannot be generic")?;
 
     let component_type = (*impl_block.self_ty).clone();
     if extract_type_ident(&component_type).is_none() {
@@ -486,6 +474,17 @@ fn expand_component_trait_impl(
     let trait_ident = trait_segment.ident.clone();
 
     let metadata = crate::wit_world::ManifestPackage::load_or_default(call_site_span.into())?;
+    // Without a project manifest the namespace validation below would run against synthesized
+    // placeholder metadata and recommend `miden:empty/...@0.0.0` as the fix; name the real
+    // problem instead, mirroring the trait-side guard.
+    if !metadata.has_miden_project_toml {
+        return Err(syn::Error::new(
+            trait_ident.span(),
+            "`#[component]` requires a `miden-project.toml` next to the crate's `Cargo.toml`, \
+             with `kind = \"account-component\"` and a `[lib].namespace` declaring the \
+             component's interface",
+        ));
+    }
     let package_name = format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
     // The generated WIT interface is named after the trait *as spelled here*. The trait-side
     // validation only covers the declared trait name, so an impl that spells the trait through an
@@ -672,6 +671,19 @@ fn declared_namespace(metadata: &crate::wit_world::ManifestPackage) -> &str {
         .as_str()
         .trim_start_matches("::")
         .trim_matches('"')
+}
+
+/// Rejects any generic parameters or `where` clause on a component item.
+///
+/// Shared by the trait, trait-impl, and storage expansions, which all generate code that cannot
+/// be generic.
+fn reject_generics(generics: &syn::Generics, message: &str) -> Result<(), syn::Error> {
+    if generics.lt_token.is_some() || !generics.params.is_empty() || generics.where_clause.is_some()
+    {
+        return Err(syn::Error::new(generics.span(), message));
+    }
+
+    Ok(())
 }
 
 /// Extracts the interface segment of the fully-qualified component id declared in

@@ -952,3 +952,33 @@ impl TestComponent for TestComponentStorage {
 
     assert!(stderr.contains("not the implementation block"), "unexpected stderr: {stderr}");
 }
+
+#[test]
+fn component_storage_rejects_generic_parameters() {
+    // The storage expansion emits bare-ident impls (`Default`, account traits, the marker
+    // constant), so a generic struct must get the actionable macro error rather than a pile of
+    // rustc "missing generics" errors pointing at generated impls.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, StorageValue, Word};
+
+#[component_storage]
+struct TestComponentStorage<T> {
+    #[storage(description = "some value")]
+    value: StorageValue<Word>,
+    marker: core::marker::PhantomData<T>,
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_storage_rejects_generic_parameters", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected generic storage structs to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("component storage structs cannot be generic"),
+        "unexpected stderr: {stderr}"
+    );
+}
