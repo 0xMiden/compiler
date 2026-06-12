@@ -1738,7 +1738,10 @@ impl CanonicalAbiType {
         }
     }
 
-    fn joined_variant_payload_flat_types(cases: &[Option<CanonicalAbiType>]) -> Box<[Type]> {
+    /// Joins the flat payload types of all variant cases position by position.
+    pub(crate) fn joined_variant_payload_flat_types(
+        cases: &[Option<CanonicalAbiType>],
+    ) -> Box<[Type]> {
         let case_payloads = cases.iter().flatten().map(|case| case.flat_types().into_vec());
         join_variant_payloads(case_payloads, join_flat_types)
             .expect("component variant payload types should be joinable")

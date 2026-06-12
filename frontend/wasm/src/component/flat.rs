@@ -849,6 +849,44 @@ mod tests {
     }
 
     #[test]
+    fn test_flatten_type_agrees_with_canonical_abi_flat_types() {
+        // `validate_flat_variants` slices flattened signature values by per-type
+        // `CanonicalAbiType::flat_types` lengths, so the two flattening implementations must
+        // produce identical flat shapes for every supported type. The runtime guards only catch
+        // total-length mismatches: a compensating per-type disagreement would silently validate
+        // the wrong value slots.
+        let context = Rc::new(Context::default());
+        for canon in crate::component::test_support::canonical_agreement_fixtures() {
+            let flattened = flatten_type(&context, &canon.ir)
+                .unwrap_or_else(|err| panic!("flatten_type failed for {}: {err}", canon.ir));
+            let flat_param_types: Vec<Type> =
+                flattened.iter().map(|param| param.ty.clone()).collect();
+
+            assert_eq!(
+                flat_param_types,
+                canon.flat_types().into_vec(),
+                "flatten_type and CanonicalAbiType::flat_types disagree for {}",
+                canon.ir
+            );
+        }
+    }
+
+    #[test]
+    fn test_unsupported_canonical_abi_type_has_no_flat_types() {
+        // Unsupported metadata is rejected before any wrapper generation, so it never reaches
+        // the flat-shape slicing in `validate_flat_variants`; its empty flat shape is excluded
+        // from the agreement domain above.
+        let unsupported = crate::component::CanonicalAbiType {
+            ir: Type::List(Arc::new(Type::U32)),
+            abi: crate::component::CanonicalAbiInfo::default(),
+            kind: crate::component::CanonicalAbiTypeKind::Unsupported,
+        };
+
+        assert!(unsupported.contains_unsupported());
+        assert!(unsupported.flat_types().is_empty());
+    }
+
+    #[test]
     fn test_flattened_types_layout_matches_flattened_shape() {
         let context = Rc::new(Context::default());
         let nested = Type::from(StructType::new(vec![Type::U8, Type::U64, Type::Felt]));

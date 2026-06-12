@@ -112,6 +112,144 @@ pub(super) mod test_support {
         }
     }
 
+    /// Builds canonical ABI metadata for a scalar leaf type.
+    pub fn scalar_abi_type(ir: Type, abi: CanonicalAbiInfo) -> CanonicalAbiType {
+        CanonicalAbiType {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Scalar,
+        }
+    }
+
+    /// Builds canonical ABI metadata for a two-case variant with mixed 32/64-bit payloads.
+    ///
+    /// The payload lanes join `i32` and `u64` into one widened `i64` slot, exercising the
+    /// positional payload-join rules.
+    pub fn mixed_payload_variant_type() -> CanonicalAbiType {
+        let case_abis = [Some(CanonicalAbiInfo::SCALAR4), Some(CanonicalAbiInfo::SCALAR8)];
+        let info = VariantInfo::new_static(&case_abis);
+        let abi = CanonicalAbiInfo::variant_static(&case_abis);
+        let cases = [
+            Some(scalar_abi_type(Type::I32, CanonicalAbiInfo::SCALAR4)),
+            Some(scalar_abi_type(Type::U64, CanonicalAbiInfo::SCALAR8)),
+        ];
+        let payload_flat_types = CanonicalAbiType::joined_variant_payload_flat_types(&cases);
+        let ir = Type::Enum(Arc::new(
+            EnumType::new(
+                "mixed-payload".into(),
+                Type::U8,
+                [
+                    Variant::new("first".into(), Type::I32, Some(0)),
+                    Variant::new("second".into(), Type::U64, Some(1)),
+                ],
+            )
+            .expect("mixed-payload enum should be valid"),
+        ));
+
+        CanonicalAbiType {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Variant {
+                discriminant: Box::new(scalar_abi_type(Type::U8, CanonicalAbiInfo::SCALAR1)),
+                payload_offset32: info.payload_offset32,
+                cases: Box::new(cases),
+                payload_flat_types,
+            },
+        }
+    }
+
+    /// Builds canonical ABI metadata for an option-shaped variant with a felt payload.
+    pub fn option_of_felt_type() -> CanonicalAbiType {
+        let case_abis = [None, Some(CanonicalAbiInfo::SCALAR4)];
+        let info = VariantInfo::new_static(&case_abis);
+        let abi = CanonicalAbiInfo::variant_static(&case_abis);
+        let cases = [None, Some(scalar_abi_type(Type::Felt, CanonicalAbiInfo::SCALAR4))];
+        let payload_flat_types = CanonicalAbiType::joined_variant_payload_flat_types(&cases);
+        let ir = Type::Enum(Arc::new(
+            EnumType::new(
+                "option-felt".into(),
+                Type::U8,
+                [
+                    Variant::c_like("none".into(), Some(0)),
+                    Variant::new("some".into(), Type::Felt, Some(1)),
+                ],
+            )
+            .expect("option-shaped enum should be valid"),
+        ));
+
+        CanonicalAbiType {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Variant {
+                discriminant: Box::new(scalar_abi_type(Type::U8, CanonicalAbiInfo::SCALAR1)),
+                payload_offset32: info.payload_offset32,
+                cases: Box::new(cases),
+                payload_flat_types,
+            },
+        }
+    }
+
+    /// Builds canonical ABI metadata for a record with a scalar and a payload-variant field.
+    pub fn record_with_variant_field_type() -> CanonicalAbiType {
+        let scalar_field = scalar_abi_type(Type::U32, CanonicalAbiInfo::SCALAR4);
+        let variant_field = scalar_payload_variant_type();
+        let mut offset = 0;
+        let scalar_offset = scalar_field.abi.next_field32(&mut offset);
+        let variant_offset = variant_field.abi.next_field32(&mut offset);
+        let abi = CanonicalAbiInfo::record([&scalar_field.abi, &variant_field.abi].into_iter());
+        let ir = Type::from(StructType::new(vec![Type::U32, variant_field.ir.clone()]));
+
+        CanonicalAbiType {
+            ir,
+            abi,
+            kind: CanonicalAbiTypeKind::Record {
+                fields: Box::new([
+                    CanonicalAbiField {
+                        offset32: scalar_offset,
+                        ty: scalar_field,
+                    },
+                    CanonicalAbiField {
+                        offset32: variant_offset,
+                        ty: variant_field,
+                    },
+                ]),
+            },
+        }
+    }
+
+    /// Returns canonical ABI fixtures whose metadata must agree with signature flattening.
+    ///
+    /// Every fixture pairs an HIR type (`ir`) with the canonical ABI metadata tree built for
+    /// it, covering the supported lowering domain: scalars, records, unit-only variants,
+    /// payload variants (including joined mixed-width lanes), and nesting.
+    pub fn canonical_agreement_fixtures() -> Vec<CanonicalAbiType> {
+        let scalars = [
+            (Type::I1, CanonicalAbiInfo::SCALAR1),
+            (Type::I8, CanonicalAbiInfo::SCALAR1),
+            (Type::U8, CanonicalAbiInfo::SCALAR1),
+            (Type::I16, CanonicalAbiInfo::SCALAR2),
+            (Type::U16, CanonicalAbiInfo::SCALAR2),
+            (Type::I32, CanonicalAbiInfo::SCALAR4),
+            (Type::U32, CanonicalAbiInfo::SCALAR4),
+            (Type::I64, CanonicalAbiInfo::SCALAR8),
+            (Type::U64, CanonicalAbiInfo::SCALAR8),
+            (Type::Felt, CanonicalAbiInfo::SCALAR4),
+        ];
+
+        scalars
+            .into_iter()
+            .map(|(ir, abi)| scalar_abi_type(ir, abi))
+            .chain([
+                two_field_record_type(),
+                unit_only_variant_type(),
+                scalar_payload_variant_type(),
+                mixed_payload_variant_type(),
+                option_of_felt_type(),
+                record_with_variant_field_type(),
+            ])
+            .collect()
+    }
+
     /// Builds canonical ABI metadata for a two-field record result.
     pub fn two_field_record_type() -> CanonicalAbiType {
         let field_ty = CanonicalAbiType {
