@@ -40,5 +40,4 @@ tempfile.workspace = true
 walkdir = "2.5"
 
 [dev-dependencies]
-# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 miden-mast-package.workspace = true

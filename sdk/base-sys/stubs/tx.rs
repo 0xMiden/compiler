@@ -62,3 +62,13 @@ pub extern "C" fn tx_get_expiration_block_delta_plain() -> f32 {
 pub extern "C" fn tx_update_expiration_block_delta_plain(_delta: f32) {
     unsafe { core::hint::unreachable_unchecked() }
 }
+
+#[unsafe(export_name = "miden::protocol::tx::execute_foreign_procedure_indirect")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn tx_execute_foreign_procedure_indirect(
+    _invocation: *const c_void,
+    _out: *mut c_void,
+) {
+    unsafe { core::hint::unreachable_unchecked() }
+}

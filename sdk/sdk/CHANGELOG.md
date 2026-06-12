@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### BREAKING
 - `#[auth_script]` attribute macro is required to mark the authentication procedure in the authentication component #1051
 
+### Added
+- `#[component]` and `#[note]` now generate typed Foreign Procedure Invocation (FPI)
+  wrapper structs for account dependencies declared in package metadata, allowing account
+  components and note scripts to call dependency account methods through
+  `execute_foreign_procedure` using normal Rust method signatures.
+  For example:
+  ```rust
+  let counter = CounterContract::from_account(counter_account_id);
+  let count = counter.get_count();
+  ```
+
 ## [0.11.0]
 
 ### BREAKING

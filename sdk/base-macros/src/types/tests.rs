@@ -27,9 +27,48 @@ fn allows_sdk_type_without_export_attribute() {
     let type_ref = map_type_to_type_ref(&ty, &exported).expect("asset should resolve");
     assert_eq!(type_ref.wit_name, "asset");
     assert!(!type_ref.is_custom);
+    assert!(type_ref.requires_import);
     let exported_names = HashSet::new();
     ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
         .expect("core types require no export");
+}
+
+#[test]
+fn allows_wit_primitive_type_without_export_attribute() {
+    reset_export_type_registry_for_tests();
+    let ty: Type = syn::parse_str("u64").unwrap();
+    let exported = HashMap::new();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("u64 should resolve");
+    assert_eq!(type_ref.wit_name, "u64");
+    assert!(!type_ref.is_custom);
+    assert!(!type_ref.requires_import);
+    let exported_names = HashSet::new();
+    ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect("primitive types require no export");
+}
+
+#[test]
+fn struct_fields_allow_wit_primitive_types() {
+    reset_export_type_registry_for_tests();
+    let item: syn::ItemStruct = parse_quote! {
+        struct Foo {
+            first: u64,
+            second: u32,
+            third: u8,
+        }
+    };
+    let def = exported_type_from_struct(&item).expect("struct definition should parse");
+    let exported_names = HashSet::from([def.wit_name.clone()]);
+
+    let ExportedTypeKind::Record { fields } = &def.kind else {
+        panic!("expected record kind");
+    };
+    for field in fields {
+        assert!(!field.ty.is_custom);
+        assert!(!field.ty.requires_import);
+        ensure_custom_type_defined(&field.ty, &exported_names, Span::call_site())
+            .expect("primitive fields should not need #[export_type]");
+    }
 }
 
 #[test]

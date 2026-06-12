@@ -16,6 +16,7 @@ mod component;
 mod config;
 mod emit;
 mod error;
+mod fpi;
 mod intrinsics;
 mod miden_abi;
 mod module;

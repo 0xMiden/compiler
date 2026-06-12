@@ -21,7 +21,7 @@ use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
     boilerplate::runtime_boilerplate,
     component_macro::{
-        generate_wit::{build_component_wit, write_component_wit_file},
+        generate_wit::{ComponentWitSpec, build_component_wit, write_component_wit_file},
         storage::process_storage_fields,
     },
     types::{
@@ -329,17 +329,32 @@ fn expand_component_impl(
         impl_block.span(),
     )?;
 
-    let wit_source = build_component_wit(
-        &package_name,
-        metadata.package.version().inner(),
-        &interface_name,
-        &world_name,
-        &type_imports,
-        &methods,
-        &exported_types,
-    )?;
-    write_component_wit_file(call_site_span, &wit_source, &package_name)?;
-    let inline_literal = Literal::string(&wit_source);
+    let dependency_imports = metadata.collect_miden_dependency_imports(Span2::call_site())?;
+    let inline_wit_source = build_component_wit(ComponentWitSpec {
+        component_package: &package_name,
+        component_version: metadata.package.version().inner(),
+        interface_name: &interface_name,
+        world_name: &world_name,
+        dependency_imports: &dependency_imports,
+        type_imports: &type_imports,
+        methods: &methods,
+        exported_types: &exported_types,
+    })?;
+    // Dependency imports are only needed while generating this crate's bindings. The public WIT
+    // file stays export-only so downstream crates can depend on this account without also
+    // materializing all of its transitive FPI dependencies next to the generated WIT.
+    let public_wit_source = build_component_wit(ComponentWitSpec {
+        component_package: &package_name,
+        component_version: metadata.package.version().inner(),
+        interface_name: &interface_name,
+        world_name: &world_name,
+        dependency_imports: &[],
+        type_imports: &type_imports,
+        methods: &methods,
+        exported_types: &exported_types,
+    })?;
+    write_component_wit_file(call_site_span, &public_wit_source, &package_name)?;
+    let inline_literal = Literal::string(&inline_wit_source);
 
     let guest_trait_path = build_guest_trait_path(&package_name, &interface_module)?;
     let guest_methods: Vec<TokenStream2> = methods
@@ -770,7 +785,7 @@ fn parse_component_method(
 
                 let user_ty = (*pat_type.ty).clone();
                 let type_ref = map_type_to_type_ref(&pat_type.ty, exported_types)?;
-                if !type_ref.is_custom {
+                if type_ref.requires_import {
                     type_imports.insert(type_ref.wit_name.clone());
                 }
 
@@ -795,7 +810,7 @@ fn parse_component_method(
         ReturnType::Type(_, ty) if is_unit_type(ty) => MethodReturn::Unit,
         ReturnType::Type(_, ty) => {
             let type_ref = map_type_to_type_ref(ty, exported_types)?;
-            if !type_ref.is_custom {
+            if type_ref.requires_import {
                 type_imports.insert(type_ref.wit_name.clone());
             }
             MethodReturn::Type {
@@ -999,6 +1014,7 @@ mod tests {
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
             is_custom: true,
+            requires_import: false,
             path: vec!["StructA".into()],
         };
 
@@ -1013,6 +1029,7 @@ mod tests {
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
             is_custom: true,
+            requires_import: false,
             path: vec!["StructA".into()],
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];
@@ -1031,6 +1048,7 @@ mod tests {
         let type_ref = TypeRef {
             wit_name: "struct-a".into(),
             is_custom: true,
+            requires_import: false,
             path: vec!["super".into(), "StructA".into()],
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];

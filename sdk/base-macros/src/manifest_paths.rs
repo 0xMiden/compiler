@@ -9,7 +9,10 @@ use std::{
 use proc_macro2::Span;
 use syn::Error;
 
-use crate::util::{bundled_wit_folder, strip_line_comment};
+use crate::{
+    util::{bundled_wit_folder, strip_line_comment},
+    wit_world::ProjectPackageMetadata,
+};
 
 /// File name for the embedded Miden SDK WIT.
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
@@ -30,7 +33,7 @@ pub(crate) struct ResolveOptions {
 
 /// Collects WIT search paths and the target world from `miden-project.toml` + local files.
 pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, Error> {
-    let manifest = crate::wit_world::ManifestPackage::load(Span::call_site())?;
+    let manifest = ProjectPackageMetadata::load_or_default(Span::call_site())?;
 
     let canonical_prelude_dir = ensure_sdk_wit()?;
 

@@ -163,7 +163,7 @@ pub fn maybe_lower_linker_stub(
             let mut import_func = import_func_ref.borrow_mut();
             attach_effects_to_function(&mut import_func, effects.iter());
         }
-        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
+        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)?
     };
 
     // Return

@@ -215,7 +215,11 @@ fn cargo_build(
         nested_options.profile = "release".to_string();
     }
 
-    let package = midenc_session::fixup_targets(package, true);
+    let package = if target.ty.is_executable() {
+        midenc_session::fixup_targets(package, true)
+    } else {
+        package
+    };
 
     let input = InputFile::from_path(manifest_path).unwrap();
     let session = Rc::new(Session::new_project(

@@ -44,6 +44,15 @@ struct MemoryEffectArray;
 #[allow(unused)]
 struct AdviceEffectArray;
 
+#[derive(DialectAttribute)]
+#[attribute(
+    dialect = BuiltinDialect,
+    remote = "Array<super::LocalVariable>",
+    implements(AttrPrinter),
+)]
+#[allow(unused)]
+struct LocalVariableArray;
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Array<T>(SmallVec<[T; 2]>);
 
@@ -252,6 +261,19 @@ impl crate::print::AttrPrinter for TypeArrayAttr {
                 *printer += const_text(", ");
             }
             printer.print_type(value);
+        }
+    }
+}
+
+impl crate::print::AttrPrinter for LocalVariableArrayAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        for (i, value) in self.0.iter().enumerate() {
+            if i > 0 {
+                *printer += const_text(", ");
+            }
+            *printer += text(alloc::format!("{value}"));
         }
     }
 }

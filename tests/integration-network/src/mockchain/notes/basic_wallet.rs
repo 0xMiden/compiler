@@ -14,12 +14,11 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use midenc_expect_test::expect;
 
-use crate::mockchain::support::{
+use super::super::support::{
     assert_account_has_fungible_asset, build_asset_transfer_tx, build_send_notes_script,
     compile_rust_package, execute_tx, note_cycles, note_script_root, prologue_cycles,
     to_core_felts, tx_script_processing_cycles,
 };
-
 /// Converts the P2IDE note payload into protocol storage order for the basic-wallet tests.
 fn to_p2ide_storage_felts(
     target: &AccountId,

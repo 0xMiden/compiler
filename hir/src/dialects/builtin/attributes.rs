@@ -16,7 +16,10 @@ pub mod version;
 mod visibility;
 
 pub use self::{
-    array::{AdviceEffectArrayAttr, Array, MemoryEffectArrayAttr, TypeArrayAttr, U32ArrayAttr},
+    array::{
+        AdviceEffectArrayAttr, Array, LocalVariableArrayAttr, MemoryEffectArrayAttr, TypeArrayAttr,
+        U32ArrayAttr,
+    },
     boolean::BoolAttr,
     bytes::{Bytes, BytesAttr},
     effects::{AdviceEffectDescriptor, AdviceResourceKind, MemoryEffectDescriptor},

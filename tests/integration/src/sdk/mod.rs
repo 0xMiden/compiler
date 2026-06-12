@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, path::Path};
 
 use miden_core::{
     program::Program,
@@ -42,6 +42,16 @@ fn assert_manifest_exports_match_library(package: &miden_mast_package::Package) 
         manifest_exports, library_exports,
         "package manifest exports diverged from library exports"
     );
+}
+
+/// Writes a compiled package where `miden::generate!` expects Cargo Miden dependency artifacts.
+fn persist_cargo_miden_dependency(
+    project_path: impl AsRef<Path>,
+    package: &miden_mast_package::Package,
+) {
+    package
+        .write_masp_file(project_path.as_ref().join("target").join("miden").join("release"))
+        .expect("failed to persist compiled Miden dependency package");
 }
 
 fn component_namespace(name: &str) -> String {
@@ -162,6 +172,10 @@ fn rust_sdk_cross_ctx_account_and_note() {
         [],
     );
     let account_package = test.compile_package();
+    persist_cargo_miden_dependency(
+        "../fixtures/components/cross-ctx-account",
+        account_package.as_ref(),
+    );
     assert!(account_package.is_library());
     assert_manifest_exports_match_library(account_package.as_ref());
     let lib = account_package.mast.clone();
@@ -216,6 +230,10 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         [],
     );
     let account_package = test.compile_package();
+    persist_cargo_miden_dependency(
+        "../fixtures/components/cross-ctx-account-word",
+        account_package.as_ref(),
+    );
     assert!(account_package.is_library());
     let lib = account_package.mast.clone();
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
@@ -264,6 +282,10 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         [],
     );
     let account_package = test.compile_package();
+    persist_cargo_miden_dependency(
+        "../fixtures/components/cross-ctx-account-word-arg",
+        account_package.as_ref(),
+    );
 
     assert!(account_package.is_library());
     let lib = account_package.mast.clone();

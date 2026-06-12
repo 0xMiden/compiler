@@ -31,6 +31,21 @@ pub enum CanonicalTypeError {
     #[error("type '{0}' is not supported by the canonical abi")]
     #[diagnostic()]
     Unsupported(Type),
+    #[error("non-C-like enum '{0}' is not supported by the canonical abi")]
+    #[diagnostic()]
+    NonCLikeEnum(Type),
+    #[error("canonical abi layout for type '{ty}' overflowed u32 offsets")]
+    #[diagnostic()]
+    LayoutOverflow { ty: Type },
+}
+
+/// Byte layout for one value produced by canonical ABI flattening.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CanonicalFlatLayoutEntry {
+    /// Byte offset of this flattened value relative to the containing tuple.
+    pub offset: u32,
+    /// Source type to load from memory for this flattened value.
+    pub ty: Type,
 }
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
@@ -79,6 +94,114 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
             return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }
     })
+}
+
+/// Returns byte offsets for values produced by canonical ABI flattening.
+pub fn flattened_type_layout(
+    ty: &Type,
+    offset: u32,
+) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
+    let mut layout = Vec::new();
+    push_flattened_type_layout(ty, offset, &mut layout)?;
+    Ok(layout)
+}
+
+/// Returns byte offsets for a canonical ABI tuple of flattened parameter values.
+pub fn flattened_types_layout(
+    tys: &[Type],
+) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
+    let tuple = StructType::new(tys.iter().cloned());
+    let mut layout = Vec::new();
+
+    for field in tuple.fields() {
+        push_flattened_type_layout(&field.ty, field.offset, &mut layout)?;
+    }
+
+    Ok(layout)
+}
+
+/// Appends byte offsets for values produced by canonical ABI flattening.
+fn push_flattened_type_layout(
+    ty: &Type,
+    offset: u32,
+    layout: &mut Vec<CanonicalFlatLayoutEntry>,
+) -> Result<(), CanonicalTypeError> {
+    match ty {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::Felt => layout.push(CanonicalFlatLayoutEntry {
+            offset,
+            ty: ty.clone(),
+        }),
+        Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
+        Type::Enum(enum_ty) => {
+            if !enum_ty.is_c_like() {
+                return Err(CanonicalTypeError::NonCLikeEnum(ty.clone()));
+            }
+            push_flattened_type_layout(enum_ty.discriminant(), offset, layout)?;
+        }
+        Type::Struct(struct_ty) => {
+            for field in struct_ty.fields() {
+                let field_offset = canonical_layout_offset(offset, field.offset, &field.ty)?;
+                push_flattened_type_layout(&field.ty, field_offset, layout)?;
+            }
+        }
+        Type::Array(array_ty) => {
+            let elem_ty = array_ty.element_type();
+            let elem_stride = u32::try_from(elem_ty.aligned_size_in_bytes()).map_err(|_| {
+                CanonicalTypeError::LayoutOverflow {
+                    ty: elem_ty.clone(),
+                }
+            })?;
+            for index in 0..array_ty.len() {
+                let index =
+                    u32::try_from(index).map_err(|_| CanonicalTypeError::LayoutOverflow {
+                        ty: elem_ty.clone(),
+                    })?;
+                let elem_offset = index.checked_mul(elem_stride).ok_or_else(|| {
+                    CanonicalTypeError::LayoutOverflow {
+                        ty: elem_ty.clone(),
+                    }
+                })?;
+                let elem_offset = canonical_layout_offset(offset, elem_offset, elem_ty)?;
+                push_flattened_type_layout(elem_ty, elem_offset, layout)?;
+            }
+        }
+        Type::List(_) => {
+            layout.push(CanonicalFlatLayoutEntry {
+                offset,
+                ty: Type::I32,
+            });
+            layout.push(CanonicalFlatLayoutEntry {
+                offset: canonical_layout_offset(offset, 4, ty)?,
+                ty: Type::I32,
+            });
+        }
+        Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::Unknown
+        | Type::Never
+        | Type::Ptr(_)
+        | Type::Function(_) => {
+            return Err(CanonicalTypeError::Unsupported(ty.clone()));
+        }
+    }
+
+    Ok(())
+}
+
+/// Adds a relative byte offset within a canonical ABI tuple layout.
+fn canonical_layout_offset(base: u32, relative: u32, ty: &Type) -> Result<u32, CanonicalTypeError> {
+    base.checked_add(relative)
+        .ok_or_else(|| CanonicalTypeError::LayoutOverflow { ty: ty.clone() })
 }
 
 /// Flattens the given list of CanonABI types into a list of ABI parameters.
@@ -404,6 +527,63 @@ mod tests {
         assert_eq!(result[0].ty, Type::I32);
         assert_eq!(result[1].ty, Type::I32);
         assert_eq!(result[2].ty, Type::Felt);
+    }
+
+    #[test]
+    fn test_flattened_types_layout_matches_flattened_shape() {
+        let context = Rc::new(Context::default());
+        let nested = Type::from(StructType::new(vec![Type::U8, Type::U64, Type::Felt]));
+        let params = vec![Type::I32, nested, Type::from(ArrayType::new(Type::U16, 2))];
+
+        let flattened = flatten_types(&context, &params).unwrap();
+        let layout = flattened_types_layout(&params).unwrap();
+
+        assert_eq!(layout.len(), flattened.len());
+        assert_eq!(
+            layout.iter().map(|entry| entry.ty.clone()).collect::<Vec<_>>(),
+            vec![Type::I32, Type::U8, Type::U64, Type::Felt, Type::U16, Type::U16]
+        );
+    }
+
+    #[test]
+    fn test_flattened_types_layout_uses_canonical_tuple_offsets() {
+        let nested = Type::from(StructType::new(vec![Type::U8, Type::U64]));
+        let params = vec![Type::Felt, nested.clone()];
+        let tuple = StructType::new(params.clone());
+        let Type::Struct(nested_struct) = &nested else {
+            panic!("expected nested struct");
+        };
+        let nested_base = tuple.fields()[1].offset;
+        let expected_offsets = vec![
+            tuple.fields()[0].offset,
+            nested_base + nested_struct.fields()[0].offset,
+            nested_base + nested_struct.fields()[1].offset,
+        ];
+
+        let layout = flattened_types_layout(&params).unwrap();
+
+        assert_eq!(layout.iter().map(|entry| entry.offset).collect::<Vec<_>>(), expected_offsets);
+    }
+
+    #[test]
+    fn test_flattened_type_layout_rejects_non_c_like_enum() {
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "result".into(),
+                Type::U8,
+                [
+                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("err".into(), Type::I32, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let err = flattened_type_layout(&enum_ty, 0)
+            .expect_err("non-C-like enum layouts must return a diagnostic");
+        let message = err.to_string();
+
+        assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
     }
 
     #[test]

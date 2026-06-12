@@ -20,7 +20,7 @@ use crate::{
 };
 
 /// Convert a resolved callee [`midenc_hir::SymbolPath`] into a MASM [`masm::InvocationTarget`].
-fn invocation_target_from_symbol_path(
+pub(super) fn invocation_target_from_symbol_path(
     callee_path: &midenc_hir::SymbolPath,
     span: midenc_hir::SourceSpan,
 ) -> masm::InvocationTarget {

@@ -54,6 +54,8 @@ mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
 mod export_type;
+mod foreign_account;
+mod fpi;
 mod generate;
 mod manifest_paths;
 mod note;
@@ -66,6 +68,31 @@ mod wit_world;
 /// Generates the WIT interface and storage metadata.
 ///
 /// **NOTE:** Mark each type used in the public method with `#[export_type]` attribute macro.
+///
+/// # Foreign Procedure Invocation (FPI)
+///
+/// Use `#[account(...)]` on an empty struct to generate typed FPI caller wrappers for
+/// account dependencies. Dependency names are Rust-style Miden package names: write the Miden
+/// package name as a Rust identifier by replacing `-` with `_`.
+///
+/// ```rust,ignore
+/// use miden::{account, AccountId, Felt};
+///
+/// #[account(counter_contract)]
+/// struct CounterContract;
+///
+/// #[component]
+/// impl CallerAccount {
+///     pub fn read_counter(&self, counter_account_id: AccountId) -> Felt {
+///         let counter = CounterContract::from_account(counter_account_id);
+///         counter.get_count()
+///     }
+/// }
+/// ```
+///
+/// The generated methods invoke the foreign account through the transaction kernel's
+/// `execute_foreign_procedure` operation. The callee account must be deployed with code matching
+/// the dependency package used while compiling the caller.
 ///
 /// To disable WIT interface generation:
 /// - don't use `#[component]` attribute macro in the `impl MyAccountType` section;
@@ -80,6 +107,19 @@ pub fn component(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     component_macro::component(attr, item)
+}
+
+/// Generates typed FPI bindings for account dependencies on an empty wrapper struct.
+///
+/// The attribute accepts Rust-style Miden package names. Write the Miden package name as a Rust
+/// identifier by replacing `-` with `_`. For example, a dependency named `counter-contract` is
+/// requested with `#[account(counter_contract)]`.
+#[proc_macro_attribute]
+pub fn account(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    foreign_account::expand(attr, item)
 }
 
 /// Marks a component method as the authentication procedure entrypoint (`#[auth_script]`).
@@ -113,6 +153,38 @@ pub fn export_type(
 /// - a note input type definition (`struct MyNote { ... }`)
 /// - the associated inherent `impl` block that contains an entrypoint method annotated with
 ///   `#[note_script]`
+///
+/// # Foreign Procedure Invocation (FPI)
+///
+/// Use `#[account(...)]` on an empty struct to generate typed FPI caller wrappers for
+/// account dependencies. Dependency names are Rust-style Miden package names: write the Miden
+/// package name as a Rust identifier by replacing `-` with `_`.
+///
+/// ```rust,ignore
+/// use miden::*;
+///
+/// #[account(counter_contract)]
+/// struct CounterContract;
+///
+/// #[note]
+/// struct CounterCaller {
+///     counter_account_id: AccountId,
+/// }
+///
+/// #[note]
+/// impl CounterCaller {
+///     #[note_script]
+///     pub fn run(self, _arg: Word) {
+///         let counter = CounterContract::from_account(self.counter_account_id);
+///         let count = counter.get_count();
+///         assert_eq(count, felt!(1));
+///     }
+/// }
+/// ```
+///
+/// The generated methods invoke the foreign account through the transaction kernel's
+/// `execute_foreign_procedure` operation. The callee account must be deployed with code matching
+/// the dependency package used while compiling the note.
 ///
 /// # Example
 ///

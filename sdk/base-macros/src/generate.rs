@@ -16,7 +16,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::manifest_paths;
+use crate::{fpi, manifest_paths};
 
 /// Name of the wrapper struct generated to aggregate imported interface methods.
 const WRAPPER_STRUCT_NAME: &str = "Account";
@@ -171,14 +171,47 @@ fn generate_bindings(
     config: &manifest_paths::ResolvedWit,
     world: Option<&str>,
 ) -> Result<TokenStream2, Error> {
-    let inline_src = args.inline.as_ref().map(|src| src.value());
-    let inline_ref = inline_src.as_deref();
-    let mut wit_sources = load_wit_sources(&config.paths, inline_ref)?;
+    generate_bindings_from_sources(
+        &config.paths,
+        args.inline.as_ref().map(|src| src.value()).as_deref(),
+        world,
+        &args.with_entries,
+        &[],
+    )
+}
+
+/// Generates inline WIT bindings and injects FPI imports for the selected dependency interfaces.
+pub(crate) fn generate_inline_fpi_bindings(
+    config: &manifest_paths::ResolvedWit,
+    inline_source: &str,
+    world: &str,
+    fpi_imports: &[String],
+    with_entries: &[(String, WithOption)],
+) -> Result<TokenStream2, Error> {
+    generate_bindings_from_sources(
+        &config.paths,
+        Some(inline_source),
+        Some(world),
+        with_entries,
+        fpi_imports,
+    )
+}
+
+/// Generates WIT bindings from resolved source paths and optional inline source.
+fn generate_bindings_from_sources(
+    paths: &[String],
+    inline_source: Option<&str>,
+    world: Option<&str>,
+    with_entries: &[(String, WithOption)],
+    fpi_imports: &[String],
+) -> Result<TokenStream2, Error> {
+    let mut wit_sources = load_wit_sources(paths, inline_source)?;
 
     let world_id = wit_sources
         .resolve
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
+    fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
 
     let mut opts = Opts {
         generate_all: true,
@@ -186,7 +219,7 @@ fn generate_bindings(
         default_bindings_module: Some("bindings".to_string()),
         ..Opts::default()
     };
-    push_custom_with_entries(&mut opts, &args.with_entries);
+    push_custom_with_entries(&mut opts, with_entries);
     push_default_with_entries(&mut opts);
 
     let mut generated_files = wit_bindgen_core::Files::default();
@@ -415,7 +448,7 @@ fn collect_methods_from_module(
     let functions: Vec<&ItemFn> = items
         .iter()
         .filter_map(|item| match item {
-            Item::Fn(func) if is_target_function(func) => Some(func),
+            Item::Fn(func) if is_target_function(func) && !fpi::is_function(func) => Some(func),
             _ => None,
         })
         .collect();
@@ -471,7 +504,7 @@ fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Resul
 /// This transforms simple type names (e.g., `StructA`) into fully qualified paths
 /// (e.g., `miden::component::component::StructA`) so they resolve correctly when
 /// the method is placed at the bindings root level.
-fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[syn::Ident]) {
+pub(crate) fn qualify_signature_types(sig: &mut syn::Signature, module_path: &[syn::Ident]) {
     struct TypeQualifier<'a> {
         module_path: &'a [syn::Ident],
     }
@@ -555,7 +588,7 @@ fn is_primitive_or_std_type(name: &str) -> bool {
 ///
 /// Returns an error if the function contains a receiver (`self`) or uses
 /// unsupported argument patterns (e.g., destructuring patterns).
-fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> {
+pub(crate) fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> {
     func.sig
         .inputs
         .iter()
@@ -598,7 +631,7 @@ fn wrapper_call_tokens(
 /// - `exports` modules (these are user-implemented exports, not imports)
 /// - Modules starting with underscore (internal/private modules)
 /// - Non-leaf modules (modules that contain nested modules)
-fn should_generate_struct(path: &[syn::Ident], items: &[Item]) -> bool {
+pub(crate) fn should_generate_struct(path: &[syn::Ident], items: &[Item]) -> bool {
     if path.is_empty() {
         return false;
     }
@@ -627,7 +660,7 @@ fn is_target_function(func: &ItemFn) -> bool {
 }
 
 /// Formats a module path as a `::` separated string for use in documentation.
-fn format_module_path(path: &[syn::Ident]) -> String {
+pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
     path.iter().map(|ident| ident.to_string()).collect::<Vec<_>>().join("::")
 }
 

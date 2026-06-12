@@ -15,6 +15,7 @@ use crate::manifest_paths::SDK_WIT_SOURCE;
 pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
     pub(crate) is_custom: bool,
+    pub(crate) requires_import: bool,
     pub(crate) path: Vec<String>,
 }
 
@@ -109,20 +110,30 @@ pub(crate) fn map_type_to_type_ref(
 
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
-            let wit_name = ident.to_kebab_case();
-
-            if exported_types.contains_key(&ident) {
+            if let Some(wit_name) = wit_primitive_type_name(&ident) {
                 return Ok(TypeRef {
-                    wit_name,
-                    is_custom: true,
+                    wit_name: wit_name.to_string(),
+                    is_custom: false,
+                    requires_import: false,
                     path: path_segments,
                 });
             }
 
+            if exported_types.contains_key(&ident) {
+                return Ok(TypeRef {
+                    wit_name: ident.to_kebab_case(),
+                    is_custom: true,
+                    requires_import: false,
+                    path: path_segments,
+                });
+            }
+
+            let wit_name = ident.to_kebab_case();
             if sdk_core_type_names().contains(&wit_name) {
                 return Ok(TypeRef {
                     wit_name,
                     is_custom: false,
+                    requires_import: true,
                     path: path_segments,
                 });
             }
@@ -130,6 +141,7 @@ pub(crate) fn map_type_to_type_ref(
             Ok(TypeRef {
                 wit_name,
                 is_custom: true,
+                requires_import: false,
                 path: path_segments,
             })
         }
@@ -137,6 +149,22 @@ pub(crate) fn map_type_to_type_ref(
             ty.span(),
             "unsupported type in component interface; only paths are supported",
         )),
+    }
+}
+
+/// Returns the WIT primitive name for Rust scalar types supported by component lowering.
+fn wit_primitive_type_name(rust_name: &str) -> Option<&'static str> {
+    match rust_name {
+        "bool" => Some("bool"),
+        "u8" => Some("u8"),
+        "u16" => Some("u16"),
+        "u32" => Some("u32"),
+        "u64" => Some("u64"),
+        "i8" => Some("s8"),
+        "i16" => Some("s16"),
+        "i32" => Some("s32"),
+        "i64" => Some("s64"),
+        _ => None,
     }
 }
 

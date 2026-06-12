@@ -168,6 +168,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     //info.register_operation_trait::<hir::ConstantBytes, dyn HirLowering>();
     info.register_operation_trait::<hir::ConstantPointer, dyn HirLowering>();
     info.register_operation_trait::<hir::Exec, dyn HirLowering>();
+    info.register_operation_trait::<hir::ExecFpi, dyn HirLowering>();
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
     info.register_operation_trait::<hir::Syscall, dyn HirLowering>();
     info.register_operation_trait::<hir::Store, dyn HirLowering>();

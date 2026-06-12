@@ -1,6 +1,6 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{future::Future, sync::Arc};
+use std::{future::Future, path::Path, sync::Arc};
 
 use miden_client::{
     Word,
@@ -52,7 +52,8 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
-pub(crate) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Package> {
+pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
+    let project_path = project_path.as_ref();
     let config = WasmTranslationConfig::default();
     let mut builder = CompilerTestBuilder::rust_source_cargo_miden(project_path, config, []);
 
@@ -61,7 +62,13 @@ pub(crate) fn compile_rust_package(project_path: &str, release: bool) -> Arc<Pac
     }
 
     let mut test = builder.build();
-    test.compile_package()
+    let package = test.compile_package();
+    let profile = if release { "release" } else { "debug" };
+    package
+        .write_masp_file(project_path.join("target").join("miden").join(profile))
+        .expect("failed to persist compiled Miden package");
+
+    package
 }
 
 /// Returns the root of the note script exported by the compiled package.
