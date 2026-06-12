@@ -18,13 +18,14 @@ use midenc_hir::{
 use midenc_session::diagnostics::Report;
 
 use super::{
-    ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS,
+    CanonicalAbiType, ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS,
+    MAX_FLAT_RESULTS,
     canon_abi_utils::{store, validate_flat_variants},
     flat::{
         CanonicalAbiMode, CanonicalAbiTransformation, check_core_wasm_signature_equivalence,
         classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
-        flattened_types_layout,
     },
+    flat_tuple_layout,
 };
 use crate::{
     callable::CallableFunction,
@@ -173,7 +174,7 @@ fn generate_fpi_lowering(
         &core_func_sig,
         args.len(),
     )?;
-    let lowered = lower_fpi_canonical_args(&shape, &import_func_ty.ir, fb, args, span)
+    let lowered = lower_fpi_canonical_args(&shape, import_func_ty, fb, args, span)
         .wrap_err_with(|| format!("failed to lower FPI import arguments for `{core_func_path}`"))?;
 
     let prefix_locals =
@@ -421,7 +422,7 @@ fn plan_fpi_call(
 /// Emits the felt-only protocol argument list for a validated FPI call shape.
 fn lower_fpi_canonical_args(
     shape: &FpiCallShape,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     args: &[ValueRef],
     span: SourceSpan,
@@ -491,15 +492,16 @@ fn lower_fpi_direct_args(
 ///
 /// Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
 /// generated wrapper reloads every flattened value here, so all FPI calls reach the backend in
-/// the same direct, felt-only form.
+/// the same direct, felt-only form. Load offsets come from the canonical ABI metadata trees,
+/// matching the tuple layout the calling convention requires of the stored arguments.
 fn lower_fpi_indirect_args(
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     arg_ptr: ValueRef,
-    params: &[Type],
+    params: &[CanonicalAbiType],
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
     let mut fpi_args = Vec::new();
-    for entry in flattened_types_layout(params)? {
+    for entry in flat_tuple_layout(params)? {
         let value = load_fpi_tuple_value(fb, arg_ptr, entry.offset, &entry.ty, span)?;
         push_fpi_arg_felts(fb, &entry.ty, value, &mut fpi_args, span)?;
     }
@@ -1465,29 +1467,6 @@ mod tests {
                 && message.contains("direct FPI calls support at most 16"),
             "unexpected error message: {message}"
         );
-    }
-
-    #[test]
-    fn flattened_types_layout_rejects_non_c_like_enum() {
-        let enum_ty = Type::Enum(Arc::new(
-            EnumType::new(
-                "result".into(),
-                Type::U8,
-                [
-                    Variant::c_like("ok".into(), Some(0)),
-                    Variant::new("err".into(), Type::I32, Some(1)),
-                ],
-            )
-            .unwrap(),
-        ));
-
-        let err = match flattened_types_layout(&[enum_ty]) {
-            Ok(_) => panic!("non-C-like enum layouts must return a diagnostic"),
-            Err(err) => err,
-        };
-        let message = err.to_string();
-
-        assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
     }
 
     fn component_import_path(function: &str) -> SymbolPath {
