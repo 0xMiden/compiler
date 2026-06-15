@@ -164,10 +164,8 @@ jobs:
         run: |
           cargo make check --tests
       - name: Test
-        # Temporarily skipped network tests until miden-client publishes a protocol 0.15-compatible release.
         run: |
-          cargo make test -E 'not (package(midenc-integration-tests) or package(cargo-miden))'
-          # cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
+          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
 
   release_profile_tests:
     name: midenc release-profile tests
@@ -384,9 +382,8 @@ jobs:
             cargo install cargo-make --force
           fi
       - name: Test
-        # Temporarily skipped until miden-client publishes a protocol 0.15-compatible release.
         run: |
-          echo "midenc-integration-network-tests is temporarily disabled"
+          cargo make test -E 'package(midenc-integration-network-tests)'
 
   check_release:
     name: release checks
