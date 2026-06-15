@@ -39,6 +39,7 @@ pub(super) fn expand_sibling_traits(
     refs: &[DependencyRef],
 ) -> syn::Result<TokenStream2> {
     reject_duplicate_trait_names(refs)?;
+    reject_component_trait_name_collision(component_trait_ident, refs)?;
 
     let dependencies = select_dependencies(metadata, refs, Span2::call_site())?;
     let imports = dependencies
@@ -108,15 +109,17 @@ fn augment_missing_sibling_wit(err: syn::Error, dependencies: &[SelectedDependen
         return err;
     }
 
-    // Match the wit-parser "package '<pkg>@<ver>' not found" id against each import's package
-    // segment (everything before the interface `/`). Match up to the version boundary (`<pkg>@`)
-    // so a package id that is a prefix of another (`miden:counter` vs `miden:counter-contract`) is
-    // not over-matched.
+    // Only the "package '<id>' not found" portion names the missing package; wit-parser appends a
+    // `known packages:` list of the packages it *did* resolve. Matching against the whole message
+    // would blame a resolved sibling that happens to appear in that list, so restrict the search to
+    // the text before it. Within that, match up to the version boundary (`<pkg>@`) so a package id
+    // that is a prefix of another (`miden:counter` vs `miden:counter-contract`) is not over-matched.
+    let not_found = message.split("known packages").next().unwrap_or(message.as_str());
     let missing = dependencies
         .iter()
         .filter(|dependency| {
             let package = dependency.import().split('/').next().unwrap_or(dependency.import());
-            message.contains(&format!("{package}@"))
+            not_found.contains(&format!("{package}@"))
         })
         .collect::<Vec<_>>();
     if missing.is_empty() {
@@ -144,6 +147,35 @@ fn augment_missing_sibling_wit(err: syn::Error, dependencies: &[SelectedDependen
              it:\n{hints}\n\nunderlying error: {message}"
         ),
     )
+}
+
+/// Rejects a sibling reference whose generated trait would shadow the component trait itself.
+///
+/// The generated `pub trait <Interface>` is emitted next to the user's component trait, so a
+/// reference whose interface segment equals the component trait name would produce two traits with
+/// the same name in one module — a raw `E0428` far from its cause. Catch it with a clear message.
+fn reject_component_trait_name_collision(
+    component_trait_ident: &Ident,
+    refs: &[DependencyRef],
+) -> syn::Result<()> {
+    if let Some(reference) = refs
+        .iter()
+        .find(|reference| &reference.interface_ident == component_trait_ident)
+    {
+        return Err(Error::new(
+            reference.span,
+            format!(
+                "sibling reference `{}::{}` would generate a trait named `{}`, which collides \
+                 with the component trait `{}` being defined; rename the component trait so it \
+                 differs from its sibling interface names",
+                reference.package_ident,
+                reference.interface_ident,
+                reference.interface_ident,
+                component_trait_ident,
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Rejects references whose interface segments would generate identically named Rust traits.
@@ -432,5 +464,44 @@ mod tests {
             augment_missing_sibling_wit(raw, std::slice::from_ref(&dependency)).to_string();
         assert!(augmented.starts_with("package 'miden:counter-contract@0.1.0' not found"));
         assert!(!augmented.contains("[package.metadata.miden.dependencies]"));
+    }
+
+    #[test]
+    fn does_not_blame_a_sibling_listed_under_known_packages() {
+        // `first` resolved (it appears in the error's `known packages` list); only `second` is
+        // missing. The hint must name only `second`, not the healthy `first`.
+        let first = SelectedDependency {
+            name: "first-counter".to_string(),
+            root: std::path::PathBuf::from("/tmp/first"),
+            interface: crate::wit_world::DependencyInterface {
+                name: "first-counter".to_string(),
+                import: "miden:first-counter/first-counter@0.1.0".to_string(),
+                types: Vec::new(),
+            },
+        };
+        let second = SelectedDependency {
+            name: "second-counter".to_string(),
+            root: std::path::PathBuf::from("/tmp/second"),
+            interface: crate::wit_world::DependencyInterface {
+                name: "second-counter".to_string(),
+                import: "miden:second-counter/second-counter@0.1.0".to_string(),
+                types: Vec::new(),
+            },
+        };
+        let raw = Error::new(
+            Span2::call_site(),
+            "package 'miden:second-counter@0.1.0' not found. known packages: miden:base@1.0.0, \
+             miden:first-counter@0.1.0",
+        );
+
+        let deps = [first, second];
+        let message = augment_missing_sibling_wit(raw, &deps).to_string();
+        // The hint wraps the dependency name in quotes; the resolved sibling appears only in the
+        // verbatim underlying error (unquoted), so a quoted match isolates the hint.
+        assert!(message.contains("\"second-counter\""), "message: {message}");
+        assert!(
+            !message.contains("\"first-counter\""),
+            "must not blame the resolved sibling: {message}"
+        );
     }
 }

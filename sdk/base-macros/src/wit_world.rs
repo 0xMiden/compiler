@@ -565,15 +565,18 @@ fn parse_dependency_wit_path(path: &Path) -> Result<Option<DependencyWit>, Strin
         .push_path(path)
         .map_err(|err| format!("failed to parse WIT path '{}': {err}", path.display()))?;
 
-    let interface_ids = exported_interfaces(&resolve, package_id);
-    if interface_ids.is_empty() {
+    // Skip exported interfaces that cannot be turned into a referenceable import id (anonymous
+    // inline interfaces, or interfaces in an unversioned package) rather than failing the whole
+    // dependency: an incidental anonymous export must not break a referenced *named* interface. A
+    // reference to a skipped interface still fails later, via `find_interface`, with a precise
+    // "does not export a WIT interface named ..." message.
+    let interfaces = exported_interfaces(&resolve, package_id)
+        .into_iter()
+        .filter_map(|interface_id| dependency_interface_metadata(&resolve, interface_id).ok())
+        .collect::<Vec<_>>();
+    if interfaces.is_empty() {
         return Ok(None);
     }
-
-    let interfaces = interface_ids
-        .into_iter()
-        .map(|interface_id| dependency_interface_metadata(&resolve, interface_id))
-        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Some(DependencyWit { interfaces }))
 }
@@ -903,6 +906,37 @@ world multi-account-world {
         assert_eq!(selected.name, "multi-account");
 
         assert!(dependency.select("missing-api").is_none());
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn skips_anonymous_exported_interfaces() {
+        let fixture_root = empty_fixture_root();
+        let wit_dir = fixture_root.join("target/generated-wit");
+        fs::create_dir_all(&wit_dir).expect("generated-wit directory must be created");
+        // The world exports a named interface plus an inline (anonymous) one; the anonymous export
+        // must be skipped rather than failing the whole dependency parse.
+        let wit = r#"
+package miden:mixed-export@0.0.1;
+
+interface named-api {
+    get-value: func() -> u64;
+}
+
+world mixed-export-world {
+    export named-api;
+    export inline-api: interface {
+        helper: func();
+    }
+}
+"#;
+        fs::write(wit_dir.join("mixed-export.wit"), wit).expect("mixed-export WIT fixture");
+
+        let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
+
+        assert_eq!(dependency_wit.interfaces.len(), 1);
+        assert_eq!(dependency_wit.interfaces[0].name, "named-api");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }

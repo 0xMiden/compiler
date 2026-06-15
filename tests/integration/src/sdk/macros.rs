@@ -997,6 +997,47 @@ impl TestComponent for TestComponentStorage {
     );
 }
 
+#[test]
+fn component_sibling_trait_name_must_differ_from_the_component_trait() {
+    // A sibling reference whose interface segment equals the component trait name would generate a
+    // second `trait TestComponent` next to the user's. The collision check runs before WIT
+    // resolution, so the referenced interface need not exist; the macro should reject the name
+    // clash with guidance instead of leaving a raw duplicate-definition error.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestComponent)]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(7)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep(
+        "component_sibling_trait_name_collision",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected the colliding trait name to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("collides with the component trait"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
 /// Builds a generated account project that deliberately has no `miden-project.toml`, for tests
 /// of the missing-manifest diagnostics.
 fn manifestless_account_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {
