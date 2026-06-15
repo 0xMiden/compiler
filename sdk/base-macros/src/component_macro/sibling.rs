@@ -109,12 +109,14 @@ fn augment_missing_sibling_wit(err: syn::Error, dependencies: &[SelectedDependen
     }
 
     // Match the wit-parser "package '<pkg>@<ver>' not found" id against each import's package
-    // segment (everything before the interface `/`).
+    // segment (everything before the interface `/`). Match up to the version boundary (`<pkg>@`)
+    // so a package id that is a prefix of another (`miden:counter` vs `miden:counter-contract`) is
+    // not over-matched.
     let missing = dependencies
         .iter()
         .filter(|dependency| {
             let package = dependency.import().split('/').next().unwrap_or(dependency.import());
-            message.contains(package)
+            message.contains(&format!("{package}@"))
         })
         .collect::<Vec<_>>();
     if missing.is_empty() {
@@ -405,5 +407,30 @@ mod tests {
         let raw = Error::new(Span2::call_site(), "some unrelated macro error");
         let augmented = augment_missing_sibling_wit(raw, std::slice::from_ref(&test_dependency()));
         assert_eq!(augmented.to_string(), "some unrelated macro error");
+    }
+
+    #[test]
+    fn does_not_over_match_a_prefix_package_id() {
+        // A `miden:counter` dependency must not be flagged when the error names the distinct
+        // `miden:counter-contract` package, even though the former id is a prefix of the latter.
+        let dependency = SelectedDependency {
+            name: "counter".to_string(),
+            root: std::path::PathBuf::from("/tmp/counter"),
+            interface: crate::wit_world::DependencyInterface {
+                name: "counter".to_string(),
+                import: "miden:counter/counter@0.1.0".to_string(),
+                types: Vec::new(),
+            },
+        };
+        let raw = Error::new(
+            Span2::call_site(),
+            "package 'miden:counter-contract@0.1.0' not found. known packages: miden:base@1.0.0",
+        );
+
+        // No dependency matches the error's package id, so the original error passes through.
+        let augmented =
+            augment_missing_sibling_wit(raw, std::slice::from_ref(&dependency)).to_string();
+        assert!(augmented.starts_with("package 'miden:counter-contract@0.1.0' not found"));
+        assert!(!augmented.contains("[package.metadata.miden.dependencies]"));
     }
 }

@@ -117,6 +117,13 @@ pub(crate) fn is_function(func: &ItemFn) -> bool {
 }
 
 /// Determines whether a generated free function represents a plain (non-FPI) WIT import.
+///
+/// Unlike [`is_function`], which keys on the synthesized `fpi_` prefix, this is a negative filter:
+/// it accepts any safe, public free function in a generated leaf import module that is not an FPI
+/// import. That relies on wit-bindgen emitting exactly the interface's functions as plain public
+/// free functions in those modules — it does not emit auxiliary public free functions there. If a
+/// future wit-bindgen version changes that, such functions would be picked up as sibling methods
+/// and this predicate would need to narrow (e.g. by the interface's declared function set).
 pub(crate) fn is_plain_import_function(func: &ItemFn) -> bool {
     matches!(func.vis, syn::Visibility::Public(_))
         && func.sig.unsafety.is_none()
