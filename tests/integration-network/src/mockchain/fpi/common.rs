@@ -13,7 +13,7 @@ use miden_client::{
 };
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
+    account::{AccountBuilder, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
@@ -461,26 +461,4 @@ fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> 
         &names.account_package,
         account_project_root,
     )
-}
-
-/// Asserts the counter value stored in the counter contract's storage map at `storage_key`.
-fn assert_counter_storage_at_key(
-    counter_account_storage: &AccountStorage,
-    storage_slot: &StorageSlotName,
-    storage_key: Word,
-    expected: u64,
-) {
-    let word = counter_account_storage
-        .get_map_item(storage_slot, storage_key)
-        .expect("Failed to get counter value from storage slot");
-
-    // `AccountStorage` exposes scalar felt values as `[felt, 0, 0, 0]`.
-    let val = word[0];
-    assert_eq!(
-        val.as_canonical_u64(),
-        expected,
-        "Counter value mismatch. Expected: {}, Got: {}",
-        expected,
-        val.as_canonical_u64()
-    );
 }

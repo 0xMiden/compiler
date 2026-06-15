@@ -13,7 +13,6 @@ mod single_sibling;
 
 use miden_client::Word;
 use miden_core::Felt;
-use miden_protocol::account::{AccountStorage, StorageSlotName};
 
 /// Returns the non-zero storage key used by the sibling counter fixtures.
 fn counter_storage_key() -> Word {
@@ -23,18 +22,4 @@ fn counter_storage_key() -> Word {
         Felt::new(34).unwrap(),
         Felt::new(55).unwrap(),
     ])
-}
-
-/// Asserts the counter value stored in an account's storage map at `storage_key`.
-fn assert_counter_storage_at_key(
-    account_storage: &AccountStorage,
-    storage_slot: &StorageSlotName,
-    storage_key: Word,
-    expected: u64,
-) {
-    let word = account_storage
-        .get_map_item(storage_slot, storage_key)
-        .expect("failed to get counter value from storage slot");
-
-    assert_eq!(word[0].as_canonical_u64(), expected, "counter value mismatch");
 }

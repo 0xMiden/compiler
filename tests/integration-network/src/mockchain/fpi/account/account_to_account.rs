@@ -14,14 +14,14 @@ use miden_client::{
 use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
+    account::{AccountBuilder, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::super::{
-    super::support::{execute_tx, note_script_root, to_core_felts},
+    super::support::{assert_counter_storage_at_key, execute_tx, note_script_root, to_core_felts},
     common::build_account_to_account_fpi_test_packages,
 };
 
@@ -135,20 +135,6 @@ fn callee_storage_key() -> Word {
         Felt::new(34).unwrap(),
         Felt::new(55).unwrap(),
     ])
-}
-
-/// Asserts the counter value stored in the callee account's storage map at `storage_key`.
-fn assert_counter_storage_at_key(
-    callee_account_storage: &AccountStorage,
-    storage_slot: &StorageSlotName,
-    storage_key: Word,
-    expected: u64,
-) {
-    let word = callee_account_storage
-        .get_map_item(storage_slot, storage_key)
-        .expect("failed to get counter value from storage slot");
-
-    assert_eq!(word[0].as_canonical_u64(), expected, "counter value mismatch");
 }
 
 /// Minimal callee account component source used by the account-to-account FPI test.

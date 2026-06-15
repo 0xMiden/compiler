@@ -612,6 +612,30 @@ world test-sibling-world {
 }
 "#;
 
+/// A sibling WIT whose interface owns a record type passed across a sibling call.
+///
+/// Exercises the dependency-type remapping in the sibling generator: the owned `point` record must
+/// resolve to the caller's `crate::bindings` rather than being regenerated in the sibling bindings.
+const TEST_SIBLING_OWNED_TYPE_WIT: &str = r#"package miden:test-sibling@0.0.1;
+
+use miden:base/core-types@1.0.0;
+
+interface test-sibling {
+    use core-types.{felt};
+
+    record point {
+        x: felt,
+        y: felt,
+    }
+
+    echo-point: func(p: point) -> point;
+}
+
+world test-sibling-world {
+    export test-sibling;
+}
+"#;
+
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
 /// The sibling exists only as its generated WIT (under `dep/target/generated-wit`), which is all
@@ -620,18 +644,20 @@ fn account_component_project_with_sibling_dep(
     name: &str,
     lib_rs: &str,
 ) -> crate::cargo_proj::Project {
-    account_component_project_with_sibling_dep_inner(name, lib_rs, true)
+    account_component_project_with_sibling_dep_inner(name, lib_rs, TEST_SIBLING_GENERATED_WIT, true)
 }
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// `declare_sibling_wit` controls whether the dependency's generated WIT is declared under
+/// `sibling_wit` is the dependency's generated WIT written under `dep/target/generated-wit`.
+/// `declare_sibling_wit` controls whether that WIT is declared under
 /// `[package.metadata.miden.dependencies]` in `miden-project.toml`. Omitting it reproduces the
 /// case where the reference selects (the WIT is read from `target/generated-wit`) but the inline
 /// `generate!` cannot resolve the import, so the macro emits the missing-WIT diagnostic.
 fn account_component_project_with_sibling_dep_inner(
     name: &str,
     lib_rs: &str,
+    sibling_wit: &str,
     declare_sibling_wit: bool,
 ) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
@@ -689,7 +715,7 @@ supported-types = ["RegularAccountUpdatableCode"]
     project(name)
         .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
-        .file("dep/target/generated-wit/test-sibling.wit", TEST_SIBLING_GENERATED_WIT)
+        .file("dep/target/generated-wit/test-sibling.wit", sibling_wit)
         .file("src/lib.rs", lib_rs)
         .build()
 }
@@ -907,6 +933,7 @@ impl TestComponent for TestComponentStorage {
     let cargo_proj = account_component_project_with_sibling_dep_inner(
         "component_sibling_missing_wit_entry",
         lib_rs,
+        TEST_SIBLING_GENERATED_WIT,
         false,
     );
     let output = cargo_check_miden_target(&cargo_proj);
@@ -923,6 +950,50 @@ impl TestComponent for TestComponentStorage {
     assert!(
         stderr.contains("[package.metadata.miden.dependencies]"),
         "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_sibling_call_passes_an_interface_owned_record() {
+    // The sibling interface owns the `point` record and passes it across a sibling call. This
+    // exercises the dependency-type remap path (`dependency_type_with_entries`): the generated
+    // `echo_point` resolves `Point` to the caller's `crate::bindings`, where the impl-site
+    // `#[component]` materializes it from the imported sibling interface.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, native_account::NativeAccount, Felt};
+
+use crate::bindings::miden::test_sibling::test_sibling::Point;
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn relay_point(&mut self, x: Felt, y: Felt) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn relay_point(&mut self, x: Felt, y: Felt) -> Felt {
+        let echoed = self.echo_point(Point { x, y });
+        echoed.x
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep_inner(
+        "component_sibling_owned_record",
+        lib_rs,
+        TEST_SIBLING_OWNED_TYPE_WIT,
+        true,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected a sibling call passing an interface-owned record to compile: {stderr}"
     );
 }
 

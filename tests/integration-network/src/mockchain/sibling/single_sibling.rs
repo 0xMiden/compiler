@@ -16,8 +16,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::{
-    super::support::{execute_tx, note_script_root},
-    assert_counter_storage_at_key,
+    super::support::{assert_counter_storage_at_key, execute_tx, note_script_root},
     common::build_sibling_test_packages,
     counter_storage_key,
 };
