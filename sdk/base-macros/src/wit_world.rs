@@ -1,6 +1,7 @@
 //! Shared manifest and WIT world helpers used by script-like SDK proc macros.
 
 use std::{
+    collections::HashSet,
     env, fs,
     path::{Path, PathBuf},
     sync::Arc,
@@ -89,7 +90,13 @@ impl ProjectPackageMetadata {
         let mut imports =
             collect_miden_dependencies(&self.manifest_dir, &self.package, error_span)?
                 .into_iter()
-                .map(|dependency| dependency.import().to_owned())
+                .flat_map(|dependency| {
+                    dependency
+                        .interfaces
+                        .iter()
+                        .map(|interface| interface.import.clone())
+                        .collect::<Vec<_>>()
+                })
                 .collect::<Vec<_>>();
         imports.sort();
         Ok(imports)
@@ -228,7 +235,13 @@ impl ManifestPackage {
         let mut imports = self
             .collect_miden_dependencies(error_span)?
             .into_iter()
-            .map(|dependency| dependency.import().to_owned())
+            .flat_map(|dependency| {
+                dependency
+                    .interfaces
+                    .iter()
+                    .map(|interface| interface.import.clone())
+                    .collect::<Vec<_>>()
+            })
             .collect::<Vec<_>>();
         imports.sort();
         Ok(imports)
@@ -250,29 +263,79 @@ pub(crate) struct MidenDependency {
     pub(crate) name: String,
     /// Canonical project root or precompiled package path.
     pub(crate) root: PathBuf,
-    /// Exported WIT interface loaded from the dependency metadata.
-    pub(crate) interface: DependencyInterface,
+    /// Exported WIT interfaces loaded from the dependency metadata.
+    pub(crate) interfaces: Vec<DependencyInterface>,
 }
 
 impl MidenDependency {
+    /// Narrows this dependency to the exported interface with the given kebab-case name.
+    pub(crate) fn select(&self, interface_name: &str) -> Option<SelectedDependency> {
+        self.interfaces
+            .iter()
+            .find(|interface| interface.name == interface_name)
+            .map(|interface| SelectedDependency {
+                name: self.name.clone(),
+                root: self.root.clone(),
+                interface: interface.clone(),
+            })
+    }
+
+    /// Names of the interfaces exported by this dependency, for diagnostics.
+    pub(crate) fn interface_names(&self) -> Vec<&str> {
+        self.interfaces.iter().map(|interface| interface.name.as_str()).collect()
+    }
+}
+
+/// A dependency narrowed to one selected exported interface.
+///
+/// This is the unit the `#[account]` and `#[component]` sibling generators consume: one
+/// `pkg::Interface` macro argument resolves to one `SelectedDependency`.
+#[derive(Debug)]
+pub(crate) struct SelectedDependency {
+    /// Manifest key used for this dependency.
+    pub(crate) name: String,
+    /// Canonical project root or precompiled package path.
+    pub(crate) root: PathBuf,
+    /// The selected exported WIT interface.
+    pub(crate) interface: DependencyInterface,
+}
+
+impl SelectedDependency {
     /// Fully-qualified WIT import path, including package version.
     pub(crate) fn import(&self) -> &str {
         &self.interface.import
     }
 
-    /// WIT type names declared by the imported dependency interface.
+    /// WIT type names declared by the selected dependency interface.
     pub(crate) fn type_names(&self) -> &[String] {
         &self.interface.types
     }
 }
 
 /// Exported dependency interface metadata derived from WIT.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct DependencyInterface {
+    /// Kebab-case interface name as declared in the dependency WIT.
+    pub(crate) name: String,
     /// Fully-qualified WIT import path, including package version.
     pub(crate) import: String,
     /// WIT type names owned by the imported interface.
     pub(crate) types: Vec<String>,
+}
+
+/// Renders a standalone inline WIT package whose single world imports the given interfaces.
+///
+/// Shared by the `#[account]` FPI bindings and the `#[component]` sibling bindings, which both
+/// generate import-only worlds next to the user's items.
+pub(crate) fn import_world_wit(name: &str, imports: &[String]) -> String {
+    let mut tokens = format!("package miden:{name}@1.0.0;\n\nworld {name} {{\n");
+    for import in imports {
+        tokens.push_str("    import ");
+        tokens.push_str(import);
+        tokens.push_str(";\n");
+    }
+    tokens.push_str("}\n");
+    tokens
 }
 
 /// Writes a WIT world block with the provided imports and exports.
@@ -330,14 +393,14 @@ fn collect_miden_dependencies(
                 dependencies.push(MidenDependency {
                     name: dependency.name().to_string(),
                     root: dependency_root,
-                    interface: dependency_wit.interface,
+                    interfaces: dependency_wit.interfaces,
                 });
             }
             _ => continue,
         }
     }
 
-    dependencies.sort_by(|a, b| a.import().cmp(b.import()));
+    dependencies.sort_by(|a, b| a.name.cmp(&b.name));
 
     Ok(dependencies)
 }
@@ -489,10 +552,10 @@ fn dependency_wit_error_message(
 
 /// WIT metadata extracted from a dependency package.
 struct DependencyWit {
-    interface: DependencyInterface,
+    interfaces: Vec<DependencyInterface>,
 }
 
-/// Parses one WIT path and returns dependency metadata when it exports an interface.
+/// Parses one WIT path and returns dependency metadata when it exports at least one interface.
 fn parse_dependency_wit_path(path: &Path) -> Result<Option<DependencyWit>, String> {
     let mut resolve = Resolve::default();
     resolve
@@ -502,25 +565,35 @@ fn parse_dependency_wit_path(path: &Path) -> Result<Option<DependencyWit>, Strin
         .push_path(path)
         .map_err(|err| format!("failed to parse WIT path '{}': {err}", path.display()))?;
 
-    let Some(interface_id) = first_exported_interface(&resolve, package_id) else {
+    let interface_ids = exported_interfaces(&resolve, package_id);
+    if interface_ids.is_empty() {
         return Ok(None);
-    };
+    }
 
-    Ok(Some(DependencyWit {
-        interface: dependency_interface_metadata(&resolve, interface_id)?,
-    }))
+    let interfaces = interface_ids
+        .into_iter()
+        .map(|interface_id| dependency_interface_metadata(&resolve, interface_id))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(Some(DependencyWit { interfaces }))
 }
 
-/// Returns the first interface exported by any world in the parsed package.
-fn first_exported_interface(resolve: &Resolve, package_id: PackageId) -> Option<InterfaceId> {
+/// Returns the interfaces exported by the worlds of the parsed package, in declaration order.
+fn exported_interfaces(resolve: &Resolve, package_id: PackageId) -> Vec<InterfaceId> {
     let package = &resolve.packages[package_id];
-    package.worlds.values().find_map(|world_id| {
+    let mut seen = HashSet::new();
+    let mut interfaces = Vec::new();
+    for world_id in package.worlds.values() {
         let world = &resolve.worlds[*world_id];
-        world.exports.values().find_map(|item| match item {
-            WorldItem::Interface { id, .. } => Some(*id),
-            WorldItem::Function(_) | WorldItem::Type { .. } => None,
-        })
-    })
+        for item in world.exports.values() {
+            if let WorldItem::Interface { id, .. } = item
+                && seen.insert(*id)
+            {
+                interfaces.push(*id);
+            }
+        }
+    }
+    interfaces
 }
 
 /// Builds explicit metadata for an exported dependency interface.
@@ -539,6 +612,7 @@ fn dependency_interface_metadata(
     let interface_name = interface.name.as_deref().ok_or_else(|| {
         format!("exported interface in WIT package '{}' is anonymous", package.name)
     })?;
+    let name = interface_name.to_string();
     let import = package.name.interface_id(interface_name);
     let types = interface
         .types
@@ -552,7 +626,11 @@ fn dependency_interface_metadata(
         })
         .collect();
 
-    Ok(DependencyInterface { import, types })
+    Ok(DependencyInterface {
+        name,
+        import,
+        types,
+    })
 }
 
 /// Returns true when a type belongs to the dependency interface rather than a `use` import.
@@ -777,11 +855,54 @@ world typed-account-world {
 
         let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
 
-        assert_eq!(dependency_wit.interface.import, "miden:typed-account/typed-account@0.0.1");
+        assert_eq!(dependency_wit.interfaces.len(), 1);
+        assert_eq!(dependency_wit.interfaces[0].name, "typed-account");
+        assert_eq!(dependency_wit.interfaces[0].import, "miden:typed-account/typed-account@0.0.1");
         assert_eq!(
-            dependency_wit.interface.types,
+            dependency_wit.interfaces[0].types,
             vec!["mixed-scalar-record", "options", "amount"]
         );
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn parses_all_exported_interfaces_and_selects_by_name() {
+        let fixture_root = empty_fixture_root();
+        let wit_dir = fixture_root.join("target/generated-wit");
+        fs::create_dir_all(&wit_dir).expect("generated-wit directory must be created");
+        let wit = r#"
+package miden:multi-account@0.0.1;
+
+interface first-api {
+    get-value: func() -> u64;
+}
+
+interface second-api {
+    set-value: func(value: u64);
+}
+
+world multi-account-world {
+    export first-api;
+    export second-api;
+}
+"#;
+        fs::write(wit_dir.join("multi-account.wit"), wit).expect("multi-interface WIT fixture");
+
+        let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
+        let dependency = super::MidenDependency {
+            name: "multi-account".to_string(),
+            root: fixture_root.clone(),
+            interfaces: dependency_wit.interfaces,
+        };
+
+        assert_eq!(dependency.interface_names(), vec!["first-api", "second-api"]);
+
+        let selected = dependency.select("second-api").expect("interface must be selectable");
+        assert_eq!(selected.import(), "miden:multi-account/second-api@0.0.1");
+        assert_eq!(selected.name, "multi-account");
+
+        assert!(dependency.select("missing-api").is_none());
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
@@ -791,8 +912,9 @@ world typed-account-world {
         let fixture_root = basic_wallet_fixture_root();
         let dependency_wit = parse_dependency_wit(&fixture_root).unwrap();
 
-        assert_eq!(dependency_wit.interface.import, "miden:basic-wallet/basic-wallet@0.1.0");
-        assert!(dependency_wit.interface.types.is_empty());
+        assert_eq!(dependency_wit.interfaces.len(), 1);
+        assert_eq!(dependency_wit.interfaces[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
+        assert!(dependency_wit.interfaces[0].types.is_empty());
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
@@ -803,8 +925,9 @@ world typed-account-world {
         let dependency_wit =
             parse_dependency_wit(&fixture_root.join("target/generated-wit")).unwrap();
 
-        assert_eq!(dependency_wit.interface.import, "miden:basic-wallet/basic-wallet@0.1.0");
-        assert!(dependency_wit.interface.types.is_empty());
+        assert_eq!(dependency_wit.interfaces.len(), 1);
+        assert_eq!(dependency_wit.interfaces[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
+        assert!(dependency_wit.interfaces[0].types.is_empty());
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
@@ -830,7 +953,8 @@ world typed-account-world {
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].root, package_path);
-        assert_eq!(dependencies[0].import(), "miden:basic-wallet/basic-wallet@0.1.0");
+        assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);
+        assert_eq!(dependencies[0].interfaces[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }

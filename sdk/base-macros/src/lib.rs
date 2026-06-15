@@ -67,6 +67,7 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
+mod dependency_ref;
 mod export_type;
 mod foreign_account;
 mod fpi;
@@ -93,16 +94,55 @@ mod wit_world;
 ///
 /// **NOTE:** Mark each type used in an exported method with the `#[export_type]` attribute macro.
 ///
+/// # Sibling component calls
+///
+/// An account may be deployed with several components. To call the other ("sibling") components
+/// of the same account, list them on the component trait as `package::Interface` references — the
+/// Rust-style Miden package name (replace `-` with `_`) followed by the sibling's exported WIT
+/// interface in UpperCamelCase. Each reference generates a `pub trait` named after the interface
+/// whose default methods call the sibling through the Wasm component-model boundary (a
+/// cross-context `call`, the same mechanism note scripts use to call the account). The generated
+/// traits attach to `#[component_storage]` structs automatically, and may be declared as
+/// supertraits of the component trait to make the dependency part of its API:
+///
+/// ```rust,ignore
+/// use miden::{component, component_storage, native_account::NativeAccount, Asset};
+///
+/// #[component_storage]
+/// struct MyComponentStorage;
+///
+/// // Generates `trait Pausable` and `trait CounterContract` with default methods that
+/// // call the sibling components deployed on the same account.
+/// #[component(pausable::Pausable, counter_contract::CounterContract)]
+/// trait MyComponent: NativeAccount + Pausable + CounterContract {
+///     fn receive_asset(&mut self, asset: Asset);
+/// }
+///
+/// #[component] // the implementation block takes no arguments
+/// impl MyComponent for MyComponentStorage {
+///     fn receive_asset(&mut self, asset: Asset) {
+///         assert!(!self.is_paused()); // sibling call into `pausable`
+///         self.increment_count();     // sibling call into `counter-contract`
+///         self.add_asset(asset);      // native account built-in
+///     }
+/// }
+/// ```
+///
+/// Each referenced package must be declared as a dependency in `miden-project.toml`, and the
+/// account must be deployed with the sibling components for the calls to resolve at runtime.
+///
 /// # Foreign Procedure Invocation (FPI)
 ///
 /// Use `#[account(...)]` on an empty struct to generate typed account wrappers for account
-/// dependencies. Dependency names are Rust-style Miden package names: write the Miden package
-/// name as a Rust identifier by replacing `-` with `_`.
+/// dependencies. Each dependency is referenced as `package::Interface`: the package is the
+/// Rust-style Miden package name (write the Miden package name as a Rust identifier by replacing
+/// `-` with `_`) and the interface names the dependency's exported WIT interface in
+/// UpperCamelCase.
 ///
 /// ```rust,ignore
 /// use miden::{account, component, component_storage, AccountId, Felt};
 ///
-/// #[account(counter_contract)]
+/// #[account(counter_contract::CounterContract)]
 /// struct CounterContract;
 ///
 /// #[component_storage]
@@ -182,9 +222,10 @@ pub fn component_storage(
 /// Generates typed active and foreign account bindings for account dependencies on an empty
 /// wrapper struct.
 ///
-/// The attribute accepts Rust-style Miden package names. Write the Miden package name as a Rust
-/// identifier by replacing `-` with `_`. For example, a dependency named `counter-contract` is
-/// requested with `#[account(counter_contract)]`.
+/// The attribute accepts `package::Interface` references. Write the Miden package name as a Rust
+/// identifier by replacing `-` with `_`, followed by the dependency's exported WIT interface in
+/// UpperCamelCase. For example, the `counter-contract` interface of a dependency named
+/// `counter-contract` is requested with `#[account(counter_contract::CounterContract)]`.
 #[proc_macro_attribute]
 pub fn account(
     attr: proc_macro::TokenStream,
@@ -228,13 +269,14 @@ pub fn export_type(
 /// # Foreign Procedure Invocation (FPI)
 ///
 /// Use `#[account(...)]` on an empty struct to generate typed active and foreign account wrappers
-/// for account dependencies. Dependency names are Rust-style Miden package names: write the Miden
-/// package name as a Rust identifier by replacing `-` with `_`.
+/// for account dependencies. Each dependency is referenced as `package::Interface`: the
+/// Rust-style Miden package name (replace `-` with `_`) followed by the dependency's exported WIT
+/// interface in UpperCamelCase.
 ///
 /// ```rust,ignore
 /// use miden::*;
 ///
-/// #[account(counter_contract)]
+/// #[account(counter_contract::CounterContract)]
 /// struct CounterContract;
 ///
 /// #[note]
@@ -266,7 +308,7 @@ pub fn export_type(
 /// ```rust,ignore
 /// use miden::*;
 ///
-/// #[account(basic_wallet)]
+/// #[account(basic_wallet::BasicWallet)]
 /// struct Wallet;
 ///
 /// #[note]

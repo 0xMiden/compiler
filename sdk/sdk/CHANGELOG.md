@@ -30,8 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   struct name does not match the interface segment gets different slot ids on recompile. Note
   that this also means renaming the component trait (and updating `[lib].namespace` to match)
   re-keys the storage slot ids of an already-deployed component #697
+- `#[account(...)]` dependency references now require the dependency's exported WIT interface:
+  write `#[account(counter_contract::CounterContract)]` instead of
+  `#[account(counter_contract)]`. The interface segment is kebab-cased and validated against the
+  interfaces the dependency's generated WIT exports #697
 
 ### Added
+- `#[component(package::Interface, ...)]` on the component trait declares sibling component
+  dependencies — other components deployed on the same account. Each reference generates a
+  `pub trait` named after the interface whose default methods call the sibling component through
+  the Wasm component-model boundary (an intra-account cross-context `call`, the same mechanism
+  note scripts use to call the account). The generated traits attach to `#[component_storage]`
+  structs automatically and may be declared as supertraits of the component trait. Each sibling
+  package must be a declared dependency, and its generated WIT must be reachable through
+  `[package.metadata.miden.dependencies].<name>.wit` in `miden-project.toml` (the same entry FPI
+  dependencies use) #697
+- `#[component]` traits may declare supertraits (e.g. `NativeAccount` and generated sibling
+  traits) #697
 - `#[account(...)]` on an empty struct generates a typed account wrapper exposing the methods
   of the account component packages listed in the attribute. The same type serves both as the
   transaction's native (active) account — when passed to a `#[note]`/`#[tx_script]` entrypoint —

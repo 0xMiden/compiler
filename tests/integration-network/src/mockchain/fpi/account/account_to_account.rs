@@ -189,7 +189,7 @@ const CALLER_ACCOUNT_SOURCE: &str = r#"
 
 use miden::{account, component, component_storage, felt, AccountId, Felt, Word};
 
-#[account(account_to_account_callee_account)]
+#[account(account_to_account_callee_account::CounterContract)]
 struct CalleeAccount;
 
 /// Account component which forwards reads to another account through FPI.
@@ -226,7 +226,7 @@ use miden::*;
 ///
 /// Deliberately named `Account` — the name of the removed auto-generated wrapper — as regression
 /// coverage that user-defined `#[account(...)]` wrappers may use it.
-#[account(account_to_account_caller_account)]
+#[account(account_to_account_caller_account::CallerAccount)]
 struct Account;
 
 /// Note script input containing the foreign callee account id.

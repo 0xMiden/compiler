@@ -13,7 +13,7 @@ use miden::{intrinsics::advice::adv_push_mapvaln, *};
 
 /// Native account of the transaction script: exposes the `basic-wallet` component methods (e.g.
 /// `move_asset_to_note`) gathered from the `basic_wallet` package.
-#[account(basic_wallet)]
+#[account(basic_wallet::BasicWallet)]
 struct Wallet;
 
 // Input layout constants
