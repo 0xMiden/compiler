@@ -2613,7 +2613,8 @@ dependencies = [
 [[package]]
 name = "miden-client"
 version = "0.15.0"
-source = "git+https://github.com/0xMiden/miden-client?branch=igamigo-protocol-0.15#07ef4c3eecfcbf993463404a52c41d05753f9ec1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfc5df299b9828c808d60e0360c1f5d0c9f0b165eb5f8847340c1a1376b1510f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2972,7 +2973,8 @@ dependencies = [
 [[package]]
 name = "miden-node-proto-build"
 version = "0.15.0"
-source = "git+https://github.com/0xMiden/node.git?branch=igamigo-export-ntxauth#0c1f9208b9c396dfc2c2fc929b806786ceb7c40c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef3b301741cedd6d0b532583690bc21dbf856d4e14218c591f3924bc905c660a"
 dependencies = [
  "build-rs",
  "codegen",
@@ -2984,9 +2986,9 @@ dependencies = [
 
 [[package]]
 name = "miden-note-transport-proto-build"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec23738a2eee393524a849a8dce982ad824050cc54abde145d4fb62b92c84198"
+checksum = "eb0d4c7cc5f8d94624bab25c43a71039d44abb4f441acdbb34d9a284dc2e2cc1"
 dependencies = [
  "fs-err",
  "miette",
@@ -3059,9 +3061,9 @@ dependencies = [
 
 [[package]]
 name = "miden-protocol"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b70acd2c57f7f9185c5174966dd47080389271410f25f6a3539970a4474fd440"
+checksum = "66340243e37da5936cb278a8dd11037813f1dc6731c2fc866703b76ed465ebc3"
 dependencies = [
  "bech32",
  "fs-err",
@@ -3105,7 +3107,8 @@ dependencies = [
 [[package]]
 name = "miden-remote-prover-client"
 version = "0.15.0"
-source = "git+https://github.com/0xMiden/node.git?branch=igamigo-export-ntxauth#0c1f9208b9c396dfc2c2fc929b806786ceb7c40c"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2acdb9494689feeec0f60e3b61901b5eb2362b49b993b4cbc3eb75ad83514dd"
 dependencies = [
  "build-rs",
  "fs-err",
@@ -3139,9 +3142,9 @@ dependencies = [
 
 [[package]]
 name = "miden-standards"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc788da5d0dc43f93d6489a302d453cc6c67a12923208c9c8963e43073db0b3b"
+checksum = "c7c7146b028e637f4079b5bdefeefc54d7d6e47a805451fa0a18859d19efa2ff"
 dependencies = [
  "bon",
  "fs-err",
@@ -3185,9 +3188,9 @@ dependencies = [
 
 [[package]]
 name = "miden-testing"
-version = "0.15.1"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f334894b69bf5839c9f05f04317f519aaee5cd2212d256585458d9cf68450273"
+checksum = "d4096fc44a4c88f37405be284e25efdce194d6051e9472ae136ab9249659433c"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3226,9 +3229,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.15.1"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88b4862817c0d6d0bb64d326e77e247c991c1fcfcb7f0e6146bc1e67a82bc96a"
+checksum = "94092b45bc0abc656af25473c9807d1e6cee8e682c58d3b1186f0bd0fb6471fb"
 dependencies = [
  "miden-processor",
  "miden-protocol",
@@ -3240,9 +3243,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.15.1"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "853b8ff2b998cd709e2e48734a2cb8854536debc2d11f66ad5d8437fc552e773"
+checksum = "f60add2b40559352661bc86970541f88ffcf98c528f301295f9dc3bf15481b46"
 dependencies = [
  "miden-protocol",
  "miden-tx",
@@ -4720,7 +4723,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "343d3bd7056eda839b03204e68deff7d1b13aba7af2b2fd16890697274262ee7"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "petgraph 0.8.3",
@@ -4741,7 +4744,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
