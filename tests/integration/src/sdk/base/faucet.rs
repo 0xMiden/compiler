@@ -99,10 +99,11 @@ fn account_faucet_create_non_fungible_asset_binding() {
 fn account_faucet_mint_binding() {
     run_faucet_binding_test(
         "account_faucet_mint_binding",
-        "pub fn binding(&self) -> Asset {
+        "pub fn binding(&self) -> Felt {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));
-        faucet::mint(asset)
+        faucet::mint(asset);
+        Felt::new(0).unwrap()
     }",
     );
 }
@@ -111,34 +112,25 @@ fn account_faucet_mint_binding() {
 fn account_faucet_burn_binding() {
     run_faucet_binding_test(
         "account_faucet_burn_binding",
-        "pub fn binding(&self) -> Asset {
+        "pub fn binding(&self) -> Felt {
         let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
          Word::from([Felt::new(0).unwrap(); 4]));
-        faucet::burn(asset)
+        faucet::burn(asset);
+        Felt::new(0).unwrap()
     }",
     );
 }
 
 #[test]
-fn account_faucet_mint_value_binding() {
+fn account_faucet_has_callbacks_binding() {
     run_faucet_binding_test(
-        "account_faucet_mint_value_binding",
-        "pub fn binding(&self) -> Word {
-        let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
-         Word::from([Felt::new(0).unwrap(); 4]));
-        faucet::mint_value(asset)
-    }",
-    );
-}
-
-#[test]
-fn account_faucet_burn_value_binding() {
-    run_faucet_binding_test(
-        "account_faucet_burn_value_binding",
-        "pub fn binding(&self) -> Word {
-        let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
-         Word::from([Felt::new(0).unwrap(); 4]));
-        faucet::burn_value(asset)
+        "account_faucet_has_callbacks_binding",
+        "pub fn binding(&self) -> Felt {
+        if faucet::has_callbacks() {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
     }",
     );
 }

@@ -147,6 +147,9 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::tx::update_expiration_block_delta"]
     pub fn extern_tx_update_expiration_block_delta(delta: Felt);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::tx::get_tx_script_root"]
+    pub fn extern_tx_get_tx_script_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::tx::execute_foreign_procedure_indirect"]
     pub fn extern_tx_execute_foreign_procedure(
         invocation: *const ForeignProcedureInvocation,
@@ -201,6 +204,15 @@ pub fn get_expiration_block_delta() -> Felt {
 pub fn update_expiration_block_delta(delta: Felt) {
     unsafe {
         extern_tx_update_expiration_block_delta(delta);
+    }
+}
+
+/// Returns the transaction script root.
+pub fn get_tx_script_root() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_tx_get_tx_script_root(ret_area.as_mut_ptr());
+        ret_area.assume_init()
     }
 }
 

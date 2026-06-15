@@ -80,7 +80,7 @@ fn account_asset_create_fungible_asset_binding() {
         "account_asset_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         let faucet = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(0).unwrap() };
-        asset::create_fungible_asset(faucet, Felt::new(10).unwrap())
+        asset::create_fungible_asset(faucet, Felt::new(10).unwrap(), false)
     }",
     );
 }
@@ -92,7 +92,7 @@ fn account_asset_create_non_fungible_asset_binding() {
         "pub fn binding(&self) -> Asset {
         let faucet = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(0).unwrap() };
         let hash = Word::from([Felt::new(0).unwrap(); 4]);
-        asset::create_non_fungible_asset(faucet, hash)
+        asset::create_non_fungible_asset(faucet, hash, false)
     }",
     );
 }

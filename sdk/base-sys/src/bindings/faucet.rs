@@ -27,7 +27,6 @@ unsafe extern "C" {
         asset_value_1: Felt,
         asset_value_2: Felt,
         asset_value_3: Felt,
-        ptr: *mut Word,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::faucet::burn"]
@@ -40,8 +39,10 @@ unsafe extern "C" {
         asset_value_1: Felt,
         asset_value_2: Felt,
         asset_value_3: Felt,
-        ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::faucet::has_callbacks"]
+    pub fn extern_faucet_has_callbacks() -> Felt;
 }
 
 /// Creates a fungible asset for the faucet bound to the current transaction.
@@ -68,11 +69,9 @@ pub fn create_non_fungible_asset(data_hash: Word) -> Asset {
     }
 }
 
-/// Mints the provided asset for the faucet bound to the current transaction and returns the new
-/// asset value.
-pub fn mint_value(asset: Asset) -> Word {
+/// Mints the provided asset for the faucet bound to the current transaction.
+pub fn mint(asset: Asset) {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_faucet_mint(
             asset.key[0],
             asset.key[1],
@@ -82,17 +81,13 @@ pub fn mint_value(asset: Asset) -> Word {
             asset.value[1],
             asset.value[2],
             asset.value[3],
-            ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
     }
 }
 
-/// Burns the provided asset from the faucet bound to the current transaction and returns the
-/// resulting asset value.
-pub fn burn_value(asset: Asset) -> Word {
+/// Burns the provided asset from the faucet bound to the current transaction.
+pub fn burn(asset: Asset) {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_faucet_burn(
             asset.key[0],
             asset.key[1],
@@ -102,20 +97,12 @@ pub fn burn_value(asset: Asset) -> Word {
             asset.value[1],
             asset.value[2],
             asset.value[3],
-            ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
     }
 }
 
-/// Mints the provided asset for the faucet bound to the current transaction.
+/// Returns whether the current faucet has custom mint or burn callbacks.
 #[inline]
-pub fn mint(asset: Asset) -> Asset {
-    Asset::new(asset.key, mint_value(asset))
-}
-
-/// Burns the provided asset from the faucet bound to the current transaction.
-#[inline]
-pub fn burn(asset: Asset) -> Asset {
-    Asset::new(asset.key, burn_value(asset))
+pub fn has_callbacks() -> bool {
+    unsafe { extern_faucet_has_callbacks() != Felt::new(0).unwrap() }
 }

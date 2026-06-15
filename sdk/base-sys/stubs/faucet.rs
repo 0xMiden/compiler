@@ -32,7 +32,6 @@ pub extern "C" fn faucet_mint_plain(
     _v1: f32,
     _v2: f32,
     _v3: f32,
-    _out: *mut c_void,
 ) {
     unsafe { core::hint::unreachable_unchecked() }
 }
@@ -49,7 +48,13 @@ pub extern "C" fn faucet_burn_plain(
     _v1: f32,
     _v2: f32,
     _v3: f32,
-    _out: *mut c_void,
 ) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
+#[unsafe(export_name = "miden::protocol::faucet::has_callbacks")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn faucet_has_callbacks_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }

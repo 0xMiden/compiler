@@ -21,6 +21,12 @@ pub const GET_RECIPIENT: &str = "get_recipient";
 pub const GET_SCRIPT_ROOT: &str = "get_script_root";
 pub const GET_SERIAL_NUMBER: &str = "get_serial_number";
 pub const GET_METADATA: &str = "get_metadata";
+pub const IS_PUBLIC: &str = "is_public";
+pub const IS_PRIVATE: &str = "is_private";
+pub const GET_ATTACHMENTS_COMMITMENT: &str = "get_attachments_commitment";
+pub const WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY: &str = "write_attachment_commitments_to_memory";
+pub const WRITE_ATTACHMENT_TO_MEMORY: &str = "write_attachment_to_memory";
+pub const FIND_ATTACHMENT: &str = "find_attachment";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -50,6 +56,24 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
                 Felt, Felt, Felt, Felt, // METADATA_HEADER
             ],
         ),
+    );
+    note.insert(Symbol::from(IS_PUBLIC), FunctionType::new(CallConv::Wasm, [], [Felt]));
+    note.insert(Symbol::from(IS_PRIVATE), FunctionType::new(CallConv::Wasm, [], [Felt]));
+    note.insert(
+        Symbol::from(GET_ATTACHMENTS_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
+    note.insert(
+        Symbol::from(WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY),
+        FunctionType::new(CallConv::Wasm, [I32], [I32, I32]),
+    );
+    note.insert(
+        Symbol::from(WRITE_ATTACHMENT_TO_MEMORY),
+        FunctionType::new(CallConv::Wasm, [I32, Felt], [I32, I32]),
+    );
+    note.insert(
+        Symbol::from(FIND_ATTACHMENT),
+        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt]),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), note);
     m

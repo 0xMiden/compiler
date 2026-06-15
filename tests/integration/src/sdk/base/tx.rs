@@ -128,6 +128,14 @@ fn rust_sdk_account_tx_update_expiration_block_delta_binding() {
 }
 
 #[test]
+fn rust_sdk_account_tx_get_tx_script_root_binding() {
+    run_tx_binding_test(
+        "rust_sdk_account_tx_get_tx_script_root_binding",
+        "let root = tx::get_tx_script_root();\n    let _ = root;",
+    );
+}
+
+#[test]
 fn rust_sdk_account_tx_get_input_notes_commitment_binding() {
     run_tx_binding_test(
         "rust_sdk_account_tx_get_input_notes_commitment_binding",

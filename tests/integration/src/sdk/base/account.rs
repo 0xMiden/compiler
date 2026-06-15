@@ -132,12 +132,22 @@ fn account_compute_delta_commitment_binding() {
 }
 
 #[test]
+fn account_native_account_get_id_binding() {
+    run_account_binding_test(
+        "account_native_account_get_id_binding",
+        "pub fn binding(&self) -> AccountId {
+        native_account::get_id()
+    }",
+    );
+}
+
+#[test]
 fn account_get_initial_balance_binding() {
     run_account_binding_test(
         "account_get_initial_balance_binding",
         "pub fn binding(&self) -> Felt {
-        let faucet = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(0).unwrap() };
-        self.get_initial_balance(faucet)
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
+        self.get_initial_balance(asset_key)
     }",
     );
 }

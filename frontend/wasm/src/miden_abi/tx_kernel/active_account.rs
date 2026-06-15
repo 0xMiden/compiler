@@ -96,11 +96,11 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     active_account.insert(
         Symbol::from(GET_BALANCE),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt]),
     );
     active_account.insert(
         Symbol::from(GET_INITIAL_BALANCE),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt]),
     );
     active_account.insert(
         Symbol::from(HAS_NON_FUNGIBLE_ASSET),

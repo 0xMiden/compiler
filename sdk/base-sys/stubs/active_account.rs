@@ -130,14 +130,24 @@ pub extern "C" fn active_account_get_initial_map_item_plain(
 #[unsafe(export_name = "miden::protocol::active_account::get_balance")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn active_account_get_balance_plain(_suffix: f32, _prefix: f32) -> f32 {
+pub extern "C" fn active_account_get_balance_plain(
+    _asset_key_0: f32,
+    _asset_key_1: f32,
+    _asset_key_2: f32,
+    _asset_key_3: f32,
+) -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 #[unsafe(export_name = "miden::protocol::active_account::get_initial_balance")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn active_account_get_initial_balance_plain(_suffix: f32, _prefix: f32) -> f32 {
+pub extern "C" fn active_account_get_initial_balance_plain(
+    _asset_key_0: f32,
+    _asset_key_1: f32,
+    _asset_key_2: f32,
+    _asset_key_3: f32,
+) -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }
 

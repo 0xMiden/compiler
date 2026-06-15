@@ -3,7 +3,10 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::{AccountId, Asset, NoteMetadata, RawAccountId, Recipient};
+use super::{AccountId, Asset, AttachmentLocation, NoteMetadata, RawAccountId, Recipient};
+
+const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
+const MAX_ATTACHMENT_WORDS: usize = 256;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -29,6 +32,24 @@ unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_metadata"]
     fn extern_note_get_metadata(ptr: *mut NoteMetadata);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::is_public"]
+    fn extern_note_is_public() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::is_private"]
+    fn extern_note_is_private() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::get_attachments_commitment"]
+    fn extern_note_get_attachments_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::write_attachment_commitments_to_memory"]
+    fn extern_note_write_attachment_commitments_to_memory(dest_ptr: *mut Felt) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::write_attachment_to_memory"]
+    fn extern_note_write_attachment_to_memory(dest_ptr: *mut Felt, attachment_idx: Felt) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::active_note::find_attachment"]
+    fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut AttachmentLocation);
 }
 
 /// Returns the storage of the currently executing note.
@@ -129,6 +150,70 @@ pub fn get_metadata() -> NoteMetadata {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
         extern_note_get_metadata(ret_area.as_mut_ptr());
+        ret_area.assume_init()
+    }
+}
+
+/// Returns whether the note currently executing is public.
+#[inline]
+pub fn is_public() -> bool {
+    unsafe { extern_note_is_public() != Felt::new(0).unwrap() }
+}
+
+/// Returns whether the note currently executing is private.
+#[inline]
+pub fn is_private() -> bool {
+    unsafe { extern_note_is_private() != Felt::new(0).unwrap() }
+}
+
+/// Returns the commitment over all attachments of the note currently executing.
+pub fn get_attachments_commitment() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_note_get_attachments_commitment(ret_area.as_mut_ptr());
+        ret_area.assume_init()
+    }
+}
+
+/// Writes attachment commitments to memory and returns them as protocol words.
+pub fn write_attachment_commitments_to_memory() -> Vec<Word> {
+    let mut commitments: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENTS_PER_NOTE);
+    let num_attachments = unsafe {
+        let ptr = (commitments.as_mut_ptr() as usize) / 4;
+        extern_note_write_attachment_commitments_to_memory(ptr as *mut Felt)
+    };
+    assert!(
+        num_attachments <= MAX_ATTACHMENTS_PER_NOTE,
+        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
+    );
+    unsafe {
+        commitments.set_len(num_attachments);
+    }
+    commitments
+}
+
+/// Writes the selected attachment to memory and returns it as protocol words.
+pub fn write_attachment_to_memory(attachment_idx: Felt) -> Vec<Word> {
+    let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
+    let num_words = unsafe {
+        let ptr = (attachment.as_mut_ptr() as usize) / 4;
+        extern_note_write_attachment_to_memory(ptr as *mut Felt, attachment_idx)
+    };
+    assert!(
+        num_words <= MAX_ATTACHMENT_WORDS,
+        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
+    );
+    unsafe {
+        attachment.set_len(num_words);
+    }
+    attachment
+}
+
+/// Searches the active note metadata for `attachment_scheme`.
+pub fn find_attachment(attachment_scheme: Felt) -> AttachmentLocation {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<AttachmentLocation>::uninit();
+        extern_note_find_attachment(attachment_scheme, ret_area.as_mut_ptr());
         ret_area.assume_init()
     }
 }

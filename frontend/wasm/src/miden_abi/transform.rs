@@ -112,6 +112,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::native_account::ADD_ASSET
                         | tx_kernel::native_account::REMOVE_ASSET
+                        | tx_kernel::native_account::GET_ID
                         | tx_kernel::native_account::COMPUTE_DELTA_COMMITMENT
                         | tx_kernel::native_account::SET_STORAGE_ITEM
                         | tx_kernel::native_account::SET_STORAGE_MAP_ITEM => {
@@ -128,6 +129,22 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::note::COMPUTE_AND_STORE_RECIPIENT => {
                             Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        tx_kernel::note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
+                        | tx_kernel::note::WRITE_ATTACHMENT_TO_MEMORY
+                        | tx_kernel::note::WRITE_INDEXED_ATTACHMENT_TO_MEMORY => {
+                            Some(TransformStrategy::ListReturn)
+                        }
+                        tx_kernel::note::COMPUTE_STORAGE_COMMITMENT
+                        | tx_kernel::note::COMPUTE_RECIPIENT
+                        | tx_kernel::note::METADATA_INTO_SENDER
+                        | tx_kernel::note::METADATA_INTO_ATTACHMENT_SCHEMES
+                        | tx_kernel::note::FIND_ATTACHMENT_IDX => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        tx_kernel::note::METADATA_INTO_NOTE_TYPE
+                        | tx_kernel::note::METADATA_INTO_TAG => {
+                            Some(TransformStrategy::NoTransform)
                         }
                         _ => None,
                     }
@@ -174,21 +191,33 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 symbols::Faucet => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::faucet::CREATE_FUNGIBLE_ASSET
-                        | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET
-                        | tx_kernel::faucet::MINT
-                        | tx_kernel::faucet::BURN => Some(TransformStrategy::ReturnViaPointer),
+                        | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET => {
+                            Some(TransformStrategy::ReturnViaPointer)
+                        }
+                        tx_kernel::faucet::MINT
+                        | tx_kernel::faucet::BURN
+                        | tx_kernel::faucet::HAS_CALLBACKS => Some(TransformStrategy::NoTransform),
                         _ => None,
                     }
                 }
                 symbols::ActiveNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::active_note::GET_STORAGE => Some(TransformStrategy::ListReturn),
-                        tx_kernel::active_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::active_note::GET_STORAGE
+                        | tx_kernel::active_note::GET_ASSETS
+                        | tx_kernel::active_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
+                        | tx_kernel::active_note::WRITE_ATTACHMENT_TO_MEMORY => {
+                            Some(TransformStrategy::ListReturn)
+                        }
+                        tx_kernel::active_note::IS_PUBLIC | tx_kernel::active_note::IS_PRIVATE => {
+                            Some(TransformStrategy::NoTransform)
+                        }
                         tx_kernel::active_note::GET_SENDER
                         | tx_kernel::active_note::GET_RECIPIENT
                         | tx_kernel::active_note::GET_SCRIPT_ROOT
                         | tx_kernel::active_note::GET_SERIAL_NUMBER
-                        | tx_kernel::active_note::GET_METADATA => {
+                        | tx_kernel::active_note::GET_METADATA
+                        | tx_kernel::active_note::GET_ATTACHMENTS_COMMITMENT
+                        | tx_kernel::active_note::FIND_ATTACHMENT => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -196,14 +225,21 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::InputNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::input_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::input_note::GET_ASSETS
+                        | tx_kernel::input_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
+                        | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY => {
+                            Some(TransformStrategy::ListReturn)
+                        }
                         tx_kernel::input_note::GET_ASSETS_INFO
                         | tx_kernel::input_note::GET_RECIPIENT
                         | tx_kernel::input_note::GET_METADATA
                         | tx_kernel::input_note::GET_SENDER
                         | tx_kernel::input_note::GET_STORAGE_INFO
                         | tx_kernel::input_note::GET_SCRIPT_ROOT
-                        | tx_kernel::input_note::GET_SERIAL_NUMBER => {
+                        | tx_kernel::input_note::GET_SERIAL_NUMBER
+                        | tx_kernel::input_note::GET_ATTACHMENTS_COMMITMENT
+                        | tx_kernel::input_note::GET_ATTACHMENTS_COMMITMENT_RAW
+                        | tx_kernel::input_note::FIND_ATTACHMENT => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -214,13 +250,20 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::output_note::CREATE => Some(TransformStrategy::NoTransform),
                         tx_kernel::output_note::ADD_ASSET => Some(TransformStrategy::NoTransform),
                         tx_kernel::output_note::ADD_ATTACHMENT
-                        | tx_kernel::output_note::ADD_WORD_ATTACHMENT => {
+                        | tx_kernel::output_note::ADD_WORD_ATTACHMENT
+                        | tx_kernel::output_note::ADD_ATTACHMENT_FROM_MEMORY => {
                             Some(TransformStrategy::NoTransform)
                         }
-                        tx_kernel::output_note::GET_ASSETS => Some(TransformStrategy::ListReturn),
+                        tx_kernel::output_note::GET_ASSETS
+                        | tx_kernel::output_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
+                        | tx_kernel::output_note::WRITE_ATTACHMENT_TO_MEMORY => {
+                            Some(TransformStrategy::ListReturn)
+                        }
                         tx_kernel::output_note::GET_ASSETS_INFO
                         | tx_kernel::output_note::GET_RECIPIENT
-                        | tx_kernel::output_note::GET_METADATA => {
+                        | tx_kernel::output_note::GET_METADATA
+                        | tx_kernel::output_note::GET_ATTACHMENTS_COMMITMENT
+                        | tx_kernel::output_note::FIND_ATTACHMENT => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         _ => None,
@@ -238,7 +281,8 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                     }
                     tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
                     | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
-                    | tx_kernel::tx::GET_BLOCK_COMMITMENT => {
+                    | tx_kernel::tx::GET_BLOCK_COMMITMENT
+                    | tx_kernel::tx::GET_TX_SCRIPT_ROOT => {
                         Some(TransformStrategy::ReturnViaPointer)
                     }
                     tx_kernel::tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT => {
@@ -317,7 +361,6 @@ pub fn list_return<B: ?Sized + Builder>(
         )));
     }
 
-    // Return the first result (length) only
     Ok(results[0..1].to_vec())
 }
 

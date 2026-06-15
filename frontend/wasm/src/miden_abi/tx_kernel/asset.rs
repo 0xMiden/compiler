@@ -26,7 +26,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(CREATE_FUNGIBLE_ASSET),
         FunctionType::new(
             CallConv::Wasm,
-            [Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt],
             [
                 Felt, Felt, Felt, Felt, // ASSET_KEY
                 Felt, Felt, Felt, Felt, // ASSET_VALUE
@@ -37,7 +37,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(CREATE_NON_FUNGIBLE_ASSET),
         FunctionType::new(
             CallConv::Wasm,
-            [Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt, Felt, Felt, Felt],
             [
                 Felt, Felt, Felt, Felt, // ASSET_KEY
                 Felt, Felt, Felt, Felt, // ASSET_VALUE

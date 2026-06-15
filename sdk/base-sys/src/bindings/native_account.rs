@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::Asset;
+use super::types::{AccountId, Asset, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -30,6 +30,9 @@ unsafe extern "C" {
         asset_value_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::get_id"]
+    fn extern_native_account_get_id(ptr: *mut RawAccountId);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::incr_nonce"]
     fn extern_native_account_incr_nonce() -> Felt;
@@ -110,6 +113,15 @@ pub fn remove_asset(asset: Asset) -> Word {
             ret_area.as_mut_ptr(),
         );
         ret_area.assume_init()
+    }
+}
+
+/// Returns the native account ID for the current transaction.
+pub fn get_id() -> AccountId {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        extern_native_account_get_id(ret_area.as_mut_ptr());
+        ret_area.assume_init().into_account_id()
     }
 }
 
