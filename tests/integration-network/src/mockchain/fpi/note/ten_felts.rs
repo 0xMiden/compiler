@@ -22,7 +22,12 @@ pub fn ten_felts() {
 
 /// Returns the non-zero storage key used by the ten-felt FPI test.
 fn ten_felts_storage_key() -> Word {
-    Word::new([Felt::new(31), Felt::new(32), Felt::new(33), Felt::new(34)])
+    Word::new([
+        Felt::new(31).unwrap(),
+        Felt::new(32).unwrap(),
+        Felt::new(33).unwrap(),
+        Felt::new(34).unwrap(),
+    ])
 }
 
 /// Minimal counter account component source used by the ten-felt FPI test.

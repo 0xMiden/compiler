@@ -89,7 +89,7 @@ impl TrapExpectation {
                         },
                     ..
                 },
-            ) if *err_code == Felt::new(0) => Ok(()),
+            ) if *err_code == Felt::ZERO => Ok(()),
             (
                 TrapExpectation::DivideByZero,
                 ExecutionError::OperationError {
@@ -136,7 +136,7 @@ where
 
         match (expected_result, vm_result) {
             (Ok(expected), Ok(trace)) => {
-                let output_felts = trace.stack_outputs().get_num_elements(expected.len());
+                let output_felts = trace.stack.get_num_elements(expected.len());
                 let outputs: Vec<i32> =
                     output_felts.iter().map(|f| f.as_canonical_u64() as u32 as i32).collect();
                 prop_assert_eq!(outputs, expected);
@@ -151,7 +151,7 @@ where
             )),
             (Err(expectation), Ok(trace)) => {
                 let outputs: Vec<i32> = trace
-                    .stack_outputs()
+                    .stack
                     .iter()
                     .map(|f| f.as_canonical_u64() as u32 as i32)
                     .collect::<Vec<_>>();
@@ -174,14 +174,14 @@ where
 
 /// For a `i32` unary op the strategy produces `a`. The intrinsic expects stack `[a]`.
 fn unary_i32op_input_to_stack(strategy_value: &i32) -> Vec<Felt> {
-    vec![Felt::new(*strategy_value as u32 as u64)]
+    vec![Felt::new(*strategy_value as u32 as u64).expect("u32 values fit in a felt")]
 }
 
 /// For a `i32` binary op the strategy produces `(a, b)`. The intrinsic expects stack `[b, a]`.
 fn binary_i32op_inputs_to_stack(strategy_value: &(i32, i32)) -> Vec<Felt> {
     vec![
-        Felt::new(strategy_value.1 as u32 as u64),
-        Felt::new(strategy_value.0 as u32 as u64),
+        Felt::new(strategy_value.1 as u32 as u64).expect("u32 values fit in a felt"),
+        Felt::new(strategy_value.0 as u32 as u64).expect("u32 values fit in a felt"),
     ]
 }
 

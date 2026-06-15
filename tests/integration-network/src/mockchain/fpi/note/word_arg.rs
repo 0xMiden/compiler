@@ -22,7 +22,12 @@ pub fn word_arg() {
 
 /// Returns the non-zero storage key used by the `Word` argument FPI test.
 fn word_arg_storage_key() -> Word {
-    Word::new([Felt::new(11), Felt::new(22), Felt::new(33), Felt::new(44)])
+    Word::new([
+        Felt::new(11).unwrap(),
+        Felt::new(22).unwrap(),
+        Felt::new(33).unwrap(),
+        Felt::new(44).unwrap(),
+    ])
 }
 
 /// Minimal counter account component source used by the `Word` argument FPI test.

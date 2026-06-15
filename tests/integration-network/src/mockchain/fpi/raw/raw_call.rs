@@ -10,9 +10,7 @@ use miden_client::{
 };
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{
-        AccountBuilder, AccountComponentMetadata, AccountStorageMode, AccountType, auth::AuthScheme,
-    },
+    account::{AccountBuilder, AccountComponentMetadata, AccountType, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{
@@ -80,10 +78,7 @@ fn build_raw_fpi_component(procedure_name: &str) -> (AccountComponent, Word) {
     let raw_component = AccountComponent::new(
         component_code,
         vec![],
-        AccountComponentMetadata::new(
-            RAW_CALLEE_MODULE,
-            [AccountType::RegularAccountUpdatableCode],
-        ),
+        AccountComponentMetadata::new(RAW_CALLEE_MODULE),
     )
     .expect("failed to build raw FPI callee account component");
 
@@ -132,8 +127,7 @@ miden-protocol = "*"
 fn execute_raw_fpi_note(raw_component: AccountComponent, note_package: Arc<Package>) {
     let mut builder = MockChain::builder();
     let foreign_account = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(raw_component)
@@ -144,8 +138,7 @@ fn execute_raw_fpi_note(raw_component: AccountComponent, note_package: Arc<Packa
         .expect("failed to add raw FPI callee account to mock chain builder");
 
     let caller_builder = AccountBuilder::new([1_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(BasicWallet);
     let caller_account = builder
         .add_account_from_builder(
