@@ -53,7 +53,9 @@ impl OpEmitter<'_> {
             }
             Type::I32 | Type::I16 | Type::I8 => {
                 self.emit(
-                    masm::Instruction::EqImm(Felt::new(imm.as_i32().unwrap() as u32 as u64).into()),
+                    masm::Instruction::EqImm(
+                        Felt::new_unchecked(imm.as_i32().unwrap() as u32 as u64).into(),
+                    ),
                     span,
                 );
             }
@@ -108,7 +110,7 @@ impl OpEmitter<'_> {
             Type::I32 | Type::I16 | Type::I8 => {
                 self.emit(
                     masm::Instruction::NeqImm(
-                        Felt::new(imm.as_i32().unwrap() as u32 as u64).into(),
+                        Felt::new_unchecked(imm.as_i32().unwrap() as u32 as u64).into(),
                     ),
                     span,
                 );
@@ -861,12 +863,12 @@ impl OpEmitter<'_> {
         match &ty {
             Type::U64 => todo!("exponentiation by squaring"),
             Type::Felt => {
-                self.emit(masm::Instruction::ExpImm(Felt::new(exp as u64).into()), span);
+                self.emit(masm::Instruction::ExpImm(Felt::new_unchecked(exp as u64).into()), span);
             }
             Type::U32 => {
                 self.emit_all(
                     [
-                        masm::Instruction::ExpImm(Felt::new(exp as u64).into()),
+                        masm::Instruction::ExpImm(Felt::new_unchecked(exp as u64).into()),
                         masm::Instruction::U32Assert,
                     ],
                     span,
@@ -879,7 +881,7 @@ impl OpEmitter<'_> {
             ty @ (Type::U16 | Type::U8) => {
                 self.emit_all(
                     [
-                        masm::Instruction::ExpImm(Felt::new(exp as u64).into()),
+                        masm::Instruction::ExpImm(Felt::new_unchecked(exp as u64).into()),
                         masm::Instruction::U32Assert,
                     ],
                     span,

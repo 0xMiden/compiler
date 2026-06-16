@@ -25,7 +25,12 @@ pub fn sixteen_flattened_params_struct() {
 
 /// Returns the non-zero storage key used by the sixteen-felt record FPI test.
 fn sixteen_flattened_params_struct_storage_key() -> Word {
-    Word::new([Felt::new(51), Felt::new(52), Felt::new(53), Felt::new(54)])
+    Word::new([
+        Felt::new(51).unwrap(),
+        Felt::new(52).unwrap(),
+        Felt::new(53).unwrap(),
+        Felt::new(54).unwrap(),
+    ])
 }
 
 /// Minimal counter account component source used by the sixteen-felt record FPI test.

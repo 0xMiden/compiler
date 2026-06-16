@@ -2,7 +2,7 @@ use core::panic;
 use std::sync::Arc;
 
 use miden_core::field::PrimeField64;
-use miden_debug::{Executor, Felt as TestFelt};
+use miden_debug::{DebugQuery, Executor, Felt as TestFelt};
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::ProtocolLib;
 use miden_standards::StandardsLib;
@@ -42,22 +42,22 @@ fn adv_load_preimage() {
 
     // Create test data: 4 words (16 felts)
     let input: Vec<Felt> = vec![
-        Felt::new(1),
-        Felt::new(2),
-        Felt::new(3),
-        Felt::new(4),
-        Felt::new(5),
-        Felt::new(6),
-        Felt::new(7),
-        Felt::new(8),
-        Felt::new(9),
-        Felt::new(10),
-        Felt::new(11),
-        Felt::new(12),
-        Felt::new(13),
-        Felt::new(14),
-        Felt::new(15),
-        Felt::new(Felt::ORDER_U64 - 1),
+        Felt::new_unchecked(1),
+        Felt::new_unchecked(2),
+        Felt::new_unchecked(3),
+        Felt::new_unchecked(4),
+        Felt::new_unchecked(5),
+        Felt::new_unchecked(6),
+        Felt::new_unchecked(7),
+        Felt::new_unchecked(8),
+        Felt::new_unchecked(9),
+        Felt::new_unchecked(10),
+        Felt::new_unchecked(11),
+        Felt::new_unchecked(12),
+        Felt::new_unchecked(13),
+        Felt::new_unchecked(14),
+        Felt::new_unchecked(15),
+        Felt::new_unchecked(Felt::ORDER_U64 - 1),
     ];
 
     let commitment = miden_core::crypto::hash::Poseidon2::hash_elements(&input);
@@ -66,7 +66,7 @@ fn adv_load_preimage() {
 
     let out_addr = 20u32 * 65536;
     let args = [
-        Felt::new(out_addr as u64),
+        Felt::new_unchecked(out_addr as u64),
         commitment[0],
         commitment[1],
         commitment[2],

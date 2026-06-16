@@ -1353,7 +1353,8 @@ impl<'a> ProcedureLifter<'a> {
                 self.push_value(value, span);
                 Ok(())
             }
-            AdvPush(count) => self.advice_push(immediate_value(count)?, span, builder),
+            AdvPush => self.advice_push(1, span, builder),
+            AdvPushW => self.advice_push(4, span, builder),
             AdvLoadW => self.advice_load_word(span, builder),
             AdvPipe => self.advice_pipe(span, builder),
             Emit => self.emit_event(span, builder),
@@ -2062,7 +2063,7 @@ impl<'a> ProcedureLifter<'a> {
         let depth = u64::try_from(self.stack.len()).map_err(|_| {
             Report::msg(format!("current stack depth does not fit in a felt at {span:?}"))
         })?;
-        let value = builder.felt(Felt::new(depth), span);
+        let value = builder.felt(Felt::new_unchecked(depth), span);
         self.push_value(value, span);
         Ok(())
     }

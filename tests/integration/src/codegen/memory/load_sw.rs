@@ -27,7 +27,7 @@ fn load_sw() {
                 bytes: &value_bytes,
             }];
 
-            let args = [Felt::new(write_to as u64)];
+            let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u32, _, _>(
                 &package,
                 initializers,

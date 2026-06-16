@@ -72,7 +72,7 @@ fn pipe_words_to_memory() {
 
             if has_odd_word {
                 let last = raw_words.last().expect("raw_words is non-empty when has_odd_word");
-                advice_builder.push_for_adv_loadw(Word::new(*last));
+                advice_builder.push_word(Word::new(*last));
             }
 
             let advice_stack = advice_builder.into_elements();

@@ -14,10 +14,7 @@ use miden_client::{
 use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{
-        AccountBuilder, AccountStorage, AccountStorageMode, AccountType, StorageSlotName,
-        auth::AuthScheme,
-    },
+    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
@@ -61,8 +58,7 @@ fn execute_word_word_counter_caller_note(
 
     let mut builder = MockChain::builder();
     let counter_account = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(counter_component)
@@ -73,8 +69,7 @@ fn execute_word_word_counter_caller_note(
         .expect("failed to add counter account to mock chain builder");
 
     let caller_builder = AccountBuilder::new([1_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(BasicWallet);
     let caller_account = builder
         .add_account_from_builder(
@@ -124,12 +119,22 @@ fn execute_word_word_counter_caller_note(
 
 /// Returns the non-zero storage key used by the `Word -> Word` FPI test.
 fn word_word_storage_key() -> Word {
-    Word::new([Felt::new(101), Felt::new(202), Felt::new(303), Felt::new(404)])
+    Word::new([
+        Felt::new(101).unwrap(),
+        Felt::new(202).unwrap(),
+        Felt::new(303).unwrap(),
+        Felt::new(404).unwrap(),
+    ])
 }
 
 /// Returns the expected `Word` value used by the `Word -> Word` FPI test.
 fn expected_count_word() -> Word {
-    Word::new([Felt::new(987), Felt::new(654), Felt::new(321), Felt::new(111)])
+    Word::new([
+        Felt::new(987).unwrap(),
+        Felt::new(654).unwrap(),
+        Felt::new(321).unwrap(),
+        Felt::new(111).unwrap(),
+    ])
 }
 
 /// Asserts the stored `Word` value under `storage_key`.

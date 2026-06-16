@@ -117,7 +117,7 @@ pub fn read_value(addr: usize, ty: &Type, memory: &[u8]) -> Result<Value, ReadFa
                     "failed to decode felt at {addr}: value {value} exceeds field modulus"
                 )));
             }
-            Immediate::Felt(Felt::new(value))
+            Immediate::Felt(Felt::new_unchecked(value))
         }
         Type::Ptr(_) => {
             let value = u32::from_be_bytes(read_bytes(addr, memory));

@@ -459,7 +459,7 @@ impl OpEmitter<'_> {
                         // Drop the operand
                         masm::Instruction::Drop,
                         // Move the result to the operand stack
-                        masm::Instruction::AdvPush(1.into()),
+                        masm::Instruction::AdvPush,
                     ],
                     span,
                 );
@@ -568,7 +568,7 @@ impl OpEmitter<'_> {
                 // high bit count
                 self.emit_push(0u32, span); // [0, lo_clz, hi_clz]
                 self.emit(masm::Instruction::Dup2, span); // [hi_clz, 0, lo_clz, hi_clz]
-                self.emit_push(Felt::new(32), span);
+                self.emit_push(Felt::new_unchecked(32), span);
                 self.emit_all(
                     [
                         masm::Instruction::Lt,    // [hi_clz < 32, 0, lo_clz, hi_clz]
@@ -651,7 +651,7 @@ impl OpEmitter<'_> {
                 // are all one; otherwise return only the high bit count
                 self.emit_push(0u32, span); // [0, lo_clo, hi_clo]
                 self.emit(masm::Instruction::Dup2, span); // [hi_clo, 0, lo_clo, hi_clo]
-                self.emit_push(Felt::new(32), span);
+                self.emit_push(Felt::new_unchecked(32), span);
                 self.emit_all(
                     [
                         masm::Instruction::Lt,    // [hi_clo < 32, 0, lo_clo, hi_clo]
@@ -745,7 +745,7 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::Swap1, span);
                 self.emit_push(0u32, span); // [0, hi_ctz, lo_ctz]
                 self.emit(masm::Instruction::Dup2, span); // [lo_ctz, 0, hi_ctz, lo_ctz]
-                self.emit_push(Felt::new(32), span);
+                self.emit_push(Felt::new_unchecked(32), span);
                 self.emit_all(
                     [
                         masm::Instruction::Lt,    // [lo_ctz < 32, 0, hi_ctz, lo_ctz]
@@ -768,7 +768,7 @@ impl OpEmitter<'_> {
                 //   operand_stack: [ctz, 16, ctz]
                 self.emit(masm::Instruction::Dup1, span);
                 //   operand_stack: [ctz >= 16, 16, ctz]
-                self.emit_push(Felt::new(16), span);
+                self.emit_push(Felt::new_unchecked(16), span);
                 self.emit_all(
                     [
                         masm::Instruction::Gte,
@@ -789,7 +789,7 @@ impl OpEmitter<'_> {
                 //   operand_stack: [ctz, 8, ctz]
                 self.emit(masm::Instruction::Dup1, span);
                 //   operand_stack: [ctz >= 8, 8, ctz]
-                self.emit_push(Felt::new(8), span);
+                self.emit_push(Felt::new_unchecked(8), span);
                 self.emit_all(
                     [
                         masm::Instruction::Gte,
@@ -840,7 +840,7 @@ impl OpEmitter<'_> {
                 self.emit(masm::Instruction::Swap1, span);
                 self.emit_push(0u32, span); // [0, hi_cto, lo_cto]
                 self.emit(masm::Instruction::Dup2, span); // [lo_cto, 0, hi_cto, lo_cto]
-                self.emit_push(Felt::new(32), span);
+                self.emit_push(Felt::new_unchecked(32), span);
                 self.emit_all(
                     [
                         masm::Instruction::Lt,    // [lo_cto < 32, 0, hi_cto, lo_cto]

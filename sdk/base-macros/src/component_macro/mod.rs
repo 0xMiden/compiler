@@ -1,12 +1,11 @@
 use std::{
     collections::{BTreeSet, HashMap},
     env,
-    str::FromStr,
 };
 
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_project::TargetType;
-use miden_protocol::{account::AccountType, utils::serde::Serializable};
+use miden_protocol::utils::serde::Serializable;
 use midenc_frontend_wasm_metadata::FrontendMetadata;
 use proc_macro::Span;
 use proc_macro2::{Ident, Literal, Span as Span2, TokenStream as TokenStream2};
@@ -191,18 +190,6 @@ fn expand_component_struct(
         metadata.package.version().into_inner().clone(),
         metadata.description.clone(),
     );
-
-    for st in &metadata.supported_types {
-        match AccountType::from_str(st) {
-            Ok(account_type) => acc_builder.add_supported_type(account_type),
-            Err(err) => {
-                return Err(syn::Error::new(
-                    call_site_span.into(),
-                    format!("Invalid account type '{st}' in supported-types: {err}"),
-                ));
-            }
-        }
-    }
 
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {

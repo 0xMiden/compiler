@@ -14,10 +14,7 @@ use miden_client::{
 use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{
-        AccountBuilder, AccountStorage, AccountStorageMode, AccountType, StorageSlotName,
-        auth::AuthScheme,
-    },
+    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
@@ -64,8 +61,7 @@ fn execute_two_words_struct_counter_caller_note(
 
     let mut builder = MockChain::builder();
     let counter_account = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(counter_component)
@@ -76,8 +72,7 @@ fn execute_two_words_struct_counter_caller_note(
         .expect("failed to add counter account to mock chain builder");
 
     let caller_builder = AccountBuilder::new([1_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(BasicWallet);
     let caller_account = builder
         .add_account_from_builder(
@@ -125,22 +120,42 @@ fn execute_two_words_struct_counter_caller_note(
 
 /// Returns the first non-zero storage key used by the two-word FPI test.
 fn first_storage_key() -> Word {
-    Word::new([Felt::new(17), Felt::new(34), Felt::new(51), Felt::new(68)])
+    Word::new([
+        Felt::new(17).unwrap(),
+        Felt::new(34).unwrap(),
+        Felt::new(51).unwrap(),
+        Felt::new(68).unwrap(),
+    ])
 }
 
 /// Returns the second non-zero storage key used by the two-word FPI test.
 fn second_storage_key() -> Word {
-    Word::new([Felt::new(85), Felt::new(102), Felt::new(119), Felt::new(136)])
+    Word::new([
+        Felt::new(85).unwrap(),
+        Felt::new(102).unwrap(),
+        Felt::new(119).unwrap(),
+        Felt::new(136).unwrap(),
+    ])
 }
 
 /// Returns the first expected `Word` value used by the two-word FPI test.
 fn expected_first_word() -> Word {
-    Word::new([Felt::new(901), Felt::new(802), Felt::new(703), Felt::new(604)])
+    Word::new([
+        Felt::new(901).unwrap(),
+        Felt::new(802).unwrap(),
+        Felt::new(703).unwrap(),
+        Felt::new(604).unwrap(),
+    ])
 }
 
 /// Returns the second expected `Word` value used by the two-word FPI test.
 fn expected_second_word() -> Word {
-    Word::new([Felt::new(505), Felt::new(406), Felt::new(307), Felt::new(208)])
+    Word::new([
+        Felt::new(505).unwrap(),
+        Felt::new(406).unwrap(),
+        Felt::new(307).unwrap(),
+        Felt::new(208).unwrap(),
+    ])
 }
 
 /// Asserts the stored `Word` entries under their storage keys.

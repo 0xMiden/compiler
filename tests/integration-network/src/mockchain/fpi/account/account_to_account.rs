@@ -14,10 +14,7 @@ use miden_client::{
 use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{
-        AccountBuilder, AccountStorage, AccountStorageMode, AccountType, StorageSlotName,
-        auth::AuthScheme,
-    },
+    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
@@ -70,8 +67,7 @@ fn execute_account_to_account_note(
 
     let mut builder = MockChain::builder();
     let callee_account = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(callee_component)
@@ -82,8 +78,7 @@ fn execute_account_to_account_note(
         .expect("failed to add callee account to mock chain builder");
 
     let caller_builder = AccountBuilder::new([1_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(BasicWallet)
         .with_component(caller_component);
     let caller_account = builder
@@ -134,7 +129,12 @@ fn execute_account_to_account_note(
 
 /// Returns the non-zero storage key read by the account-to-account FPI call.
 fn callee_storage_key() -> Word {
-    Word::new([Felt::new(13), Felt::new(21), Felt::new(34), Felt::new(55)])
+    Word::new([
+        Felt::new(13).unwrap(),
+        Felt::new(21).unwrap(),
+        Felt::new(34).unwrap(),
+        Felt::new(55).unwrap(),
+    ])
 }
 
 /// Asserts the counter value stored in the callee account's storage map at `storage_key`.

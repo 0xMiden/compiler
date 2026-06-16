@@ -7,7 +7,7 @@ use super::{OpEmitter, masm};
 pub const ZERO: Felt = Felt::ZERO;
 
 /// The value 2^32, as a field element
-pub const U32_FIELD_MODULUS: Felt = Felt::new(2u64.pow(32));
+pub const U32_FIELD_MODULUS: Felt = Felt::new_unchecked(2u64.pow(32));
 
 #[allow(unused)]
 impl OpEmitter<'_> {

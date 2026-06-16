@@ -35,7 +35,6 @@ fn storage_example() {
         name = "storage-example"
         description = "A simple example of a Miden account storage API"
         version = "0.1.0"
-        supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
         name = "storage_example::my_account::asset_qty_map"

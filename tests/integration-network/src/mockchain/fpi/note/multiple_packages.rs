@@ -12,10 +12,7 @@ use miden_client::{
 };
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{
-        AccountBuilder, AccountStorage, AccountStorageMode, AccountType, StorageSlotName,
-        auth::AuthScheme,
-    },
+    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
@@ -76,8 +73,7 @@ fn execute_multiple_package_counter_caller_note(
 
     let mut builder = MockChain::builder();
     let foreign_account = AccountBuilder::new([0_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_auth_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(first_component)
@@ -89,8 +85,7 @@ fn execute_multiple_package_counter_caller_note(
         .expect("failed to add foreign account to mock chain builder");
 
     let caller_builder = AccountBuilder::new([1_u8; 32])
-        .account_type(AccountType::RegularAccountUpdatableCode)
-        .storage_mode(AccountStorageMode::Public)
+        .account_type(AccountType::Public)
         .with_component(BasicWallet);
     let caller_account = builder
         .add_account_from_builder(

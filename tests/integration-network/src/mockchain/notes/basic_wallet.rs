@@ -5,7 +5,7 @@ use miden_client::{
         AccountComponent, AccountId,
         component::{BasicWallet, InitStorageData},
     },
-    asset::{Asset, FungibleAsset},
+    asset::{Asset, AssetCallbackFlag, FungibleAsset},
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
@@ -16,7 +16,7 @@ use midenc_expect_test::expect;
 
 use super::super::support::{
     assert_account_has_fungible_asset, build_asset_transfer_tx, build_send_notes_script,
-    compile_rust_package, execute_tx, note_cycles, note_script_root, prologue_cycles,
+    compile_rust_package, execute_tx, note_script_root, prologue_cycles, single_note_cycles,
     to_core_felts, tx_script_processing_cycles,
 };
 /// Converts the P2IDE note payload into protocol storage order for the basic-wallet tests.
@@ -79,7 +79,9 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
 
     eprintln!("\n=== Step 1: Minting tokens from faucet to Alice ===");
     let mint_amount = 100_000u64; // 100,000 tokens
-    let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
+    let mint_asset = FungibleAsset::new(faucet_id, mint_amount)
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let mut note_rng = RandomCoin::new(note_script_root(note_package.as_ref()));
     let p2id_note_mint = NoteBuilder::new(faucet_id, &mut note_rng)
@@ -101,11 +103,14 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
     execute_tx(&mut chain, mint_tx_context_builder);
 
     eprintln!("\n=== Step 2: Alice consumes mint note ===");
-    let consume_tx_context_builder =
-        chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
+    let consume_tx_context_builder = chain
+        .build_tx_context(alice_id, &[p2id_note_mint.id()], &[])
+        .unwrap()
+        .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["3235"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["7315"].assert_eq(note_cycles(&tx_measurements, p2id_note_mint.id()));
+    expect!["3327"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["9323"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -113,7 +118,9 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
 
     eprintln!("\n=== Step 3: Alice creates p2id note for Bob (custom tx script) ===");
     let transfer_amount = 10_000u64; // 10,000 tokens
-    let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount).unwrap();
+    let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount)
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let (alice_tx_context_builder, bob_note) = build_asset_transfer_tx(
         &chain,
@@ -125,12 +132,16 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, alice_tx_context_builder);
-    expect!["6505"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["8561"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
-    let consume_tx_context_builder = chain.build_tx_context(bob_id, &[bob_note.id()], &[]).unwrap();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
+    let consume_tx_context_builder = chain
+        .build_tx_context(bob_id, &[bob_note.id()], &[])
+        .unwrap()
+        .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["7315"].assert_eq(note_cycles(&tx_measurements, bob_note.id()));
+    expect!["9323"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -197,7 +208,9 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
 
     // Step 1: Mint assets from faucet to Alice using p2id note
     let mint_amount = 100_000u64;
-    let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
+    let mint_asset = FungibleAsset::new(faucet_id, mint_amount)
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let p2id_rng = RandomCoin::new(note_script_root(p2id_note_package.as_ref()));
     let p2id_note_mint = NoteBuilder::new(faucet_id, p2id_rng)
@@ -219,8 +232,11 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
     execute_tx(&mut chain, mint_tx_context_builder);
 
     // Step 2: Alice consumes the p2id note
-    let consume_tx_context_builder =
-        chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
+    let consume_tx_context_builder = chain
+        .build_tx_context(alice_id, &[p2id_note_mint.id()], &[])
+        .unwrap()
+        .foreign_accounts(vec![faucet_inputs]);
     execute_tx(&mut chain, consume_tx_context_builder);
 
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -228,9 +244,11 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
 
     // Step 3: Alice creates p2ide note for Bob
     let transfer_amount = 10_000u64;
-    let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount).unwrap();
-    let timelock_height = Felt::new(0);
-    let reclaim_height = Felt::new(0);
+    let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount)
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
+    let timelock_height = Felt::ZERO;
+    let reclaim_height = Felt::ZERO;
 
     let p2ide_rng = RandomCoin::new(note_script_root(p2ide_note_package.as_ref()));
     let p2ide_note = NoteBuilder::new(alice_id, p2ide_rng)
@@ -242,20 +260,25 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
         .unwrap();
 
     let alice_account = chain.committed_account(alice_id).unwrap().clone();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
     let transfer_tx_script =
         build_send_notes_script(&alice_account, std::slice::from_ref(&p2ide_note));
     let transfer_tx_context_builder = chain
         .build_tx_context(alice_id, &[], &[])
         .unwrap()
+        .foreign_accounts(vec![faucet_inputs])
         .tx_script(transfer_tx_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(p2ide_note.clone())]);
     execute_tx(&mut chain, transfer_tx_context_builder);
 
     // Step 4: Bob consumes the p2ide note
-    let consume_tx_context_builder =
-        chain.build_tx_context(bob_id, &[p2ide_note.id()], &[]).unwrap();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
+    let consume_tx_context_builder = chain
+        .build_tx_context(bob_id, &[p2ide_note.id()], &[])
+        .unwrap()
+        .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["7765"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["9773"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -322,7 +345,9 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
 
     // Step 1: Mint assets from faucet to Alice using p2id note
     let mint_amount = 100_000u64;
-    let mint_asset = FungibleAsset::new(faucet_id, mint_amount).unwrap();
+    let mint_asset = FungibleAsset::new(faucet_id, mint_amount)
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
 
     let p2id_rng = RandomCoin::new(note_script_root(p2id_note_package.as_ref()));
     let p2id_note_mint = NoteBuilder::new(faucet_id, p2id_rng)
@@ -344,8 +369,11 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
     execute_tx(&mut chain, mint_tx_context_builder);
 
     // Step 2: Alice consumes the p2id note
-    let consume_tx_context_builder =
-        chain.build_tx_context(alice_id, &[p2id_note_mint.id()], &[]).unwrap();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
+    let consume_tx_context_builder = chain
+        .build_tx_context(alice_id, &[p2id_note_mint.id()], &[])
+        .unwrap()
+        .foreign_accounts(vec![faucet_inputs]);
     execute_tx(&mut chain, consume_tx_context_builder);
 
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -353,9 +381,11 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
 
     // Step 3: Alice creates p2ide note for Bob with reclaim enabled
     let transfer_amount = 10_000u64;
-    let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount).unwrap();
-    let timelock_height = Felt::new(0);
-    let reclaim_height = Felt::new(1);
+    let transfer_asset = FungibleAsset::new(faucet_id, transfer_amount)
+        .unwrap()
+        .with_callbacks(AssetCallbackFlag::Enabled);
+    let timelock_height = Felt::ZERO;
+    let reclaim_height = Felt::ONE;
 
     let p2ide_rng = RandomCoin::new(note_script_root(p2ide_note_package.as_ref()));
     let p2ide_note = NoteBuilder::new(alice_id, p2ide_rng)
@@ -367,20 +397,25 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .unwrap();
 
     let alice_account = chain.committed_account(alice_id).unwrap().clone();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
     let transfer_tx_script =
         build_send_notes_script(&alice_account, std::slice::from_ref(&p2ide_note));
     let transfer_tx_context_builder = chain
         .build_tx_context(alice_id, &[], &[])
         .unwrap()
+        .foreign_accounts(vec![faucet_inputs])
         .tx_script(transfer_tx_script)
         .extend_expected_output_notes(vec![RawOutputNote::Full(p2ide_note.clone())]);
     execute_tx(&mut chain, transfer_tx_context_builder);
 
     // Step 4: Alice reclaims the note (exercises the reclaim branch)
-    let reclaim_tx_context_builder =
-        chain.build_tx_context(alice_id, &[p2ide_note.id()], &[]).unwrap();
+    let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
+    let reclaim_tx_context_builder = chain
+        .build_tx_context(alice_id, &[p2ide_note.id()], &[])
+        .unwrap()
+        .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, reclaim_tx_context_builder);
-    expect!["8328"].assert_eq(note_cycles(&tx_measurements, p2ide_note.id()));
+    expect!["10366"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();

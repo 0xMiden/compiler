@@ -1,7 +1,7 @@
 use std::any::type_name;
 
 use miden_core::Felt;
-use miden_debug::{FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
+use miden_debug::{DebugQuery, FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use num_traits::{PrimInt, ToBytes};
 use proptest::{

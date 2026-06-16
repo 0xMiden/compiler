@@ -1,3 +1,4 @@
+use miden_debug::DebugQuery;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{
@@ -42,7 +43,7 @@ where
         }];
 
         // The generated `entrypoint` uses the `(out_ptr, in_ptr)` convention.
-        let args = [Felt::new(out_addr as u64), Felt::new(in_addr as u64)];
+        let args = [Felt::new_unchecked(out_addr as u64), Felt::new_unchecked(in_addr as u64)];
         eval_package::<Felt, _, _>(&package, initializers, &args, &session, |trace| {
             let vm_in: [u8; 32] = trace
                 .read_from_rust_memory(in_addr)
@@ -93,7 +94,7 @@ where
             bytes: &ibytes,
         }];
 
-        let args = [Felt::new(out_addr as u64), Felt::new(in_addr as u64)];
+        let args = [Felt::new_unchecked(out_addr as u64), Felt::new_unchecked(in_addr as u64)];
         eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
             let vm_in: [u8; 64] = trace
                 .read_from_rust_memory(in_addr)

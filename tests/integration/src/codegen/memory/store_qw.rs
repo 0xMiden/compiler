@@ -60,7 +60,7 @@ fn store_qw_unaligned_impl<T: QuadwordIO>(write_val: T) {
         let output = eval_package::<u32, _, _>(
             &package,
             initializers,
-            &[Felt::new(offs as u64)],
+            &[Felt::new_unchecked(offs as u64)],
             context.session(),
             |trace| {
                 let actual = [

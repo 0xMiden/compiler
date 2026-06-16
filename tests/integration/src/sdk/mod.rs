@@ -116,7 +116,8 @@ impl Note {
         let sender = active_note::get_sender();
         let script_root = active_note::get_script_root();
         let serial_number = active_note::get_serial_number();
-        let balance = active_account::get_balance(sender);
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
+        let balance = active_account::get_balance(asset_key);
 
         assert_eq!(sender.prefix, sender.prefix);
         assert_eq!(sender.suffix, sender.suffix);

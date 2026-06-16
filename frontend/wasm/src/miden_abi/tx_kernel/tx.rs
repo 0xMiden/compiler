@@ -22,6 +22,7 @@ pub const GET_NUM_INPUT_NOTES: &str = "get_num_input_notes";
 pub const GET_NUM_OUTPUT_NOTES: &str = "get_num_output_notes";
 pub const GET_EXPIRATION_BLOCK_DELTA: &str = "get_expiration_block_delta";
 pub const UPDATE_EXPIRATION_BLOCK_DELTA: &str = "update_expiration_block_delta";
+pub const GET_TX_SCRIPT_ROOT: &str = "get_tx_script_root";
 pub const EXECUTE_FOREIGN_PROCEDURE_INDIRECT: &str = "execute_foreign_procedure_indirect";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
@@ -53,6 +54,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     tx.insert(
         Symbol::from(UPDATE_EXPIRATION_BLOCK_DELTA),
         FunctionType::new(CallConv::Wasm, [Felt], []),
+    );
+    tx.insert(
+        Symbol::from(GET_TX_SCRIPT_ROOT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
     );
     tx.insert(
         Symbol::from(EXECUTE_FOREIGN_PROCEDURE_INDIRECT),

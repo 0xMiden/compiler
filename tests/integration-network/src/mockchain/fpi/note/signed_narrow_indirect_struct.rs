@@ -26,7 +26,12 @@ pub fn signed_narrow_indirect_struct() {
 
 /// Returns the non-zero storage key used by the signed-narrow indirect FPI test.
 fn signed_narrow_indirect_struct_storage_key() -> Word {
-    Word::new([Felt::new(61), Felt::new(62), Felt::new(63), Felt::new(64)])
+    Word::new([
+        Felt::new(61).unwrap(),
+        Felt::new(62).unwrap(),
+        Felt::new(63).unwrap(),
+        Felt::new(64).unwrap(),
+    ])
 }
 
 /// Minimal counter account component source used by the signed-narrow indirect FPI test.

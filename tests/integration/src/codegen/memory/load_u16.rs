@@ -27,7 +27,7 @@ fn load_u16() {
                 bytes: &value_bytes,
             }];
 
-            let args = [Felt::new(write_to as u64)];
+            let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u16, _, _>(
                 &package,
                 initializers,
@@ -110,7 +110,7 @@ macro_rules! define_unaligned_16bit_load_tests {
                     bytes: &initial_bytes,
                 }];
 
-                let args = [Felt::new(read_from as u64)];
+                let args = [Felt::new_unchecked(read_from as u64)];
                 let output = eval_package::<$rust_ty, _, _>(
                     &package,
                     initializers,

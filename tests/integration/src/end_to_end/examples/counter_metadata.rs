@@ -39,7 +39,6 @@ fn counter_contract() {
         name = "counter-contract"
         description = "A simple example of a Miden counter contract using the Account Storage API"
         version = "0.1.0"
-        supported-types = ["RegularAccountUpdatableCode"]
 
         [[storage.slots]]
         name = "counter_contract::counter_contract::count_map"

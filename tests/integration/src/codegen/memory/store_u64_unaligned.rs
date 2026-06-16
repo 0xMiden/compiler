@@ -44,7 +44,7 @@ fn store_u64_unaligned() {
         let output = eval_package::<u32, _, _>(
             &package,
             initializers,
-            &[Felt::new(offs as u64)],
+            &[Felt::new_unchecked(offs as u64)],
             context.session(),
             |trace| {
                 // Get the overwritten words.

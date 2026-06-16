@@ -25,7 +25,12 @@ pub fn mixed_scalar_struct() {
 
 /// Returns the non-zero storage key used by the mixed scalar record FPI test.
 fn mixed_scalar_struct_storage_key() -> Word {
-    Word::new([Felt::new(41), Felt::new(42), Felt::new(43), Felt::new(44)])
+    Word::new([
+        Felt::new(41).unwrap(),
+        Felt::new(42).unwrap(),
+        Felt::new(43).unwrap(),
+        Felt::new(44).unwrap(),
+    ])
 }
 
 /// Minimal counter account component source used by the mixed scalar record FPI test.

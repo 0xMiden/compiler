@@ -11,9 +11,9 @@ pub proc dirty
 end
 
 pub proc entry() -> u32
-# CHECK-LABEL: adv_push.1
+# CHECK-LABEL: adv_push
 # CHECK: advice data is obtained here which is later used unconstrained
-   adv_push.1
+   adv_push
 # CHECK-LABEL: exec.dirty
 # CHECK: unconstrained value is passed as a call argument here
    exec.dirty

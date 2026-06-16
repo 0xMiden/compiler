@@ -34,6 +34,13 @@ pub extern "C" fn native_account_remove_asset_plain(
     unsafe { core::hint::unreachable_unchecked() }
 }
 
+#[unsafe(export_name = "miden::protocol::native_account::get_id")]
+#[optimize(none)]
+#[inline(never)]
+pub extern "C" fn native_account_get_id_plain(_out: *mut c_void) {
+    unsafe { core::hint::unreachable_unchecked() }
+}
+
 #[unsafe(export_name = "miden::protocol::native_account::incr_nonce")]
 #[optimize(none)]
 #[inline(never)]

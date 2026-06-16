@@ -863,8 +863,8 @@ mod tests {
             // which means the hi limb is pushed first, followed by the lo limb.
             assert_eq!(&ops[3], &push!(Felt::ONE));
             assert_eq!(&ops[4], &push!(Felt::ZERO));
-            assert_eq!(&ops[5], &push!(Felt::new(3)));
-            assert_eq!(&ops[6], &push!(Felt::new(u32::MAX as u64)));
+            assert_eq!(&ops[5], &push!(Felt::new_unchecked(3)));
+            assert_eq!(&ops[6], &push!(Felt::new_unchecked(u32::MAX as u64)));
         }
 
         assert_eq!(emitter.stack()[0], five);
@@ -2085,7 +2085,7 @@ mod tests {
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
-        let ten = Immediate::Felt(Felt::new(10));
+        let ten = Immediate::Felt(Felt::new_unchecked(10));
 
         emitter.literal(ten, SourceSpan::default());
 
@@ -2102,7 +2102,7 @@ mod tests {
         let mut invoked = BTreeSet::default();
         let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
 
-        let ten = Immediate::Felt(Felt::new(10));
+        let ten = Immediate::Felt(Felt::new_unchecked(10));
 
         emitter.literal(ten, SourceSpan::default());
 

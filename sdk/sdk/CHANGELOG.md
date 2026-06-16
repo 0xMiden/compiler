@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### BREAKING
 - `#[auth_script]` attribute macro is required to mark the authentication procedure in the authentication component #1051
+- `asset::{create_fungible_asset, create_non_fungible_asset}` now take an
+  `enable_callbacks: bool` argument.
+- `active_account::{get_balance, get_initial_balance}` and the corresponding
+  `ActiveAccount` trait methods now take an asset key `Word` instead of a
+  faucet `AccountId`.
+- `faucet::{mint, burn}` no longer return an `Asset`, and the
+  `faucet::{mint_value, burn_value}` helpers were removed to match the tx
+  kernel API.
 
 ### Added
 - `#[component]` and `#[note]` now generate typed Foreign Procedure Invocation (FPI)
@@ -19,6 +27,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   let counter = CounterContract::from_account(counter_account_id);
   let count = counter.get_count();
   ```
+- Added tx-kernel SDK bindings for `native_account::get_id` and
+  `tx::get_tx_script_root`.
+- Added `AttachmentLocation` for note attachment lookup results.
+- Added active-note bindings:
+  `active_note::{is_public, is_private, get_attachments_commitment, write_attachment_commitments_to_memory, write_attachment_to_memory, find_attachment}`.
+- Added note attachment and metadata bindings:
+  `note::{compute_and_store_recipient, compute_storage_commitment, write_attachment_commitments_to_memory, write_attachment_to_memory, write_indexed_attachment_to_memory, compute_recipient, metadata_into_sender, metadata_into_attachment_schemes, metadata_into_note_type, metadata_into_tag, find_attachment_idx}`.
+- Added input-note bindings:
+  `input_note::{get_attachments_commitment, get_attachments_commitment_raw, write_attachment_commitments_to_memory, write_attachment_to_memory, find_attachment}`.
+- Added output-note bindings:
+  `output_note::{add_word_attachment, add_attachment, add_attachment_from_memory, get_attachments_commitment, find_attachment, write_attachment_commitments_to_memory, write_attachment_to_memory}`.
+- Added `faucet::has_callbacks`.
 
 ## [0.11.0]
 

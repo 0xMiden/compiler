@@ -1572,8 +1572,10 @@ fn debug_var_location_from_expression(
                 .and_then(|value| emitter.stack.find(value))
                 .map(|pos| emitter.stack.effective_index(pos) as u8)
                 .map(DebugVarLocation::Stack),
-            ExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new(*val))),
-            ExpressionOp::ConstS64(val) => Some(DebugVarLocation::Const(Felt::new(*val as u64))),
+            ExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new_unchecked(*val))),
+            ExpressionOp::ConstS64(val) => {
+                Some(DebugVarLocation::Const(Felt::new_unchecked(*val as u64)))
+            }
             ExpressionOp::FrameBase {
                 global_index,
                 byte_offset,

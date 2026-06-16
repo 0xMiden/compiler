@@ -32,7 +32,7 @@ log.workspace = true
 miden-core.workspace = true
 midenc-log = { workspace = true, optional = true }
 midenc-hir-symbol = { workspace = true, features = ["compact_str"] }
-midenc-hir-type = "0.5"
+midenc-hir-type = "0.6"
 midenc-hir-macros.workspace = true
 midenc-session.workspace = true
 paste.workspace = true

@@ -73,7 +73,10 @@ fn store_u16() {
             }];
 
             // C calling convention: first argument on top of the stack
-            let args = [Felt::new(store_value1 as u64), Felt::new(store_value2 as u64)];
+            let args = [
+                Felt::new_unchecked(store_value1 as u64),
+                Felt::new_unchecked(store_value2 as u64),
+            ];
             let output = eval_package::<u32, _, _>(
                 &package,
                 initializers,
@@ -278,7 +281,7 @@ define_unaligned_16bit_store_tests!(
     run_store_unaligned_u16,
     u16,
     Type::U16,
-    |store_value: u16| Felt::new(store_value as u64),
+    |store_value: u16| Felt::new_unchecked(store_value as u64),
     store_unaligned_u16_offset_1,
     store_unaligned_u16_offset_2,
     store_unaligned_u16
@@ -287,7 +290,7 @@ define_unaligned_16bit_store_tests!(
     run_store_unaligned_i16,
     i16,
     Type::I16,
-    |store_value: i16| Felt::new(store_value as u16 as u64),
+    |store_value: i16| Felt::new_unchecked(store_value as u16 as u64),
     store_unaligned_i16_offset_1,
     store_unaligned_i16_offset_2,
     store_unaligned_i16

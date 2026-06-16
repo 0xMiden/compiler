@@ -159,3 +159,67 @@ fn input_note_get_serial_number_binding() {
     }",
     );
 }
+
+#[test]
+fn input_note_get_attachments_commitment_binding() {
+    run_input_note_binding_test(
+        "input_note_get_attachments_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        input_note::get_attachments_commitment(NoteIdx { inner: Felt::new(0).unwrap() })
+    }",
+    );
+}
+
+#[test]
+fn input_note_get_attachments_commitment_raw_binding() {
+    run_input_note_binding_test(
+        "input_note_get_attachments_commitment_raw_binding",
+        "pub fn binding(&self) -> Word {
+        input_note::get_attachments_commitment_raw(
+            Felt::new(0).unwrap(),
+            NoteIdx { inner: Felt::new(0).unwrap() },
+        )
+    }",
+    );
+}
+
+#[test]
+fn input_note_write_attachment_commitments_to_memory_binding() {
+    run_input_note_binding_test(
+        "input_note_write_attachment_commitments_to_memory_binding",
+        "pub fn binding(&self) -> Felt {
+        let commitments =
+            input_note::write_attachment_commitments_to_memory(NoteIdx { inner: \
+         Felt::new(0).unwrap() });
+        Felt::new(commitments.len() as u64).unwrap()
+    }",
+    );
+}
+
+#[test]
+fn input_note_write_attachment_to_memory_binding() {
+    run_input_note_binding_test(
+        "input_note_write_attachment_to_memory_binding",
+        "pub fn binding(&self) -> Felt {
+        let attachment = input_note::write_attachment_to_memory(
+            NoteIdx { inner: Felt::new(0).unwrap() },
+            Felt::new(0).unwrap(),
+        );
+        Felt::new(attachment.len() as u64).unwrap()
+    }",
+    );
+}
+
+#[test]
+fn input_note_find_attachment_binding() {
+    run_input_note_binding_test(
+        "input_note_find_attachment_binding",
+        "pub fn binding(&self) -> Felt {
+        let location = input_note::find_attachment(
+            NoteIdx { inner: Felt::new(0).unwrap() },
+            Felt::new(1).unwrap(),
+        );
+        location.index
+    }",
+    );
+}

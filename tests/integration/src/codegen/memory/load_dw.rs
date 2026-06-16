@@ -28,7 +28,7 @@ fn load_dw() {
                 felts: Cow::Borrowed(&value_felts),
             }];
 
-            let args = [Felt::new(write_to as u64)];
+            let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u64, _, _>(
                 &package,
                 initializers,

@@ -130,10 +130,10 @@ fn store_u8() {
 
             // C calling convention: first argument on top of the stack
             let args = [
-                Felt::new(store_value0 as u64),
-                Felt::new(store_value1 as u64),
-                Felt::new(store_value2 as u64),
-                Felt::new(store_value3 as u64),
+                Felt::new_unchecked(store_value0 as u64),
+                Felt::new_unchecked(store_value1 as u64),
+                Felt::new_unchecked(store_value2 as u64),
+                Felt::new_unchecked(store_value3 as u64),
             ];
             let output = eval_package::<u32, _, _>(
                 &package,

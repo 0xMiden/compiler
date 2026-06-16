@@ -45,12 +45,19 @@ unsafe extern "C" {
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_balance"]
-    fn extern_active_account_get_balance(faucet_id_suffix: Felt, faucet_id_prefix: Felt) -> Felt;
+    fn extern_active_account_get_balance(
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
+    ) -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_balance"]
     fn extern_active_account_get_initial_balance(
-        faucet_id_suffix: Felt,
-        faucet_id_prefix: Felt,
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
     ) -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
@@ -177,20 +184,29 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
     }
 }
 
-/// Returns the balance of the fungible asset identified by `faucet_id`.
+/// Returns the balance of the fungible asset identified by `asset_key`.
 ///
 /// # Panics
 ///
 /// Propagates kernel errors if the referenced asset is non-fungible or the
 /// account vault invariants are violated.
-pub fn get_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_balance(faucet_id.suffix, faucet_id.prefix) }
+pub fn get_balance(asset_key: Word) -> Felt {
+    unsafe {
+        extern_active_account_get_balance(asset_key[0], asset_key[1], asset_key[2], asset_key[3])
+    }
 }
 
-/// Returns the initial balance of the fungible asset identified by `faucet_id`.
+/// Returns the initial balance of the fungible asset identified by `asset_key`.
 #[inline]
-pub fn get_initial_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_initial_balance(faucet_id.suffix, faucet_id.prefix) }
+pub fn get_initial_balance(asset_key: Word) -> Felt {
+    unsafe {
+        extern_active_account_get_initial_balance(
+            asset_key[0],
+            asset_key[1],
+            asset_key[2],
+            asset_key[3],
+        )
+    }
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
@@ -314,21 +330,21 @@ pub trait ActiveAccount {
         get_initial_asset(asset_key)
     }
 
-    /// Returns the balance of the fungible asset identified by `faucet_id`.
+    /// Returns the balance of the fungible asset identified by `asset_key`.
     ///
     /// # Panics
     ///
     /// Propagates kernel errors if the referenced asset is non-fungible or the
     /// account vault invariants are violated.
     #[inline]
-    fn get_balance(&self, faucet_id: AccountId) -> Felt {
-        get_balance(faucet_id)
+    fn get_balance(&self, asset_key: Word) -> Felt {
+        get_balance(asset_key)
     }
 
-    /// Returns the initial balance of the fungible asset identified by `faucet_id`.
+    /// Returns the initial balance of the fungible asset identified by `asset_key`.
     #[inline]
-    fn get_initial_balance(&self, faucet_id: AccountId) -> Felt {
-        get_initial_balance(faucet_id)
+    fn get_initial_balance(&self, asset_key: Word) -> Felt {
+        get_initial_balance(asset_key)
     }
 
     /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
