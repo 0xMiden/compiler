@@ -222,7 +222,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 "MemoryGrow: WebAssembly linear memory growth is not supported yet"
             );
         }
-        Operator::MemorySize { .. } => {
+        Operator::MemorySize { mem } => {
+            if *mem != 0 {
+                unsupported_diag!(diagnostics, "MemorySize: only single memory is supported");
+            }
             let memory = module_state.memory().ok_or_else(|| {
                 diagnostics
                     .diagnostic(midenc_session::diagnostics::Severity::Error)

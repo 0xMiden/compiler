@@ -125,6 +125,23 @@ fn memory_size_imported_memory() {
 }
 
 #[test]
+fn memory_size_nonzero_memory_index() {
+    check_unsupported_wat(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (memory (;1;) 2)
+            (func $test_wrapper
+                memory.size 1
+                drop
+            )
+            (export "test_wrapper" (func $test_wrapper))
+        )"#,
+        "MemorySize: only single memory is supported",
+    );
+}
+
+#[test]
 fn memory_copy() {
     check_unsupported_op(
         r#"
