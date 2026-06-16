@@ -300,7 +300,7 @@ impl OpEmitter<'_> {
         let reserved = 32 - n;
         let mask = (2u32.pow(reserved) - 1) << n;
         // Copy the input
-        self.emit(masm::Instruction::Dup1, span);
+        self.emit(masm::Instruction::Dup0, span);
         // Apply the mask
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
@@ -323,7 +323,7 @@ impl OpEmitter<'_> {
         let reserved = 32 - n;
         let mask = (2u32.pow(reserved) - 1) << n;
         // Copy the input
-        self.emit(masm::Instruction::Dup1, span);
+        self.emit(masm::Instruction::Dup0, span);
         // Apply the mask
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);

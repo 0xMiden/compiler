@@ -217,14 +217,22 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         /******************************* Memory management *********************************/
         Operator::MemoryGrow { .. } => {
-            let arg = state.pop1_bitcasted(U32, builder, span);
-            let result = builder.mem_grow(arg, span)?;
-            // WASM memory.grow returns i32, so bitcast from U32 to I32
-            state.push1(builder.bitcast(result, I32, span)?);
+            unsupported_diag!(
+                diagnostics,
+                "MemoryGrow: WebAssembly linear memory growth is not supported yet"
+            );
         }
         Operator::MemorySize { .. } => {
-            // Return total Miden memory size
-            let result = builder.mem_size(span)?;
+            let memory = module_state.memory().ok_or_else(|| {
+                diagnostics
+                    .diagnostic(midenc_session::diagnostics::Severity::Error)
+                    .with_message("MemorySize: module has no linear memory")
+                    .into_report()
+            })?;
+            let result = builder.u32(
+                u32::try_from(memory.minimum).into_diagnostic()?,
+                span,
+            );
             // WASM memory.size returns i32, so bitcast from U32 to I32
             state.push1(builder.bitcast(result, I32, span)?);
         }
@@ -232,13 +240,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::MemoryCopy { dst_mem, src_mem } => {
             // See semantics at https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md#memorycopy-instruction
             if *src_mem == 0 && src_mem == dst_mem {
-                let count_i32 = state.pop1();
-                let src_i32 = state.pop1();
-                let dst_i32 = state.pop1();
-                let count = builder.bitcast(count_i32, Type::U32, span)?;
-                let dst = prepare_addr(dst_i32, &U8, None, builder, span)?;
-                let src = prepare_addr(src_i32, &U8, None, builder, span)?;
-                builder.memcpy(src, dst, count, span)?;
+                unsupported_diag!(
+                    diagnostics,
+                    "MemoryCopy: WebAssembly overlap semantics are not supported yet"
+                );
             } else {
                 unsupported_diag!(diagnostics, "MemoryCopy: only single memory is supported");
             }

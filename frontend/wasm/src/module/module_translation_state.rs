@@ -7,7 +7,10 @@ use midenc_hir::{
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
-use super::{FuncIndex, Module, instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder};
+use super::{
+    FuncIndex, Memory, MemoryIndex, Module, instance::ModuleArgument, ir_func_type,
+    types::ModuleTypesBuilder,
+};
 use crate::{
     callable::CallableFunction,
     component::lower_imports::generate_import_lowering_function,
@@ -19,6 +22,7 @@ use crate::{
 pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
     functions: FxHashMap<FuncIndex, CallableFunction>,
+    memory: Option<Memory>,
     pub module_builder: &'a mut ModuleBuilder,
     pub world_builder: &'a mut WorldBuilder,
 }
@@ -91,11 +95,17 @@ impl<'a> ModuleTranslationState<'a> {
                 functions.insert(index, defined_function);
             };
         }
+        let memory = module.memories.get(MemoryIndex::from_u32(0)).copied();
         Ok(Self {
             functions,
+            memory,
             module_builder,
             world_builder,
         })
+    }
+
+    pub(crate) fn memory(&self) -> Option<Memory> {
+        self.memory
     }
 
     /// Get the `CallableFunction` that should be used to make a direct call to function `index`.

@@ -56,15 +56,40 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
     expected_ir.assert_eq(&w);
 }
 
+fn check_unsupported_op(wat_op: &str, expected_message: &str) {
+    let ctx = midenc_hir::Context::default();
+    let context = Rc::new(ctx);
+
+    let wat = format!(
+        r#"
+        (module
+            (memory (;0;) 16384)
+            (global $MyGlobalVal (mut i32) i32.const 42)
+            (func $test_wrapper
+                {wat_op}
+            )
+            (export "test_wrapper" (func $test_wrapper))
+        )"#,
+    );
+    let wasm = wat::parse_str(wat).unwrap();
+    let err = translate(&wasm, &WasmTranslationConfig::default(), context)
+        .expect_err("expected unsupported WebAssembly op");
+
+    assert!(
+        err.to_string().contains(expected_message),
+        "expected error to contain {expected_message:?}, got {err}"
+    );
+}
+
 #[test]
 fn memory_grow() {
-    check_op(
+    check_unsupported_op(
         r#"
             i32.const 1
             memory.grow
             drop
         "#,
-        expect_file!["expected/memory_grow.hir"],
+        "MemoryGrow: WebAssembly linear memory growth is not supported yet",
     )
 }
 
@@ -81,14 +106,14 @@ fn memory_size() {
 
 #[test]
 fn memory_copy() {
-    check_op(
+    check_unsupported_op(
         r#"
             i32.const 20 ;; dst
             i32.const 10 ;; src
             i32.const 1  ;; len
             memory.copy
         "#,
-        expect_file!["./expected/memory_copy.hir"],
+        "MemoryCopy: WebAssembly overlap semantics are not supported yet",
     )
 }
 
