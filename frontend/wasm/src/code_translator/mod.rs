@@ -335,7 +335,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::I32Const { value } => state.push1(builder.i32(*value, span)),
         Operator::I64Const { value } => state.push1(builder.i64(*value, span)),
         Operator::F32Const { value } => {
-            state.push1(builder.felt(midenc_hir::Felt::new(value.bits() as u64), span));
+            state.push1(builder.felt(midenc_hir::Felt::from(value.bits()), span));
         }
 
         /******************************* Unary Operators *************************************/
