@@ -76,8 +76,10 @@ fn check_unsupported_wat(wat: &str, expected_message: &str) {
     let context = Rc::new(ctx);
 
     let wasm = wat::parse_str(wat).unwrap();
-    let err = translate(&wasm, &WasmTranslationConfig::default(), context)
-        .expect_err("expected unsupported WebAssembly op");
+    let err = match translate(&wasm, &WasmTranslationConfig::default(), context) {
+        Ok(_) => panic!("expected unsupported WebAssembly op"),
+        Err(err) => err,
+    };
 
     assert!(
         err.to_string().contains(expected_message),
