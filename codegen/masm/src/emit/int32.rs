@@ -1080,31 +1080,73 @@ mod tests {
     use super::*;
     use crate::{OperandStack, masm::Op};
 
-    #[test]
-    fn int32_to_uint_masks_top_stack_word() {
-        let span = SourceSpan::default();
-        let context = Rc::new(Context::default());
-        let mut stack = OperandStack::new(context);
-        let mut invoked = BTreeSet::default();
-        let mut block = Vec::new();
-        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+    fn push_u32_op(value: u32, span: SourceSpan) -> Op {
+        Op::Inst(masm::Span::new(
+            span,
+            masm::Instruction::Push(masm::Immediate::Value(masm::Span::new(span, value.into()))),
+        ))
+    }
 
-        emitter.int32_to_uint(8, span);
+    fn new_emitter<'a>(
+        invoked: &'a mut BTreeSet<masm::Invoke>,
+        block: &'a mut Vec<Op>,
+        stack: &'a mut OperandStack,
+    ) -> OpEmitter<'a> {
+        OpEmitter::new(invoked, block, stack)
+    }
 
-        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Dup0)));
+    fn assert_int32_to_uint_stack_contract(block: &[Op], span: SourceSpan, n: u32) {
+        let reserved = 32 - n;
+        let mask = (2u32.pow(reserved) - 1) << n;
+
+        assert_eq!(
+            &block[0],
+            &Op::Inst(masm::Span::new(span, masm::Instruction::Dup0)),
+            "must duplicate the top stack word, not the word underneath"
+        );
+        assert_eq!(&block[1], &push_u32_op(mask, span));
+        assert_eq!(&block[2], &Op::Inst(masm::Span::new(span, masm::Instruction::U32And)));
     }
 
     #[test]
-    fn try_int32_to_uint_masks_top_stack_word() {
+    fn int32_to_uint_masks_top_stack_word_and_preserves_input() {
         let span = SourceSpan::default();
         let context = Rc::new(Context::default());
         let mut stack = OperandStack::new(context);
         let mut invoked = BTreeSet::default();
         let mut block = Vec::new();
-        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+        let mut emitter = new_emitter(&mut invoked, &mut block, &mut stack);
+
+        emitter.int32_to_uint(8, span);
+
+        assert_int32_to_uint_stack_contract(&block, span, 8);
+        assert_eq!(
+            &block[3],
+            &Op::Inst(masm::Span::new(
+                span,
+                OpEmitter::assertz_with_message_inst(
+                    "value does not fit in unsigned 8-bit range",
+                    span
+                )
+            ))
+        );
+    }
+
+    #[test]
+    fn try_int32_to_uint_masks_top_stack_word_and_preserves_input() {
+        let span = SourceSpan::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut block = Vec::new();
+        let mut emitter = new_emitter(&mut invoked, &mut block, &mut stack);
 
         emitter.try_int32_to_uint(8, span);
 
-        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Dup0)));
+        assert_int32_to_uint_stack_contract(&block, span, 8);
+        assert_eq!(
+            &block[3],
+            &Op::Inst(masm::Span::new(span, masm::Instruction::EqImm(Felt::ZERO.into())))
+        );
     }
 }
