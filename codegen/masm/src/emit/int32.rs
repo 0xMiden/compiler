@@ -1070,3 +1070,41 @@ impl OpEmitter<'_> {
         self.raw_exec("::intrinsics::i32::max", span);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc};
+
+    use midenc_hir::Context;
+
+    use super::*;
+    use crate::{OperandStack, masm::Op};
+
+    #[test]
+    fn int32_to_uint_masks_top_stack_word() {
+        let span = SourceSpan::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut block = Vec::new();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.int32_to_uint(8, span);
+
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Dup0)));
+    }
+
+    #[test]
+    fn try_int32_to_uint_masks_top_stack_word() {
+        let span = SourceSpan::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut block = Vec::new();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        emitter.try_int32_to_uint(8, span);
+
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Dup0)));
+    }
+}

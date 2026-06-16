@@ -229,10 +229,13 @@ pub fn translate_operator<B: ?Sized + Builder>(
                     .with_message("MemorySize: module has no linear memory")
                     .into_report()
             })?;
-            let result = builder.u32(
-                u32::try_from(memory.minimum).into_diagnostic()?,
-                span,
-            );
+            if memory.imported {
+                unsupported_diag!(
+                    diagnostics,
+                    "MemorySize: imported linear memories are not supported yet"
+                );
+            }
+            let result = builder.u32(u32::try_from(memory.minimum).into_diagnostic()?, span);
             // WASM memory.size returns i32, so bitcast from U32 to I32
             state.push1(builder.bitcast(result, I32, span)?);
         }

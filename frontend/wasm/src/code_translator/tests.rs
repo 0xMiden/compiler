@@ -57,9 +57,6 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
 }
 
 fn check_unsupported_op(wat_op: &str, expected_message: &str) {
-    let ctx = midenc_hir::Context::default();
-    let context = Rc::new(ctx);
-
     let wat = format!(
         r#"
         (module
@@ -71,6 +68,13 @@ fn check_unsupported_op(wat_op: &str, expected_message: &str) {
             (export "test_wrapper" (func $test_wrapper))
         )"#,
     );
+    check_unsupported_wat(&wat, expected_message);
+}
+
+fn check_unsupported_wat(wat: &str, expected_message: &str) {
+    let ctx = midenc_hir::Context::default();
+    let context = Rc::new(ctx);
+
     let wasm = wat::parse_str(wat).unwrap();
     let err = translate(&wasm, &WasmTranslationConfig::default(), context)
         .expect_err("expected unsupported WebAssembly op");
@@ -102,6 +106,22 @@ fn memory_size() {
         "#,
         expect_file!["./expected/memory_size.hir"],
     )
+}
+
+#[test]
+fn memory_size_imported_memory() {
+    check_unsupported_wat(
+        r#"
+        (module
+            (import "env" "memory" (memory 1))
+            (func $test_wrapper
+                memory.size
+                drop
+            )
+            (export "test_wrapper" (func $test_wrapper))
+        )"#,
+        "MemorySize: imported linear memories are not supported yet",
+    );
 }
 
 #[test]
