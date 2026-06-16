@@ -5,6 +5,10 @@ use super::{OpEmitter, dup_from_offset, felt, masm, movup_from_offset};
 
 pub const SIGN_BIT: u32 = 1 << 31;
 
+fn unsigned_int32_reserved_mask(n: u32) -> u32 {
+    u32::MAX.checked_shl(n).unwrap_or(0)
+}
+
 #[allow(unused)]
 impl OpEmitter<'_> {
     /// Emits code to apply a constant 32-bit mask, `mask`, to a u32 value on top of the stack.
@@ -297,8 +301,7 @@ impl OpEmitter<'_> {
     pub fn int32_to_uint(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
         // Mask the value and ensure that the unused bits above the N-bit range are 0
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
+        let mask = unsigned_int32_reserved_mask(n);
         // Copy the input
         self.emit(masm::Instruction::Dup0, span);
         // Apply the mask
@@ -320,8 +323,7 @@ impl OpEmitter<'_> {
     pub fn try_int32_to_uint(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
         // Mask the value and ensure that the unused bits above the N-bit range are 0
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
+        let mask = unsigned_int32_reserved_mask(n);
         // Copy the input
         self.emit(masm::Instruction::Dup0, span);
         // Apply the mask
@@ -1096,8 +1098,7 @@ mod tests {
     }
 
     fn assert_int32_to_uint_stack_contract(block: &[Op], span: SourceSpan, n: u32) {
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
+        let mask = unsigned_int32_reserved_mask(n);
 
         assert_eq!(
             &block[0],
@@ -1106,6 +1107,37 @@ mod tests {
         );
         assert_eq!(&block[1], &push_u32_op(mask, span));
         assert_eq!(&block[2], &Op::Inst(masm::Span::new(span, masm::Instruction::U32And)));
+    }
+
+    fn emitted_uint_check_succeeds(block: &[Op], initial_stack: &[u32]) -> bool {
+        let mut stack = initial_stack.to_vec();
+
+        for op in &block[..3] {
+            let Op::Inst(inst) = op else { panic!("expected instruction, got {op:?}") };
+            match inst.inner() {
+                masm::Instruction::Dup0 => {
+                    let value = *stack.first().expect("stack underflow");
+                    stack.insert(0, value);
+                }
+                masm::Instruction::Push(masm::Immediate::Value(value)) => {
+                    let value = match value.inner() {
+                        masm::PushValue::Int(masm::IntValue::U8(value)) => u32::from(*value),
+                        masm::PushValue::Int(masm::IntValue::U16(value)) => u32::from(*value),
+                        masm::PushValue::Int(masm::IntValue::U32(value)) => *value,
+                        value => panic!("expected integer push, got {value:?}"),
+                    };
+                    stack.insert(0, value);
+                }
+                masm::Instruction::U32And => {
+                    let lhs = stack.remove(0);
+                    let rhs = stack.remove(0);
+                    stack.insert(0, lhs & rhs);
+                }
+                inst => panic!("unexpected instruction in uint check prefix: {inst:?}"),
+            }
+        }
+
+        stack[0] == 0
     }
 
     #[test]
@@ -1147,6 +1179,42 @@ mod tests {
         assert_eq!(
             &block[3],
             &Op::Inst(masm::Span::new(span, masm::Instruction::EqImm(Felt::ZERO.into())))
+        );
+    }
+
+    #[test]
+    fn int32_to_uint_mask_handles_full_width_uint() {
+        let span = SourceSpan::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut block = Vec::new();
+        let mut emitter = new_emitter(&mut invoked, &mut block, &mut stack);
+
+        emitter.int32_to_uint(32, span);
+
+        assert_int32_to_uint_stack_contract(&block, span, 32);
+        assert_eq!(&block[1], &push_u32_op(0, span));
+    }
+
+    #[test]
+    fn int32_to_uint_emitted_check_uses_top_stack_word() {
+        let span = SourceSpan::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut block = Vec::new();
+        let mut emitter = new_emitter(&mut invoked, &mut block, &mut stack);
+
+        emitter.int32_to_uint(8, span);
+
+        assert!(
+            !emitted_uint_check_succeeds(&block, &[256, 1]),
+            "top word must fail even when the lower live word fits"
+        );
+        assert!(
+            emitted_uint_check_succeeds(&block, &[1, 256]),
+            "top word must pass even when the lower live word fails"
         );
     }
 }
