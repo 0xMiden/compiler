@@ -127,7 +127,7 @@ fn memory_size_imported_memory() {
 }
 
 #[test]
-fn memory_size_nonzero_memory_index() {
+fn memory_size_multi_memory_module() {
     check_unsupported_wat(
         r#"
         (module
@@ -139,7 +139,7 @@ fn memory_size_nonzero_memory_index() {
             )
             (export "test_wrapper" (func $test_wrapper))
         )"#,
-        "MemorySize: only single memory is supported",
+        "multiple memories",
     );
 }
 
