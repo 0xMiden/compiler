@@ -120,7 +120,8 @@ fn assert_struct_field_types(ty: &Type, expected_fields: &[&str]) {
 fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Package) {
     let component_export =
         find_manifest_procedure(package, "component export process-mixed", |name| {
-            name.ends_with("::\"process-mixed\"") && !name.contains("#process-mixed")
+            name.starts_with("::\"miden:cross-ctx-account-word/foo@1.0.0\"::")
+                && name.ends_with("::\"process-mixed\"")
         });
     assert_eq!(
         component_export
