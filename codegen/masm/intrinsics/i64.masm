@@ -72,15 +72,14 @@ pub proc overflowing_add # [b_lo, b_hi, a_lo, a_hi]
     dup.3 dup.5 eq  # [same_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
 
     # signs_differ = sign_r != sign_a
-    dup.4 movup.2 neq  # [signs_differ, same_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    dup.4 movup.2 neq  # [signs_differ, same_sign, r_lo, r_hi, sign_a, sign_b]
 
     # overflow = same_sign && signs_differ
-    and  # [overflow, sign_r, r_lo, r_hi, sign_a, sign_b]
+    and  # [overflow, r_lo, r_hi, sign_a, sign_b]
 
-    # drop: sign_b, sign_a, sign_r
-    movup.5 drop
+    # drop: sign_b, sign_a
     movup.4 drop
-    swap drop
+    movup.3 drop
 end
 
 # Adds `b` to `a`, asserting on overflow.

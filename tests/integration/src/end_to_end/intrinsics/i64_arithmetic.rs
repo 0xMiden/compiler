@@ -173,7 +173,6 @@ fn i64_wrapping_mul() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1179"]
 fn i64_overflowing_add() {
     let proc_body = r#"
     # Stack: [b_lo, b_hi, a_lo, a_hi]
@@ -273,7 +272,6 @@ fn i64_checked_neg() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1179"]
 fn i64_checked_add() {
     let proc_body = r#"
     # Stack: [b_lo, b_hi, a_lo, a_hi]
