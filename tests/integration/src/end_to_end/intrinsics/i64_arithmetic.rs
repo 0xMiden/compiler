@@ -140,7 +140,6 @@ fn i64_wrapping_add() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1181"]
 fn i64_wrapping_sub() {
     let proc_body = r#"
     # Stack: [b_lo, b_hi, a_lo, a_hi]
@@ -193,7 +192,6 @@ fn i64_overflowing_add() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1181"]
 fn i64_overflowing_sub() {
     let proc_body = r#"
     # Stack: [b_lo, b_hi, a_lo, a_hi]
@@ -297,7 +295,6 @@ fn i64_checked_add() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1181"]
 fn i64_checked_sub() {
     let proc_body = r#"
     # Stack: [b_lo, b_hi, a_lo, a_hi]
