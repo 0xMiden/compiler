@@ -2,8 +2,8 @@ use std::{marker::PhantomData, sync::Arc};
 
 use miden_assembly::{Assembler, DefaultSourceManager, Parse, ParseOptions, ast::ModuleKind};
 use miden_core::Felt;
-use miden_core_lib::CoreLibrary;
-use miden_processor::{ExecutionError, Program, operation::OperationError};
+use miden_core_lib::{CoreLibrary, handlers::u64_div::U64DivError};
+use miden_processor::{DefaultHost, ExecutionError, Program, operation::OperationError};
 use num_traits::{PrimInt, Unsigned};
 use proptest::{
     prelude::*,
@@ -80,6 +80,17 @@ end
         .expect("failed to assemble program")
 }
 
+/// Returns a [`DefaultHost`] with the Miden core library loaded.
+///
+/// The core library registers the event handlers required to execute core helpers that rely on
+/// the advice provider.
+pub(super) fn default_host_with_core_lib() -> DefaultHost {
+    let core_library = CoreLibrary::default();
+    let mut host = DefaultHost::default();
+    host.load_library(&core_library).expect("failed to load core library into host");
+    host
+}
+
 /// Describes the trap expected by the execution of an intrinsic.
 ///
 /// Variants mirror [`OperationError`] variants that can be produced by i32 intrinsics.
@@ -112,6 +123,14 @@ impl TrapExpectation {
                     ..
                 },
             ) => Ok(()),
+            // 64-bit int division is performed by the core library's `u64::div` procedure, which reports errors via the `U64_DIV` event handler.
+            (TrapExpectation::DivideByZero, ExecutionError::EventError { error, .. })
+                if error
+                    .downcast_ref::<U64DivError>()
+                    .is_some_and(|e| matches!(e, U64DivError::DivideByZero)) =>
+            {
+                Ok(())
+            }
             _ => Err(format!("expected err {:?} but VM produced: {:?}", self, vm_err)),
         }
     }
