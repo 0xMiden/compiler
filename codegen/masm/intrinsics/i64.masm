@@ -78,6 +78,12 @@ pub proc overflowing_add # [b_lo, b_hi, a_lo, a_hi]
     and  # [overflow, r_lo, r_hi]
 end
 
+# Adds `b` to `a`, wrapping on overflow.
+pub proc wrapping_add # [b_lo, b_hi, a_lo, a_hi]
+    exec.overflowing_add
+    drop
+end
+
 # Adds `b` to `a`, asserting on overflow.
 pub proc checked_add # [b_lo, b_hi, a_lo, a_hi]
     exec.overflowing_add
