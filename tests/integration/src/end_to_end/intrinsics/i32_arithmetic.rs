@@ -311,9 +311,15 @@ fn i32_pow2() {
 "#;
     test_i32_intrinsic(
         proc_body,
-        NumericStrategy::<i32>::pow2(),
+        NumericStrategy::<i32>::pow2_signed(),
         unary_i32op_input_to_stack,
-        |n: &i32| Ok(vec![1i32.wrapping_shl(*n as u32)]),
+        |n: &i32| {
+            if *n < 0 || *n >= 31 {
+                Err(TrapExpectation::FailedAssertionOverflow)
+            } else {
+                Ok(vec![1i32.wrapping_shl(*n as u32)])
+            }
+        },
     );
 }
 

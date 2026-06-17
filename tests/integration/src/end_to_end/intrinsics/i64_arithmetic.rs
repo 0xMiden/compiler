@@ -503,9 +503,15 @@ fn i64_pow2() {
 "#;
     test_i64_intrinsic(
         proc_body,
-        NumericStrategy::<i64>::pow2(),
+        NumericStrategy::<i64>::pow2_signed(),
         unary_i64op_input_to_stack,
-        |n: &i64| Ok(vec![1i64.wrapping_shl(*n as u32)]),
+        |n: &i64| {
+            if *n < 0 || *n >= 63 {
+                Err(TrapExpectation::FailedAssertionOverflow)
+            } else {
+                Ok(vec![1i64.wrapping_shl(*n as u32)])
+            }
+        },
         |stack: &[Felt]| decode_outputs_i64_only(stack, 1),
     );
 }

@@ -680,19 +680,29 @@ where
         ]
     }
 
-    pub fn pow2() -> impl Strategy<Value = T>
+    pub fn pow2_signed() -> impl Strategy<Value = T>
     where
-        T: PrimInt + 'static,
+        T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
         let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
-        // The `pow2` intrinsics assert `n < bit_width - 1`.
         let max_exp = T::from(bit_width - 2).unwrap();
+        let max_exp_plus_one = max_exp + T::one();
+        let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            5 => v.zero..=max_exp,
+            // valid exponents
+            2 => v.zero..=max_exp,
             1 => Just(v.zero),
             1 => Just(v.one),
             1 => Just(max_exp),
+
+            // invalid exponents
+            1 => v.min..=neg_one,
+            1 => Just(v.min),
+            1 => Just(neg_one),
+            1 => max_exp_plus_one..=v.max,
+            1 => Just(max_exp_plus_one),
+            1 => Just(v.max),
         ]
     }
 
