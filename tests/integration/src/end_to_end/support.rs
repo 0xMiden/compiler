@@ -1,5 +1,9 @@
-use std::marker::PhantomData;
+use std::{marker::PhantomData, sync::Arc};
 
+use miden_assembly::{Assembler, DefaultSourceManager, Parse, ParseOptions, ast::ModuleKind};
+use miden_core::Felt;
+use miden_core_lib::CoreLibrary;
+use miden_processor::{ExecutionError, Program, operation::OperationError};
 use num_traits::{PrimInt, Unsigned};
 use proptest::{
     prelude::*,
@@ -7,6 +11,111 @@ use proptest::{
 };
 
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
+
+const I32_INTRINSICS_MASM: &str = include_str!("../../../../codegen/masm/intrinsics/i32.masm");
+const I64_INTRINSICS_MASM: &str = include_str!("../../../../codegen/masm/intrinsics/i64.masm");
+
+/// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
+/// as entry point.
+///
+/// Both i32 and i64 intrinsics modules are statically linked so the body can call the intrinsics
+/// of either type by their fully-qualified path (`::intrinsics::i32::*` or `::intrinsics::i64::*`).
+pub(super) fn assemble_test_program(procedure_body: &str) -> Program {
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let core_library = CoreLibrary::default();
+
+    // Parse both intrinsic modules with their fully-qualified paths
+    let i32_intrinsics = I32_INTRINSICS_MASM
+        .parse_with_options(
+            source_manager.clone(),
+            ParseOptions::new(ModuleKind::Library, "::intrinsics::i32"),
+        )
+        .expect("failed to parse i32 intrinsics module");
+    let i64_intrinsics = I64_INTRINSICS_MASM
+        .parse_with_options(
+            source_manager.clone(),
+            ParseOptions::new(ModuleKind::Library, "::intrinsics::i64"),
+        )
+        .expect("failed to parse i64 intrinsics module");
+
+    // Parse the test module with its fully-qualified path
+    let test_module_source = format!("pub proc test_intrinsic\n{procedure_body}\nend");
+    let test_module = test_module_source
+        .parse_with_options(
+            source_manager.clone(),
+            ParseOptions::new(ModuleKind::Library, "::test"),
+        )
+        .expect("failed to parse test module");
+
+    // The i64 intrinsics module references core library symbols, so core must be available during
+    // compile_and_statically_link.
+    let mut assembler = Assembler::new(source_manager.clone())
+        .with_static_library(core_library.library())
+        .expect("failed to link core library");
+    assembler
+        .compile_and_statically_link(i32_intrinsics)
+        .expect("failed to statically link i32 intrinsics");
+    assembler
+        .compile_and_statically_link(i64_intrinsics)
+        .expect("failed to statically link i64 intrinsics");
+
+    let library = assembler
+        .assemble_library([test_module])
+        .expect("failed to assemble test library");
+    Assembler::new(source_manager)
+        .with_static_library(library)
+        .expect("failed to link library")
+        .with_static_library(core_library.library())
+        .expect("failed to link core library")
+        .assemble_program(
+            r#"
+use miden::core::sys
+
+begin
+    exec.::test::test_intrinsic
+    exec.sys::truncate_stack
+end
+"#,
+        )
+        .expect("failed to assemble program")
+}
+
+/// Describes the trap expected by the execution of an intrinsic.
+///
+/// Variants mirror [`OperationError`] variants that can be produced by i32 intrinsics.
+#[derive(Debug, Clone)]
+pub(super) enum TrapExpectation {
+    /// Expect `FailedAssertion { err_code: 0, err_msg: None }`, produced by overflow traps.
+    FailedAssertionOverflow,
+    DivideByZero,
+}
+
+impl TrapExpectation {
+    /// Returns `Ok(())` if `vm_err` matches the expectation.
+    pub(super) fn check(&self, vm_err: &ExecutionError) -> Result<(), String> {
+        match (self, vm_err) {
+            (
+                TrapExpectation::FailedAssertionOverflow,
+                ExecutionError::OperationError {
+                    err:
+                        OperationError::FailedAssertion {
+                            err_code,
+                            err_msg: None,
+                        },
+                    ..
+                },
+            ) if *err_code == Felt::ZERO => Ok(()),
+            (
+                TrapExpectation::DivideByZero,
+                ExecutionError::OperationError {
+                    err: OperationError::DivideByZero,
+                    ..
+                },
+            ) => Ok(()),
+            _ => Err(format!("expected err {:?} but VM produced: {:?}", self, vm_err)),
+        }
+    }
+}
 
 pub(super) fn cargo_toml(name: &str) -> String {
     let sdk_alloc_path = sdk_alloc_crate_path();
@@ -571,17 +680,29 @@ where
         ]
     }
 
-    pub fn pow2() -> impl Strategy<Value = T>
+    pub fn pow2_signed() -> impl Strategy<Value = T>
     where
-        T: PrimInt + 'static,
+        T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
-        let thirty = T::from(30).unwrap();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_exp = T::from(bit_width - 2).unwrap();
+        let max_exp_plus_one = max_exp + T::one();
+        let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            5 => v.zero..=thirty,
+            // valid exponents
+            2 => v.zero..=max_exp,
             1 => Just(v.zero),
             1 => Just(v.one),
-            1 => Just(thirty),
+            1 => Just(max_exp),
+
+            // invalid exponents
+            1 => v.min..=neg_one,
+            1 => Just(v.min),
+            1 => Just(neg_one),
+            1 => max_exp_plus_one..=v.max,
+            1 => Just(max_exp_plus_one),
+            1 => Just(v.max),
         ]
     }
 
@@ -622,27 +743,64 @@ where
         T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
-        let thirty_one = T::from(31).unwrap();
-        let thirty_two = T::from(32).unwrap();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = T::from(bit_width - 1).unwrap();
+        let overflow_shift = T::from(bit_width).unwrap();
         let neg_one = v.neg_one.unwrap();
         prop_oneof![
-            3 => (any::<T>(), v.zero..=thirty_one),
+            3 => (any::<T>(), v.zero..=max_shift),
             3 => (any::<T>(), any::<T>()),
             1 => Just((v.min, v.zero)),
             1 => Just((v.min, v.one)),
-            1 => Just((v.min, thirty_one)),
+            1 => Just((v.min, max_shift)),
             1 => Just((v.max, v.zero)),
-            1 => Just((v.max, thirty_one)),
+            1 => Just((v.max, max_shift)),
             1 => Just((neg_one, v.one)),
-            1 => Just((neg_one, thirty_one)),
+            1 => Just((neg_one, max_shift)),
             1 => Just((v.zero, v.zero)),
             1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, thirty_one)),
-            1 => Just((v.one, thirty_one)),
-            1 => Just((v.min, thirty_two)),
-            1 => Just((v.max, thirty_two)),
+            1 => Just((v.zero, max_shift)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.min, overflow_shift)),
+            1 => Just((v.max, overflow_shift)),
             1 => Just((v.zero, neg_one)),
-            1 => Just((v.zero, thirty_two)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.min, neg_one)),
+            1 => Just((v.max, neg_one)),
+        ]
+    }
+
+    /// The shift amount (second tuple value) is bound by `u32::MAX`.
+    pub fn shr_signed_checked_u32_shift() -> impl Strategy<Value = (T, T)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = T::from(bit_width - 1).unwrap();
+        let overflow_shift = T::from(bit_width).unwrap();
+        let max_u32_shift = T::from(u32::MAX).unwrap_or(v.max);
+        let neg_one = v.neg_one.unwrap();
+        prop_oneof![
+            3 => (any::<T>(), v.zero..=max_shift),
+            3 => (any::<T>(), overflow_shift..=max_u32_shift),
+            1 => Just((v.min, v.zero)),
+            1 => Just((v.min, v.one)),
+            1 => Just((v.min, max_shift)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((neg_one, v.one)),
+            1 => Just((neg_one, max_shift)),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, max_shift)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.min, overflow_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.min, max_u32_shift)),
+            1 => Just((v.max, max_u32_shift)),
+            1 => Just((v.zero, max_u32_shift)),
         ]
     }
 }
