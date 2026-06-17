@@ -110,18 +110,13 @@ pub proc overflowing_sub # [b_lo, b_hi, a_lo, a_hi]
     dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq  # [sign_r, r_lo, r_hi, sign_a, sign_b]
 
     # diff_sign = sign_a != sign_b
-    dup.3 dup.5 neq  # [diff_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    dup.3 movup.5 neq  # [diff_sign, sign_r, r_lo, r_hi, sign_a]
 
     # signs_differ = sign_r != sign_a
-    dup.4 movup.2 neq  # [signs_differ, diff_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    movup.4 movup.2 neq  # [signs_differ, diff_sign, r_lo, r_hi]
 
     # overflow = diff_sign && signs_differ
-    and  # [overflow, sign_r, r_lo, r_hi, sign_a, sign_b]
-
-    # drop: sign_b, sign_a, sign_r
-    movup.5 drop
-    movup.4 drop
-    swap drop
+    and  # [overflow, r_lo, r_hi]
 end
 
 # Subtracts `b` from `a`, wrapping on overflow.
