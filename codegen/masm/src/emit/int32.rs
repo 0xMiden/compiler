@@ -1113,7 +1113,9 @@ mod tests {
         let mut stack = initial_stack.to_vec();
 
         for op in &block[..3] {
-            let Op::Inst(inst) = op else { panic!("expected instruction, got {op:?}") };
+            let Op::Inst(inst) = op else {
+                panic!("expected instruction, got {op:?}")
+            };
             match inst.inner() {
                 masm::Instruction::Dup0 => {
                     let value = *stack.first().expect("stack underflow");

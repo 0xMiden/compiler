@@ -145,14 +145,14 @@ fn memory_size_multi_memory_module() {
 
 #[test]
 fn memory_copy() {
-    check_unsupported_op(
+    check_op(
         r#"
             i32.const 20 ;; dst
             i32.const 10 ;; src
             i32.const 1  ;; len
             memory.copy
         "#,
-        "MemoryCopy: WebAssembly overlap semantics are not supported yet",
+        expect_file!["./expected/memory_copy.hir"],
     )
 }
 
