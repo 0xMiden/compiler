@@ -1,9 +1,11 @@
 use std::{collections::BTreeSet, path::Path};
 
+use miden_assembly::ast::types::{FunctionType, Type};
 use miden_core::{
     program::Program,
     serde::{Deserializable, Serializable},
 };
+use miden_mast_package::{PackageExport, ProcedureExport};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
@@ -52,6 +54,111 @@ fn persist_cargo_miden_dependency(
     package
         .write_masp_file(project_path.as_ref().join("target").join("miden").join("release"))
         .expect("failed to persist compiled Miden dependency package");
+}
+
+fn find_manifest_procedure<'a>(
+    package: &'a miden_mast_package::Package,
+    description: &str,
+    mut predicate: impl FnMut(&str) -> bool,
+) -> &'a ProcedureExport {
+    let matches = package
+        .manifest
+        .exports()
+        .filter_map(|export| match export {
+            PackageExport::Procedure(export) => Some(export),
+            PackageExport::Constant(_) | PackageExport::Type(_) => None,
+        })
+        .filter(|export| predicate(export.path.as_ref().as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "expected exactly one manifest procedure matching {description}, got {:?}",
+        package
+            .manifest
+            .exports()
+            .filter_map(|export| match export {
+                PackageExport::Procedure(export) => Some(export.path.as_ref().as_str().to_string()),
+                PackageExport::Constant(_) | PackageExport::Type(_) => None,
+            })
+            .collect::<Vec<_>>(),
+    );
+    matches[0]
+}
+
+fn assert_export_signature<'a>(
+    function: &'a ProcedureExport,
+    expected_params: &[&str],
+    expected_result: &str,
+) -> &'a FunctionType {
+    let signature = function.signature.as_ref().expect("procedure export should have a signature");
+    let params = signature.params.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let expected_params = expected_params.iter().map(|param| param.to_string()).collect::<Vec<_>>();
+    assert_eq!(params, expected_params);
+
+    let result = match signature.results.as_slice() {
+        [] => "void".to_string(),
+        [result] => result.to_string(),
+        results => {
+            format!("({})", results.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "))
+        }
+    };
+    assert_eq!(result, expected_result);
+    signature
+}
+
+fn assert_struct_field_types(ty: &Type, expected_fields: &[&str]) {
+    let Type::Struct(struct_ty) = ty else {
+        panic!("expected struct type, got {ty:?}");
+    };
+    let actual_fields =
+        struct_ty.fields().iter().map(|field| field.ty.to_string()).collect::<Vec<_>>();
+    let expected_fields = expected_fields.iter().map(|ty| ty.to_string()).collect::<Vec<_>>();
+    assert_eq!(actual_fields, expected_fields);
+}
+
+fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Package) {
+    let component_export =
+        find_manifest_procedure(package, "component export process-mixed", |name| {
+            name.starts_with("::\"miden:cross-ctx-account-word/foo@1.0.0\"::")
+                && name.ends_with("::\"process-mixed\"")
+        });
+    assert_eq!(
+        component_export
+            .signature
+            .as_ref()
+            .expect("component export should have a signature")
+            .calling_convention()
+            .as_str(),
+        "component-model",
+    );
+    let mixed_struct = "struct {u64, struct miden:base/core-types@1.0.0/felt {\n    felt}, u32, \
+                        struct miden:base/core-types@1.0.0/felt {felt}, u8, i1, u16}";
+    let signature = assert_export_signature(component_export, &[mixed_struct], mixed_struct);
+    assert_struct_field_types(
+        &signature.params[0],
+        &[
+            "u64",
+            "struct miden:base/core-types@1.0.0/felt {felt}",
+            "u32",
+            "struct miden:base/core-types@1.0.0/felt {felt}",
+            "u8",
+            "i1",
+            "u16",
+        ],
+    );
+    assert_struct_field_types(
+        &signature.results[0],
+        &[
+            "u64",
+            "struct miden:base/core-types@1.0.0/felt {felt}",
+            "u32",
+            "struct miden:base/core-types@1.0.0/felt {felt}",
+            "u8",
+            "i1",
+            "u16",
+        ],
+    );
 }
 
 fn component_namespace(name: &str) -> String {
@@ -237,6 +344,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     );
     assert!(account_package.is_library());
     let lib = account_package.mast.clone();
+    assert_component_export_signatures_match_wit(account_package.as_ref());
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
     let expected_function_suffix = "\"process-word\"";
     let exports = lib

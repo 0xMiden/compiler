@@ -214,10 +214,12 @@ impl MasmComponent {
 
         let mut exe = Box::new(masm::Module::new_executable());
         let span = SourceSpan::default();
+        let mut invoked = Vec::new();
         let body = {
             let mut block = masm::Block::new(span, Vec::with_capacity(64));
             // Invoke component initializer, if present
             if let Some(init) = self.init.as_ref() {
+                invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
                 block.push(Op::Inst(Span::new(span, Inst::Exec(init.clone()))));
             }
 
@@ -231,6 +233,7 @@ impl MasmComponent {
                 span,
                 Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
             )));
+            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
             block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
             block
                 .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
@@ -242,16 +245,18 @@ impl MasmComponent {
                 let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
                 InvocationTarget::Path(Span::new(span, qualified.into_inner()))
             };
+            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
             block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
             block
         };
-        let start = masm::Procedure::new(
+        let mut start = masm::Procedure::new(
             span,
             masm::Visibility::Public,
             masm::ProcedureName::main(),
             0,
             body,
         );
+        start.extend_invoked(invoked);
         exe.define_procedure(start, source_manager)
             .into_diagnostic()
             .wrap_err("failed to define executable `main` procedure")?;

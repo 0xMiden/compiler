@@ -11,7 +11,8 @@ use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Spanned, Type,
+    ValueRef,
     dialects::{
         builtin::{
             BuiltinOpBuilder, FunctionBuilder, FunctionRef,
@@ -244,6 +245,13 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
                 info.subprogram.line = line;
                 info.subprogram.column = column;
                 info.function_span.get_or_insert(span);
+            }
+            let current_span = self.inner.func.borrow().span();
+            if current_span.is_unknown()
+                || current_span.is_synthetic()
+                || current_span == SourceSpan::default()
+            {
+                self.inner.func.borrow_mut().set_span(span);
             }
             self.refresh_function_debug_attrs();
             self.emit_parameter_dbg_if_needed(span);
