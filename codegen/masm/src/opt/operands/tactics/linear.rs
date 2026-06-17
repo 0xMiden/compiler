@@ -104,7 +104,7 @@ impl Tactic for Linear {
                         pos: currently_at,
                         value,
                     };
-                    let mut parent = graph.neighbors_directed(operand, Direction::Incoming).next();
+                    let mut parent = graph.neighbors_directed(operand, Direction::Incoming).min();
                     // There must have been an immediate parent to `value`, or it would
                     // have an expected position on the stack, and only expected operands
                     // are materialized initially.
@@ -120,7 +120,7 @@ impl Tactic for Linear {
                     while let Some(parent_operand) = parent {
                         root = parent_operand;
                         parent =
-                            graph.neighbors_directed(parent_operand, Direction::Incoming).next();
+                            graph.neighbors_directed(parent_operand, Direction::Incoming).min();
                     }
                     log::trace!(
                         target: &trace_target,
@@ -135,10 +135,18 @@ impl Tactic for Linear {
 
             // Compute the strongly connected components of the graph we've constructed,
             // and use that to drive our decisions about moving operands into place.
-            let components = petgraph::algo::kosaraju_scc(&graph);
+            let mut components = petgraph::algo::kosaraju_scc(&graph);
             if components.is_empty() {
                 break;
             }
+            // Graph traversal order can vary, but equivalent stack schedules produce different
+            // MAST roots. Resolve every cycle in operand order so codegen is reproducible.
+            components.sort_by(|a, b| {
+                a.iter()
+                    .min()
+                    .expect("SCCs are never empty")
+                    .cmp(b.iter().min().expect("SCCs are never empty"))
+            });
             log::trace!(
                 target: &trace_target,
                 "found the following connected components when analyzing required operand moves: \
@@ -188,7 +196,7 @@ impl Tactic for Linear {
                 //
                 if component.len() > 1 {
                     // Find the operand at the shallowest depth on the stack to move.
-                    let start = component.iter().min_by(|a, b| a.pos.cmp(&b.pos)).copied().unwrap();
+                    let start = component.iter().copied().min().unwrap();
                     log::trace!(
                         target: &trace_target,
                         "resolving component {component:?} by starting from {:?} at index {}",
@@ -205,7 +213,7 @@ impl Tactic for Linear {
 
                     // Do the initial swap to set up our state for the remaining swaps
                     let mut child =
-                        graph.neighbors_directed(start, Direction::Outgoing).next().unwrap();
+                        graph.neighbors_directed(start, Direction::Outgoing).min().unwrap();
                     // Swap each child with its parent until we reach the edge that forms a cycle
                     while child != start {
                         log::trace!(
@@ -218,7 +226,7 @@ impl Tactic for Linear {
                         builder.swap(child.pos);
                         changed = true;
                         if let Some(next_child) =
-                            graph.neighbors_directed(child, Direction::Outgoing).next()
+                            graph.neighbors_directed(child, Direction::Outgoing).min()
                         {
                             child = next_child;
                         } else {
@@ -319,6 +327,21 @@ mod tests {
         let problem = testing::make_problem_inputs(vec![2, 0, 1], 3, 0);
         let actions = solve_with_linear_tactic(&problem);
         assert_eq!(actions, vec![Action::Swap(2), Action::Swap(1)]);
+        assert_actions_place_expected_on_top(&problem, &actions);
+    }
+
+    /// Demonstrates that independent cycles are resolved in a stable order.
+    ///
+    /// The tactic resolves the top cycle first, then the lower cycle, so equivalent valid operand
+    /// schedules do not drift across compilations.
+    #[test]
+    fn linear_independent_cycles_resolve_top_down() {
+        let problem = testing::make_problem_inputs(vec![1, 0, 3, 2], 4, 0);
+        let actions = solve_with_linear_tactic(&problem);
+        assert_eq!(
+            actions,
+            vec![Action::Swap(1), Action::MoveUp(2), Action::Swap(3), Action::MoveDown(2),]
+        );
         assert_actions_place_expected_on_top(&problem, &actions);
     }
 
