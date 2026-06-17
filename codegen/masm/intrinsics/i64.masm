@@ -20,7 +20,7 @@ end
 #
 # This function consumes `a`.
 pub proc is_signed # [a_lo, a_hi]
-    swap.1 drop
+    drop
     push.SIGN_BIT u32and push.SIGN_BIT eq
 end
 
