@@ -386,7 +386,6 @@ fn i64_checked_shr() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1187"]
 fn i64_is_signed() {
     let proc_body = r#"
     # Stack: [a_lo, a_hi]
