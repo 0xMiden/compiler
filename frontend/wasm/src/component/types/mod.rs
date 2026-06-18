@@ -530,7 +530,7 @@ impl ComponentTypesBuilder {
         }
     }
 
-    fn register_type_name(&mut self, ty: TypeDef, name: String) {
+    pub(super) fn register_type_name(&mut self, ty: TypeDef, name: String) {
         match ty {
             TypeDef::Interface(interface_ty) => {
                 self.component_types.interface_type_names.entry(interface_ty).or_insert(name);
