@@ -549,18 +549,16 @@ fn foreign_account_struct(account_struct: &ItemStruct) -> syn::Result<ItemStruct
     let attrs = &account_struct.attrs;
     let vis = &account_struct.vis;
     let ident = &account_struct.ident;
-    // User attributes are re-emitted as-is, so drop macro-added derives the user already
-    // requested (matched by the trait's final path segment) to avoid duplicate impls.
-    let user_derives = user_derived_names(attrs);
-    let added_derives = ["Clone", "Copy", "Debug", "Default"]
-        .into_iter()
-        .filter(|name| !user_derives.contains(*name))
-        .map(|name| syn::Ident::new(name, Span::call_site()))
-        .collect::<Vec<_>>();
-    let derive_attr = (!added_derives.is_empty()).then(|| quote!(#[derive(#(#added_derives),*)]));
+    // `Default` is the only trait the macro derives: the note/tx-script entrypoint account is
+    // built through `AccountWrapper::native()` (= `Self::default()`), whose `foreign_account_id`
+    // is `None` (the native/active account). Conveniences such as `Clone`/`Copy`/`Debug` are left
+    // to the user. The derive is skipped when the user already requests `Default`, because their
+    // attributes are re-emitted verbatim and a second `Default` impl would conflict.
+    let derive_default =
+        (!user_derived_names(attrs).contains("Default")).then(|| quote!(#[derive(Default)]));
     syn::parse2(quote! {
         #(#attrs)*
-        #derive_attr
+        #derive_default
         #vis struct #ident {
             /// `Some` when this binding targets a foreign account (FPI); `None` for the
             /// transaction's native (active) account.
@@ -1140,7 +1138,7 @@ mod tests {
     }
 
     #[test]
-    fn foreign_account_struct_skips_duplicate_user_derives() {
+    fn foreign_account_struct_derives_only_default() {
         let marker: ItemStruct = parse_quote! {
             #[derive(Clone, PartialEq)]
             struct Wallet;
@@ -1149,14 +1147,37 @@ mod tests {
         let expanded = foreign_account_struct(&marker).unwrap();
         let rendered = expanded.to_token_stream().to_string();
 
-        // User derives are kept verbatim; macro-added ones already covered are dropped.
-        for derived in ["Clone", "PartialEq", "Copy", "Debug", "Default"] {
+        // User derives are kept verbatim.
+        for kept in ["Clone", "PartialEq"] {
+            assert_eq!(rendered.matches(kept).count(), 1, "expected `{kept}` kept: {rendered}");
+        }
+        // `Default` is the only trait the macro adds; conveniences are left to the user.
+        assert_eq!(rendered.matches("Default").count(), 1, "expected added `Default`: {rendered}");
+        for absent in ["Copy", "Debug"] {
             assert_eq!(
-                rendered.matches(derived).count(),
-                1,
-                "expected exactly one `{derived}` in expansion: {rendered}"
+                rendered.matches(absent).count(),
+                0,
+                "macro must not derive `{absent}`: {rendered}"
             );
         }
+    }
+
+    #[test]
+    fn foreign_account_struct_skips_duplicate_default_derive() {
+        let marker: ItemStruct = parse_quote! {
+            #[derive(Default)]
+            struct Wallet;
+        };
+
+        let expanded = foreign_account_struct(&marker).unwrap();
+        let rendered = expanded.to_token_stream().to_string();
+
+        // The user already derives `Default`, so the macro must not add a second one.
+        assert_eq!(
+            rendered.matches("Default").count(),
+            1,
+            "expected exactly one `Default` in expansion: {rendered}"
+        );
     }
 
     #[test]
