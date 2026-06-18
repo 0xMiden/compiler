@@ -550,8 +550,8 @@ fn foreign_account_struct(account_struct: &ItemStruct) -> syn::Result<ItemStruct
     let vis = &account_struct.vis;
     let ident = &account_struct.ident;
     // `Default` is the only trait the macro derives: the note/tx-script entrypoint account is
-    // built through `AccountWrapper::native()` (= `Self::default()`), whose `foreign_account_id`
-    // is `None` (the native/active account). Conveniences such as `Clone`/`Copy`/`Debug` are left
+    // built through `AccountWrapper::active()` (= `Self::default()`), whose `foreign_account_id`
+    // is `None` (the active account). Conveniences such as `Clone`/`Copy`/`Debug` are left
     // to the user. The derive is skipped when the user already requests `Default`, because their
     // attributes are re-emitted verbatim and a second `Default` impl would conflict.
     let derive_default =
@@ -561,7 +561,7 @@ fn foreign_account_struct(account_struct: &ItemStruct) -> syn::Result<ItemStruct
         #derive_default
         #vis struct #ident {
             /// `Some` when this binding targets a foreign account (FPI); `None` for the
-            /// transaction's native (active) account.
+            /// transaction's active account.
             foreign_account_id: ::core::option::Option<::miden::AccountId>,
         }
     })
@@ -611,7 +611,7 @@ fn active_account_impl(account_struct: &ItemStruct) -> TokenStream2 {
     let ident = &account_struct.ident;
     let message = format!(
         "active-account operation called on `{ident}` while it is bound to a foreign account; \
-         active-account methods are only valid for the transaction's native account"
+         active-account methods are only valid for the transaction's active account"
     );
     quote! {
         impl ::miden::active_account::ActiveAccount for #ident {
