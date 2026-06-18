@@ -41,26 +41,31 @@ pub enum CanonicalTypeError {
     LayoutOverflow { ty: Type },
 }
 
-/// Identifies the wrapper transformation required by canonical ABI flattening.
+/// Identifies the pointer indirection used by our internal canonical ABI parameter/result passing.
+///
+/// This is an implementation detail of the cross-context parameter/result passing ABI rather than a
+/// component-model transformation: it records whether inputs and/or outputs are passed by pointer
+/// indirection (because their flattened shape exceeds the direct cross-context call budget), and the
+/// dataflow direction of that indirection.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum CanonicalAbiTransformation {
-    /// The component function can be lowered or lifted directly.
+pub enum CanonicalAbiIndirection {
+    /// No indirection: the component function is lowered or lifted directly.
     None,
-    /// The component function parameters are passed through a tuple pointer.
-    ParamTuple,
-    /// The component function result is passed through an out pointer.
-    ResultOutPtr,
-    /// The component function requires both tupled parameters and an out-pointer result.
-    Both,
+    /// Inputs are passed by pointer indirection, i.e. a tuple pointer to the parameters in memory.
+    In,
+    /// Outputs are returned by pointer indirection, i.e. an out-pointer to the result in memory.
+    Out,
+    /// Both inputs and outputs are passed by pointer indirection.
+    InOut,
 }
 
-impl CanonicalAbiTransformation {
-    /// Returns true when the transformation includes tupled parameter passing.
+impl CanonicalAbiIndirection {
+    /// Returns true when inputs use pointer indirection, i.e. a tupled parameter pointer.
     pub fn has_param_tuple(self) -> bool {
-        matches!(self, Self::ParamTuple | Self::Both)
+        matches!(self, Self::In | Self::InOut)
     }
 
-    /// Returns true when any transformation is required.
+    /// Returns true when any indirection is required.
     pub fn is_needed(self) -> bool {
         !matches!(self, Self::None)
     }
@@ -211,11 +216,11 @@ pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
             > MAX_DIRECT_STACK_FELTS
 }
 
-/// Classifies the canonical ABI transformation required by a component function type.
+/// Classifies the canonical ABI pointer indirection required by a component function type.
 pub fn classify_function_type(
     context: &Rc<Context>,
     func_ty: &FunctionType,
-) -> Result<CanonicalAbiTransformation, CanonicalTypeError> {
+) -> Result<CanonicalAbiIndirection, CanonicalTypeError> {
     assert!(
         func_ty.abi.is_wasm_canonical_abi(),
         "unexpected function abi: {:?}",
@@ -228,10 +233,10 @@ pub fn classify_function_type(
     let needs_result_out_ptr = flat_results.len() > MAX_FLAT_RESULTS;
 
     Ok(match (needs_param_tuple, needs_result_out_ptr) {
-        (false, false) => CanonicalAbiTransformation::None,
-        (true, false) => CanonicalAbiTransformation::ParamTuple,
-        (false, true) => CanonicalAbiTransformation::ResultOutPtr,
-        (true, true) => CanonicalAbiTransformation::Both,
+        (false, false) => CanonicalAbiIndirection::None,
+        (true, false) => CanonicalAbiIndirection::In,
+        (false, true) => CanonicalAbiIndirection::Out,
+        (true, true) => CanonicalAbiIndirection::InOut,
     })
 }
 
@@ -898,48 +903,48 @@ mod tests {
             func_ty
         };
 
-        // No transformation needed - simple types.
+        // No indirection needed - simple types.
         let func_ty = component_func(vec![Type::I32, Type::Felt], vec![Type::I32]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiTransformation::None
+            CanonicalAbiIndirection::None
         );
 
-        // Parameter tuple needed - more than 16 flattened parameters.
+        // Input indirection needed - more than 16 flattened parameters.
         let func_ty = component_func(vec![Type::I32; 17], vec![]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiTransformation::ParamTuple
+            CanonicalAbiIndirection::In
         );
 
-        // Result out-pointer needed - result flattens to more than one value.
+        // Output indirection needed - result flattens to more than one value.
         let result = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let func_ty = component_func(vec![Type::I32], vec![result]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiTransformation::ResultOutPtr
+            CanonicalAbiIndirection::Out
         );
 
-        // Both transformations needed.
+        // Both input and output indirection needed.
         let result = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
         let func_ty = component_func(vec![Type::I32; 17], vec![result]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiTransformation::Both
+            CanonicalAbiIndirection::InOut
         );
 
         // Edge case - exactly 16 flattened parameters.
         let func_ty = component_func(vec![Type::Felt; 16], vec![]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiTransformation::None
+            CanonicalAbiIndirection::None
         );
 
-        // Parameter tuple needed - at most 16 flattened parameters can still exceed 16 felts.
+        // Input indirection needed - at most 16 flattened parameters can still exceed 16 felts.
         let func_ty = component_func(vec![Type::I64; 9], vec![]);
         assert_eq!(
             classify_function_type(&context, &func_ty).unwrap(),
-            CanonicalAbiTransformation::ParamTuple
+            CanonicalAbiIndirection::In
         );
     }
 }

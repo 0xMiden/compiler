@@ -22,7 +22,7 @@ use super::{
     MAX_FLAT_RESULTS,
     canon_abi_utils::{store, validate_flat_variants},
     flat::{
-        CanonicalAbiMode, CanonicalAbiTransformation, check_core_wasm_signature_equivalence,
+        CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
         classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
     },
     flat_tuple_layout,
@@ -122,7 +122,7 @@ pub fn generate_import_lowering_function(
     };
 
     match transformation {
-        CanonicalAbiTransformation::None => generate_direct_lowering(
+        CanonicalAbiIndirection::None => generate_direct_lowering(
             world_builder,
             &import_func_path,
             import_func_ty,
@@ -134,7 +134,7 @@ pub fn generate_import_lowering_function(
             &args,
             span,
         ),
-        CanonicalAbiTransformation::ResultOutPtr => generate_lowering_with_transformation(
+        CanonicalAbiIndirection::Out => generate_lowering_with_transformation(
             world_builder,
             &import_func_path,
             import_func_ty,
@@ -146,7 +146,7 @@ pub fn generate_import_lowering_function(
             &args,
             span,
         ),
-        CanonicalAbiTransformation::ParamTuple | CanonicalAbiTransformation::Both => {
+        CanonicalAbiIndirection::In | CanonicalAbiIndirection::InOut => {
             unreachable!("tuple-parameter import lowering was rejected earlier")
         }
     }
