@@ -32,12 +32,15 @@ impl<'a> ModuleTranslationState<'a> {
     /// `world_builder` - the Miden IR World builder
     /// `mod_types` - the Miden IR module types builder
     /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
+    /// `exported_func_visibility` - the visibility assigned to functions exported by the core
+    /// Wasm module
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
         world_builder: &'a mut WorldBuilder,
         mod_types: &ModuleTypesBuilder,
         module_args: FxHashMap<SymbolPath, ModuleArgument>,
+        exported_func_visibility: Visibility,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<Self> {
         let mut functions = FxHashMap::default();
@@ -53,7 +56,7 @@ impl<'a> ModuleTranslationState<'a> {
                 ],
             };
             let visibility = if module.is_exported(index.into()) {
-                Visibility::Public
+                exported_func_visibility
             } else {
                 Visibility::Private
             };

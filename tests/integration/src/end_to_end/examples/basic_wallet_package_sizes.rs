@@ -18,7 +18,7 @@ fn basic_wallet_and_p2id() {
     );
     let account_package = account_test.compile_package();
     assert!(account_package.is_library(), "expected library");
-    expect!["15614"].assert_eq(stripped_mast_size_str(&account_package));
+    expect!["8045"].assert_eq(stripped_mast_size_str(&account_package));
     persist_cargo_miden_dependency("../../examples/basic-wallet", account_package.as_ref());
 
     let mut tx_script_test = CompilerTest::rust_source_cargo_miden(
@@ -28,7 +28,7 @@ fn basic_wallet_and_p2id() {
     );
     let tx_script_package = tx_script_test.compile_package();
     assert!(tx_script_package.is_library(), "expected library");
-    expect!["19620"].assert_eq(stripped_mast_size_str(&tx_script_package));
+    expect!["16636"].assert_eq(stripped_mast_size_str(&tx_script_package));
 
     let mut p2id_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/p2id-note",
@@ -37,7 +37,7 @@ fn basic_wallet_and_p2id() {
     );
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    expect!["19606"].assert_eq(stripped_mast_size_str(&note_package));
+    expect!["16681"].assert_eq(stripped_mast_size_str(&note_package));
 
     let mut p2ide_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/p2ide-note",
@@ -46,5 +46,5 @@ fn basic_wallet_and_p2id() {
     );
     let p2ide_package = p2ide_test.compile_package();
     assert!(p2ide_package.is_library(), "expected library");
-    expect!["22748"].assert_eq(stripped_mast_size_str(&p2ide_package));
+    expect!["19823"].assert_eq(stripped_mast_size_str(&p2ide_package));
 }

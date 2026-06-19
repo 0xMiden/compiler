@@ -78,6 +78,7 @@ pub fn translate_module_as_component(
         &mut world_builder,
         &module_types,
         FxHashMap::default(),
+        Visibility::Public,
         context.diagnostics(),
     )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;

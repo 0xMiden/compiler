@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- keep internal component procedures out of compiled MASM package exports
+
 ## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.5.0...midenc-codegen-masm-v0.5.1) - 2025-11-13
 
 ### Other

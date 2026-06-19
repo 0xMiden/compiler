@@ -121,6 +121,13 @@ fn prepare_sources(
 ) -> Result<ProjectSourceInputs, Report> {
     // Intrinsics must be linked into the assembler context directly so they do not become part of
     // the assembled package surface.
+    let link_support_modules_privately = !generate_executable_main
+        && component
+            .modules
+            .iter()
+            .find(|module| module.path() == component.root.as_ref())
+            .is_some_and(|module| module_has_public_component_export(module));
+
     let mut support = Vec::with_capacity(component.modules.len());
     let mut root = None;
     for module in component.modules.iter() {
@@ -136,6 +143,18 @@ fn prepare_sources(
 
         if module.path() == component.root.as_ref() {
             root = Some(Box::new(Arc::unwrap_or_clone(module.clone())));
+            continue;
+        }
+
+        // Component library support modules contain the lowered core Wasm procedures called by
+        // lifted wrappers, but they are not part of the component package export surface.
+        if link_support_modules_privately {
+            log::debug!(
+                target: "assembly",
+                "adding component support module '{}' to assembler",
+                module.path()
+            );
+            assembler.compile_and_statically_link(module.clone())?;
             continue;
         }
 
@@ -265,4 +284,14 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
 /// Return true when the module belongs to the compiler's intrinsics namespace.
 fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
     module.path().as_str().trim_start_matches("::").starts_with("intrinsics")
+}
+
+/// Return true when `module` contains a public lifted Component Model wrapper.
+fn module_has_public_component_export(module: &masm::Module) -> bool {
+    module.procedures().any(|procedure| {
+        procedure.visibility().is_public()
+            && procedure
+                .signature()
+                .is_some_and(|signature| signature.cc.is_wasm_canonical_abi())
+    })
 }

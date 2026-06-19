@@ -4,7 +4,7 @@ use cranelift_entity::PrimaryMap;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, FxHashSet, Ident,
-    SymbolNameComponent, SymbolPath,
+    SymbolNameComponent, SymbolPath, Visibility,
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
     formatter::DisplayValues,
@@ -660,6 +660,7 @@ impl<'a> ComponentTranslator<'a> {
                     &mut self.world_builder,
                     module_types,
                     import_canon_lower_args,
+                    Visibility::Private,
                     self.context.diagnostics(),
                 )?;
 

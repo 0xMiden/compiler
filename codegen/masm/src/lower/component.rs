@@ -349,28 +349,25 @@ impl MasmComponentBuilder<'_> {
 
         // Finalize the component-level init, if required
         if self.component.init.is_some() {
-            let module =
-                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
-
-            let init_name = masm::ProcedureName::new("init").unwrap();
             let init_body = core::mem::take(&mut self.init_body);
-            let init = masm::Procedure::new(
-                Default::default(),
-                masm::Visibility::Public,
-                init_name,
-                0,
-                masm::Block::new(component.span(), init_body),
-            )
-            .with_signature(masm::FunctionType::new(
-                midenc_hir::CallConv::Fast,
-                vec![],
-                vec![],
-            ));
+            let invoked_from_init = core::mem::take(&mut self.invoked_from_init);
+            let root_module =
+                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+            let visibility = if module_has_public_component_export(root_module) {
+                masm::Visibility::Private
+            } else {
+                masm::Visibility::Public
+            };
 
-            module
-                .define_procedure(init, self.source_manager.clone())
-                .into_diagnostic()
-                .wrap_err("failed to define component `init` procedure")?;
+            define_init_procedure(
+                root_module,
+                visibility,
+                init_body,
+                invoked_from_init,
+                component.span(),
+                self.source_manager.clone(),
+            )
+            .wrap_err("failed to define component `init` procedure")?;
         } else {
             assert!(
                 self.init_body.is_empty(),
@@ -516,6 +513,39 @@ impl MasmComponentBuilder<'_> {
             self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
         }
     }
+}
+
+/// Define a component initializer in `module`.
+fn define_init_procedure(
+    module: &mut masm::Module,
+    visibility: masm::Visibility,
+    body: Vec<masm::Op>,
+    invoked: BTreeSet<masm::Invoke>,
+    span: SourceSpan,
+    source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
+) -> Result<(), Report> {
+    let init_name = masm::ProcedureName::new("init").unwrap();
+    let mut init = masm::Procedure::new(
+        Default::default(),
+        visibility,
+        init_name,
+        0,
+        masm::Block::new(span, body),
+    )
+    .with_signature(masm::FunctionType::new(midenc_hir::CallConv::Fast, vec![], vec![]));
+    init.extend_invoked(invoked);
+    module.define_procedure(init, source_manager).into_diagnostic()?;
+    Ok(())
+}
+
+/// Return true when `module` contains a public lifted Component Model wrapper.
+fn module_has_public_component_export(module: &masm::Module) -> bool {
+    module.procedures().any(|procedure| {
+        procedure.visibility().is_public()
+            && procedure
+                .signature()
+                .is_some_and(|signature| signature.cc.is_wasm_canonical_abi())
+    })
 }
 
 struct MasmModuleBuilder<'a> {
