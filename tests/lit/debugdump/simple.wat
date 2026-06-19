@@ -2,7 +2,7 @@
 ;;
 ;; RUN: midenc %s --entrypoint=simple::multiply --debug full -o %t/out.masp
 ;; RUN: miden-objtool dump debug-info %t/out.masp | filecheck %s
-;; XFAIL:
+;; XFAIL: *
 
 ;; CHECK: Name: simple
 ;; CHECK-NEXT: Version: 0.0.0

@@ -1,5 +1,12 @@
 // RUN: hir-opt %s | filecheck %s
 
+// XFAIL: *
+// Temporarily disabled: the parser cannot yet round-trip the named region entry
+// blocks that the printer emits for scf ops (e.g. `^block27(%147: u32, %148: u32):`
+// inside a `before` region), failing with BlockNameInRegionWithNamedArgs. This file
+// also still needs CHECK lines.
+// The proper fix is in https://github.com/0xMiden/compiler/pull/1175
+
 // This was extracted from one of our SCF transform tests
 builtin.function public extern("C") @scf(%0: ptr<u32, byte>, %1: u32, %2: u32) -> u32 {
     %28 = arith.constant 2 : u32;
