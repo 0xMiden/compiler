@@ -1,7 +1,7 @@
 //! Test that .debug_loc section shows DebugVar entries with source locations
 //! from a real Rust project compiled with debug info.
 //!
-//! XFAIL:
+//! XFAIL: *
 //! RUN: env RUSTFLAGS="-Cdebuginfo=2" midenc %s --release --debug full -o %t/out.masp
 //! RUN: miden-objtool dump debug-info %t/out.masp --section locations | filecheck %s
 //!
