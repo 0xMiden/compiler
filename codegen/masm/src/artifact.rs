@@ -1,16 +1,13 @@
 use alloc::sync::Arc;
 use core::fmt;
 
-use miden_assembly::{Path, ast::InvocationTarget};
+use miden_assembly::Path;
 use miden_core::Word;
 use miden_mast_package::Package;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
-use midenc_session::{
-    Emit, OutputMode, OutputType, Session, Writer,
-    diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
-};
+use midenc_session::{Emit, OutputMode, OutputType, Session, Writer, diagnostics::Report};
 
-use crate::{TraceEvent, lower::NativePtr, masm};
+use crate::{lower::NativePtr, masm};
 
 mod project_support;
 
@@ -199,137 +196,6 @@ impl MasmComponent {
             session,
             registry,
         )
-    }
-
-    /// Generate an executable module which when run expects the raw data segment data to be
-    /// provided on the advice stack in the same order as initialization, and the operands of
-    /// the entrypoint function on the operand stack.
-    fn generate_main(
-        &self,
-        entrypoint: &InvocationTarget,
-        emit_test_harness: bool,
-        source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
-    ) -> Result<Box<masm::Module>, Report> {
-        use masm::{Instruction as Inst, Op};
-
-        let mut exe = Box::new(masm::Module::new_executable());
-        let span = SourceSpan::default();
-        let mut invoked = Vec::new();
-        let body = {
-            let mut block = masm::Block::new(span, Vec::with_capacity(64));
-            // Invoke component initializer, if present
-            if let Some(init) = self.init.as_ref() {
-                invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
-                block.push(Op::Inst(Span::new(span, Inst::Exec(init.clone()))));
-            }
-
-            // Initialize test harness, if requested
-            if emit_test_harness {
-                self.emit_test_harness(&mut block);
-            }
-
-            // Invoke the program entrypoint
-            block.push(Op::Inst(Span::new(
-                span,
-                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
-            )));
-            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
-            block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
-            block
-                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
-
-            // Truncate the stack to 16 elements on exit
-            let truncate_stack = {
-                let name = masm::ProcedureName::new("truncate_stack").unwrap();
-                let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-                InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-            };
-            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
-            block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
-            block
-        };
-        let mut start = masm::Procedure::new(
-            span,
-            masm::Visibility::Public,
-            masm::ProcedureName::main(),
-            0,
-            body,
-        );
-        start.extend_invoked(invoked);
-        exe.define_procedure(start, source_manager)
-            .into_diagnostic()
-            .wrap_err("failed to define executable `main` procedure")?;
-        Ok(exe)
-    }
-
-    fn emit_test_harness(&self, block: &mut masm::Block) {
-        use masm::{Instruction as Inst, IntValue, Op, PushValue};
-        use miden_core::Felt;
-
-        let span = SourceSpan::default();
-
-        let pipe_words_to_memory = {
-            let name = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
-            let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-        };
-
-        // Step 1: Get the number of initializers to run
-        // => [inits] on operand stack
-        block.push(Op::Inst(Span::new(span, Inst::AdvPush)));
-
-        // Step 2: Evaluate the initial state of the loop condition `inits > 0`
-        // => [inits, inits]
-        block.push(Op::Inst(Span::new(span, Inst::Dup0)));
-        // => [inits > 0, inits]
-        block.push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
-        block.push(Op::Inst(Span::new(span, Inst::Gt)));
-
-        // Step 3: Loop until `inits == 0`
-        let mut loop_body = Vec::with_capacity(16);
-
-        // State of operand stack on entry to `loop_body`: [inits]
-        // State of advice stack on entry to `loop_body`: [dest_ptr, num_words, ...]
-        //
-        // Step 3a: Compute next value of `inits`, i.e. `inits'`
-        // => [inits - 1]
-        loop_body.push(Op::Inst(Span::new(span, Inst::SubImm(Felt::ONE.into()))));
-
-        // Step 3b: Copy initializer data to memory
-        // => [num_words, dest_ptr, inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
-        loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
-        // => [C, B, A, dest_ptr, inits'] on operand stack
-        loop_body
-            .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
-        loop_body.push(Op::Inst(Span::new(span, Inst::Exec(pipe_words_to_memory))));
-        loop_body
-            .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
-        // Drop C, B, A
-        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-        loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-        // => [inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::Drop)));
-
-        // Step 3c: Evaluate loop condition `inits' > 0`
-        // => [inits', inits']
-        loop_body.push(Op::Inst(Span::new(span, Inst::Dup0)));
-        // => [inits' > 0, inits']
-        loop_body
-            .push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
-        loop_body.push(Op::Inst(Span::new(span, Inst::Gt)));
-
-        // Step 4: Enter (or skip) loop
-        block.push(Op::While {
-            span,
-            body: masm::Block::new(span, loop_body),
-        });
-
-        // Step 5: Drop `inits` after loop is evaluated
-        block.push(Op::Inst(Span::new(span, Inst::Drop)));
     }
 }
 

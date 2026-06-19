@@ -97,6 +97,8 @@ impl ToMasmComponent for builtin::World {
         } else {
             None
         };
+        let emit_executable_main = is_executable_target(context.session());
+        let emit_test_harness = context.session().get_flag("test_harness");
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
         // if no globals) to use as the start of the dynamic heap when the program is executed
@@ -125,6 +127,8 @@ impl ToMasmComponent for builtin::World {
             source_manager: context.session().source_manager.clone(),
             init_body: Default::default(),
             invoked_from_init: Default::default(),
+            emit_executable_main,
+            emit_test_harness,
         };
 
         builder.build(self.as_operation())?;
@@ -217,6 +221,8 @@ impl ToMasmComponent for builtin::Component {
         } else {
             None
         };
+        let emit_executable_main = is_executable_target(context.session());
+        let emit_test_harness = context.session().get_flag("test_harness");
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
         // if no globals) to use as the start of the dynamic heap when the program is executed
@@ -245,6 +251,8 @@ impl ToMasmComponent for builtin::Component {
             source_manager: context.session().source_manager.clone(),
             init_body: Default::default(),
             invoked_from_init: Default::default(),
+            emit_executable_main,
+            emit_test_harness,
         };
 
         builder.build(self.as_operation())?;
@@ -286,6 +294,22 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
     })
 }
 
+/// Return true when this session is compiling a project executable target.
+fn is_executable_target(session: &midenc_session::Session) -> bool {
+    let project_package = session.project.package();
+    session
+        .options
+        .target_type
+        .is_some_and(|target_type| target_type.is_executable())
+        || project_package.library_target().is_none()
+        || session.options.target.as_deref().is_some_and(|target_name| {
+            project_package
+                .executable_targets()
+                .iter()
+                .any(|target| target_name == &**target.name)
+        })
+}
+
 struct MasmComponentBuilder<'a> {
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
@@ -293,6 +317,8 @@ struct MasmComponentBuilder<'a> {
     source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
     init_body: Vec<masm::Op>,
     invoked_from_init: BTreeSet<masm::Invoke>,
+    emit_executable_main: bool,
+    emit_test_harness: bool,
 }
 
 impl MasmComponentBuilder<'_> {
@@ -353,15 +379,10 @@ impl MasmComponentBuilder<'_> {
             let invoked_from_init = core::mem::take(&mut self.invoked_from_init);
             let root_module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
-            let visibility = if module_has_public_component_export(root_module) {
-                masm::Visibility::Private
-            } else {
-                masm::Visibility::Public
-            };
 
             define_init_procedure(
                 root_module,
-                visibility,
+                masm::Visibility::Private,
                 init_body,
                 invoked_from_init,
                 component.span(),
@@ -373,6 +394,27 @@ impl MasmComponentBuilder<'_> {
                 self.init_body.is_empty(),
                 "the need for an 'init' function was not expected, but code was generated for one"
             );
+        }
+
+        if self.emit_executable_main
+            && let Some(entrypoint) = self.component.entrypoint.clone()
+        {
+            let span = component.span();
+            let root = self.component.root.clone();
+            let init = self.component.init.as_ref().map(|_| local_procedure_target("init", span));
+            let entrypoint = localize_root_invocation_target(&entrypoint, root.as_ref());
+            let root_module =
+                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+
+            define_main_procedure(
+                root_module,
+                init,
+                entrypoint,
+                self.emit_test_harness,
+                span,
+                self.source_manager.clone(),
+            )
+            .wrap_err("failed to define executable `main` procedure")?;
         }
 
         Ok(())
@@ -538,14 +580,144 @@ fn define_init_procedure(
     Ok(())
 }
 
-/// Return true when `module` contains a public lifted Component Model wrapper.
-fn module_has_public_component_export(module: &masm::Module) -> bool {
-    module.procedures().any(|procedure| {
-        procedure.visibility().is_public()
-            && procedure
-                .signature()
-                .is_some_and(|signature| signature.cc.is_wasm_canonical_abi())
-    })
+/// Define the generated executable entry procedure in the component root module.
+/// Generate an executable module which when run expects the raw data segment data to be
+/// provided on the advice stack in the same order as initialization, and the operands of
+/// the entrypoint function on the operand stack.
+fn define_main_procedure(
+    module: &mut masm::Module,
+    init: Option<masm::InvocationTarget>,
+    entrypoint: masm::InvocationTarget,
+    emit_test_harness: bool,
+    span: SourceSpan,
+    source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
+) -> Result<(), Report> {
+    use masm::{Instruction as Inst, Op};
+
+    let mut invoked = Vec::new();
+    let body = {
+        let mut block = masm::Block::new(span, Vec::with_capacity(64));
+
+        // Invoke component initializer, if present
+        if let Some(init) = init {
+            invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
+            block.push(Op::Inst(Span::new(span, Inst::Exec(init))));
+        }
+
+        // Initialize test harness, if requested
+        if emit_test_harness {
+            emit_test_harness_initialization(&mut block);
+        }
+
+        // Invoke the program entrypoint
+        block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
+        invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
+        block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint))));
+        block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+
+        // Truncate the stack to 16 elements on exit
+        let truncate_stack = {
+            let name = masm::ProcedureName::new("truncate_stack").unwrap();
+            let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
+            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
+        };
+        invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
+        block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
+        block
+    };
+    let mut main =
+        masm::Procedure::new(span, masm::Visibility::Public, masm::ProcedureName::main(), 0, body);
+    main.extend_invoked(invoked);
+    module.define_procedure(main, source_manager).into_diagnostic()?;
+    Ok(())
+}
+
+/// Emit VM test harness initializer loading into the generated executable entry block.
+fn emit_test_harness_initialization(block: &mut masm::Block) {
+    use masm::{Instruction as Inst, IntValue, Op, PushValue};
+    use miden_core::Felt;
+
+    let span = SourceSpan::default();
+
+    let pipe_words_to_memory = {
+        let name = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
+        let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
+        let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+        InvocationTarget::Path(Span::new(span, qualified.into_inner()))
+    };
+
+    // Step 1: Get the number of initializers to run
+    // => [inits] on operand stack
+    block.push(Op::Inst(Span::new(span, Inst::AdvPush)));
+
+    // Step 2: Evaluate the initial state of the loop condition `inits > 0`
+    // => [inits, inits]
+    block.push(Op::Inst(Span::new(span, Inst::Dup0)));
+    // => [inits > 0, inits]
+    block.push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
+    block.push(Op::Inst(Span::new(span, Inst::Gt)));
+
+    // Step 3: Loop until `inits == 0`
+    let mut loop_body = Vec::with_capacity(16);
+
+    // State of operand stack on entry to `loop_body`: [inits]
+    // State of advice stack on entry to `loop_body`: [dest_ptr, num_words, ...]
+    //
+    // Step 3a: Compute next value of `inits`, i.e. `inits'`
+    // => [inits - 1]
+    loop_body.push(Op::Inst(Span::new(span, Inst::SubImm(Felt::ONE.into()))));
+
+    // Step 3b: Copy initializer data to memory
+    // => [num_words, dest_ptr, inits']
+    loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
+    loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
+    // => [C, B, A, dest_ptr, inits'] on operand stack
+    loop_body.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
+    loop_body.push(Op::Inst(Span::new(span, Inst::Exec(pipe_words_to_memory))));
+    loop_body.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+    // Drop C, B, A
+    loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+    loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+    loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+    // => [inits']
+    loop_body.push(Op::Inst(Span::new(span, Inst::Drop)));
+
+    // Step 3c: Evaluate loop condition `inits' > 0`
+    // => [inits', inits']
+    loop_body.push(Op::Inst(Span::new(span, Inst::Dup0)));
+    // => [inits' > 0, inits']
+    loop_body.push(Op::Inst(Span::new(span, Inst::Push(PushValue::Int(IntValue::U8(0)).into()))));
+    loop_body.push(Op::Inst(Span::new(span, Inst::Gt)));
+
+    // Step 4: Enter (or skip) loop
+    block.push(Op::While {
+        span,
+        body: masm::Block::new(span, loop_body),
+    });
+
+    // Step 5: Drop `inits` after loop is evaluated
+    block.push(Op::Inst(Span::new(span, Inst::Drop)));
+}
+
+/// Convert a root-module absolute invocation target into a local target.
+fn localize_root_invocation_target(
+    target: &masm::InvocationTarget,
+    root: &masm::LibraryPathRef,
+) -> masm::InvocationTarget {
+    if let masm::InvocationTarget::Path(path) = target
+        && path.parent().is_some_and(|parent| parent == root)
+        && let Some(name) = path.last()
+    {
+        return local_procedure_target(name, target.span());
+    }
+
+    target.clone()
+}
+
+/// Build an invocation target for a procedure in the current module.
+fn local_procedure_target(name: &str, span: SourceSpan) -> masm::InvocationTarget {
+    masm::InvocationTarget::Symbol(masm::Ident::from_raw_parts(Span::new(span, name.into())))
 }
 
 struct MasmModuleBuilder<'a> {

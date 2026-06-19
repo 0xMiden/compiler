@@ -67,13 +67,7 @@ pub(super) fn assemble_with_registry(
         || session.options.target.as_deref().is_some_and(|tname| {
             project_package.executable_targets().iter().any(|t| tname == &**t.name)
         });
-    let sources = prepare_sources(
-        component,
-        &mut assembler,
-        session.get_flag("test_harness"),
-        session,
-        is_executable_target,
-    )?;
+    let sources = prepare_sources(component, &mut assembler, is_executable_target)?;
     let mut project_assembler = assembler.for_project(project_package.clone(), registry)?;
 
     let selector = if is_executable_target {
@@ -115,8 +109,6 @@ fn selected_executable_target_name<'a>(
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
-    emit_test_harness: bool,
-    session: &Session,
     generate_executable_main: bool,
 ) -> Result<ProjectSourceInputs, Report> {
     // Intrinsics must be linked into the assembler context directly so they do not become part of
@@ -159,17 +151,6 @@ fn prepare_sources(
         }
 
         support.push(Box::new(Arc::unwrap_or_clone(module.clone())));
-    }
-
-    if generate_executable_main && let Some(entrypoint) = component.entrypoint.as_ref() {
-        // Our generated main module takes precedence here, so move the root module into support
-        support.extend(root);
-        let root = component.generate_main(
-            entrypoint,
-            emit_test_harness,
-            session.source_manager.clone(),
-        )?;
-        return Ok(ProjectSourceInputs { root, support });
     }
 
     let root = root.expect("components must always have a root module");
