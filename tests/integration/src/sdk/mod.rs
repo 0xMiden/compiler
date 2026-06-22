@@ -11,6 +11,7 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{
     CompilerTest, CompilerTestBuilder,
+    assert_helpers::assert_all_exports_are_lifted_wrappers,
     cargo_proj::project,
     compiler_test::{sdk_alloc_crate_path, sdk_crate_path},
     testing::executor_with_std,
@@ -286,6 +287,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
     assert!(account_package.is_library());
     assert_manifest_exports_match_library(account_package.as_ref());
+    assert_all_exports_are_lifted_wrappers(account_package.as_ref());
     let lib = account_package.mast.clone();
     let exports = lib
         .exports()
@@ -345,6 +347,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     assert!(account_package.is_library());
     let lib = account_package.mast.clone();
     assert_component_export_signatures_match_wit(account_package.as_ref());
+    assert_all_exports_are_lifted_wrappers(account_package.as_ref());
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
     let expected_function_suffix = "\"process-word\"";
     let exports = lib
@@ -398,6 +401,7 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
 
     assert!(account_package.is_library());
     let lib = account_package.mast.clone();
+    assert_all_exports_are_lifted_wrappers(account_package.as_ref());
     let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
     let expected_function_suffix = "\"process-word\"";
     let exports = lib

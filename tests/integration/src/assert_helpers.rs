@@ -33,6 +33,29 @@ pub(crate) fn assert_unique_protocol_export(
     );
 }
 
+/// Assert that every procedure exported by `package` is a lifted Component Model wrapper.
+///
+/// Internal procedures (lowered core Wasm functions, the component `init`, `cabi_*`, intrinsics)
+/// do not use the Component Model calling convention, so this catches such procedures leaking into
+/// the package export surface without having to enumerate the expected export names.
+pub(crate) fn assert_all_exports_are_lifted_wrappers(package: &miden_mast_package::Package) {
+    for export in package.mast.exports() {
+        let Some(proc_export) = export.as_procedure() else {
+            continue;
+        };
+        let is_lifted_wrapper = proc_export
+            .signature
+            .as_ref()
+            .is_some_and(|signature| signature.calling_convention().is_wasm_canonical_abi());
+        assert!(
+            is_lifted_wrapper,
+            "package should export only lifted Component Model wrappers, but `{}` is not one; \
+             internal procedures must not leak into the package export surface",
+            proc_export.path,
+        );
+    }
+}
+
 /// Assert that a package exposes exactly the expected lifted Component Model procedure wrappers.
 pub(crate) fn assert_lifted_component_exports(
     package: &miden_mast_package::Package,
@@ -43,13 +66,10 @@ pub(crate) fn assert_lifted_component_exports(
         .map(|export| (*export).to_string())
         .collect::<BTreeSet<_>>();
 
-    let procedure_exports = package
+    let mast_exports = package
         .mast
         .exports()
         .filter_map(|export| export.as_procedure())
-        .collect::<Vec<_>>();
-    let mast_exports = procedure_exports
-        .iter()
         .map(|export| export.path.as_ref().as_str().to_string())
         .collect::<BTreeSet<_>>();
 
@@ -58,18 +78,7 @@ pub(crate) fn assert_lifted_component_exports(
         "package should only export lifted Component Model wrappers",
     );
 
-    for export in procedure_exports {
-        assert!(
-            export
-                .signature
-                .as_ref()
-                .expect("lifted component export should have a signature")
-                .calling_convention()
-                .is_wasm_canonical_abi(),
-            "export {} should use the Component Model calling convention",
-            export.path
-        );
-    }
+    assert_all_exports_are_lifted_wrappers(package);
 
     let manifest_exports = package
         .manifest

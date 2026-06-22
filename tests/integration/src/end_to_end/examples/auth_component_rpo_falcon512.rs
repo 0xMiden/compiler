@@ -1,7 +1,10 @@
 use miden_core::serde::{Deserializable, Serializable};
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use crate::{CompilerTest, assert_helpers::assert_unique_protocol_export};
+use crate::{
+    CompilerTest,
+    assert_helpers::{assert_all_exports_are_lifted_wrappers, assert_unique_protocol_export},
+};
 
 #[test]
 fn auth_component_rpo_falcon512() {
@@ -14,6 +17,7 @@ fn auth_component_rpo_falcon512() {
     let auth_comp_package = test.compile_package();
     assert!(auth_comp_package.is_library());
     assert_unique_protocol_export(auth_comp_package.as_ref(), "auth_script", "check-signature");
+    assert_all_exports_are_lifted_wrappers(auth_comp_package.as_ref());
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();
