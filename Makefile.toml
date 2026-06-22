@@ -435,27 +435,16 @@ dependencies = ["cargo-miden"]
 [tasks.test-lit]
 category = "Test"
 description = "Runs the lit/filecheck test suite"
+command = "litcheck"
 env = { MIDENC_BIN_DIR = "${MIDENC_BIN_DIR}" }
-script = ['''
-#!/usr/bin/env bash
-set -euo pipefail
-# litcheck (up to 0.4.3) always exits 0, even when tests fail or cannot be run, so a meaningful
-# exit code must be derived from the printed summary; otherwise lit failures never fail CI.
-log_file="$(mktemp)"
-trap 'rm -f "${log_file}"' EXIT
-litcheck lit run --verbose \
-    --path "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin" \
-    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit" 2>&1 | tee "${log_file}"
-if ! grep -q "Total Discovered Tests" "${log_file}"; then
-    echo "error: litcheck did not produce a test summary" >&2
-    exit 1
-fi
-# Note: "Failed As Expected" (XFAIL) sections intentionally do not match this pattern.
-if grep -qE "^\*+ (Failed|Unresolved) Tests" "${log_file}"; then
-    echo "error: the lit suite reported failed or unresolved tests" >&2
-    exit 1
-fi
-''']
+args = [
+    "lit",
+    "run",
+    "--verbose",
+    "--path",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tests/lit",
+]
 dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 
 [tasks.lit]
@@ -473,7 +462,8 @@ dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 [tasks.litcheck]
 category = "Test"
 description = "Set up the litcheck utility"
-install_crate = { crate_name = "litcheck", test_arg = "--help" }
+# 0.4.4 is the first release that propagates lit failures through the process exit code.
+install_crate = { crate_name = "litcheck", min_version = "0.4.4", test_arg = "--help" }
 
 [tasks.docs]
 category = "Documentation"
