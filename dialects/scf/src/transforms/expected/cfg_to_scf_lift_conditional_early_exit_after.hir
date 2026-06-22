@@ -32,7 +32,7 @@ builtin.function public extern("C") @cfg_to_scf_lift_conditional_early_exit(%0: 
     default {
         scf.yield %24, %14 : (u32, u32);
     } : (u32, u32);
-    cf.switch %31 #builtin.u32<0> -> ^block8(%30, u32), ^block9 : (u32);
+    cf.switch %31 [#builtin.u32<0> -> ^block8(%30 : u32)], ^block9 : (u32);
 ^block8(%13: u32):
     builtin.ret %13 : (u32);
 ^block9:

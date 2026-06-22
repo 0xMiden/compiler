@@ -161,13 +161,10 @@ impl quote::ToTokens for DeriveOpParser {
                 if let Some(key_ty) = succ_group.keyed.as_ref() {
                     successors.extend(quote! {
                             next_operand_group = 0;
-                            // Keyed successors print as a bare comma-separated list of
-                            // `#key -> ^block(...)` entries; stop when the next token cannot
-                            // start a key, e.g. at the label of a following static successor.
-                            parser.parse_comma_separated_list(Delimiter::None, Some(#field_name_str), |parser| {
-                                if !parser.token_stream_mut().is_next(|tok| matches!(tok, ::midenc_hir::parse::Token::HashIdent(_))) {
-                                    return Ok(false);
-                                }
+                            // Keyed successors print as a bracket-delimited, comma-separated list
+                            // of `#key -> ^block(...)` entries (`#delimiter` is `Bracket` here);
+                            // the delimiter lets a fallback successor follow unambiguously.
+                            parser.parse_comma_separated_list(#delimiter, Some(#field_name_str), |parser| {
                                 let key_ty = <<#key_ty as ::midenc_hir::KeyedSuccessor>::KeyStorage as ::midenc_hir::attributes::MaybeInferAttributeType>::maybe_infer_type()
                                     .unwrap_or(::midenc_hir::Type::Unknown);
                                 let key = parser.parse_typed_attribute::<<#key_ty as ::midenc_hir::KeyedSuccessor>::KeyStorage>(&key_ty)?.into_inner();

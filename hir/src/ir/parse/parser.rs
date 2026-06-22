@@ -1457,6 +1457,12 @@ pub trait ParserExt<'input>: Parser<'input> {
         T: AttributeRegistration,
     {
         let name = self.context().get_registered_attribute_name::<T>();
+        // Name and dialect parsing are delegated entirely to `parse_extended_attribute`, which
+        // resolves the dialect (including elision against the default dialect) and errors on an
+        // unknown attribute; the `is::<T>()` check below then validates the concrete type. We do
+        // not pre-validate the leading `#ident` token here: doing so would have to re-implement
+        // the `#dialect.name` form the printer emits, and consuming that token would leave
+        // `parse_extended_attribute` to misparse the remainder.
         let attr = self.parse_extended_attribute(ty)?;
 
         if attr.borrow().is::<T>() {

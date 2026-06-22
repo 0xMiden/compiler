@@ -450,7 +450,7 @@ builtin.function public extern(\"C\") @branch(%c: i1, %a: u32, %b: u32) -> u32 {
         let context = Rc::new(Context::default());
         let source = "\
 builtin.function public extern(\"C\") @branch_args(%c: i1, %a: u32, %b: u32) -> u32 {
-    cf.cond_br %c ^one(%a, u32), ^two(%a, %b, u32, u32) : (i1);
+    cf.cond_br %c ^one(%a : u32), ^two(%a, %b : u32, u32) : (i1);
 ^one(%x: u32):
     builtin.ret %x : (u32);
 ^two(%y: u32, %z: u32):
@@ -460,7 +460,7 @@ builtin.function public extern(\"C\") @branch_args(%c: i1, %a: u32, %b: u32) -> 
             parse_function_fixpoint(&context, "parse_cond_br_args.hir", source)?;
         expect![[r#"
             builtin.function public extern("C") @branch_args(%0: i1, %1: u32, %2: u32) -> u32 {
-                cf.cond_br %0 ^block2(%1, u32), ^block3(%1, %2, u32, u32) : (i1);
+                cf.cond_br %0 ^block2(%1 : u32), ^block3(%1, %2 : u32, u32) : (i1);
             ^block2(%3: u32):
                 builtin.ret %3 : (u32);
             ^block3(%4: u32, %5: u32):
@@ -515,9 +515,9 @@ builtin.function public extern(\"C\") @branch_args(%c: i1, %a: u32, %b: u32) -> 
         let context = Rc::new(Context::default());
         let source = "\
 builtin.function public extern(\"C\") @looped(%start: i1) -> i1 {
-    cf.br ^header(%start, i1);
+    cf.br ^header(%start : i1);
 ^header(%v: i1):
-    cf.cond_br %v ^header(%v, i1), ^exit : (i1);
+    cf.cond_br %v ^header(%v : i1), ^exit : (i1);
 ^exit:
     builtin.ret %v : (i1);
 };";
@@ -525,9 +525,9 @@ builtin.function public extern(\"C\") @looped(%start: i1) -> i1 {
             parse_function_fixpoint(&context, "parse_backward_refs.hir", source)?;
         expect![[r#"
             builtin.function public extern("C") @looped(%0: i1) -> i1 {
-                cf.br ^block2(%0, i1);
+                cf.br ^block2(%0 : i1);
             ^block2(%1: i1):
-                cf.cond_br %1 ^block2(%1, i1), ^block3 : (i1);
+                cf.cond_br %1 ^block2(%1 : i1), ^block3 : (i1);
             ^block3:
                 builtin.ret %1 : (i1);
             };"#]]
@@ -576,7 +576,7 @@ builtin.function public extern(\"C\") @looped(%start: i1) -> i1 {
         let context = Rc::new(Context::default());
         let source = "\
 builtin.function public extern(\"C\") @select(%sel: u32, %a: u32, %b: u32) -> u32 {
-    cf.switch %sel #builtin.u32<1> -> ^one(%a, u32), ^fallback : (u32);
+    cf.switch %sel [#builtin.u32<1> -> ^one(%a : u32)], ^fallback : (u32);
 ^one(%x: u32):
     builtin.ret %x : (u32);
 ^fallback:
@@ -585,7 +585,7 @@ builtin.function public extern(\"C\") @select(%sel: u32, %a: u32, %b: u32) -> u3
         let (function, printed) = parse_function_fixpoint(&context, "parse_switch.hir", source)?;
         expect![[r#"
             builtin.function public extern("C") @select(%0: u32, %1: u32, %2: u32) -> u32 {
-                cf.switch %0 #builtin.u32<1> -> ^block2(%1, u32), ^block3 : (u32);
+                cf.switch %0 [#builtin.u32<1> -> ^block2(%1 : u32)], ^block3 : (u32);
             ^block2(%3: u32):
                 builtin.ret %3 : (u32);
             ^block3:

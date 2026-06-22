@@ -122,8 +122,12 @@ impl quote::ToTokens for DeriveOpPrinter {
             for (succ_group_index, succ_group) in format.successor_groups.iter().enumerate() {
                 let field_name = &succ_group.field_name;
                 if succ_group.keyed.is_some() {
+                    // A keyed successor group prints as a bracket-delimited, comma-separated list
+                    // of `#key -> ^block(args)` entries. The brackets are required: an undelimited
+                    // list cannot be followed by the fallback successor without ambiguity.
                     successors.extend(quote! {
                         printer.print_space();
+                        *printer += ::midenc_hir::formatter::const_text("[");
                         let mut p = ::midenc_hir::print::AsmPrinter::new(op.context_rc(), printer.flags());
                         for (i, keyed_succ) in self.#field_name().iter().enumerate() {
                             use ::midenc_hir::AsValueRange;
@@ -140,6 +144,7 @@ impl quote::ToTokens for DeriveOpPrinter {
                             p.print_successor_arguments(operands.as_value_range());
                         }
                         *printer += ::midenc_hir::formatter::indent(4, p.finish());
+                        *printer += ::midenc_hir::formatter::const_text("]");
                     });
                 } else if succ_group.successors.is_empty() && succ_group.requires_delimiter {
                     successors.extend(quote! {

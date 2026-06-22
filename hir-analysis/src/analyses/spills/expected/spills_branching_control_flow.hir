@@ -14,11 +14,11 @@ builtin.function public extern("C") @spills_branching_control_flow(%0: ptr<u8, e
 ^block2:
     %12 = arith.constant 1 : u64;
     %13 = hir.exec ::@test::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
-    cf.br ^block4(%13, u32);
+    cf.br ^block4(%13 : u32);
 ^block3:
     %14 = arith.constant 8 : u32;
     %15 = arith.add %1, %14 <{ overflow = #builtin.overflow<unchecked> }>;
-    cf.br ^block4(%15, u32);
+    cf.br ^block4(%15 : u32);
 ^block4(%16: u32):
     %17 = arith.constant 72 : u32;
     %18 = arith.add %1, %17 <{ overflow = #builtin.overflow<unchecked> }>;

@@ -201,8 +201,9 @@ impl<'a> AsmPrinter<'a> {
         self.document += doc;
     }
 
-    /// Prints a successor argument list: the operand uses followed by their types, e.g.
-    /// `(%0, %1, u32, u32)`, matching the grammar accepted by `parse_successor_and_use_list`.
+    /// Prints a successor argument list as an `ssa-use-and-type-list`, i.e. the operand uses, a
+    /// colon, then their types: `(%0, %1 : u32, u32)`. This matches the grammar accepted by
+    /// `parse_successor_and_use_list`.
     ///
     /// Prints nothing when `values` is empty, as the parser treats the entire list as optional.
     pub fn print_successor_arguments<const N: usize>(&mut self, values: ValueRange<'_, N>) {
@@ -217,7 +218,7 @@ impl<'a> AsmPrinter<'a> {
             .collect::<crate::SmallVec<[_; 4]>>();
         self.document += const_text("(");
         self.print_value_uses(values);
-        self.document += const_text(", ");
+        self.document += const_text(" : ");
         self.print_types(types);
         self.document += const_text(")");
     }
