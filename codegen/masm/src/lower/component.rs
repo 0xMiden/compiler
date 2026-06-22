@@ -97,7 +97,7 @@ impl ToMasmComponent for builtin::World {
         } else {
             None
         };
-        let emit_executable_main = is_executable_target(context.session());
+        let emit_executable_main = context.session().is_executable_target();
         let emit_test_harness = context.session().get_flag("test_harness");
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
@@ -221,7 +221,7 @@ impl ToMasmComponent for builtin::Component {
         } else {
             None
         };
-        let emit_executable_main = is_executable_target(context.session());
+        let emit_executable_main = context.session().is_executable_target();
         let emit_test_harness = context.session().get_flag("test_harness");
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
@@ -292,22 +292,6 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
             }]
         }
     })
-}
-
-/// Return true when this session is compiling a project executable target.
-fn is_executable_target(session: &midenc_session::Session) -> bool {
-    let project_package = session.project.package();
-    session
-        .options
-        .target_type
-        .is_some_and(|target_type| target_type.is_executable())
-        || project_package.library_target().is_none()
-        || session.options.target.as_deref().is_some_and(|target_name| {
-            project_package
-                .executable_targets()
-                .iter()
-                .any(|target| target_name == &**target.name)
-        })
 }
 
 struct MasmComponentBuilder<'a> {

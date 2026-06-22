@@ -479,6 +479,19 @@ impl Session {
         self.options.output_types.should_assemble() && !self.options.link_only
     }
 
+    /// Returns true if this session is compiling a project executable target.
+    pub fn is_executable_target(&self) -> bool {
+        let project_package = self.project.package();
+        self.options.target_type.is_some_and(|target_type| target_type.is_executable())
+            || project_package.library_target().is_none()
+            || self.options.target.as_deref().is_some_and(|target_name| {
+                project_package
+                    .executable_targets()
+                    .iter()
+                    .any(|target| target_name == &**target.name)
+            })
+    }
+
     /// Returns true if the given [OutputType] should be emitted as an output
     pub fn should_emit(&self, ty: OutputType) -> bool {
         self.options.output_types.contains_key(&ty)

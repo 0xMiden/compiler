@@ -62,11 +62,7 @@ pub(super) fn assemble_with_registry(
         }
     }
 
-    let is_executable_target = session.options.target_type.is_some_and(|tt| tt.is_executable())
-        || project_package.library_target().is_none()
-        || session.options.target.as_deref().is_some_and(|tname| {
-            project_package.executable_targets().iter().any(|t| tname == &**t.name)
-        });
+    let is_executable_target = session.is_executable_target();
     let sources = prepare_sources(component, &mut assembler, is_executable_target)?;
     let mut project_assembler = assembler.for_project(project_package.clone(), registry)?;
 
