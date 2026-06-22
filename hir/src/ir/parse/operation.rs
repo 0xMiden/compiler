@@ -733,9 +733,12 @@ where
                 );
             }
 
-            // Add definitions for each of the parsed result names, mapping them onto the
-            // operation's results in order. Names do not correspond 1:1 to result groups: a
-            // single variadic result group may be bound by multiple names (e.g. `scf.if`).
+            // Bind each parsed result name to a result of the operation, in order. The printer
+            // emits one SSA name per result (e.g. `%a, %b, %c = scf.if`) - the canonical form for
+            // an op with a single result group - so the names map directly onto the flattened
+            // result list; the `%name:count` spelling instead binds `count` consecutive results to
+            // `%name#0..#count`. The previous code indexed `results().group(i)` by the i-th *name*,
+            // which panicked once a single variadic group was bound by more than one name.
             let results = op.results().all();
             let mut result_offset = 0usize;
             for result_record in result_ids.iter() {
@@ -1305,11 +1308,13 @@ impl<'input, P> OperationParser<P>
 where
     P: Parser<'input>,
 {
-    /// Parse a new block into 'block', returning the block that was actually defined.
+    /// Parse a new block, returning the block that was defined.
     ///
-    /// Note that the returned block may differ from `block`: a label that was previously
-    /// referenced as a successor resolves to its forward-declared block, so callers must attach
-    /// the returned block to the region rather than the one they provided.
+    /// When `block` is `Some`, that block is the one populated and returned - unless the parsed
+    /// label was already forward-referenced as a successor, in which case this panics: branch
+    /// targets already point at the forward-declared block, so the caller's block cannot be used.
+    /// Callers that may encounter forward-declared labels must pass `None` and attach the returned
+    /// block to the region.
     ///
     ///   block ::= block-label? operation*
     ///   block-label    ::= block-id block-arg-list? `:`
@@ -1342,19 +1347,26 @@ where
         // use it. Otherwise create a new one.
         let block_and_loc = self.get_block_info_by_name(name);
 
-        let block = if let Some(block) = block_and_loc {
-            // Otherwise, the block has a forward declaration. Forward declarations are
-            // removed once defined, so if we are defining a existing block and it is
-            // not a forward declaration, then it is a redeclaration. Fail if the block
-            // was already defined.
-            if !self.erase_forward_ref(block.into_inner()) {
+        let block = if let Some(forward_declared) = block_and_loc {
+            // The block has a forward declaration. Forward declarations are removed once defined,
+            // so if this name already resolves to a non-forward-declared block, it is a
+            // redeclaration.
+            if !self.erase_forward_ref(forward_declared.into_inner()) {
                 // "redefinition of block {name}"
                 return Err(ParserError::BlockAlreadyDefined {
                     span: name_span,
                     name,
                 });
             }
-            Span::new(name_span, block.into_inner())
+            // A caller that provided a block expects it to be the one populated, but branch
+            // targets already point at the forward-declared block, so we cannot honor that here.
+            // Such callers must pass `None` and use the returned block instead.
+            assert!(
+                block.is_none(),
+                "parse_block was given an explicit block, but `{name}` was forward-referenced as \
+                 a successor; pass `None` so the forward-declared block can be used"
+            );
+            Span::new(name_span, forward_declared.into_inner())
         } else {
             let block =
                 Span::new(name_span, block.unwrap_or_else(|| self.context_rc().create_block()));
