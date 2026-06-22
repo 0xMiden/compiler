@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### BREAKING
-- `#[auth_script]` attribute macro is required to mark the authentication procedure in the authentication component #1051
+- SDK bindings updated for VM v0.23 / protocol v0.15 (`miden-field` bumped to `^0.25`). `Felt::new`
+  is now fallible: it returns `Result<Felt, _>` instead of `Felt`, so `Felt::new(x)` becomes
+  `Felt::new(x).unwrap()` (or handle the error).
 - `asset::{create_fungible_asset, create_non_fungible_asset}` now take an
   `enable_callbacks: bool` argument.
 - `active_account::{get_balance, get_initial_balance}` and the corresponding
@@ -16,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `faucet::{mint, burn}` no longer return an `Asset`, and the
   `faucet::{mint_value, burn_value}` helpers were removed to match the tx
   kernel API.
+- `output_note::set_attachment` was removed. The attachment shape is now selected by function
+  rather than a runtime `attachment_kind` argument: use
+  `output_note::add_word_attachment(note_idx, attachment_scheme, attachment)` for a single word,
+  `add_attachment` for a commitment, or `add_attachment_from_memory` for a multi-word attachment.
 - The auto-generated `crate::bindings::Account` struct is removed. Declare the account
   explicitly with `#[account(...)]` and use that type as the note/tx-script entrypoint account
   parameter #1157
@@ -69,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added output-note bindings:
   `output_note::{add_word_attachment, add_attachment, add_attachment_from_memory, get_attachments_commitment, find_attachment, write_attachment_commitments_to_memory, write_attachment_to_memory}`.
 - Added `faucet::has_callbacks`.
+- `println!` macro (and `debug::println`) for emitting a debug message during execution.
+
+## [0.12.0] - 2026-04-16
+
+### BREAKING
+- `#[auth_script]` attribute macro is required to mark the authentication procedure in the authentication component #1051
 
 ## [0.11.0]
 
