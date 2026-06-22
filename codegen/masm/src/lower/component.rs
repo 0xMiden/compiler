@@ -71,7 +71,6 @@ impl ToMasmComponent for builtin::World {
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
-        let init = requires_init.then(|| init_invocation_target("::init", SourceSpan::default()));
 
         // Define the initial component modules set
         //
@@ -103,7 +102,7 @@ impl ToMasmComponent for builtin::World {
         let mut masm_component = MasmComponent {
             id: None,
             root,
-            init,
+            requires_init,
             entrypoint,
             kernel,
             rodata,
@@ -187,9 +186,6 @@ impl ToMasmComponent for builtin::Component {
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
-        let init = requires_init.then(|| {
-            init_invocation_target(component_path.as_path().to_absolute(), SourceSpan::default())
-        });
 
         // Define the initial component modules set
         //
@@ -221,7 +217,7 @@ impl ToMasmComponent for builtin::Component {
         let mut masm_component = MasmComponent {
             id: Some(id),
             root,
-            init,
+            requires_init,
             entrypoint,
             kernel,
             rodata,
@@ -294,11 +290,11 @@ struct MasmComponentBuilder<'a> {
 impl MasmComponentBuilder<'_> {
     /// Convert the component body to Miden Assembly
     pub fn build(mut self, component: &midenc_hir::Operation) -> Result<(), Report> {
-        use masm::{Instruction as Inst, InvocationTarget, Op};
+        use masm::{Instruction as Inst, Op};
 
         // If a component-level init is required, emit code to initialize the heap before any other
         // initialization code.
-        if self.component.init.is_some() {
+        if self.component.requires_init {
             let span = component.span();
 
             // Heap metadata initialization
@@ -307,12 +303,7 @@ impl MasmComponentBuilder<'_> {
                 span,
                 Inst::Push(masm::Immediate::Value(Span::unknown(heap_base.into()))),
             )));
-            let heap_init = {
-                let name = masm::ProcedureName::new("heap_init").unwrap();
-                let module = masm::LibraryPath::new("::intrinsics::mem").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-                InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-            };
+            let heap_init = qualified_procedure_target("::intrinsics::mem", "heap_init", span);
             self.init_body.push(Op::Inst(Span::new(
                 span,
                 Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
@@ -344,7 +335,7 @@ impl MasmComponentBuilder<'_> {
         }
 
         // Finalize the component-level init, if required
-        if self.component.init.is_some() {
+        if self.component.requires_init {
             let init_body = core::mem::take(&mut self.init_body);
             let invoked_from_init = core::mem::take(&mut self.invoked_from_init);
             let root_module =
@@ -370,7 +361,7 @@ impl MasmComponentBuilder<'_> {
         {
             let span = component.span();
             let root = self.component.root.clone();
-            let init = self.component.init.as_ref().map(|_| local_procedure_target("init", span));
+            let init = self.component.requires_init.then(|| local_procedure_target("init", span));
             let entrypoint = localize_root_invocation_target(&entrypoint, root.as_ref());
             let root_module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
@@ -444,9 +435,8 @@ impl MasmComponentBuilder<'_> {
         let builder = MasmFunctionBuilder::new(function)?;
         let init = self
             .component
-            .init
-            .as_ref()
-            .map(|_| local_procedure_target("init", function.span()));
+            .requires_init
+            .then(|| local_procedure_target("init", function.span()));
         let procedure = builder.build(
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
@@ -476,7 +466,7 @@ impl MasmComponentBuilder<'_> {
     /// populate the global heap with the data segments of this component, verifying that the
     /// commitments match.
     fn emit_data_segment_initialization(&mut self) {
-        use masm::{Instruction as Inst, InvocationTarget, Op};
+        use masm::{Instruction as Inst, Op};
 
         // Emit data segment initialization code
         //
@@ -484,12 +474,8 @@ impl MasmComponentBuilder<'_> {
         // having been placed in the advice map with the same commitment and encoding used here.
         // The program will fail to execute if this is not set up correctly.
         let span = SourceSpan::default();
-        let pipe_preimage_to_memory = {
-            let name = masm::ProcedureName::new("pipe_preimage_to_memory").unwrap();
-            let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-        };
+        let pipe_preimage_to_memory =
+            qualified_procedure_target("::miden::core::mem", "pipe_preimage_to_memory", span);
         for rodata in self.component.rodata.iter() {
             // Push the commitment hash (`COM`) for this data onto the operand stack
 
@@ -554,16 +540,6 @@ fn define_init_procedure(
     Ok(())
 }
 
-/// Build an invocation target for the qualified component initializer procedure.
-fn init_invocation_target(
-    module: impl AsRef<miden_assembly_syntax::Path>,
-    span: SourceSpan,
-) -> masm::InvocationTarget {
-    let name = masm::ProcedureName::new("init").unwrap();
-    let qualified = masm::QualifiedProcedureName::new(module, name);
-    InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-}
-
 /// Define the generated executable `main` procedure in the component root module.
 ///
 /// The generated entry procedure invokes the component initializer, optional VM test harness
@@ -577,6 +553,21 @@ fn define_main_procedure(
     source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
 ) -> Result<(), Report> {
     use masm::{Instruction as Inst, Op};
+
+    // The generated entrypoint claims the reserved `main` procedure name in the component root
+    // module, which also holds the lifted Component Model export wrappers. A component export
+    // named `main` would otherwise surface as an opaque symbol conflict during assembly, so reject
+    // it here with an actionable error.
+    let main_name = masm::ProcedureName::main();
+    if module.procedures().any(|proc| proc.name().as_str() == main_name.as_str()) {
+        return Err(Report::msg(format!(
+            "cannot generate executable entrypoint: component root module '{}' already defines a \
+             procedure named `{}`; rename the conflicting component export or build a library \
+             instead",
+            module.path(),
+            main_name.as_str(),
+        )));
+    }
 
     let mut invoked = Vec::new();
     let body = {
@@ -600,12 +591,8 @@ fn define_main_procedure(
         block.push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
 
         // Truncate the stack to 16 elements on exit
-        let truncate_stack = {
-            let name = masm::ProcedureName::new("truncate_stack").unwrap();
-            let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-            InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-        };
+        let truncate_stack =
+            qualified_procedure_target("::miden::core::sys", "truncate_stack", span);
         invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
         block.push(Op::Inst(Span::new(span, Inst::Exec(truncate_stack))));
         block
@@ -624,12 +611,8 @@ fn emit_test_harness_initialization(block: &mut masm::Block) {
 
     let span = SourceSpan::default();
 
-    let pipe_words_to_memory = {
-        let name = masm::ProcedureName::new("pipe_words_to_memory").unwrap();
-        let module = masm::LibraryPath::new("::miden::core::mem").unwrap();
-        let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-        InvocationTarget::Path(Span::new(span, qualified.into_inner()))
-    };
+    let pipe_words_to_memory =
+        qualified_procedure_target("::miden::core::mem", "pipe_words_to_memory", span);
 
     // Step 1: Get the number of initializers to run
     // => [inits] on operand stack
@@ -702,6 +685,19 @@ fn localize_root_invocation_target(
 /// Build an invocation target for a procedure in the current module.
 fn local_procedure_target(name: &str, span: SourceSpan) -> masm::InvocationTarget {
     masm::InvocationTarget::Symbol(masm::Ident::from_raw_parts(Span::new(span, name.into())))
+}
+
+/// Build an invocation target for a fully-qualified procedure in another module (e.g. a stdlib or
+/// intrinsics procedure referenced by absolute path).
+fn qualified_procedure_target(
+    module: &str,
+    name: &str,
+    span: SourceSpan,
+) -> masm::InvocationTarget {
+    let name = masm::ProcedureName::new(name).unwrap();
+    let module = masm::LibraryPath::new(module).unwrap();
+    let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
+    InvocationTarget::Path(Span::new(span, qualified.into_inner()))
 }
 
 struct MasmModuleBuilder<'a> {
@@ -909,13 +905,21 @@ impl MasmFunctionBuilder {
             trace_target,
         };
 
-        // For component export functions, invoke the `init` procedure first if needed.
-        // It loads the data segments and global vars into memory.
+        // Component export wrappers (Component Model calling convention) invoke the `init`
+        // procedure first to load data segments and global vars into memory.
+        //
+        // Every such wrapper is lowered in the component root module, where the caller supplies a
+        // root-local `init` target. Support-module functions are never Component Model exports and
+        // always pass `None`, so reaching this branch without a target indicates a broken lowering
+        // invariant rather than a user error.
         if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
             let init = init_target.ok_or_else(|| {
-                Report::msg("component export wrapper requires a root-local init target")
+                Report::msg(
+                    "internal error: Component Model export wrapper lowered without a root-local \
+                     `init` target",
+                )
             })?;
             let span = SourceSpan::default();
             // Add init call to the emitter's target before emitting the function body
@@ -935,12 +939,11 @@ impl MasmFunctionBuilder {
             // Since the VM's `drop` instruction not letting stack size go beyond the 16 elements
             // we most likely end up with stack size > 16 elements at the end.
             // See https://github.com/0xPolygonMiden/miden-vm/blob/c4acf49510fda9ba80f20cee1a9fb1727f410f47/processor/src/stack/mod.rs?plain=1#L226-L253
-            let truncate_stack = {
-                let name = masm::ProcedureName::new("truncate_stack").unwrap();
-                let module = masm::LibraryPath::new("::miden::core::sys").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            };
+            let truncate_stack = qualified_procedure_target(
+                "::miden::core::sys",
+                "truncate_stack",
+                SourceSpan::default(),
+            );
             let span = SourceSpan::default();
             invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
             body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(truncate_stack))));

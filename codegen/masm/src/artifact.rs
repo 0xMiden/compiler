@@ -17,11 +17,13 @@ pub struct MasmComponent {
     ///
     /// All components must have a canonical root module, even if empty
     pub root: Arc<Path>,
-    /// The symbol name of the component initializer function
+    /// Whether this component requires an initializer procedure.
     ///
-    /// This function is responsible for initializing global variables and writing data segments
+    /// The initializer is responsible for initializing global variables and writing data segments
     /// into memory at program startup, and at cross-context call boundaries (in callee prologue).
-    pub init: Option<masm::InvocationTarget>,
+    /// When set, a private root-local `init` procedure is generated and invoked by the lifted
+    /// export wrappers (and the generated executable entrypoint) via a same-module symbol.
+    pub requires_init: bool,
     /// The symbol name of the program entrypoint, if this component is executable.
     ///
     /// If unset, it indicates that the component is a library, even if it could be made executable.

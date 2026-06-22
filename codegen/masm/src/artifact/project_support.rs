@@ -105,11 +105,12 @@ fn selected_executable_target_name<'a>(
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
-    generate_executable_main: bool,
+    is_executable_target: bool,
 ) -> Result<ProjectSourceInputs, Report> {
-    // Component library support modules are implementation details, not package exports.
+    // Component library support modules are implementation details, not package exports. They are
+    // only surfaced when assembling a library; executables statically link everything into `main`.
     let link_support_modules_privately =
-        !generate_executable_main && component.link_support_modules_privately;
+        !is_executable_target && component.link_support_modules_privately;
 
     let mut support = Vec::with_capacity(component.modules.len());
     let mut root = None;
