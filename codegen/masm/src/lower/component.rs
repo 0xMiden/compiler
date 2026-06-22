@@ -71,16 +71,7 @@ impl ToMasmComponent for builtin::World {
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
-        let init = if requires_init {
-            let name = masm::ProcedureName::new("init").unwrap();
-            let qualified = masm::QualifiedProcedureName::new("::init", name);
-            Some(masm::InvocationTarget::Path(Span::new(
-                SourceSpan::default(),
-                qualified.into_inner(),
-            )))
-        } else {
-            None
-        };
+        let init = requires_init.then(|| init_invocation_target("::init", SourceSpan::default()));
 
         // Define the initial component modules set
         //
@@ -196,17 +187,9 @@ impl ToMasmComponent for builtin::Component {
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
-        let init = if requires_init {
-            let name = masm::ProcedureName::new("init").unwrap();
-            let qualified =
-                masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
-            Some(masm::InvocationTarget::Path(Span::new(
-                SourceSpan::default(),
-                qualified.into_inner(),
-            )))
-        } else {
-            None
-        };
+        let init = requires_init.then(|| {
+            init_invocation_target(component_path.as_path().to_absolute(), SourceSpan::default())
+        });
 
         // Define the initial component modules set
         //
@@ -368,7 +351,6 @@ impl MasmComponentBuilder<'_> {
 
             define_init_procedure(
                 root_module,
-                masm::Visibility::Private,
                 init_body,
                 invoked_from_init,
                 component.span(),
@@ -549,10 +531,9 @@ impl MasmComponentBuilder<'_> {
     }
 }
 
-/// Define a component initializer in `module`.
+/// Define the private component initializer in `module`.
 fn define_init_procedure(
     module: &mut masm::Module,
-    visibility: masm::Visibility,
     body: Vec<masm::Op>,
     invoked: BTreeSet<masm::Invoke>,
     span: SourceSpan,
@@ -561,7 +542,7 @@ fn define_init_procedure(
     let init_name = masm::ProcedureName::new("init").unwrap();
     let mut init = masm::Procedure::new(
         Default::default(),
-        visibility,
+        masm::Visibility::Private,
         init_name,
         0,
         masm::Block::new(span, body),
@@ -570,6 +551,16 @@ fn define_init_procedure(
     init.extend_invoked(invoked);
     module.define_procedure(init, source_manager).into_diagnostic()?;
     Ok(())
+}
+
+/// Build an invocation target for the qualified component initializer procedure.
+fn init_invocation_target(
+    module: impl AsRef<miden_assembly_syntax::Path>,
+    span: SourceSpan,
+) -> masm::InvocationTarget {
+    let name = masm::ProcedureName::new("init").unwrap();
+    let qualified = masm::QualifiedProcedureName::new(module, name);
+    InvocationTarget::Path(Span::new(span, qualified.into_inner()))
 }
 
 /// Define the generated executable `main` procedure in the component root module.

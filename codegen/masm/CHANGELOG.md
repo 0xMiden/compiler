@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- keep internal component procedures out of compiled MASM package exports
+- keep internal component procedures out of compiled MASM package exports so library packages expose
+  only lifted Component Model wrappers
+- preserve generated component initializer callees in MASM procedure metadata
 
 ## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.5.0...midenc-codegen-masm-v0.5.1) - 2025-11-13
 

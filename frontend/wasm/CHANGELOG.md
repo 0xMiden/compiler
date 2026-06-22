@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- treat core Wasm exports inside components as implementation details until lifted into Component
+  Model export wrappers
+
 ## [0.5.1](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.5.0...midenc-frontend-wasm-v0.5.1) - 2025-11-13
 
 ### Added
