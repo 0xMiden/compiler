@@ -473,10 +473,16 @@ impl MasmComponentBuilder<'_> {
 
     fn define_function(&mut self, function: &builtin::Function) -> Result<(), Report> {
         let builder = MasmFunctionBuilder::new(function)?;
+        let init = self
+            .component
+            .init
+            .as_ref()
+            .map(|_| local_procedure_target("init", function.span()));
         let procedure = builder.build(
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
+            init,
         )?;
 
         let module =
@@ -775,6 +781,7 @@ impl MasmModuleBuilder<'_> {
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
+            None,
         )?;
 
         self.module
@@ -892,6 +899,7 @@ impl MasmFunctionBuilder {
         function: &builtin::Function,
         analysis_manager: AnalysisManager,
         link_info: &LinkInfo,
+        init_target: Option<masm::InvocationTarget>,
     ) -> Result<masm::Procedure, Report> {
         use alloc::collections::BTreeSet;
 
@@ -928,17 +936,9 @@ impl MasmFunctionBuilder {
         if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
-            let init = if let Some(id) = link_info.component() {
-                let component_path = id.to_library_path();
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified =
-                    masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            } else {
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified = masm::QualifiedProcedureName::new("::init", name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            };
+            let init = init_target.ok_or_else(|| {
+                Report::msg("component export wrapper requires a root-local init target")
+            })?;
             let span = SourceSpan::default();
             // Add init call to the emitter's target before emitting the function body
             emitter.invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
