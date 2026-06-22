@@ -34,6 +34,11 @@ pub struct MasmComponent {
     pub heap_base: u32,
     /// The address of the `__stack_pointer` global, if such a global has been defined
     pub stack_pointer: Option<u32>,
+    /// Whether non-root support modules are implementation details of the component package.
+    ///
+    /// When true, support modules are statically linked into library packages instead of being
+    /// surfaced as public package modules.
+    pub link_support_modules_privately: bool,
     /// The set of modules in this component
     pub modules: Vec<Arc<masm::Module>>,
 }

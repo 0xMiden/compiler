@@ -118,6 +118,7 @@ impl ToMasmComponent for builtin::World {
             rodata,
             heap_base,
             stack_pointer,
+            link_support_modules_privately: false,
             modules,
         };
         let builder = MasmComponentBuilder {
@@ -242,6 +243,7 @@ impl ToMasmComponent for builtin::Component {
             rodata,
             heap_base,
             stack_pointer,
+            link_support_modules_privately: true,
             modules,
         };
         let builder = MasmComponentBuilder {

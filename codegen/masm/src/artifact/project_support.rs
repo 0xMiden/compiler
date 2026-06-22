@@ -109,12 +109,8 @@ fn prepare_sources(
 ) -> Result<ProjectSourceInputs, Report> {
     // Intrinsics must be linked into the assembler context directly so they do not become part of
     // the assembled package surface.
-    let link_support_modules_privately = !generate_executable_main
-        && component
-            .modules
-            .iter()
-            .find(|module| module.path() == component.root.as_ref())
-            .is_some_and(|module| module_has_public_component_export(module));
+    let link_support_modules_privately =
+        !generate_executable_main && component.link_support_modules_privately;
 
     let mut support = Vec::with_capacity(component.modules.len());
     let mut root = None;
@@ -261,14 +257,4 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
 /// Return true when the module belongs to the compiler's intrinsics namespace.
 fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
     module.path().as_str().trim_start_matches("::").starts_with("intrinsics")
-}
-
-/// Return true when `module` contains a public lifted Component Model wrapper.
-fn module_has_public_component_export(module: &masm::Module) -> bool {
-    module.procedures().any(|procedure| {
-        procedure.visibility().is_public()
-            && procedure
-                .signature()
-                .is_some_and(|signature| signature.cc.is_wasm_canonical_abi())
-    })
 }
