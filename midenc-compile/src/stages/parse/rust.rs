@@ -242,13 +242,20 @@ trim-paths = [\"diagnostics\", \"object\"]
     let cargo_env = std::env::var("CARGO").map(PathBuf::from).ok();
     let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
 
+    // When a specific cargo wasn't provided, resolve the toolchain to build under via rustup. This
+    // honors an inherited RUSTUP_TOOLCHAIN or the active `rust-toolchain.toml` pin rather than
+    // forcing the generic `nightly` channel, which matters because the SDK crates require a
+    // specific nightly and this build runs from a temporary directory where directory overrides do
+    // not apply.
+    let toolchain = if cargo_env.is_none() {
+        crate::rust::rustup_toolchain()
+    } else {
+        None
+    };
+
     let mut cargo = std::process::Command::new(cargo_path);
-    // Ensure we specify the nightly toolchain if a specific cargo wasn't set. An inherited
-    // RUSTUP_TOOLCHAIN (e.g. from the rust-toolchain.toml override of the invoking project) takes
-    // precedence: forcing the generic `nightly` channel would bypass that pin, and the build
-    // below runs from a temporary directory where directory-based overrides do not apply.
-    if cargo_env.is_none() && std::env::var_os("RUSTUP_TOOLCHAIN").is_none() {
-        cargo.arg("+nightly");
+    if let Some(toolchain) = toolchain.as_deref() {
+        cargo.arg(format!("+{toolchain}"));
     }
     cargo.env("RUSTFLAGS", rustflags);
     // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
@@ -258,14 +265,7 @@ trim-paths = [\"diagnostics\", \"object\"]
     cargo.args(&cargo_build_args);
 
     // Handle the target for buildable commands
-    crate::rust::install_wasm32_target(
-        wasi,
-        if cargo_env.is_none() {
-            Some("nightly")
-        } else {
-            None
-        },
-    )?;
+    crate::rust::install_wasm32_target(wasi, toolchain.as_deref())?;
 
     cargo.arg("--target").arg(format!("wasm32-{wasi}"));
 
