@@ -1,62 +1,11 @@
-use std::collections::BTreeSet;
-
-use miden_mast_package::PackageExport;
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use super::persist_cargo_miden_dependency;
-use crate::{CompilerTestBuilder, assert_helpers::assert_unique_protocol_export};
-
-/// Assert that the counter contract package exposes only lifted Component Model wrappers.
-fn assert_counter_contract_exports_are_lifted_component_wrappers(
-    package: &miden_mast_package::Package,
-) {
-    let expected_exports = BTreeSet::from([
-        r#"::"miden:counter-contract/miden-counter-contract@0.1.0"::"get-count""#.to_string(),
-        r#"::"miden:counter-contract/miden-counter-contract@0.1.0"::"increment-count""#.to_string(),
-    ]);
-
-    let procedure_exports = package
-        .mast
-        .exports()
-        .filter_map(|export| export.as_procedure())
-        .collect::<Vec<_>>();
-    let mast_exports = procedure_exports
-        .iter()
-        .map(|export| export.path.as_ref().as_str().to_string())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        mast_exports, expected_exports,
-        "counter-contract should only export lifted Component Model wrappers",
-    );
-
-    for export in procedure_exports {
-        assert!(
-            export
-                .signature
-                .as_ref()
-                .expect("lifted component export should have a signature")
-                .calling_convention()
-                .is_wasm_canonical_abi(),
-            "export {} should use the Component Model calling convention",
-            export.path
-        );
-    }
-
-    let manifest_exports = package
-        .manifest
-        .exports()
-        .filter_map(|export| match export {
-            PackageExport::Procedure(export) => Some(export.path.as_ref().as_str().to_string()),
-            PackageExport::Constant(_) | PackageExport::Type(_) => None,
-        })
-        .collect::<BTreeSet<_>>();
-    assert_eq!(
-        manifest_exports, expected_exports,
-        "counter-contract manifest exports should match MAST exports",
-    );
-}
+use crate::{
+    CompilerTestBuilder,
+    assert_helpers::{assert_lifted_component_exports, assert_unique_protocol_export},
+};
 
 #[test]
 fn counter_note() {
@@ -68,8 +17,12 @@ fn counter_note() {
     );
     let mut counter_contract = counter_contract_builder.build();
     let counter_contract_package = counter_contract.compile_package();
-    assert_counter_contract_exports_are_lifted_component_wrappers(
+    assert_lifted_component_exports(
         counter_contract_package.as_ref(),
+        &[
+            r#"::"miden:counter-contract/miden-counter-contract@0.1.0"::"get-count""#,
+            r#"::"miden:counter-contract/miden-counter-contract@0.1.0"::"increment-count""#,
+        ],
     );
     persist_cargo_miden_dependency(
         "../../examples/counter-contract",
