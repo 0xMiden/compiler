@@ -107,8 +107,7 @@ fn prepare_sources(
     assembler: &mut Assembler,
     generate_executable_main: bool,
 ) -> Result<ProjectSourceInputs, Report> {
-    // Intrinsics must be linked into the assembler context directly so they do not become part of
-    // the assembled package surface.
+    // Component library support modules are implementation details, not package exports.
     let link_support_modules_privately =
         !generate_executable_main && component.link_support_modules_privately;
 
@@ -116,6 +115,8 @@ fn prepare_sources(
     let mut root = None;
     for module in component.modules.iter() {
         if is_intrinsics_module(module) {
+            // Intrinsics must be linked into the assembler context directly so they do not become
+            // part of the assembled package surface.
             log::debug!(
                 target: "assembly",
                 "adding intrinsics '{}' to assembler",

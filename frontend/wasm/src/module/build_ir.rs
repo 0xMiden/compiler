@@ -72,6 +72,7 @@ pub fn translate_module_as_component(
     let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
 
     let mut module_builder = ModuleBuilder::new(module_ref);
+    // Standalone Wasm module exports are the package surface.
     let mut module_state = ModuleTranslationState::new(
         &parsed_module.module,
         &mut module_builder,

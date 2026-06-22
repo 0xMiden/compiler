@@ -572,10 +572,10 @@ fn define_init_procedure(
     Ok(())
 }
 
-/// Define the generated executable entry procedure in the component root module.
-/// Generate an executable module which when run expects the raw data segment data to be
-/// provided on the advice stack in the same order as initialization, and the operands of
-/// the entrypoint function on the operand stack.
+/// Define the generated executable `main` procedure in the component root module.
+///
+/// The generated entry procedure invokes the component initializer, optional VM test harness
+/// initialization, selected entrypoint, and stack truncation shim in order.
 fn define_main_procedure(
     module: &mut masm::Module,
     init: Option<masm::InvocationTarget>,

@@ -82,9 +82,9 @@ pub fn generate_export_lifting_function(
     let export_func_span = core_export_func_ref.borrow().span();
     let export_func_ident =
         Ident::new(midenc_hir::interner::Symbol::intern(export_func_name), export_func_span);
-    // Make the lowered core WASM export internal so only the lifted wrapper is publicly exported
-    // from the component, while still allowing the component-level wrapper to call across the
-    // nested core module symbol table boundary.
+    // Promote the lowered core WASM export to internal so the lifted wrapper can call across the
+    // nested core module symbol table boundary. Package export pruning happens during MASM package
+    // assembly, since MASM currently lowers internal visibility to public procedure visibility.
     core_module_builder
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();

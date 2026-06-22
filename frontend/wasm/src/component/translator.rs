@@ -654,6 +654,7 @@ impl<'a> ComponentTranslator<'a> {
                 let module_name = parsed_module.module.name().as_str();
                 let module_ref = self.result.define_module(Ident::from(module_name)).unwrap();
                 let mut module_builder = ModuleBuilder::new(module_ref);
+                // Core exports inside a Wasm component are implementation details until lifted.
                 let mut module_state = ModuleTranslationState::new(
                     &parsed_module.module,
                     &mut module_builder,

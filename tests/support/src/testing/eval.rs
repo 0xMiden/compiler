@@ -86,9 +86,9 @@ where
 {
     // Provide initializer data and any user-supplied advice inputs via the advice stack.
     //
-    // NOTE: This relies on MasmComponent emitting a test harness via `emit_test_harness` during
-    // assembly of the package. The test harness consumes initializer inputs in FIFO order from the
-    // advice stack (top = index 0).
+    // NOTE: This relies on MasmComponent emitting a test harness via
+    // `emit_test_harness_initialization` during lowering. The test harness consumes initializer
+    // inputs in FIFO order from the advice stack (top = index 0).
     let user_advice_stack: Vec<Felt> = advice_stack.into_iter().collect();
     let mut advice_stack = Vec::new();
     let mut num_initializers = 0u64;
