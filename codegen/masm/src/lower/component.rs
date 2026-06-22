@@ -217,6 +217,7 @@ impl ToMasmComponent for builtin::Component {
         let heap_base = u32::try_from(heap_base)
             .expect("unable to allocate dynamic heap: global table too large");
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
+        let link_support_modules_privately = !id.is_synthetic_wrapper();
         let mut masm_component = MasmComponent {
             id: Some(id),
             root,
@@ -226,7 +227,7 @@ impl ToMasmComponent for builtin::Component {
             rodata,
             heap_base,
             stack_pointer,
-            link_support_modules_privately: true,
+            link_support_modules_privately,
             modules,
         };
         let builder = MasmComponentBuilder {
