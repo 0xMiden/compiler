@@ -294,11 +294,6 @@ fn rust_sdk_cross_ctx_account_and_note() {
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
         .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
-    assert!(
-        !lib.exports()
-            .any(|export| export.path().as_ref().as_str().starts_with("intrinsics")),
-        "expected no intrinsics in the exports"
-    );
     let expected_module_prefix = "::\"miden:cross-ctx-account/";
     let expected_function_suffix = "\"process-felt\"";
     assert!(

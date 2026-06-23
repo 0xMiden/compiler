@@ -40,9 +40,17 @@ pub(crate) fn assert_unique_protocol_export(
 /// the package export surface without having to enumerate the expected export names.
 pub(crate) fn assert_all_exports_are_lifted_wrappers(package: &miden_mast_package::Package) {
     for export in package.mast.exports() {
+        // A library package should expose nothing but lifted wrappers, so a non-procedure
+        // (constant/type) export is itself a leak.
         let Some(proc_export) = export.as_procedure() else {
-            continue;
+            panic!(
+                "package should export only lifted Component Model wrappers, but `{}` is a \
+                 non-procedure export",
+                export.path().as_ref().as_str(),
+            );
         };
+        // Only lifted wrappers carry the Component Model calling convention; internal procedures
+        // never do, so the calling convention is a reliable proxy for "is a public package export".
         let is_lifted_wrapper = proc_export
             .signature
             .as_ref()

@@ -17,6 +17,7 @@ fn counter_note() {
     );
     let mut counter_contract = counter_contract_builder.build();
     let counter_contract_package = counter_contract.compile_package();
+    assert!(counter_contract_package.is_library(), "expected library");
     assert_lifted_component_exports(
         counter_contract_package.as_ref(),
         &[
