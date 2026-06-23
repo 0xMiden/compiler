@@ -467,7 +467,7 @@ impl CompilerTestBuilder {
                     session,
                     context,
                     artifact_name: config.module_name,
-                    entrypoint: self.entrypoint.clone(),
+                    entrypoint: self.entrypoint,
                     ..Default::default()
                 }
             }
