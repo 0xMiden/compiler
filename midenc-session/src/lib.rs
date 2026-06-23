@@ -131,7 +131,7 @@ impl Session {
                         };
                         options.target_type = Some(target_type);
                     }
-                    let is_executable_target =
+                    let is_executable_target_type =
                         options.target_type.is_some_and(|ty| ty.is_executable());
                     let project = {
                         let package = project.package();
@@ -144,13 +144,13 @@ impl Session {
                             });
 
                         if has_virtual_executable_target
-                            || (is_cargo_project && is_executable_target)
+                            || (is_cargo_project && is_executable_target_type)
                         {
                             // HACK(pauls): Workaround bug with virtual bin targets until
                             // 0.24.x. See https://github.com/0xMiden/miden-vm/pull/3156
                             miden_project::Project::Package(fixup_targets(
                                 package,
-                                is_cargo_project && is_executable_target,
+                                is_cargo_project && is_executable_target_type,
                             ))
                         } else {
                             project
