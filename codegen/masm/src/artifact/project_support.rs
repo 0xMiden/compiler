@@ -101,7 +101,8 @@ fn selected_executable_target_name<'a>(
     Ok(session.name.as_ref())
 }
 
-/// Prepare the synthetic project target and source inputs used to assemble compiler-generated MASM.
+/// Partition the component's modules into the project root, surfaced support sources, and modules
+/// statically linked into the assembler, producing the source inputs for project assembly.
 fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,

@@ -554,19 +554,6 @@ fn define_main_procedure(
 ) -> Result<(), Report> {
     use masm::{Instruction as Inst, Op};
 
-    // The generated entrypoint claims the reserved `main` procedure name in the component root
-    // module, which also holds the lifted Component Model export wrappers. A component export
-    // named `main` would otherwise surface as an opaque symbol conflict during assembly, so reject
-    // it here with an actionable error.
-    if module.procedures().any(|proc| proc.name().is_main()) {
-        return Err(Report::msg(format!(
-            "cannot generate executable entrypoint: component root module '{}' already defines a \
-             procedure named `main`; rename the conflicting component export or build a library \
-             instead",
-            module.path(),
-        )));
-    }
-
     let mut invoked = Vec::new();
     let body = {
         let mut block = masm::Block::new(span, Vec::with_capacity(64));

@@ -24,7 +24,7 @@ pub struct MasmComponent {
     /// When set, a private root-local `init` procedure is generated and invoked by the lifted
     /// export wrappers (and the generated executable entrypoint) via a same-module symbol.
     pub requires_init: bool,
-    /// The symbol name of the program entrypoint, if this component is executable.
+    /// The invocation target for the program entrypoint, if this component is executable.
     ///
     /// If unset, it indicates that the component is a library, even if it could be made executable.
     pub entrypoint: Option<masm::InvocationTarget>,
