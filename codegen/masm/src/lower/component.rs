@@ -70,7 +70,7 @@ impl ToMasmComponent for builtin::World {
 
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
-        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        let requires_init = link_info.requires_init();
 
         // Define the initial component modules set
         //
@@ -108,6 +108,9 @@ impl ToMasmComponent for builtin::World {
             rodata,
             heap_base,
             stack_pointer,
+            // A World is the standalone/whole-program path: its non-root modules are the package
+            // surface itself, with no lifted-wrapper layer to hide them behind, so they are never
+            // linked privately.
             link_support_modules_privately: false,
             modules,
         };
@@ -185,7 +188,7 @@ impl ToMasmComponent for builtin::Component {
 
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
-        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        let requires_init = link_info.requires_init();
 
         // Define the initial component modules set
         //
@@ -338,8 +341,7 @@ impl MasmComponentBuilder<'_> {
         if self.component.requires_init {
             let init_body = core::mem::take(&mut self.init_body);
             let invoked_from_init = core::mem::take(&mut self.invoked_from_init);
-            let root_module =
-                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+            let root_module = self.component.root_module_mut();
 
             define_init_procedure(
                 root_module,
@@ -363,8 +365,7 @@ impl MasmComponentBuilder<'_> {
             let root = self.component.root.clone();
             let init = self.component.requires_init.then(|| local_procedure_target("init", span));
             let entrypoint = localize_root_invocation_target(&entrypoint, root.as_ref());
-            let root_module =
-                Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+            let root_module = self.component.root_module_mut();
 
             define_main_procedure(
                 root_module,
@@ -444,8 +445,7 @@ impl MasmComponentBuilder<'_> {
             init,
         )?;
 
-        let module =
-            Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
+        let module = self.component.root_module_mut();
         let expected_path_len = if module.path().is_absolute() { 2 } else { 1 };
         assert_eq!(
             module.path().len(),
@@ -558,14 +558,12 @@ fn define_main_procedure(
     // module, which also holds the lifted Component Model export wrappers. A component export
     // named `main` would otherwise surface as an opaque symbol conflict during assembly, so reject
     // it here with an actionable error.
-    let main_name = masm::ProcedureName::main();
-    if module.procedures().any(|proc| proc.name().as_str() == main_name.as_str()) {
+    if module.procedures().any(|proc| proc.name().is_main()) {
         return Err(Report::msg(format!(
             "cannot generate executable entrypoint: component root module '{}' already defines a \
-             procedure named `{}`; rename the conflicting component export or build a library \
+             procedure named `main`; rename the conflicting component export or build a library \
              instead",
             module.path(),
-            main_name.as_str(),
         )));
     }
 
@@ -905,22 +903,13 @@ impl MasmFunctionBuilder {
             trace_target,
         };
 
-        // Component export wrappers (Component Model calling convention) invoke the `init`
-        // procedure first to load data segments and global vars into memory.
-        //
-        // Every such wrapper is lowered in the component root module, where the caller supplies a
-        // root-local `init` target. Support-module functions are never Component Model exports and
-        // always pass `None`, so reaching this branch without a target indicates a broken lowering
-        // invariant rather than a user error.
+        // Component export wrappers (Component Model calling convention) invoke the component
+        // `init` procedure first to load data segments and global vars into memory. The caller
+        // threads a root-local `init` target exactly when initialization is required; support
+        // module functions are never Component Model exports and always pass `None`.
         if function.signature().cc.is_wasm_canonical_abi()
-            && (link_info.has_globals() || link_info.has_data_segments())
+            && let Some(init) = init_target
         {
-            let init = init_target.ok_or_else(|| {
-                Report::msg(
-                    "internal error: Component Model export wrapper lowered without a root-local \
-                     `init` target",
-                )
-            })?;
             let span = SourceSpan::default();
             // Add init call to the emitter's target before emitting the function body
             emitter.invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));

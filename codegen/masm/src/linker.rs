@@ -43,6 +43,12 @@ impl LinkInfo {
         !self.segment_layout.is_empty()
     }
 
+    /// Returns true if the component needs an initializer procedure to populate global variables
+    /// and data segments into memory before its exports run.
+    pub fn requires_init(&self) -> bool {
+        self.has_globals() || self.has_data_segments()
+    }
+
     pub fn globals_layout(&self) -> &GlobalVariableLayout {
         &self.globals_layout
     }

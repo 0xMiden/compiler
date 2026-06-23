@@ -107,8 +107,12 @@ fn prepare_sources(
     assembler: &mut Assembler,
     is_executable_target: bool,
 ) -> Result<ProjectSourceInputs, Report> {
-    // Component library support modules are implementation details, not package exports. They are
-    // only surfaced when assembling a library; executables statically link everything into `main`.
+    // Non-root support modules hold the lowered core Wasm procedures called by lifted wrappers.
+    // For a component library they are implementation details, so statically link them into the
+    // assembler (below) rather than surfacing them as package source. This static linking — not
+    // procedure visibility — is what keeps them off the package export surface, because MASM
+    // currently lowers `Internal` to public. Executable targets and synthetic-wrapper/standalone
+    // components keep them as source inputs instead.
     let link_support_modules_privately =
         !is_executable_target && component.link_support_modules_privately;
 

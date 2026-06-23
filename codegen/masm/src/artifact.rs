@@ -39,7 +39,10 @@ pub struct MasmComponent {
     /// Whether non-root support modules are implementation details of the component package.
     ///
     /// When true, support modules are statically linked into library packages instead of being
-    /// surfaced as public package modules.
+    /// surfaced as public package modules. This static linking — not procedure visibility — is
+    /// what prunes the lowered core Wasm procedures from the package export surface in the common
+    /// (non-synthetic-wrapper) component-library case, because MASM currently lowers `Internal`
+    /// visibility to public.
     pub link_support_modules_privately: bool,
     /// The set of modules in this component
     pub modules: Vec<Arc<masm::Module>>,
@@ -181,6 +184,17 @@ impl fmt::Display for MasmComponent {
 }
 
 impl MasmComponent {
+    /// Get a mutable reference to the component root module (`modules[0]`).
+    ///
+    /// The root module is never cloned during lowering, so the unique reference is guaranteed.
+    pub(crate) fn root_module_mut(&mut self) -> &mut masm::Module {
+        debug_assert!(
+            self.modules[0].path() == self.root.as_ref(),
+            "modules[0] must be the component root module"
+        );
+        Arc::get_mut(&mut self.modules[0]).expect("expected unique reference")
+    }
+
     /// Assemble this component into a Miden package.
     pub fn assemble(
         &self,
