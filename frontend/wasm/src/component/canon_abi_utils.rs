@@ -3,10 +3,14 @@ use midenc_dialect_cf::{ControlFlowOpBuilder, SwitchCase};
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_hir::{
-    AddressSpace, BlockRef, Builder, Felt, PointerType, SmallVec, SourceSpan, Type, ValueRef,
+    AddressSpace, BlockRef, Builder, EnumType, Felt, PointerType, SmallVec, SourceSpan, Type,
+    ValueRef,
 };
 
-use super::{CanonicalAbiType, CanonicalAbiTypeKind};
+use super::{
+    canonical_abi_info, canonical_flat_types, canonical_variant_payload_flat_types,
+    canonical_variant_payload_offset32,
+};
 use crate::{WasmError, error::WasmResult, module::function_builder_ext::FunctionBuilderExt};
 
 /// Recursively loads primitive values from memory based on the component-level type following the
@@ -15,56 +19,82 @@ use crate::{WasmError, error::WasmResult, module::function_builder_ext::Function
 pub fn load<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
     ptr: ValueRef,
-    ty: &CanonicalAbiType,
+    ty: &Type,
     values: &mut SmallVec<[ValueRef; 8]>,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    match &ty.kind {
+    match ty {
         // Primitive types are loaded directly
-        CanonicalAbiTypeKind::Scalar => {
-            values.push(load_scalar_value(fb, ptr, &ty.ir, span)?);
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::Felt => {
+            values.push(load_scalar_value(fb, ptr, ty, span)?);
         }
 
-        CanonicalAbiTypeKind::Variant {
-            discriminant,
-            payload_offset32,
-            cases,
-            payload_flat_types,
-        } => {
-            load(fb, ptr, discriminant, values, span)?;
+        Type::Enum(enum_ty) => {
+            load(fb, ptr, enum_ty.discriminant(), values, span)?;
             let discriminant = *values.last().expect("variant load should produce a discriminant");
+            let payload_offset32 = canonical_variant_payload_offset32(enum_ty)?;
+            let payload_flat_types = canonical_variant_payload_flat_types(enum_ty)?;
             load_variant_payload(
                 fb,
                 ptr,
                 discriminant,
-                *payload_offset32,
-                cases,
-                payload_flat_types,
+                payload_offset32,
+                enum_ty,
+                &payload_flat_types,
                 values,
                 span,
             )?;
         }
 
         // Struct types are loaded field by field
-        CanonicalAbiTypeKind::Record { fields } => {
-            for field in fields {
-                let field_addr = offset_addr(fb, ptr, field.offset32, span)?;
+        Type::Struct(struct_ty) => {
+            let mut offset = 0u32;
+            for field in struct_ty.fields() {
+                let field_abi = canonical_abi_info(&field.ty)?;
+                let field_offset = field_abi.next_field32(&mut offset);
+                let field_addr = offset_addr(fb, ptr, field_offset, span)?;
                 // Recursively load the field
                 load(fb, field_addr, &field.ty, values, span)?;
             }
         }
 
-        CanonicalAbiTypeKind::Unsupported if matches!(&ty.ir, Type::List(_)) => {
+        Type::Array(array_ty) => {
+            let element_abi = canonical_abi_info(array_ty.element_type())?;
+            let mut offset = 0u32;
+            for _ in 0..array_ty.len() {
+                let element_offset = element_abi.next_field32(&mut offset);
+                let element_addr = offset_addr(fb, ptr, element_offset, span)?;
+                load(fb, element_addr, array_ty.element_type(), values, span)?;
+            }
+        }
+
+        Type::List(_) => {
             return Err(WasmError::Unsupported(
                 "list types are not yet supported in cross-context calls".to_string(),
             )
             .into());
         }
 
-        CanonicalAbiTypeKind::Unsupported => {
+        Type::Unknown
+        | Type::Never
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Ptr(_)
+        | Type::Function(_) => {
             return Err(WasmError::Unsupported(format!(
                 "Unsupported type in canonical ABI loading: {:?}",
-                ty.ir
+                ty
             ))
             .into());
         }
@@ -79,57 +109,83 @@ pub fn load<B: ?Sized + Builder>(
 pub fn store<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
     ptr: ValueRef,
-    ty: &CanonicalAbiType,
+    ty: &Type,
     values: &mut impl Iterator<Item = ValueRef>,
     span: SourceSpan,
 ) -> WasmResult<()> {
-    match &ty.kind {
+    match ty {
         // Primitive types are stored directly
-        CanonicalAbiTypeKind::Scalar => {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::Felt => {
             let value_to_store = values.next().expect("Not enough values to store");
-            store_scalar_value(fb, ptr, &ty.ir, value_to_store, span)?;
+            store_scalar_value(fb, ptr, ty, value_to_store, span)?;
         }
 
-        CanonicalAbiTypeKind::Variant {
-            discriminant,
-            payload_offset32,
-            cases,
-            payload_flat_types,
-        } => {
+        Type::Enum(enum_ty) => {
             let discriminant_value = values.next().expect("Not enough values to store");
-            store_scalar_value(fb, ptr, &discriminant.ir, discriminant_value, span)?;
+            store_scalar_value(fb, ptr, enum_ty.discriminant(), discriminant_value, span)?;
+            let payload_offset32 = canonical_variant_payload_offset32(enum_ty)?;
+            let payload_flat_types = canonical_variant_payload_flat_types(enum_ty)?;
             store_variant_payload(
                 fb,
                 ptr,
                 discriminant_value,
-                *payload_offset32,
-                cases,
-                payload_flat_types,
+                payload_offset32,
+                enum_ty,
+                &payload_flat_types,
                 values,
                 span,
             )?;
         }
 
         // Struct types are stored field by field
-        CanonicalAbiTypeKind::Record { fields } => {
-            for field in fields {
-                let field_addr = offset_addr(fb, ptr, field.offset32, span)?;
+        Type::Struct(struct_ty) => {
+            let mut offset = 0u32;
+            for field in struct_ty.fields() {
+                let field_abi = canonical_abi_info(&field.ty)?;
+                let field_offset = field_abi.next_field32(&mut offset);
+                let field_addr = offset_addr(fb, ptr, field_offset, span)?;
                 // Recursively store the field
                 store(fb, field_addr, &field.ty, values, span)?;
             }
         }
 
-        CanonicalAbiTypeKind::Unsupported if matches!(&ty.ir, Type::List(_)) => {
+        Type::Array(array_ty) => {
+            let element_abi = canonical_abi_info(array_ty.element_type())?;
+            let mut offset = 0u32;
+            for _ in 0..array_ty.len() {
+                let element_offset = element_abi.next_field32(&mut offset);
+                let element_addr = offset_addr(fb, ptr, element_offset, span)?;
+                store(fb, element_addr, array_ty.element_type(), values, span)?;
+            }
+        }
+
+        Type::List(_) => {
             return Err(WasmError::Unsupported(
                 "list types are not yet supported in cross-context calls".to_string(),
             )
             .into());
         }
 
-        CanonicalAbiTypeKind::Unsupported => {
+        Type::Unknown
+        | Type::Never
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Ptr(_)
+        | Type::Function(_) => {
             return Err(WasmError::Unsupported(format!(
                 "Unsupported type in canonical ABI storing: {:?}",
-                ty.ir
+                ty
             ))
             .into());
         }
@@ -141,18 +197,18 @@ pub fn store<B: ?Sized + Builder>(
 /// Validates variant discriminants in a sequence of flattened canonical ABI values.
 pub fn validate_flat_variants<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
-    tys: &[CanonicalAbiType],
+    tys: &[Type],
     values: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<()> {
     let mut offset = 0usize;
     for ty in tys {
-        let flat_types = ty.flat_types();
+        let flat_types = canonical_flat_types(ty)?;
         let end = offset + flat_types.len();
         let Some(flat_values) = values.get(offset..end) else {
             return Err(WasmError::Unsupported(format!(
                 "not enough flattened canonical ABI values for {:?}",
-                ty.ir
+                ty
             ))
             .into());
         };
@@ -178,23 +234,23 @@ fn load_variant_payload<B: ?Sized + Builder>(
     ptr: ValueRef,
     discriminant: ValueRef,
     payload_offset32: u32,
-    cases: &[Option<CanonicalAbiType>],
+    enum_ty: &EnumType,
     payload_flat_types: &[Type],
     values: &mut SmallVec<[ValueRef; 8]>,
     span: SourceSpan,
 ) -> WasmResult<()> {
     if payload_flat_types.is_empty() {
-        validate_variant_discriminant(fb, discriminant, cases.len(), span)?;
+        validate_variant_discriminant(fb, discriminant, enum_ty.variants().len(), span)?;
         return Ok(());
     }
 
     let payload_addr = offset_addr(fb, ptr, payload_offset32, span)?;
     let join_block = fb.create_block_with_params(payload_flat_types.iter().cloned(), span);
-    let case_blocks = switch_variant_cases(fb, discriminant, cases.len(), span)?;
+    let case_blocks = switch_variant_cases(fb, discriminant, enum_ty.variants().len(), span)?;
 
-    for (block, case) in case_blocks.into_iter().zip(cases) {
+    for (block, case) in case_blocks.into_iter().zip(enum_ty.variants()) {
         fb.switch_to_block(block);
-        let case_values = load_case_payload(fb, payload_addr, case.as_ref(), span)?;
+        let case_values = load_case_payload(fb, payload_addr, case.value.as_ref(), span)?;
         let joined_values = adapt_flat_values(fb, &case_values, payload_flat_types, span)?;
         fb.br(join_block, joined_values, span)?;
     }
@@ -212,13 +268,13 @@ fn store_variant_payload<B: ?Sized + Builder>(
     ptr: ValueRef,
     discriminant: ValueRef,
     payload_offset32: u32,
-    cases: &[Option<CanonicalAbiType>],
+    enum_ty: &EnumType,
     payload_flat_types: &[Type],
     values: &mut impl Iterator<Item = ValueRef>,
     span: SourceSpan,
 ) -> WasmResult<()> {
     if payload_flat_types.is_empty() {
-        validate_variant_discriminant(fb, discriminant, cases.len(), span)?;
+        validate_variant_discriminant(fb, discriminant, enum_ty.variants().len(), span)?;
         return Ok(());
     }
 
@@ -228,12 +284,12 @@ fn store_variant_payload<B: ?Sized + Builder>(
         .collect::<Vec<_>>();
     let payload_addr = offset_addr(fb, ptr, payload_offset32, span)?;
     let join_block = fb.create_block();
-    let case_blocks = switch_variant_cases(fb, discriminant, cases.len(), span)?;
+    let case_blocks = switch_variant_cases(fb, discriminant, enum_ty.variants().len(), span)?;
 
-    for (block, case) in case_blocks.into_iter().zip(cases) {
+    for (block, case) in case_blocks.into_iter().zip(enum_ty.variants()) {
         fb.switch_to_block(block);
-        if let Some(case_ty) = case {
-            let case_flat_types = case_ty.flat_types();
+        if let Some(case_ty) = case.value.as_ref() {
+            let case_flat_types = canonical_flat_types(case_ty)?;
             let case_values = project_flat_values(fb, &payload_values, &case_flat_types, span)?;
             let mut case_values = case_values.into_iter();
             store(fb, payload_addr, case_ty, &mut case_values, span)?;
@@ -296,49 +352,61 @@ fn validate_variant_discriminant<B: ?Sized + Builder>(
 /// Validates variant discriminants inside one flattened canonical ABI value.
 fn validate_flat_type<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
-    ty: &CanonicalAbiType,
+    ty: &Type,
     values: &[ValueRef],
     span: SourceSpan,
 ) -> WasmResult<()> {
-    let expected_len = ty.flat_types().len();
+    let expected_len = canonical_flat_types(ty)?.len();
     if values.len() != expected_len {
         return Err(WasmError::Unsupported(format!(
             "flattened canonical ABI value for {:?} has {} values, expected {expected_len}",
-            ty.ir,
+            ty,
             values.len()
         ))
         .into());
     }
 
-    match &ty.kind {
-        CanonicalAbiTypeKind::Scalar => Ok(()),
-        CanonicalAbiTypeKind::Record { fields } => {
+    match ty {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::Felt => Ok(()),
+        Type::Struct(struct_ty) => {
             let mut offset = 0usize;
-            for field in fields {
-                let len = field.ty.flat_types().len();
+            for field in struct_ty.fields() {
+                let len = canonical_flat_types(&field.ty)?.len();
                 validate_flat_type(fb, &field.ty, &values[offset..offset + len], span)?;
                 offset += len;
             }
             Ok(())
         }
-        CanonicalAbiTypeKind::Variant {
-            cases,
-            payload_flat_types,
-            ..
-        } => {
+        Type::Enum(enum_ty) => {
+            let payload_flat_types = canonical_variant_payload_flat_types(enum_ty)?;
             let discriminant = values[0];
             if payload_flat_types.is_empty() {
-                return validate_variant_discriminant(fb, discriminant, cases.len(), span);
+                return validate_variant_discriminant(
+                    fb,
+                    discriminant,
+                    enum_ty.variants().len(),
+                    span,
+                );
             }
 
             let payload_values = &values[1..];
             let join_block = fb.create_block();
-            let case_blocks = switch_variant_cases(fb, discriminant, cases.len(), span)?;
+            let case_blocks =
+                switch_variant_cases(fb, discriminant, enum_ty.variants().len(), span)?;
 
-            for (block, case) in case_blocks.into_iter().zip(cases) {
+            for (block, case) in case_blocks.into_iter().zip(enum_ty.variants()) {
                 fb.switch_to_block(block);
-                if let Some(case_ty) = case {
-                    let case_flat_types = case_ty.flat_types();
+                if let Some(case_ty) = case.value.as_ref() {
+                    let case_flat_types = canonical_flat_types(case_ty)?;
                     let case_values =
                         project_flat_values(fb, payload_values, &case_flat_types, span)?;
                     validate_flat_type(fb, case_ty, &case_values, span)?;
@@ -350,9 +418,31 @@ fn validate_flat_type<B: ?Sized + Builder>(
             fb.switch_to_block(join_block);
             Ok(())
         }
-        CanonicalAbiTypeKind::Unsupported => Err(WasmError::Unsupported(format!(
+        Type::Array(array_ty) => {
+            let mut offset = 0usize;
+            for _ in 0..array_ty.len() {
+                let len = canonical_flat_types(array_ty.element_type())?.len();
+                validate_flat_type(
+                    fb,
+                    array_ty.element_type(),
+                    &values[offset..offset + len],
+                    span,
+                )?;
+                offset += len;
+            }
+            Ok(())
+        }
+        Type::Unknown
+        | Type::Never
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Ptr(_)
+        | Type::List(_)
+        | Type::Function(_) => Err(WasmError::Unsupported(format!(
             "unsupported type in flattened canonical ABI validation: {:?}",
-            ty.ir
+            ty
         ))
         .into()),
     }
@@ -362,7 +452,7 @@ fn validate_flat_type<B: ?Sized + Builder>(
 fn load_case_payload<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
     payload_addr: ValueRef,
-    case: Option<&CanonicalAbiType>,
+    case: Option<&Type>,
     span: SourceSpan,
 ) -> WasmResult<SmallVec<[ValueRef; 8]>> {
     let mut values = SmallVec::<[ValueRef; 8]>::new();

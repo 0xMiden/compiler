@@ -1159,10 +1159,6 @@ const fn align_to(a: u32, b: u32) -> u32 {
     (a + (b - 1)) & !(b - 1)
 }
 
-const fn max(a: u32, b: u32) -> u32 {
-    if a > b { a } else { b }
-}
-
 impl CanonicalAbiInfo {
     /// ABI information for lists/strings which are "pointer pairs"
     pub const POINTER_PAIR: CanonicalAbiInfo = CanonicalAbiInfo {
@@ -1195,32 +1191,11 @@ impl CanonicalAbiInfo {
 
     /// Returns the abi for a record represented by the specified fields.
     pub fn record<'a>(fields: impl Iterator<Item = &'a CanonicalAbiInfo>) -> CanonicalAbiInfo {
-        // NB: this is basically a duplicate copy of
-        // `CanonicalAbiInfo::record_static` and the two should be kept in sync.
-
         let mut ret = CanonicalAbiInfo::default();
         for field in fields {
             ret.size32 = align_to(ret.size32, field.align32) + field.size32;
             ret.align32 = ret.align32.max(field.align32);
             ret.flat_count = add_flat(ret.flat_count, field.flat_count);
-        }
-        ret.size32 = align_to(ret.size32, ret.align32);
-        ret
-    }
-
-    /// Same as `CanonicalAbiInfo::record` but in a `const`-friendly context.
-    pub const fn record_static(fields: &[CanonicalAbiInfo]) -> CanonicalAbiInfo {
-        // NB: this is basically a duplicate copy of `CanonicalAbiInfo::record`
-        // and the two should be kept in sync.
-
-        let mut ret = CanonicalAbiInfo::ZERO;
-        let mut i = 0;
-        while i < fields.len() {
-            let field = &fields[i];
-            ret.size32 = align_to(ret.size32, field.align32) + field.size32;
-            ret.align32 = max(ret.align32, field.align32);
-            ret.flat_count = add_flat(ret.flat_count, field.flat_count);
-            i += 1;
         }
         ret.size32 = align_to(ret.size32, ret.align32);
         ret
@@ -1261,9 +1236,6 @@ impl CanonicalAbiInfo {
         I: IntoIterator<Item = Option<&'a CanonicalAbiInfo>>,
         I::IntoIter: ExactSizeIterator,
     {
-        // NB: this is basically a duplicate definition of
-        // `CanonicalAbiInfo::variant_static`, these should be kept in sync.
-
         let cases = cases.into_iter();
         let discrim_size = u32::from(DiscriminantSize::from_count(cases.len()).unwrap());
         let mut max_size32 = 0;
@@ -1273,35 +1245,6 @@ impl CanonicalAbiInfo {
             max_size32 = max_size32.max(case.size32);
             max_align32 = max_align32.max(case.align32);
             max_case_count = max_flat(max_case_count, case.flat_count);
-        }
-        CanonicalAbiInfo {
-            size32: align_to(align_to(discrim_size, max_align32) + max_size32, max_align32),
-            align32: max_align32,
-            flat_count: add_flat(max_case_count, Some(1)),
-        }
-    }
-
-    /// Same as `CanonicalAbiInfo::variant` but `const`-safe
-    pub const fn variant_static(cases: &[Option<CanonicalAbiInfo>]) -> CanonicalAbiInfo {
-        // NB: this is basically a duplicate definition of
-        // `CanonicalAbiInfo::variant`, these should be kept in sync.
-
-        let discrim_size = match DiscriminantSize::from_count(cases.len()) {
-            Some(size) => size.byte_size(),
-            None => unreachable!(),
-        };
-        let mut max_size32 = 0;
-        let mut max_align32 = discrim_size;
-        let mut max_case_count = Some(0);
-        let mut i = 0;
-        while i < cases.len() {
-            let case = &cases[i];
-            if let Some(case) = case {
-                max_size32 = max(max_size32, case.size32);
-                max_align32 = max(max_align32, case.align32);
-                max_case_count = max_flat(max_case_count, case.flat_count);
-            }
-            i += 1;
         }
         CanonicalAbiInfo {
             size32: align_to(align_to(discrim_size, max_align32) + max_size32, max_align32),
@@ -1347,74 +1290,13 @@ impl VariantInfo {
             abi,
         )
     }
-
-    pub const fn new_static(cases: &[Option<CanonicalAbiInfo>]) -> VariantInfo {
-        let size = match DiscriminantSize::from_count(cases.len()) {
-            Some(size) => size,
-            None => unreachable!(),
-        };
-        let abi = CanonicalAbiInfo::variant_static(cases);
-        VariantInfo {
-            size,
-            payload_offset32: align_to(size.byte_size(), abi.align32),
-        }
-    }
 }
 
-/// Component function type plus the canonical ABI type trees needed for load/store lowering.
+/// Component function type used by generated component wrappers.
 #[derive(Clone, Debug)]
 pub struct ComponentFunctionType {
     /// The HIR function type used to build component wrapper signatures.
     pub ir: FunctionType,
-    /// Canonical ABI type trees for the function parameters.
-    pub params: Box<[CanonicalAbiType]>,
-    /// Canonical ABI type trees for the function results.
-    pub results: Box<[CanonicalAbiType]>,
-}
-
-/// Canonical ABI lowering metadata for one component-model type.
-#[derive(Clone, Debug)]
-pub struct CanonicalAbiType {
-    /// The HIR type used when emitting typed memory operations.
-    pub ir: Type,
-    /// Canonical ABI layout information for this type.
-    pub abi: CanonicalAbiInfo,
-    /// Recursive load/store shape for this type.
-    pub kind: CanonicalAbiTypeKind,
-}
-
-/// Recursive load/store shape for a canonical ABI type.
-#[derive(Clone, Debug)]
-pub enum CanonicalAbiTypeKind {
-    /// A scalar value that can be loaded or stored directly.
-    Scalar,
-    /// A record-like value with canonical ABI field offsets.
-    Record {
-        /// Fields with offsets in 32-bit linear memory.
-        fields: Box<[CanonicalAbiField]>,
-    },
-    /// A variant-like value with a discriminant and optional payload storage.
-    Variant {
-        /// Canonical ABI discriminant type.
-        discriminant: Box<CanonicalAbiType>,
-        /// Offset of the payload area in 32-bit linear memory.
-        payload_offset32: u32,
-        /// Canonical ABI type trees for each variant case payload.
-        cases: Box<[Option<CanonicalAbiType>]>,
-        /// Joined flat payload slot types for this variant.
-        payload_flat_types: Box<[Type]>,
-    },
-    /// A component-model type that is not supported by the current load/store lowering.
-    Unsupported,
-}
-
-/// One record field with its canonical ABI offset.
-#[derive(Clone, Debug)]
-pub struct CanonicalAbiField {
-    /// Offset of this field in 32-bit linear memory.
-    pub offset32: u32,
-    /// Canonical ABI type tree for this field.
-    pub ty: CanonicalAbiType,
 }
 
 impl ComponentFunctionType {
@@ -1430,22 +1312,12 @@ impl ComponentFunctionType {
             .iter()
             .map(|ty| interface_type_to_ir_for_component_signature(ty, component_types))
             .collect();
-        let params_abi = params_types
-            .iter()
-            .map(|ty| CanonicalAbiType::from_interface_type(ty, component_types))
-            .collect();
-        let results_abi = results_types
-            .iter()
-            .map(|ty| CanonicalAbiType::from_interface_type(ty, component_types))
-            .collect();
         Self {
             ir: FunctionType {
                 params,
                 results,
                 abi: CallConv::ComponentModel,
             },
-            params: params_abi,
-            results: results_abi,
         }
     }
 }
@@ -1558,270 +1430,227 @@ fn unsupported_interface_type_to_ir(ty: &InterfaceType, component_types: &Compon
     }
 }
 
-impl CanonicalAbiType {
-    /// Builds canonical ABI load/store metadata from a component-model interface type.
-    pub fn from_interface_type(ty: &InterfaceType, component_types: &ComponentTypes) -> Self {
-        if interface_type_requires_unsupported_canonical_abi(ty, component_types) {
-            return Self::unsupported(
-                unsupported_interface_type_to_ir(ty, component_types),
-                component_types.canonical_abi(ty).clone(),
-            );
+/// Returns the canonical ABI layout information for a HIR type supported by the wrappers.
+pub fn canonical_abi_info(ty: &Type) -> Result<CanonicalAbiInfo, CanonicalTypeError> {
+    Ok(match ty {
+        Type::I1 | Type::I8 | Type::U8 => CanonicalAbiInfo::SCALAR1,
+        Type::I16 | Type::U16 => CanonicalAbiInfo::SCALAR2,
+        Type::I32 | Type::U32 | Type::Felt => CanonicalAbiInfo::SCALAR4,
+        Type::I64 | Type::U64 => CanonicalAbiInfo::SCALAR8,
+        Type::Struct(struct_ty) => {
+            let fields = struct_ty
+                .fields()
+                .iter()
+                .map(|field| canonical_abi_info(&field.ty))
+                .collect::<Result<Vec<_>, _>>()?;
+            CanonicalAbiInfo::record(fields.iter())
         }
-
-        match ty {
-            InterfaceType::Bool
-            | InterfaceType::S8
-            | InterfaceType::U8
-            | InterfaceType::S16
-            | InterfaceType::U16
-            | InterfaceType::S32
-            | InterfaceType::U32
-            | InterfaceType::S64
-            | InterfaceType::U64
-            | InterfaceType::Float32 => Self::scalar(
-                interface_type_to_ir(ty, component_types),
-                component_types.canonical_abi(ty).clone(),
-            ),
-            InterfaceType::Record(idx) => {
-                let record = &component_types[*idx];
-                Self::record(
-                    interface_type_to_ir(ty, component_types),
-                    record.abi.clone(),
-                    record.fields.iter().map(|field| &field.ty),
-                    component_types,
-                )
-            }
-            InterfaceType::Tuple(idx) => {
-                let tuple = &component_types[*idx];
-                Self::record(
-                    interface_type_to_ir(ty, component_types),
-                    tuple.abi.clone(),
-                    tuple.types.iter(),
-                    component_types,
-                )
-            }
-            InterfaceType::Variant(idx) => {
-                let variant = &component_types[*idx];
-                Self::variant(
-                    interface_type_to_ir(ty, component_types),
-                    variant.abi.clone(),
-                    &variant.info,
-                    variant.cases.iter().map(|case| case.ty.as_ref()),
-                    component_types,
-                )
-            }
-            InterfaceType::Enum(idx) => {
-                let enum_ty = &component_types[*idx];
-                Self::variant(
-                    interface_type_to_ir(ty, component_types),
-                    enum_ty.abi.clone(),
-                    &enum_ty.info,
-                    (0..enum_ty.names.len()).map(|_| None),
-                    component_types,
-                )
-            }
-            InterfaceType::Option(idx) => {
-                let option = &component_types[*idx];
-                Self::variant(
-                    interface_type_to_ir(ty, component_types),
-                    option.abi.clone(),
-                    &option.info,
-                    [None, Some(&option.ty)],
-                    component_types,
-                )
-            }
-            InterfaceType::Result(idx) => {
-                let result = &component_types[*idx];
-                Self::variant(
-                    interface_type_to_ir(ty, component_types),
-                    result.abi.clone(),
-                    &result.info,
-                    [result.ok.as_ref(), result.err.as_ref()],
-                    component_types,
-                )
-            }
-            InterfaceType::String
-            | InterfaceType::List(_)
-            | InterfaceType::Char
-            | InterfaceType::Float64
-            | InterfaceType::ErrorContext
-            | InterfaceType::Flags(_)
-            | InterfaceType::Own(_)
-            | InterfaceType::Borrow(_) => unreachable!("unsupported types are handled earlier"),
+        Type::Enum(enum_ty) => canonical_variant_abi_info(enum_ty)?,
+        Type::Array(array_ty) => {
+            let element = canonical_abi_info(array_ty.element_type())?;
+            CanonicalAbiInfo::record((0..array_ty.len()).map(|_| &element))
         }
-    }
+        Type::Unknown
+        | Type::Never
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Ptr(_)
+        | Type::List(_)
+        | Type::Function(_) => return Err(CanonicalTypeError::Unsupported(ty.clone())),
+    })
+}
 
-    fn scalar(ir: Type, abi: CanonicalAbiInfo) -> Self {
-        Self {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Scalar,
-        }
-    }
+/// Returns true if a HIR type cannot be lowered by the current canonical ABI wrappers.
+pub fn contains_unsupported_canonical_abi_type(ty: &Type) -> bool {
+    canonical_abi_info(ty).is_err()
+}
 
-    fn unsupported(ir: Type, abi: CanonicalAbiInfo) -> Self {
-        Self {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Unsupported,
-        }
-    }
-
-    fn record<'a>(
-        ir: Type,
-        abi: CanonicalAbiInfo,
-        fields: impl Iterator<Item = &'a InterfaceType>,
-        component_types: &ComponentTypes,
-    ) -> Self {
-        let mut offset = 0u32;
-        let fields = fields
-            .map(|field| {
-                let ty = CanonicalAbiType::from_interface_type(field, component_types);
-                let offset32 = ty.abi.next_field32(&mut offset);
-                CanonicalAbiField { offset32, ty }
-            })
-            .collect();
-        Self {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Record { fields },
-        }
-    }
-
-    fn variant<'a>(
-        ir: Type,
-        abi: CanonicalAbiInfo,
-        info: &VariantInfo,
-        cases: impl IntoIterator<Item = Option<&'a InterfaceType>>,
-        component_types: &ComponentTypes,
-    ) -> Self {
-        let discriminant = Box::new(CanonicalAbiType::scalar(
-            discriminant_size_to_ir(info.size),
-            CanonicalAbiInfo::scalar(info.size.byte_size()),
-        ));
-        let cases = cases
+/// Returns this type's flattened canonical ABI value types.
+///
+/// This is the type-only counterpart to `flat::flatten_type`: callers use it when they need to
+/// slice or lay out already-flattened values without access to a HIR context.
+pub fn canonical_flat_types(ty: &Type) -> Result<Box<[Type]>, CanonicalTypeError> {
+    Ok(match ty {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::Felt => Box::new([canonical_flat_scalar_type(ty)]),
+        Type::Struct(struct_ty) => struct_ty
+            .fields()
+            .iter()
+            .map(|field| canonical_flat_types(&field.ty))
+            .try_collect::<Vec<_>>()?
             .into_iter()
-            .map(|ty| ty.map(|ty| CanonicalAbiType::from_interface_type(ty, component_types)))
-            .collect::<Box<[_]>>();
-        let payload_flat_types = Self::joined_variant_payload_flat_types(&cases);
-
-        Self {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Variant {
-                discriminant,
-                payload_offset32: info.payload_offset32,
-                cases,
-                payload_flat_types,
-            },
+            .flat_map(|flat| flat.into_vec())
+            .collect(),
+        Type::Enum(enum_ty) => {
+            let mut flat = canonical_flat_types(enum_ty.discriminant())?.into_vec();
+            flat.extend(canonical_variant_payload_flat_types(enum_ty)?.into_vec());
+            flat.into_boxed_slice()
         }
-    }
-
-    /// Returns this type's flattened canonical ABI value types.
-    ///
-    /// Must stay in agreement with [`super::flat::flatten_type`], which produces the
-    /// signature-level flattening for the same types: `validate_flat_variants` slices argument
-    /// lists of those signatures using the lengths returned here. Both are built on the shared
-    /// scalar mapping and variant payload join rules in the `flat` module.
-    pub fn flat_types(&self) -> Box<[Type]> {
-        match &self.kind {
-            CanonicalAbiTypeKind::Scalar => Box::new([canonical_flat_scalar_type(&self.ir)]),
-            CanonicalAbiTypeKind::Record { fields } => {
-                fields.iter().flat_map(|field| field.ty.flat_types().into_vec()).collect()
-            }
-            CanonicalAbiTypeKind::Variant {
-                discriminant,
-                payload_flat_types,
-                ..
-            } => core::iter::once(canonical_flat_scalar_type(&discriminant.ir))
-                .chain(payload_flat_types.iter().cloned())
-                .collect(),
-            CanonicalAbiTypeKind::Unsupported => Box::new([]),
+        Type::Array(array_ty) => {
+            vec![array_ty.element_type().clone(); array_ty.len()].into_boxed_slice()
         }
-    }
+        Type::Unknown
+        | Type::Never
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Ptr(_)
+        | Type::List(_)
+        | Type::Function(_) => return Err(CanonicalTypeError::Unsupported(ty.clone())),
+    })
+}
 
-    /// Joins the flat payload types of all variant cases position by position.
-    pub(crate) fn joined_variant_payload_flat_types(
-        cases: &[Option<CanonicalAbiType>],
-    ) -> Box<[Type]> {
-        let case_payloads = cases.iter().flatten().map(|case| case.flat_types().into_vec());
-        join_variant_payloads(case_payloads, join_flat_types)
-            .expect("component variant payload types should be joinable")
-            .into_boxed_slice()
-    }
+/// Joins the flat payload types of all variant cases position by position.
+pub fn canonical_variant_payload_flat_types(
+    enum_ty: &EnumType,
+) -> Result<Box<[Type]>, CanonicalTypeError> {
+    let case_payloads = enum_ty
+        .variants()
+        .iter()
+        .filter_map(|case| case.value.as_ref())
+        .map(|ty| canonical_flat_types(ty).map(|flat| flat.into_vec()))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(join_variant_payloads(case_payloads, join_flat_types)?.into_boxed_slice())
+}
 
-    /// Returns the memory load layout for this type's flattened canonical ABI values.
-    ///
-    /// Produces exactly one entry per flat type returned by [`Self::flat_types`], in the same
-    /// order, pairing the canonical ABI byte offset (relative to `offset`) with the source type
-    /// to load from memory. Payload-carrying variants have no static load layout because their
-    /// payload lanes depend on the runtime discriminant, so they are rejected.
-    pub fn flat_layout(
-        &self,
-        offset: u32,
-    ) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
-        let mut layout = Vec::new();
-        self.push_flat_layout(offset, &mut layout)?;
-        Ok(layout)
-    }
+/// Returns the memory load layout for this type's flattened canonical ABI values.
+///
+/// Produces exactly one entry per flat type returned by [`canonical_flat_types`], in the same order,
+/// pairing the canonical ABI byte offset (relative to `offset`) with the source type to load from
+/// memory. Payload-carrying variants have no static load layout because their payload lanes depend
+/// on the runtime discriminant, so they are rejected.
+pub fn canonical_flat_layout(
+    ty: &Type,
+    offset: u32,
+) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
+    let mut layout = Vec::new();
+    push_canonical_flat_layout(ty, offset, &mut layout)?;
+    Ok(layout)
+}
 
-    /// Appends the memory load layout for this type's flattened canonical ABI values.
-    fn push_flat_layout(
-        &self,
-        offset: u32,
-        layout: &mut Vec<CanonicalFlatLayoutEntry>,
-    ) -> Result<(), CanonicalTypeError> {
-        match &self.kind {
-            CanonicalAbiTypeKind::Scalar => layout.push(CanonicalFlatLayoutEntry {
-                offset,
-                ty: self.ir.clone(),
-            }),
-            CanonicalAbiTypeKind::Record { fields } => {
-                for field in fields.iter() {
-                    let field_offset = offset.checked_add(field.offset32).ok_or_else(|| {
-                        CanonicalTypeError::LayoutOverflow {
-                            ty: field.ty.ir.clone(),
-                        }
-                    })?;
-                    field.ty.push_flat_layout(field_offset, layout)?;
-                }
-            }
-            CanonicalAbiTypeKind::Variant {
-                discriminant,
-                cases,
-                ..
-            } => {
-                if cases.iter().any(Option::is_some) {
-                    return Err(CanonicalTypeError::NonCLikeEnum(self.ir.clone()));
-                }
-                discriminant.push_flat_layout(offset, layout)?;
-            }
-            CanonicalAbiTypeKind::Unsupported => {
-                return Err(CanonicalTypeError::Unsupported(self.ir.clone()));
+/// Appends the memory load layout for this type's flattened canonical ABI values.
+fn push_canonical_flat_layout(
+    ty: &Type,
+    offset: u32,
+    layout: &mut Vec<CanonicalFlatLayoutEntry>,
+) -> Result<(), CanonicalTypeError> {
+    match ty {
+        Type::I1
+        | Type::I8
+        | Type::U8
+        | Type::I16
+        | Type::U16
+        | Type::I32
+        | Type::U32
+        | Type::I64
+        | Type::U64
+        | Type::Felt => layout.push(CanonicalFlatLayoutEntry {
+            offset,
+            ty: ty.clone(),
+        }),
+        Type::Struct(struct_ty) => {
+            let mut field_offset = 0u32;
+            for field in struct_ty.fields() {
+                let field_abi = canonical_abi_info(&field.ty)?;
+                let field_start = field_abi.next_field32(&mut field_offset);
+                let absolute_offset = offset.checked_add(field_start).ok_or_else(|| {
+                    CanonicalTypeError::LayoutOverflow {
+                        ty: field.ty.clone(),
+                    }
+                })?;
+                push_canonical_flat_layout(&field.ty, absolute_offset, layout)?;
             }
         }
-
-        Ok(())
-    }
-
-    /// Returns true if this canonical ABI type tree contains an unsupported lowering shape.
-    pub fn contains_unsupported(&self) -> bool {
-        match &self.kind {
-            CanonicalAbiTypeKind::Scalar => false,
-            CanonicalAbiTypeKind::Record { fields } => {
-                fields.iter().any(|field| field.ty.contains_unsupported())
+        Type::Enum(enum_ty) => {
+            if !enum_ty.is_c_like() {
+                return Err(CanonicalTypeError::NonCLikeEnum(ty.clone()));
             }
-            CanonicalAbiTypeKind::Variant {
-                discriminant,
-                cases,
-                ..
-            } => {
-                discriminant.contains_unsupported()
-                    || cases.iter().flatten().any(Self::contains_unsupported)
-            }
-            CanonicalAbiTypeKind::Unsupported => true,
+            push_canonical_flat_layout(enum_ty.discriminant(), offset, layout)?;
         }
+        Type::Array(array_ty) => {
+            let element_abi = canonical_abi_info(array_ty.element_type())?;
+            let mut element_offset = 0u32;
+            for _ in 0..array_ty.len() {
+                let element_start = element_abi.next_field32(&mut element_offset);
+                let absolute_offset = offset.checked_add(element_start).ok_or_else(|| {
+                    CanonicalTypeError::LayoutOverflow {
+                        ty: array_ty.element_type().clone(),
+                    }
+                })?;
+                layout.push(CanonicalFlatLayoutEntry {
+                    offset: absolute_offset,
+                    ty: array_ty.element_type().clone(),
+                });
+            }
+        }
+        Type::Unknown
+        | Type::Never
+        | Type::I128
+        | Type::U128
+        | Type::U256
+        | Type::F64
+        | Type::Ptr(_)
+        | Type::List(_)
+        | Type::Function(_) => return Err(CanonicalTypeError::Unsupported(ty.clone())),
     }
+
+    Ok(())
+}
+
+/// Returns the canonical ABI information for a HIR enum without using HIR's ordinary layout.
+fn canonical_variant_abi_info(enum_ty: &EnumType) -> Result<CanonicalAbiInfo, CanonicalTypeError> {
+    let discriminant = canonical_abi_info(enum_ty.discriminant())?;
+    let cases = enum_ty
+        .variants()
+        .iter()
+        .map(|case| case.value.as_ref().map(canonical_abi_info).transpose())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    Ok(canonical_variant_abi_info_from_cases(
+        &discriminant,
+        cases.iter().map(Option::as_ref),
+    ))
+}
+
+/// Computes canonical ABI information for a variant from its discriminant and case payloads.
+fn canonical_variant_abi_info_from_cases<'a>(
+    discriminant: &CanonicalAbiInfo,
+    cases: impl IntoIterator<Item = Option<&'a CanonicalAbiInfo>>,
+) -> CanonicalAbiInfo {
+    // This tracks the same Canonical ABI variant layout formula as
+    // `CanonicalAbiInfo::variant`, but starts from the HIR enum's actual discriminant type instead
+    // of deriving the smallest discriminant from the number of cases.
+    let mut max_size32 = 0;
+    let mut max_align32 = discriminant.align32;
+    let mut max_case_count = Some(0);
+    for case in cases.into_iter().flatten() {
+        max_size32 = max_size32.max(case.size32);
+        max_align32 = max_align32.max(case.align32);
+        max_case_count = max_flat(max_case_count, case.flat_count);
+    }
+    CanonicalAbiInfo {
+        size32: align_to(align_to(discriminant.size32, max_align32) + max_size32, max_align32),
+        align32: max_align32,
+        flat_count: add_flat(max_case_count, discriminant.flat_count),
+    }
+}
+
+/// Returns the Canonical ABI payload offset for a HIR enum.
+pub fn canonical_variant_payload_offset32(enum_ty: &EnumType) -> Result<u32, CanonicalTypeError> {
+    let discriminant = canonical_abi_info(enum_ty.discriminant())?;
+    let abi = canonical_variant_abi_info(enum_ty)?;
+    Ok(align_to(discriminant.size32, abi.align32))
 }
 
 /// Byte layout for one value produced by canonical ABI flattening.
@@ -1838,13 +1667,14 @@ pub struct CanonicalFlatLayoutEntry {
 /// The tuple is laid out as a canonical ABI record of the parameter types, matching how
 /// canonical lowering stores an oversized argument list behind a single pointer.
 pub fn flat_tuple_layout(
-    params: &[CanonicalAbiType],
+    params: &[Type],
 ) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
     let mut layout = Vec::new();
     let mut offset = 0u32;
     for param in params {
-        let param_offset = param.abi.next_field32(&mut offset);
-        param.push_flat_layout(param_offset, &mut layout)?;
+        let param_abi = canonical_abi_info(param)?;
+        let param_offset = param_abi.next_field32(&mut offset);
+        push_canonical_flat_layout(param, param_offset, &mut layout)?;
     }
     Ok(layout)
 }
@@ -2472,15 +2302,14 @@ mod tests {
         supported_component_model_features,
     };
 
-    /// Returns true when this metadata tree contains a payload-carrying variant, which has no
-    /// static flat load layout.
-    fn contains_payload_variant(ty: &CanonicalAbiType) -> bool {
-        match &ty.kind {
-            CanonicalAbiTypeKind::Scalar | CanonicalAbiTypeKind::Unsupported => false,
-            CanonicalAbiTypeKind::Record { fields } => {
-                fields.iter().any(|field| contains_payload_variant(&field.ty))
+    /// Returns true when this type contains a payload-carrying variant with no static flat layout.
+    fn contains_payload_variant(ty: &Type) -> bool {
+        match ty {
+            Type::Struct(struct_ty) => {
+                struct_ty.fields().iter().any(|field| contains_payload_variant(&field.ty))
             }
-            CanonicalAbiTypeKind::Variant { cases, .. } => cases.iter().any(Option::is_some),
+            Type::Enum(enum_ty) => enum_ty.variants().iter().any(|case| case.value.is_some()),
+            _ => false,
         }
     }
 
@@ -2489,23 +2318,21 @@ mod tests {
         // `lower_fpi_indirect_args` reloads tuple values through `flat_tuple_layout` while the
         // FPI call shape counts felts from the flattened signature, so the layout must produce
         // exactly one entry per flat type, with the canonical scalar mapping relating the two.
-        for canon in crate::component::test_support::canonical_agreement_fixtures() {
-            if contains_payload_variant(&canon) {
-                let err = canon
-                    .flat_layout(0)
+        for ty in crate::component::test_support::canonical_agreement_fixtures() {
+            if contains_payload_variant(&ty) {
+                let err = canonical_flat_layout(&ty, 0)
                     .expect_err("payload variants must not produce a static load layout");
                 assert!(
                     err.to_string().contains("non-C-like enum"),
                     "unexpected error for {}: {err}",
-                    canon.ir
+                    ty
                 );
                 continue;
             }
 
-            let layout = canon
-                .flat_layout(0)
-                .unwrap_or_else(|err| panic!("flat_layout failed for {}: {err}", canon.ir));
-            let flat_types = canon.flat_types();
+            let layout = canonical_flat_layout(&ty, 0)
+                .unwrap_or_else(|err| panic!("flat layout failed for {ty}: {err}"));
+            let flat_types = canonical_flat_types(&ty).expect("fixture should flatten");
 
             assert_eq!(
                 layout
@@ -2514,15 +2341,46 @@ mod tests {
                     .collect::<Vec<_>>(),
                 flat_types.into_vec(),
                 "flat_layout and flat_types disagree for {}",
-                canon.ir
+                ty
             );
         }
     }
 
     #[test]
+    fn canonical_record_layout_aligns_u64_to_eight_bytes() {
+        let ty = Type::from(StructType::new(vec![Type::U8, Type::U64]));
+
+        let layout = canonical_flat_layout(&ty, 0).expect("record layout should succeed");
+
+        assert_eq!(
+            layout.iter().map(|entry| (entry.offset, entry.ty.clone())).collect::<Vec<_>>(),
+            vec![(0, Type::U8), (8, Type::U64)]
+        );
+    }
+
+    #[test]
+    fn canonical_variant_payload_offset_aligns_u64_to_eight_bytes() {
+        let enum_ty = EnumType::new(
+            "u64-payload".into(),
+            Type::U8,
+            [
+                Variant::c_like("none".into(), Some(0)),
+                Variant::new("some".into(), Type::U64, Some(1)),
+            ],
+        )
+        .expect("variant should be valid");
+
+        assert_eq!(
+            canonical_variant_payload_offset32(&enum_ty)
+                .expect("payload offset should be computable"),
+            8
+        );
+    }
+
+    #[test]
     fn flat_tuple_layout_uses_canonical_abi_offsets() {
         let params = [
-            crate::component::test_support::scalar_abi_type(Type::U8, CanonicalAbiInfo::SCALAR1),
+            Type::U8,
             crate::component::test_support::two_field_record_type(),
             crate::component::test_support::unit_only_variant_type(),
         ];
@@ -2539,14 +2397,10 @@ mod tests {
 
     #[test]
     fn flat_tuple_layout_rejects_unsupported_types() {
-        let params = [CanonicalAbiType {
-            ir: Type::List(std::sync::Arc::new(Type::U32)),
-            abi: CanonicalAbiInfo::default(),
-            kind: CanonicalAbiTypeKind::Unsupported,
-        }];
+        let params = [Type::List(std::sync::Arc::new(Type::U32))];
 
         let err = flat_tuple_layout(&params)
-            .expect_err("unsupported metadata must not produce a load layout");
+            .expect_err("unsupported type must not produce a load layout");
 
         assert!(
             err.to_string().contains("not supported by the canonical abi"),
@@ -2657,9 +2511,9 @@ mod tests {
             panic!("expected exported component option type");
         };
 
-        let abi_ty = CanonicalAbiType::from_interface_type(&maybe_bytes_ty, &component_types);
+        let ir_ty = interface_type_to_ir_for_component_signature(&maybe_bytes_ty, &component_types);
         assert!(
-            matches!(abi_ty.kind, CanonicalAbiTypeKind::Unsupported),
+            contains_unsupported_canonical_abi_type(&ir_ty),
             "option<list<u8>> should be unsupported instead of dropping the payload shape"
         );
     }

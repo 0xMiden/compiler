@@ -73,9 +73,9 @@ impl CanonicalAbiIndirection {
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
 ///
-/// Must stay in agreement with [`super::CanonicalAbiType::flat_types`], which flattens the same
-/// types from the canonical ABI metadata tree; both are built on [`canonical_flat_scalar_type`]
-/// and the variant payload join rules in this module.
+/// Must stay in agreement with `types::canonical_flat_types`, which flattens the same types without
+/// needing a HIR context; both are built on [`canonical_flat_scalar_type`] and the variant payload
+/// join rules in this module.
 pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     Ok(match ty {
@@ -117,7 +117,7 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
 /// Returns the canonical flat core type for a scalar HIR type.
 ///
 /// This is the single source of truth for the canonical ABI scalar mapping shared by
-/// [`flatten_type`] and [`super::CanonicalAbiType::flat_types`].
+/// [`flatten_type`] and `types::canonical_flat_types`.
 pub(crate) fn canonical_flat_scalar_type(ty: &Type) -> Type {
     match ty {
         Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => Type::I32,
@@ -151,7 +151,7 @@ fn flatten_enum_type(
 ///
 /// Each case payload contributes its flat values at the same positions; overlapping positions
 /// are unified with `join`. This is the single payload-join driver shared by
-/// [`flatten_enum_type`] and [`super::CanonicalAbiType::flat_types`].
+/// [`flatten_enum_type`] and `types::canonical_flat_types`.
 pub(crate) fn join_variant_payloads<T>(
     cases: impl IntoIterator<Item = Vec<T>>,
     mut join: impl FnMut(&T, &T) -> Result<T, CanonicalTypeError>,
@@ -353,6 +353,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::component::{canonical_flat_types, contains_unsupported_canonical_abi_type};
 
     #[test]
     fn test_flatten_type_integers() {
@@ -739,39 +740,31 @@ mod tests {
     #[test]
     fn test_flatten_type_agrees_with_canonical_abi_flat_types() {
         // `validate_flat_variants` slices flattened signature values by per-type
-        // `CanonicalAbiType::flat_types` lengths, so the two flattening implementations must
+        // `canonical_flat_types` lengths, so the two flattening implementations must
         // produce identical flat shapes for every supported type. The runtime guards only catch
         // total-length mismatches: a compensating per-type disagreement would silently validate
         // the wrong value slots.
         let context = Rc::new(Context::default());
-        for canon in crate::component::test_support::canonical_agreement_fixtures() {
-            let flattened = flatten_type(&context, &canon.ir)
-                .unwrap_or_else(|err| panic!("flatten_type failed for {}: {err}", canon.ir));
+        for ty in crate::component::test_support::canonical_agreement_fixtures() {
+            let flattened = flatten_type(&context, &ty)
+                .unwrap_or_else(|err| panic!("flatten_type failed for {ty}: {err}"));
             let flat_param_types: Vec<Type> =
                 flattened.iter().map(|param| param.ty.clone()).collect();
 
             assert_eq!(
                 flat_param_types,
-                canon.flat_types().into_vec(),
-                "flatten_type and CanonicalAbiType::flat_types disagree for {}",
-                canon.ir
+                canonical_flat_types(&ty).expect("fixture should flatten").into_vec(),
+                "flatten_type and canonical_flat_types disagree for {ty}",
             );
         }
     }
 
     #[test]
-    fn test_unsupported_canonical_abi_type_has_no_flat_types() {
-        // Unsupported metadata is rejected before any wrapper generation, so it never reaches
-        // the flat-shape slicing in `validate_flat_variants`; its empty flat shape is excluded
-        // from the agreement domain above.
-        let unsupported = crate::component::CanonicalAbiType {
-            ir: Type::List(Arc::new(Type::U32)),
-            abi: crate::component::CanonicalAbiInfo::default(),
-            kind: crate::component::CanonicalAbiTypeKind::Unsupported,
-        };
+    fn test_unsupported_canonical_abi_type_is_rejected_by_type_helpers() {
+        let unsupported = Type::List(Arc::new(Type::U32));
 
-        assert!(unsupported.contains_unsupported());
-        assert!(unsupported.flat_types().is_empty());
+        assert!(contains_unsupported_canonical_abi_type(&unsupported));
+        assert!(canonical_flat_types(&unsupported).is_err());
     }
 
     #[test]

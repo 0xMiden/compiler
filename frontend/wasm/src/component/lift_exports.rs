@@ -23,6 +23,7 @@ use midenc_session::{
 use super::{
     ComponentFunctionType,
     canon_abi_utils::{load, validate_flat_variants},
+    contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiMode, check_core_wasm_signature_equivalence, classify_function_type,
         flatten_function_type, flatten_types,
@@ -37,8 +38,6 @@ use crate::{
 
 struct ComponentExportMetadata<'a> {
     ty: &'a FunctionType,
-    params: &'a [super::CanonicalAbiType],
-    results: &'a [super::CanonicalAbiType],
     param_names: &'a [String],
     protocol_export_kind: Option<ProtocolExportKind>,
 }
@@ -83,8 +82,6 @@ pub fn generate_export_lifting_function(
     })?;
     let export_metadata = ComponentExportMetadata {
         ty: &export_func_ty.ir,
-        params: &export_func_ty.params,
-        results: &export_func_ty.results,
         param_names: export_param_names,
         protocol_export_kind,
     };
@@ -257,7 +254,7 @@ fn generate_lifting_with_transformation(
     // 1. Load the data from that pointer into the "flattened" representation (primitive types)
     // 2. Return it as individual values (tuple)
 
-    validate_flat_variants(&mut fb, export_metadata.params, &args, span)?;
+    validate_flat_variants(&mut fb, &export_metadata.ty.params, &args, span)?;
 
     let exec = fb.exec(core_export_func_ref, core_export_func_sig, args, span)?;
 
@@ -277,7 +274,7 @@ fn generate_lifting_with_transformation(
         1,
         "expected a single result in the component-level export function"
     );
-    let result_abi_type = &export_metadata.results[0];
+    let result_abi_type = &export_metadata.ty.results[0];
 
     load(&mut fb, result_ptr, result_abi_type, &mut return_values, span)?;
 
@@ -377,7 +374,7 @@ fn generate_direct_lifting(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    validate_flat_variants(&mut fb, export_metadata.params, &args, span)?;
+    validate_flat_variants(&mut fb, &export_metadata.ty.params, &args, span)?;
 
     let exec = fb
         .exec(core_export_func_ref, core_export_func_sig, args, span)
@@ -390,7 +387,7 @@ fn generate_direct_lifting(
         "For direct lifting of the component export function {export_func_ident} expected a \
          single result or none"
     );
-    validate_flat_variants(&mut fb, export_metadata.results, &results, span)?;
+    validate_flat_variants(&mut fb, &export_metadata.ty.results, &results, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span).expect("failed br");
@@ -407,12 +404,12 @@ fn reject_unsupported_export_canonical_abi_types(
     core_export_func_path: &SymbolPath,
     export_func_ty: &ComponentFunctionType,
 ) -> WasmResult<()> {
-    for ty in export_func_ty.params.iter().chain(export_func_ty.results.iter()) {
-        if ty.contains_unsupported() {
+    for ty in export_func_ty.ir.params.iter().chain(export_func_ty.ir.results.iter()) {
+        if contains_unsupported_canonical_abi_type(ty) {
             return Err(Report::msg(format!(
                 "component export lifting for '{core_export_func_path}' has unsupported canonical \
                  ABI type {:?}",
-                ty.ir
+                ty
             )));
         }
     }
@@ -496,12 +493,9 @@ mod tests {
     use midenc_session::DiagnosticsHandler;
 
     use super::*;
-    use crate::component::{
-        CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
-        test_support::{
-            component_function, component_with_core_module, count_validation_ops,
-            two_field_record_type, unit_only_variant_type,
-        },
+    use crate::component::test_support::{
+        component_function, component_with_core_module, count_validation_ops,
+        two_field_record_type, unit_only_variant_type,
     };
 
     fn component_export_path(function: &str) -> SymbolPath {
@@ -511,12 +505,8 @@ mod tests {
         ])
     }
 
-    fn scalar_u64_type() -> CanonicalAbiType {
-        CanonicalAbiType {
-            ir: Type::U64,
-            abi: CanonicalAbiInfo::SCALAR8,
-            kind: CanonicalAbiTypeKind::Scalar,
-        }
+    fn scalar_u64_type() -> Type {
+        Type::U64
     }
 
     #[test]
@@ -525,17 +515,9 @@ mod tests {
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();
-        let mut ir = FunctionType::new(
-            CallConv::Fast,
-            vec![variant_ty.ir.clone()],
-            vec![result_ty.ir.clone()],
-        );
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let export_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([variant_ty]),
-            results: Box::new([result_ty.clone()]),
-        };
+        let export_func_ty = ComponentFunctionType { ir };
         // Lowered core export signatures carry bare core types without extension attributes.
         let core_sig = Signature {
             params: vec![AbiParam::new(Type::I32)],
@@ -575,13 +557,9 @@ mod tests {
         let (_context, mut component_builder, mut module_builder) = component_with_core_module();
 
         let result_ty = scalar_u64_type();
-        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let export_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([]),
-            results: Box::new([result_ty]),
-        };
+        let export_func_ty = ComponentFunctionType { ir };
         // The flattened export signature returns a single i64, but the core export returns i32.
         let core_sig = Signature {
             params: vec![],
@@ -623,17 +601,9 @@ mod tests {
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();
-        let mut ir = FunctionType::new(
-            CallConv::Fast,
-            vec![variant_ty.ir.clone()],
-            vec![result_ty.ir.clone()],
-        );
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let export_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([variant_ty]),
-            results: Box::new([result_ty]),
-        };
+        let export_func_ty = ComponentFunctionType { ir };
         // The flattened export parameter is a single i32 discriminant, but the core export
         // takes i64.
         let core_sig = Signature {
@@ -675,17 +645,9 @@ mod tests {
         let (_context, mut component_builder, mut module_builder) = component_with_core_module();
 
         let list_ty = Type::List(Arc::new(Type::U8));
-        let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty.clone()], vec![]);
+        let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty], vec![]);
         ir.abi = CallConv::ComponentModel;
-        let export_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([CanonicalAbiType {
-                ir: list_ty,
-                abi: CanonicalAbiInfo::POINTER_PAIR,
-                kind: CanonicalAbiTypeKind::Unsupported,
-            }]),
-            results: Box::new([]),
-        };
+        let export_func_ty = ComponentFunctionType { ir };
         let core_sig = Signature {
             params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::I32)],
             results: vec![],

@@ -18,9 +18,9 @@ use midenc_hir::{
 use midenc_session::diagnostics::Report;
 
 use super::{
-    CanonicalAbiType, ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS,
-    MAX_FLAT_RESULTS,
+    ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS,
     canon_abi_utils::{store, validate_flat_variants},
+    contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
         classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
@@ -192,14 +192,14 @@ fn generate_fpi_lowering(
     fb.switch_to_block(exit_block);
     let results = lower_fpi_result_felts(fb, &shape.flattened_results, &results, span)?;
     if let Some(output_ptr) = lowered.output_ptr {
-        if import_func_ty.results.len() != 1 {
+        if import_func_ty.ir.results.len() != 1 {
             return Err(midenc_session::diagnostics::Report::msg(format!(
                 "FPI import with an output pointer expected one result type, got {}",
-                import_func_ty.results.len()
+                import_func_ty.ir.results.len()
             )));
         }
         let mut results_iter = results.into_iter();
-        store(fb, output_ptr, &import_func_ty.results[0], &mut results_iter, span)?;
+        store(fb, output_ptr, &import_func_ty.ir.results[0], &mut results_iter, span)?;
         fb.ret([], span)?;
     } else {
         fb.ret(results, span)?;
@@ -442,7 +442,7 @@ fn lower_fpi_canonical_args(
                 "FPI import with more than 16 flattened params did not receive an argument pointer",
             )
         })?;
-        lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.params, span)?
+        lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.ir.params, span)?
     } else {
         lower_fpi_direct_args(
             fb,
@@ -497,7 +497,7 @@ fn lower_fpi_direct_args(
 fn lower_fpi_indirect_args(
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     arg_ptr: ValueRef,
-    params: &[CanonicalAbiType],
+    params: &[Type],
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
     let mut fpi_args = Vec::new();
@@ -888,7 +888,7 @@ fn generate_lowering_with_transformation(
     let output_ptr = args.last().expect("expected pointer argument");
     let args_without_ptr: Vec<_> = args[..args.len() - 1].to_vec();
 
-    validate_flat_variants(fb, &import_func_ty.params, &args_without_ptr, span)?;
+    validate_flat_variants(fb, &import_func_ty.ir.params, &args_without_ptr, span)?;
 
     // Call the import function - it will return a tuple to the flattened result
     let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
@@ -897,13 +897,13 @@ fn generate_lowering_with_transformation(
     let results_storage = borrow.results();
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-    validate_flat_variants(fb, &import_func_ty.results, &results, span)?;
+    validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
 
     // Store values recursively based on the component-level type
     // This follows the canonical ABI store algorithm from:
     // https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#storing
-    assert_eq!(import_func_ty.results.len(), 1, "expected a single result type");
-    let result_type = &import_func_ty.results[0];
+    assert_eq!(import_func_ty.ir.results.len(), 1, "expected a single result type");
+    let result_type = &import_func_ty.ir.results[0];
     let mut results_iter = results.into_iter();
 
     store(fb, *output_ptr, result_type, &mut results_iter, span)?;
@@ -984,7 +984,7 @@ fn generate_direct_lowering(
 
     let mut component_builder = ComponentBuilder::new(component_ref);
 
-    validate_flat_variants(fb, &import_func_ty.params, args, span)?;
+    validate_flat_variants(fb, &import_func_ty.ir.params, args, span)?;
 
     check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig_flat).map_err(
         |message| {
@@ -1015,7 +1015,7 @@ fn generate_direct_lowering(
         "For direct lowering the component import function {import_func_path} expected a single \
          result or none"
     );
-    validate_flat_variants(fb, &import_func_ty.results, &results, span)?;
+    validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span)?;
@@ -1036,12 +1036,12 @@ fn reject_unsupported_import_canonical_abi_types(
     import_func_path: &SymbolPath,
     import_func_ty: &ComponentFunctionType,
 ) -> WasmResult<()> {
-    for ty in import_func_ty.params.iter().chain(import_func_ty.results.iter()) {
-        if ty.contains_unsupported() {
+    for ty in import_func_ty.ir.params.iter().chain(import_func_ty.ir.results.iter()) {
+        if contains_unsupported_canonical_abi_type(ty) {
             return Err(Report::msg(format!(
                 "component import lowering for '{import_func_path}' has unsupported canonical ABI \
                  type {:?}",
-                ty.ir
+                ty
             )));
         }
     }
@@ -1060,12 +1060,9 @@ mod tests {
     };
 
     use super::*;
-    use crate::component::{
-        CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind,
-        test_support::{
-            count_validation_ops, scalar_payload_variant_type, two_field_record_type,
-            unit_only_variant_type, world_with_core_module,
-        },
+    use crate::component::test_support::{
+        count_validation_ops, scalar_payload_variant_type, two_field_record_type,
+        unit_only_variant_type, world_with_core_module,
     };
 
     fn test_import_path(name: &str) -> SymbolPath {
@@ -1485,20 +1482,8 @@ mod tests {
         ])
     }
 
-    fn scalar_i32_type() -> CanonicalAbiType {
-        CanonicalAbiType {
-            ir: Type::I32,
-            abi: CanonicalAbiInfo::SCALAR4,
-            kind: CanonicalAbiTypeKind::Scalar,
-        }
-    }
-
-    fn scalar_u64_type() -> CanonicalAbiType {
-        CanonicalAbiType {
-            ir: Type::U64,
-            abi: CanonicalAbiInfo::SCALAR8,
-            kind: CanonicalAbiTypeKind::Scalar,
-        }
+    fn scalar_u64_type() -> Type {
+        Type::U64
     }
 
     #[test]
@@ -1507,11 +1492,7 @@ mod tests {
 
         let mut ir = FunctionType::new(CallConv::Fast, vec![Type::I32; 17], vec![]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([]),
-            results: Box::new([]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
 
         let tuple = Type::from(StructType::new(vec![Type::I32; 17]));
         let core_func_sig = Signature {
@@ -1545,14 +1526,9 @@ mod tests {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = two_field_record_type();
-        let mut ir =
-            FunctionType::new(CallConv::Fast, vec![Type::I32; 16], vec![result_ty.ir.clone()]);
+        let mut ir = FunctionType::new(CallConv::Fast, vec![Type::I32; 16], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: (0..16).map(|_| scalar_i32_type()).collect::<Vec<_>>().into_boxed_slice(),
-            results: Box::new([result_ty]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
 
         let core_func_sig = Signature {
             params: vec![AbiParam::new(Type::I32); 17],
@@ -1586,17 +1562,10 @@ mod tests {
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();
-        let mut ir = FunctionType::new(
-            CallConv::Fast,
-            vec![variant_ty.ir.clone()],
-            vec![result_ty.ir.clone()],
-        );
+        let mut ir =
+            FunctionType::new(CallConv::Fast, vec![variant_ty.clone()], vec![result_ty.clone()]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([variant_ty]),
-            results: Box::new([result_ty.clone()]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
         let core_func_sig = Signature {
             params: vec![AbiParam::zext(Type::I32, &context), AbiParam::new(Type::I32)],
             results: vec![],
@@ -1627,13 +1596,9 @@ mod tests {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = scalar_payload_variant_type();
-        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([]),
-            results: Box::new([result_ty]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
         let core_func_sig = Signature {
             params: vec![AbiParam::new(Type::I32)],
             results: vec![],
@@ -1667,13 +1632,9 @@ mod tests {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
         let result_ty = scalar_u64_type();
-        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty.ir.clone()]);
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([]),
-            results: Box::new([result_ty]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
         let core_func_sig = Signature {
             params: vec![],
             results: vec![AbiParam::new(Type::I32)],
@@ -1706,17 +1667,9 @@ mod tests {
 
         let variant_ty = unit_only_variant_type();
         let result_ty = two_field_record_type();
-        let mut ir = FunctionType::new(
-            CallConv::Fast,
-            vec![variant_ty.ir.clone()],
-            vec![result_ty.ir.clone()],
-        );
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([variant_ty]),
-            results: Box::new([result_ty]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
         // The flattened import parameters are an i32 discriminant plus the i32 result
         // out-pointer, but the core import declares an i64 discriminant.
         let core_func_sig = Signature {
@@ -1752,15 +1705,7 @@ mod tests {
         let list_ty = Type::List(Arc::new(Type::U8));
         let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty.clone()], vec![]);
         ir.abi = CallConv::ComponentModel;
-        let import_func_ty = ComponentFunctionType {
-            ir,
-            params: Box::new([CanonicalAbiType {
-                ir: list_ty,
-                abi: CanonicalAbiInfo::POINTER_PAIR,
-                kind: CanonicalAbiTypeKind::Unsupported,
-            }]),
-            results: Box::new([]),
-        };
+        let import_func_ty = ComponentFunctionType { ir };
 
         let core_func_sig = Signature {
             params: vec![

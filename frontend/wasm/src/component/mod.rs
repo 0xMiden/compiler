@@ -34,19 +34,13 @@ pub(super) mod test_support {
         version::Version,
     };
 
-    use super::{
-        CanonicalAbiField, CanonicalAbiInfo, CanonicalAbiType, CanonicalAbiTypeKind, VariantInfo,
-    };
     use crate::module::function_builder_ext::{
         FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener,
     };
 
-    /// Builds canonical ABI metadata for a two-case unit-only variant.
-    pub fn unit_only_variant_type() -> CanonicalAbiType {
-        let cases = [None, None];
-        let info = VariantInfo::new_static(&cases);
-        let abi = CanonicalAbiInfo::variant_static(&cases);
-        let ir = Type::Enum(Arc::new(
+    /// Builds a HIR type for a two-case unit-only component variant.
+    pub fn unit_only_variant_type() -> Type {
+        Type::Enum(Arc::new(
             EnumType::new(
                 "unit-only".into(),
                 Type::U8,
@@ -56,35 +50,12 @@ pub(super) mod test_support {
                 ],
             )
             .expect("unit-only enum should be valid"),
-        ));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Variant {
-                discriminant: Box::new(CanonicalAbiType {
-                    ir: Type::U8,
-                    abi: CanonicalAbiInfo::SCALAR1,
-                    kind: CanonicalAbiTypeKind::Scalar,
-                }),
-                payload_offset32: info.payload_offset32,
-                cases: Box::new([None, None]),
-                payload_flat_types: Box::new([]),
-            },
-        }
+        ))
     }
 
-    /// Builds canonical ABI metadata for a two-case variant with scalar payloads.
-    pub fn scalar_payload_variant_type() -> CanonicalAbiType {
-        let payload_ty = CanonicalAbiType {
-            ir: Type::I32,
-            abi: CanonicalAbiInfo::SCALAR4,
-            kind: CanonicalAbiTypeKind::Scalar,
-        };
-        let case_abis = [Some(CanonicalAbiInfo::SCALAR4), Some(CanonicalAbiInfo::SCALAR4)];
-        let info = VariantInfo::new_static(&case_abis);
-        let abi = CanonicalAbiInfo::variant_static(&case_abis);
-        let ir = Type::Enum(Arc::new(
+    /// Builds a HIR type for a two-case component variant with scalar payloads.
+    pub fn scalar_payload_variant_type() -> Type {
+        Type::Enum(Arc::new(
             EnumType::new(
                 "scalar-payload".into(),
                 Type::U8,
@@ -94,47 +65,15 @@ pub(super) mod test_support {
                 ],
             )
             .expect("scalar-payload enum should be valid"),
-        ));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Variant {
-                discriminant: Box::new(CanonicalAbiType {
-                    ir: Type::U8,
-                    abi: CanonicalAbiInfo::SCALAR1,
-                    kind: CanonicalAbiTypeKind::Scalar,
-                }),
-                payload_offset32: info.payload_offset32,
-                cases: Box::new([Some(payload_ty.clone()), Some(payload_ty)]),
-                payload_flat_types: Box::new([Type::I32]),
-            },
-        }
+        ))
     }
 
-    /// Builds canonical ABI metadata for a scalar leaf type.
-    pub fn scalar_abi_type(ir: Type, abi: CanonicalAbiInfo) -> CanonicalAbiType {
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Scalar,
-        }
-    }
-
-    /// Builds canonical ABI metadata for a two-case variant with mixed 32/64-bit payloads.
+    /// Builds a HIR type for a two-case variant with mixed 32/64-bit payloads.
     ///
     /// The payload lanes join `i32` and `u64` into one widened `i64` slot, exercising the
     /// positional payload-join rules.
-    pub fn mixed_payload_variant_type() -> CanonicalAbiType {
-        let case_abis = [Some(CanonicalAbiInfo::SCALAR4), Some(CanonicalAbiInfo::SCALAR8)];
-        let info = VariantInfo::new_static(&case_abis);
-        let abi = CanonicalAbiInfo::variant_static(&case_abis);
-        let cases = [
-            Some(scalar_abi_type(Type::I32, CanonicalAbiInfo::SCALAR4)),
-            Some(scalar_abi_type(Type::U64, CanonicalAbiInfo::SCALAR8)),
-        ];
-        let payload_flat_types = CanonicalAbiType::joined_variant_payload_flat_types(&cases);
-        let ir = Type::Enum(Arc::new(
+    pub fn mixed_payload_variant_type() -> Type {
+        Type::Enum(Arc::new(
             EnumType::new(
                 "mixed-payload".into(),
                 Type::U8,
@@ -144,28 +83,12 @@ pub(super) mod test_support {
                 ],
             )
             .expect("mixed-payload enum should be valid"),
-        ));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Variant {
-                discriminant: Box::new(scalar_abi_type(Type::U8, CanonicalAbiInfo::SCALAR1)),
-                payload_offset32: info.payload_offset32,
-                cases: Box::new(cases),
-                payload_flat_types,
-            },
-        }
+        ))
     }
 
-    /// Builds canonical ABI metadata for an option-shaped variant with a felt payload.
-    pub fn option_of_felt_type() -> CanonicalAbiType {
-        let case_abis = [None, Some(CanonicalAbiInfo::SCALAR4)];
-        let info = VariantInfo::new_static(&case_abis);
-        let abi = CanonicalAbiInfo::variant_static(&case_abis);
-        let cases = [None, Some(scalar_abi_type(Type::Felt, CanonicalAbiInfo::SCALAR4))];
-        let payload_flat_types = CanonicalAbiType::joined_variant_payload_flat_types(&cases);
-        let ir = Type::Enum(Arc::new(
+    /// Builds a HIR type for an option-shaped variant with a felt payload.
+    pub fn option_of_felt_type() -> Type {
+        Type::Enum(Arc::new(
             EnumType::new(
                 "option-felt".into(),
                 Type::U8,
@@ -175,70 +98,35 @@ pub(super) mod test_support {
                 ],
             )
             .expect("option-shaped enum should be valid"),
-        ));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Variant {
-                discriminant: Box::new(scalar_abi_type(Type::U8, CanonicalAbiInfo::SCALAR1)),
-                payload_offset32: info.payload_offset32,
-                cases: Box::new(cases),
-                payload_flat_types,
-            },
-        }
+        ))
     }
 
-    /// Builds canonical ABI metadata for a record with a scalar and a payload-variant field.
-    pub fn record_with_variant_field_type() -> CanonicalAbiType {
-        let scalar_field = scalar_abi_type(Type::U32, CanonicalAbiInfo::SCALAR4);
+    /// Builds a HIR type for a record with a scalar and a payload-variant field.
+    pub fn record_with_variant_field_type() -> Type {
         let variant_field = scalar_payload_variant_type();
-        let mut offset = 0;
-        let scalar_offset = scalar_field.abi.next_field32(&mut offset);
-        let variant_offset = variant_field.abi.next_field32(&mut offset);
-        let abi = CanonicalAbiInfo::record([&scalar_field.abi, &variant_field.abi].into_iter());
-        let ir = Type::from(StructType::new(vec![Type::U32, variant_field.ir.clone()]));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Record {
-                fields: Box::new([
-                    CanonicalAbiField {
-                        offset32: scalar_offset,
-                        ty: scalar_field,
-                    },
-                    CanonicalAbiField {
-                        offset32: variant_offset,
-                        ty: variant_field,
-                    },
-                ]),
-            },
-        }
+        Type::from(StructType::new(vec![Type::U32, variant_field]))
     }
 
-    /// Returns canonical ABI fixtures whose metadata must agree with signature flattening.
+    /// Returns HIR type fixtures whose type-only Canonical ABI helpers must agree with flattening.
     ///
-    /// Every fixture pairs an HIR type (`ir`) with the canonical ABI metadata tree built for
-    /// it, covering the supported lowering domain: scalars, records, unit-only variants,
+    /// The fixtures cover the supported lowering domain: scalars, records, unit-only variants,
     /// payload variants (including joined mixed-width lanes), and nesting.
-    pub fn canonical_agreement_fixtures() -> Vec<CanonicalAbiType> {
+    pub fn canonical_agreement_fixtures() -> Vec<Type> {
         let scalars = [
-            (Type::I1, CanonicalAbiInfo::SCALAR1),
-            (Type::I8, CanonicalAbiInfo::SCALAR1),
-            (Type::U8, CanonicalAbiInfo::SCALAR1),
-            (Type::I16, CanonicalAbiInfo::SCALAR2),
-            (Type::U16, CanonicalAbiInfo::SCALAR2),
-            (Type::I32, CanonicalAbiInfo::SCALAR4),
-            (Type::U32, CanonicalAbiInfo::SCALAR4),
-            (Type::I64, CanonicalAbiInfo::SCALAR8),
-            (Type::U64, CanonicalAbiInfo::SCALAR8),
-            (Type::Felt, CanonicalAbiInfo::SCALAR4),
+            Type::I1,
+            Type::I8,
+            Type::U8,
+            Type::I16,
+            Type::U16,
+            Type::I32,
+            Type::U32,
+            Type::I64,
+            Type::U64,
+            Type::Felt,
         ];
 
         scalars
             .into_iter()
-            .map(|(ir, abi)| scalar_abi_type(ir, abi))
             .chain([
                 two_field_record_type(),
                 unit_only_variant_type(),
@@ -250,35 +138,9 @@ pub(super) mod test_support {
             .collect()
     }
 
-    /// Builds canonical ABI metadata for a two-field record result.
-    pub fn two_field_record_type() -> CanonicalAbiType {
-        let field_ty = CanonicalAbiType {
-            ir: Type::U32,
-            abi: CanonicalAbiInfo::SCALAR4,
-            kind: CanonicalAbiTypeKind::Scalar,
-        };
-        let mut offset = 0;
-        let first_offset = field_ty.abi.next_field32(&mut offset);
-        let second_offset = field_ty.abi.next_field32(&mut offset);
-        let abi = CanonicalAbiInfo::record([&field_ty.abi, &field_ty.abi].into_iter());
-        let ir = Type::from(StructType::new(vec![Type::U32, Type::U32]));
-
-        CanonicalAbiType {
-            ir,
-            abi,
-            kind: CanonicalAbiTypeKind::Record {
-                fields: Box::new([
-                    CanonicalAbiField {
-                        offset32: first_offset,
-                        ty: field_ty.clone(),
-                    },
-                    CanonicalAbiField {
-                        offset32: second_offset,
-                        ty: field_ty,
-                    },
-                ]),
-            },
-        }
+    /// Builds a HIR type for a two-field record result.
+    pub fn two_field_record_type() -> Type {
+        Type::from(StructType::new(vec![Type::U32, Type::U32]))
     }
 
     /// Creates an empty world fixture for component CanonABI tests.
