@@ -528,7 +528,7 @@ where
         }
 
         let mut types = SmallVec::<[Type; 4]>::new_const();
-        self.parser.token_stream_mut().expect(Token::Comma)?;
+        self.parser.token_stream_mut().expect(Token::Colon)?;
         self.parser.parse_type_list_no_parens(&mut types)?;
 
         if value_ids.len() != types.len() {
@@ -733,9 +733,15 @@ where
                 );
             }
 
-            // Add definitions for each of the result groups.
-            for (result_group, result_record) in result_ids.iter().enumerate() {
-                let group = op.results().group(result_group);
+            // Bind each parsed result name to a result of the operation, in order. The printer
+            // emits one SSA name per result (e.g. `%a, %b, %c = scf.if`) - the canonical form for
+            // an op with a single result group - so the names map directly onto the flattened
+            // result list; the `%name:count` spelling instead binds `count` consecutive results to
+            // `%name#0..#count`. The previous code indexed `results().group(i)` by the i-th *name*,
+            // which panicked once a single variadic group was bound by more than one name.
+            let results = op.results().all();
+            let mut result_offset = 0usize;
+            for result_record in result_ids.iter() {
                 for result_index in 0..result_record.count {
                     let name = ValueId::from_symbol(result_record.id);
                     let name = if result_record.count == 1 {
@@ -747,7 +753,8 @@ where
                         loc: result_record.loc,
                         name,
                     };
-                    let value = group[result_index as usize] as ValueRef;
+                    let value = results[result_offset] as ValueRef;
+                    result_offset += 1;
                     self.add_definition(use_info, value);
                 }
             }
@@ -929,6 +936,7 @@ where
                     block,
                     key: None,
                     operand_group: (i + 1) as u8,
+                    successor_group: 0,
                 },
             ));
         } else if self.parser.token_stream_mut().is_next(|tok| matches!(tok, Token::Lbracket)) {
@@ -943,6 +951,7 @@ where
                     block,
                     key: None,
                     operand_group: (i + 1) as u8,
+                    successor_group: 0,
                 }
             }));
         }
@@ -1278,9 +1287,10 @@ where
         region.borrow_mut().body_mut().push_back(owning_block);
 
         while self.token_stream_mut().is_next(|tok| !matches!(tok, Token::Rbrace)) {
-            let new_block = self.context_rc().create_block();
-            self.parse_block(Some(new_block))?;
-            region.borrow_mut().push_back(new_block);
+            // Each subsequent block starts with a label; `parse_block` resolves it to the
+            // forward-declared block when the label was already referenced as a successor.
+            let block = self.parse_block(None)?;
+            region.borrow_mut().push_back(block);
         }
 
         // Pop the SSA value scope for this region.
@@ -1298,20 +1308,27 @@ impl<'input, P> OperationParser<P>
 where
     P: Parser<'input>,
 {
-    /// Parse a new block into 'block'.
+    /// Parse a new block, returning the block that was defined.
+    ///
+    /// When `block` is `Some`, that block is the one populated and returned - unless the parsed
+    /// label was already forward-referenced as a successor, in which case this panics: branch
+    /// targets already point at the forward-declared block, so the caller's block cannot be used.
+    /// Callers that may encounter forward-declared labels must pass `None` and attach the returned
+    /// block to the region.
     ///
     ///   block ::= block-label? operation*
     ///   block-label    ::= block-id block-arg-list? `:`
     ///   block-id       ::= caret-id
     ///   block-arg-list ::= `(` ssa-id-and-type-list? `)`
     ///
-    pub fn parse_block(&mut self, block: Option<BlockRef>) -> ParseResult {
+    pub fn parse_block(&mut self, block: Option<BlockRef>) -> ParseResult<BlockRef> {
         // The first block of a region may already exist, if it does the caret identifier is
         // optional.
         if let Some(block) = block
             && self.token_stream_mut().is_next(|tok| !matches!(tok, Token::CaretIdent(_)))
         {
-            return self.parse_block_body(block);
+            self.parse_block_body(block)?;
+            return Ok(block);
         }
 
         let (name_span, name) = self
@@ -1330,21 +1347,33 @@ where
         // use it. Otherwise create a new one.
         let block_and_loc = self.get_block_info_by_name(name);
 
-        let block = if let Some(block) = block_and_loc {
-            // Otherwise, the block has a forward declaration. Forward declarations are
-            // removed once defined, so if we are defining a existing block and it is
-            // not a forward declaration, then it is a redeclaration. Fail if the block
-            // was already defined.
-            if !self.erase_forward_ref(block.into_inner()) {
+        let block = if let Some(forward_declared) = block_and_loc {
+            // The block has a forward declaration. Forward declarations are removed once defined,
+            // so if this name already resolves to a non-forward-declared block, it is a
+            // redeclaration.
+            if !self.erase_forward_ref(forward_declared.into_inner()) {
                 // "redefinition of block {name}"
                 return Err(ParserError::BlockAlreadyDefined {
                     span: name_span,
                     name,
                 });
             }
-            Span::new(name_span, block.into_inner())
+            // A caller that provided a block expects it to be the one populated, but branch
+            // targets already point at the forward-declared block, so we cannot honor that here.
+            // Such callers must pass `None` and use the returned block instead.
+            assert!(
+                block.is_none(),
+                "parse_block was given an explicit block, but `{name}` was forward-referenced as \
+                 a successor; pass `None` so the forward-declared block can be used"
+            );
+            Span::new(name_span, forward_declared.into_inner())
         } else {
-            Span::new(name_span, block.unwrap_or_else(|| self.context_rc().create_block()))
+            let block =
+                Span::new(name_span, block.unwrap_or_else(|| self.context_rc().create_block()));
+            // Register the definition so later references (e.g. backwards branches) resolve to
+            // this block, and duplicate definitions are detected.
+            self.blocks_by_name.last_mut().unwrap().insert(name, block);
+            block
         };
 
         // Populate the high level assembly state if necessary.
@@ -1359,7 +1388,8 @@ where
         self.parse_colon()?;
 
         // Parse the body of the block.
-        self.parse_block_body(block.into_inner())
+        self.parse_block_body(block.into_inner())?;
+        Ok(block.into_inner())
     }
 
     /// Parse a list of operations into 'block'.
@@ -1920,9 +1950,10 @@ where
         let dest = self.parse_successor()?;
 
         // Handle optional arguments.
-        self.parse_optional_lparen()?;
-        self.parser.parse_optional_ssa_use_and_type_list(operands)?;
-        self.parse_rparen()?;
+        if self.parse_optional_lparen()? {
+            self.parser.parse_optional_ssa_use_and_type_list(operands)?;
+            self.parse_rparen()?;
+        }
 
         Ok(dest)
     }

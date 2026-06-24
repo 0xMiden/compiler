@@ -462,7 +462,8 @@ dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 [tasks.litcheck]
 category = "Test"
 description = "Set up the litcheck utility"
-install_crate = { crate_name = "litcheck", test_arg = "--help" }
+# 0.4.4 is the first release that propagates lit failures through the process exit code.
+install_crate = { crate_name = "litcheck", min_version = "0.4.4", test_arg = "--help" }
 
 [tasks.docs]
 category = "Documentation"

@@ -472,8 +472,15 @@ pub struct RetImm {
 
 impl OpPrinter for RetImm {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::{attributes::IntegerLikeAttr, formatter::const_text};
+
+        // Print the immediate as `<value> : <type>`, mirroring the grammar accepted by the
+        // `OpParser` implementation below, so the output can be re-parsed.
+        let value = self.value().as_ref().as_immediate();
         printer.print_space();
-        printer.print_attribute_value(&*self.value());
+        printer.print_decimal_integer(value);
+        *printer += const_text(" : ");
+        printer.print_type(&value.ty());
     }
 }
 
@@ -490,18 +497,23 @@ impl OpParser for RetImm {
         let end = parser.token_stream().current_span();
         let span = SourceSpan::new(end.source_id(), start..end.end());
 
-        if ty.is_numeric() {
-            let attr = parser
-                .context_rc()
-                .create_attribute_with_type::<ImmediateAttr, _>(imm.into_inner(), ty.into_inner());
-            state.add_attribute("value", attr);
-        } else {
+        // Re-type the parsed literal to the declared type: integer parsing infers the narrowest
+        // representation, which would otherwise survive into the attribute and reprint with the
+        // wrong type.
+        let Some(imm) = imm.into_inner().coerced_to(&ty) else {
             return Err(ParserError::InvalidOperationType {
                 span,
                 ty_span: ty.span(),
-                reason: format!("expected numeric type, got {ty}"),
+                reason: format!(
+                    "expected a numeric type able to represent the immediate, got {ty}"
+                ),
             });
-        }
+        };
+
+        let attr = parser
+            .context_rc()
+            .create_attribute_with_type::<ImmediateAttr, _>(imm, ty.into_inner());
+        state.add_attribute("value", attr);
 
         Ok(())
     }

@@ -172,6 +172,8 @@ pub struct While {
     before: Region,
     #[region]
     after: Region,
+    #[results]
+    returns: AnyType,
 }
 
 impl While {
@@ -423,10 +425,12 @@ impl OpParser for IndexSwitch {
 
         state
             .add_attribute("cases", parser.context_rc().create_attribute::<U32ArrayAttr, _>(cases));
+        // The default region is declared first on the operation; case regions follow it (see
+        // `get_case_region`).
+        state.add_region(fallback_region);
         for region in regions {
             state.add_region(region);
         }
-        state.add_region(fallback_region);
 
         parser.parse_optional_attribute_dict(&mut state.attrs)?;
         parser.parse_colon_type_list(&mut state.results)?;
@@ -719,5 +723,225 @@ impl RegionBranchTerminatorOpInterface for Yield {
 impl ConditionallySpeculatable for Yield {
     fn speculatability(&self) -> Speculatability {
         Speculatability::Speculatable
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_expect_test::expect;
+    use midenc_hir::{
+        diagnostics::Report, dialects::builtin::Function, testing::parse_function_fixpoint,
+    };
+
+    use super::*;
+
+    /// Find the first operation of type `T` in the entry block of `function`.
+    fn find_op<T: OpRegistration>(function: &Function) -> UnsafeIntrusiveEntityRef<T> {
+        function
+            .body()
+            .entry()
+            .body()
+            .iter()
+            .find_map(|op| op.as_operation_ref().try_downcast_op::<T>().ok())
+            .unwrap_or_else(|| {
+                panic!("expected a {} op in the function body", <T as OpRegistration>::full_name())
+            })
+    }
+
+    /// The regions of an operation with operands must parse with no pre-bound entry arguments:
+    /// the `^block(...)` header the printer emits declares them. Also covers the variadic
+    /// forwarded operands of `scf.condition`, which parse as the trailing comma list following
+    /// the condition operand, and the `scf.while` result type signature.
+    #[test]
+    fn parse_scf_while_round_trips() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @count_to(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %count = scf.while %zero before {
+    ^head(%i: u32):
+        %continue = arith.lt %i, %n;
+        scf.condition %continue, %i : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %next = arith.incr %j;
+        scf.yield %next : (u32);
+    } : (u32) -> u32;
+    builtin.ret %count : (u32);
+};";
+        let (function, printed) = parse_function_fixpoint(&context, "parse_scf_while.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @count_to(%0: u32) -> u32 {
+                %1 = arith.constant 0 : u32;
+                %6 = scf.while %1 before {
+                ^block2(%2: u32):
+                    %3 = arith.lt %2, %0;
+                    scf.condition %3, %2 : (i1, u32);
+                } after {
+                ^block3(%4: u32):
+                    %5 = arith.incr %4;
+                    scf.yield %5 : (u32);
+                } : (u32) -> (u32);
+                builtin.ret %6 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let while_op = find_op::<While>(&function);
+        let while_op = while_op.borrow();
+        assert_eq!(while_op.inits().len(), 1);
+        assert_eq!(while_op.num_results(), 1);
+        assert_eq!(while_op.before().entry().num_arguments(), 1);
+        let condition = while_op.condition_op();
+        let condition = condition.borrow();
+        assert_eq!(condition.forwarded().len(), 1);
+
+        Ok(())
+    }
+
+    /// The trailing forwarded-operand list of `scf.condition` may be empty, in which case the
+    /// printer omits it entirely; the parser must accept the bare form.
+    #[test]
+    fn parse_scf_condition_without_forwarded_operands() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @spin(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    scf.while %zero before {
+    ^head(%i: u32):
+        %continue = arith.lt %i, %n;
+        scf.condition %continue : (i1);
+    } after {
+    ^body:
+        scf.yield %zero : (u32);
+    } : (u32) -> ();
+    builtin.ret %n : (u32);
+};";
+        let (function, printed) =
+            parse_function_fixpoint(&context, "parse_scf_condition_bare.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @spin(%0: u32) -> u32 {
+                %1 = arith.constant 0 : u32;
+                scf.while %1 before {
+                ^block2(%2: u32):
+                    %3 = arith.lt %2, %0;
+                    scf.condition %3 : (i1);
+                } after {
+                ^block3:
+                    scf.yield %1 : (u32);
+                } : (u32) -> ();
+                builtin.ret %0 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let while_op = find_op::<While>(&function);
+        let while_op = while_op.borrow();
+        assert_eq!(while_op.num_results(), 0);
+        let condition = while_op.condition_op();
+        let condition = condition.borrow();
+        assert_eq!(condition.forwarded().len(), 0);
+
+        Ok(())
+    }
+
+    /// Multi-name result bindings (`%x, %y = scf.if ...`) map the parsed names onto the
+    /// flattened result list of a single variadic result group.
+    #[test]
+    fn parse_multi_name_result_bindings() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @pick(%c: i1, %a: u32, %b: u32) -> u32 {
+    %x, %y = scf.if %c then {
+        scf.yield %a, %b : (u32, u32);
+    } else {
+        scf.yield %b, %a : (u32, u32);
+    } : (i1) -> (u32, u32);
+    %sum = arith.add %x, %y <{ overflow = #builtin.overflow<unchecked> }>;
+    builtin.ret %sum : (u32);
+};";
+        let (function, printed) =
+            parse_function_fixpoint(&context, "parse_multi_result.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @pick(%0: i1, %1: u32, %2: u32) -> u32 {
+                %3, %4 = scf.if %0 then {
+                    scf.yield %1, %2 : (u32, u32);
+                } else {
+                    scf.yield %2, %1 : (u32, u32);
+                } : (i1) -> (u32, u32);
+                %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<unchecked> }>;
+                builtin.ret %5 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let if_op = find_op::<If>(&function);
+        let if_op = if_op.borrow();
+        assert_eq!(if_op.num_results(), 2);
+        // Both bound names resolve to the if's results: the adder uses each exactly once.
+        for result in if_op.results().all().iter() {
+            assert_eq!(result.borrow().iter_uses().count(), 1);
+        }
+
+        Ok(())
+    }
+
+    /// `scf.index_switch` regions parse with the default region first, matching the accessors
+    /// (`default_region` is region 0, case regions follow in case order).
+    #[test]
+    fn parse_index_switch_region_order() -> Result<(), Report> {
+        let context = Rc::new(Context::default());
+        let source = "\
+builtin.function public extern(\"C\") @dispatch(%sel: u32, %a: u32, %b: u32) -> u32 {
+    %r = scf.index_switch %sel
+    case 1 {
+        scf.yield %a : (u32);
+    }
+    default {
+        scf.yield %b : (u32);
+    } : u32;
+    builtin.ret %r : (u32);
+};";
+        let (function, printed) =
+            parse_function_fixpoint(&context, "parse_index_switch.hir", source)?;
+        expect![[r#"
+            builtin.function public extern("C") @dispatch(%0: u32, %1: u32, %2: u32) -> u32 {
+                %3 = scf.index_switch %0 
+                case 1 {
+                    scf.yield %1 : (u32);
+                }
+                default {
+                    scf.yield %2 : (u32);
+                } : (u32);
+                builtin.ret %3 : (u32);
+            };"#]]
+        .assert_eq(&printed);
+
+        let function = function.borrow();
+        let body = function.body();
+        let entry = body.entry();
+        let arg_a = entry.arguments()[1] as ValueRef;
+        let arg_b = entry.arguments()[2] as ValueRef;
+
+        let yielded_value = |region: &Region| -> ValueRef {
+            let terminator = region.entry().terminator().unwrap();
+            let yield_op = terminator
+                .try_downcast_op::<Yield>()
+                .expect("expected region to terminate with scf.yield");
+            let yield_op = yield_op.borrow();
+            let yielded = yield_op.yielded();
+            let operand = yielded.iter().next().unwrap();
+            operand.borrow().as_value_ref()
+        };
+
+        let switch_op = find_op::<IndexSwitch>(&function);
+        let switch_op = switch_op.borrow();
+        // The default region yields %b and the `case 1` region yields %a; if the parser
+        // appended the default region last, the two would come back swapped.
+        assert_eq!(yielded_value(&switch_op.default_region()), arg_b);
+        let case_region = switch_op.get_case_region(0);
+        assert_eq!(yielded_value(&case_region.borrow()), arg_a);
+
+        Ok(())
     }
 }

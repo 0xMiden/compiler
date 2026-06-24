@@ -63,6 +63,7 @@ impl quote::ToTokens for DeriveOpParser {
         };
         if !format.operand_groups.is_empty() {
             let mut operand_group_parsers = quote! {};
+            let mut is_first_parsed_group = true;
             for group in format.operand_groups.iter() {
                 if group.successor_operands {
                     continue;
@@ -97,14 +98,25 @@ impl quote::ToTokens for DeriveOpParser {
                             parser.parse_operand_list(operands, Delimiter::None, /*allow_result_number=*/true, ::core::num::NonZeroU8::new(#size_lit))?;
                         }
                     });
-                } else {
+                } else if is_first_parsed_group {
                     operand_group_parsers.extend(quote! {
                         {
                             let operands = &mut gathered_operands[#group_index_lit];
                             parser.parse_operand_list(operands, Delimiter::None, /*allow_result_number=*/true, None)?;
                         }
                     });
+                } else {
+                    // A variadic group following a fixed group is printed as a trailing
+                    // comma-separated list that is omitted entirely when empty; parse it the same
+                    // way.
+                    operand_group_parsers.extend(quote! {
+                        {
+                            let operands = &mut gathered_operands[#group_index_lit];
+                            parser.parse_trailing_operand_list(operands, Delimiter::None)?;
+                        }
+                    });
                 }
+                is_first_parsed_group = false;
             }
 
             gather_operands.extend(quote! {
@@ -129,12 +141,16 @@ impl quote::ToTokens for DeriveOpParser {
 
         let mut successors = quote! {};
         if !format.successor_groups.is_empty() {
-            for succ_group in format.successor_groups.iter() {
+            for (succ_group_index, succ_group) in format.successor_groups.iter().enumerate() {
                 let field_name = &succ_group.field_name;
                 let field_name_str =
                     syn::Lit::Str(syn::LitStr::new(&format!("{field_name}"), field_name.span()));
                 let base_operand_group_lit = syn::Lit::Int(syn::LitInt::new(
                     &format!("{}", succ_group.base_operand_group),
+                    field_name.span(),
+                ));
+                let succ_group_index_lit = syn::Lit::Int(syn::LitInt::new(
+                    &succ_group_index.to_string(),
                     field_name.span(),
                 ));
                 let delimiter: syn::Expr = if succ_group.requires_delimiter {
@@ -145,23 +161,27 @@ impl quote::ToTokens for DeriveOpParser {
                 if let Some(key_ty) = succ_group.keyed.as_ref() {
                     successors.extend(quote! {
                             next_operand_group = 0;
+                            // Keyed successors print as a bracket-delimited, comma-separated list
+                            // of `#key -> ^block(...)` entries (`#delimiter` is `Bracket` here);
+                            // the delimiter lets a fallback successor follow unambiguously.
                             parser.parse_comma_separated_list(#delimiter, Some(#field_name_str), |parser| {
                                 let key_ty = <<#key_ty as ::midenc_hir::KeyedSuccessor>::KeyStorage as ::midenc_hir::attributes::MaybeInferAttributeType>::maybe_infer_type()
                                     .unwrap_or(::midenc_hir::Type::Unknown);
                                 let key = parser.parse_typed_attribute::<<#key_ty as ::midenc_hir::KeyedSuccessor>::KeyStorage>(&key_ty)?.into_inner();
                                 parser.parse_arrow()?;
-                                let operand_group = #base_operand_group_lit + next_operand_group;
-                                next_operand_group += 1;
-                                if gathered_operands.len() == operand_group {
+                                // The first successor uses the operand group reserved for this
+                                // field; additional ones append new groups at the end, since
+                                // successors reference their operand group by explicit index.
+                                let operand_group = if next_operand_group == 0 {
+                                    #base_operand_group_lit
+                                } else {
                                     gathered_operands.push(Default::default());
                                     state.operands.push(Default::default());
-                                } else {
-                                    assert!(gathered_operands.len() < operand_group);
-                                    gathered_operands.insert(operand_group, Default::default());
-                                    state.operands.insert(operand_group, Default::default());
-                                }
+                                    state.operands.len() - 1
+                                };
+                                next_operand_group += 1;
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_keyed_successor(key, block_ref.into_inner(), operand_group as u8);
+                                state.add_keyed_successor(key, block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
 
                                 Ok(true)
                             })?;
@@ -170,29 +190,45 @@ impl quote::ToTokens for DeriveOpParser {
                     successors.extend(quote! {
                             next_operand_group = 0;
                             parser.parse_comma_separated_list(#delimiter, Some(#field_name_str), |parser| {
-                                let operand_group = #base_operand_group_lit + next_operand_group;
-                                next_operand_group += 1;
-                                if gathered_operands.len() == operand_group {
+                                // The first successor uses the operand group reserved for this
+                                // field; additional ones append new groups at the end, since
+                                // successors reference their operand group by explicit index.
+                                let operand_group = if next_operand_group == 0 {
+                                    #base_operand_group_lit
+                                } else {
                                     gathered_operands.push(Default::default());
                                     state.operands.push(Default::default());
-                                } else {
-                                    assert!(gathered_operands.len() < operand_group);
-                                    gathered_operands.insert(operand_group, Default::default());
-                                    state.operands.insert(operand_group, Default::default());
-                                }
+                                    state.operands.len() - 1
+                                };
+                                next_operand_group += 1;
                                 let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
-                                state.add_successor(block_ref.into_inner(), operand_group as u8);
+                                state.add_successor(block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
 
                                 Ok(true)
                             })?;
                         });
                 } else {
-                    for _ in succ_group.successors.iter() {
+                    for (succ_index, _) in succ_group.successors.iter().enumerate() {
+                        // The printer separates this successor from whatever precedes it
+                        // (an earlier successor group or a prior successor in this group)
+                        // with `, `; consume that separator if present.
+                        if succ_group_index > 0 || succ_group.index > 0 || succ_index > 0 {
+                            successors.extend(quote! {
+                                parser.parse_optional_comma()?;
+                            });
+                        }
+                        let succ_index_lit = syn::Lit::Int(syn::LitInt::new(
+                            &succ_index.to_string(),
+                            field_name.span(),
+                        ));
                         successors.extend(quote! {
                             {
-                                let block_ref = parser.parse_successor_and_use_list(&mut state.operands[next_operand_group])?;
-                                state.add_successor(block_ref.into_inner(), next_operand_group as u8);
-                                next_operand_group += 1;
+                                let operand_group = #base_operand_group_lit + #succ_index_lit;
+                                while state.operands.len() <= operand_group {
+                                    state.operands.push(Default::default());
+                                }
+                                let block_ref = parser.parse_successor_and_use_list(&mut state.operands[operand_group])?;
+                                state.add_successor(block_ref.into_inner(), operand_group as u8, #succ_group_index_lit);
                             }
                         });
                     }
@@ -271,7 +307,10 @@ impl quote::ToTokens for DeriveOpParser {
         } else {
             resolve_operands.extend(quote! {
                 let total_operand_types = sig_params.len();
-                let total_operands = gathered_operands.iter().map(|group| group.len()).sum::<usize>() + state.operands.iter().map(|group| group.len()).sum::<usize>();
+                // Only operands gathered by name are resolved against the type signature;
+                // successor operands (already resolved with their inline types) are not
+                // part of the printed signature.
+                let total_operands = gathered_operands.iter().map(|group| group.len()).sum::<usize>();
                 if total_operand_types != total_operands {
                     return Err(ParserError::OperandAndTypeListMismatch {
                         span: state.span,
@@ -328,142 +367,16 @@ impl quote::ToTokens for RegionParser<'_> {
         let isolated =
             syn::Lit::Bool(syn::LitBool::new(self.format.isolated_from_above, Span::call_site()));
 
-        let mut args = quote! {};
-        match &self.format.signature.params {
-            ParamShape::None => {
-                args.extend(quote! {
-                    #[allow(unused_variables, unused_mut)]
-                    let mut args = ::midenc_hir::SmallVec::<[::midenc_hir::parse::Argument; 1]>::new_const();
-                });
-            }
-            ParamShape::Static(group_index) => {
-                let group_index = *group_index;
-                assert!(
-                    self.format
-                        .successor_groups
-                        .iter()
-                        .all(|group| group.base_operand_group > group_index
-                            || !group.successors.is_empty()),
-                    "dynamically-sized successor groups must be defined after all other operand \
-                     groups"
-                );
-                let group = &self.format.operand_groups[group_index];
-                let group_size = syn::Lit::Int(syn::LitInt::new(
-                    &group.operands.len().to_string(),
-                    group.field_name.span(),
-                ));
-                args.extend(quote! {
-                    let mut args = ::midenc_hir::SmallVec::<[::midenc_hir::parse::Argument; #group_size]>::new_const();
-                });
-
-                let operand_group = syn::Lit::Int(syn::LitInt::new(
-                    &group_index.to_string(),
-                    group.field_name.span(),
-                ));
-                for operand in group.operands.iter() {
-                    let operand_index = syn::Lit::Int(syn::LitInt::new(
-                        &operand.index.to_string(),
-                        group.field_name.span(),
-                    ));
-                    args.extend(quote! {
-                        args.push(::midenc_hir::parse::Argument {
-                            name: gathered_operands[#operand_group][#operand_index],
-                            ty: ::midenc_hir::Type::Unknown,
-                            attrs: Default::default(),
-                            loc: ::midenc_hir::dialects::builtin::attributes::Location::Unknown,
-                        });
-                    });
-                }
-            }
-            ParamShape::Dynamic(group_index) => {
-                let group_index = *group_index;
-                assert!(
-                    self.format
-                        .successor_groups
-                        .iter()
-                        .all(|group| group.base_operand_group > group_index
-                            || !group.successors.is_empty()),
-                    "dynamically-sized successor groups must be defined after all other operand \
-                     groups"
-                );
-                let group = &self.format.operand_groups[group_index];
-                args.extend(quote! {
-                    let mut args = ::midenc_hir::SmallVec::<[::midenc_hir::parse::Argument; 1]>::new_const();
-                });
-
-                let operand_group = syn::Lit::Int(syn::LitInt::new(
-                    &group_index.to_string(),
-                    group.field_name.span(),
-                ));
-                args.extend(quote! {
-                    args.extend(gathered_operands[#operand_group].iter().copied().map(|operand| {
-                        ::midenc_hir::parse::Argument {
-                            name: operand,
-                            ty: ::midenc_hir::Type::Unknown,
-                            attrs: Default::default(),
-                            loc: ::midenc_hir::dialects::builtin::attributes::Location::Unknown,
-                        }
-                    }));
-                });
-            }
-            ParamShape::TrailingVarArgs { fixed, varargs } => {
-                let fixed_group_index = *fixed;
-                let varargs_group_index = *varargs;
-                assert!(
-                    self.format
-                        .successor_groups
-                        .iter()
-                        .all(|group| ((group.base_operand_group > fixed_group_index)
-                            && (group.base_operand_group > varargs_group_index))
-                            || !group.successors.is_empty()),
-                    "dynamically-sized successor groups must be defined after all other operand \
-                     groups"
-                );
-                let fixed_group = &self.format.operand_groups[fixed_group_index];
-                let group_size = syn::Lit::Int(syn::LitInt::new(
-                    &fixed_group.operands.len().to_string(),
-                    fixed_group.field_name.span(),
-                ));
-
-                args.extend(quote! {
-                    let mut args = ::midenc_hir::SmallVec::<[::midenc_hir::parse::Argument; #group_size]>::new_const();
-                });
-
-                let operand_group = syn::Lit::Int(syn::LitInt::new(
-                    &fixed_group_index.to_string(),
-                    fixed_group.field_name.span(),
-                ));
-                for operand in fixed_group.operands.iter() {
-                    let operand_index = syn::Lit::Int(syn::LitInt::new(
-                        &operand.index.to_string(),
-                        fixed_group.field_name.span(),
-                    ));
-                    args.extend(quote! {
-                        args.push(::midenc_hir::parse::Argument {
-                            name: gathered_operands[#operand_group][#operand_index],
-                            ty: ::midenc_hir::Type::Unknown,
-                            attrs: Default::default(),
-                            loc: ::midenc_hir::dialects::builtin::attributes::Location::Unknown,
-                        });
-                    });
-                }
-                let varargs_group = &self.format.operand_groups[varargs_group_index];
-                let operand_group = syn::Lit::Int(syn::LitInt::new(
-                    &varargs_group_index.to_string(),
-                    varargs_group.field_name.span(),
-                ));
-                args.extend(quote! {
-                    args.extend(gathered_operands[#operand_group].iter().copied().map(|operand| {
-                        ::midenc_hir::parse::Argument {
-                            name: operand,
-                            ty: ::midenc_hir::Type::Unknown,
-                            attrs: Default::default(),
-                            loc: ::midenc_hir::dialects::builtin::attributes::Location::Unknown,
-                        }
-                    }));
-                });
-            }
-        }
+        // Regions are parsed with no pre-bound entry arguments: an operation's operands are
+        // references to values defined in the enclosing scope, not fresh bindings, so forwarding
+        // them as entry arguments would either collide with their original definitions or reject
+        // the explicit `^block(...)` header the printer emits. Entry block arguments are instead
+        // declared by that header; named-argument forwarding in `parse_region_body` remains for
+        // true binding syntaxes such as function signatures.
+        let args = quote! {
+            #[allow(unused_variables, unused_mut)]
+            let mut args = ::midenc_hir::SmallVec::<[::midenc_hir::parse::Argument; 1]>::new_const();
+        };
         let elide_entry_region_name = self.format.regions.len() == 1;
         for (
             i,

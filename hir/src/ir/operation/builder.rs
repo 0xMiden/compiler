@@ -134,18 +134,22 @@ where
         op.regions.push_back(region);
     }
 
-    // TODO: This needs to replicate the behavior of with_(keyed_)successor
     pub fn with_pending_successor(&mut self, succ: PendingSuccessorInfo) {
         let owner = self.op;
         let mut op = self.op.borrow_mut();
-        // Record SuccessorInfo for this successor in the op
+        // Record SuccessorInfo for this successor in the op, in the successor group expected
+        // by the operation's accessors. Pending successors must be added in non-decreasing
+        // successor group order.
         let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(succ.block, owner, succ_index);
-        op.successors.push(SuccessorInfo {
-            block: successor,
-            key: succ.key,
-            operand_group: succ.operand_group,
-        });
+        op.successors.push_to_group(
+            succ.successor_group as usize,
+            SuccessorInfo {
+                block: successor,
+                key: succ.key,
+                operand_group: succ.operand_group,
+            },
+        );
     }
 
     pub fn with_successor(

@@ -30,7 +30,7 @@ builtin.function public extern("C") @cfg_to_scf_lift_nested_while_loop(%0: ptr<u
             } after {
             ^block17(%61: u32, %62: u32, %63: u32):
                 scf.yield %61, %62, %63 : (u32, u32, u32);
-            } : (u32, u32, u32);
+            } : (u32, u32, u32) -> (u32, u32, u32);
             %11 = arith.incr %3;
             scf.yield %11, %57, %20, %25 : (u32, u32, u32, u32);
         } : (i1) -> (u32, u32, u32, u32);
@@ -39,6 +39,6 @@ builtin.function public extern("C") @cfg_to_scf_lift_nested_while_loop(%0: ptr<u
     } after {
     ^block12(%40: u32, %41: u32, %42: u32):
         scf.yield %40, %41, %42 : (u32, u32, u32);
-    } : (u32, u32, u32);
+    } : (u32, u32, u32) -> (u32, u32, u32);
     builtin.ret %36 : (u32);
 };

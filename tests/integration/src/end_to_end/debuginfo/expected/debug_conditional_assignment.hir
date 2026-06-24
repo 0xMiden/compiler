@@ -78,7 +78,7 @@ builtin.component private @root_ns:root@1.0.0 {
             cf.br ^block6;
         };
         builtin.global_variable private @__stack_pointer : i32 {
-            builtin.ret_imm #builtin.number<1048576>;
+            builtin.ret_imm 1048576 : i32;
         };
     };
 };
