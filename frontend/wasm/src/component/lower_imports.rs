@@ -7,21 +7,25 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    AddressSpace, AsValueRange, Builder, FunctionType, Op, PointerType, SourceSpan, SymbolPath,
-    Type, ValueRef, Visibility,
+    AddressSpace, Builder, FunctionType, Op, PointerType, SourceSpan, SymbolPath, Type, ValueRef,
+    Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
-        attributes::Signature,
+        attributes::{AbiParam, Signature},
     },
 };
+use midenc_session::diagnostics::Report;
 
 use super::{
-    canon_abi_utils::store,
+    ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS,
+    canon_abi_utils::{store, validate_flat_variants},
+    contains_unsupported_canonical_abi_type,
     flat::{
-        CanonicalAbiMode, flatten_function_type, flatten_types, flattened_types_layout,
-        needs_transformation,
+        CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
+        classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
     },
+    flat_tuple_layout,
 };
 use crate::{
     callable::CallableFunction,
@@ -36,36 +40,50 @@ const FPI_IMPORT_PREFIX: &str = "fpi-";
 const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
 const FPI_EXEC_INPUTS: usize = ExecFpi::MAX_INPUT_FELTS;
 const FPI_EXEC_RESULTS: usize = ExecFpi::EXECUTOR_RESULT_FELTS;
-/// Maximum operand stack felts a direct FPI wrapper call may require.
-///
-/// Calls pass all their operands on the MASM operand stack, whose directly addressable window is
-/// 16 elements, so the generated wrapper cannot be invoked with more than 16 felts of flattened
-/// parameters (including the canonical ABI output pointer, when present).
-const FPI_DIRECT_MAX_STACK_FELTS: usize = 16;
-const CANONICAL_ABI_MAX_FLAT_PARAMS: usize = 16;
-const CANONICAL_ABI_MAX_FLAT_RESULTS: usize = 1;
-
-type AbiParam = midenc_hir::dialects::builtin::attributes::AbiParam;
 
 /// Generates the lowering function (cross-context Miden ABI -> Wasm CABI) for the given import function.
 pub fn generate_import_lowering_function(
     world_builder: &mut WorldBuilder,
     module_builder: &mut ModuleBuilder,
     import_func_path: SymbolPath,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
 ) -> WasmResult<CallableFunction> {
     let context = module_builder.builder().context_rc();
+    // FPI imports bypass canonical ABI validation and classification: they use their own
+    // typed-signature checks, and oversized argument lists take the FPI indirect lowering
+    // path instead of tupled parameters.
+    let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
+    if !is_fpi {
+        reject_unsupported_import_canonical_abi_types(&import_func_path, import_func_ty)?;
+    }
     let import_lowered_sig =
-        flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import).wrap_err_with(
-            || {
+        flatten_function_type(&context, &import_func_ty.ir, CanonicalAbiMode::Import)
+            .wrap_err_with(|| {
                 format!(
                     "failed to generate component import lowering: signature of \
                      '{import_func_path}' requires flattening"
                 )
-            },
-        )?;
+            })?;
+    let transformation = if is_fpi {
+        None
+    } else {
+        let transformation =
+            classify_function_type(&context, &import_func_ty.ir).wrap_err_with(|| {
+                format!(
+                    "failed to generate component import lowering: signature of \
+                     '{import_func_path}' requires classification"
+                )
+            })?;
+        // Import flattening appends a result out-pointer after tuple classification, so the
+        // final flattened parameter list can exceed the budget even when classification
+        // reported no parameter tuple.
+        if transformation.has_param_tuple() || flat_params_need_tuple(import_lowered_sig.params()) {
+            return reject_tuple_parameter_import_lowering(&import_func_path);
+        }
+        Some(transformation)
+    };
 
     let core_func_ref = module_builder
         .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
@@ -90,7 +108,7 @@ pub fn generate_import_lowering_function(
         .map(|ba| ba as ValueRef)
         .collect();
 
-    if is_fpi_import(&import_func_path, import_func_ty)? {
+    let Some(transformation) = transformation else {
         return generate_fpi_lowering(
             import_func_ty,
             &import_lowered_sig,
@@ -101,10 +119,10 @@ pub fn generate_import_lowering_function(
             &args,
             span,
         );
-    }
+    };
 
-    if needs_transformation(&import_lowered_sig) {
-        generate_lowering_with_transformation(
+    match transformation {
+        CanonicalAbiIndirection::None => generate_direct_lowering(
             world_builder,
             &import_func_path,
             import_func_ty,
@@ -115,26 +133,29 @@ pub fn generate_import_lowering_function(
             &mut fb,
             &args,
             span,
-        )
-    } else {
-        generate_direct_lowering(
+        ),
+        CanonicalAbiIndirection::Out => generate_lowering_with_transformation(
             world_builder,
             &import_func_path,
             import_func_ty,
             core_func_path,
             core_func_sig,
+            import_lowered_sig,
             core_func_ref,
             &mut fb,
             &args,
             span,
-        )
+        ),
+        CanonicalAbiIndirection::In | CanonicalAbiIndirection::InOut => {
+            unreachable!("tuple-parameter import lowering was rejected earlier")
+        }
     }
 }
 
 /// Generates a lowering function for FPI imports backed by `execute_foreign_procedure`.
 #[allow(clippy::too_many_arguments)]
 fn generate_fpi_lowering(
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     import_lowered_sig: &Signature,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
@@ -144,10 +165,10 @@ fn generate_fpi_lowering(
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
     let context = core_func_ref.borrow().as_operation().context_rc();
-    validate_fpi_typed_signature(&core_func_path, import_func_ty)?;
+    validate_fpi_typed_signature(&core_func_path, &import_func_ty.ir)?;
     let shape = plan_fpi_call(
         &context,
-        import_func_ty,
+        &import_func_ty.ir,
         import_lowered_sig,
         &core_func_path,
         &core_func_sig,
@@ -171,14 +192,14 @@ fn generate_fpi_lowering(
     fb.switch_to_block(exit_block);
     let results = lower_fpi_result_felts(fb, &shape.flattened_results, &results, span)?;
     if let Some(output_ptr) = lowered.output_ptr {
-        if import_func_ty.results.len() != 1 {
+        if import_func_ty.ir.results.len() != 1 {
             return Err(midenc_session::diagnostics::Report::msg(format!(
                 "FPI import with an output pointer expected one result type, got {}",
-                import_func_ty.results.len()
+                import_func_ty.ir.results.len()
             )));
         }
         let mut results_iter = results.into_iter();
-        store(fb, output_ptr, &import_func_ty.results[0], &mut results_iter, span)?;
+        store(fb, output_ptr, &import_func_ty.ir.results[0], &mut results_iter, span)?;
         fb.ret([], span)?;
     } else {
         fb.ret(results, span)?;
@@ -310,8 +331,26 @@ fn plan_fpi_call(
     let flattened_results = flatten_types(context, &import_func_ty.results)?;
     // Canonical ABI passes more than 16 flattened parameters indirectly through one pointer; the
     // generated wrapper reloads that tuple so every FPI call lowers to the same felt-only form.
-    let has_arg_ptr = flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS;
-    let has_output_ptr = flattened_results.len() > CANONICAL_ABI_MAX_FLAT_RESULTS;
+    let has_arg_ptr = flattened_params.len() > MAX_FLAT_PARAMS;
+    let has_output_ptr = flattened_results.len() > MAX_FLAT_RESULTS;
+
+    if !has_arg_ptr {
+        // The generated wrapper receives all its parameters on the operand stack, so the direct
+        // call shape is limited by the stack's addressable window, independent of the FPI
+        // protocol's own input limit. Check this before comparing against the lowered core
+        // signature: over-budget direct shapes are tupled by canonical ABI flattening, which
+        // would otherwise surface as a confusing shape mismatch.
+        let stack_felts =
+            flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
+                + usize::from(has_output_ptr);
+        if stack_felts > MAX_DIRECT_STACK_FELTS {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
+                 expanding 64-bit values and result pointers, but direct FPI calls support at \
+                 most {MAX_DIRECT_STACK_FELTS}"
+            )));
+        }
+    }
 
     let expected_params = if has_arg_ptr {
         1 + usize::from(has_output_ptr)
@@ -329,21 +368,6 @@ fn plan_fpi_call(
         return Err(midenc_session::diagnostics::Report::msg(
             "FPI import with more than 16 flattened params must lower to an argument pointer",
         ));
-    }
-    if !has_arg_ptr {
-        // The generated wrapper receives all its parameters on the operand stack, so the direct
-        // call shape is limited by the stack's addressable window, independent of the FPI
-        // protocol's own input limit.
-        let stack_felts =
-            flattened_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
-                + usize::from(has_output_ptr);
-        if stack_felts > FPI_DIRECT_MAX_STACK_FELTS {
-            return Err(midenc_session::diagnostics::Report::msg(format!(
-                "FPI import `{core_func_path}` lowers to {stack_felts} operand stack felts after \
-                 expanding 64-bit values and result pointers, but direct FPI calls support at \
-                 most {FPI_DIRECT_MAX_STACK_FELTS}"
-            )));
-        }
     }
     if has_output_ptr {
         let output_param = &import_lowered_sig.params()[expected_params - 1];
@@ -398,7 +422,7 @@ fn plan_fpi_call(
 /// Emits the felt-only protocol argument list for a validated FPI call shape.
 fn lower_fpi_canonical_args(
     shape: &FpiCallShape,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     args: &[ValueRef],
     span: SourceSpan,
@@ -418,7 +442,7 @@ fn lower_fpi_canonical_args(
                 "FPI import with more than 16 flattened params did not receive an argument pointer",
             )
         })?;
-        lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.params, span)?
+        lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.ir.params, span)?
     } else {
         lower_fpi_direct_args(
             fb,
@@ -468,7 +492,8 @@ fn lower_fpi_direct_args(
 ///
 /// Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
 /// generated wrapper reloads every flattened value here, so all FPI calls reach the backend in
-/// the same direct, felt-only form.
+/// the same direct, felt-only form. Load offsets come from the canonical ABI metadata trees,
+/// matching the tuple layout the calling convention requires of the stored arguments.
 fn lower_fpi_indirect_args(
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     arg_ptr: ValueRef,
@@ -476,7 +501,7 @@ fn lower_fpi_indirect_args(
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
     let mut fpi_args = Vec::new();
-    for entry in flattened_types_layout(params)? {
+    for entry in flat_tuple_layout(params)? {
         let value = load_fpi_tuple_value(fb, arg_ptr, entry.offset, &entry.ty, span)?;
         push_fpi_arg_felts(fb, &entry.ty, value, &mut fpi_args, span)?;
     }
@@ -732,6 +757,13 @@ fn is_fpi_proc_root_type(ty: &Type) -> bool {
     )
 }
 
+/// Rejects component import signatures that require tuple-parameter lowering.
+fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> WasmResult<T> {
+    Err(Report::msg(format!(
+        "tuple-parameter import lowering is not supported for '{import_func_path}'"
+    )))
+}
+
 /// Generates a lowering function for component imports that require transformation.
 ///
 /// This function handles the case where a Component Model import needs to be "lowered" to match
@@ -769,7 +801,7 @@ fn is_fpi_proc_root_type(ty: &Type) -> bool {
 fn generate_lowering_with_transformation(
     world_builder: &mut WorldBuilder,
     import_func_path: &SymbolPath,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
     import_func_sig_flat: Signature,
@@ -784,11 +816,25 @@ fn generate_lowering_with_transformation(
          last parameter a pointer"
     );
 
-    assert!(
-        core_func_sig.results().is_empty(),
-        "The lowered core function {core_func_path} should not have results when using \
-         out-pointer pattern"
-    );
+    // The lowered core function takes the flattened parameters with the result out-pointer
+    // passed as a core Wasm i32 pointer, and returns nothing.
+    let mut expected_core_params = import_func_sig_flat.params().to_vec();
+    *expected_core_params
+        .last_mut()
+        .expect("flattened import params cannot be empty") = AbiParam::new(Type::I32);
+    let expected_core_sig = Signature {
+        params: expected_core_params,
+        results: vec![],
+        cc: core_func_sig.cc,
+    };
+    check_core_wasm_signature_equivalence(&core_func_sig, &expected_core_sig).map_err(
+        |message| {
+            Report::msg(format!(
+                "component import lowering for '{import_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        },
+    )?;
 
     let id = ComponentId::try_from(import_func_path)
         .wrap_err("path does not start with a valid component id")?;
@@ -808,23 +854,20 @@ fn generate_lowering_with_transformation(
     // The import function should have the lifted signature (returns tuple)
     // not the lowered signature with pointer parameter
     let context = world_builder.context_rc();
-    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import)
-        .wrap_err_with(|| {
-            format!("failed to flatten import function signature for '{import_func_path}'")
-        })?;
 
     // Extract the actual result types from the import function type
     let flattened_results =
-        flatten_types(&context, &import_func_ty.results).wrap_err_with(|| {
+        flatten_types(&context, &import_func_ty.ir.results).wrap_err_with(|| {
             format!("failed to flatten result types for import function '{import_func_path}'")
         })?;
 
     // Remove the pointer parameter that was added for the flattened signature
-    let params_without_ptr = import_func_sig.params[..import_func_sig.params.len() - 1].to_vec();
+    let params_without_ptr =
+        import_func_sig_flat.params[..import_func_sig_flat.params.len() - 1].to_vec();
     let new_import_func_sig = Signature {
         params: params_without_ptr,
-        results: flattened_results.clone(),
-        cc: import_func_sig.cc,
+        results: flattened_results,
+        cc: import_func_sig_flat.cc,
     };
     let import_func_ref = component_builder
         .define_function(
@@ -845,17 +888,22 @@ fn generate_lowering_with_transformation(
     let output_ptr = args.last().expect("expected pointer argument");
     let args_without_ptr: Vec<_> = args[..args.len() - 1].to_vec();
 
+    validate_flat_variants(fb, &import_func_ty.ir.params, &args_without_ptr, span)?;
+
     // Call the import function - it will return a tuple to the flattened result
     let call = fb.call(import_func_ref, new_import_func_sig, args_without_ptr, span)?;
 
     let borrow = call.borrow();
-    let results = borrow.results().as_value_range().into_owned();
+    let results_storage = borrow.results();
+    let results: Vec<ValueRef> =
+        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
 
     // Store values recursively based on the component-level type
     // This follows the canonical ABI store algorithm from:
     // https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#storing
-    assert_eq!(import_func_ty.results.len(), 1, "expected a single result type");
-    let result_type = &import_func_ty.results[0];
+    assert_eq!(import_func_ty.ir.results.len(), 1, "expected a single result type");
+    let result_type = &import_func_ty.ir.results[0];
     let mut results_iter = results.into_iter();
 
     store(fb, *output_ptr, result_type, &mut results_iter, span)?;
@@ -897,6 +945,8 @@ fn generate_lowering_with_transformation(
 /// * `core_func_sig` - The lowered signature of the core function, which should be compatible with
 ///   the component import (no transformation needed).
 ///
+/// * `import_func_sig_flat` - The flattened signature of the component import.
+///
 /// * `core_func_ref` - Reference to the core function being built.
 ///
 /// * `args` - The arguments to pass directly to the component import function.
@@ -912,9 +962,10 @@ fn generate_lowering_with_transformation(
 fn generate_direct_lowering(
     world_builder: &mut WorldBuilder,
     import_func_path: &SymbolPath,
-    import_func_ty: &FunctionType,
+    import_func_ty: &ComponentFunctionType,
     core_func_path: SymbolPath,
     core_func_sig: Signature,
+    import_func_sig_flat: Signature,
     core_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     args: &[ValueRef],
@@ -933,21 +984,26 @@ fn generate_direct_lowering(
 
     let mut component_builder = ComponentBuilder::new(component_ref);
 
-    let context = world_builder.context_rc();
-    let import_func_sig = flatten_function_type(&context, import_func_ty, CanonicalAbiMode::Import)
-        .wrap_err_with(|| {
-            format!("failed to flatten import function signature for '{import_func_path}'")
-        })?;
+    validate_flat_variants(fb, &import_func_ty.ir.params, args, span)?;
+
+    check_core_wasm_signature_equivalence(&core_func_sig, &import_func_sig_flat).map_err(
+        |message| {
+            Report::msg(format!(
+                "component import lowering for '{import_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        },
+    )?;
     let import_func_ref = component_builder
         .define_function(
             import_func_path.name().into(),
             Visibility::Internal,
-            import_func_sig.clone(),
+            import_func_sig_flat.clone(),
         )
         .expect("failed to define the import function");
 
     let call = fb
-        .call(import_func_ref, core_func_sig.clone(), args.to_vec(), span)
+        .call(import_func_ref, import_func_sig_flat, args.to_vec(), span)
         .expect("failed to build an exec op");
 
     let borrow = call.borrow();
@@ -959,6 +1015,7 @@ fn generate_direct_lowering(
         "For direct lowering the component import function {import_func_path} expected a single \
          result or none"
     );
+    validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span)?;
@@ -974,16 +1031,39 @@ fn generate_direct_lowering(
     })
 }
 
+/// Rejects component import signatures containing unsupported canonical ABI shapes.
+fn reject_unsupported_import_canonical_abi_types(
+    import_func_path: &SymbolPath,
+    import_func_ty: &ComponentFunctionType,
+) -> WasmResult<()> {
+    for ty in import_func_ty.ir.params.iter().chain(import_func_ty.ir.results.iter()) {
+        if contains_unsupported_canonical_abi_type(ty) {
+            return Err(Report::msg(format!(
+                "component import lowering for '{import_func_path}' has unsupported canonical ABI \
+                 type {:?}",
+                ty
+            )));
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use alloc::rc::Rc;
-    use std::sync::Arc;
+    use alloc::sync::Arc;
 
     use midenc_hir::{
-        CallConv, Context, EnumType, StructType, SymbolNameComponent, Variant, interner::Symbol,
+        CallConv, Context, EnumType, FunctionType, PointerType, StructType, SymbolName,
+        SymbolNameComponent, SymbolPath, Type, Variant, dialects::builtin::attributes::AbiParam,
+        interner::Symbol,
     };
 
     use super::*;
+    use crate::component::test_support::{
+        count_validation_ops, scalar_payload_variant_type, two_field_record_type,
+        unit_only_variant_type, world_with_core_module,
+    };
 
     fn test_import_path(name: &str) -> SymbolPath {
         SymbolPath::from_iter([
@@ -1118,7 +1198,7 @@ mod tests {
             .expect_err("list parameters must not lower directly across typed FPI");
         let message = err.to_string();
 
-        assert!(flattened_params.len() <= CANONICAL_ABI_MAX_FLAT_PARAMS);
+        assert!(flattened_params.len() <= MAX_FLAT_PARAMS);
         assert!(
             message.contains("parameter 6")
                 && message.contains("pointer-like type")
@@ -1143,7 +1223,7 @@ mod tests {
             .expect_err("string-like list values must not lower indirectly across typed FPI");
         let message = err.to_string();
 
-        assert!(flattened_params.len() > CANONICAL_ABI_MAX_FLAT_PARAMS);
+        assert!(flattened_params.len() > MAX_FLAT_PARAMS);
         assert!(
             message.contains("parameter 21")
                 && message.contains("pointer-like type")
@@ -1386,26 +1466,273 @@ mod tests {
         );
     }
 
+    fn component_import_path(function: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(SymbolName::intern("miden:test@1.0.0")),
+            SymbolNameComponent::Leaf(SymbolName::intern(function)),
+        ])
+    }
+
+    fn core_function_path(function: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(SymbolName::intern("core")),
+            SymbolNameComponent::Leaf(SymbolName::intern(function)),
+        ])
+    }
+
+    fn scalar_u64_type() -> Type {
+        Type::U64
+    }
+
     #[test]
-    fn flattened_types_layout_rejects_non_c_like_enum() {
-        let enum_ty = Type::Enum(Arc::new(
-            EnumType::new(
-                "result".into(),
-                Type::U8,
-                [
-                    Variant::c_like("ok".into(), Some(0)),
-                    Variant::new("err".into(), Type::I32, Some(1)),
-                ],
-            )
-            .unwrap(),
-        ));
+    fn rejects_import_lowering_with_tupled_params_and_no_result() {
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
 
-        let err = match flattened_types_layout(&[enum_ty]) {
-            Ok(_) => panic!("non-C-like enum layouts must return a diagnostic"),
-            Err(err) => err,
+        let mut ir = FunctionType::new(CallConv::Fast, vec![Type::I32; 17], vec![]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+
+        let tuple = Type::from(StructType::new(vec![Type::I32; 17]));
+        let core_func_sig = Signature {
+            params: vec![AbiParam::sret(Type::from(PointerType::new(tuple)), &context)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
         };
-        let message = err.to_string();
 
-        assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("too_many_params"),
+            &import_func_ty,
+            core_function_path("too_many_params"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected tuple-parameter import lowering to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("tuple-parameter import lowering"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_import_lowering_when_result_out_pointer_exceeds_param_budget() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![Type::I32; 16], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I32); 17],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("too_many_params_with_result"),
+            &import_func_ty,
+            core_function_path("too_many_params_with_result"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected import out-pointer overflow to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("tuple-parameter import lowering"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn transformed_import_lowering_validates_flat_variant_params() {
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir =
+            FunctionType::new(CallConv::Fast, vec![variant_ty.clone()], vec![result_ty.clone()]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("roundtrip"),
+            &import_func_ty,
+            core_function_path("roundtrip"),
+            core_func_sig,
+        )
+        .expect("import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(switch_count, 1, "transformed import params should validate the tag");
+        assert_eq!(
+            unreachable_count, 1,
+            "invalid transformed import param tag should be unreachable"
+        );
+    }
+
+    #[test]
+    fn transformed_import_lowering_validates_flat_variant_results_before_store() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let result_ty = scalar_payload_variant_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("variant_result"),
+            &import_func_ty,
+            core_function_path("variant_result"),
+            core_func_sig,
+        )
+        .expect("import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(
+            switch_count, 2,
+            "transformed import results should validate the tag before storing"
+        );
+        assert_eq!(
+            unreachable_count, 2,
+            "invalid transformed import result tag should be unreachable before storing"
+        );
+    }
+
+    #[test]
+    fn rejects_direct_import_lowering_with_mismatched_core_result_signature() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let result_ty = scalar_u64_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("mismatched_result"),
+            &import_func_ty,
+            core_function_path("mismatched_result"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched direct import signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_transformed_import_lowering_with_mismatched_core_params() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        // The flattened import parameters are an i32 discriminant plus the i32 result
+        // out-pointer, but the core import declares an i64 discriminant.
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I64), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("mismatched_params"),
+            &import_func_ty,
+            core_function_path("mismatched_params"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched transformed import signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_direct_import_lowering_with_unsupported_list_param() {
+        let (context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let list_ty = Type::List(Arc::new(Type::U8));
+        let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty.clone()], vec![]);
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+
+        let core_func_sig = Signature {
+            params: vec![
+                AbiParam::sret(Type::from(PointerType::new(Type::U8)), &context),
+                AbiParam::new(Type::I32),
+            ],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("list_param"),
+            &import_func_ty,
+            core_function_path("list_param"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected direct list import lowering to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("unsupported canonical ABI"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
     }
 }

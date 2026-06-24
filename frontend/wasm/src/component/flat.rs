@@ -7,10 +7,12 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    CallConv, Context, FunctionType, PointerType, StructType, Type,
+    CallConv, Context, EnumType, FunctionType, PointerType, StructType, Type,
     diagnostics::{Diagnostic, miette},
     dialects::builtin::attributes::{AbiParam, Signature},
 };
+
+use super::types::{MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS};
 
 /// Identifies which kind of component wrapper is being flattened for the canonical ABI.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -39,40 +41,56 @@ pub enum CanonicalTypeError {
     LayoutOverflow { ty: Type },
 }
 
-/// Byte layout for one value produced by canonical ABI flattening.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalFlatLayoutEntry {
-    /// Byte offset of this flattened value relative to the containing tuple.
-    pub offset: u32,
-    /// Source type to load from memory for this flattened value.
-    pub ty: Type,
+/// Identifies the pointer indirection used by our internal canonical ABI parameter/result passing.
+///
+/// This is an implementation detail of the cross-context parameter/result passing ABI rather than a
+/// component-model transformation: it records whether inputs and/or outputs are passed by pointer
+/// indirection (because their flattened shape exceeds the direct cross-context call budget), and the
+/// dataflow direction of that indirection.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum CanonicalAbiIndirection {
+    /// No indirection: the component function is lowered or lifted directly.
+    None,
+    /// Inputs are passed by pointer indirection, i.e. a tuple pointer to the parameters in memory.
+    In,
+    /// Outputs are returned by pointer indirection, i.e. an out-pointer to the result in memory.
+    Out,
+    /// Both inputs and outputs are passed by pointer indirection.
+    InOut,
+}
+
+impl CanonicalAbiIndirection {
+    /// Returns true when inputs use pointer indirection, i.e. a tupled parameter pointer.
+    pub fn has_param_tuple(self) -> bool {
+        matches!(self, Self::In | Self::InOut)
+    }
+
+    /// Returns true when any indirection is required.
+    pub fn is_needed(self) -> bool {
+        !matches!(self, Self::None)
+    }
 }
 
 /// Flattens the given CanonABI type into a list of ABI parameters.
+///
+/// Must stay in agreement with `types::canonical_flat_types`, which flattens the same types without
+/// needing a HIR context; both are built on [`canonical_flat_scalar_type`] and the variant payload
+/// join rules in this module.
 pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, CanonicalTypeError> {
     // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
     Ok(match ty {
-        Type::I1 => vec![AbiParam::zext(Type::I32, context)],
-        Type::I8 => vec![AbiParam::sext(Type::I32, context)],
-        Type::U8 => vec![AbiParam::zext(Type::I32, context)],
-        Type::I16 => vec![AbiParam::sext(Type::I32, context)],
-        Type::U16 => vec![AbiParam::zext(Type::I32, context)],
-        Type::I32 => vec![AbiParam::new(Type::I32)],
-        Type::U32 => vec![AbiParam::new(Type::I32)],
-        Type::I64 => vec![AbiParam::new(Type::I64)],
-        Type::U64 => vec![AbiParam::new(Type::I64)],
+        Type::I1 | Type::U8 | Type::U16 => {
+            vec![AbiParam::zext(canonical_flat_scalar_type(ty), context)]
+        }
+        Type::I8 | Type::I16 => vec![AbiParam::sext(canonical_flat_scalar_type(ty), context)],
+        Type::I32 | Type::U32 | Type::I64 | Type::U64 | Type::Felt => {
+            vec![AbiParam::new(canonical_flat_scalar_type(ty))]
+        }
         Type::I128 | Type::U128 | Type::U256 => {
             unimplemented!("flattening of {ty} in canonical abi")
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
-        Type::Felt => vec![AbiParam::new(Type::Felt)],
-        Type::Enum(enum_ty) => {
-            assert!(
-                enum_ty.is_c_like(),
-                "non-C-like enums are not yet supported in canonical ABI flattening: {enum_ty}"
-            );
-            flatten_type(context, enum_ty.discriminant())?
-        }
+        Type::Enum(enum_ty) => flatten_enum_type(context, enum_ty)?,
         Type::Struct(struct_ty) => struct_ty
             .fields()
             .iter()
@@ -96,112 +114,85 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
     })
 }
 
-/// Returns byte offsets for values produced by canonical ABI flattening.
-pub fn flattened_type_layout(
-    ty: &Type,
-    offset: u32,
-) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
-    let mut layout = Vec::new();
-    push_flattened_type_layout(ty, offset, &mut layout)?;
-    Ok(layout)
-}
-
-/// Returns byte offsets for a canonical ABI tuple of flattened parameter values.
-pub fn flattened_types_layout(
-    tys: &[Type],
-) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
-    let tuple = StructType::new(tys.iter().cloned());
-    let mut layout = Vec::new();
-
-    for field in tuple.fields() {
-        push_flattened_type_layout(&field.ty, field.offset, &mut layout)?;
-    }
-
-    Ok(layout)
-}
-
-/// Appends byte offsets for values produced by canonical ABI flattening.
-fn push_flattened_type_layout(
-    ty: &Type,
-    offset: u32,
-    layout: &mut Vec<CanonicalFlatLayoutEntry>,
-) -> Result<(), CanonicalTypeError> {
+/// Returns the canonical flat core type for a scalar HIR type.
+///
+/// This is the single source of truth for the canonical ABI scalar mapping shared by
+/// [`flatten_type`] and `types::canonical_flat_types`.
+pub(crate) fn canonical_flat_scalar_type(ty: &Type) -> Type {
     match ty {
-        Type::I1
-        | Type::I8
-        | Type::U8
-        | Type::I16
-        | Type::U16
-        | Type::I32
-        | Type::U32
-        | Type::I64
-        | Type::U64
-        | Type::Felt => layout.push(CanonicalFlatLayoutEntry {
-            offset,
-            ty: ty.clone(),
-        }),
-        Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
-        Type::Enum(enum_ty) => {
-            if !enum_ty.is_c_like() {
-                return Err(CanonicalTypeError::NonCLikeEnum(ty.clone()));
-            }
-            push_flattened_type_layout(enum_ty.discriminant(), offset, layout)?;
-        }
-        Type::Struct(struct_ty) => {
-            for field in struct_ty.fields() {
-                let field_offset = canonical_layout_offset(offset, field.offset, &field.ty)?;
-                push_flattened_type_layout(&field.ty, field_offset, layout)?;
-            }
-        }
-        Type::Array(array_ty) => {
-            let elem_ty = array_ty.element_type();
-            let elem_stride = u32::try_from(elem_ty.aligned_size_in_bytes()).map_err(|_| {
-                CanonicalTypeError::LayoutOverflow {
-                    ty: elem_ty.clone(),
-                }
-            })?;
-            for index in 0..array_ty.len() {
-                let index =
-                    u32::try_from(index).map_err(|_| CanonicalTypeError::LayoutOverflow {
-                        ty: elem_ty.clone(),
-                    })?;
-                let elem_offset = index.checked_mul(elem_stride).ok_or_else(|| {
-                    CanonicalTypeError::LayoutOverflow {
-                        ty: elem_ty.clone(),
-                    }
-                })?;
-                let elem_offset = canonical_layout_offset(offset, elem_offset, elem_ty)?;
-                push_flattened_type_layout(elem_ty, elem_offset, layout)?;
-            }
-        }
-        Type::List(_) => {
-            layout.push(CanonicalFlatLayoutEntry {
-                offset,
-                ty: Type::I32,
-            });
-            layout.push(CanonicalFlatLayoutEntry {
-                offset: canonical_layout_offset(offset, 4, ty)?,
-                ty: Type::I32,
-            });
-        }
-        Type::I128
-        | Type::U128
-        | Type::U256
-        | Type::Unknown
-        | Type::Never
-        | Type::Ptr(_)
-        | Type::Function(_) => {
-            return Err(CanonicalTypeError::Unsupported(ty.clone()));
-        }
+        Type::I1 | Type::I8 | Type::U8 | Type::I16 | Type::U16 | Type::I32 | Type::U32 => Type::I32,
+        Type::I64 | Type::U64 => Type::I64,
+        Type::Felt => Type::Felt,
+        ty => ty.clone(),
     }
-
-    Ok(())
 }
 
-/// Adds a relative byte offset within a canonical ABI tuple layout.
-fn canonical_layout_offset(base: u32, relative: u32, ty: &Type) -> Result<u32, CanonicalTypeError> {
-    base.checked_add(relative)
-        .ok_or_else(|| CanonicalTypeError::LayoutOverflow { ty: ty.clone() })
+/// Flattens a HIR enum according to the component-model variant flattening rules.
+fn flatten_enum_type(
+    context: &Rc<Context>,
+    enum_ty: &EnumType,
+) -> Result<Vec<AbiParam>, CanonicalTypeError> {
+    let mut flat = flatten_type(context, enum_ty.discriminant())?;
+    if enum_ty.is_c_like() {
+        return Ok(flat);
+    }
+
+    let cases = enum_ty
+        .variants()
+        .iter()
+        .filter_map(|variant| variant.value.as_ref())
+        .map(|value_ty| flatten_type(context, value_ty))
+        .try_collect::<Vec<Vec<AbiParam>>>()?;
+    flat.extend(join_variant_payloads(cases, join_abi_param)?);
+    Ok(flat)
+}
+
+/// Joins flattened variant case payloads positionally per the canonical ABI variant rule.
+///
+/// Each case payload contributes its flat values at the same positions; overlapping positions
+/// are unified with `join`. This is the single payload-join driver shared by
+/// [`flatten_enum_type`] and `types::canonical_flat_types`.
+pub(crate) fn join_variant_payloads<T>(
+    cases: impl IntoIterator<Item = Vec<T>>,
+    mut join: impl FnMut(&T, &T) -> Result<T, CanonicalTypeError>,
+) -> Result<Vec<T>, CanonicalTypeError> {
+    let mut payload = Vec::<T>::new();
+    for case in cases {
+        for (index, item) in case.into_iter().enumerate() {
+            if index < payload.len() {
+                payload[index] = join(&payload[index], &item)?;
+            } else {
+                payload.push(item);
+            }
+        }
+    }
+    Ok(payload)
+}
+
+/// Joins two flattened ABI parameters at the same variant payload position.
+fn join_abi_param(left: &AbiParam, right: &AbiParam) -> Result<AbiParam, CanonicalTypeError> {
+    let ty = join_flat_types(&left.ty, &right.ty)?;
+    if left.ty == ty && right.ty == ty && left.extension() == right.extension() {
+        return Ok(left.clone());
+    }
+    Ok(AbiParam::new(ty))
+}
+
+/// Joins two component flat types at the same variant payload position.
+pub(crate) fn join_flat_types(left: &Type, right: &Type) -> Result<Type, CanonicalTypeError> {
+    if left == right {
+        return Ok(left.clone());
+    }
+
+    match (left, right) {
+        (Type::I32, Type::I64) | (Type::I64, Type::I32) => Ok(Type::I64),
+        (Type::I32, Type::Felt) | (Type::Felt, Type::I32) => Ok(Type::I32),
+        (Type::I64, Type::Felt) | (Type::Felt, Type::I64) => Ok(Type::I64),
+        (Type::I64, Type::F64) | (Type::F64, Type::I64) => Ok(Type::I64),
+        (Type::Ptr(_), Type::I32) | (Type::I32, Type::Ptr(_)) => Ok(Type::I32),
+        (Type::Ptr(_), Type::Ptr(_)) => Ok(Type::I32),
+        _ => Err(CanonicalTypeError::Unsupported(left.clone())),
+    }
 }
 
 /// Flattens the given list of CanonABI types into a list of ABI parameters.
@@ -216,6 +207,37 @@ pub fn flatten_types(
         .into_iter()
         .flatten()
         .collect())
+}
+
+/// Returns true when flattened parameters exceed the direct cross-context call budget.
+pub(crate) fn flat_params_need_tuple(flat_params: &[AbiParam]) -> bool {
+    flat_params.len() > MAX_FLAT_PARAMS
+        || flat_params.iter().map(|param| param.ty.size_in_felts()).sum::<usize>()
+            > MAX_DIRECT_STACK_FELTS
+}
+
+/// Classifies the canonical ABI pointer indirection required by a component function type.
+pub fn classify_function_type(
+    context: &Rc<Context>,
+    func_ty: &FunctionType,
+) -> Result<CanonicalAbiIndirection, CanonicalTypeError> {
+    assert!(
+        func_ty.abi.is_wasm_canonical_abi(),
+        "unexpected function abi: {:?}",
+        &func_ty.abi
+    );
+
+    let flat_params = flatten_types(context, &func_ty.params)?;
+    let flat_results = flatten_types(context, &func_ty.results)?;
+    let needs_param_tuple = flat_params_need_tuple(&flat_params);
+    let needs_result_out_ptr = flat_results.len() > MAX_FLAT_RESULTS;
+
+    Ok(match (needs_param_tuple, needs_result_out_ptr) {
+        (false, false) => CanonicalAbiIndirection::None,
+        (true, false) => CanonicalAbiIndirection::In,
+        (false, true) => CanonicalAbiIndirection::Out,
+        (true, true) => CanonicalAbiIndirection::InOut,
+    })
 }
 
 /// Flattens the given CanonABI function type
@@ -236,11 +258,9 @@ pub fn flatten_function_type(
         "unexpected function abi: {:?}",
         &func_ty.abi
     );
-    const MAX_FLAT_PARAMS: usize = 16;
-    const MAX_FLAT_RESULTS: usize = 1;
     let mut flat_params = flatten_types(context, &func_ty.params)?;
     let mut flat_results = flatten_types(context, &func_ty.results)?;
-    if flat_params.len() > MAX_FLAT_PARAMS {
+    if flat_params_need_tuple(&flat_params) {
         // from https://github.com/WebAssembly/component-model/blob/main/design/mvp/CanonicalABI.md#flattening
         //
         // When there are too many flat values, in general, a single `i32` pointer can be passed instead
@@ -275,41 +295,53 @@ pub fn flatten_function_type(
     })
 }
 
-/// Checks if the given function signature needs to be transformed, i.e., if it contains a pointer
-pub fn needs_transformation(sig: &Signature) -> bool {
-    let pointer_in_params = sig.params().iter().any(|param| param.is_sret_param());
-    let pointer_in_results = sig.results().iter().any(|result| result.is_sret_param());
-
-    // Check if the total size of parameters exceeds 16 felts (the maximum stack elements
-    // accessible to the callee using the `call` instruction)
-    let params_size_in_felts: usize =
-        sig.params().iter().map(|param| param.ty.size_in_felts()).sum();
-    let exceeds_felt_limit = params_size_in_felts > 16;
-
-    pointer_in_params || pointer_in_results || exceeds_felt_limit
-}
-
-/// Asserts that the given core Wasm signature is equivalent to the given flattened signature
-/// This checks that we flattened the Wasm CM function type correctly.
-pub fn assert_core_wasm_signature_equivalence(
+/// Checks that the given core Wasm signature is equivalent to the flattened component signature.
+///
+/// This compares the canonical ABI parameter/result shape (arity and core types), but not the
+/// wrapper calling convention. Extension attributes (zext/sext) are ignored: core Wasm signatures
+/// are built from bare core types and never carry them, while flattening annotates small scalars
+/// with the extension expected from the wrapper.
+pub fn check_core_wasm_signature_equivalence(
     wasm_core_sig: &Signature,
     flattened_sig: &Signature,
-) {
-    assert_eq!(
-        wasm_core_sig.params().len(),
-        flattened_sig.params().len(),
-        "expected the same number of params"
-    );
-    assert_eq!(
-        wasm_core_sig.results().len(),
-        flattened_sig.results().len(),
-        "expected the same number of results"
-    );
-    for (wasm_core_param, flattened_param) in
-        wasm_core_sig.params().iter().zip(flattened_sig.params())
-    {
-        assert_eq!(wasm_core_param.ty, flattened_param.ty, "expected the same param type");
+) -> Result<(), String> {
+    if wasm_core_sig.params().len() != flattened_sig.params().len() {
+        return Err(format!(
+            "expected {} params, got {}",
+            flattened_sig.params().len(),
+            wasm_core_sig.params().len()
+        ));
     }
+    if wasm_core_sig.results().len() != flattened_sig.results().len() {
+        return Err(format!(
+            "expected {} results, got {}",
+            flattened_sig.results().len(),
+            wasm_core_sig.results().len()
+        ));
+    }
+
+    for (index, (wasm_core_param, flattened_param)) in
+        wasm_core_sig.params().iter().zip(flattened_sig.params()).enumerate()
+    {
+        if wasm_core_param.ty != flattened_param.ty {
+            return Err(format!(
+                "expected param {index} to be {}, got {}",
+                flattened_param.ty, wasm_core_param.ty
+            ));
+        }
+    }
+    for (index, (wasm_core_result, flattened_result)) in
+        wasm_core_sig.results().iter().zip(flattened_sig.results()).enumerate()
+    {
+        if wasm_core_result.ty != flattened_result.ty {
+            return Err(format!(
+                "expected result {index} to be {}, got {}",
+                flattened_result.ty, wasm_core_result.ty
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -321,6 +353,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::component::{canonical_flat_types, contains_unsupported_canonical_abi_type};
 
     #[test]
     fn test_flatten_type_integers() {
@@ -392,6 +425,61 @@ mod tests {
     }
 
     #[test]
+    fn test_signature_equivalence_checks_result_types() {
+        let core_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        let flattened_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I64)],
+            cc: CallConv::ComponentModel,
+        };
+
+        let err = check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect_err("result type mismatch should be rejected");
+        assert!(err.contains("result 0"), "unexpected diagnostic: {err}");
+    }
+
+    #[test]
+    fn test_signature_equivalence_ignores_extension_attributes() {
+        let context = Rc::new(Context::default());
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+        let flattened_sig = Signature {
+            params: vec![AbiParam::zext(Type::I32, &context)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        // Core Wasm signatures are built from bare core types and never carry the
+        // zext/sext annotations that flattening adds for small scalars.
+        check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect("extension attribute difference should be allowed");
+    }
+
+    #[test]
+    fn test_signature_equivalence_allows_calling_convention_difference() {
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::new(Type::I64)],
+            cc: CallConv::C,
+        };
+        let flattened_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::new(Type::I64)],
+            cc: CallConv::ComponentModel,
+        };
+
+        check_core_wasm_signature_equivalence(&core_sig, &flattened_sig)
+            .expect("calling convention difference should be allowed");
+    }
+
+    #[test]
     fn test_flatten_type_c_like_enum() {
         let context = Rc::new(Context::default());
         let enum_ty = Type::Enum(Arc::new(
@@ -410,22 +498,142 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "non-C-like enums are not yet supported in canonical ABI flattening"]
-    fn test_flatten_type_non_c_like_enum_panics() {
+    fn test_flatten_type_payload_enum() {
         let context = Rc::new(Context::default());
         let enum_ty = Type::Enum(Arc::new(
             EnumType::new(
                 "result".into(),
                 Type::U8,
                 [
-                    Variant::c_like("ok".into(), Some(0)),
+                    Variant::new("ok".into(), Type::Felt, Some(0)),
                     Variant::new("err".into(), Type::I32, Some(1)),
                 ],
             )
             .unwrap(),
         ));
 
-        let _ = flatten_type(&context, &enum_ty);
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
+        assert_eq!(result[1].ty, Type::I32);
+        assert_eq!(result[1].extension(), ArgumentExtension::None);
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_missing_trailing_payloads() {
+        let context = Rc::new(Context::default());
+        let word_ty = Type::from(StructType::new([Type::Felt, Type::Felt, Type::Felt, Type::Felt]));
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("scalar".into(), Type::Felt, Some(0)),
+                    Variant::new("word".into(), word_ty, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].ty, Type::I32);
+        assert!(result[1..].iter().all(|param| param.ty == Type::Felt));
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_word_and_u64() {
+        let context = Rc::new(Context::default());
+        let word_ty = Type::from(StructType::new([Type::Felt, Type::Felt, Type::Felt, Type::Felt]));
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("word".into(), word_ty, Some(0)),
+                    Variant::new("amount".into(), Type::U64, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 5);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I64);
+        assert!(result[2..].iter().all(|param| param.ty == Type::Felt));
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_record_field_orders() {
+        let context = Rc::new(Context::default());
+        let payload_a = Type::from(StructType::new([Type::U64, Type::U32]));
+        let payload_b = Type::from(StructType::new([Type::U32, Type::U64]));
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("a".into(), payload_a, Some(0)),
+                    Variant::new("b".into(), payload_b, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I64);
+        assert_eq!(result[2].ty, Type::I64);
+    }
+
+    #[test]
+    fn test_flatten_type_payload_enum_joins_u8_and_u64() {
+        let context = Rc::new(Context::default());
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::new("tiny".into(), Type::U8, Some(0)),
+                    Variant::new("wide".into(), Type::U64, Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+
+        let result = flatten_type(&context, &enum_ty).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[1].ty, Type::I64);
+    }
+
+    #[test]
+    fn test_flatten_type_c_like_enum_discriminant_boundary() {
+        let context = Rc::new(Context::default());
+        let cases_255 = (0..255)
+            .map(|index| Variant::c_like(format!("case-{index}").into(), Some(index)))
+            .collect::<Vec<_>>();
+        let enum_255 =
+            Type::Enum(Arc::new(EnumType::new("enum255".into(), Type::U8, cases_255).unwrap()));
+
+        let result = flatten_type(&context, &enum_255).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
+
+        let cases_256 = (0..256)
+            .map(|index| Variant::c_like(format!("case-{index}").into(), Some(index)))
+            .collect::<Vec<_>>();
+        let enum_256 =
+            Type::Enum(Arc::new(EnumType::new("enum256".into(), Type::U16, cases_256).unwrap()));
+
+        let result = flatten_type(&context, &enum_256).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ty, Type::I32);
+        assert_eq!(result[0].extension(), ArgumentExtension::Zext);
     }
 
     #[test]
@@ -530,60 +738,33 @@ mod tests {
     }
 
     #[test]
-    fn test_flattened_types_layout_matches_flattened_shape() {
+    fn test_flatten_type_agrees_with_canonical_abi_flat_types() {
+        // `validate_flat_variants` slices flattened signature values by per-type
+        // `canonical_flat_types` lengths, so the two flattening implementations must
+        // produce identical flat shapes for every supported type. The runtime guards only catch
+        // total-length mismatches: a compensating per-type disagreement would silently validate
+        // the wrong value slots.
         let context = Rc::new(Context::default());
-        let nested = Type::from(StructType::new(vec![Type::U8, Type::U64, Type::Felt]));
-        let params = vec![Type::I32, nested, Type::from(ArrayType::new(Type::U16, 2))];
+        for ty in crate::component::test_support::canonical_agreement_fixtures() {
+            let flattened = flatten_type(&context, &ty)
+                .unwrap_or_else(|err| panic!("flatten_type failed for {ty}: {err}"));
+            let flat_param_types: Vec<Type> =
+                flattened.iter().map(|param| param.ty.clone()).collect();
 
-        let flattened = flatten_types(&context, &params).unwrap();
-        let layout = flattened_types_layout(&params).unwrap();
-
-        assert_eq!(layout.len(), flattened.len());
-        assert_eq!(
-            layout.iter().map(|entry| entry.ty.clone()).collect::<Vec<_>>(),
-            vec![Type::I32, Type::U8, Type::U64, Type::Felt, Type::U16, Type::U16]
-        );
+            assert_eq!(
+                flat_param_types,
+                canonical_flat_types(&ty).expect("fixture should flatten").into_vec(),
+                "flatten_type and canonical_flat_types disagree for {ty}",
+            );
+        }
     }
 
     #[test]
-    fn test_flattened_types_layout_uses_canonical_tuple_offsets() {
-        let nested = Type::from(StructType::new(vec![Type::U8, Type::U64]));
-        let params = vec![Type::Felt, nested.clone()];
-        let tuple = StructType::new(params.clone());
-        let Type::Struct(nested_struct) = &nested else {
-            panic!("expected nested struct");
-        };
-        let nested_base = tuple.fields()[1].offset;
-        let expected_offsets = vec![
-            tuple.fields()[0].offset,
-            nested_base + nested_struct.fields()[0].offset,
-            nested_base + nested_struct.fields()[1].offset,
-        ];
+    fn test_unsupported_canonical_abi_type_is_rejected_by_type_helpers() {
+        let unsupported = Type::List(Arc::new(Type::U32));
 
-        let layout = flattened_types_layout(&params).unwrap();
-
-        assert_eq!(layout.iter().map(|entry| entry.offset).collect::<Vec<_>>(), expected_offsets);
-    }
-
-    #[test]
-    fn test_flattened_type_layout_rejects_non_c_like_enum() {
-        let enum_ty = Type::Enum(Arc::new(
-            EnumType::new(
-                "result".into(),
-                Type::U8,
-                [
-                    Variant::c_like("ok".into(), Some(0)),
-                    Variant::new("err".into(), Type::I32, Some(1)),
-                ],
-            )
-            .unwrap(),
-        ));
-
-        let err = flattened_type_layout(&enum_ty, 0)
-            .expect_err("non-C-like enum layouts must return a diagnostic");
-        let message = err.to_string();
-
-        assert!(message.contains("non-C-like enum"), "unexpected error: {message}");
+        assert!(contains_unsupported_canonical_abi_type(&unsupported));
+        assert!(canonical_flat_types(&unsupported).is_err());
     }
 
     #[test]
@@ -620,6 +801,16 @@ mod tests {
 
         // 17 params - should be transformed to pointer
         let params = vec![Type::I32; 17];
+        let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
+        func_ty.abi = CallConv::ComponentModel;
+        let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
+
+        assert_eq!(sig.params().len(), 1);
+        assert!(matches!(sig.params()[0].ty, Type::Ptr(_)));
+        assert!(sig.params()[0].is_sret_param());
+
+        // Nine i64 params fit the Canon ABI flat-value count but exceed the 16-felt call budget.
+        let params = vec![Type::I64; 9];
         let mut func_ty = FunctionType::new(CallConv::Fast, params, vec![Type::I32]);
         func_ty.abi = CallConv::ComponentModel;
         let sig = flatten_function_type(&context, &func_ty, CanonicalAbiMode::Export).unwrap();
@@ -696,46 +887,57 @@ mod tests {
     }
 
     #[test]
-    fn test_needs_transformation() {
+    fn test_classify_function_type() {
         let context = Rc::new(Context::default());
 
-        // No transformation needed - simple types
-        let sig = Signature {
-            params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::Felt)],
-            results: vec![AbiParam::new(Type::I32)],
-            cc: CallConv::ComponentModel,
+        let component_func = |params, results| {
+            let mut func_ty = FunctionType::new(CallConv::Fast, params, results);
+            func_ty.abi = CallConv::ComponentModel;
+            func_ty
         };
-        assert!(!needs_transformation(&sig));
 
-        // Transformation needed - pointer in params
-        let mut sig_with_ptr = sig.clone();
-        sig_with_ptr.params[0].mark_sret(&context);
-        assert!(needs_transformation(&sig_with_ptr));
+        // No indirection needed - simple types.
+        let func_ty = component_func(vec![Type::I32, Type::Felt], vec![Type::I32]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiIndirection::None
+        );
 
-        // Transformation needed - pointer in results
-        let sig = Signature {
-            params: vec![AbiParam::new(Type::I32)],
-            results: vec![AbiParam::sret(Type::from(PointerType::new(Type::I32)), &context)],
-            cc: CallConv::ComponentModel,
-        };
-        assert!(needs_transformation(&sig));
+        // Input indirection needed - more than 16 flattened parameters.
+        let func_ty = component_func(vec![Type::I32; 17], vec![]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiIndirection::In
+        );
 
-        // Transformation needed - exceeds 16 felts
-        let params = vec![AbiParam::new(Type::Felt); 17];
-        let sig = Signature {
-            params,
-            results: vec![],
-            cc: CallConv::ComponentModel,
-        };
-        assert!(needs_transformation(&sig));
+        // Output indirection needed - result flattens to more than one value.
+        let result = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let func_ty = component_func(vec![Type::I32], vec![result]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiIndirection::Out
+        );
 
-        // Edge case - exactly 16 felts
-        let params = vec![AbiParam::new(Type::Felt); 16];
-        let sig = Signature {
-            params,
-            results: vec![],
-            cc: CallConv::ComponentModel,
-        };
-        assert!(!needs_transformation(&sig));
+        // Both input and output indirection needed.
+        let result = Type::from(StructType::new(vec![Type::I32, Type::Felt]));
+        let func_ty = component_func(vec![Type::I32; 17], vec![result]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiIndirection::InOut
+        );
+
+        // Edge case - exactly 16 flattened parameters.
+        let func_ty = component_func(vec![Type::Felt; 16], vec![]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiIndirection::None
+        );
+
+        // Input indirection needed - at most 16 flattened parameters can still exceed 16 felts.
+        let func_ty = component_func(vec![Type::I64; 9], vec![]);
+        assert_eq!(
+            classify_function_type(&context, &func_ty).unwrap(),
+            CanonicalAbiIndirection::In
+        );
     }
 }

@@ -334,6 +334,9 @@ pub fn translate_operator<B: ?Sized + Builder>(
         /****************************** Nullary Operators **********************************/
         Operator::I32Const { value } => state.push1(builder.i32(*value, span)),
         Operator::I64Const { value } => state.push1(builder.i64(*value, span)),
+        Operator::F32Const { value } => {
+            state.push1(builder.felt(midenc_hir::Felt::from(value.bits()), span));
+        }
 
         /******************************* Unary Operators *************************************/
         Operator::I32Clz => {
@@ -412,6 +415,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::F32ReinterpretI32 => {
             let val = state.pop1_bitcasted(Felt, builder, span);
+            state.push1(val);
+        }
+        Operator::I32ReinterpretF32 => {
+            let val = state.pop1_bitcasted(I32, builder, span);
             state.push1(val);
         }
         /****************************** Binary Operators ************************************/
