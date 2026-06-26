@@ -29,7 +29,7 @@ impl BuildCommand {
         let compiler_opts =
             Compiler::try_parse_from(cwd.clone(), &self.args).unwrap_or_else(|err| err.exit());
 
-        let metadata_out_dir = compiler_opts.target_dir.join("miden").join(&compiler_opts.profile);
+        let metadata_out_dir = compiler_opts.target_dir.join(&compiler_opts.profile);
         if !metadata_out_dir.exists() {
             std::fs::create_dir_all(&metadata_out_dir)?;
         }
