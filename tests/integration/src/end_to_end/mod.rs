@@ -8,3 +8,4 @@ mod intrinsics;
 mod memory;
 mod regressions;
 pub(crate) mod support;
+mod wasm_translation;

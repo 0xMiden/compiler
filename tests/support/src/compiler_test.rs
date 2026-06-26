@@ -17,7 +17,7 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::{
     Context, FunctionIdent, Ident, Op, demangle::demangle, dialects::builtin, interner::Symbol,
 };
-use midenc_session::{InputFile, Session};
+use midenc_session::{FileName, FileType, InputFile, InputType, Session};
 
 use crate::{
     cargo_proj::project,
@@ -116,17 +116,35 @@ impl RustcTest {
     }
 }
 
+/// Configuration for tests which use Wasm bytes as input
+#[derive(Debug)]
+pub struct WasmTest {
+    /// The module name to address functions. For example `"test"` makes `function entrypoint`
+    /// addressable as `"test::entrypoint"`.
+    pub module_name: Cow<'static, str>,
+    /// Wasm bytes
+    pub wasm: Vec<u8>,
+}
+
 /// The various types of input artifacts that can be used to drive compiler tests
 pub enum CompilerTestInputType {
     /// A project that uses `cargo miden build` to produce a Wasm component to use as input
     CargoMiden(CargoTest),
     /// A project that uses `rustc` to produce a core Wasm module to use as input
     Rustc(RustcTest),
+    /// A project that uses Wasm as input
+    Wasm(WasmTest),
 }
 
 impl From<RustcTest> for CompilerTestInputType {
     fn from(config: RustcTest) -> Self {
         Self::Rustc(config)
+    }
+}
+
+impl From<WasmTest> for CompilerTestInputType {
+    fn from(config: WasmTest) -> Self {
+        Self::Wasm(config)
     }
 }
 
@@ -178,10 +196,12 @@ impl CompilerTestBuilder {
         let entrypoint = match source {
             CompilerTestInputType::Rustc(_) => Some("__main".into()),
             CompilerTestInputType::CargoMiden(ref mut config) => config.entrypoint.take(),
+            CompilerTestInputType::Wasm(_) => None,
         };
         let name = match source {
             CompilerTestInputType::Rustc(ref mut config) => config.name.as_ref(),
             CompilerTestInputType::CargoMiden(ref mut config) => config.name.as_ref(),
+            CompilerTestInputType::Wasm(ref config) => config.module_name.as_ref(),
         };
         let entrypoint = entrypoint.as_deref().map(|entry| FunctionIdent {
             module: Ident::with_empty_span(Symbol::intern(name)),
@@ -262,6 +282,7 @@ impl CompilerTestBuilder {
         match self.source {
             CompilerTestInputType::CargoMiden(ref mut config) => config.release = release,
             CompilerTestInputType::Rustc(_) => (),
+            CompilerTestInputType::Wasm(_) => (),
         }
         self
     }
@@ -273,6 +294,8 @@ impl CompilerTestBuilder {
             | CompilerTestInputType::Rustc(RustcTest { target_dir, .. }) => {
                 *target_dir = Some(path.as_ref().to_path_buf());
             }
+            // Not invoking cargo/rustc
+            CompilerTestInputType::Wasm(_) => (),
         }
         self
     }
@@ -415,6 +438,39 @@ impl CompilerTestBuilder {
                     ..Default::default()
                 }
             }
+
+            CompilerTestInputType::Wasm(config) => {
+                // Provide the Wasm binary via stdin
+                let input = InputFile::new(
+                    FileType::Wasm,
+                    InputType::Stdin {
+                        name: FileName::from(PathBuf::from(format!("{}.wasm", config.module_name))),
+                        input: config.wasm,
+                    },
+                );
+
+                setup::install_reporting_hooks();
+
+                let argv = self.midenc_flags.clone();
+                let mut options = midenc_compile::Compiler::try_parse_from(
+                    std::env::current_dir().unwrap(),
+                    argv,
+                )
+                .expect("invalid compiler options");
+                options.link_modules.extend(self.link_masm_modules);
+                let source_manager = Arc::new(DefaultSourceManager::default());
+                let session = Rc::new(Session::new(input, options, None, source_manager).unwrap());
+                let context = Rc::new(Context::new(session.clone()));
+
+                CompilerTest {
+                    config: self.config,
+                    session,
+                    context,
+                    artifact_name: config.module_name,
+                    entrypoint: self.entrypoint,
+                    ..Default::default()
+                }
+            }
         }
     }
 }
@@ -436,6 +492,21 @@ impl CompilerTestBuilder {
             CargoTest::new(name, cargo_project_folder.as_ref().to_path_buf()),
         ));
         builder.with_wasm_translation_config(config);
+        builder.with_midenc_flags(midenc_flags);
+        builder
+    }
+
+    /// Compile Wasm using midenc
+    pub fn from_wasm(
+        module_name: impl Into<Cow<'static, str>>,
+        wasm: Vec<u8>,
+        midenc_flags: impl IntoIterator<Item = String>,
+    ) -> Self {
+        let module_name = module_name.into();
+        let mut builder = CompilerTestBuilder::new(WasmTest {
+            module_name: module_name.clone(),
+            wasm,
+        });
         builder.with_midenc_flags(midenc_flags);
         builder
     }
@@ -840,6 +911,15 @@ impl CompilerTest {
     ) -> Self {
         CompilerTestBuilder::rust_source_cargo_miden(cargo_project_folder, config, midenc_flags)
             .build()
+    }
+
+    /// Provide pre-compiled Wasm bytes as input to the compiler.
+    pub fn from_wasm(
+        module_name: impl Into<Cow<'static, str>>,
+        wasm: Vec<u8>,
+        midenc_flags: impl IntoIterator<Item = String>,
+    ) -> Self {
+        CompilerTestBuilder::from_wasm(module_name, wasm, midenc_flags).build()
     }
 
     /// Set the Rust source code to compile

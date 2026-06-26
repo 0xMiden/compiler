@@ -17,6 +17,6 @@ pub use self::cargo_proj::ProjectBuilder;
 /// Generates an on-disk Cargo project in the Cargo target directory for use in tests.
 pub use self::cargo_proj::project;
 pub use self::{
-    compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest},
+    compiler_test::{CargoTest, CompilerTest, CompilerTestBuilder, RustcTest, WasmTest},
     testing::setup::default_session,
 };
