@@ -146,6 +146,28 @@ fn i32_overflowing_mul() {
 }
 
 #[test]
+fn i32_overflowing_mod() {
+    let proc_body = r#"
+    # Stack: [b, a]
+    exec.::intrinsics::i32::overflowing_mod
+    # Stack: [overflowed, result]
+"#;
+    test_i32_intrinsic(
+        proc_body,
+        NumericStrategy::<i32>::rem_signed_checked(),
+        binary_i32op_inputs_to_stack,
+        |(a, b): &(i32, i32)| {
+            if *b == 0 {
+                Err(TrapExpectation::DivideByZero)
+            } else {
+                let (result, overflowed) = a.overflowing_rem(*b);
+                Ok(vec![overflowed as i32, result])
+            }
+        },
+    );
+}
+
+#[test]
 fn i32_wrapping_add() {
     let proc_body = r#"
     # Stack: [b, a]
@@ -187,6 +209,27 @@ fn i32_wrapping_mul() {
         NumericStrategy::<i32>::mul_signed(),
         binary_i32op_inputs_to_stack,
         |(a, b): &(i32, i32)| Ok(vec![a.wrapping_mul(*b)]),
+    );
+}
+
+#[test]
+fn i32_wrapping_mod() {
+    let proc_body = r#"
+    # Stack: [b, a]
+    exec.::intrinsics::i32::wrapping_mod
+    # Stack: [result]
+"#;
+    test_i32_intrinsic(
+        proc_body,
+        NumericStrategy::<i32>::rem_signed_checked(),
+        binary_i32op_inputs_to_stack,
+        |(a, b): &(i32, i32)| {
+            if *b == 0 {
+                Err(TrapExpectation::DivideByZero)
+            } else {
+                Ok(vec![a.wrapping_rem(*b)])
+            }
+        },
     );
 }
 

@@ -600,6 +600,8 @@ where
             1 => Just((v.max, v.two)),
             1 => Just((v.zero, v.one)),
             1 => Just((v.zero, v.min)),
+            1 => Just((v.one, v.min)),
+            1 => Just((v.two, v.min)),
             1 => Just((v.max, v.zero)),
             1 => Just((v.min, v.zero)),
             1 => Just((v.zero, v.zero)),
