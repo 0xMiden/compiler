@@ -76,7 +76,7 @@ impl CounterCaller {
     /// Checks that a `Word` argument is forwarded to the foreign counter account.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let key = Word::new([felt!(11), felt!(22), felt!(33), felt!(44)]);
         let count = count_acc.get_count_by_key(key);
         assert_eq(count, felt!(42));

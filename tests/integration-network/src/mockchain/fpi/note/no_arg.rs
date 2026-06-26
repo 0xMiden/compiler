@@ -67,7 +67,7 @@ impl CounterCaller {
     /// Checks that the foreign counter account stores the initialized value.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let count = count_acc.get_count();
         assert_eq(count, felt!(42));
     }

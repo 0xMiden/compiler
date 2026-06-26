@@ -226,7 +226,7 @@ impl CounterCaller {
     /// Checks that a multi-package foreign account binding exposes both component methods.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let counters = ForeignCounters::from_account(self.foreign_account_id);
+        let counters = ForeignCounters::new(self.foreign_account_id);
 
         let first = counters.get_first_count();
         let second = counters.get_second_count();

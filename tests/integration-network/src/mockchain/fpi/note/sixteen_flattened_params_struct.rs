@@ -138,7 +138,7 @@ impl CounterCaller {
     /// Checks that sixteen flattened record fields cross the FPI boundary in both directions.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let result = count_acc.echo_sixteen_flattened_params(SixteenFlattenedParams {
             felt0: felt!(101),
             felt1: felt!(102),

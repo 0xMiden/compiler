@@ -16,15 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `faucet::{mint, burn}` no longer return an `Asset`, and the
   `faucet::{mint_value, burn_value}` helpers were removed to match the tx
   kernel API.
+- The auto-generated `crate::bindings::Account` struct is removed. Declare the account
+  explicitly with `#[account(...)]` and use that type as the note/tx-script entrypoint account
+  parameter #1157
 
 ### Added
-- `#[component]` and `#[note]` now generate typed Foreign Procedure Invocation (FPI)
-  wrapper structs for account dependencies declared in package metadata, allowing account
-  components and note scripts to call dependency account methods through
-  `execute_foreign_procedure` using normal Rust method signatures.
+- `#[account(...)]` on an empty struct generates a typed account wrapper exposing the methods
+  of the account component packages listed in the attribute. The same type serves both as the
+  transaction's native (active) account — when passed to a `#[note]`/`#[tx_script]` entrypoint —
+  and as a foreign account caller created with `new(account_id)`, whose method calls are routed
+  through `execute_foreign_procedure` (FPI) #1157
   For example:
   ```rust
-  let counter = CounterContract::from_account(counter_account_id);
+  let counter = CounterContract::new(counter_account_id);
   let count = counter.get_count();
   ```
 - Added tx-kernel SDK bindings for `native_account::get_id` and

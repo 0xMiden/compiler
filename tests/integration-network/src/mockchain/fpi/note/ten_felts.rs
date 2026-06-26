@@ -89,7 +89,7 @@ impl CounterCaller {
     /// Checks that ten user felts cross the direct FPI boundary in order.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::from_account(self.counter_account_id);
+        let count_acc = CounterContract::new(self.counter_account_id);
         let count = count_acc.get_count_by_ten_felts(
             felt!(31),
             felt!(32),

@@ -10,16 +10,19 @@
 
 use miden::*;
 
-use crate::bindings::Account;
+/// Native account of the note: exposes the `basic-wallet` component methods (e.g.
+/// `receive_asset`) gathered from the `basic_wallet` package.
+#[account(basic_wallet)]
+pub struct Wallet;
 
-fn consume_assets(account: &mut Account) {
+fn consume_assets(account: &mut Wallet) {
     let assets = active_note::get_assets();
     for asset in assets {
         account.receive_asset(asset);
     }
 }
 
-fn reclaim_assets(account: &mut Account, consuming_account: AccountId) {
+fn reclaim_assets(account: &mut Wallet, consuming_account: AccountId) {
     let creator_account = active_note::get_sender();
 
     if consuming_account == creator_account {
@@ -35,7 +38,7 @@ struct P2ideNote;
 #[note]
 impl P2ideNote {
     #[note_script]
-    pub fn run(self, _arg: Word, account: &mut Account) {
+    pub fn run(self, _arg: Word, account: &mut Wallet) {
         let inputs = active_note::get_storage();
 
         // make sure the number of inputs is 4

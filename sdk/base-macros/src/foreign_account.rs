@@ -1,4 +1,4 @@
-//! Attribute macro for explicit foreign account FPI bindings.
+//! Attribute macro for explicit active and foreign account bindings.
 
 use std::collections::{HashMap, HashSet};
 
@@ -33,7 +33,7 @@ impl Parse for ForeignAccountArgs {
     }
 }
 
-/// Expands `#[account(...)]` into a typed FPI caller wrapper.
+/// Expands `#[account(...)]` into a typed account API wrapper.
 pub(crate) fn expand(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
@@ -120,7 +120,7 @@ fn validate_empty_struct(account_struct: &ItemStruct) -> syn::Result<()> {
         _ => Err(Error::new(
             account_struct.fields.span(),
             "account must be applied to an empty struct; remove all fields because the macro \
-             generates the FPI wrapper methods on that type",
+             generates account wrapper methods on that type",
         )),
     }
 }

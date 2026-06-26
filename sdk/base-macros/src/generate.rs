@@ -1,16 +1,10 @@
-use std::{
-    collections::{HashMap, HashSet},
-    env, fs,
-    path::PathBuf,
-};
+use std::{collections::HashSet, env, fs, path::PathBuf};
 
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use syn::{
-    Attribute, Error, File, FnArg, ImplItem, ImplItemFn, Item, ItemFn, ItemImpl, ItemStruct,
-    LitStr, Pat, ReturnType, Token, TypePath,
+    Error, FnArg, Item, ItemFn, LitStr, Pat, Token, TypePath,
     parse::{Parse, ParseStream},
-    parse_quote,
     spanned::Spanned,
     visit_mut::VisitMut,
 };
@@ -25,8 +19,6 @@ use wit_bindgen_rust::{Opts, WithOption};
 
 use crate::{fpi, manifest_paths};
 
-/// Name of the wrapper struct generated to aggregate imported interface methods.
-const WRAPPER_STRUCT_NAME: &str = "Account";
 /// Fully-qualified WIT interface path for Miden SDK core types.
 const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
 
@@ -147,22 +139,17 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
             }
 
             match generate_bindings(&args, &config, world_value.as_deref()) {
-                Ok(raw_bindings) => match augment_generated_bindings(raw_bindings) {
-                    Ok(augmented) => {
-                        quote! {
-                            // Wrap the bindings in the `bindings` module since `generate!` makes a top level
-                            // module named after the package namespace which is `miden` for all our projects
-                            // so it conflicts with the `miden` crate (SDK)
-                            #[doc(hidden)]
-                            #[allow(dead_code)]
-                            pub mod bindings {
-                                #augmented
-                            }
-                        }
-                        .into()
+                Ok(raw_bindings) => quote! {
+                    // Wrap the bindings in the `bindings` module since `generate!` makes a top level
+                    // module named after the package namespace which is `miden` for all our projects
+                    // so it conflicts with the `miden` crate (SDK)
+                    #[doc(hidden)]
+                    #[allow(dead_code)]
+                    pub mod bindings {
+                        #raw_bindings
                     }
-                    Err(err) => err.to_compile_error().into(),
-                },
+                }
+                .into(),
                 Err(err) => err.to_compile_error().into(),
             }
         }
@@ -264,62 +251,6 @@ fn generate_bindings_from_sources(
     }
 
     Ok(tokens)
-}
-
-/// Post-processes wit-bindgen output to inject wrapper structs for imported interfaces.
-///
-/// This transforms the raw bindings by walking all modules and injecting an `Account` wrapper
-/// struct at the bindings root level. The struct has methods that delegate to the generated
-/// free functions in leaf modules. This provides a more ergonomic API
-/// (e.g., `Account::default().receive_asset(asset)` instead of
-/// `miden::basic_wallet::basic_wallet::receive_asset(asset)`).
-///
-/// ## Leaf Module Selection
-///
-/// Only "leaf" modules (those containing no nested modules) contribute methods to the
-/// wrapper struct. This is because wit-bindgen generates a module hierarchy where:
-/// - Non-leaf modules represent WIT package namespaces (e.g., `miden::basic_wallet`)
-/// - Leaf modules represent actual WIT interfaces with callable functions
-///
-/// For example, given the module structure:
-/// ```text
-/// miden/
-///   basic_wallet/
-///     basic_wallet/     <- leaf module, methods collected here
-///       receive_asset()
-///       send_asset()
-/// ```
-/// Only functions from `miden::basic_wallet::basic_wallet` are wrapped.
-fn augment_generated_bindings(tokens: TokenStream2) -> syn::Result<TokenStream2> {
-    let mut file: File = syn::parse2(tokens)?;
-    let mut collected_methods = Vec::new();
-    collect_wrapper_methods(&file.items, &mut Vec::new(), &mut collected_methods)?;
-
-    // Check for method name collisions across different interfaces
-    check_method_name_collisions(&collected_methods)?;
-
-    if !collected_methods.is_empty() {
-        let struct_ident = syn::Ident::new(WRAPPER_STRUCT_NAME, Span::call_site());
-        let struct_item: ItemStruct = parse_quote! {
-            /// Wrapper struct that contains all the methods from all the account component
-            /// dependencies of this script. Each account component dependency method is "merged"
-            /// into this struct.
-            #[derive(Default)]
-            pub struct #struct_ident;
-        };
-
-        let mut impl_item: ItemImpl = parse_quote! {
-            impl #struct_ident {}
-        };
-        impl_item
-            .items
-            .extend(collected_methods.into_iter().map(|cm| ImplItem::Fn(cm.method)));
-
-        file.items.push(Item::Struct(struct_item));
-        file.items.push(Item::Impl(impl_item));
-    }
-
-    Ok(file.into_token_stream())
 }
 
 /// Result of loading and parsing WIT sources from file paths and optional inline content.
@@ -565,104 +496,6 @@ fn interface_matches(resolve: &Resolve, interface_id: InterfaceId, interface_pat
     resolve.packages[package_id].name.interface_id(name) == interface_path
 }
 
-/// A collected wrapper method along with its source module path.
-struct CollectedMethod {
-    method: ImplItemFn,
-    /// The module path where this method originated (e.g., "miden::basic_wallet::basic_wallet").
-    source_path: String,
-}
-
-/// Recursively walks all modules and collects wrapper methods from leaf modules.
-///
-/// The `path` parameter tracks the current module path for generating correct call paths.
-/// Collected methods are appended to `methods_out` and will be placed in the root `Account` struct.
-fn collect_wrapper_methods(
-    items: &[Item],
-    path: &mut Vec<syn::Ident>,
-    methods_out: &mut Vec<CollectedMethod>,
-) -> syn::Result<()> {
-    for item in items.iter() {
-        if let Item::Mod(module) = item {
-            path.push(module.ident.clone());
-            if let Some((_, ref content)) = module.content {
-                collect_wrapper_methods(content, path, methods_out)?;
-                collect_methods_from_module(content, path, methods_out)?;
-            }
-            path.pop();
-        }
-    }
-
-    Ok(())
-}
-
-/// Collects wrapper methods from a leaf module's public functions.
-///
-/// A leaf module is one that contains no nested modules. Only leaf modules contribute
-/// methods, as non-leaf modules typically represent namespace hierarchy rather than
-/// concrete interfaces.
-fn collect_methods_from_module(
-    items: &[Item],
-    path: &[syn::Ident],
-    methods_out: &mut Vec<CollectedMethod>,
-) -> syn::Result<()> {
-    if !should_generate_struct(path, items) {
-        return Ok(());
-    }
-
-    let functions: Vec<&ItemFn> = items
-        .iter()
-        .filter_map(|item| match item {
-            Item::Fn(func) if is_target_function(func) && !fpi::is_function(func) => Some(func),
-            _ => None,
-        })
-        .collect();
-
-    let source_path = format_module_path(path);
-    for func in functions {
-        methods_out.push(CollectedMethod {
-            method: build_wrapper_method(func, path)?,
-            source_path: source_path.clone(),
-        });
-    }
-
-    Ok(())
-}
-
-/// Builds a wrapper method that delegates to the original free function.
-///
-/// Type paths in the signature are qualified with the module path prefix so they
-/// resolve correctly when the method is placed at the bindings root level.
-fn build_wrapper_method(func: &ItemFn, module_path: &[syn::Ident]) -> syn::Result<ImplItemFn> {
-    let mut sig = func.sig.clone();
-    // Make every method `&mut self` as a temporary workaround until
-    // https://github.com/0xMiden/compiler/issues/802 is resolved
-    sig.inputs.insert(0, parse_quote!(&mut self));
-
-    // Qualify type paths in the signature so they resolve from the bindings root
-    qualify_signature_types(&mut sig, module_path);
-
-    let arg_idents = collect_arg_idents(func)?;
-    let call_expr = wrapper_call_tokens(module_path, &sig.ident, &arg_idents);
-
-    let method_doc = format!("Calls `{}` from `{}`.", sig.ident, format_module_path(module_path));
-    let doc_attr: Attribute = parse_quote!(#[doc = #method_doc]);
-    let inline_attr: Attribute = parse_quote!(#[inline(always)]);
-
-    let body_tokens = match &sig.output {
-        ReturnType::Default => quote!({ #call_expr; }),
-        _ => quote!({ #call_expr }),
-    };
-    let block = syn::parse2(body_tokens)?;
-
-    Ok(ImplItemFn {
-        attrs: vec![doc_attr, inline_attr],
-        vis: func.vis.clone(),
-        defaultness: None,
-        sig,
-        block,
-    })
-}
-
 /// Qualifies type paths in a function signature with the module path prefix.
 ///
 /// This transforms simple type names (e.g., `StructA`) into fully qualified paths
@@ -775,20 +608,6 @@ pub(crate) fn collect_arg_idents(func: &ItemFn) -> syn::Result<Vec<syn::Ident>> 
         .collect()
 }
 
-/// Generates tokens for calling the original free function from the wrapper method.
-fn wrapper_call_tokens(
-    module_path: &[syn::Ident],
-    fn_ident: &syn::Ident,
-    args: &[syn::Ident],
-) -> TokenStream2 {
-    let mut path_tokens = quote! { crate::bindings };
-    for ident in module_path {
-        path_tokens = quote! { #path_tokens :: #ident };
-    }
-
-    quote! { #path_tokens :: #fn_ident(#(#args),*) }
-}
-
 /// Determines whether a wrapper struct should be generated for the given module.
 ///
 /// Returns `false` for:
@@ -815,57 +634,14 @@ pub(crate) fn should_generate_struct(path: &[syn::Ident], items: &[Item]) -> boo
     !items.iter().any(|item| matches!(item, Item::Mod(_)))
 }
 
-/// Determines whether a function should have a wrapper method generated.
-///
-/// Returns `true` for public, safe functions that don't start with underscore.
-fn is_target_function(func: &ItemFn) -> bool {
-    matches!(func.vis, syn::Visibility::Public(_))
-        && func.sig.unsafety.is_none()
-        && !func.sig.ident.to_string().starts_with('_')
-}
-
 /// Formats a module path as a `::` separated string for use in documentation.
 pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
     path.iter().map(|ident| ident.to_string()).collect::<Vec<_>>().join("::")
 }
 
-/// Checks for method name collisions across collected wrapper methods.
-///
-/// If multiple imported interfaces define functions with the same name, they would all be
-/// added to the `Account` struct, causing a compilation error. This function detects such
-/// collisions early and provides a clear error message indicating which interfaces conflict.
-fn check_method_name_collisions(methods: &[CollectedMethod]) -> syn::Result<()> {
-    let mut seen: HashMap<String, &str> = HashMap::new();
-
-    for collected in methods {
-        let method_name = collected.method.sig.ident.to_string();
-
-        if let Some(existing_path) = seen.get(&method_name) {
-            return Err(Error::new(
-                Span::call_site(),
-                format!(
-                    "method name collision in generated `{WRAPPER_STRUCT_NAME}` struct: \
-                     `{method_name}` is defined in both `{existing_path}` and `{}`. Consider \
-                     using the original module paths directly instead of the wrapper struct.",
-                    collected.source_path
-                ),
-            ));
-        }
-
-        seen.insert(method_name, &collected.source_path);
-    }
-
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Helper to parse Rust source into a syn::File.
-    fn parse_file(src: &str) -> File {
-        syn::parse_str(src).unwrap_or_else(|e| panic!("failed to parse test source: {e}\n{src}"))
-    }
 
     #[test]
     fn test_should_generate_struct_empty_path() {
@@ -925,38 +701,6 @@ mod tests {
     }
 
     #[test]
-    fn test_is_target_function_public() {
-        let func: ItemFn = syn::parse_quote! {
-            pub fn receive_asset(asset: u64) {}
-        };
-        assert!(is_target_function(&func));
-    }
-
-    #[test]
-    fn test_is_target_function_private_excluded() {
-        let func: ItemFn = syn::parse_quote! {
-            fn private_fn() {}
-        };
-        assert!(!is_target_function(&func));
-    }
-
-    #[test]
-    fn test_is_target_function_unsafe_excluded() {
-        let func: ItemFn = syn::parse_quote! {
-            pub unsafe fn unsafe_fn() {}
-        };
-        assert!(!is_target_function(&func));
-    }
-
-    #[test]
-    fn test_is_target_function_underscore_excluded() {
-        let func: ItemFn = syn::parse_quote! {
-            pub fn _internal() {}
-        };
-        assert!(!is_target_function(&func));
-    }
-
-    #[test]
     fn test_format_module_path() {
         let path = vec![
             syn::Ident::new("miden", Span::call_site()),
@@ -990,76 +734,18 @@ mod tests {
     }
 
     #[test]
-    fn test_collect_wrapper_methods_from_leaf_module() {
-        let src = r#"
-            mod miden {
-                mod basic_wallet {
-                    mod basic_wallet {
-                        pub fn receive_asset(asset: u64) {}
-                        pub fn send_asset(asset: u64) {}
-                    }
-                }
-            }
-        "#;
-        let file = parse_file(src);
-        let mut methods = Vec::new();
-        collect_wrapper_methods(&file.items, &mut Vec::new(), &mut methods).unwrap();
-
-        // Should have collected 2 methods from the leaf module
-        assert_eq!(methods.len(), 2);
-
-        // Check method names
-        let method_names: Vec<_> = methods.iter().map(|m| m.method.sig.ident.to_string()).collect();
-        assert!(method_names.contains(&"receive_asset".to_string()));
-        assert!(method_names.contains(&"send_asset".to_string()));
-    }
-
-    #[test]
-    fn test_collect_wrapper_methods_skips_exports() {
-        let src = r#"
-            mod exports {
-                mod my_component {
-                    pub fn exported_fn() {}
-                }
-            }
-        "#;
-        let file = parse_file(src);
-        let mut methods = Vec::new();
-        collect_wrapper_methods(&file.items, &mut Vec::new(), &mut methods).unwrap();
-
-        // exports module should not contribute any methods
-        assert!(methods.is_empty());
-    }
-
-    #[test]
-    fn test_collect_wrapper_methods_skips_empty_modules() {
-        let src = r#"
-            mod miden {
-                mod empty_module {
-                }
-            }
-        "#;
-        let file = parse_file(src);
-        let mut methods = Vec::new();
-        collect_wrapper_methods(&file.items, &mut Vec::new(), &mut methods).unwrap();
-
-        // No methods should be collected from empty module
-        assert!(methods.is_empty());
-    }
-
-    #[test]
     fn test_qualify_signature_types() {
-        let func: ItemFn = syn::parse_quote! {
-            pub fn test_fn(a: StructA, b: u64) -> StructB {}
+        let mut sig: syn::Signature = syn::parse_quote! {
+            fn test_fn(a: StructA, b: u64) -> StructB
         };
         let path = vec![
             syn::Ident::new("miden", Span::call_site()),
             syn::Ident::new("component", Span::call_site()),
         ];
-        let method = build_wrapper_method(&func, &path).unwrap();
+        qualify_signature_types(&mut sig, &path);
 
-        // Check that the types are qualified
-        let sig_str = method.sig.to_token_stream().to_string();
+        // Check that the custom types are qualified with the module path
+        let sig_str = sig.to_token_stream().to_string();
         assert!(sig_str.contains("miden :: component :: StructA"));
         assert!(sig_str.contains("miden :: component :: StructB"));
         // Primitives should not be qualified
@@ -1068,138 +754,9 @@ mod tests {
     }
 
     #[test]
-    fn test_build_wrapper_method_signature() {
-        let func: ItemFn = syn::parse_quote! {
-            pub fn receive_asset(asset: u64) {}
-        };
-        let path = vec![
-            syn::Ident::new("miden", Span::call_site()),
-            syn::Ident::new("basic_wallet", Span::call_site()),
-        ];
-        let method = build_wrapper_method(&func, &path).unwrap();
-
-        // Method should have &mut self as first parameter
-        assert_eq!(method.sig.inputs.len(), 2);
-        assert!(
-            matches!(method.sig.inputs.first(), Some(FnArg::Receiver(r)) if r.mutability.is_some())
-        );
-
-        // Should be public
-        assert!(matches!(method.vis, syn::Visibility::Public(_)));
-
-        // Should have inline attribute
-        assert!(method.attrs.iter().any(|attr| { attr.path().is_ident("inline") }));
-    }
-
-    #[test]
-    fn test_build_wrapper_method_with_return_type() {
-        let func: ItemFn = syn::parse_quote! {
-            pub fn get_value() -> u32 { 42 }
-        };
-        let path = vec![syn::Ident::new("test_mod", Span::call_site())];
-        let method = build_wrapper_method(&func, &path).unwrap();
-
-        // Return type should be preserved
-        assert!(matches!(method.sig.output, ReturnType::Type(_, _)));
-    }
-
-    #[test]
-    fn test_augment_generated_bindings_adds_account_struct() {
-        let src = r#"
-            mod miden {
-                mod basic_wallet {
-                    mod basic_wallet {
-                        pub fn receive_asset(asset: u64) {}
-                        pub fn send_asset(to: u32, amount: u64) -> bool { true }
-                    }
-                }
-            }
-        "#;
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens).unwrap();
-        let result_str = result.to_string();
-
-        // Should contain the Account struct
-        assert!(result_str.contains("struct Account"));
-        assert!(result_str.contains("impl Account"));
-
-        // Should contain wrapper methods
-        assert!(result_str.contains("fn receive_asset"));
-        assert!(result_str.contains("fn send_asset"));
-
-        // Methods should have &mut self parameter
-        assert!(result_str.contains("& mut self"));
-    }
-
-    #[test]
-    fn test_augment_generated_bindings_empty_input() {
-        let src = "";
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens).unwrap();
-        let result_str = result.to_string();
-
-        // Should not add Account struct when there are no methods
-        assert!(!result_str.contains("struct Account"));
-    }
-
-    #[test]
-    fn test_augment_generated_bindings_exports_only() {
-        let src = r#"
-            mod exports {
-                mod my_component {
-                    pub fn exported_fn() {}
-                }
-            }
-        "#;
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens).unwrap();
-        let result_str = result.to_string();
-
-        // Should not add Account struct for exports-only bindings
-        assert!(!result_str.contains("struct Account"));
-    }
-
-    #[test]
-    fn test_augment_generated_bindings_preserves_original_modules() {
-        let src = r#"
-            mod miden {
-                mod wallet {
-                    pub fn get_balance() -> u64 { 0 }
-                }
-            }
-        "#;
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens).unwrap();
-        let result_str = result.to_string();
-
-        // Original module structure should be preserved
-        assert!(result_str.contains("mod miden"));
-        assert!(result_str.contains("mod wallet"));
-        assert!(result_str.contains("fn get_balance"));
-    }
-
-    #[test]
-    fn test_wrapper_call_tokens_generates_correct_path() {
-        let path = vec![
-            syn::Ident::new("miden", Span::call_site()),
-            syn::Ident::new("basic_wallet", Span::call_site()),
-        ];
-        let fn_ident = syn::Ident::new("receive_asset", Span::call_site());
-        let args = vec![syn::Ident::new("asset", Span::call_site())];
-
-        let tokens = wrapper_call_tokens(&path, &fn_ident, &args);
-        let result = tokens.to_string();
-
-        assert!(result.contains("crate :: bindings :: miden :: basic_wallet :: receive_asset"));
-        assert!(result.contains("asset"));
-    }
-
-    #[test]
-    fn test_wrapper_method_qualifies_custom_type_inside_option() {
-        let func: ItemFn = parse_quote! {
-            pub fn roundtrip(payload: Option<OptionPayload>) -> Option<OptionPayload> {
-                unimplemented!()
-            }
+    fn test_qualify_signature_types_inside_option() {
+        let mut sig: syn::Signature = syn::parse_quote! {
+            fn roundtrip(payload: Option<OptionPayload>) -> Option<OptionPayload>
         };
         let path = vec![
             syn::Ident::new("miden", Span::call_site()),
@@ -1207,8 +764,8 @@ mod tests {
             syn::Ident::new("interface", Span::call_site()),
         ];
 
-        let method = build_wrapper_method(&func, &path).unwrap();
-        let signature = method.sig.to_token_stream().to_string().replace(' ', "");
+        qualify_signature_types(&mut sig, &path);
+        let signature = sig.to_token_stream().to_string().replace(' ', "");
 
         assert!(signature.contains("payload:Option<miden::account::interface::OptionPayload>"));
         assert!(signature.contains("->Option<miden::account::interface::OptionPayload>"));
@@ -1314,148 +871,5 @@ world core-type-variant-world {
         );
 
         assert!(world_uses_miden_core_types(&resolve, world));
-    }
-
-    /// Integration test verifying that `augment_generated_bindings` produces valid Rust code.
-    ///
-    /// This test simulates realistic wit-bindgen output with custom types, multiple methods,
-    /// and verifies the augmented output parses as valid Rust and contains the expected
-    /// wrapper struct with properly qualified type paths.
-    #[test]
-    fn test_augment_generated_bindings_integration() {
-        // Simulate more realistic wit-bindgen output with types and multiple leaf modules
-        let src = r#"
-            mod miden {
-                mod basic_wallet {
-                    mod basic_wallet {
-                        pub struct AssetInfo {
-                            pub amount: u64,
-                        }
-
-                        pub fn receive_asset(asset: AssetInfo) {}
-                        pub fn move_asset_to_note(asset: AssetInfo, note_idx: u32) -> bool { true }
-                        fn _internal_helper() {}  // Should be skipped (underscore prefix)
-                    }
-                }
-                mod other_component {
-                    mod other_component {
-                        pub fn do_something(value: u64) -> u64 { value }
-                    }
-                }
-            }
-            mod exports {
-                mod my_export {
-                    pub fn exported_fn() {}  // Should be skipped (exports module)
-                }
-            }
-        "#;
-
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens).unwrap();
-
-        // Verify the output parses as valid Rust
-        let parsed: File =
-            syn::parse2(result.clone()).expect("augmented bindings should be valid Rust syntax");
-
-        // Find the Account struct and impl
-        let has_account_struct = parsed
-            .items
-            .iter()
-            .any(|item| matches!(item, Item::Struct(s) if s.ident == "Account"));
-        let has_account_impl = parsed.items.iter().any(|item| {
-            matches!(item, Item::Impl(i) if i.self_ty.to_token_stream().to_string() == "Account")
-        });
-
-        assert!(has_account_struct, "should generate Account struct");
-        assert!(has_account_impl, "should generate Account impl");
-
-        // Find the impl block and verify methods
-        let impl_block = parsed
-            .items
-            .iter()
-            .find_map(|item| match item {
-                Item::Impl(i) if i.self_ty.to_token_stream().to_string() == "Account" => Some(i),
-                _ => None,
-            })
-            .expect("Account impl should exist");
-
-        let method_names: Vec<String> = impl_block
-            .items
-            .iter()
-            .filter_map(|item| match item {
-                ImplItem::Fn(f) => Some(f.sig.ident.to_string()),
-                _ => None,
-            })
-            .collect();
-
-        // Should include methods from both leaf modules
-        assert!(method_names.contains(&"receive_asset".to_string()));
-        assert!(method_names.contains(&"move_asset_to_note".to_string()));
-        assert!(method_names.contains(&"do_something".to_string()));
-
-        // Should NOT include internal helper or exported functions
-        assert!(!method_names.contains(&"_internal_helper".to_string()));
-        assert!(!method_names.contains(&"exported_fn".to_string()));
-
-        // Verify type qualification in the result string
-        let result_str = result.to_string();
-        // AssetInfo should be qualified with its module path
-        assert!(
-            result_str.contains("miden :: basic_wallet :: basic_wallet :: AssetInfo"),
-            "custom types should be qualified with module path"
-        );
-    }
-
-    #[test]
-    fn test_method_name_collision_detected() {
-        // Two different interfaces with the same function name
-        let src = r#"
-            mod miden {
-                mod interface_a {
-                    mod interface_a {
-                        pub fn transfer(amount: u64) {}
-                    }
-                }
-                mod interface_b {
-                    mod interface_b {
-                        pub fn transfer(value: u32) {}
-                    }
-                }
-            }
-        "#;
-
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens);
-
-        assert!(result.is_err(), "should detect method name collision");
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("method name collision"),
-            "error should mention collision: {err_msg}"
-        );
-        assert!(err_msg.contains("transfer"), "error should mention the colliding method name");
-    }
-
-    #[test]
-    fn test_no_collision_different_names() {
-        let src = r#"
-            mod miden {
-                mod interface_a {
-                    mod interface_a {
-                        pub fn transfer_a(amount: u64) {}
-                    }
-                }
-                mod interface_b {
-                    mod interface_b {
-                        pub fn transfer_b(value: u32) {}
-                    }
-                }
-            }
-        "#;
-
-        let tokens: TokenStream2 = src.parse().unwrap();
-        let result = augment_generated_bindings(tokens);
-
-        assert!(result.is_ok(), "should not detect collision for different method names");
     }
 }
