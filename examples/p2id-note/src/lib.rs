@@ -6,7 +6,7 @@ use miden::{AccountId, Word, account, active_note, note};
 
 /// Native account of the note: exposes the `basic-wallet` component methods (e.g.
 /// `receive_asset`) gathered from the `basic_wallet` package.
-#[account(basic_wallet)]
+#[account(basic_wallet::BasicWallet)]
 pub struct Wallet;
 
 #[note]

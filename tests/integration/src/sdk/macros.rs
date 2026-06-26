@@ -592,6 +592,452 @@ impl TestComponent for TestComponentStorage {
     );
 }
 
+/// Hand-written stand-in for the generated WIT of a sibling component dependency.
+///
+/// Mirrors the shape the `#[component]` macro writes to `target/generated-wit` so the sibling
+/// tests don't have to compile a real dependency project with cargo-miden.
+const TEST_SIBLING_GENERATED_WIT: &str = r#"package miden:test-sibling@0.0.1;
+
+use miden:base/core-types@1.0.0;
+
+interface test-sibling {
+    use core-types.{felt};
+
+    get-value: func() -> felt;
+    bump-value: func(delta: felt) -> felt;
+}
+
+world test-sibling-world {
+    export test-sibling;
+}
+"#;
+
+/// A sibling WIT whose interface owns a record type passed across a sibling call.
+///
+/// Exercises the dependency-type remapping in the sibling generator: the owned `point` record must
+/// resolve to the caller's `crate::bindings` rather than being regenerated in the sibling bindings.
+const TEST_SIBLING_OWNED_TYPE_WIT: &str = r#"package miden:test-sibling@0.0.1;
+
+use miden:base/core-types@1.0.0;
+
+interface test-sibling {
+    use core-types.{felt};
+
+    record point {
+        x: felt,
+        y: felt,
+    }
+
+    echo-point: func(p: point) -> point;
+}
+
+world test-sibling-world {
+    export test-sibling;
+}
+"#;
+
+/// Builds an account component project with one sibling component dependency named `test-sibling`.
+///
+/// The sibling exists only as its generated WIT (under `dep/target/generated-wit`), which is all
+/// the macros need: sibling calls resolve at link time and read no `.masp` during expansion.
+fn account_component_project_with_sibling_dep(
+    name: &str,
+    lib_rs: &str,
+) -> crate::cargo_proj::Project {
+    account_component_project_with_sibling_dep_inner(name, lib_rs, TEST_SIBLING_GENERATED_WIT, true)
+}
+
+/// Builds an account component project with one sibling component dependency named `test-sibling`.
+///
+/// `sibling_wit` is the dependency's generated WIT written under `dep/target/generated-wit`.
+/// `declare_sibling_wit` controls whether that WIT is declared under
+/// `[package.metadata.miden.dependencies]` in `miden-project.toml`. Omitting it reproduces the
+/// case where the reference selects (the WIT is read from `target/generated-wit`) but the inline
+/// `generate!` cannot resolve the import, so the macro emits the missing-WIT diagnostic.
+fn account_component_project_with_sibling_dep_inner(
+    name: &str,
+    lib_rs: &str,
+    sibling_wit: &str,
+    declare_sibling_wit: bool,
+) -> crate::cargo_proj::Project {
+    let sdk_path = sdk_crate_path();
+    let namespace = base::account_component_namespace(name, "test-component");
+    let component_package = format!("miden:{}", name.replace('_', "-"));
+    let sibling_wit_entry = if declare_sibling_wit {
+        "\n[package.metadata.miden.dependencies]\ntest-sibling = { wit = \
+         \"dep/target/generated-wit\" }\n"
+    } else {
+        ""
+    };
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+namespace = "{namespace}"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+test-sibling = {{ path = "dep" }}
+{sibling_wit_entry}"#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[package.metadata.component]
+package = "{component_package}"
+
+[package.metadata.component.target.dependencies]
+"miden:test-sibling" = {{ path = "dep/target/generated-wit/test-sibling.wit" }}
+
+[package.metadata.miden]
+project-kind = "account"
+supported-types = ["RegularAccountUpdatableCode"]
+"#,
+        sdk_path = sdk_path.display(),
+    );
+
+    project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("dep/target/generated-wit/test-sibling.wit", sibling_wit)
+        .file("src/lib.rs", lib_rs)
+        .build()
+}
+
+#[test]
+fn component_trait_with_sibling_dependency_compiles() {
+    // The sibling reference generates `trait TestSibling` with default methods calling the
+    // dependency's imports, attached to the storage struct through the `NativeAccount` blanket
+    // impl — so both the supertrait bound and the `self.*` calls type-check with no user glue.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, native_account::NativeAccount, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn value(&mut self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&mut self) -> Felt {
+        let _bumped = self.bump_value(felt!(1));
+        self.get_value()
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project_with_sibling_dep("component_sibling_dependency", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected the sibling component reference to compile: {stderr}"
+    );
+}
+
+#[test]
+fn component_traits_allow_plain_supertraits() {
+    // Supertraits no longer require sibling references; declaring account traits the component
+    // relies on is part of its API.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, native_account::NativeAccount, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent: NativeAccount {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project("component_traits_allow_plain_supertraits", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected a component trait with supertraits to compile: {stderr}"
+    );
+}
+
+#[test]
+fn component_impl_blocks_reject_arguments() {
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component(test_sibling::TestSibling)]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep(
+        "component_impl_blocks_reject_arguments",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected arguments on the impl block to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("only accepts arguments on the component trait declaration"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_sibling_references_require_the_interface_segment() {
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling)]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep(
+        "component_sibling_requires_interface_segment",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected a bare sibling reference to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("missing the WIT interface name"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("test_sibling::TestSibling"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn component_sibling_references_validate_the_interface_name() {
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::WrongName)]
+trait TestComponent: WrongName {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(1)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep(
+        "component_sibling_validates_interface_name",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected an unknown sibling interface to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("does not export a WIT interface named `wrong-name`"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("exported interfaces: test-sibling"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_sibling_reports_missing_wit_dependency_manifest_entry() {
+    // The reference is valid and the dependency WIT exists under `target/generated-wit`, but the
+    // `[package.metadata.miden.dependencies]` entry that puts it on the macro's WIT search path is
+    // omitted. Expansion should surface the actionable diagnostic, not a bare wit-parser error.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, native_account::NativeAccount, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn value(&mut self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&mut self) -> Felt {
+        self.get_value()
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep_inner(
+        "component_sibling_missing_wit_entry",
+        lib_rs,
+        TEST_SIBLING_GENERATED_WIT,
+        false,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected the missing sibling WIT entry to fail the build"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("could not resolve the WIT for sibling component dependencies"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("[package.metadata.miden.dependencies]"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_sibling_call_passes_an_interface_owned_record() {
+    // The sibling interface owns the `point` record and passes it across a sibling call. This
+    // exercises the dependency-type remap path (`dependency_type_with_entries`): the generated
+    // `echo_point` resolves `Point` to the caller's `crate::bindings`, where the impl-site
+    // `#[component]` materializes it from the imported sibling interface.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, native_account::NativeAccount, Felt};
+
+use crate::bindings::miden::test_sibling::test_sibling::Point;
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn relay_point(&mut self, x: Felt, y: Felt) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn relay_point(&mut self, x: Felt, y: Felt) -> Felt {
+        let echoed = self.echo_point(Point { x, y });
+        echoed.x
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep_inner(
+        "component_sibling_owned_record",
+        lib_rs,
+        TEST_SIBLING_OWNED_TYPE_WIT,
+        true,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected a sibling call passing an interface-owned record to compile: {stderr}"
+    );
+}
+
+#[test]
+fn component_sibling_trait_name_must_differ_from_the_component_trait() {
+    // A sibling reference whose interface segment equals the component trait name would generate a
+    // second `trait TestComponent` next to the user's. The collision check runs before WIT
+    // resolution, so the referenced interface need not exist; the macro should reject the name
+    // clash with guidance instead of leaving a raw duplicate-definition error.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestComponent)]
+trait TestComponent {
+    fn value(&self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&self) -> Felt {
+        felt!(7)
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep(
+        "component_sibling_trait_name_collision",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected the colliding trait name to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("collides with the component trait"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
 /// Builds a generated account project that deliberately has no `miden-project.toml`, for tests
 /// of the missing-manifest diagnostics.
 fn manifestless_account_project(name: &str, lib_rs: &str) -> crate::cargo_proj::Project {

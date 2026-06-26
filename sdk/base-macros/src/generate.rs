@@ -193,6 +193,25 @@ pub(crate) fn generate_inline_fpi_bindings(
     )
 }
 
+/// Generates inline bindings for an import-only world without injecting FPI variants.
+///
+/// Used by the `#[component]` sibling generator: the imported dependency functions are kept
+/// as-is and lower to direct cross-context calls, so no `fpi-*` companions are synthesized.
+pub(crate) fn generate_inline_import_bindings(
+    config: &manifest_paths::ResolvedWit,
+    inline_source: &str,
+    world: &str,
+    with_entries: &[(String, WithOption)],
+) -> Result<TokenStream2, Error> {
+    generate_bindings_from_sources(
+        &config.paths,
+        Some(inline_source),
+        Some(world),
+        with_entries,
+        &[],
+    )
+}
+
 /// Generates WIT bindings from resolved source paths and optional inline source.
 fn generate_bindings_from_sources(
     paths: &[String],

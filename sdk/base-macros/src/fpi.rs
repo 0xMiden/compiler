@@ -27,7 +27,7 @@ use crate::{
     generate::{
         collect_arg_idents, format_module_path, qualify_signature_types, should_generate_struct,
     },
-    wit_world::MidenDependency,
+    wit_world::SelectedDependency,
 };
 
 /// WIT function prefix reserved for generated foreign procedure imports.
@@ -116,6 +116,20 @@ pub(crate) fn is_function(func: &ItemFn) -> bool {
         && func.sig.ident.to_string().starts_with(RUST_FUNCTION_PREFIX)
 }
 
+/// Determines whether a generated free function represents a plain (non-FPI) WIT import.
+///
+/// Unlike [`is_function`], which keys on the synthesized `fpi_` prefix, this is a negative filter:
+/// it accepts any safe, public free function in a generated leaf import module that is not an FPI
+/// import. That relies on wit-bindgen emitting exactly the interface's functions as plain public
+/// free functions in those modules — it does not emit auxiliary public free functions there. If a
+/// future wit-bindgen version changes that, such functions would be picked up as sibling methods
+/// and this predicate would need to narrow (e.g. by the interface's declared function set).
+pub(crate) fn is_plain_import_function(func: &ItemFn) -> bool {
+    matches!(func.vis, syn::Visibility::Public(_))
+        && func.sig.unsafety.is_none()
+        && !func.sig.ident.to_string().starts_with(RUST_FUNCTION_PREFIX)
+}
+
 /// Core WIT types needed to synthesize caller-only FPI imports.
 #[derive(Clone, Copy)]
 struct CoreTypes {
@@ -123,14 +137,14 @@ struct CoreTypes {
     word: WitType,
 }
 
-/// FPI-capable generated import module.
-struct Module {
-    /// Rust module path where the generated `fpi_*` free functions live.
-    module_path: Vec<syn::Ident>,
+/// Generated import module with the free functions selected by a walk filter.
+pub(crate) struct Module {
+    /// Rust module path where the selected generated free functions live.
+    pub(crate) module_path: Vec<syn::Ident>,
     /// String form of `module_path` used for dependency lookup.
-    path_string: String,
-    /// Generated FPI free functions from this import module.
-    functions: Vec<ItemFn>,
+    pub(crate) path_string: String,
+    /// Selected generated free functions from this import module.
+    pub(crate) functions: Vec<ItemFn>,
 }
 
 /// Resolved package data needed to generate FPI caller wrappers.
@@ -296,18 +310,29 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
     }
 }
 
-/// Recursively walks all modules and collects FPI functions from leaf import modules.
+/// Walks generated bindings and collects the import-module functions selected by `filter`.
+pub(crate) fn collect_import_modules(
+    items: &[Item],
+    filter: &dyn Fn(&ItemFn) -> bool,
+) -> syn::Result<Vec<Module>> {
+    let mut modules = Vec::new();
+    collect_modules(items, &mut Vec::new(), &mut modules, filter)?;
+    Ok(modules)
+}
+
+/// Recursively walks all modules and collects selected functions from leaf import modules.
 fn collect_modules(
     items: &[Item],
     path: &mut Vec<syn::Ident>,
     modules_out: &mut Vec<Module>,
+    filter: &dyn Fn(&ItemFn) -> bool,
 ) -> syn::Result<()> {
     for item in items.iter() {
         if let Item::Mod(module) = item {
             path.push(module.ident.clone());
             if let Some((_, ref content)) = module.content {
-                collect_modules(content, path, modules_out)?;
-                collect_functions_from_module(content, path, modules_out);
+                collect_modules(content, path, modules_out, filter)?;
+                collect_functions_from_module(content, path, modules_out, filter);
             }
             path.pop();
         }
@@ -316,11 +341,12 @@ fn collect_modules(
     Ok(())
 }
 
-/// Collects generated `fpi_*` free functions from a leaf import module.
+/// Collects selected generated free functions from a leaf import module.
 fn collect_functions_from_module(
     items: &[Item],
     path: &[syn::Ident],
     modules_out: &mut Vec<Module>,
+    filter: &dyn Fn(&ItemFn) -> bool,
 ) {
     if !should_generate_struct(path, items) {
         return;
@@ -329,7 +355,7 @@ fn collect_functions_from_module(
     let functions = items
         .iter()
         .filter_map(|item| match item {
-            Item::Fn(func) if is_function(func) => Some(func.clone()),
+            Item::Fn(func) if filter(func) => Some(func.clone()),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -349,12 +375,11 @@ fn collect_functions_from_module(
 pub(crate) fn augment_foreign_account_bindings(
     bindings: TokenStream2,
     account_struct: ItemStruct,
-    dependencies: Vec<MidenDependency>,
+    dependencies: Vec<SelectedDependency>,
     binding_module_ident: syn::Ident,
 ) -> syn::Result<TokenStream2> {
     let file: File = syn::parse2(bindings)?;
-    let mut modules = Vec::new();
-    collect_modules(&file.items, &mut Vec::new(), &mut modules)?;
+    let modules = collect_import_modules(&file.items, &is_function)?;
 
     if modules.is_empty() {
         return Err(Error::new(
@@ -675,7 +700,7 @@ fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
 }
 
 /// Loads a single dependency package and extracts exported procedure roots.
-fn load_dependency(dependency: MidenDependency) -> syn::Result<Dependency> {
+fn load_dependency(dependency: SelectedDependency) -> syn::Result<Dependency> {
     let import = dependency.import().to_owned();
     let module_path = import_module_path(&import);
     let package_path = resolve_dependency_package_path(&dependency)?;
@@ -715,6 +740,31 @@ fn load_dependency(dependency: MidenDependency) -> syn::Result<Dependency> {
     })
 }
 
+/// Maps dependency-defined WIT types to the normal bindings module generated by component/note.
+pub(crate) fn dependency_type_with_entries(
+    dependencies: &[SelectedDependency],
+) -> Vec<(String, wit_bindgen_rust::WithOption)> {
+    use heck::ToUpperCamelCase;
+
+    dependencies
+        .iter()
+        .flat_map(|dependency| {
+            let import = dependency.import();
+            let module_path = import_module_path(import);
+            dependency.type_names().iter().map(move |wit_type| {
+                (
+                    format!("{import}/{wit_type}"),
+                    wit_bindgen_rust::WithOption::Path(format!(
+                        "crate::bindings::{}::{}",
+                        module_path,
+                        wit_type.to_upper_camel_case()
+                    )),
+                )
+            })
+        })
+        .collect()
+}
+
 /// Converts a fully-qualified WIT import path into the Rust module path generated by wit-bindgen.
 pub(crate) fn import_module_path(import: &str) -> String {
     let without_version = import.split('@').next().unwrap_or(import);
@@ -727,7 +777,7 @@ pub(crate) fn import_module_path(import: &str) -> String {
 }
 
 /// Finds the `.masp` package artifact corresponding to a manifest dependency entry.
-fn resolve_dependency_package_path(dependency: &MidenDependency) -> syn::Result<PathBuf> {
+fn resolve_dependency_package_path(dependency: &SelectedDependency) -> syn::Result<PathBuf> {
     if dependency.root.is_file() {
         return Ok(dependency.root.clone());
     }
@@ -757,7 +807,7 @@ fn resolve_dependency_package_path(dependency: &MidenDependency) -> syn::Result<
 
 /// Formats the diagnostic emitted when FPI wrapper generation cannot load a dependency package.
 fn missing_dependency_package_message(
-    dependency: &MidenDependency,
+    dependency: &SelectedDependency,
     package_stems: &[String],
     output_dirs: &[PathBuf],
     profiles: &[String],
@@ -786,7 +836,7 @@ fn missing_dependency_package_message(
 }
 
 /// Returns a command hint for building a dependency package before generating FPI wrappers.
-fn dependency_build_hint(dependency: &MidenDependency) -> String {
+fn dependency_build_hint(dependency: &SelectedDependency) -> String {
     let manifest_path = dependency.root.join("Cargo.toml");
     if manifest_path.is_file() {
         format!(
@@ -806,7 +856,7 @@ fn dependency_build_hint(dependency: &MidenDependency) -> String {
 }
 
 /// Returns candidate output directories where a dependency `.masp` may have been written.
-fn dependency_output_dirs(dependency: &MidenDependency, profiles: &[String]) -> Vec<PathBuf> {
+fn dependency_output_dirs(dependency: &SelectedDependency, profiles: &[String]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
     // The dependency root is the most precise location for path dependencies. Prefer it over
@@ -910,7 +960,7 @@ fn find_dependency_package_in_dir(
 }
 
 /// Returns likely `.masp` filename stems for a dependency.
-fn dependency_package_stems(dependency: &MidenDependency) -> Vec<String> {
+fn dependency_package_stems(dependency: &SelectedDependency) -> Vec<String> {
     let mut stems = Vec::new();
 
     if let Some(package_name) = dependency_manifest_package_name(&dependency.root) {
@@ -1053,10 +1103,11 @@ mod tests {
         std::fs::create_dir_all(&temp_root).unwrap();
         std::fs::write(temp_root.join("Cargo.toml"), "[package]\nname = \"counter\"\n").unwrap();
 
-        let dependency = MidenDependency {
+        let dependency = SelectedDependency {
             name: "counter".to_string(),
             root: temp_root.clone(),
             interface: DependencyInterface {
+                name: "counter".to_string(),
                 import: "miden:counter/counter@0.0.1".to_string(),
                 types: Vec::new(),
             },

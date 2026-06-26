@@ -36,6 +36,22 @@ pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.prefix().as_felt(), value.suffix()]
 }
 
+/// Asserts the scalar counter value stored in an account's storage map at `storage_key`.
+pub(crate) fn assert_counter_storage_at_key(
+    account_storage: &AccountStorage,
+    storage_slot: &StorageSlotName,
+    storage_key: Word,
+    expected: u64,
+) {
+    let word = account_storage
+        .get_map_item(storage_slot, storage_key)
+        .expect("failed to get counter value from storage slot");
+
+    // `AccountStorage` exposes scalar felt values as `[felt, 0, 0, 0]`.
+    let value = word[0].as_canonical_u64();
+    assert_eq!(value, expected, "counter value mismatch: expected {expected}, got {value}");
+}
+
 // ASYNC HELPERS
 // ================================================================================================
 

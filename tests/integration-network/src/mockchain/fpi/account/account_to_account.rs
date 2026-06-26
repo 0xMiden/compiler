@@ -14,14 +14,14 @@ use miden_client::{
 use miden_core::Felt;
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
+    account::{AccountBuilder, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::super::{
-    super::support::{execute_tx, note_script_root, to_core_felts},
+    super::support::{assert_counter_storage_at_key, execute_tx, note_script_root, to_core_felts},
     common::build_account_to_account_fpi_test_packages,
 };
 
@@ -137,20 +137,6 @@ fn callee_storage_key() -> Word {
     ])
 }
 
-/// Asserts the counter value stored in the callee account's storage map at `storage_key`.
-fn assert_counter_storage_at_key(
-    callee_account_storage: &AccountStorage,
-    storage_slot: &StorageSlotName,
-    storage_key: Word,
-    expected: u64,
-) {
-    let word = callee_account_storage
-        .get_map_item(storage_slot, storage_key)
-        .expect("failed to get counter value from storage slot");
-
-    assert_eq!(word[0].as_canonical_u64(), expected, "counter value mismatch");
-}
-
 /// Minimal callee account component source used by the account-to-account FPI test.
 const CALLEE_ACCOUNT_SOURCE: &str = r#"
 #![no_std]
@@ -189,7 +175,7 @@ const CALLER_ACCOUNT_SOURCE: &str = r#"
 
 use miden::{account, component, component_storage, felt, AccountId, Felt, Word};
 
-#[account(account_to_account_callee_account)]
+#[account(account_to_account_callee_account::CounterContract)]
 struct CalleeAccount;
 
 /// Account component which forwards reads to another account through FPI.
@@ -226,7 +212,7 @@ use miden::*;
 ///
 /// Deliberately named `Account` — the name of the removed auto-generated wrapper — as regression
 /// coverage that user-defined `#[account(...)]` wrappers may use it.
-#[account(account_to_account_caller_account)]
+#[account(account_to_account_caller_account::CallerAccount)]
 struct Account;
 
 /// Note script input containing the foreign callee account id.
