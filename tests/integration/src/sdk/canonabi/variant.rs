@@ -33,7 +33,7 @@ fn variant_with_two_felt_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Request variants carrying felt values.
 #[export_type]
@@ -53,13 +53,18 @@ pub enum Response {
     Second(Felt),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms one felt variant into one felt result variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::First(value) => Response::First(value + felt!(1)),
             Request::Second(value) => Response::Second(value + felt!(2)),
@@ -89,7 +94,7 @@ fn variant_with_unit_and_felt_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Request variants with and without payloads.
 #[export_type]
@@ -109,13 +114,18 @@ pub enum Response {
     Value(Felt),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a unit or felt variant into the matching result variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::Empty => Response::Empty,
             Request::Value(value) => Response::Value(value + felt!(5)),
@@ -145,7 +155,7 @@ fn variant_with_felt_and_word_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, Word, component, export_type, felt};
+use miden::{Felt, Word, component, component_storage, export_type, felt};
 
 /// Request variants carrying either a felt or a word.
 #[export_type]
@@ -165,13 +175,18 @@ pub enum Response {
     Elements(Word),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms either a felt or word variant into the matching result variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::Scalar(value) => Response::Scalar(value + felt!(3)),
             Request::Elements(word) => Response::Elements(Word::new([
@@ -212,7 +227,7 @@ fn variant_with_felt_word_and_unit_cases() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, Word, component, export_type, felt};
+use miden::{Felt, Word, component, component_storage, export_type, felt};
 
 /// Request variants carrying a scalar, a word, or no value.
 #[export_type]
@@ -236,13 +251,18 @@ pub enum Response {
     Empty,
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a scalar, word, or unit variant into the matching result variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::Scalar(value) => Response::Scalar(value + felt!(8)),
             Request::Vector(word) => Response::Vector(Word::new([
@@ -290,7 +310,7 @@ fn variant_with_word_and_u64_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Word, component, export_type, felt};
+use miden::{Word, component, component_storage, export_type, felt};
 
 /// Request variants carrying either a word or a 64-bit integer.
 #[export_type]
@@ -310,13 +330,18 @@ pub enum Response {
     Amount(u64),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms either a word or u64 variant into the matching result variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::Elements(word) => Response::Elements(Word::new([
                 word.a + felt!(10),
@@ -359,7 +384,7 @@ fn variant_with_u8_and_u64_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type};
+use miden::{component, component_storage, export_type};
 
 /// Request variants carrying differently sized integer values.
 #[export_type]
@@ -379,13 +404,18 @@ pub enum Response {
     Wide(u64),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms either an 8-bit or 64-bit variant into the matching result variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::Tiny(value) => Response::Tiny(value + 5),
             Request::Wide(value) => Response::Wide(value + 13),
@@ -418,7 +448,7 @@ fn variant_with_different_struct_payload_shapes() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type};
+use miden::{component, component_storage, export_type};
 
 /// Payload with a 64-bit field before a 32-bit field.
 #[derive(Clone, Copy, Debug)]
@@ -458,13 +488,18 @@ pub enum Response {
     B(PayloadB),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms the active record payload using its own field layout.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::A(payload) => Response::A(PayloadA {
                 x: payload.x + 17,
@@ -507,7 +542,7 @@ fn variant_with_nested_variant_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, Word, component, export_type, felt};
+use miden::{Felt, Word, component, component_storage, export_type, felt};
 
 /// Inner variants carried by the outer request and response variants.
 #[derive(Clone, Copy, Debug)]
@@ -537,13 +572,18 @@ pub enum Response {
     Some(Inner),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a nested variant payload and returns it through the outer variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::None => Response::None,
             Request::Some(Inner::One(value)) => Response::Some(Inner::One(value + felt!(9))),
@@ -591,7 +631,7 @@ fn variant_with_mixed_struct_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Payload with mixed scalar fields and canonical ABI alignment requirements.
 #[derive(Clone, Copy, Debug)]
@@ -629,13 +669,18 @@ pub enum Response {
     Second(MixedPayload),
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a mixed record payload and returns it in the matching variant.
-    pub fn roundtrip(&self, request: Request) -> Response {
+    fn roundtrip(&self, request: Request) -> Response;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, request: Request) -> Response {
         match request {
             Request::First(payload) => Response::First(MixedPayload {
                 amount: payload.amount + 7,

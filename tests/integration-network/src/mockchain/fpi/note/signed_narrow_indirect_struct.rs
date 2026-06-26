@@ -39,7 +39,7 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Felt, StorageMap, Word};
+use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
 /// Record whose fields force indirect FPI while carrying signed narrow values.
 #[export_type]
@@ -79,17 +79,24 @@ pub struct SignedNarrowRecord {
 }
 
 /// Account component whose FPI method echoes a signed-narrow record.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map included so the shared FPI mock-chain helper can initialize the account.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose FPI method echoes a signed-narrow record.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the signed-narrow record received from the caller.
-    pub fn echo_signed_narrow_record(&self, input: SignedNarrowRecord) -> SignedNarrowRecord {
+    fn echo_signed_narrow_record(&self, input: SignedNarrowRecord) -> SignedNarrowRecord;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the signed-narrow record received from the caller.
+    fn echo_signed_narrow_record(&self, input: SignedNarrowRecord) -> SignedNarrowRecord {
         let _ = &self.count_map;
         assert_eq!(input.i8_value, -7);
         assert_eq!(input.i16_value, -1234);
@@ -105,7 +112,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::signed_narrow_indirect_struct_account::miden_signed_narrow_indirect_struct_account::SignedNarrowRecord;
+use crate::bindings::miden::signed_narrow_indirect_struct_account::counter_contract::SignedNarrowRecord;
 #[account(signed_narrow_indirect_struct_account)]
 struct CounterContract;
 

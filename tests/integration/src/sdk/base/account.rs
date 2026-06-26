@@ -2,26 +2,19 @@ use super::*;
 
 #[allow(clippy::uninlined_format_args)]
 fn run_account_binding_test_with_struct(name: &str, account_struct: &str, method: &str) {
+    let component = account_component_source_with_storage(account_struct, "TestAccount", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::*;
 
-#[component]
-{account_struct}
-
-#[component]
-impl TestAccount {{
-    {method}
-}}
-",
-        account_struct = account_struct,
-        method = method
+{component}
+"
     );
 
     let sdk_path = sdk_crate_path();
-    let namespace = component_namespace(name);
+    let namespace = account_component_namespace(name, "test-account");
     let miden_project_toml = format!(
         r#"
 [package]
@@ -78,7 +71,7 @@ debug = false
 
 #[allow(clippy::uninlined_format_args)]
 fn run_account_binding_test(name: &str, method: &str) {
-    run_account_binding_test_with_struct(name, "struct TestAccount;", method)
+    run_account_binding_test_with_struct(name, "struct TestAccountStorage;", method)
 }
 
 #[test]
@@ -264,7 +257,7 @@ fn account_was_procedure_called_binding() {
 fn account_storage_get_initial_item_binding() {
     run_account_binding_test_with_struct(
         "account_storage_get_initial_item_binding",
-        r#"struct TestAccount {
+        r#"struct TestAccountStorage {
     #[storage(description = "test value")]
     value: StorageValue<Word>,
 }"#,
@@ -278,7 +271,7 @@ fn account_storage_get_initial_item_binding() {
 fn account_storage_get_initial_map_item_binding() {
     run_account_binding_test_with_struct(
         "account_storage_get_initial_map_item_binding",
-        r#"struct TestAccount {
+        r#"struct TestAccountStorage {
     #[storage(description = "test map")]
     map: StorageMap<Word, Word>,
 }"#,

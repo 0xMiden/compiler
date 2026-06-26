@@ -2,25 +2,19 @@ use super::*;
 
 #[allow(clippy::uninlined_format_args)]
 fn run_faucet_binding_test(name: &str, method: &str) {
+    let component = account_component_source("TestFaucet", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::*;
 
-#[component]
-struct TestFaucet;
-
-#[component]
-impl TestFaucet {{
-    {method}
-}}
-",
-        method = method
+{component}
+"
     );
 
     let sdk_path = sdk_crate_path();
-    let namespace = component_namespace(name);
+    let namespace = account_component_namespace(name, "test-faucet");
     let miden_project_toml = format!(
         r#"
 [package]

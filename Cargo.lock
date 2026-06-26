@@ -476,7 +476,9 @@ version = "0.8.1"
 dependencies = [
  "anyhow",
  "clap",
+ "heck",
  "liquid",
+ "liquid-core",
  "log",
  "miden-mast-package",
  "midenc-compile",
@@ -3738,7 +3740,9 @@ dependencies = [
  "midenc-session",
  "num-traits",
  "proptest",
+ "quote",
  "sha2 0.11.0",
+ "syn 2.0.117",
 ]
 
 [[package]]

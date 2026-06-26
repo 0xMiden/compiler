@@ -8,15 +8,20 @@ fn result_with_felt_ok_and_u64_error_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, felt};
+use miden::{Felt, component, component_storage, felt};
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a result with felt success and integer error payloads.
-    pub fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64> {
+    fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64> {
         match value {
             Ok(value) => Ok(value + felt!(7)),
             Err(value) => Err(value + 9),
@@ -53,15 +58,20 @@ fn result_with_large_felt_ok_and_u32_error_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component};
+use miden::{Felt, component, component_storage};
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Returns the result unchanged across the canonical ABI boundary.
-    pub fn roundtrip(&self, value: Result<Felt, u32>) -> Result<Felt, u32> {
+    fn roundtrip(&self, value: Result<Felt, u32>) -> Result<Felt, u32>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, value: Result<Felt, u32>) -> Result<Felt, u32> {
         value
     }
 }
@@ -95,15 +105,20 @@ fn result_with_large_felt_ok_and_u64_error_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component};
+use miden::{Felt, component, component_storage};
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Returns the result unchanged across the canonical ABI boundary.
-    pub fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64> {
+    fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, value: Result<Felt, u64>) -> Result<Felt, u64> {
         value
     }
 }
@@ -137,15 +152,20 @@ fn result_with_word_ok_and_felt_error_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, Word, component, felt};
+use miden::{Felt, Word, component, component_storage, felt};
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a result with word success and felt error payloads.
-    pub fn roundtrip(&self, value: Result<Word, Felt>) -> Result<Word, Felt> {
+    fn roundtrip(&self, value: Result<Word, Felt>) -> Result<Word, Felt>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, value: Result<Word, Felt>) -> Result<Word, Felt> {
         match value {
             Ok(word) => Ok(Word::new([
                 word.a + felt!(1),
@@ -195,7 +215,7 @@ fn result_with_record_payloads() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Success payload used inside a result.
 #[derive(Clone, Copy, Debug)]
@@ -221,13 +241,21 @@ pub struct ResultErrPayload {
     pub tiny: u8,
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms record payloads carried by a result.
-    pub fn roundtrip(
+    fn roundtrip(
+        &self,
+        payload: Result<ResultOkPayload, ResultErrPayload>,
+    ) -> Result<ResultOkPayload, ResultErrPayload>;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(
         &self,
         payload: Result<ResultOkPayload, ResultErrPayload>,
     ) -> Result<ResultOkPayload, ResultErrPayload> {
@@ -302,7 +330,7 @@ fn record_with_result_field() {
     let account_source = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{Felt, component, export_type, felt};
+use miden::{Felt, component, component_storage, export_type, felt};
 
 /// Payload whose record layout contains a result field.
 #[derive(Clone, Copy, Debug)]
@@ -316,13 +344,18 @@ pub struct ResultFieldPayload {
     pub flag: bool,
 }
 
-#[component]
+#[component_storage]
 struct CanonabiAccount;
 
 #[component]
-impl CanonabiAccount {
+trait CanonabiComponent {
     /// Transforms a record with a result field.
-    pub fn roundtrip(&self, payload: ResultFieldPayload) -> ResultFieldPayload {
+    fn roundtrip(&self, payload: ResultFieldPayload) -> ResultFieldPayload;
+}
+
+#[component]
+impl CanonabiComponent for CanonabiAccount {
+    fn roundtrip(&self, payload: ResultFieldPayload) -> ResultFieldPayload {
         ResultFieldPayload {
             amount: payload.amount + 3,
             outcome: match payload.outcome {

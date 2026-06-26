@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The auto-generated `crate::bindings::Account` struct is removed. Declare the account
   explicitly with `#[account(...)]` and use that type as the note/tx-script entrypoint account
   parameter #1157
+- `#[component]` no longer applies to structs or inherent impl blocks. An account component is
+  now written as a `#[component_storage]` struct declaring the storage fields, a `#[component]`
+  trait declaring the API, and a `#[component] impl Trait for Storage` block providing the
+  behavior. The WIT interface name derives from the trait name, and `[lib].namespace` in
+  `miden-project.toml` must equal the full `miden:<package>/<interface>@<version>` id (package
+  from the kebab-cased `[package].name`, version from `miden-project.toml`) #697
+- Storage slot names now derive from the `[lib].namespace` interface segment instead of the
+  storage struct name. Slot names feed `StorageSlotId` derivation, so a component whose storage
+  struct name does not match the interface segment gets different slot ids on recompile. Note
+  that this also means renaming the component trait (and updating `[lib].namespace` to match)
+  re-keys the storage slot ids of an already-deployed component #697
 
 ### Added
 - `#[account(...)]` on an empty struct generates a typed account wrapper exposing the methods

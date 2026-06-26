@@ -726,23 +726,22 @@ impl MasmFunctionBuilder {
         if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
-            let init = if let Some(id) = link_info.component() {
-                let component_path = id.to_library_path();
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified =
-                    masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            } else {
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified = masm::QualifiedProcedureName::new("::init", name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            };
-            let span = SourceSpan::default();
-            // Add init call to the emitter's target before emitting the function body
-            emitter.invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, init.clone()));
-            emitter
-                .target
-                .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(init))));
+            // Resolve `init` symbolically within the containing module instead of through a
+            // fully-qualified component path, which depends on the (user-editable)
+            // `[lib].namespace` matching the component's library identity.
+            //
+            // INVARIANT: this relies on the canonical-ABI export wrappers being emitted into the
+            // root component module — the same module where `MasmComponentBuilder` defines
+            // `init` (`self.component.modules[0]`); the inner lifted functions in interface and
+            // core child modules carry no init prologue. If export wrappers ever move into child
+            // modules, this symbol stops resolving and the init target must be threaded in as a
+            // qualified path instead. A user-exported method named `init` collides with the
+            // generated procedure at definition time ("symbol conflict: found duplicate
+            // definitions"), so it cannot silently shadow this target.
+            let init = InvocationTarget::Symbol("init".parse().unwrap());
+            // Add init call to the emitter's target before emitting the function body; `emit`
+            // also registers the invocation so the assembler can resolve the symbolic target.
+            emitter.emitter().emit(masm::Instruction::Exec(init), SourceSpan::default());
         }
 
         let mut body = emitter.emit(&entry.borrow());

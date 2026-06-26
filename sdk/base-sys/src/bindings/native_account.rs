@@ -62,14 +62,19 @@ unsafe extern "C" {
 /// Implement a basic-wallet style `receive_asset` method by adding the asset to the vault:
 ///
 /// ```rust,ignore
-/// use miden::{component, native_account::NativeAccount, Asset};
+/// use miden::{component, component_storage, native_account::NativeAccount, Asset};
+///
+/// #[component_storage]
+/// struct MyAccountStorage;
 ///
 /// #[component]
-/// struct MyAccount;
+/// trait MyAccount {
+///     fn receive_asset(&mut self, asset: Asset);
+/// }
 ///
 /// #[component]
-/// impl MyAccount {
-///     pub fn receive_asset(&mut self, asset: Asset) {
+/// impl MyAccount for MyAccountStorage {
+///     fn receive_asset(&mut self, asset: Asset) {
 ///         self.add_asset(asset);
 ///     }
 /// }
@@ -156,7 +161,8 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
 
 /// Trait that provides native account operations for components.
 ///
-/// This trait is automatically implemented for types marked with the `#[component]` macro.
+/// This trait is automatically implemented for the storage struct marked with the
+/// `#[component_storage]` macro.
 pub trait NativeAccount {
     /// Adds the specified asset to the vault and returns the resulting asset value word stored
     /// under that asset key.
@@ -172,14 +178,19 @@ pub trait NativeAccount {
     /// Implement a basic-wallet style `receive_asset` method by adding the asset to the vault:
     ///
     /// ```rust,ignore
-    /// use miden::{component, native_account::NativeAccount, Asset};
+    /// use miden::{component, component_storage, native_account::NativeAccount, Asset};
+    ///
+    /// #[component_storage]
+    /// struct MyAccountStorage;
     ///
     /// #[component]
-    /// struct MyAccount;
+    /// trait MyAccount {
+    ///     fn receive_asset(&mut self, asset: Asset);
+    /// }
     ///
     /// #[component]
-    /// impl MyAccount {
-    ///     pub fn receive_asset(&mut self, asset: Asset) {
+    /// impl MyAccount for MyAccountStorage {
+    ///     fn receive_asset(&mut self, asset: Asset) {
     ///         self.add_asset(asset);
     ///     }
     /// }

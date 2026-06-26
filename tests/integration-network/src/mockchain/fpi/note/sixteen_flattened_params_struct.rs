@@ -38,7 +38,7 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Felt, StorageMap, Word};
+use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
 /// Record whose fields flatten to sixteen procedure input felts.
 #[export_type]
@@ -78,17 +78,27 @@ pub struct SixteenFlattenedParams {
 }
 
 /// Account component whose FPI method echoes a sixteen-felt record.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map included so the shared FPI mock-chain helper can initialize the account.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose FPI method echoes a sixteen-felt record.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the sixteen-felt record received from the caller.
-    pub fn echo_sixteen_flattened_params(
+    fn echo_sixteen_flattened_params(
+        &self,
+        input: SixteenFlattenedParams,
+    ) -> SixteenFlattenedParams;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the sixteen-felt record received from the caller.
+    fn echo_sixteen_flattened_params(
         &self,
         input: SixteenFlattenedParams,
     ) -> SixteenFlattenedParams {
@@ -105,7 +115,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::sixteen_flattened_params_struct_account::miden_sixteen_flattened_params_struct_account::SixteenFlattenedParams;
+use crate::bindings::miden::sixteen_flattened_params_struct_account::counter_contract::SixteenFlattenedParams;
 #[account(sixteen_flattened_params_struct_account)]
 struct CounterContract;
 

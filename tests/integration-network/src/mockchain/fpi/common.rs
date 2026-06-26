@@ -369,6 +369,9 @@ pub(super) fn execute_counter_caller_note(
 }
 
 /// Returns the derived storage slot name for the generated counter account package.
+///
+/// The middle segment tracks the `counter-contract` interface declared in the generated account's
+/// `[lib].namespace`, from which the macro derives slot names.
 fn counter_storage_slot_name_for_package(account_package: &str) -> StorageSlotName {
     let package_name = account_package.strip_prefix("miden:").unwrap_or(account_package);
     let namespace = sanitize_slot_name_component(package_name);
@@ -407,7 +410,7 @@ fn account_miden_project_toml(names: &FpiTestProjectNames) -> String {
 
 /// Returns the generated account project manifest for a package without FPI dependencies.
 fn account_miden_project_toml_for(account_name: &str, account_package: &str) -> String {
-    let namespace = miden_project_namespace(account_package, account_name);
+    let namespace = account_component_namespace(account_package, "counter-contract");
     format!(
         r#"
 [package]
@@ -482,7 +485,7 @@ fn dependent_account_miden_project_toml(
     dependency_package: &str,
     dependency_root: &Path,
 ) -> String {
-    let namespace = miden_project_namespace(account_package, account_name);
+    let namespace = account_component_namespace(account_package, "caller-account");
     let dependency_name = miden_dependency_name(dependency_package);
     let dependency_wit_path = dependency_root.join("target/generated-wit");
     format!(
@@ -673,6 +676,12 @@ fn miden_dependency_name(package: &str) -> &str {
 /// Returns the generated WIT namespace used by temporary FPI projects.
 fn miden_project_namespace(package: &str, project_name: &str) -> String {
     format!("{package}/miden-{project_name}@0.0.1")
+}
+
+/// Builds the `[lib].namespace` for a generated account component. The interface segment must
+/// equal the component trait name (kebab-case).
+fn account_component_namespace(package: &str, interface: &str) -> String {
+    format!("{package}/{interface}@0.0.1")
 }
 
 /// Returns the generated note manifest with one Miden dependency.

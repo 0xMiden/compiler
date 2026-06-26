@@ -222,6 +222,7 @@ impl PredecessorState {
 
     pub fn join(&mut self, predecessor: OperationRef) -> ChangeResult {
         if self.known_predecessors.insert(predecessor) {
+            self.known_predecessors.sort_by(stable_operation_cmp);
             self.successor_inputs.insert(predecessor, Default::default());
             ChangeResult::Changed
         } else {
@@ -242,6 +243,37 @@ impl PredecessorState {
             result |= ChangeResult::Changed;
         }
         result
+    }
+}
+
+/// Orders operations by stable IR position rather than pointer identity.
+fn stable_operation_cmp(a: &OperationRef, b: &OperationRef) -> core::cmp::Ordering {
+    use core::cmp::Ordering;
+
+    if OperationRef::ptr_eq(a, b) {
+        return Ordering::Equal;
+    }
+
+    match (a.parent(), b.parent()) {
+        (Some(a_block), Some(b_block)) => {
+            let block_order = a_block.borrow().id().cmp(&b_block.borrow().id());
+            if block_order != Ordering::Equal {
+                return block_order;
+            }
+
+            if a.borrow().is_before_in_block(b) {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            }
+        }
+        (None, Some(_)) => Ordering::Less,
+        (Some(_), None) => Ordering::Greater,
+        (None, None) => {
+            let a = a.borrow();
+            let b = b.borrow();
+            a.name().cmp(&b.name()).then_with(|| a.span().cmp(&b.span()))
+        }
     }
 }
 
@@ -972,4 +1004,40 @@ where
         operands.push(lattice.value().constant_value());
     }
     Some(operands)
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{SourceSpan, Type, ValueRef, testing::Test};
+
+    use super::*;
+
+    #[test]
+    fn predecessor_state_orders_known_predecessors_by_ir_position() {
+        let mut test = Test::new(
+            "predecessor_state_orders_known_predecessors_by_ir_position",
+            &[Type::U32, Type::U32],
+            &[],
+        );
+        let (first_op, second_op, point) = {
+            let mut builder = test.function_builder();
+            let block = builder.current_block();
+            let lhs = block.borrow().arguments()[0] as ValueRef;
+            let rhs = block.borrow().arguments()[1] as ValueRef;
+            let first = builder.add_unchecked(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+            let first_op = first.borrow().get_defining_op().unwrap();
+            let second = builder.add_unchecked(first, rhs, SourceSpan::UNKNOWN).unwrap();
+            let second_op = second.borrow().get_defining_op().unwrap();
+
+            (first_op, second_op, ProgramPoint::after(second_op))
+        };
+
+        let mut solver = DataFlowSolver::default();
+        let mut predecessors = solver.get_or_create_mut::<PredecessorState, _>(point);
+        predecessors.join(second_op);
+        predecessors.join(first_op);
+
+        assert_eq!(predecessors.known_predecessors(), &[first_op, second_op]);
+    }
 }

@@ -4,25 +4,19 @@ use super::*;
 /// Compiles a minimal `miden` account component which calls the specified `output_note` method, and
 /// compares the generated WAT/HIR/MASM output to the checked-in expectations.
 fn run_output_note_binding_test(name: &str, method: &str) {
+    let component = account_component_source("TestOutputNote", method);
     let lib_rs = format!(
         r"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::*;
 
-#[component]
-struct TestOutputNote;
-
-#[component]
-impl TestOutputNote {{
-    {method}
-}}
-",
-        method = method
+{component}
+"
     );
 
     let sdk_path = sdk_crate_path();
-    let namespace = component_namespace(name);
+    let namespace = account_component_namespace(name, "test-output-note");
     let miden_project_toml = format!(
         r#"
 [package]

@@ -18,7 +18,7 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Felt, StorageMap, Word};
+use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
 /// Record whose six `u64` fields expand past the direct FPI stack window.
 #[export_type]
@@ -40,17 +40,24 @@ pub struct SixU64Record {
 }
 
 /// Account component whose FPI method echoes a six-`u64` record.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map included so the shared FPI mock-chain helper can initialize the account.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Felt>,
 }
 
+/// Account component whose FPI method echoes a six-`u64` record.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the six-`u64` record received from the caller.
-    pub fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record {
+    fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the six-`u64` record received from the caller.
+    fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record {
         let _ = &self.count_map;
         input
     }
@@ -64,7 +71,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::six_u64_struct_account::miden_six_u64_struct_account::SixU64Record;
+use crate::bindings::miden::six_u64_struct_account::counter_contract::SixU64Record;
 #[account(six_u64_struct_account)]
 struct CounterContract;
 

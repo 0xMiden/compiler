@@ -54,7 +54,7 @@ pub(crate) fn project_template_arg(template: &str) -> String {
 }
 
 fn cached_rust_templates_path() -> anyhow::Result<PathBuf> {
-    let cache_root = env::temp_dir().join("cargo_miden_local_rust_templates_v0_30_0_features");
+    let cache_root = env::temp_dir().join("cargo_miden_local_rust_templates");
     let ready_marker = cache_root.join(".ready");
     if templates_cache_is_ready(&cache_root, &ready_marker) {
         return Ok(cache_root);
@@ -84,62 +84,97 @@ fn cached_rust_templates_path() -> anyhow::Result<PathBuf> {
     }
 
     write_local_test_templates(&cache_root)?;
-    fs::write(&ready_marker, "local")?;
+    fs::write(&ready_marker, templates_revision())?;
     Ok(cache_root)
 }
 
+/// The cache is keyed by template content: the ready marker stores a digest of the rendered
+/// template sources, so editing `local_template_files` invalidates stale caches automatically.
 fn templates_cache_is_ready(cache_root: &Path, ready_marker: &Path) -> bool {
-    ready_marker.exists()
-        && ["account", "auth-component", "note", "program", "tx-script"]
+    fs::read_to_string(ready_marker).is_ok_and(|revision| revision == templates_revision())
+        && local_template_files()
             .iter()
-            .all(|template| cache_root.join(template).is_dir())
+            .all(|(template, ..)| cache_root.join(template).is_dir())
+}
+
+/// Digest of the local template contents used to detect stale caches.
+fn templates_revision() -> String {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    for (name, cargo_toml, lib_rs) in local_template_files() {
+        name.hash(&mut hasher);
+        cargo_toml.hash(&mut hasher);
+        lib_rs.hash(&mut hasher);
+    }
+    format!("{:016x}", hasher.finish())
 }
 
 fn write_local_test_templates(cache_root: &Path) -> anyhow::Result<()> {
-    write_template(
-        cache_root,
-        "account",
-        cargo_toml("account", true),
-        r#"#![no_std]
+    for (name, cargo_toml, lib_rs) in local_template_files() {
+        write_template(cache_root, name, cargo_toml, lib_rs)?;
+    }
+    Ok(())
+}
+
+/// Local stand-ins for the rust-templates repository, rendered by `cargo miden new` in tests:
+/// `(template name, Cargo.toml, lib.rs)` triples.
+fn local_template_files() -> Vec<(&'static str, String, &'static str)> {
+    // The component trait must be named after the project: the default `[lib].namespace` written
+    // by `cargo miden new` uses the package name as the WIT interface segment, and the
+    // `#[component]` macro requires the trait name (kebab-case) to match it.
+    vec![
+        (
+            "account",
+            cargo_toml("account", true),
+            r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, felt, Felt};
+use miden::{component, component_storage, felt, Felt};
+
+#[component_storage]
+struct {{project_name | upper_camel_case}}Storage;
 
 #[component]
-struct TestAccount;
+trait {{project_name | upper_camel_case}} {
+    fn value(&self) -> Felt;
+}
 
 #[component]
-impl TestAccount {
-    pub fn value(&self) -> Felt {
+impl {{project_name | upper_camel_case}} for {{project_name | upper_camel_case}}Storage {
+    fn value(&self) -> Felt {
         felt!(1)
     }
 }
 "#,
-    )?;
-    write_template(
-        cache_root,
-        "auth-component",
-        cargo_toml("authentication-component", true),
-        r#"#![no_std]
+        ),
+        (
+            "auth-component",
+            cargo_toml("authentication-component", true),
+            r#"#![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, Word};
+use miden::{component, component_storage, Word};
+
+#[component_storage]
+struct {{project_name | upper_camel_case}}Storage;
 
 #[component]
-struct AuthComponent;
-
-#[component]
-impl AuthComponent {
+trait {{project_name | upper_camel_case}} {
     #[auth_script]
-    pub fn auth(&mut self, _arg: Word) {}
+    fn auth(&mut self, _arg: Word);
+}
+
+#[component]
+impl {{project_name | upper_camel_case}} for {{project_name | upper_camel_case}}Storage {
+    fn auth(&mut self, _arg: Word) {}
 }
 "#,
-    )?;
-    write_template(
-        cache_root,
-        "note",
-        cargo_toml("note-script", true),
-        r#"#![no_std]
+        ),
+        (
+            "note",
+            cargo_toml("note-script", true),
+            r#"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::{note, Word};
@@ -153,12 +188,11 @@ impl TestNote {
     pub fn run(self, _arg: Word) {}
 }
 "#,
-    )?;
-    write_template(
-        cache_root,
-        "tx-script",
-        cargo_toml("transaction-script", true),
-        r#"#![no_std]
+        ),
+        (
+            "tx-script",
+            cargo_toml("transaction-script", true),
+            r#"#![no_std]
 #![feature(alloc_error_handler)]
 
 use miden::{tx_script, Word};
@@ -166,12 +200,11 @@ use miden::{tx_script, Word};
 #[tx_script]
 fn run(_arg: Word) {}
 "#,
-    )?;
-    write_template(
-        cache_root,
-        "program",
-        cargo_toml("program", false),
-        r#"#![no_std]
+        ),
+        (
+            "program",
+            cargo_toml("program", false),
+            r#"#![no_std]
 #![feature(alloc_error_handler)]
 
 #[cfg(not(test))]
@@ -191,17 +224,16 @@ pub fn entrypoint(value: u32) -> u32 {
     value + 1
 }
 "#,
-    )?;
-
-    Ok(())
+        ),
+    ]
 }
 
 fn cargo_toml(project_kind: &str, component: bool) -> String {
+    // Component projects must NOT override `[package.metadata.component].package`: the project's
+    // identity (and so the `[lib].namespace` interface segment) must follow the crate name, which
+    // is what the project-named component trait in the template kebab-matches.
     let component_metadata = if component {
-        r#"
-[package.metadata.component]
-package = "miden:test-template"
-"#
+        "\n[package.metadata.component]\n"
     } else {
         ""
     };

@@ -199,7 +199,7 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, export_type, Felt, StorageMap, Word};
+use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
 /// Pair of storage keys passed through the FPI boundary.
 #[export_type]
@@ -220,17 +220,32 @@ pub struct WordPair {
 }
 
 /// Account component whose storage map holds counter words.
-#[component]
-struct CounterContract {
+#[component_storage]
+struct CounterContractStorage {
     /// Storage map holding counter words.
     #[storage(description = "counter contract storage map")]
     count_map: StorageMap<Word, Word>,
 }
 
+/// Account component whose storage map holds counter words.
 #[component]
-impl CounterContract {
+trait CounterContract {
     /// Returns the sum of the first felt in the three words stored under the provided keys.
-    pub fn sum_first_elements_by_keys(
+    fn sum_first_elements_by_keys(
+        &self,
+        first_key: Word,
+        second_key: Word,
+        third_key: Word,
+    ) -> Felt;
+
+    /// Returns the counter words stored under `keys`.
+    fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair;
+}
+
+#[component]
+impl CounterContract for CounterContractStorage {
+    /// Returns the sum of the first felt in the three words stored under the provided keys.
+    fn sum_first_elements_by_keys(
         &self,
         first_key: Word,
         second_key: Word,
@@ -242,7 +257,7 @@ impl CounterContract {
     }
 
     /// Returns the counter words stored under `keys`.
-    pub fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair {
+    fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair {
         WordPair {
             first: self.count_map.get(keys.first_key),
             second: self.count_map.get(keys.second_key),
@@ -258,7 +273,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::multi_call_account::miden_multi_call_account::KeyPair;
+use crate::bindings::miden::multi_call_account::counter_contract::KeyPair;
 #[account(multi_call_account)]
 struct CounterContract;
 

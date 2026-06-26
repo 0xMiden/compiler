@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use miden::{Asset, Felt, Word, component, export_type};
+use miden::{Asset, Felt, Word, component, component_storage, export_type};
 
 pub mod my_types {
     use miden::{Felt, export_type};
@@ -49,13 +49,21 @@ pub struct LaterDefined {
     pub value: Felt,
 }
 
-#[component]
-struct MyAccount;
+#[component_storage]
+struct MyAccountStorage;
 
 #[component]
-impl MyAccount {
+trait MyAccount {
     /// Exercises exported user-defined type and SDK type in signatures and return value.
-    pub fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
+    fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB;
+
+    /// Exercises user-defined types in a sub-module
+    fn test_custom_types2(&self, a: StructA, asset: Asset) -> my_types::StructC;
+}
+
+#[component]
+impl MyAccount for MyAccountStorage {
+    fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB {
         let foo_val = Word::from([a.foo.a, asset.key.a, a.foo.b, a.foo.c]);
 
         let val_a = StructA {
@@ -69,8 +77,7 @@ impl MyAccount {
         }
     }
 
-    /// Exercises user-defined types in a sub-module
-    pub fn test_custom_types2(&self, a: StructA, asset: Asset) -> my_types::StructC {
+    fn test_custom_types2(&self, a: StructA, asset: Asset) -> my_types::StructC {
         let d = self.test_custom_types_private(a, asset);
 
         let _forward = ForwardHolder {
@@ -82,7 +89,9 @@ impl MyAccount {
             inner2: d.baz,
         }
     }
+}
 
+impl MyAccountStorage {
     fn test_custom_types_private(&self, a: StructA, _asset: Asset) -> StructD {
         StructD {
             bar: a.foo.a,
