@@ -168,6 +168,7 @@ miden-stdlib-sys = { version = "0.12.0", path = "sdk/stdlib-sys" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
+#miden-assembly = { path = "../miden-vm/assembly" }
 # miden-debug = { git = "https://github.com/0xMiden/miden-debug", branch = "main" }
 #miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 #miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
