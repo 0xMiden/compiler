@@ -2506,9 +2506,9 @@ dependencies = [
 
 [[package]]
 name = "miden-air"
-version = "0.23.1"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a04e2a9fe12abe40a7a3b10f0184ead7105a081d9940d927d32120544a84c2b3"
+checksum = "69f1a80330b3e3d3f98e08817dc6a5e3d90d11ab5e88aa9c0dad5d3b4202598b"
 dependencies = [
  "miden-ace-codegen",
  "miden-core",
@@ -2522,9 +2522,9 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df61b8f89bb2736ec7c75ba814396ad190e8fc85ae556be07a407415fccfb3df"
+checksum = "8582d184360be35eb2111a99245f556f43e1066ed09192fbcd0f218c466862a5"
 dependencies = [
  "env_logger",
  "log",
@@ -2540,9 +2540,9 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly-syntax"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca10f0f9108f30905eb6aaceb536395c03cec3dcd8c089a7551c7d7d75d68415"
+checksum = "ffa307bc2cbd1f0cb74ed58981823f400a433900fb8f963762331fbb8389d5dc"
 dependencies = [
  "aho-corasick",
  "env_logger",
@@ -2653,9 +2653,9 @@ dependencies = [
 
 [[package]]
 name = "miden-core"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4bed17ecc11e59874f4d23a4488f2fc6ea971247b8596ce395300e37e770f4f6"
+checksum = "80657c32850817f5f67dcf114866495a4b055531778b7c26d0602646ce777eb8"
 dependencies = [
  "derive_more",
  "log",
@@ -2675,9 +2675,9 @@ dependencies = [
 
 [[package]]
 name = "miden-core-lib"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5110dceb0c7590a49bbd5aa398d3234886767c306f86023dd7303f696521c39"
+checksum = "16410655f32f98537afc9ddf57b71cb6d1ca9d980da5f4eea164cafcaf891b2e"
 dependencies = [
  "env_logger",
  "fs-err",
@@ -2813,9 +2813,9 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-types"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e68d205f8573f10fcc822c740acae8cb4af74bded9443d54d44a52677f8f97f"
+checksum = "956708ccb2f643db398b4b3d4f8d0baf199b1bfb5e34c8be1cd1bc811c005e8e"
 dependencies = [
  "memchr",
  "miden-crypto",
@@ -2925,9 +2925,9 @@ dependencies = [
 
 [[package]]
 name = "miden-mast-package"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44b9b1485f221dd3662e6d9f40e380c3511dd5341a84ac1929625c5428bae24b"
+checksum = "f37c21836b40785ce297d363c57740d4e33edcc411f84185a524eddadd5f53c7"
 dependencies = [
  "miden-assembly-syntax",
  "miden-core",
@@ -3012,9 +3012,9 @@ dependencies = [
 
 [[package]]
 name = "miden-package-registry"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd003f6a1931bfffbf9b97eff40d74af01e5f0739d46b95a5909059252fc3652"
+checksum = "9ece6064beb0582d1c64ba30d0c548c4b7a45f87abae6d69e22fd49c8b343258"
 dependencies = [
  "miden-assembly-syntax",
  "miden-core",
@@ -3028,9 +3028,9 @@ dependencies = [
 
 [[package]]
 name = "miden-processor"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9285c9ab8fea74fa9d0b08b27eb0f7393b36ca3128f177863943a02045742c4b"
+checksum = "ea972ca9e45dbf26aa396367e8508db0f7292adea6f6ddf8d39d0e334285fe2b"
 dependencies = [
  "itertools 0.14.0",
  "miden-air",
@@ -3046,9 +3046,9 @@ dependencies = [
 
 [[package]]
 name = "miden-project"
-version = "0.23.2"
+version = "0.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eebfdca65a2e1baba65841965b0bccf2c50e2bb05d900eafe9e3b62a1aebb9f0"
+checksum = "5320e7e5b562359bd6161ac752dfe43dd4f69bb06e87f94a21a27bb656e5a20d"
 dependencies = [
  "miden-assembly-syntax",
  "miden-core",

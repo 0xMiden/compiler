@@ -133,32 +133,23 @@ fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Pa
             .as_str(),
         "component-model",
     );
-    let mixed_struct = "struct {u64, struct miden:base/core-types@1.0.0/felt {\n    felt}, u32, \
-                        struct miden:base/core-types@1.0.0/felt {felt}, u8, i1, u16}";
-    let signature = assert_export_signature(component_export, &[mixed_struct], mixed_struct);
+    let felt_struct = "struct miden:base/core-types@1.0.0/felt {\n    inner : felt}";
+    let compact_felt_struct = "struct miden:base/core-types@1.0.0/felt {inner : felt}";
+    let mixed_struct = format!(
+        concat!(
+            "struct mixed-struct {{f : u64, a : {felt_struct}, b : u32, ",
+            "c : {felt_struct}, d : u8, e : i1, g : u16}}"
+        ),
+        felt_struct = felt_struct
+    );
+    let signature = assert_export_signature(component_export, &[&mixed_struct], &mixed_struct);
     assert_struct_field_types(
         &signature.params[0],
-        &[
-            "u64",
-            "struct miden:base/core-types@1.0.0/felt {felt}",
-            "u32",
-            "struct miden:base/core-types@1.0.0/felt {felt}",
-            "u8",
-            "i1",
-            "u16",
-        ],
+        &["u64", compact_felt_struct, "u32", compact_felt_struct, "u8", "i1", "u16"],
     );
     assert_struct_field_types(
         &signature.results[0],
-        &[
-            "u64",
-            "struct miden:base/core-types@1.0.0/felt {felt}",
-            "u32",
-            "struct miden:base/core-types@1.0.0/felt {felt}",
-            "u8",
-            "i1",
-            "u16",
-        ],
+        &["u64", compact_felt_struct, "u32", compact_felt_struct, "u8", "i1", "u16"],
     );
 }
 

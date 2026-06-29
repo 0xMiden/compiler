@@ -159,6 +159,7 @@ impl<'a> ComponentTranslator<'a> {
         types: &mut ComponentTypesBuilder,
     ) -> WasmResult<FrontendOutput> {
         self.detect_shim_modules(root_component);
+        self.register_component_export_type_names(root_component, types)?;
 
         let mut frame = ComponentFrame::new(root_component.types_ref(), FxHashMap::default());
 
@@ -417,25 +418,24 @@ impl<'a> ComponentTranslator<'a> {
                     "Component aliases are not yet supported"
                 )
             }
-            LocalInitializer::Export(_name, component_item) => {
-                match component_item {
-                    ComponentItem::Func(i) => {
-                        frame.component_funcs.push(frame.component_funcs[*i].clone());
-                    }
-                    ComponentItem::ComponentInstance(_) => {
-                        let unwrap_instance = component_item.unwrap_instance();
-                        self.component_export(frame, types, unwrap_instance)?;
-                    }
-                    ComponentItem::Type(_) => {
-                        // do nothing
-                    }
-                    _ => unsupported_diag!(
-                        self.context.diagnostics(),
-                        "Exporting of {:?} is not yet supported",
-                        component_item
-                    ),
+            LocalInitializer::Export(name, component_item) => match component_item {
+                ComponentItem::Func(i) => {
+                    frame.component_funcs.push(frame.component_funcs[*i].clone());
                 }
-            }
+                ComponentItem::ComponentInstance(_) => {
+                    let unwrap_instance = component_item.unwrap_instance();
+                    self.component_export(frame, types, unwrap_instance)?;
+                }
+                ComponentItem::Type(ty) => {
+                    let ty = types.convert_type(frame.types, *ty).map_err(Report::msg)?;
+                    types.register_type_name(ty, (*name).to_owned());
+                }
+                _ => unsupported_diag!(
+                    self.context.diagnostics(),
+                    "Exporting of {:?} is not yet supported",
+                    component_item
+                ),
+            },
         }
         Ok(())
     }
@@ -449,6 +449,7 @@ impl<'a> ComponentTranslator<'a> {
         let instance = &frame.component_instances[component_instance_idx].unwrap_instantiated();
         let static_component_idx = frame.components[instance.component].index;
         let parsed_component = &self.nested_components[static_component_idx];
+        self.register_component_export_type_names(parsed_component, types)?;
         for (name, item) in parsed_component.exports.iter() {
             if let ComponentItem::Func(f) = item {
                 self.define_component_export_lift_func(
@@ -463,6 +464,21 @@ impl<'a> ComponentTranslator<'a> {
             }
         }
         frame.component_instances.push(ComponentInstanceDef::Export);
+        Ok(())
+    }
+
+    fn register_component_export_type_names(
+        &self,
+        parsed_component: &ParsedComponent<'a>,
+        types: &mut ComponentTypesBuilder,
+    ) -> WasmResult<()> {
+        let component_types = parsed_component.types_ref();
+        for (name, item) in parsed_component.exports.iter() {
+            if let ComponentItem::Type(ty) = item {
+                let ty = types.convert_type(component_types, *ty).map_err(Report::msg)?;
+                types.register_type_name(ty, (*name).to_owned());
+            }
+        }
         Ok(())
     }
 
