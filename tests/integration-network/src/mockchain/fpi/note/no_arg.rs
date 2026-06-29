@@ -60,7 +60,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 use miden::*;
 
 #[account(no_arg_account::CounterContract)]
-struct CounterContract;
+struct Counter;
 
 /// Note script input containing the foreign counter account id.
 #[note]
@@ -74,7 +74,7 @@ impl CounterCaller {
     /// Checks that the foreign counter account stores the initialized value.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::new(self.counter_account_id);
+        let count_acc = Counter::new(self.counter_account_id);
         let count = count_acc.get_count();
         assert_eq(count, felt!(42));
     }

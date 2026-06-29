@@ -220,7 +220,7 @@ use miden::*;
 
 use crate::bindings::miden::three_words_struct_account::counter_contract::KeyTriple;
 #[account(three_words_struct_account::CounterContract)]
-struct CounterContract;
+struct Counter;
 
 /// Note script input containing the foreign counter account id.
 #[note]
@@ -234,7 +234,7 @@ impl CounterCaller {
     /// Checks that three `Word` values in one record cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::new(self.counter_account_id);
+        let count_acc = Counter::new(self.counter_account_id);
         let first_key = Word::new([felt!(17), felt!(34), felt!(51), felt!(68)]);
         let second_key = Word::new([felt!(85), felt!(102), felt!(119), felt!(136)]);
         let third_key = Word::new([felt!(153), felt!(170), felt!(187), felt!(204)]);

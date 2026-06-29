@@ -6,7 +6,7 @@ use quote::format_ident;
 use syn::{Error, Fields, ItemStruct, spanned::Spanned};
 
 use crate::{
-    dependency_ref::{DependencyRefArgs, select_dependencies},
+    dependency_ref::{DependencyRef, DependencyRefArgs, select_dependencies},
     fpi, generate, manifest_paths,
     wit_world::{ManifestPackage, import_world_wit},
 };
@@ -40,12 +40,21 @@ fn expand_inner(
     }
     let account_struct = syn::parse2::<ItemStruct>(item)?;
     validate_empty_struct(&account_struct)?;
+    reject_duplicate_trait_names(&args.refs)?;
+    reject_struct_trait_name_collision(&account_struct, &args.refs)?;
 
     let manifest = ManifestPackage::load(Span::call_site())?;
     let dependencies = select_dependencies(&manifest, &args.refs, Span::call_site())?;
     let imports = dependencies
         .iter()
         .map(|dependency| dependency.import().to_owned())
+        .collect::<Vec<_>>();
+    // The trait name generated for each component is the interface segment as written, parallel to
+    // `dependencies` (both follow the order of `args.refs`).
+    let trait_idents = args
+        .refs
+        .iter()
+        .map(|reference| reference.interface_ident.clone())
         .collect::<Vec<_>>();
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
     let inline_wit = import_world_wit(FOREIGN_ACCOUNT_WORLD, &imports);
@@ -65,8 +74,61 @@ fn expand_inner(
         bindings,
         account_struct,
         dependencies,
+        trait_idents,
         binding_module_ident,
     )
+}
+
+/// Rejects references whose generated component traits would share a name with the wrapper struct.
+///
+/// Each `package::Interface` reference generates a `pub trait <Interface>` next to the `#[account]`
+/// struct, so a reference whose interface segment equals the struct name would put a struct and a
+/// trait with the same name in one module — a raw `E0428` far from its cause. Catch it here.
+fn reject_struct_trait_name_collision(
+    account_struct: &ItemStruct,
+    refs: &[DependencyRef],
+) -> syn::Result<()> {
+    if let Some(reference) =
+        refs.iter().find(|reference| reference.interface_ident == account_struct.ident)
+    {
+        return Err(Error::new(
+            reference.span,
+            format!(
+                "account reference `{}::{}` generates a trait named `{}`, which collides with the \
+                 `#[account]` struct `{}`; rename the struct so it differs from its component \
+                 interface names",
+                reference.package_ident,
+                reference.interface_ident,
+                reference.interface_ident,
+                account_struct.ident,
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects references whose interface segments would generate identically named component traits.
+fn reject_duplicate_trait_names(refs: &[DependencyRef]) -> syn::Result<()> {
+    for (index, reference) in refs.iter().enumerate() {
+        if let Some(previous) = refs[..index]
+            .iter()
+            .find(|previous| previous.interface_ident == reference.interface_ident)
+        {
+            return Err(Error::new(
+                reference.span,
+                format!(
+                    "account references `{}::{}` and `{}::{}` would both generate a trait named \
+                     `{}`; component interface names must be unique within one `#[account]`",
+                    previous.package_ident,
+                    previous.interface_ident,
+                    reference.package_ident,
+                    reference.interface_ident,
+                    reference.interface_ident,
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Verifies that the attribute is applied to a non-generic empty struct.
@@ -158,5 +220,37 @@ mod tests {
 
         assert!(message.contains("account must be applied to an empty struct"));
         assert!(message.contains("remove all fields"));
+    }
+
+    #[test]
+    fn rejects_struct_named_like_a_generated_trait() {
+        let err = expand_inner(
+            quote::quote!(counter_contract::CounterContract),
+            quote::quote! {
+                struct CounterContract;
+            },
+        )
+        .unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("generates a trait named `CounterContract`"), "{message}");
+        assert!(message.contains("collides with the `#[account]` struct `CounterContract`"));
+        assert!(message.contains("rename the struct"));
+    }
+
+    #[test]
+    fn rejects_duplicate_generated_trait_names_across_packages() {
+        let err = expand_inner(
+            quote::quote!(first_counter::Counter, second_counter::Counter),
+            quote::quote! {
+                struct Wallet;
+            },
+        )
+        .unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("would both generate a trait named `Counter`"), "{message}");
+        assert!(message.contains("first_counter::Counter"));
+        assert!(message.contains("second_counter::Counter"));
     }
 }

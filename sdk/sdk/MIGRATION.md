@@ -273,8 +273,29 @@ it is the transaction's native (active) account. Constructed with `new(account_i
 (FPI):
 
 ```rust
-let counter = CounterContract::new(counter_account_id);
+#[account(counter_contract::CounterContract)]
+struct Counter;
+
+let counter = Counter::new(counter_account_id);
 let count = counter.get_count();
+```
+
+Each referenced interface now generates a `pub trait <Interface>` implemented for the wrapper
+(rather than inherent methods on it), so **the wrapper struct must be named differently from every
+referenced interface** — `#[account(counter_contract::CounterContract)] struct CounterContract;`
+no longer compiles; rename the struct (e.g. `Counter`). Single-component accounts keep calling
+`account.method(..)` unchanged, because the generated trait sits in the same module and is in
+scope. When an account derives two components that export the same method name — or a component
+method shares a name with an `ActiveAccount` built-in such as `get_id` — the bare call is
+ambiguous; disambiguate it with UFCS:
+
+```rust
+#[account(basic_wallet::BasicWallet, vault::Vault)]
+struct Wallet;
+
+// both BasicWallet and Vault export `deposit`:
+<Wallet as BasicWallet>::deposit(account, asset);
+<Wallet as Vault>::deposit(account, asset);
 ```
 
 **FPI is not limited to note/tx scripts — an account component can call another account through

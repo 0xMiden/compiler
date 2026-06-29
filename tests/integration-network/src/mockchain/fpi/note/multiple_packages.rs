@@ -171,15 +171,15 @@ struct CounterContractStorage {
 
 /// Account component whose storage map holds the first counter value.
 #[component]
-trait CounterContract {
+trait FirstCounter {
     /// Returns the first counter value.
-    fn get_first_count(&self) -> Felt;
+    fn get_count(&self) -> Felt;
 }
 
 #[component]
-impl CounterContract for CounterContractStorage {
+impl FirstCounter for CounterContractStorage {
     /// Returns the first counter value.
-    fn get_first_count(&self) -> Felt {
+    fn get_count(&self) -> Felt {
         let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
         self.count_map.get(key)
     }
@@ -203,15 +203,15 @@ struct CounterContractStorage {
 
 /// Account component whose storage map holds the second counter value.
 #[component]
-trait CounterContract {
+trait SecondCounter {
     /// Returns the second counter value.
-    fn get_second_count(&self) -> Felt;
+    fn get_count(&self) -> Felt;
 }
 
 #[component]
-impl CounterContract for CounterContractStorage {
+impl SecondCounter for CounterContractStorage {
     /// Returns the second counter value.
-    fn get_second_count(&self) -> Felt {
+    fn get_count(&self) -> Felt {
         let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
         self.count_map.get(key)
     }
@@ -225,7 +225,7 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-#[account(multiple_packages_first_account::CounterContract, multiple_packages_second_account::CounterContract)]
+#[account(multiple_packages_first_account::FirstCounter, multiple_packages_second_account::SecondCounter)]
 struct ForeignCounters;
 
 /// Note script input containing the foreign account id.
@@ -242,8 +242,10 @@ impl CounterCaller {
     pub fn run(self, _arg: Word) {
         let counters = ForeignCounters::new(self.foreign_account_id);
 
-        let first = counters.get_first_count();
-        let second = counters.get_second_count();
+        // Both components export a `get_count` method, so `counters.get_count()` is ambiguous;
+        // the call must be disambiguated through the per-component trait with UFCS.
+        let first = <ForeignCounters as FirstCounter>::get_count(&counters);
+        let second = <ForeignCounters as SecondCounter>::get_count(&counters);
 
         assert_eq(first, felt!(41));
         assert_eq(second, felt!(73));

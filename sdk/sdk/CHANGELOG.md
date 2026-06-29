@@ -64,6 +64,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   write `#[account(counter_contract::CounterContract)]` instead of
   `#[account(counter_contract)]`. The interface segment is kebab-cased and validated against the
   interfaces the dependency's generated WIT exports #697
+- `#[account(...)]` now generates the component methods as one `pub trait` per referenced
+  interface (implemented for the wrapper) instead of inherent methods on the wrapper struct. Two
+  components that export the same method name can therefore coexist on one wrapper; a shared method
+  name is no longer a compile error and is called with
+  `<Wallet as Interface>::method(account, ..)`. Two consequences for existing code: the wrapper
+  struct must be named differently from every referenced interface (e.g.
+  `#[account(counter_contract::CounterContract)] struct CounterContract;` no longer compiles —
+  rename the struct), and a component method that shares a name with an `ActiveAccount` built-in
+  (e.g. `get_id`) no longer shadows it — disambiguate with
+  `<Wallet as Interface>::get_id(account)` or `<Wallet as ActiveAccount>::get_id(account)`.
+  Single-component accounts whose method names do not overlap keep calling `account.method(..)`
+  unchanged #1157
 
 ### Added
 - `#[component(package::Interface, ...)]` on the component trait declares sibling component
@@ -82,9 +94,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transaction's native (active) account — when passed to a `#[note]`/`#[tx_script]` entrypoint —
   and as a foreign account caller created with `new(account_id)`, whose method calls are routed
   through `execute_foreign_procedure` (FPI) #1157
-  For example:
+  For example, calling the `counter-contract` interface through a `Counter` wrapper:
   ```rust
-  let counter = CounterContract::new(counter_account_id);
+  #[account(counter_contract::CounterContract)]
+  struct Counter;
+
+  let counter = Counter::new(counter_account_id);
   let count = counter.get_count();
   ```
 - Added tx-kernel SDK bindings for `native_account::get_id` and

@@ -73,7 +73,7 @@ use miden::*;
 
 use crate::bindings::miden::six_u64_struct_account::counter_contract::SixU64Record;
 #[account(six_u64_struct_account::CounterContract)]
-struct CounterContract;
+struct Counter;
 
 /// First double-word value used by the six-`u64` record FPI test.
 const FIRST: u64 = 0x0000_0001_0000_0002;
@@ -100,7 +100,7 @@ impl CounterCaller {
     /// Checks that six `u64` fields cross the direct FPI boundary in both directions.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::new(self.counter_account_id);
+        let count_acc = Counter::new(self.counter_account_id);
         let result = count_acc.echo_six_u64_record(SixU64Record {
             first: FIRST,
             second: SECOND,

@@ -137,13 +137,14 @@ mod wit_world;
 /// dependencies. Each dependency is referenced as `package::Interface`: the package is the
 /// Rust-style Miden package name (write the Miden package name as a Rust identifier by replacing
 /// `-` with `_`) and the interface names the dependency's exported WIT interface in
-/// UpperCamelCase.
+/// UpperCamelCase. Each interface generates a trait of that name implemented for the wrapper, so
+/// the wrapper struct must be named differently from every referenced interface.
 ///
 /// ```rust,ignore
 /// use miden::{account, component, component_storage, AccountId, Felt};
 ///
 /// #[account(counter_contract::CounterContract)]
-/// struct CounterContract;
+/// struct Counter;
 ///
 /// #[component_storage]
 /// struct CallerAccountStorage;
@@ -156,7 +157,7 @@ mod wit_world;
 /// #[component]
 /// impl CallerAccount for CallerAccountStorage {
 ///     fn read_counter(&self, counter_account_id: AccountId) -> Felt {
-///         let counter = CounterContract::new(counter_account_id);
+///         let counter = Counter::new(counter_account_id);
 ///         counter.get_count()
 ///     }
 /// }
@@ -226,6 +227,16 @@ pub fn component_storage(
 /// identifier by replacing `-` with `_`, followed by the dependency's exported WIT interface in
 /// UpperCamelCase. For example, the `counter-contract` interface of a dependency named
 /// `counter-contract` is requested with `#[account(counter_contract::CounterContract)]`.
+///
+/// Each referenced interface generates one `pub trait <Interface>` whose methods dispatch between
+/// the active account and the foreign account the wrapper is bound to, plus an `impl <Interface>
+/// for <Wrapper>` that attaches it. Emitting one trait per component lets two components that
+/// export the same method name coexist on one wrapper; when a method name is shared, the call is
+/// disambiguated with `<Wrapper as Interface>::method(account, ..)`. The wrapper struct must be
+/// named differently from every referenced interface, and the interfaces must be distinct from
+/// each other. The generated traits live in the same module as the wrapper, so a same-module
+/// `#[note]`/`#[tx_script]` entrypoint sees them without an import; a cross-module entrypoint needs
+/// `use` of the trait.
 #[proc_macro_attribute]
 pub fn account(
     attr: proc_macro::TokenStream,

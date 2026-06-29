@@ -59,15 +59,21 @@ pub(super) fn build_multi_package_fpi_test_packages(
     caller_source: &str,
 ) -> (Arc<Package>, Arc<Package>, Arc<Package>, StorageSlotName, StorageSlotName) {
     let names = FpiMultiPackageProjectNames::new(test_name);
-    let first_storage_slot = counter_storage_slot_name_for_package(&names.first_account_package);
-    let second_storage_slot = counter_storage_slot_name_for_package(&names.second_account_package);
+    // The two components export distinct WIT interfaces (`first-counter`, `second-counter`) so the
+    // `#[account(...)]` macro generates two differently named traits. Storage slot names derive
+    // from the interface segment, so they track those interfaces too.
+    let first_storage_slot =
+        storage_slot_name_for_package(&names.first_account_package, "first_counter");
+    let second_storage_slot =
+        storage_slot_name_for_package(&names.second_account_package, "second_counter");
 
     let first_account_project = project(&names.first_account_name)
         .file(
             "miden-project.toml",
-            &account_miden_project_toml_for(
+            &account_miden_project_toml_with_interface(
                 &names.first_account_name,
                 &names.first_account_package,
+                "first-counter",
             ),
         )
         .file(
@@ -81,9 +87,10 @@ pub(super) fn build_multi_package_fpi_test_packages(
     let second_account_project = project(&names.second_account_name)
         .file(
             "miden-project.toml",
-            &account_miden_project_toml_for(
+            &account_miden_project_toml_with_interface(
                 &names.second_account_name,
                 &names.second_account_package,
+                "second-counter",
             ),
         )
         .file(

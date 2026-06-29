@@ -1,10 +1,11 @@
-//! The same dependency used both as a sibling (intra-account) and through FPI (inter-account).
+//! A component reaching a counter both as a sibling (intra-account) and through FPI (inter-account).
 //!
-//! The caller component depends on one counter package and reaches it two ways: through the
-//! generated sibling trait against the copy deployed on its own account, and through an
-//! `#[account(...)]` wrapper against a copy deployed on a second, foreign account. This also
-//! exercises the same WIT interface being imported by the sibling bindings (plain functions
-//! only) and the `#[account]` bindings (plain + `fpi-*` functions) in one crate.
+//! The caller component calls a local counter through the generated sibling trait (against the copy
+//! deployed on its own account) and a remote counter through an `#[account(...)]` wrapper (against a
+//! copy deployed on a second, foreign account). The two counters export distinct WIT interfaces, so
+//! the generated sibling trait and the `#[account]` FPI trait get distinct names: the trait-based
+//! `#[account]` macro generates one trait per interface, so reusing one interface for both roles in
+//! a single crate would collide.
 
 use miden_client::{
     account::{
@@ -23,7 +24,7 @@ use miden_testing::{AccountState, Auth, MockChain};
 
 use super::{
     super::support::{assert_counter_storage_at_key, execute_tx, note_script_root, to_core_felts},
-    common::build_sibling_test_packages,
+    common::build_sibling_and_fpi_test_packages,
     counter_storage_key,
 };
 
@@ -32,27 +33,34 @@ use super::{
 /// sibling trait and reads the remote counter through FPI.
 #[test]
 fn sibling_and_fpi() {
-    let (counter_package, caller_package, note_package, counter_storage_slot) =
-        build_sibling_test_packages(
-            "sibling_and_fpi",
-            COUNTER_CONTRACT_SOURCE,
-            CALLER_ACCOUNT_SOURCE,
-            NOTE_SOURCE,
-        );
+    let (
+        counter_package,
+        remote_counter_package,
+        caller_package,
+        note_package,
+        local_storage_slot,
+        remote_storage_slot,
+    ) = build_sibling_and_fpi_test_packages(
+        "sibling_and_fpi",
+        COUNTER_CONTRACT_SOURCE,
+        REMOTE_COUNTER_SOURCE,
+        CALLER_ACCOUNT_SOURCE,
+        NOTE_SOURCE,
+    );
 
     let local_counter_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
-            .insert_map_entry(counter_storage_slot.clone(), counter_storage_key(), 314_u64)
+            .insert_map_entry(local_storage_slot.clone(), counter_storage_key(), 314_u64)
             .unwrap();
         AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
     };
     let remote_counter_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
-            .insert_map_entry(counter_storage_slot.clone(), counter_storage_key(), 777_u64)
+            .insert_map_entry(remote_storage_slot.clone(), counter_storage_key(), 777_u64)
             .unwrap();
-        AccountComponent::from_package(&counter_package, &init_storage_data).unwrap()
+        AccountComponent::from_package(&remote_counter_package, &init_storage_data).unwrap()
     };
     let caller_component =
         AccountComponent::from_package(&caller_package, &InitStorageData::default()).unwrap();
@@ -100,13 +108,13 @@ fn sibling_and_fpi() {
 
     assert_counter_storage_at_key(
         chain.committed_account(account.id()).unwrap().storage(),
-        &counter_storage_slot,
+        &local_storage_slot,
         counter_storage_key(),
         314,
     );
     assert_counter_storage_at_key(
         chain.committed_account(remote_account.id()).unwrap().storage(),
-        &counter_storage_slot,
+        &remote_storage_slot,
         counter_storage_key(),
         777,
     );
@@ -121,13 +129,13 @@ fn sibling_and_fpi() {
     // The local sibling counter was incremented; the remote counter was only read through FPI.
     assert_counter_storage_at_key(
         chain.committed_account(account.id()).unwrap().storage(),
-        &counter_storage_slot,
+        &local_storage_slot,
         counter_storage_key(),
         315,
     );
     assert_counter_storage_at_key(
         chain.committed_account(remote_account.id()).unwrap().storage(),
-        &counter_storage_slot,
+        &remote_storage_slot,
         counter_storage_key(),
         777,
     );
@@ -171,7 +179,40 @@ impl CounterContract for CounterContractStorage {
 }
 "#;
 
-/// Caller component using the counter dependency both as a sibling and through FPI.
+/// Remote counter component reached through FPI, deployed on the foreign account.
+///
+/// It exports a distinct `remote-counter` interface (trait `RemoteCounter`) so the caller's
+/// `#[account]` FPI trait does not collide with its sibling `CounterContract` trait.
+const REMOTE_COUNTER_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, Felt, StorageMap, Word};
+
+/// Account component whose storage map holds one counter value.
+#[component_storage]
+struct RemoteCounterStorage {
+    /// Storage map holding the counter value.
+    #[storage(description = "remote counter storage map")]
+    count_map: StorageMap<Word, Felt>,
+}
+
+/// Remote counter component exposing a read over its counter.
+#[component]
+trait RemoteCounter {
+    /// Returns the counter value stored under the provided key.
+    fn get_count(&self, key: Word) -> Felt;
+}
+
+#[component]
+impl RemoteCounter for RemoteCounterStorage {
+    fn get_count(&self, key: Word) -> Felt {
+        self.count_map.get(key)
+    }
+}
+"#;
+
+/// Caller component using a sibling counter locally and a remote counter through FPI.
 const CALLER_ACCOUNT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
@@ -181,15 +222,19 @@ use miden::{
     AccountId, Felt, Word,
 };
 
-/// Foreign binding to another account holding the same counter component package.
-#[account(sibling_and_fpi_counter_account::CounterContract)]
-struct RemoteCounter;
+/// Foreign binding to a second account holding the remote counter component.
+///
+/// The remote counter exports a different WIT interface (`remote-counter`) than the local sibling
+/// counter (`counter-contract`), so this wrapper's generated `RemoteCounter` trait does not collide
+/// with the sibling `CounterContract` trait below.
+#[account(sibling_and_fpi_remote_counter_account::RemoteCounter)]
+struct Remote;
 
-/// Storage-less component which reaches the counter dependency two ways.
+/// Storage-less component which reaches a counter both as a sibling and through FPI.
 #[component_storage]
 struct CallerAccountStorage;
 
-/// Account component using the counter both as a sibling and as a foreign account through FPI.
+/// Account component using a sibling counter locally and a remote counter through FPI.
 #[component(sibling_and_fpi_counter_account::CounterContract)]
 trait CallerAccount: NativeAccount + CounterContract {
     /// Increments the local sibling counter, then reads the remote account's counter via FPI.
@@ -200,12 +245,12 @@ trait CallerAccount: NativeAccount + CounterContract {
 impl CallerAccount for CallerAccountStorage {
     fn bump_local_read_remote(&mut self, remote_account_id: AccountId) -> Felt {
         let key = Word::new([felt!(13), felt!(21), felt!(34), felt!(55)]);
-        // Intra-account sibling call through the generated `CounterContract` trait.
+        // Intra-account sibling call through the sibling `CounterContract` trait.
         let before = self.get_count(key);
         let after = self.increment_count(key);
         assert_eq(after, before + felt!(1));
-        // Inter-account FPI call through the `#[account]` wrapper's inherent methods.
-        let remote = RemoteCounter::new(remote_account_id);
+        // Inter-account FPI call through the `#[account]` wrapper's `RemoteCounter` trait.
+        let remote = Remote::new(remote_account_id);
         remote.get_count(key)
     }
 }
