@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-29
+
 ### BREAKING
 - SDK bindings updated for VM v0.23 / protocol v0.15 (`miden-field` bumped to `^0.25`). `Felt::new`
   is now fallible: it returns `Result<Felt, _>` instead of `Felt`, so `Felt::new(x)` becomes
