@@ -20,14 +20,14 @@ use midenc_session::{
 pub struct Compiler {
     /// Write all intermediate compiler artifacts to `<dir>`
     ///
-    /// Defaults to a directory named `target/midenc` in the current working directory
+    /// Defaults to a directory named `target/miden` in the current working directory
     #[cfg_attr(
         feature = "std",
         arg(
             long,
             value_name = "DIR",
             env = "MIDENC_TARGET_DIR",
-            default_value = "target/midenc",
+            default_value = "target/miden",
             help_heading = "Output"
         )
     )]

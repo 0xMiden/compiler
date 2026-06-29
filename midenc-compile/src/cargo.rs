@@ -186,6 +186,18 @@ fn cargo_build(
     source_manager: Arc<dyn SourceManager + Send + Sync>,
 ) -> CompilerResult<Arc<miden_mast_package::Package>> {
     let package_name = package.name().to_string();
+    // The directory of the dependency being compiled, captured before `manifest_path` is consumed
+    // below. The compiled package is materialized under this directory's `target` (see the end of
+    // this function).
+    let dependency_dir = manifest_path
+        .parent()
+        .ok_or_else(|| {
+            Report::msg(format!(
+                "dependency manifest path '{}' has no parent directory",
+                manifest_path.display()
+            ))
+        })?
+        .to_path_buf();
     let mut nested_options = Box::new(midenc_session::Options {
         manifest_path: Some(manifest_path.clone()),
         target: Some(target.name.to_string()),
@@ -243,6 +255,24 @@ fn cargo_build(
     };
 
     registry.publish_package(package.clone())?;
+
+    // Materialize the compiled dependency package on disk, in addition to publishing it to the
+    // in-memory registry. A dependent crate that imports this dependency (e.g. via
+    // `#[account(..)]`) resolves the dependency's `.masp` from disk while expanding its own Rust
+    // macros. The profile sub-directory mirrors the one searched by that macro: `release` for
+    // release builds and `debug` otherwise.
+    let profile = if cargo_opts.release {
+        "release"
+    } else {
+        "debug"
+    };
+    let masp_out_dir = dependency_dir.join("target").join("miden").join(profile);
+    package.write_masp_file(&masp_out_dir).map_err(|err| {
+        Report::msg(format!(
+            "failed to materialize dependency package '{package_name}' to '{}': {err}",
+            masp_out_dir.display()
+        ))
+    })?;
 
     Ok(package)
 }
