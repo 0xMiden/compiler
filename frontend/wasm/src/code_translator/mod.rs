@@ -19,7 +19,7 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::{WasmMemArg, WasmOpBuilder, prepare_addr};
 use midenc_hir::{
-    BlockRef, Builder, Felt, Immediate, Op,
+    BlockRef, Builder, Immediate, Op,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -57,6 +57,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
     diagnostics: &DiagnosticsHandler,
     span: SourceSpan,
 ) -> WasmResult<()> {
+    builder.record_debug_span(span);
+
     if !state.reachable {
         translate_unreachable_operator(op, builder, state, mod_types, diagnostics, span)?;
         return Ok(());
@@ -73,6 +75,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         Operator::LocalGet { local_index } => {
             let local = builder.get_local(Variable::from_u32(*local_index));
             let val = builder.load_local(local, span)?;
+            builder.emit_debug_values_for_wasm_local(*local_index, val, span);
             state.push1(val);
         }
         Operator::LocalSet { local_index } => {
@@ -94,6 +97,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 val
             };
             builder.store_local(local, val, span)?;
+            builder.emit_dbg_value_for_var(var, val, span);
+            builder.emit_debug_values_for_wasm_local(*local_index, val, span);
         }
         Operator::LocalTee { local_index } => {
             let var = Variable::from_u32(*local_index);
@@ -114,6 +119,8 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 val
             };
             builder.store_local(local, val, span)?;
+            builder.emit_dbg_value_for_var(var, val, span);
+            builder.emit_debug_values_for_wasm_local(*local_index, val, span);
         }
         /********************************** Globals ****************************************/
         Operator::GlobalGet { global_index } => {
@@ -149,7 +156,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let (arg1, arg2, cond) = state.pop3();
             match ty {
                 wasmparser::ValType::F32 => {
-                    let imm = builder.felt(Felt::ZERO, span);
+                    let imm = builder.felt(midenc_hir::Felt::ZERO, span);
                     let cond = builder.gt(cond, imm, span)?;
                     state.push1(builder.select(cond, arg1, arg2, span)?);
                 }
@@ -327,25 +334,49 @@ pub fn translate_operator<B: ?Sized + Builder>(
         /****************************** Nullary Operators **********************************/
         Operator::I32Const { value } => state.push1(builder.i32(*value, span)),
         Operator::I64Const { value } => state.push1(builder.i64(*value, span)),
+        Operator::F32Const { value } => {
+            state.push1(builder.felt(midenc_hir::Felt::from(value.bits()), span));
+        }
 
         /******************************* Unary Operators *************************************/
-        Operator::I32Clz | Operator::I64Clz => {
+        Operator::I32Clz => {
             let val = state.pop1();
             let count = builder.clz(val, span)?;
             // To ensure we match the Wasm semantics, treat the output of clz as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
         }
-        Operator::I32Ctz | Operator::I64Ctz => {
+        Operator::I64Clz => {
+            let val = state.pop1();
+            let count_u32 = builder.clz(val, span)?;
+            // To ensure we match the Wasm semantics, treat the output of clz as an i64
+            let count_u64 = builder.zext(count_u32, Type::U64, span)?;
+            state.push1(builder.bitcast(count_u64, Type::I64, span)?);
+        }
+        Operator::I32Ctz => {
             let val = state.pop1();
             let count = builder.ctz(val, span)?;
             // To ensure we match the Wasm semantics, treat the output of ctz as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
         }
-        Operator::I32Popcnt | Operator::I64Popcnt => {
+        Operator::I64Ctz => {
+            let val = state.pop1();
+            let count_u32 = builder.ctz(val, span)?;
+            // To ensure we match the Wasm semantics, treat the output of ctz as an i64
+            let count_u64 = builder.zext(count_u32, Type::U64, span)?;
+            state.push1(builder.bitcast(count_u64, Type::I64, span)?);
+        }
+        Operator::I32Popcnt => {
             let val = state.pop1();
             let count = builder.popcnt(val, span)?;
             // To ensure we match the Wasm semantics, treat the output of popcnt as an i32
             state.push1(builder.bitcast(count, Type::I32, span)?);
+        }
+        Operator::I64Popcnt => {
+            let val = state.pop1();
+            let count_u32 = builder.popcnt(val, span)?;
+            // To ensure we match the Wasm semantics, treat the output of popcnt as an i64
+            let count_u64 = builder.zext(count_u32, Type::U64, span)?;
+            state.push1(builder.bitcast(count_u64, Type::I64, span)?);
         }
         Operator::I32Extend8S => {
             let val = state.pop1();
@@ -384,6 +415,10 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::F32ReinterpretI32 => {
             let val = state.pop1_bitcasted(Felt, builder, span);
+            state.push1(val);
+        }
+        Operator::I32ReinterpretF32 => {
+            let val = state.pop1_bitcasted(I32, builder, span);
             state.push1(val);
         }
         /****************************** Binary Operators ************************************/
@@ -429,29 +464,30 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.bitcast(arg2, U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.shl(arg1, arg2, span)?);
         }
         Operator::I64Shl => {
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.cast(arg2, U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.shl(arg1, arg2, span)?);
         }
         Operator::I32ShrU => {
             let (arg1, arg2) = state.pop2_bitcasted(U32, builder, span)?;
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             let val = builder.shr(arg1, arg2, span)?;
             state.push1(builder.bitcast(val, I32, span)?);
         }
         Operator::I64ShrU => {
             let (arg1, arg2) = state.pop2();
             let arg1 = builder.bitcast(arg1, U64, span)?;
-            let arg2 = builder.cast(arg2, U32, span)?;
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             let val = builder.shr(arg1, arg2, span)?;
             state.push1(builder.bitcast(val, I64, span)?);
         }
@@ -459,34 +495,34 @@ pub fn translate_operator<B: ?Sized + Builder>(
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.shr(arg1, arg2, span)?);
         }
         Operator::I64ShrS => {
             let (arg1, arg2) = state.pop2();
             // wrapping shift semantics drop any bits that would cause
             // the shift to exceed the bitwidth of the type
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.shr(arg1, arg2, span)?);
         }
         Operator::I32Rotl => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.rotl(arg1, arg2, span)?);
         }
         Operator::I64Rotl => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.rotl(arg1, arg2, span)?);
         }
         Operator::I32Rotr => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.bitcast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 32, span)?;
             state.push1(builder.rotr(arg1, arg2, span)?);
         }
         Operator::I64Rotr => {
             let (arg1, arg2) = state.pop2();
-            let arg2 = builder.cast(arg2, Type::U32, span)?;
+            let arg2 = mask_movement_count(builder, arg2, 64, span)?;
             state.push1(builder.rotr(arg1, arg2, span)?);
         }
         Operator::I32Sub | Operator::I64Sub => {
@@ -524,7 +560,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
 
             let res = builder.mul_wrapping(lhs, rhs, span)?;
 
-            let (res_hi, res_lo) = builder.split2(res, Type::U64, span)?;
+            let (res_hi, res_lo) = builder.split2(res, Type::I64, span)?;
             state.pushn(&[res_hi, res_lo]);
         }
         Operator::I64MulWideS => {
@@ -924,6 +960,35 @@ fn translate_br_if_args(
     };
     let inputs = state.peekn_mut(return_count);
     (br_destination, inputs)
+}
+
+/// Masks the shift count according to Wasm semantics of [shift] and [rotate].
+///
+/// Wasm allows unbounded shift counts, wrapping them modulo `value_width`. Since Masm only
+/// accepts counts in `[0, value_width)`, adjust the shift count here.
+///
+/// [shift]: https://webassembly.github.io/spec/core/exec/numerics.html#xref-exec-numerics-op-ishl-mathrm-ishl-n-i-1-i-2
+/// [rotate]: https://webassembly.github.io/spec/core/exec/numerics.html#xref-exec-numerics-op-irotl-mathrm-irotl-n-i-1-i-2
+fn mask_movement_count<B: ?Sized + Builder>(
+    builder: &mut FunctionBuilderExt<'_, B>,
+    count: ValueRef,
+    value_width: u32,
+    span: SourceSpan,
+) -> Result<ValueRef, Report> {
+    let count_ty = count.borrow().ty().clone();
+    let count = match count_ty {
+        Type::I32 => builder.bitcast(count, U32, span)?,
+        Type::U32 => count,
+        Type::I64 | Type::U64 => {
+            // Safe to narrow: the mask below only keeps the low 5 or 6 bits anyway.
+            builder.trunc(count, U32, span)?
+        }
+        ty => unreachable!("invalid wasm shift count type: {ty}"),
+    };
+
+    // Use `count & (value_width - 1)` to calculate `count % value_width`
+    let mask = builder.u32(value_width - 1, span);
+    builder.band(count, mask, span)
 }
 
 fn translate_br_table<B: ?Sized + Builder>(

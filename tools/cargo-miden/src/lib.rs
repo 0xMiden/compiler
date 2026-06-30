@@ -8,21 +8,15 @@ use clap::Parser;
 
 mod cli;
 mod commands;
-mod compile_masm;
-mod config;
-mod dependencies;
 mod outputs;
-mod target;
 mod template;
 mod utils;
 
 pub use commands::BuildCommand;
-pub use outputs::{BuildOutput, CommandOutput};
-pub use target::{
-    detect_project_type, detect_target_environment, target_environment_to_project_type,
-};
+pub use outputs::CommandOutput;
 
 /// Requested output type for the `build` command.
+#[derive(Debug, Copy, Clone)]
 pub enum OutputType {
     /// Return the Wasm component or core Wasm module emitted by Cargo.
     Wasm,
@@ -35,7 +29,7 @@ pub enum OutputType {
 /// The iterator of arguments is expected to mirror the invocation of `cargo miden …`.
 /// The command returns an optional [`CommandOutput`]; commands that only produce side-effects
 /// (such as printing help) will return `Ok(None)`.
-pub fn run<T>(args: T, build_output_type: OutputType) -> Result<Option<CommandOutput>>
+pub fn run<T>(args: T) -> Result<Option<CommandOutput>>
 where
     T: Iterator<Item = String>,
 {
@@ -49,7 +43,11 @@ where
             let project_path = cmd.exec()?;
             Ok(Some(CommandOutput::NewCommandOutput { project_path }))
         }
-        cli::CargoMidenCommand::Build(cmd) => cmd.exec(build_output_type),
+        cli::CargoMidenCommand::Build(cmd) => cmd.exec().map(|output| {
+            Some(CommandOutput::BuildCommandOutput {
+                output: vec![output],
+            })
+        }),
         cli::CargoMidenCommand::Test(cmd) => {
             cmd.exec()?;
             Ok(None)

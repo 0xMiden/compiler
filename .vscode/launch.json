@@ -12,12 +12,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-codegen-masm"],
         "filter": {
           "name": "midenc_codegen_masm",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -27,12 +27,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-dialect-hir"],
         "filter": {
           "name": "midenc_dialect_hir",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -42,12 +42,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-hir-symbol"],
         "filter": {
           "name": "midenc_hir_symbol",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -57,12 +57,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-hir"],
         "filter": {
           "name": "midenc_hir",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -72,12 +72,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-hir-type"],
         "filter": {
           "name": "midenc_hir_type",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -87,12 +87,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-session"],
         "filter": {
           "name": "midenc_session",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -102,12 +102,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-frontend-wasm"],
         "filter": {
           "name": "midenc_frontend_wasm",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -117,12 +117,12 @@
         "args": ["build", "--bin=midenc", "--package=midenc"],
         "filter": {
           "name": "midenc",
-          "kind": "bin"
-        }
+          "kind": "bin",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -132,12 +132,12 @@
         "args": ["test", "--no-run", "--bin=midenc", "--package=midenc"],
         "filter": {
           "name": "midenc",
-          "kind": "bin"
-        }
+          "kind": "bin",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -147,12 +147,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-driver"],
         "filter": {
           "name": "midenc_driver",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -162,12 +162,12 @@
         "args": ["test", "--no-run", "--lib", "--package=midenc-compile"],
         "filter": {
           "name": "midenc_compile",
-          "kind": "lib"
-        }
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
@@ -177,27 +177,27 @@
         "args": ["build", "--bin=cargo-miden", "--package=cargo-miden"],
         "filter": {
           "name": "cargo-miden",
-          "kind": "bin"
-        }
+          "kind": "bin",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
+      "sourceLanguages": ["rust"],
     },
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug unit tests in library 'miden_integration_tests'",
+      "name": "Debug unit tests in library 'midenc-integration-tests'",
       "cargo": {
-        "args": ["test", "--no-run", "--lib", "--package=miden-integration-tests"],
+        "args": ["test", "--no-run", "--lib", "--package=midenc-integration-tests"],
         "filter": {
-          "name": "miden_integration_tests",
-          "kind": "lib"
-        }
+          "name": "midenc_integration_tests",
+          "kind": "lib",
+        },
       },
       "args": [],
       "cwd": "${workspaceFolder}",
-      "sourceLanguages": ["rust"]
-    }
-  ]
+      "sourceLanguages": ["rust"],
+    },
+  ],
 }

@@ -14,7 +14,7 @@ use crate::{
     adt::SmallSet,
     formatter::DisplayValues,
     patterns::{PatternApplicationError, RewritePattern, TracingRewriterListener},
-    traits::{ConstantLike, Foldable, IsolatedFromAbove},
+    traits::{ConstantLike, Foldable, IsolatedFromAbove, Transparent},
 };
 
 /// Rewrite ops in the given region, which must be isolated from above, by repeatedly applying the
@@ -487,7 +487,11 @@ impl GreedyPatternRewriteDriver {
         let op = op_ref.borrow();
 
         // If the operation is trivially dead - remove it.
-        if op.is_trivially_dead() {
+        //
+        // Transparent ops represent metadata uses, such as debug info. They must remain available
+        // to rewrite patterns anchored on transparent ops, and should not be erased by this
+        // generic pre-pattern cleanup.
+        if !op.implements::<dyn Transparent>() && op.is_trivially_dead() {
             drop(op);
             rewriter.erase_op(op_ref);
             log::trace!(target: "pattern-rewrite-driver", "processing complete: operation is trivially dead");

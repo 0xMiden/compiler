@@ -422,17 +422,26 @@ pub trait OpAsmParser<'input>: Parser<'input> {
         allow_result_number: bool,
         required_operand_count: Option<NonZeroU8>,
     ) -> ParseResult {
+        let start = self.current_location();
+        let base_len = result.len();
         self.parse_comma_separated_list(delimiter, Some("operand list"), |parser| {
             let operand = parser.parse_operand(allow_result_number)?;
             result.push(operand);
 
-            Ok(true)
+            // Stop after the required number of operands, leaving the trailing comma and any
+            // remaining items to be consumed by a following (e.g. variadic) operand group.
+            Ok(required_operand_count
+                .is_none_or(|required| result.len() - base_len < required.get() as usize))
         })?;
 
         if let Some(required) = required_operand_count
-            && result.len() != required.get() as usize
+            && result.len() - base_len != required.get() as usize
         {
-            todo!()
+            return Err(ParserError::InvalidOperandCount {
+                span: start,
+                expected: required.get() as usize,
+                actual: result.len() - base_len,
+            });
         }
 
         Ok(())

@@ -1,0 +1,7 @@
+[package]
+name = "issue-invalid-stack-offset-movup"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:issue-invalid-stack-offset-movup/miden-issue-invalid-stack-offset-movup@0.1.0"

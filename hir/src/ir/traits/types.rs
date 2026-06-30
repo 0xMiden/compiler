@@ -5,7 +5,8 @@ use midenc_hir_type::PointerType;
 use midenc_session::diagnostics::Severity;
 
 use crate::{
-    CompactString, Context, Op, Operation, Report, Type, derive::operation_trait, ir::value::Value,
+    CompactString, Context, Op, Operation, Report, Type, ValueRef, derive::operation_trait,
+    ir::value::Value,
 };
 
 /// OpInterface to compute the return type(s) of an operation.
@@ -19,6 +20,143 @@ pub trait InferTypeOpInterface: Op {
     fn are_compatible_return_types(&self, lhs: &[Type], rhs: &[Type]) -> bool {
         lhs == rhs
     }
+}
+
+/// A value-range constraint implied by an operation operand or by a checked refinement operation.
+///
+/// This describes semantic constraints beyond the raw Miden field element representation. For
+/// example, a `u32`-typed operand implies that a raw field element must have been checked to fit in
+/// the `u32` range before it reaches that operand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValueRangeConstraint {
+    /// The value must be a valid member of this HIR type's value range.
+    Type(Type),
+}
+
+impl ValueRangeConstraint {
+    /// Return the implicit value-range constraint for `ty`, if values of that type must be more
+    /// constrained than an arbitrary field element.
+    pub fn from_type(ty: &Type) -> Option<Self> {
+        if is_unconstrained_value_type(ty) {
+            None
+        } else {
+            Some(Self::Type(ty.clone()))
+        }
+    }
+
+    pub fn ty(&self) -> &Type {
+        match self {
+            Self::Type(ty) => ty,
+        }
+    }
+}
+
+/// The range requirement imposed on an operation operand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OperandRangeRequirement {
+    /// The operand does not need to be range-constrained before being consumed by this operation.
+    None,
+    /// The operand must satisfy the given range constraint before being consumed.
+    Required(ValueRangeConstraint),
+}
+
+impl OperandRangeRequirement {
+    #[inline]
+    pub fn into_constraint(self) -> Option<ValueRangeConstraint> {
+        match self {
+            Self::None => None,
+            Self::Required(constraint) => Some(constraint),
+        }
+    }
+}
+
+/// Return the implicit value-range requirement for `op` operand `operand_index`.
+///
+/// Operations may override the default type-derived behavior with
+/// [OperandRangeRequirementOpInterface]. This is important for checked operations, which consume a
+/// value precisely in order to establish a value-range contract.
+pub fn operation_operand_range_requirement(
+    op: &Operation,
+    operand_index: usize,
+) -> Option<ValueRangeConstraint> {
+    if operand_index >= op.num_operands() {
+        return None;
+    }
+
+    if let Some(interface) = op.as_trait::<dyn OperandRangeRequirementOpInterface>() {
+        return interface.operand_range_requirement(operand_index).into_constraint();
+    }
+
+    default_operand_range_requirement(op, operand_index)
+}
+
+/// Return the default type-derived range requirement for `op` operand `operand_index`.
+pub fn default_operand_range_requirement(
+    op: &Operation,
+    operand_index: usize,
+) -> Option<ValueRangeConstraint> {
+    let operand = &op.operands()[operand_index];
+    let value = operand.borrow().as_value_ref();
+    let value = value.borrow();
+    ValueRangeConstraint::from_type(value.ty())
+}
+
+/// Return true if values of `ty` are unconstrained by type alone.
+///
+/// MASM has field elements and words as native unconstrained value representations. HIR types other
+/// than `felt` and four-felt words imply additional range/shape constraints.
+pub fn is_unconstrained_value_type(ty: &Type) -> bool {
+    matches!(ty, Type::Unknown | Type::Never | Type::Felt) || is_word_type(ty)
+}
+
+/// Return true if `ty` is the conventional Miden word type, i.e. `[felt; 4]`.
+pub fn is_word_type(ty: &Type) -> bool {
+    match ty {
+        Type::Array(array) => array.len() == 4 && array.element_type() == &Type::Felt,
+        _ => false,
+    }
+}
+
+/// OpInterface for operations with operand-specific value-range requirements.
+pub trait OperandRangeRequirementOpInterface: Op {
+    fn operand_range_requirement(&self, operand_index: usize) -> OperandRangeRequirement;
+}
+
+/// Describes an operation result whose value range was refined from an input value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ValueRangeRefinement {
+    pub input: ValueRef,
+    pub result: ValueRef,
+    pub constraint: ValueRangeConstraint,
+}
+
+/// OpInterface for checked cast operations.
+///
+/// Implementing this interface indicates that the operation result is produced by checking the
+/// input value against the output range before materializing the cast result.
+pub trait CheckedCastOpInterface: Op {
+    fn checked_cast_refinement(&self, result: ValueRef) -> Option<ValueRangeRefinement>;
+}
+
+/// OpInterface for assertion operations that refine a value's range.
+///
+/// Implementing this interface indicates that the operation result is a checked/refined version of
+/// one of the operation's input values.
+pub trait ValueRangeAssertionOpInterface: Op {
+    fn value_range_assertion(&self, result: ValueRef) -> Option<ValueRangeRefinement>;
+}
+
+/// Return the value-range refinement that produces `result`, if `op` has one.
+pub fn operation_result_value_range_refinement(
+    op: &Operation,
+    result: ValueRef,
+) -> Option<ValueRangeRefinement> {
+    op.as_trait::<dyn ValueRangeAssertionOpInterface>()
+        .and_then(|interface| interface.value_range_assertion(result))
+        .or_else(|| {
+            op.as_trait::<dyn CheckedCastOpInterface>()
+                .and_then(|interface| interface.checked_cast_refinement(result))
+        })
 }
 
 /// Op expects all operands to be of the same type

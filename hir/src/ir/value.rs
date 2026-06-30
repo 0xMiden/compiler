@@ -10,7 +10,7 @@ pub use self::{
     stack::StackOperand,
 };
 use super::*;
-use crate::{DynHash, DynPartialEq, PartialEqable, any::AsAny, interner};
+use crate::{DynHash, DynPartialEq, PartialEqable, any::AsAny, interner, traits::Transparent};
 
 /// A unique identifier for a [Value] in the IR
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -71,7 +71,7 @@ impl ValueId {
             index as u32 <= Self::OP_RESULT_INDEX_MASK,
             "invalid op result index: must be less than 64",
         );
-        Self((self.0 & !Self::OP_RESULT_INDEX_MASK) | index as u32)
+        Self((self.0 & !Self::OP_RESULT_INDEX_MASK) | Self::OP_RESULT_TAG | index as u32)
     }
 
     /// Strip operation result metadata from this [ValueId]
@@ -126,7 +126,11 @@ impl fmt::Debug for ValueId {
 impl fmt::Display for ValueId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Some(sym) = self.as_symbol_id() {
-            write!(f, "%{sym}")
+            if let Some(index) = self.result_index() {
+                write!(f, "%{sym}#{index}")
+            } else {
+                write!(f, "%{sym}")
+            }
         } else if let Some(index) = self.result_index() {
             write!(f, "%{}#{index}", self.as_u32())
         } else {
@@ -174,6 +178,13 @@ pub trait Value:
     fn is_used_outside_of_block(&self, block: &BlockRef) -> bool {
         self.iter_uses()
             .any(|user| user.owner.parent().is_some_and(|blk| !BlockRef::ptr_eq(&blk, block)))
+    }
+    /// Returns true if this value has at least one non-transparent user that should keep it alive
+    fn has_real_uses(&self) -> bool {
+        // The value is used so long as at least one using op is not Transparent.
+        self.uses()
+            .iter()
+            .any(|user| !user.owner.borrow().implements::<dyn Transparent>())
     }
     /// Replace all uses of `self` with `replacement`
     fn replace_all_uses_with(&mut self, mut replacement: ValueRef) {

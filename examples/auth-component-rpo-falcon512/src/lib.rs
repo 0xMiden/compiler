@@ -3,14 +3,17 @@
 
 extern crate alloc;
 
-use miden::{StorageValue, Word, component, felt, hash_words, intrinsics::advice::adv_insert, tx};
+use miden::{
+    StorageValue, Word, component, component_storage, felt, hash_words, intrinsics::advice::adv_insert,
+    tx,
+};
 
 /// Authentication component storage/layout.
 ///
 /// Public key is expected to be in the slot 0. Matches MASM constant `PUBLIC_KEY_SLOT=0` in
 /// ../base/crates/miden-lib/asm/account_components/rpo_falcon_512.masm
-#[component]
-struct AuthComponent {
+#[component_storage]
+struct AuthComponentStorage {
     /// The account owner's public key (RPO-Falcon512 public key hash).
     #[storage(
         description = "owner public key",
@@ -19,10 +22,16 @@ struct AuthComponent {
     owner_public_key: StorageValue<Word>,
 }
 
+/// API of the RPO-Falcon512 authentication component.
 #[component]
-impl AuthComponent {
+trait AuthComponent {
     #[auth_script]
-    pub fn check_signature(&mut self, _arg: Word) {
+    fn check_signature(&mut self, _arg: Word);
+}
+
+#[component]
+impl AuthComponent for AuthComponentStorage {
+    fn check_signature(&mut self, _arg: Word) {
         let ref_block_num = tx::get_block_number();
         let final_nonce = self.incr_nonce();
 

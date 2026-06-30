@@ -1,10 +1,10 @@
-use alloc::sync::Arc;
+use alloc::{rc::Rc, sync::Arc};
 use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
-use midenc_hir::{FxHashSet, Ident, interner::Symbol};
+use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
     CustomSectionReader, DataKind, ElementItems, ElementKind, Encoding, ExternalKind,
@@ -66,6 +66,10 @@ pub struct ParsedModule<'data> {
 
     /// DWARF debug information, if enabled, parsed from the module.
     pub debuginfo: DebugInfoData<'data>,
+
+    /// Precomputed debug metadata for functions
+    pub function_debug:
+        FxHashMap<FuncIndex, Rc<core::cell::RefCell<crate::module::debug_info::FunctionDebugInfo>>>,
 
     /// Set if debuginfo was found but it was not parsed due to `Tunables`
     /// configuration.
@@ -186,6 +190,8 @@ pub struct FunctionBodyData<'a> {
     pub body: FunctionBody<'a>,
     /// Validator for the function body
     pub validator: FuncToValidate<ValidatorResources>,
+    /// Offset in the original wasm binary where this function body starts
+    pub body_offset: u64,
 }
 
 #[cfg(test)]
@@ -194,8 +200,8 @@ mod tests;
 #[derive(Default)]
 pub struct DebugInfoData<'a> {
     pub dwarf: Dwarf<'a>,
-    debug_loc: gimli::DebugLoc<DwarfReader<'a>>,
-    debug_loclists: gimli::DebugLocLists<DwarfReader<'a>>,
+    pub debug_loc: gimli::DebugLoc<DwarfReader<'a>>,
+    pub debug_loclists: gimli::DebugLocLists<DwarfReader<'a>>,
     pub debug_ranges: gimli::DebugRanges<DwarfReader<'a>>,
     pub debug_rnglists: gimli::DebugRngLists<DwarfReader<'a>>,
 }
@@ -210,6 +216,10 @@ pub struct WasmFileInfo {
     pub code_section_offset: u64,
     pub imported_func_count: u32,
     pub funcs: Vec<FunctionMetadata>,
+    /// The byte offset where this module starts within a component.
+    /// This is 0 for standalone modules, but non-zero when the module
+    /// is embedded in a wasm component. Used for DWARF address translation.
+    pub module_base_offset: u64,
 }
 
 #[derive(Debug)]
@@ -399,36 +409,38 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         let cnt = usize::try_from(imports.count()).unwrap();
         self.result.module.imports.reserve(cnt);
         for entry in imports {
-            let import = entry.into_diagnostic()?;
-            let ty = match import.ty {
-                TypeRef::Func(index) => {
-                    let index = TypeIndex::from_u32(index);
-                    let sig_index = self.result.module.types[index].unwrap_function();
-                    self.result.module.num_imported_funcs += 1;
-                    self.result.wasm_file.imported_func_count += 1;
-                    EntityType::Function(sig_index)
-                }
-                TypeRef::Memory(ty) => {
-                    self.result.module.memories.push(super::Memory {
-                        minimum: ty.initial,
-                        maximum: ty.maximum,
-                        imported: true,
-                    });
-                    EntityType::Memory(ty.into())
-                }
-                TypeRef::Global(ty) => {
-                    self.result.module.num_imported_globals += 1;
-                    EntityType::Global(convert_global_type(&ty))
-                }
-                TypeRef::Table(ty) => {
-                    self.result.module.num_imported_tables += 1;
-                    EntityType::Table(convert_table_type(&ty))
-                }
+            for import in entry.into_diagnostic()? {
+                let (_, import) = import.into_diagnostic()?;
+                let ty = match import.ty {
+                    TypeRef::Func(index) | TypeRef::FuncExact(index) => {
+                        let index = TypeIndex::from_u32(index);
+                        let sig_index = self.result.module.types[index].unwrap_function();
+                        self.result.module.num_imported_funcs += 1;
+                        self.result.wasm_file.imported_func_count += 1;
+                        EntityType::Function(sig_index)
+                    }
+                    TypeRef::Memory(ty) => {
+                        self.result.module.memories.push(super::Memory {
+                            minimum: ty.initial,
+                            maximum: ty.maximum,
+                            imported: true,
+                        });
+                        EntityType::Memory(ty.into())
+                    }
+                    TypeRef::Global(ty) => {
+                        self.result.module.num_imported_globals += 1;
+                        EntityType::Global(convert_global_type(&ty))
+                    }
+                    TypeRef::Table(ty) => {
+                        self.result.module.num_imported_tables += 1;
+                        EntityType::Table(convert_table_type(&ty))
+                    }
 
-                // doesn't get past validation
-                TypeRef::Tag(_) => unreachable!(),
-            };
-            self.declare_import(import.module, import.name, ty);
+                    // doesn't get past validation
+                    TypeRef::Tag(_) => unreachable!(),
+                };
+                self.declare_import(import.module, import.name, ty);
+            }
         }
         Ok(())
     }
@@ -466,8 +478,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     precomputed: Vec::new(),
                 },
                 wasmparser::TableInit::Expr(cexpr) => {
-                    let mut init_expr_reader = cexpr.get_binary_reader();
-                    match init_expr_reader.read_operator().into_diagnostic()? {
+                    let mut init_expr_reader = cexpr.get_operators_reader();
+                    match init_expr_reader.read().into_diagnostic()? {
                         Operator::RefNull { hty: _ } => TableInitialValue::Null {
                             precomputed: Vec::new(),
                         },
@@ -515,8 +527,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         self.result.module.globals.reserve_exact(cnt);
         for entry in globals {
             let wasmparser::Global { ty, init_expr } = entry.into_diagnostic()?;
-            let mut init_expr_reader = init_expr.get_binary_reader();
-            let initializer = match init_expr_reader.read_operator().into_diagnostic()? {
+            let mut init_expr_reader = init_expr.get_operators_reader();
+            let initializer = match init_expr_reader.read().into_diagnostic()? {
                 Operator::I32Const { value } => GlobalInit::I32Const(value),
                 Operator::I64Const { value } => GlobalInit::I64Const(value),
                 Operator::F32Const { value } => GlobalInit::F32Const(value.bits()),
@@ -552,7 +564,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         for entry in exports {
             let wasmparser::Export { name, kind, index } = entry.into_diagnostic()?;
             let entity = match kind {
-                ExternalKind::Func => {
+                ExternalKind::Func | ExternalKind::FuncExact => {
                     let index = FuncIndex::from_u32(index);
                     self.flag_func_escaped(index);
                     EntityIndex::Function(index)
@@ -611,8 +623,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     for func in funcs {
                         let func = match func
                             .into_diagnostic()?
-                            .get_binary_reader()
-                            .read_operator()
+                            .get_operators_reader()
+                            .read()
                             .into_diagnostic()?
                         {
                             Operator::RefNull { .. } => FuncIndex::reserved_value(),
@@ -640,21 +652,20 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     offset_expr,
                 } => {
                     let table_index = TableIndex::from_u32(table_index.unwrap_or(0));
-                    let mut offset_expr_reader = offset_expr.get_binary_reader();
-                    let (base, offset) =
-                        match offset_expr_reader.read_operator().into_diagnostic()? {
-                            Operator::I32Const { value } => (None, value as u32),
-                            Operator::GlobalGet { global_index } => {
-                                (Some(GlobalIndex::from_u32(global_index)), 0)
-                            }
-                            ref s => {
-                                unsupported_diag!(
-                                    diagnostics,
-                                    "wasm error: unsupported init expr in element section: {:?}",
-                                    s
-                                );
-                            }
-                        };
+                    let mut offset_expr_reader = offset_expr.get_operators_reader();
+                    let (base, offset) = match offset_expr_reader.read().into_diagnostic()? {
+                        Operator::I32Const { value } => (None, value as u32),
+                        Operator::GlobalGet { global_index } => {
+                            (Some(GlobalIndex::from_u32(global_index)), 0)
+                        }
+                        ref s => {
+                            unsupported_diag!(
+                                diagnostics,
+                                "wasm error: unsupported init expr in element section: {:?}",
+                                s
+                            );
+                        }
+                    };
 
                     self.result.module.table_initialization.segments.push(TableSegment {
                         table_index,
@@ -678,7 +689,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
     }
 
     fn code_section_start(&mut self, count: u32, range: Range<usize>) -> Result<(), Report> {
-        self.validator.code_section_start(count, &range).into_diagnostic()?;
+        self.validator.code_section_start(&range).into_diagnostic()?;
         let cnt = usize::try_from(count).unwrap();
         self.result.function_body_inputs.reserve_exact(cnt);
         self.result.wasm_file.code_section_offset = range.start as u64;
@@ -703,7 +714,12 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 params: sig.params().into(),
             });
         }
-        self.result.function_body_inputs.push(FunctionBodyData { validator, body });
+        let body_offset = body.range().start as u64;
+        self.result.function_body_inputs.push(FunctionBodyData {
+            validator,
+            body,
+            body_offset,
+        });
         self.result.code_index += 1;
         Ok(())
     }
@@ -716,7 +732,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         self.validator.data_section(&data_section).into_diagnostic()?;
         let cnt = usize::try_from(data_section.count()).unwrap();
         self.result.data_segments.reserve_exact(cnt);
-        for entry in data_section.into_iter() {
+        for entry in data_section {
             let wasmparser::Data {
                 kind,
                 data,
@@ -732,8 +748,8 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         "data section memory index must be 0 (only one memory per module is \
                          supported)"
                     );
-                    let mut offset_expr_reader = offset_expr.get_binary_reader();
-                    let offset = match offset_expr_reader.read_operator().into_diagnostic()? {
+                    let mut offset_expr_reader = offset_expr.get_operators_reader();
+                    let offset = match offset_expr_reader.read().into_diagnostic()? {
                         Operator::I32Const { value } => DataSegmentOffset::I32Const(value),
                         Operator::GlobalGet { global_index } => {
                             DataSegmentOffset::GetGlobal(GlobalIndex::from_u32(global_index))

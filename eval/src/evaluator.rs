@@ -2,7 +2,13 @@ mod context;
 mod frame;
 mod memory;
 
-use alloc::{format, rc::Rc, string::ToString, vec, vec::Vec};
+use alloc::{
+    format,
+    rc::Rc,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 
 use midenc_hir::{
     CallableOpInterface, Context, Immediate, Operation, OperationRef, RegionBranchPoint, RegionRef,
@@ -36,6 +42,8 @@ pub struct HirEvaluator {
     condition_set_by: Option<OperationRef>,
     /// The current operation being executed
     ip: Option<OperationRef>,
+    /// Lines printed via the [`midenc_dialect_hir::PrintLn`] op
+    printed_lines: Vec<String>,
 }
 
 impl HirEvaluator {
@@ -44,6 +52,7 @@ impl HirEvaluator {
         Self {
             context,
             contexts: vec![ExecutionContext::default()],
+            printed_lines: Default::default(),
             call_stack: Default::default(),
             condition: 0,
             condition_set_by: None,
@@ -55,10 +64,16 @@ impl HirEvaluator {
     pub fn reset(&mut self) {
         self.contexts.truncate(1);
         self.current_context_mut().reset();
+        self.printed_lines.clear();
         self.call_stack.clear();
         self.condition = 0;
         self.condition_set_by = None;
         self.ip = None;
+    }
+
+    /// Returns the lines printed during the current evaluation.
+    pub fn printed_lines(&self) -> &[String] {
+        &self.printed_lines
     }
 
     /// The current frame of the call stack
@@ -366,6 +381,13 @@ impl HirEvaluator {
         self.current_context().read_memory(addr, ty, self.current_span())
     }
 
+    /// Read `len` bytes from memory starting at `addr`.
+    ///
+    /// Returns an error if `addr` is invalid or the read would be out of bounds.
+    pub fn read_memory_bytes(&self, addr: u32, len: u32) -> Result<Vec<u8>, Report> {
+        self.current_context().read_memory_bytes(addr, len, self.current_span())
+    }
+
     /// Write `value` to `addr` in heap memory.
     ///
     /// Returns an error if `addr` is invalid, or `value` could not be written to `addr` (either the
@@ -422,6 +444,11 @@ impl HirEvaluator {
     /// Set the concrete value assigned to `id`
     pub fn set_value(&mut self, id: ValueRef, value: impl Into<Value>) {
         self.current_frame_mut().set_value(id, value);
+    }
+
+    /// Record a printed line.
+    pub fn push_printed_line(&mut self, line: String) {
+        self.printed_lines.push(line);
     }
 
     /// Start building an error diagnostic

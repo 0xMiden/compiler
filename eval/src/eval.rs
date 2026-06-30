@@ -12,7 +12,8 @@ use midenc_dialect_wasm::{self as wasm};
 use midenc_hir::{
     AttributeRef, Felt, Immediate, ImmediateAttr, Op, OperationRef, Overflow, RegionBranchPoint,
     RegionBranchTerminatorOpInterface, Report, SmallVec, SourceSpan, Spanned, SuccessorInfo, Type,
-    Value as _, ValueRange, dialects::builtin,
+    Value as _, ValueRange,
+    dialects::{builtin, debuginfo},
 };
 use midenc_session::diagnostics::Severity;
 
@@ -103,6 +104,13 @@ impl Eval for ub::Unreachable {
             span: self.span(),
             reason: "control reached an unreachable program point".to_string(),
         })
+    }
+}
+
+// Debug info operations are purely observational and have no runtime semantics.
+impl Eval for debuginfo::DebugValue {
+    fn eval(&self, _evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        Ok(ControlFlowEffect::None)
     }
 }
 
@@ -727,6 +735,53 @@ impl Eval for hir::MemCpy {
             let value = evaluator.read_memory(src, &source_ty)?;
             evaluator.write_memory(dst, value)?;
         }
+
+        Ok(ControlFlowEffect::None)
+    }
+}
+
+impl Eval for hir::PrintLn {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let addr = evaluator.use_value(&self.ptr().as_value_ref())?;
+        let Immediate::U32(ptr) = addr else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected pointer to be a u32 immediate, got {}", addr.ty()),
+            ));
+        };
+
+        let pointer_ty = self.ptr().ty();
+        let pointee_ty = pointer_ty
+            .pointee()
+            .expect("expected pointer type to have been verified already");
+        if *pointee_ty != Type::U8 {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid println: expected pointer to u8, got pointer to {pointee_ty}"),
+            ));
+        }
+
+        let len = evaluator.use_value(&self.len().as_value_ref())?;
+        let Immediate::U32(len) = len else {
+            return Err(evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("expected length to be a u32 immediate, got {}", len.ty()),
+            ));
+        };
+
+        let bytes = evaluator.read_memory_bytes(ptr, len)?;
+        let line = String::from_utf8(bytes).map_err(|err| {
+            evaluator.report(
+                "evaluation failed",
+                self.span(),
+                format!("invalid UTF-8 input to hir.println: {err}"),
+            )
+        })?;
+
+        evaluator.push_printed_line(line);
 
         Ok(ControlFlowEffect::None)
     }
@@ -1457,9 +1512,9 @@ macro_rules! comparison_with {
             (Immediate::U64(x), Immediate::U64(y)) => Immediate::U64($comparator(x, y)),
             (Immediate::I128(x), Immediate::I128(y)) => Immediate::I128($comparator(x, y)),
             (Immediate::U128(x), Immediate::U128(y)) => Immediate::U128($comparator(x, y)),
-            (Immediate::Felt(x), Immediate::Felt(y)) => {
-                Immediate::Felt(Felt::new($comparator(x.as_canonical_u64(), y.as_canonical_u64())))
-            }
+            (Immediate::Felt(x), Immediate::Felt(y)) => Immediate::Felt(Felt::new_unchecked(
+                $comparator(x.as_canonical_u64(), y.as_canonical_u64()),
+            )),
             _ => unreachable!(),
         }
     }};
@@ -1744,7 +1799,7 @@ impl Eval for arith::Neg {
             Immediate::U64(x) => Immediate::U64(!x),
             Immediate::I128(x) => Immediate::I128(-x),
             Immediate::U128(x) => Immediate::U128(!x),
-            Immediate::Felt(x) => Immediate::Felt(Felt::new(!x.as_canonical_u64())),
+            Immediate::Felt(x) => Immediate::Felt(Felt::new_unchecked(!x.as_canonical_u64())),
             _ => {
                 return Err(evaluator.report(
                     "evaluation failed",

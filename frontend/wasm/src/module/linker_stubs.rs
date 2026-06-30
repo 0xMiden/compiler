@@ -18,9 +18,12 @@ use wasmparser::{FunctionBody, Operator};
 
 use crate::{
     error::WasmResult,
-    intrinsics::{Intrinsic, convert_intrinsics_call},
+    intrinsics::{
+        Intrinsic, IntrinsicsConversionResult, attach_effects_to_function, convert_intrinsics_call,
+    },
     miden_abi::{
-        is_miden_abi_module, miden_abi_function_type, transform::transform_miden_abi_call,
+        is_miden_abi_module, miden_abi_function_effects, miden_abi_function_type,
+        transform::transform_miden_abi_call,
     },
     module::{
         function_builder_ext::{FunctionBuilderContext, FunctionBuilderExt, SSABuilderListener},
@@ -126,16 +129,20 @@ pub fn maybe_lower_linker_stub(
         let Some(conv) = intr.conversion_result() else {
             return Ok(false);
         };
-        if conv.is_function() {
+        if let IntrinsicsConversionResult::FunctionType { effects, .. } = conv {
             // Declare callee and call via convert_intrinsics_call with function_ref
             let import_module_ref = module_state
                 .world_builder
                 .declare_module_tree(&import_path.without_leaf())
                 .wrap_err("failed to create module for intrinsics imports")?;
             let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-            let intrinsic_func_ref = import_module_builder
+            let mut intrinsic_func_ref = import_module_builder
                 .define_function(import_path.name().into(), Visibility::Public, import_sig.clone())
                 .wrap_err("failed to create intrinsic function ref")?;
+            {
+                let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
+                attach_effects_to_function(&mut intrinsic_func, effects.iter());
+            }
             convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
         } else {
             // Inline conversion of intrinsic operation
@@ -148,10 +155,15 @@ pub fn maybe_lower_linker_stub(
             .declare_module_tree(&import_path.without_leaf())
             .wrap_err("failed to create module for MASM imports")?;
         let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-        let import_func_ref = import_module_builder
+        let mut import_func_ref = import_module_builder
             .define_function(import_path.name().into(), Visibility::Public, import_sig)
             .wrap_err("failed to create MASM import function ref")?;
-        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)
+        {
+            let effects = miden_abi_function_effects(&import_path);
+            let mut import_func = import_func_ref.borrow_mut();
+            attach_effects_to_function(&mut import_func, effects.iter());
+        }
+        transform_miden_abi_call(import_func_ref, &import_path, &args, &mut fb)?
     };
 
     // Return

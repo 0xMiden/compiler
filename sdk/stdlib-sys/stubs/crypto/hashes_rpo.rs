@@ -3,12 +3,16 @@ use core::ffi::c_void;
 /// Unreachable stub for std::crypto::hashes::poseidon2::hash_elements
 
 #[unsafe(export_name = "miden::core::crypto::hashes::poseidon2::hash_elements")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn rpo_hash_elements_stub(_ptr: u32, _num_elements: u32, _result_ptr: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
 /// Unreachable stub for std::crypto::hashes::poseidon2::hash_words
 #[unsafe(export_name = "miden::core::crypto::hashes::poseidon2::hash_words")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn rpo_hash_words_stub(_start_addr: u32, _end_addr: u32, _result_ptr: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
@@ -18,6 +22,8 @@ pub extern "C" fn rpo_hash_words_stub(_start_addr: u32, _end_addr: u32, _result_
 /// The ABI maps this to a function which consumes 8 felts (two digests) and returns a 4-felt digest.
 /// In Rust bindings, the return value is passed back via a pointer to a result area.
 #[unsafe(export_name = "miden::core::crypto::hashes::poseidon2::merge")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn poseidon2_merge_stub(
     _b0: f32,
     _b1: f32,

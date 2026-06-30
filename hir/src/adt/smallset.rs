@@ -1,4 +1,4 @@
-use core::{borrow::Borrow, fmt};
+use core::{borrow::Borrow, cmp::Ordering, fmt};
 
 use smallvec::SmallVec;
 
@@ -139,6 +139,14 @@ where
     /// Clear the content of the set
     pub fn clear(&mut self) {
         self.items.clear();
+    }
+
+    /// Sort the items in this set using `compare`.
+    pub fn sort_by<F>(&mut self, compare: F)
+    where
+        F: FnMut(&T, &T) -> Ordering,
+    {
+        self.items.sort_by(compare);
     }
 
     pub fn contains<Q>(&self, item: &Q) -> bool

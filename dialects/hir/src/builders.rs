@@ -1,22 +1,26 @@
 use midenc_hir::{
-    AsCallableSymbolRef, Builder, Immediate, Op, OpBuilder, PointerType, Report, SourceSpan, Type,
-    UnsafeIntrusiveEntityRef, ValueRef,
+    AsCallableSymbolRef, Builder, CompactString, Felt, Immediate, Op, OpBuilder, PointerType,
+    Report, SmallVec, SourceSpan, Type, UnsafeIntrusiveEntityRef, ValueRef,
     dialects::builtin::{
-        attributes::{LocalVariable, Signature},
+        attributes::{Array, LocalVariable, Signature},
         *,
     },
 };
 
 use crate::*;
 
+macro_rules! op_results {
+    ($op:expr) => {{
+        let op = $op.borrow();
+        op.results().iter().map(|result| result.borrow().as_value_ref()).collect()
+    }};
+}
+
 pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
-    fn assert(
-        &mut self,
-        value: ValueRef,
-        span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assert>, Report> {
+    fn assert(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Assert, (ValueRef,)>(span);
-        op_builder(value)
+        let op = op_builder(value)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assert_with_error(
@@ -24,18 +28,31 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         value: ValueRef,
         code: u32,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assert>, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::Assert, (ValueRef, u32)>(span);
-        op_builder(value, code)
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::Assert, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, code, CompactString::default())?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
-    fn assertz(
+    fn assert_with_message(
         &mut self,
         value: ValueRef,
+        message: impl Into<CompactString>,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assertz>, Report> {
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::Assert, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, 0u32, message.into())?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn assertz(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::Assertz, (ValueRef,)>(span);
-        op_builder(value)
+        let op = op_builder(value)?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assertz_with_error(
@@ -43,9 +60,25 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         value: ValueRef,
         code: u32,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Assertz>, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::Assertz, (ValueRef, u32)>(span);
-        op_builder(value, code)
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::Assertz, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, code, CompactString::default())?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn assertz_with_message(
+        &mut self,
+        value: ValueRef,
+        message: impl Into<CompactString>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::Assertz, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, 0u32, message.into())?;
+        Ok(op.borrow().result().as_value_ref())
     }
 
     fn assert_eq(
@@ -65,8 +98,23 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         code: u32,
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::AssertEq, (_, _, _)>(span);
-        op_builder(lhs, rhs, code)
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::AssertEq, (ValueRef, ValueRef, u32, CompactString)>(span);
+        op_builder(lhs, rhs, code, CompactString::default())
+    }
+
+    fn assert_eq_with_message(
+        &mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        message: impl Into<CompactString>,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::AssertEq>, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::AssertEq, (ValueRef, ValueRef, u32, CompactString)>(span);
+        op_builder(lhs, rhs, 0u32, message.into())
     }
 
     fn assert_eq_imm(
@@ -92,6 +140,39 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         self.assert_eq_with_error(lhs, rhs, code, span)
     }
 
+    /// Assert that `value` is in the u32 range and refine its result type to u32.
+    fn assert_u32(&mut self, value: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AssertU32, (ValueRef,)>(span);
+        let op = op_builder(value)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn assert_u32_with_error(
+        &mut self,
+        value: ValueRef,
+        code: u32,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::AssertU32, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, code, CompactString::default())?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    fn assert_u32_with_message(
+        &mut self,
+        value: ValueRef,
+        message: impl Into<CompactString>,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::AssertU32, (ValueRef, u32, CompactString)>(span);
+        let op = op_builder(value, 0u32, message.into())?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /// Grow the global heap by `num_pages` pages, in 64kb units.
     ///
     /// Returns the previous size (in pages) of the heap, or -1 if the heap could not be grown.
@@ -105,6 +186,332 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     fn mem_size(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
         let op_builder = self.builder_mut().create::<crate::ops::MemSize, _>(span);
         let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Return the caller procedure hash as a word.
+    fn caller(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Caller, _>(span);
+        let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Return the current VM clock cycle.
+    fn clk(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Clk, _>(span);
+        let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Pop one field element from the VM advice stack.
+    fn advice_pop(&mut self, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AdvicePop, _>(span);
+        let op = op_builder()?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Pop one word from the VM advice stack, overwriting four stack slots.
+    fn advice_load_word(
+        &mut self,
+        old0: ValueRef,
+        old1: ValueRef,
+        old2: ValueRef,
+        old3: ValueRef,
+        span: SourceSpan,
+    ) -> Result<(ValueRef, ValueRef, ValueRef, ValueRef), Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::AdviceLoadWord, _>(span);
+        let op = op_builder(old0, old1, old2, old3)?;
+        let op = op.borrow();
+        Ok((
+            op.result0().as_value_ref(),
+            op.result1().as_value_ref(),
+            op.result2().as_value_ref(),
+            op.result3().as_value_ref(),
+        ))
+    }
+
+    /// Pop two advice words, write them to memory, and update the affected VM stack window.
+    fn advice_pipe<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 13]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::AdvicePipe, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Emit an event whose ID is already on the operand stack.
+    fn emit_event(&mut self, event_id: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::EmitEvent, _>(span);
+        let op = op_builder(event_id)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Emit an immediate event.
+    fn emit_event_imm(
+        &mut self,
+        event_id: Felt,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::EmitEventImm>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::EmitEventImm, _>(span);
+        op_builder(Immediate::Felt(event_id))
+    }
+
+    /// Emit a recognized VM system event with explicit stack-read dependencies.
+    fn system_event<A>(
+        &mut self,
+        stack: A,
+        event_id: Felt,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::SystemEvent, (A, Immediate)>(span);
+        let op = op_builder(stack, Immediate::Felt(event_id))?;
+        Ok(op_results!(op))
+    }
+
+    /// Compute the Poseidon2 hash of a word.
+    fn hash(
+        &mut self,
+        input0: ValueRef,
+        input1: ValueRef,
+        input2: ValueRef,
+        input3: ValueRef,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::Hash, _>(span);
+        let op = op_builder(input0, input1, input2, input3)?;
+        Ok(op_results!(op))
+    }
+
+    /// Compute the Poseidon2 merge hash of two words.
+    #[allow(clippy::too_many_arguments)]
+    fn hmerge(
+        &mut self,
+        lhs0: ValueRef,
+        lhs1: ValueRef,
+        lhs2: ValueRef,
+        lhs3: ValueRef,
+        rhs0: ValueRef,
+        rhs1: ValueRef,
+        rhs2: ValueRef,
+        rhs3: ValueRef,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::HMerge, _>(span);
+        let op = op_builder(lhs0, lhs1, lhs2, lhs3, rhs0, rhs1, rhs2, rhs3)?;
+        Ok(op_results!(op))
+    }
+
+    /// Apply the Poseidon2 permutation to the top three VM stack words.
+    #[allow(clippy::too_many_arguments)]
+    fn hperm(
+        &mut self,
+        state0: ValueRef,
+        state1: ValueRef,
+        state2: ValueRef,
+        state3: ValueRef,
+        state4: ValueRef,
+        state5: ValueRef,
+        state6: ValueRef,
+        state7: ValueRef,
+        state8: ValueRef,
+        state9: ValueRef,
+        state10: ValueRef,
+        state11: ValueRef,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 12]>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::HPerm, _>(span);
+        let op = op_builder(
+            state0, state1, state2, state3, state4, state5, state6, state7, state8, state9,
+            state10, state11,
+        )?;
+        Ok(op_results!(op))
+    }
+
+    /// Read a Merkle tree node from the advice provider and verify it against a root.
+    fn mtree_get<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 8]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeGet, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Update a Merkle tree node, producing the old node value and new root.
+    fn mtree_set<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 8]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeSet, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Merge two Merkle tree roots in the advice provider.
+    fn mtree_merge<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 4]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeMerge, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Verify a Merkle path for a node/root pair.
+    fn mtree_verify<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 10]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MTreeVerify, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Verify a Merkle path with an inline diagnostic message.
+    fn mtree_verify_with_message<A>(
+        &mut self,
+        stack: A,
+        message: impl Into<CompactString>,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 10]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder =
+            self.builder_mut().create::<crate::ops::MTreeVerify, (A, CompactString)>(span);
+        let op = op_builder(stack, message.into())?;
+        Ok(op_results!(op))
+    }
+
+    /// Encrypt two words from memory using the Poseidon2 sponge stream state.
+    fn crypto_stream<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 14]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::CryptoStream, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Perform one FRI ext2 layer fold by a factor of four.
+    fn fri_ext2fold4<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::FriExt2Fold4, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Perform eight Horner evaluation steps over base-field coefficients.
+    fn horner_base<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::HornerBase, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Perform four Horner evaluation steps over extension-field coefficients.
+    fn horner_ext<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 16]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::HornerExt, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Evaluate a memory-encoded arithmetic circuit and assert it evaluates to zero.
+    fn eval_circuit<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 3]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::EvalCircuit, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Log a precompile event into the VM precompile transcript.
+    fn log_precompile<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 12]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::LogPrecompile, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Load two VM words from memory and update the affected VM stack window.
+    fn mem_stream<A>(
+        &mut self,
+        stack: A,
+        span: SourceSpan,
+    ) -> Result<SmallVec<[ValueRef; 13]>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::MemStream, (A,)>(span);
+        let op = op_builder(stack)?;
+        Ok(op_results!(op))
+    }
+
+    /// Create a constant byte array
+    fn bytes(&mut self, bytes: &[u8], span: SourceSpan) -> Result<ValueRef, Report> {
+        let context = self.builder().context_rc();
+        let id = context.create_constant(bytes);
+        let bytes = context.get_constant(id);
+        let op_builder = self.builder_mut().create::<crate::ops::ConstantBytes, _>(span);
+        let op = op_builder(bytes)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
@@ -310,6 +717,17 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    /// Gets the element-address-space pointer to a procedure local.
+    fn local_address(
+        &mut self,
+        local: LocalVariable,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::LocalAddress, _>(span);
+        let op = op_builder(local)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     /*
     /// Loads a value from the given temporary (local variable), of the type associated with that
     /// local.
@@ -413,6 +831,19 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(src, dst, count)
     }
 
+    /// Emit a println operation for printing a string to the debug output.
+    ///
+    /// The string is constructed by reading `len` bytes from memory starting at `ptr`.
+    fn println(
+        &mut self,
+        ptr: ValueRef,
+        len: ValueRef,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::PrintLn>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::PrintLn, _>(span);
+        op_builder(ptr, len)
+    }
+
     /// This is a cast operation that permits performing arithmetic on pointer values
     /// by casting a pointer to a specified integral type.
     fn ptrtoint(&mut self, arg: ValueRef, ty: Type, span: SourceSpan) -> Result<ValueRef, Report> {
@@ -493,6 +924,26 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(callee, signature, args)
     }
 
+    /// Invoke a foreign account procedure via the transaction kernel FPI executor.
+    ///
+    /// `prefix_locals` must reference the six felt locals holding the executor prefix in protocol
+    /// order (account id suffix, account id prefix, procedure root felts), stored to before this
+    /// op; `inputs` are the flattened procedure input felts (at most
+    /// [`crate::ops::ExecFpi::MAX_INPUT_FELTS`]).
+    fn exec_fpi<A>(
+        &mut self,
+        prefix_locals: [LocalVariable; crate::ops::ExecFpi::PREFIX_FELTS],
+        inputs: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ExecFpi>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let prefix_locals = Array::from(prefix_locals);
+        let op_builder = self.builder_mut().create::<crate::ops::ExecFpi, (_, A)>(span);
+        op_builder(prefix_locals, inputs)
+    }
+
     fn call<C, A>(
         &mut self,
         callee: C,
@@ -505,6 +956,21 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         A: IntoIterator<Item = ValueRef>,
     {
         let op_builder = self.builder_mut().create::<crate::ops::Call, (C, _, A)>(span);
+        op_builder(callee, signature, args)
+    }
+
+    fn syscall<C, A>(
+        &mut self,
+        callee: C,
+        signature: Signature,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Syscall>, Report>
+    where
+        C: AsCallableSymbolRef,
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::Syscall, (C, _, A)>(span);
         op_builder(callee, signature, args)
     }
 

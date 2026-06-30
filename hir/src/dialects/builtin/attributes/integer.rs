@@ -1,6 +1,10 @@
 use crate::{
-    AttrPrinter, Immediate, attributes::IntegerLikeAttr, derive::DialectAttribute,
-    dialects::builtin::BuiltinDialect, print::AsmPrinter,
+    AttrPrinter, Immediate,
+    attributes::{AttrParser, IntegerLikeAttr},
+    derive::DialectAttribute,
+    dialects::builtin::BuiltinDialect,
+    parse::ParserExt,
+    print::AsmPrinter,
 };
 
 macro_rules! define_integer_attr {
@@ -35,6 +39,18 @@ macro_rules! __define_integer_attr {
             impl AttrPrinter for [<$name Attr>] {
                 fn print(&self, printer: &mut AsmPrinter<'_>) {
                     printer.print_decimal_integer(self.as_immediate());
+                }
+            }
+
+            impl AttrParser for [<$name Attr>] {
+                fn parse(
+                    parser: &mut dyn crate::parse::Parser<'_>,
+                ) -> crate::parse::ParseResult<crate::AttributeRef> {
+                    let value = parser.parse_decimal_integer::<$t>()?;
+                    Ok(parser
+                        .context_rc()
+                        .create_attribute::<[<$name Attr>], _>(value.into_inner())
+                        .as_attribute_ref())
                 }
             }
         }

@@ -268,46 +268,67 @@ impl clap::builder::TypedValueParser for InputFileParser {
 pub enum FileType {
     Hir,
     Masm,
-    Mast,
     Masp,
+    Rust,
+    Toml,
     Wasm,
     Wat,
 }
+
 impl fmt::Display for FileType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Hir => f.write_str("hir"),
             Self::Masm => f.write_str("masm"),
-            Self::Mast => f.write_str("mast"),
             Self::Masp => f.write_str("masp"),
+            Self::Rust => f.write_str("rs"),
+            Self::Toml => f.write_str("toml"),
             Self::Wasm => f.write_str("wasm"),
             Self::Wat => f.write_str("wat"),
         }
     }
 }
+
 impl FileType {
     pub fn detect(bytes: &[u8]) -> Result<Self, InvalidInputError> {
         if bytes.starts_with(b"\0asm") {
             return Ok(FileType::Wasm);
         }
 
-        if bytes.starts_with(b"MAST\0") {
-            return Ok(FileType::Mast);
-        }
-
         if bytes.starts_with(b"MASP\0") {
             return Ok(FileType::Masp);
         }
 
+        fn is_rust_top_level_item(line: &str) -> bool {
+            line.starts_with("//")
+                || line.starts_with("#[")
+                || line.starts_with("#![")
+                || line.starts_with("pub fn")
+                || line.starts_with("fn ")
+        }
+
         fn is_masm_top_level_item(line: &str) -> bool {
-            line.starts_with("const.") || line.starts_with("export.") || line.starts_with("proc.")
+            line.starts_with("pub proc")
+                || line.starts_with("proc ")
+                || line.starts_with("adv_map")
+                || line.starts_with("const ")
+        }
+
+        fn is_project_toml_item(line: &str) -> bool {
+            line.starts_with("[workspace]") || line.starts_with("[package]")
         }
 
         if let Ok(content) = core::str::from_utf8(bytes) {
             // Skip comment lines and empty lines
-            let first_line = content
-                .lines()
-                .find(|line| !line.starts_with(['#', ';']) && !line.trim().is_empty());
+            let first_line = content.lines().find(|line| {
+                if line.trim().is_empty() {
+                    return false;
+                }
+                if line.starts_with('#') && !(line.starts_with("#[") || line.starts_with("#![")) {
+                    return false;
+                }
+                !line.starts_with(';')
+            });
             if let Some(first_line) = first_line {
                 if first_line.starts_with("(module #") {
                     return Ok(FileType::Hir);
@@ -315,8 +336,14 @@ impl FileType {
                 if first_line.starts_with("(module") {
                     return Ok(FileType::Wat);
                 }
+                if is_rust_top_level_item(first_line) {
+                    return Ok(FileType::Masm);
+                }
                 if is_masm_top_level_item(first_line) {
                     return Ok(FileType::Masm);
+                }
+                if is_project_toml_item(first_line) {
+                    return Ok(FileType::Toml);
                 }
             }
         }
@@ -331,8 +358,9 @@ impl TryFrom<&Path> for FileType {
         match path.extension().and_then(|ext| ext.to_str()) {
             Some("hir") => Ok(FileType::Hir),
             Some("masm") => Ok(FileType::Masm),
-            Some("masl") | Some("mast") => Ok(FileType::Mast),
             Some("masp") => Ok(FileType::Masp),
+            Some("rs") => Ok(FileType::Rust),
+            Some("toml") => Ok(FileType::Toml),
             Some("wasm") => Ok(FileType::Wasm),
             Some("wat") => Ok(FileType::Wat),
             _ => Err(InvalidInputError::UnsupportedFileType(path.to_path_buf())),

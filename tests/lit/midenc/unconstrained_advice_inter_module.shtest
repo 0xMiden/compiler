@@ -1,0 +1,12 @@
+# RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/masm/cross_module_advice_taint/miden-project.toml 2>&1 | filecheck %s
+
+CHECK-LABEL: lib/support.masm
+CHECK:  unconstrained advice data is consumed here as a constrained value
+
+CHECK-LABEL: lib/mod.masm
+CHECK: exec.support::dirty
+CHECK: unconstrained value is passed as a call argument here
+
+CHECK-LABEL: lib/mod.masm
+CHECK: adv_push
+CHECK: advice data is obtained here which is later used unconstrained

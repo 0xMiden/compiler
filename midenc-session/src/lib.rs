@@ -1,11 +1,11 @@
 #![no_std]
 #![feature(debug_closure_helpers)]
 #![feature(specialization)]
-#![feature(slice_split_once)]
 // Specialization
 #![allow(incomplete_features)]
 #![deny(warnings)]
 
+#[macro_use]
 extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
@@ -14,9 +14,7 @@ use alloc::{
     borrow::ToOwned,
     format,
     string::{String, ToString},
-    vec::Vec,
 };
-use core::str::FromStr;
 
 mod color;
 pub mod diagnostics;
@@ -30,10 +28,11 @@ mod libs;
 mod options;
 mod outputs;
 pub mod path;
+pub mod registry;
 #[cfg(feature = "std")]
 mod statistics;
 
-use alloc::{fmt, sync::Arc};
+use alloc::{boxed::Box, fmt, sync::Arc};
 
 /// The version associated with the current compiler toolchain
 pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
@@ -41,19 +40,20 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 /// The git revision associated with the current compiler toolchain
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
-pub use miden_assembly;
+use heck::ToKebabCase;
+pub use miden_assembly_syntax;
+pub use miden_mast_package::PackageId;
+pub use miden_package_registry;
+pub use miden_project;
 use midenc_hir_symbol::Symbol;
 
 pub use self::{
     color::ColorChoice,
-    diagnostics::{DiagnosticsHandler, Emitter, SourceManager},
+    diagnostics::{DiagnosticsHandler, Emitter, Report, SourceManager},
     emit::{Emit, Writer},
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
-    libs::{
-        LibraryKind, LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB,
-        add_target_link_libraries,
-    },
+    libs::{LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB, add_target_link_libraries},
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
     path::{Path, PathBuf},
@@ -61,55 +61,26 @@ pub use self::{
 #[cfg(feature = "std")]
 pub use self::{duration::HumanDuration, emit::EmitExt, statistics::Statistics};
 
-/// The type of project being compiled
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub enum ProjectType {
-    /// Compile a Miden program that can be run on the Miden VM
-    #[default]
-    Program,
-    /// Compile a Miden library which can be linked into a program
-    Library,
-}
-impl ProjectType {
-    pub fn default_for_target(target: TargetEnv) -> Self {
-        match target {
-            // We default to compiling a program unless the target has a library-only ABI.
-            TargetEnv::Base => Self::Program,
-            TargetEnv::Rollup {
-                target: RollupTarget::TransactionScript,
-            } => Self::Program,
-            TargetEnv::Rollup {
-                target: RollupTarget::Account,
-            }
-            | TargetEnv::Rollup {
-                target: RollupTarget::NoteScript,
-            }
-            | TargetEnv::Rollup {
-                target: RollupTarget::AuthComponent,
-            } => Self::Library,
-            // The emulator can run either programs or individual library functions,
-            // so we compile as a library and delegate the choice of how to run it
-            // to the emulator
-            TargetEnv::Emu => Self::Library,
-        }
-    }
-}
-
 /// This struct provides access to all of the metadata and configuration
 /// needed during a single compilation session.
+#[derive(Clone)]
 pub struct Session {
     /// The name of this session
     pub name: String,
     /// Configuration for the current compiler session
-    pub options: Options,
+    pub options: Box<Options>,
     /// The current source manager
     pub source_manager: Arc<dyn SourceManager + Send + Sync>,
     /// The current diagnostics handler
     pub diagnostics: Arc<DiagnosticsHandler>,
     /// The inputs being compiled
-    pub inputs: Vec<InputFile>,
+    pub input: Option<InputFile>,
     /// The outputs to be produced by the compiler during compilation
     pub output_files: OutputFiles,
+    /// The project being compiled
+    ///
+    /// This may be a virtual manifest (i.e. materialized only in-memory)
+    pub project: miden_project::Project,
     /// Statistics gathered from the current compiler session
     #[cfg(feature = "std")]
     pub statistics: Statistics,
@@ -117,52 +88,228 @@ pub struct Session {
 
 impl fmt::Debug for Session {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let inputs = self.inputs.iter().map(|input| input.file_name()).collect::<Vec<_>>();
         f.debug_struct("Session")
             .field("name", &self.name)
             .field("options", &self.options)
-            .field("inputs", &inputs)
+            .field("inputs", &self.input)
             .field("output_files", &self.output_files)
             .finish_non_exhaustive()
     }
 }
 
 impl Session {
-    pub fn new<I>(
-        inputs: I,
-        output_dir: Option<PathBuf>,
-        output_file: Option<OutputFile>,
-        target_dir: PathBuf,
-        options: Options,
+    pub fn new(
+        input: InputFile,
+        mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
-    ) -> Self
-    where
-        I: IntoIterator<Item = InputFile>,
-    {
-        let inputs = inputs.into_iter().collect::<Vec<_>>();
+    ) -> Result<Self, Report> {
+        use miden_debug_types::Span;
 
-        Self::make(inputs, output_dir, output_file, target_dir, options, emitter, source_manager)
+        if matches!(input.file_type(), FileType::Toml) {
+            let (pkgid, project) = match &input.file {
+                InputType::Real(path) => {
+                    let is_cargo_project =
+                        path.file_name().unwrap().eq_ignore_ascii_case("Cargo.toml");
+                    let project_path = if is_cargo_project {
+                        path.with_file_name("miden-project.toml")
+                    } else {
+                        path.clone()
+                    };
+                    let project = miden_project::Project::load(&project_path, &source_manager)
+                        .map_err(|err| {
+                            err.wrap_err(format!(
+                                "failed to load Miden project from {}",
+                                project_path.display()
+                            ))
+                        })?;
+                    if options.target_type.is_none() {
+                        let project_package = project.package();
+                        let target_type = match project_package.library_target() {
+                            Some(lib) => lib.ty,
+                            None => miden_project::TargetType::Executable,
+                        };
+                        options.target_type = Some(target_type);
+                    }
+                    let is_executable_target =
+                        options.target_type.is_some_and(|ty| ty.is_executable());
+                    let project = {
+                        let package = project.package();
+                        let has_virtual_executable_target =
+                            package.executable_targets().iter().any(|target| {
+                                target
+                                    .path
+                                    .as_deref()
+                                    .is_some_and(|path| path.as_str() == "<virtual>")
+                            });
+
+                        if has_virtual_executable_target
+                            || (is_cargo_project && is_executable_target)
+                        {
+                            // HACK(pauls): Workaround bug with virtual bin targets until
+                            // 0.24.x. See https://github.com/0xMiden/miden-vm/pull/3156
+                            miden_project::Project::Package(fixup_targets(
+                                package,
+                                is_cargo_project && is_executable_target,
+                            ))
+                        } else {
+                            project
+                        }
+                    };
+                    let pkgid = match &project {
+                        miden_project::Project::Package(pkg)
+                        | miden_project::Project::WorkspacePackage { package: pkg, .. } => {
+                            pkg.name().inner().clone()
+                        }
+                    };
+                    (pkgid, project)
+                }
+                InputType::Stdin { name, input } => {
+                    let content = core::str::from_utf8(input).map_err(|err| {
+                        Report::msg(format!(
+                            "unable to load source file '{name}' due to invalid utf-8: {err}"
+                        ))
+                    })?;
+                    let source_file = source_manager.load(
+                        miden_debug_types::SourceLanguage::Other("toml"),
+                        miden_debug_types::Uri::new(name.as_str()),
+                        content.to_string(),
+                    );
+                    let package = miden_project::Package::load(source_file)?;
+                    let pkgid = package.name().inner().clone();
+                    (pkgid, miden_project::Project::Package(package.into()))
+                }
+            };
+            let name = options.name.clone().unwrap_or_else(|| pkgid.to_string());
+            if options.target_type.is_none() {
+                let project_package = project.package();
+                let target_type = match project_package.library_target() {
+                    Some(lib) => lib.ty,
+                    None => miden_project::TargetType::Executable,
+                };
+                options.target_type = Some(target_type);
+            }
+            if is_cargo_project_input(&input) {
+                infer_cargo_project_entrypoint(&project, &mut options)?;
+            }
+            Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
+        } else {
+            let name = options
+                .name
+                .clone()
+                .or_else(|| {
+                    log::debug!(target: "driver", "no name specified, attempting to derive from output file");
+                    options.output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
+                })
+                .unwrap_or_else(|| {
+                    log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
+                    match &input {
+                        InputFile {
+                            file: InputType::Real(path),
+                            ..
+                        } => path
+                            .file_stem()
+                            .and_then(|stem| stem.to_str())
+                            .or_else(|| path.extension().and_then(|stem| stem.to_str()))
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "invalid input path: '{}' has no file stem or extension",
+                                    path.display()
+                                )
+                            })
+                            .to_string(),
+                            input @ InputFile {
+                                file: InputType::Stdin { name, .. },
+                                ..
+                            } => {
+                            let name = name.as_str();
+                            if matches!(name, "empty" | "stdin") {
+                                log::debug!(target: "driver", "no good input file name to use, using current directory base name");
+                                options
+                                    .current_dir
+                                    .file_stem()
+                                    .and_then(|stem| stem.to_str())
+                                    .unwrap_or(name)
+                                    .to_string()
+                            } else {
+                                input.filestem().to_owned()
+                            }
+                        }
+                    }
+                });
+            log::debug!(target: "driver", "artifact name set to '{name}'");
+
+            let mut default_target = miden_project::Target::r#virtual(
+                options.target_type.unwrap_or_default(),
+                name.clone(),
+                miden_assembly_syntax::Path::new(name.as_str()).to_absolute().into_owned(),
+            );
+            if let InputType::Real(path) = &input.file {
+                default_target.path = Some(Span::unknown(miden_project::Uri::from(path.as_path())));
+
+                #[cfg(feature = "std")]
+                {
+                    let tmp = std::env::temp_dir().canonicalize().unwrap();
+                    let project_dir = tmp.join(&name).join("src");
+                    let project_remap_target = if path.is_absolute() {
+                        Some(
+                            path.strip_prefix(&options.current_dir)
+                                .ok()
+                                .or(path.as_path().parent())
+                                .unwrap()
+                                .to_path_buf()
+                                .into_boxed_path(),
+                        )
+                    } else {
+                        path.parent().map(|p| p.to_path_buf().into_boxed_path())
+                    };
+                    options.remap_path_prefixes.push(RemapPathPrefix {
+                        from: project_dir.into_boxed_path(),
+                        to: project_remap_target,
+                    });
+                }
+            }
+            let package = miden_project::Package::new(name.clone(), default_target);
+
+            // Currently, we always require the core library to be linked
+            let package = package.with_dependencies([miden_project::Dependency::new(
+                Span::unknown("miden-core".to_string().into()),
+                miden_project::DependencyVersionScheme::Registry(
+                    miden_project::VersionRequirement::Semantic(Span::unknown(
+                        miden_project::VersionReq::STAR.clone(),
+                    )),
+                ),
+                miden_project::Linkage::Dynamic,
+            )]);
+
+            let project = miden_project::Project::Package(package.into());
+            Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
+        }
     }
 
-    fn make(
-        inputs: Vec<InputFile>,
-        output_dir: Option<PathBuf>,
-        output_file: Option<OutputFile>,
-        target_dir: PathBuf,
-        options: Options,
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_project(
+        name: String,
+        input: Option<InputFile>,
+        project: miden_project::Project,
+        mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Self {
-        log::debug!(target: "driver", "creating session for {} inputs:", inputs.len());
+        log::debug!(target: "driver", "creating session {name}");
         if log::log_enabled!(target: "driver", log::Level::Debug) {
-            for input in inputs.iter() {
-                log::debug!(target: "driver", " - {} ({})", input.file_name(), input.file_type());
+            if let Some(input) = input.as_ref() {
+                log::debug!(
+                    target: "driver",
+                    " | input = {} ({})",
+                    input.file_name(),
+                    input.file_type(),
+                );
             }
             log::debug!(
                 target: "driver",
                 " | outputs_dir = {}",
-                output_dir
+                options.output_dir
                     .as_ref()
                     .map(|p| p.display().to_string())
                     .unwrap_or("<unset>".to_string())
@@ -170,9 +317,9 @@ impl Session {
             log::debug!(
                 target: "driver",
                 " | output_file = {}",
-                output_file.as_ref().map(|of| of.to_string()).unwrap_or("<unset>".to_string())
+                options.output_file.as_ref().map(|of| of.to_string()).unwrap_or("<unset>".to_string())
             );
-            log::debug!(target: "driver", " | target_dir = {}", target_dir.display());
+            log::debug!(target: "driver", " | target_dir = {}", options.target_dir.display());
         }
         let diagnostics = Arc::new(DiagnosticsHandler::new(
             options.diagnostics,
@@ -180,9 +327,10 @@ impl Session {
             emitter.unwrap_or_else(|| options.default_emitter()),
         ));
 
-        let output_dir = output_dir
+        let output_dir = options
+            .output_dir
             .as_deref()
-            .or_else(|| output_file.as_ref().and_then(|of| of.parent()))
+            .or_else(|| options.output_file.as_ref().and_then(|of| of.parent()))
             .map(|path| path.to_path_buf());
 
         if let Some(output_dir) = output_dir.as_deref() {
@@ -191,90 +339,43 @@ impl Session {
             log::debug!(target: "driver", " | output dir = <unset>");
         }
 
-        log::debug!(target: "driver", " | target = {}", &options.target);
-        log::debug!(target: "driver", " | type = {:?}", &options.project_type);
+        log::debug!(target: "driver", " | target = {}", options.target_type.map(|tt| tt.to_string()).unwrap_or("none specified".to_string()));
         if log::log_enabled!(target: "driver", log::Level::Debug) {
             for lib in options.link_libraries.iter() {
                 if let Some(path) = lib.path.as_deref() {
-                    log::debug!(target: "driver", " | linking {} library '{}' from {}", &lib.kind, &lib.name, path.display());
+                    log::debug!(target: "driver", " | linking library '{}' from {}", &lib.name, path.display());
                 } else {
-                    log::debug!(target: "driver", " | linking {} library '{}'", &lib.kind, &lib.name);
+                    log::debug!(target: "driver", " | linking library '{}'", &lib.name);
                 }
             }
         }
 
-        let name = options
-            .name
-            .clone()
-            .or_else(|| {
-                log::debug!(target: "driver", "no name specified, attempting to derive from output file");
-                output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
-            })
-            .unwrap_or_else(|| {
-                log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
-                match inputs.first() {
-                    Some(InputFile {
-                        file: InputType::Real(path),
-                        ..
-                    }) => path
-                        .file_stem()
-                        .and_then(|stem| stem.to_str())
-                        .or_else(|| path.extension().and_then(|stem| stem.to_str()))
-                        .unwrap_or_else(|| {
-                            panic!(
-                                "invalid input path: '{}' has no file stem or extension",
-                                path.display()
-                            )
-                        })
-                        .to_string(),
-                    Some(
-                        input @ InputFile {
-                            file: InputType::Stdin { name, .. },
-                            ..
-                        },
-                    ) => {
-                        let name = name.as_str();
-                        if matches!(name, "empty" | "stdin") {
-                            log::debug!(target: "driver", "no good input file name to use, using current directory base name");
-                            options
-                                .current_dir
-                                .file_stem()
-                                .and_then(|stem| stem.to_str())
-                                .unwrap_or(name)
-                                .to_string()
-                        } else {
-                            input.filestem().to_owned()
-                        }
-                    }
-                    None => "out".to_owned(),
-                }
-            });
-        log::debug!(target: "driver", "artifact name set to '{name}'");
-
         let output_files = OutputFiles::new(
             name.clone(),
             options.current_dir.clone(),
-            output_dir.unwrap_or_else(|| options.current_dir.clone()),
-            output_file,
-            target_dir,
+            options.output_dir.clone().unwrap_or_else(|| options.current_dir.clone()),
+            options.output_file.clone(),
+            options.target_dir.clone(),
             options.output_types.clone(),
         );
+
+        create_target_dir(options.target_dir.as_path());
+
+        // Linka against implicitly required libraries
+        let requires_protocol = options.target_requires_protocol();
+        add_target_link_libraries(&mut options.link_libraries, requires_protocol);
 
         Self {
             name,
             options,
             source_manager,
             diagnostics,
-            inputs,
+            input,
             output_files,
+            project,
             #[cfg(feature = "std")]
             statistics: Default::default(),
         }
-    }
-
-    pub fn with_project_type(mut self, ty: ProjectType) -> Self {
-        self.options.project_type = ty;
-        self
     }
 
     #[doc(hidden)]
@@ -311,6 +412,11 @@ impl Session {
     /// The name of this session (used as the name of the project, output file, etc.)
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Get a new package registry instance for this session
+    pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
+        registry::HybridPackageRegistry::new(&self.options).map(Box::new)
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to
@@ -448,74 +554,129 @@ impl Session {
     }
 }
 
-/// This enum describes the different target environments targetable by the compiler
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub enum TargetEnv {
-    /// The emulator environment, which has a more restrictive instruction set
-    Emu,
-    /// The default Miden VM environment
-    #[default]
-    Base,
-    /// The Miden Rollup environment, using the Rollup kernel
-    Rollup { target: RollupTarget },
+fn is_cargo_project_input(input: &InputFile) -> bool {
+    matches!(
+        &input.file,
+        InputType::Real(path) if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
+    )
 }
-impl fmt::Display for TargetEnv {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Emu => f.write_str("emu"),
-            Self::Base => f.write_str("base"),
-            Self::Rollup { target } => f.write_str(&format!("rollup:{target}")),
+
+fn infer_cargo_project_entrypoint(
+    project: &miden_project::Project,
+    options: &mut Options,
+) -> Result<(), Report> {
+    if options.entrypoint.is_some() {
+        return Ok(());
+    }
+
+    match options.target_type {
+        Some(miden_project::TargetType::Executable) => {
+            let package = project.package();
+            let targets = package.executable_targets();
+            let target = if let Some(target_name) = options.target.as_deref() {
+                targets.iter().find(|target| target_name == &**target.name.inner()).ok_or_else(
+                    || Report::msg(format!("no executable target name '{target_name}'")),
+                )?
+            } else if targets.len() == 1 {
+                &targets[0]
+            } else {
+                return Err(Report::msg(
+                    "ambiguous executable target selection: use --target to select a specific \
+                     executable target",
+                ));
+            };
+
+            let masm_module_name = target.name.inner().replace('-', "_");
+            options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
         }
+        Some(miden_project::TargetType::TransactionScript) => {
+            options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
+        }
+        _ => (),
+    }
+
+    Ok(())
+}
+
+pub fn fixup_targets(
+    package: Arc<miden_project::Package>,
+    is_cargo_project: bool,
+) -> Arc<miden_project::Package> {
+    // Find executable targets whose `path` is `<virtual>`, and strip the path out - this
+    // is required due to a bug in the project manifest parser that requires executable
+    // targets to have a `path`, but virtual targets don't have paths
+    let requires_virtual_rewrite = package
+        .executable_targets()
+        .iter()
+        .any(|t| t.path.as_deref().is_some_and(|path| path.as_str() == "<virtual>"));
+    if requires_virtual_rewrite || is_cargo_project {
+        // We have to rewrite this package without the path
+        let mut prev_targets = package.executable_targets().iter();
+        let mut default_target = match package.library_target().cloned() {
+            Some(target) => target.inner().clone(),
+            None => prev_targets.next().unwrap().inner().clone(),
+        };
+        if is_cargo_project {
+            rewrite_component_target_namespace(&mut default_target, &package);
+        }
+        if default_target.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
+            default_target.path = None;
+        }
+        let new_package = miden_project::Package::new(package.name().into_inner(), default_target)
+            .with_version(package.version().into_inner().clone())
+            .with_dependencies(package.dependencies().iter().cloned())
+            .with_lints(package.lints().clone())
+            .with_metadata(package.metadata().clone())
+            .with_targets(prev_targets.map(|t| {
+                let mut t = t.inner().clone();
+                if t.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
+                    t.path = None;
+                } else if is_cargo_project {
+                    rewrite_component_target_namespace(&mut t, &package);
+                }
+                t
+            }));
+        let new_package = package
+            .profiles()
+            .iter()
+            .cloned()
+            .fold(new_package, |pkg, profile| pkg.with_profile(profile));
+        new_package.into()
+    } else {
+        package
     }
 }
 
-impl FromStr for TargetEnv {
-    type Err = anyhow::Error;
+fn rewrite_component_target_namespace(
+    target: &mut miden_project::Target,
+    package: &miden_project::Package,
+) {
+    use miden_assembly_syntax::ast;
+    use miden_debug_types::Span;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "emu" => Ok(Self::Emu),
-            "base" => Ok(Self::Base),
-            "rollup" => Ok(Self::Rollup {
-                target: RollupTarget::default(),
-            }),
-            "rollup:account" => Ok(Self::Rollup {
-                target: RollupTarget::Account,
-            }),
-            "rollup:note-script" => Ok(Self::Rollup {
-                target: RollupTarget::NoteScript,
-            }),
-            "rollup:transaction-script" => Ok(Self::Rollup {
-                target: RollupTarget::TransactionScript,
-            }),
-            "rollup:authentication-component" => Ok(Self::Rollup {
-                target: RollupTarget::AuthComponent,
-            }),
-            _ => Err(anyhow::anyhow!("invalid target environment: {s}")),
-        }
+    let namespace_id = target.namespace.to_relative().as_ident().map(|id| id.into_inner());
+    if target.ty.is_executable()
+        || namespace_id.as_deref().is_none_or(|id| package.name().inner() != id)
+    {
+        return;
     }
+
+    // If the namespace is the same as the package name, then the default
+    // namespace is being used, and we should rewrite it to use the correct
+    // namespace, derived from the component id
+    let component_namespace = package.name().to_kebab_case();
+    let component_id = format!(
+        "::miden:{component_namespace}/miden-{component_namespace}@{}",
+        package.version()
+    );
+    target.namespace = Span::unknown(ast::Path::new(&component_id).into());
 }
 
-/// This enum describes the different rollup targets
-#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub enum RollupTarget {
-    #[default]
-    Account,
-    NoteScript,
-    TransactionScript,
-    /// Authentication `AccountComponent` that has exactly one procedure named `auth__*` that
-    /// accepts a `Word` (authentication arguments) and throws an error in case of a failed
-    /// authentication
-    AuthComponent,
+#[cfg(feature = "std")]
+fn create_target_dir(path: &Path) {
+    std::fs::create_dir_all(path)
+        .unwrap_or_else(|err| panic!("unable to create --target-dir '{}': {err}", path.display()));
 }
 
-impl fmt::Display for RollupTarget {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Account => f.write_str("account"),
-            Self::NoteScript => f.write_str("note-script"),
-            Self::TransactionScript => f.write_str("transaction-script"),
-            Self::AuthComponent => f.write_str("authentication-component"),
-        }
-    }
-}
+#[cfg(not(feature = "std"))]
+fn create_target_dir(_path: &Path) {}

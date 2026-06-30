@@ -4,12 +4,13 @@ pub use miden_field::Felt;
 
 #[cfg(all(target_family = "wasm", miden))]
 unsafe extern "C" {
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::felt::assert"]
     fn extern_assert(a: Felt);
-
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::felt::assertz"]
     fn extern_assertz(a: Felt);
-
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "intrinsics::felt::assert_eq"]
     fn extern_assert_eq(a: Felt, b: Felt);
 }
@@ -39,7 +40,7 @@ pub fn assert_eq(a: Felt, b: Felt) {
 #[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assert(a: Felt) {
-    if a != Felt::new(1) {
+    if a != Felt::new(1).unwrap() {
         panic!("assert: expected 1");
     }
 }
@@ -48,7 +49,7 @@ pub fn assert(a: Felt) {
 #[cfg(not(all(target_family = "wasm", miden)))]
 #[inline(always)]
 pub fn assertz(a: Felt) {
-    if a != Felt::new(0) {
+    if a != Felt::new(0).unwrap() {
         panic!("assertz: expected 0");
     }
 }
@@ -70,6 +71,6 @@ macro_rules! felt {
     ($value:literal) => {{
         const VALUE: u64 = $value as u64;
         // assert!(VALUE <= Felt::M, "Invalid Felt value, must be >= 0 and <= 2^64 - 2^32 + 1");
-        $crate::Felt::new(VALUE)
+        $crate::Felt::new(VALUE).unwrap()
     }};
 }

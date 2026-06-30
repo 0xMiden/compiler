@@ -1,0 +1,10 @@
+[package]
+name = "fibonacci"
+version = "0.1.0"
+
+[[bin]]
+name = "fibonacci"
+path = "<virtual>"
+
+[dependencies]
+miden-core = "*"

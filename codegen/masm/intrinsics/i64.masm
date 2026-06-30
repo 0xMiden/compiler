@@ -20,7 +20,7 @@ end
 #
 # This function consumes `a`.
 pub proc is_signed # [a_lo, a_hi]
-    swap.1 drop
+    drop
     push.SIGN_BIT u32and push.SIGN_BIT eq
 end
 
@@ -69,18 +69,19 @@ pub proc overflowing_add # [b_lo, b_hi, a_lo, a_hi]
     dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq  # [sign_r, r_lo, r_hi, sign_a, sign_b]
 
     # same_sign = sign_a == sign_b
-    dup.3 dup.5 eq  # [same_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    dup.3 movup.5 eq  # [same_sign, sign_r, r_lo, r_hi, sign_a]
 
     # signs_differ = sign_r != sign_a
-    dup.4 movup.2 neq  # [signs_differ, same_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    movup.4 movup.2 neq  # [signs_differ, same_sign, r_lo, r_hi]
 
     # overflow = same_sign && signs_differ
-    and  # [overflow, sign_r, r_lo, r_hi, sign_a, sign_b]
+    and  # [overflow, r_lo, r_hi]
+end
 
-    # drop: sign_b, sign_a, sign_r
-    movup.5 drop
-    movup.4 drop
-    swap drop
+# Adds `b` to `a`, wrapping on overflow.
+pub proc wrapping_add # [b_lo, b_hi, a_lo, a_hi]
+    exec.overflowing_add
+    drop
 end
 
 # Adds `b` to `a`, asserting on overflow.
@@ -109,18 +110,13 @@ pub proc overflowing_sub # [b_lo, b_hi, a_lo, a_hi]
     dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq  # [sign_r, r_lo, r_hi, sign_a, sign_b]
 
     # diff_sign = sign_a != sign_b
-    dup.3 dup.5 neq  # [diff_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    dup.3 movup.5 neq  # [diff_sign, sign_r, r_lo, r_hi, sign_a]
 
     # signs_differ = sign_r != sign_a
-    dup.4 movup.2 neq  # [signs_differ, diff_sign, sign_r, r_lo, r_hi, sign_a, sign_b]
+    movup.4 movup.2 neq  # [signs_differ, diff_sign, r_lo, r_hi]
 
     # overflow = diff_sign && signs_differ
-    and  # [overflow, sign_r, r_lo, r_hi, sign_a, sign_b]
-
-    # drop: sign_b, sign_a, sign_r
-    movup.5 drop
-    movup.4 drop
-    swap drop
+    and  # [overflow, r_lo, r_hi]
 end
 
 # Subtracts `b` from `a`, wrapping on overflow.

@@ -229,7 +229,7 @@ impl<T> Drop for IntoIter<T> {
     }
 }
 
-intrusive_adapter!(ChunkHeaderAdapter<T> = Rc<ChunkHeader<T>>: ChunkHeader<T> { link: LinkedListLink });
+intrusive_adapter!(ChunkHeaderAdapter<T> = Rc<ChunkHeader<T>>: ChunkHeader<T> { link => LinkedListLink });
 
 type ChunkList<T> = intrusive_collections::LinkedList<ChunkHeaderAdapter<T>>;
 

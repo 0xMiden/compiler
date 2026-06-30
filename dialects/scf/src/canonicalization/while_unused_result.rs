@@ -107,7 +107,7 @@ impl RewritePattern for WhileUnusedResult {
             let after_arg = after_args[i];
             let term_arg = forwarded[i];
 
-            if !result.is_used() && !after_arg.borrow().is_used() {
+            if !result.has_real_uses() && !after_arg.borrow().has_real_uses() {
                 need_update = true;
             } else {
                 new_results_indices.push(i);

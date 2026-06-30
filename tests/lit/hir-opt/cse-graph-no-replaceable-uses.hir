@@ -1,0 +1,23 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(cse)' | filecheck %s
+
+// This regression covers graph-region use-before-def handling when a duplicate has no
+// safely replaceable uses. The store using %1 is visited before CSE reaches the duplicate
+// constant definition, so replacing that operand would mutate already-visited IR. The pass
+// must leave both constants and the forward use in place.
+//
+// CHECK-LABEL: builtin.module private @graph_no_replaceable_uses
+// CHECK: [[ADDR:%\d+]] = arith.constant 0 : u32;
+// CHECK-NEXT: [[PTR:%\d+]] = hir.int_to_ptr [[ADDR]]
+// CHECK: [[CANONICAL:%\d+]] = arith.constant 1 : i32;
+// CHECK-NEXT: hir.store [[PTR]], [[CANONICAL]]
+// CHECK-NEXT: hir.store [[PTR]], [[DUP:%\d+]]
+// CHECK-NEXT: [[DUP]] = arith.constant 1 : i32;
+builtin.module private @graph_no_replaceable_uses {
+    %addr = arith.constant 0 : u32;
+    %ptr = hir.int_to_ptr %addr <{ ty = #builtin.type<ptr<i32, byte>> }>;
+    %0 = arith.constant 1 : i32;
+    hir.store %ptr, %0 : (ptr<i32, byte>, i32);
+    // The only use of the duplicate is before its definition, so no operand is rewritten.
+    hir.store %ptr, %1 : (ptr<i32, byte>, i32);
+    %1 = arith.constant 1 : i32;
+};

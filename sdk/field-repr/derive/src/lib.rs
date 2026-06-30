@@ -21,7 +21,7 @@
 //!     suffix: Felt,
 //! }
 //!
-//! let value = AccountId { prefix: Felt::new(1), suffix: Felt::new(2) };
+//! let value = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(2).unwrap() };
 //! let felts = value.to_felt_repr();
 //! let roundtrip = AccountId::try_from(felts.as_slice()).unwrap();
 //! assert_eq!(roundtrip, value);
@@ -43,7 +43,7 @@
 //! // Encoded as: [tag, payload...], where `tag` is the variant ordinal in declaration order.
 //! // Ping -> tag = 0
 //! // Transfer -> tag = 1
-//! let value = Message::Transfer { to: Felt::new(7), amount: 10 };
+//! let value = Message::Transfer { to: Felt::new(7).unwrap(), amount: 10 };
 //! let felts = value.to_felt_repr();
 //! let roundtrip = Message::try_from(felts.as_slice()).unwrap();
 //! assert_eq!(roundtrip, value);

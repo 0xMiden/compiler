@@ -1,4 +1,5 @@
 #![no_std]
+#![feature(optimize_attribute)]
 
 //! Unreachable stubs for Miden base SDK functions.
 //!

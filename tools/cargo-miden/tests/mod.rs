@@ -1,4 +1,4 @@
 mod build;
-mod project_type;
+mod p2id_cargo_miden_build;
 mod utils;
 mod workspace;

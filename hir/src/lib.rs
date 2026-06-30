@@ -1,12 +1,12 @@
 #![no_std]
 #![feature(allocator_api)]
-#![feature(alloc_layout_extra)]
 #![feature(coerce_unsized)]
 #![feature(const_type_name)]
 #![feature(unsize)]
 #![feature(ptr_metadata)]
 #![feature(ptr_as_uninit)]
 #![feature(layout_for_ptr)]
+#![feature(ptr_alignment_type)]
 #![feature(slice_ptr_get)]
 #![feature(specialization)]
 #![feature(rustc_attrs)]
@@ -21,12 +21,12 @@
 #![feature(exact_size_is_empty)]
 #![feature(generic_const_exprs)]
 #![feature(clone_to_uninit)]
-#![feature(new_range_api)]
 // The following are used in impls of custom collection types based on SmallVec
 #![feature(std_internals)] // for ByRefSized
 #![feature(extend_one)]
 #![feature(extend_one_unchecked)]
 #![feature(iter_advance_by)]
+#![feature(iter_intersperse)]
 #![feature(iter_next_chunk)]
 #![feature(iter_collect_into)]
 #![feature(trusted_len)]
@@ -63,6 +63,7 @@ pub mod adt;
 pub mod any;
 pub mod attributes;
 pub mod constants;
+pub mod conversion;
 pub mod demangle;
 pub mod derive;
 pub mod dialects;
@@ -83,8 +84,8 @@ pub use midenc_session::diagnostics;
 
 pub use self::{
     attributes::{
-        Attribute, AttributeName, AttributeRef, AttributeRegistration, NamedAttribute,
-        NamedAttributeList,
+        Attribute, AttributeName, AttributeRef, AttributeRegistration, AttributeValue,
+        NamedAttribute, NamedAttributeList,
     },
     dialects::builtin::attributes::{Location, Overflow, Visibility, version},
     direction::{Backward, Direction, Forward},

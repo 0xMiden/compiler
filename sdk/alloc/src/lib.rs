@@ -1,4 +1,5 @@
 #![no_std]
+#![cfg_attr(target_family = "wasm", feature(linkage))]
 #![deny(warnings)]
 
 extern crate alloc;
@@ -128,6 +129,7 @@ unsafe impl GlobalAlloc for BumpAlloc {
 
 #[cfg(target_family = "wasm")]
 unsafe extern "C" {
+    #[linkage = "extern_weak"]
     #[link_name = "intrinsics::mem::heap_base"]
     fn heap_base() -> *mut u8;
 }

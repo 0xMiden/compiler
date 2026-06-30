@@ -5,18 +5,29 @@ use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
-    FunctionType, Ident, Op, OpExt, SmallVec, SourceSpan, SymbolPath, ValueRange, ValueRef,
+    FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
     Visibility,
-    dialects::builtin::{
-        BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
-        attributes::{Signature, UnitAttr},
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, ComponentBuilder, ModuleBuilder,
+            attributes::{AbiParam, Signature, UnitAttr},
+        },
+        debuginfo::attributes::{CompileUnit, CompileUnitAttr, Subprogram, SubprogramAttr},
     },
 };
-use midenc_session::{DiagnosticsHandler, diagnostics::Severity};
+use midenc_session::{
+    DiagnosticsHandler,
+    diagnostics::{Report, Severity},
+};
 
 use super::{
-    canon_abi_utils::load,
-    flat::{CanonicalAbiMode, flatten_function_type, flatten_types, needs_transformation},
+    ComponentFunctionType,
+    canon_abi_utils::{load, validate_flat_variants},
+    contains_unsupported_canonical_abi_type,
+    flat::{
+        CanonicalAbiMode, check_core_wasm_signature_equivalence, classify_function_type,
+        flatten_function_type, flatten_types,
+    },
 };
 use crate::{
     error::WasmResult,
@@ -25,18 +36,26 @@ use crate::{
     },
 };
 
+struct ComponentExportMetadata<'a> {
+    ty: &'a FunctionType,
+    param_names: &'a [String],
+    protocol_export_kind: Option<ProtocolExportKind>,
+}
+
 /// Generates a lifted component export wrapper around a lowered core Wasm export.
 pub fn generate_export_lifting_function(
     component_builder: &mut ComponentBuilder,
     export_func_name: &str,
-    export_func_ty: FunctionType,
+    export_func_ty: ComponentFunctionType,
+    export_param_names: &[String],
     core_export_func_path: SymbolPath,
     protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
+    reject_unsupported_export_canonical_abi_types(&core_export_func_path, &export_func_ty)?;
     let context = { component_builder.component.borrow().as_operation().context_rc() };
     let cross_ctx_export_sig_flat =
-        flatten_function_type(&context, &export_func_ty, CanonicalAbiMode::Export).map_err(
+        flatten_function_type(&context, &export_func_ty.ir, CanonicalAbiMode::Export).map_err(
             |e| {
                 let message = format!(
                     "Component export lifting generation. Signature for exported function \
@@ -54,7 +73,18 @@ pub fn generate_export_lifting_function(
         return Err(diagnostics.diagnostic(Severity::Error).with_message(message).into_report());
     }
 
-    let export_func_ident = Ident::new(export_func_name.to_string().into(), SourceSpan::default());
+    let transformation = classify_function_type(&context, &export_func_ty.ir).map_err(|e| {
+        let message = format!(
+            "Component export lifting generation. Signature for exported function \
+             {core_export_func_path} requires classification. Error: {e}"
+        );
+        diagnostics.diagnostic(Severity::Error).with_message(message).into_report()
+    })?;
+    let export_metadata = ComponentExportMetadata {
+        ty: &export_func_ty.ir,
+        param_names: export_param_names,
+        protocol_export_kind,
+    };
 
     let core_export_module_path = core_export_func_path.without_leaf();
     let core_module_ref = component_builder
@@ -65,34 +95,35 @@ pub fn generate_export_lifting_function(
     let core_export_func_ref = core_module_builder
         .get_function(core_export_func_path.name().as_str())
         .expect("failed to find the core module export function");
-    // Make the lowered core WASM export private so only the lifted wrapper is
-    // publicly exported from the component. This prevents double-exports and
-    // ensures all external callers go through the Canonical ABI–correct
-    // wrapper generated here.
+    let export_func_span = core_export_func_ref.borrow().span();
+    let export_func_ident =
+        Ident::new(midenc_hir::interner::Symbol::intern(export_func_name), export_func_span);
+    // Make the lowered core WASM export internal so only the lifted wrapper is
+    // publicly exported from the component, while still allowing the wrapper to
+    // call across the nested core module symbol table boundary.
     core_module_builder
-        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Private);
+        .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
-    if needs_transformation(&cross_ctx_export_sig_flat) {
+    if transformation.is_needed() {
         generate_lifting_with_transformation(
             component_builder,
             export_func_ident,
-            &export_func_ty,
+            &export_metadata,
             cross_ctx_export_sig_flat,
             core_export_func_ref,
             core_export_func_sig,
             &core_export_func_path,
-            protocol_export_kind,
             diagnostics,
         )?;
     } else {
         generate_direct_lifting(
             component_builder,
             export_func_ident,
+            &export_metadata,
             core_export_func_ref,
             core_export_func_sig,
             cross_ctx_export_sig_flat,
-            protocol_export_kind,
         )?;
     }
 
@@ -132,12 +163,11 @@ pub fn generate_export_lifting_function(
 fn generate_lifting_with_transformation(
     component_builder: &mut ComponentBuilder,
     export_func_ident: Ident,
-    export_func_ty: &FunctionType,
+    export_metadata: &ComponentExportMetadata<'_>,
     cross_ctx_export_sig_flat: Signature,
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
-    protocol_export_kind: Option<ProtocolExportKind>,
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     assert_eq!(
@@ -152,9 +182,25 @@ fn generate_lifting_with_transformation(
          have a pointer in the result",
     );
 
+    // The lowered core function implementing a transformed export takes the flattened
+    // parameters directly and returns a single i32 pointer to the result data.
+    let expected_core_sig = Signature {
+        params: cross_ctx_export_sig_flat.params().to_vec(),
+        results: vec![AbiParam::new(Type::I32)],
+        cc: core_export_func_sig.cc,
+    };
+    check_core_wasm_signature_equivalence(&core_export_func_sig, &expected_core_sig).map_err(
+        |message| {
+            Report::msg(format!(
+                "component export lifting for '{core_export_func_path}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        },
+    )?;
+
     // Extract flattened result types from the exported component-level function type
     let context = { core_export_func_ref.borrow().as_operation().context_rc() };
-    let flattened_results = flatten_types(&context, &export_func_ty.results).map_err(|e| {
+    let flattened_results = flatten_types(&context, &export_metadata.ty.results).map_err(|e| {
         let message = format!(
             "Failed to flatten result types for exported function {core_export_func_path}: {e}"
         );
@@ -176,7 +222,13 @@ fn generate_lifting_with_transformation(
     };
     let export_func_ref =
         component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
-    annotate_protocol_export(export_func_ref, protocol_export_kind);
+    annotate_protocol_export(export_func_ref, export_metadata.protocol_export_kind);
+    annotate_component_export_debug_signature(
+        export_func_ref,
+        export_func_ident.name.as_str(),
+        export_metadata.ty,
+        export_metadata.param_names,
+    );
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -202,6 +254,8 @@ fn generate_lifting_with_transformation(
     // 1. Load the data from that pointer into the "flattened" representation (primitive types)
     // 2. Return it as individual values (tuple)
 
+    validate_flat_variants(&mut fb, &export_metadata.ty.params, &args, span)?;
+
     let exec = fb.exec(core_export_func_ref, core_export_func_sig, args, span)?;
 
     let borrow = exec.borrow();
@@ -216,13 +270,13 @@ fn generate_lifting_with_transformation(
 
     // Load results using the recursive function from canon_abi_utils
     assert_eq!(
-        export_func_ty.results.len(),
+        export_metadata.ty.results.len(),
         1,
         "expected a single result in the component-level export function"
     );
-    let result_type = &export_func_ty.results[0];
+    let result_abi_type = &export_metadata.ty.results[0];
 
-    load(&mut fb, result_ptr, result_type, &mut return_values, span)?;
+    load(&mut fb, result_ptr, result_abi_type, &mut return_values, span)?;
 
     assert!(
         return_values.len() <= 16,
@@ -273,17 +327,33 @@ fn generate_lifting_with_transformation(
 fn generate_direct_lifting(
     component_builder: &mut ComponentBuilder,
     export_func_ident: Ident,
+    export_metadata: &ComponentExportMetadata<'_>,
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
-    protocol_export_kind: Option<ProtocolExportKind>,
 ) -> WasmResult<()> {
+    // The lowered core function implementing a direct export must already have the
+    // flattened canonical ABI shape, since the wrapper forwards its arguments verbatim.
+    check_core_wasm_signature_equivalence(&core_export_func_sig, &cross_ctx_export_sig_flat)
+        .map_err(|message| {
+            Report::msg(format!(
+                "component export lifting for '{export_func_ident}' has core Wasm signature \
+                 mismatch: {message}"
+            ))
+        })?;
+
     let export_func_ref = component_builder.define_function(
         export_func_ident,
         Visibility::Public,
         cross_ctx_export_sig_flat.clone(),
     )?;
-    annotate_protocol_export(export_func_ref, protocol_export_kind);
+    annotate_protocol_export(export_func_ref, export_metadata.protocol_export_kind);
+    annotate_component_export_debug_signature(
+        export_func_ref,
+        export_func_ident.name.as_str(),
+        export_metadata.ty,
+        export_metadata.param_names,
+    );
 
     let (span, context) = {
         let export_func = export_func_ref.borrow();
@@ -304,24 +374,45 @@ fn generate_direct_lifting(
         .map(|ba| ba as ValueRef)
         .collect();
 
+    validate_flat_variants(&mut fb, &export_metadata.ty.params, &args, span)?;
+
     let exec = fb
         .exec(core_export_func_ref, core_export_func_sig, args, span)
         .expect("failed to build an exec op");
 
     let borrow = exec.borrow();
-    let results = ValueRange::<2>::from(borrow.results().all());
+    let results = ValueRange::<2>::from(borrow.results().all()).iter().collect::<Vec<_>>();
     assert!(
         results.len() <= 1,
         "For direct lifting of the component export function {export_func_ident} expected a \
          single result or none"
     );
+    validate_flat_variants(&mut fb, &export_metadata.ty.results, &results, span)?;
 
     let exit_block = fb.create_block();
     fb.br(exit_block, vec![], span).expect("failed br");
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
-    let returning_onty_first = results.iter().take(1);
+    let returning_onty_first = results.iter().copied().take(1);
     fb.ret(returning_onty_first, span).expect("failed ret");
+
+    Ok(())
+}
+
+/// Rejects component export signatures containing unsupported canonical ABI shapes.
+fn reject_unsupported_export_canonical_abi_types(
+    core_export_func_path: &SymbolPath,
+    export_func_ty: &ComponentFunctionType,
+) -> WasmResult<()> {
+    for ty in export_func_ty.ir.params.iter().chain(export_func_ty.ir.results.iter()) {
+        if contains_unsupported_canonical_abi_type(ty) {
+            return Err(Report::msg(format!(
+                "component export lifting for '{core_export_func_path}' has unsupported canonical \
+                 ABI type {:?}",
+                ty
+            )));
+        }
+    }
 
     Ok(())
 }
@@ -347,5 +438,247 @@ fn annotate_protocol_export(
             export_func.set_attribute("auth_script", auth_attr);
         }
         None => {}
+    }
+}
+
+fn annotate_component_export_debug_signature(
+    mut export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+    export_func_name: &str,
+    export_func_ty: &FunctionType,
+    export_param_names: &[String],
+) {
+    assert!(
+        export_func_ty.abi.is_wasm_canonical_abi(),
+        "component export debug signatures must be derived from Component Model ABI function types",
+    );
+    let context = {
+        let export_func = export_func_ref.borrow();
+        export_func.as_operation().context_rc()
+    };
+
+    let file = midenc_hir::interner::Symbol::intern("<component>");
+    let mut compile_unit = CompileUnit::new(midenc_hir::interner::Symbol::intern("wit"), file);
+    compile_unit.producer = Some(midenc_hir::interner::Symbol::intern("midenc-frontend-wasm"));
+
+    let param_names = export_param_names
+        .iter()
+        .map(|name| midenc_hir::interner::Symbol::intern(name.as_str()));
+    let subprogram =
+        Subprogram::new(midenc_hir::interner::Symbol::intern(export_func_name), file, 1, Some(1))
+            .with_function_type(FunctionType {
+                abi: export_func_ty.abi,
+                params: export_func_ty.params.clone(),
+                results: export_func_ty.results.clone(),
+            })
+            .with_param_names(param_names);
+
+    let cu_attr = context.create_attribute::<CompileUnitAttr, _>(compile_unit).as_attribute_ref();
+    let sp_attr = context.create_attribute::<SubprogramAttr, _>(subprogram).as_attribute_ref();
+
+    let mut export_func = export_func_ref.borrow_mut();
+    let op = export_func.as_operation_mut();
+    op.set_attribute("di.compile_unit", cu_attr);
+    op.set_attribute("di.subprogram", sp_attr);
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::sync::Arc;
+
+    use midenc_hir::{
+        CallConv, FunctionType, Ident, SymbolName, SymbolNameComponent, SymbolPath, Type,
+        Visibility,
+        dialects::builtin::attributes::{AbiParam, Signature},
+    };
+    use midenc_session::DiagnosticsHandler;
+
+    use super::*;
+    use crate::component::test_support::{
+        component_function, component_with_core_module, count_validation_ops,
+        two_field_record_type, unit_only_variant_type,
+    };
+
+    fn component_export_path(function: &str) -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Component(SymbolName::intern("core")),
+            SymbolNameComponent::Leaf(SymbolName::intern(function)),
+        ])
+    }
+
+    fn scalar_u64_type() -> Type {
+        Type::U64
+    }
+
+    #[test]
+    fn transformed_export_lifting_validates_flat_variant_params() {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType { ir };
+        // Lowered core export signatures carry bare core types without extension attributes.
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("roundtrip_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        generate_export_lifting_function(
+            &mut component_builder,
+            "roundtrip",
+            export_func_ty,
+            &["value".to_string()],
+            component_export_path("roundtrip_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        )
+        .expect("export lifting should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(component_function(&component_builder, "roundtrip"));
+        assert_eq!(switch_count, 1, "transformed export params should validate the tag");
+        assert_eq!(
+            unreachable_count, 1,
+            "invalid transformed export param tag should be unreachable"
+        );
+    }
+
+    #[test]
+    fn rejects_direct_export_lifting_with_mismatched_core_signature() {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+
+        let result_ty = scalar_u64_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType { ir };
+        // The flattened export signature returns a single i64, but the core export returns i32.
+        let core_sig = Signature {
+            params: vec![],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("mismatched_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        let result = generate_export_lifting_function(
+            &mut component_builder,
+            "mismatched",
+            export_func_ty,
+            &[],
+            component_export_path("mismatched_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched direct export signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_transformed_export_lifting_with_mismatched_core_params() {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+
+        let variant_ty = unit_only_variant_type();
+        let result_ty = two_field_record_type();
+        let mut ir = FunctionType::new(CallConv::Fast, vec![variant_ty], vec![result_ty]);
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType { ir };
+        // The flattened export parameter is a single i32 discriminant, but the core export
+        // takes i64.
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I64)],
+            results: vec![AbiParam::new(Type::I32)],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("mismatched_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        let result = generate_export_lifting_function(
+            &mut component_builder,
+            "mismatched",
+            export_func_ty,
+            &["value".to_string()],
+            component_export_path("mismatched_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        );
+
+        match result {
+            Ok(_) => panic!("expected mismatched transformed export signature to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("core Wasm signature"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_export_lifting_with_unsupported_list_param() {
+        let (_context, mut component_builder, mut module_builder) = component_with_core_module();
+
+        let list_ty = Type::List(Arc::new(Type::U8));
+        let mut ir = FunctionType::new(CallConv::Fast, vec![list_ty], vec![]);
+        ir.abi = CallConv::ComponentModel;
+        let export_func_ty = ComponentFunctionType { ir };
+        let core_sig = Signature {
+            params: vec![AbiParam::new(Type::I32), AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+        module_builder
+            .define_function(
+                Ident::with_empty_span("list_core".into()),
+                Visibility::Public,
+                core_sig,
+            )
+            .expect("failed to define core export");
+
+        let result = generate_export_lifting_function(
+            &mut component_builder,
+            "list_param",
+            export_func_ty,
+            &["value".to_string()],
+            component_export_path("list_core"),
+            None,
+            &DiagnosticsHandler::default(),
+        );
+
+        match result {
+            Ok(_) => panic!("expected list export lifting to be rejected"),
+            Err(err) => {
+                assert!(
+                    err.to_string().contains("unsupported canonical ABI"),
+                    "unexpected diagnostic: {err}"
+                );
+            }
+        }
     }
 }

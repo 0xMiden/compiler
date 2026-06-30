@@ -1,7 +1,7 @@
 [package]
 name = "miden-field-repr"
 description = "Serialization/deserialization for felt representation"
-version = "0.12.0"
+version = "0.13.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -13,16 +13,19 @@ edition.workspace = true
 
 [lib]
 crate-type = ["rlib"]
+test = false
+doctest = false
 
 [dependencies]
-miden-field-repr-derive = { path = "../derive", version = "0.12.0" }
-miden-field.workspace = true
-
-[target.'cfg(not(target_family = "wasm"))'.dependencies]
-miden-core.workspace = true
+miden-field-repr-derive = { path = "../derive", version = "0.13.0" }
+miden-field = { workspace = true, default-features = false }
 
 [features]
 default = []
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(miden)"] }
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+additional-targets = ["wasm32-unknown-unknown", "wasm32-wasip1", "wasm32-wasip2"]

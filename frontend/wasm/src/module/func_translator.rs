@@ -6,11 +6,15 @@
 //!
 //! Based on Cranelift's Wasm -> CLIF translator v11.0.0
 
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use cranelift_entity::EntityRef;
 use midenc_hir::{
-    BlockRef, Builder, Context, Op,
+    BlockRef, Builder, Context, Op, Type,
     diagnostics::{ColumnNumber, LineNumber},
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
 };
@@ -21,8 +25,9 @@ use midenc_session::{
 use wasmparser::{FuncValidator, FunctionBody, WasmModuleResources};
 
 use super::{
-    function_builder_ext::SSABuilderListener, module_env::ParsedModule,
-    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
+    debug_info::FunctionDebugInfo, function_builder_ext::SSABuilderListener,
+    module_env::ParsedModule, module_translation_state::ModuleTranslationState,
+    types::ModuleTypesBuilder,
 };
 use crate::{
     code_translator::translate_operator,
@@ -69,11 +74,21 @@ impl FuncTranslator {
         session: &Session,
         func_validator: &mut FuncValidator<impl WasmModuleResources>,
         config: &crate::WasmTranslationConfig,
+        debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     ) -> WasmResult<()> {
         let context = func.borrow().as_operation().context_rc();
         let mut op_builder = midenc_hir::OpBuilder::new(context)
             .with_listener(SSABuilderListener::new(self.func_ctx.clone()));
         let mut builder = FunctionBuilderExt::new(func, &mut op_builder);
+
+        // Keep a clone for FrameBase variable declaration below
+        let debug_info_ref = debug_info.clone();
+
+        if let Some(info) = debug_info.clone() {
+            builder.set_debug_metadata(info);
+        }
+
+        self.state.set_debug_info(debug_info);
 
         let entry_block = builder.current_block();
         builder.seal_block(entry_block); // Declare all predecessors known.
@@ -91,13 +106,27 @@ impl FuncTranslator {
 
         let mut reader = body.get_locals_reader().into_diagnostic()?;
 
-        parse_local_decls(
+        let total_wasm_vars = parse_local_decls(
             &mut reader,
             &mut builder,
             num_params,
             func_validator,
             &session.diagnostics,
         )?;
+
+        // Declare extra SSA variables for FrameBase-only debug entries (e.g. local `sum`
+        // in debug builds that lives in linear memory, not a WASM local).
+        // Use declare_var_only to avoid allocating HIR locals that would inflate
+        // num_locals and corrupt FMP offset calculations.
+        if let Some(info) = debug_info_ref.as_ref() {
+            let locals_len = info.borrow().locals.len();
+            if locals_len > total_wasm_vars {
+                for idx in total_wasm_vars..locals_len {
+                    let var = Variable::new(idx);
+                    builder.declare_var_only(var, Type::I32);
+                }
+            }
+        }
 
         let mut reader = body.get_operators_reader().into_diagnostic()?;
         parse_function_body(
@@ -136,7 +165,8 @@ fn declare_parameters<B: ?Sized + Builder>(
 
         let param_value = entry_block.borrow().arguments()[i];
         builder.def_var(var, param_value);
-        builder.store_local(local, param_value, SourceSpan::UNKNOWN).unwrap();
+        builder.register_parameter(var, param_value);
+        builder.store_local(local, param_value, SourceSpan::SYNTHETIC).unwrap();
     }
     next_local
 }
@@ -144,13 +174,14 @@ fn declare_parameters<B: ?Sized + Builder>(
 /// Parse the local variable declarations that precede the function body.
 ///
 /// Declare local variables, starting from `num_params`.
+/// Returns the total number of declared variables (params + locals).
 fn parse_local_decls<B: ?Sized + Builder>(
     reader: &mut wasmparser::LocalsReader<'_>,
     builder: &mut FunctionBuilderExt<'_, B>,
     num_params: usize,
     validator: &mut FuncValidator<impl WasmModuleResources>,
     diagnostics: &DiagnosticsHandler,
-) -> WasmResult<()> {
+) -> WasmResult<usize> {
     let mut next_local = num_params;
     let local_count = reader.get_count();
 
@@ -161,7 +192,7 @@ fn parse_local_decls<B: ?Sized + Builder>(
         declare_locals(builder, count, ty, &mut next_local, diagnostics)?;
     }
 
-    Ok(())
+    Ok(next_local)
 }
 
 /// Declare `count` local variables of the same type, starting from `next_local`.
@@ -204,104 +235,58 @@ fn parse_function_body<B: ?Sized + Builder>(
     debug_assert_eq!(state.control_stack.len(), 1, "State not initialized");
 
     let func_name = builder.name();
-    let mut end_span = SourceSpan::UNKNOWN;
+    let mut end_span = SourceSpan::SYNTHETIC;
     // Track the last valid span to use as a fallback for instructions without DWARF debug info.
-    // This is particularly useful for `unreachable` instructions that follow panic calls,
-    // where the unreachable itself has no source location but should inherit the panic call's span.
     let mut last_valid_span = SourceSpan::UNKNOWN;
     while !reader.eof() {
         let pos = reader.original_position();
         let (op, offset) = reader.read_with_offset().into_diagnostic()?;
         func_validator.op(pos, &op).into_diagnostic()?;
 
-        let offset = (offset as u64)
+        let code_offset = (offset as u64)
             .checked_sub(module.wasm_file.code_section_offset)
             .expect("offset occurs before start of code section");
-        let mut span = SourceSpan::UNKNOWN;
-        if let Some(loc) = addr2line.find_location(offset).into_diagnostic()? {
-            if let Some(file) = loc.file {
-                let path = std::path::Path::new(file);
 
-                // Resolve relative paths to absolute paths
-                let resolved_path = if path.is_relative() {
-                    // Strategy 1: Try trim_path_prefixes
-                    if let Some(resolved) = config.trim_path_prefixes.iter().find_map(|prefix| {
-                        let candidate = prefix.join(path);
-                        if candidate.exists() {
-                            // Canonicalize to get absolute path
-                            candidate.canonicalize().ok()
-                        } else {
-                            None
-                        }
-                    }) {
-                        Some(resolved)
-                    }
-                    // Strategy 2: Try session.options.current_dir as fallback
-                    else {
-                        let current_dir_candidate = session.options.current_dir.join(path);
-                        if current_dir_candidate.exists() {
-                            current_dir_candidate.canonicalize().ok()
-                        } else {
-                            None
-                        }
-                    }
-                } else {
-                    // Path is absolute, but verify it exists and canonicalize it
-                    if path.exists() {
-                        path.canonicalize().ok()
-                    } else {
-                        None
-                    }
-                };
-
-                if let Some(absolute_path) = resolved_path {
-                    debug_assert!(
-                        absolute_path.is_absolute(),
-                        "resolved path should be absolute: {}",
-                        absolute_path.display()
-                    );
-                    log::debug!(target: "module-parser",
-                        "resolved source path '{}' -> '{}'",
-                        file,
-                        absolute_path.display()
-                    );
-                    let source_file =
-                        session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-                    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
-                    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
-                    span = source_file
-                        .line_column_to_span(line, column)
-                        .unwrap_or(SourceSpan::UNKNOWN);
-                    if !span.is_unknown() {
-                        last_valid_span = span;
-                    }
-                } else {
-                    log::debug!(target: "module-parser",
-                        "failed to resolve source path '{file}' for instruction at offset \
-                         {offset} in function {func_name}"
-                    );
-                }
-            }
+        // For DWARF lookup, we need different offset calculations depending on context:
+        // - For standalone modules: DWARF addresses are relative to the code section start
+        // - For modules in components: DWARF addresses are absolute (component file offsets)
+        let dwarf_lookup_offset = if module.wasm_file.module_base_offset > 0 {
+            module.wasm_file.module_base_offset + offset as u64
+        } else {
+            code_offset
+        };
+        let span = resolve_instruction_span(addr2line, dwarf_lookup_offset, session, config)?;
+        if !span.is_unknown() {
+            last_valid_span = span;
         } else {
             log::debug!(target: "module-parser",
                 "failed to locate span for instruction at offset {offset} in function {func_name}"
             );
         }
 
-        // Track the span of every END we observe, so we have a span to assign to the return we
-        // place in the final exit block
-        if let wasmparser::Operator::End = op {
-            end_span = span;
-        }
-
-        let effective_span = if span.is_unknown() && !last_valid_span.is_unknown() {
-            log::debug!(target: "module-parser",
-                "using last valid span as fallback for {:?} at offset {offset} in function {func_name}", op
-            );
-            last_valid_span
+        let effective_span = if span.is_unknown() {
+            if !last_valid_span.is_unknown() {
+                log::debug!(target: "module-parser",
+                    "using last valid span as fallback for {:?} at offset {offset} in function {func_name}", op
+                );
+                last_valid_span
+            } else {
+                SourceSpan::SYNTHETIC
+            }
         } else {
             span
         };
+        builder.record_debug_span(effective_span);
+
+        if state.reachable && !builder.is_unreachable() {
+            builder.apply_location_schedule(code_offset, effective_span, &state.stack);
+        }
+
+        // Track the span of every END we observe, so we have a span to assign to the return we
+        // place in the final exit block
+        if let wasmparser::Operator::End = op {
+            end_span = effective_span;
+        }
 
         translate_operator(
             &op,
@@ -314,8 +299,6 @@ fn parse_function_body<B: ?Sized + Builder>(
             effective_span,
         )?;
     }
-    let pos = reader.original_position();
-    func_validator.finish(pos).into_diagnostic()?;
 
     // The final `End` operator left us in the exit block where we need to manually add a return
     // instruction.
@@ -331,4 +314,130 @@ fn parse_function_body<B: ?Sized + Builder>(
     state.stack.clear();
 
     Ok(())
+}
+
+struct ResolvedSourceLocation {
+    path: PathBuf,
+    span: SourceSpan,
+}
+
+fn resolve_instruction_span(
+    addr2line: &addr2line::Context<DwarfReader<'_>>,
+    offset: u64,
+    session: &Session,
+    config: &crate::WasmTranslationConfig,
+) -> WasmResult<SourceSpan> {
+    let mut frames = addr2line.find_frames(offset).skip_all_loads().into_diagnostic()?;
+    let mut fallback = SourceSpan::UNKNOWN;
+
+    while let Some(frame) = frames.next().into_diagnostic()? {
+        let Some(location) = frame.location else {
+            continue;
+        };
+        let Some(resolved) = resolve_source_location(&location, session, config)? else {
+            continue;
+        };
+
+        if fallback.is_unknown() {
+            fallback = resolved.span;
+        }
+
+        if !is_internal_source_path(&resolved.path) {
+            return Ok(resolved.span);
+        }
+    }
+
+    Ok(fallback)
+}
+
+fn resolve_source_location(
+    loc: &addr2line::Location<'_>,
+    session: &Session,
+    config: &crate::WasmTranslationConfig,
+) -> WasmResult<Option<ResolvedSourceLocation>> {
+    let Some(file) = loc.file else {
+        return Ok(None);
+    };
+
+    let path = Path::new(file);
+    let Some(absolute_path) = resolve_source_path(path, session, config) else {
+        log::debug!(target: "module-parser", "failed to resolve source path '{file}'");
+        return Ok(None);
+    };
+
+    debug_assert!(
+        absolute_path.is_absolute(),
+        "resolved path should be absolute: {}",
+        absolute_path.display()
+    );
+    log::debug!(target: "module-parser",
+        "resolved source path '{}' -> '{}'",
+        file,
+        absolute_path.display()
+    );
+
+    let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
+    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
+    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
+    let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
+
+    let path = if path.is_absolute() {
+        config
+            .remap_path_prefixes
+            .iter()
+            .filter_map(|remap_prefix| {
+                path.strip_prefix(remap_prefix.source_prefix()).ok().map(|p| {
+                    match remap_prefix.to.as_deref() {
+                        Some(parent) => parent.join(p),
+                        None => p.to_path_buf(),
+                    }
+                })
+            })
+            .max_by_key(|p| p.components().count())
+            .unwrap_or(path.to_path_buf())
+    } else {
+        path.to_path_buf()
+    };
+
+    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation { path, span }))
+}
+
+fn resolve_source_path(
+    path: &Path,
+    session: &Session,
+    config: &crate::WasmTranslationConfig,
+) -> Option<PathBuf> {
+    if path.is_relative() {
+        // Strategy 1: Try remap_path_prefixes.
+        if let Some(resolved) = config.remap_path_prefixes.iter().find_map(|prefix| {
+            let candidate = prefix.source_prefix().join(path).canonicalize().ok();
+            if candidate.as_ref().is_some_and(|candidate| candidate.exists()) {
+                candidate
+            } else {
+                None
+            }
+        }) {
+            return Some(resolved);
+        }
+
+        // Strategy 2: Try session.options.current_dir as fallback.
+        let current_dir_candidate = session.options.current_dir.join(path).canonicalize().ok();
+        if current_dir_candidate.as_ref().is_some_and(|candidate| candidate.exists()) {
+            current_dir_candidate
+        } else {
+            None
+        }
+    } else if path.exists() {
+        path.canonicalize().ok()
+    } else {
+        None
+    }
+}
+
+fn is_internal_source_path(path: &Path) -> bool {
+    let path = path.to_string_lossy();
+    path.contains("/rust/library/")
+        || path.contains("/.cargo/registry/")
+        || path.contains("/registry/src/")
+        || path.contains("/compiler/sdk/")
 }

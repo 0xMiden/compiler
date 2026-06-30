@@ -1,0 +1,10 @@
+[package]
+name = "collatz"
+version = "0.1.0"
+
+[[bin]]
+name = "collatz"
+path = "<virtual>"
+
+[dependencies]
+miden-core = "*"

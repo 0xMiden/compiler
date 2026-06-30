@@ -1,0 +1,33 @@
+[package]
+name = "midenc-frontend-masm"
+description = "MASM disassembler frontend for the Miden compiler"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[dependencies]
+miden-core.workspace = true
+miden-core-lib = { workspace = true, features = ["std"] }
+miden-assembly.workspace = true
+miden-assembly-syntax = { workspace = true, features = ["std"] }
+miden-mast-package.workspace = true
+miden-project = { workspace = true, features = ["std", "serde"] }
+midenc-dialect-arith.workspace = true
+midenc-dialect-cf.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-dialect-scf.workspace = true
+midenc-hir.workspace = true
+rustc-hash.workspace = true
+
+[dev-dependencies]
+miden-assembly = { workspace = true, features = ["std"] }
+miden-package-registry.workspace = true
+miden-processor = { workspace = true, features = ["std"] }
+midenc-codegen-masm.workspace = true
+midenc-session.workspace = true

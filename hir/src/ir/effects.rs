@@ -1,3 +1,5 @@
+mod advice;
+mod debug;
 mod instance;
 mod interface;
 mod memory;
@@ -5,7 +7,9 @@ mod speculation;
 
 use core::fmt;
 
-pub use self::{instance::EffectInstance, interface::*, memory::*, speculation::*};
+pub use self::{
+    advice::*, debug::*, instance::EffectInstance, interface::*, memory::*, speculation::*,
+};
 use crate::{DynPartialEq, any::AsAny, eq::PartialEqable};
 
 pub trait Effect: AsAny + fmt::Debug {}

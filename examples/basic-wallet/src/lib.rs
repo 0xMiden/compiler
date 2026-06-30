@@ -7,22 +7,21 @@
 //
 // extern crate alloc;
 
-use miden::{Asset, NoteIdx, component, output_note};
+use miden::{Asset, NoteIdx, component, component_storage, output_note};
 
-#[component]
-struct MyAccount;
+#[component_storage]
+struct BasicWalletStorage;
 
+/// API of the basic wallet account component.
 #[component]
-impl MyAccount {
+trait BasicWallet {
     /// Adds an asset to the account.
     ///
     /// This function adds the specified asset to the account's asset list.
     ///
     /// # Arguments
     /// * `asset` - The asset to be added to the account
-    pub fn receive_asset(&mut self, asset: Asset) {
-        self.add_asset(asset);
-    }
+    fn receive_asset(&mut self, asset: Asset);
 
     /// Moves an asset from the account to a note.
     ///
@@ -32,7 +31,16 @@ impl MyAccount {
     /// # Arguments
     /// * `asset` - The asset to move from the account to the note
     /// * `note_idx` - The index of the note to receive the asset
-    pub fn move_asset_to_note(&mut self, asset: Asset, note_idx: NoteIdx) {
+    fn move_asset_to_note(&mut self, asset: Asset, note_idx: NoteIdx);
+}
+
+#[component]
+impl BasicWallet for BasicWalletStorage {
+    fn receive_asset(&mut self, asset: Asset) {
+        self.add_asset(asset);
+    }
+
+    fn move_asset_to_note(&mut self, asset: Asset, note_idx: NoteIdx) {
         self.remove_asset(asset);
         output_note::add_asset(asset, note_idx);
     }

@@ -5,7 +5,7 @@ use super::*;
 /// See [HasRecursiveEffects] for more details on the semantics of recursive effects.
 pub trait HasRecursiveMemoryEffects {}
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum MemoryEffect {
     /// The following effect indicates that the operation reads from some resource.
     ///
@@ -26,6 +26,38 @@ pub enum MemoryEffect {
     /// An 'allocate' effect implies only de-allocation of the resource, and not any visible
     /// allocation, mutation or dereference.
     Free,
+}
+
+impl AsRef<str> for MemoryEffect {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Read => "read",
+            Self::Write => "write",
+            Self::Allocate => "allocate",
+            Self::Free => "free",
+        }
+    }
+}
+
+impl core::fmt::Display for MemoryEffect {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_ref())
+    }
+}
+
+impl core::str::FromStr for MemoryEffect {
+    type Err = alloc::string::String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        use alloc::string::ToString;
+        match s {
+            "read" => Ok(Self::Read),
+            "write" => Ok(Self::Write),
+            "allocate" => Ok(Self::Allocate),
+            "free" => Ok(Self::Free),
+            s => Err(s.to_string()),
+        }
+    }
 }
 
 impl PartialEq<MemoryEffect> for &MemoryEffect {

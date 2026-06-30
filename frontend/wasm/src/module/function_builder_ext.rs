@@ -1,23 +1,36 @@
-use alloc::rc::Rc;
+use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
 use core::cell::RefCell;
+use std::path::Path;
 
-use cranelift_entity::SecondaryMap;
+use cranelift_entity::{EntityRef as _, SecondaryMap};
+use log::warn;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::WasmOpBuilder;
 use midenc_hir::{
-    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType,
-    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Type, ValueRef,
-    dialects::builtin::{
-        BuiltinOpBuilder, FunctionBuilder, FunctionRef,
-        attributes::{LocalVariable, Signature},
+    BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
+    OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Spanned, Type,
+    ValueRef,
+    dialects::{
+        builtin::{
+            BuiltinOpBuilder, FunctionBuilder, FunctionRef,
+            attributes::{LocalVariable, Signature},
+        },
+        debuginfo::{
+            DIBuilder,
+            attributes::{CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr},
+        },
     },
+    interner::Symbol,
     traits::{BranchOpInterface, Terminator},
 };
 
-use crate::ssa::{SSABuilder, SideEffects, Variable};
+use crate::{
+    module::debug_info::{FunctionDebugInfo, LocationScheduleEntry},
+    ssa::{SSABuilder, SideEffects, Variable},
+};
 
 /// Tracking variables and blocks for SSA construction.
 pub struct FunctionBuilderContext {
@@ -127,6 +140,10 @@ impl Listener for SSABuilderListener {
 pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     inner: FunctionBuilder<'c, B>,
     func_ctx: Rc<RefCell<FunctionBuilderContext>>,
+    debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
+    param_values: Vec<(Variable, ValueRef)>,
+    param_dbg_emitted: bool,
+    active_wasm_local_debug_vars: BTreeMap<u32, Vec<usize>>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -136,11 +153,255 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
 
         let inner = FunctionBuilder::new(func, builder);
 
-        Self { inner, func_ctx }
+        Self {
+            inner,
+            func_ctx,
+            debug_info: None,
+            param_values: Vec::new(),
+            param_dbg_emitted: false,
+            active_wasm_local_debug_vars: BTreeMap::new(),
+        }
     }
 }
 
 impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
+    const DI_COMPILE_UNIT_ATTR: &'static str = "di.compile_unit";
+    const DI_SUBPROGRAM_ATTR: &'static str = "di.subprogram";
+
+    pub fn set_debug_metadata(&mut self, info: Rc<RefCell<FunctionDebugInfo>>) {
+        self.debug_info = Some(info);
+        self.param_dbg_emitted = false;
+        self.refresh_function_debug_attrs();
+    }
+
+    pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
+        let Some(info) = self.debug_info.clone() else {
+            return;
+        };
+        let idx = var.index();
+        let (attr_opt, expr_opt, schedule_only) = {
+            let info = info.borrow();
+            let local_info = info.locals.get(idx).and_then(|l| l.as_ref());
+            match local_info {
+                Some(l) => {
+                    let schedule_only = !l.locations.is_empty();
+                    (Some(l.attr.clone()), l.expression.clone(), schedule_only)
+                }
+                None => (None, None, false),
+            }
+        };
+        let Some(mut attr) = attr_opt else {
+            return;
+        };
+        if schedule_only {
+            return;
+        }
+
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            attr.file = file_symbol;
+            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+                attr.line = line;
+                attr.column = column;
+            }
+        }
+
+        // If DWARF didn't provide a location expression, synthesize one from the
+        // wasm local index — we know this variable is stored as a wasm local.
+        let expr = expr_opt.or_else(|| {
+            let ops = vec![ExpressionOp::WasmLocal(idx as u32)];
+            Some(Expression::with_ops(ops))
+        });
+
+        if let Err(err) =
+            DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, expr, span)
+        {
+            warn!("failed to emit dbg.value for local {idx}: {err:?}");
+        }
+    }
+
+    pub fn def_var_with_dbg(&mut self, var: Variable, val: ValueRef, span: SourceSpan) {
+        self.def_var(var, val);
+        self.emit_dbg_value_for_var(var, val, span);
+    }
+
+    pub fn register_parameter(&mut self, var: Variable, value: ValueRef) {
+        self.param_values.push((var, value));
+    }
+
+    pub fn record_debug_span(&mut self, span: SourceSpan) {
+        if span == SourceSpan::UNKNOWN {
+            return;
+        }
+        let Some(info_rc) = self.debug_info.as_ref() else {
+            return;
+        };
+
+        if let Some((file_symbol, directory_symbol, line, column)) = self.span_to_location(span) {
+            {
+                let mut info = info_rc.borrow_mut();
+                info.compile_unit.file = file_symbol;
+                info.compile_unit.directory = directory_symbol;
+                info.subprogram.file = file_symbol;
+                info.subprogram.line = line;
+                info.subprogram.column = column;
+                info.function_span.get_or_insert(span);
+            }
+            let current_span = self.inner.func.borrow().span();
+            if current_span.is_unknown()
+                || current_span.is_synthetic()
+                || current_span == SourceSpan::default()
+            {
+                self.inner.func.borrow_mut().set_span(span);
+            }
+            self.refresh_function_debug_attrs();
+            self.emit_parameter_dbg_if_needed(span);
+        }
+    }
+
+    pub fn apply_location_schedule(
+        &mut self,
+        offset: u64,
+        span: SourceSpan,
+        wasm_stack: &[ValueRef],
+    ) {
+        let Some(info_rc) = self.debug_info.as_ref() else {
+            return;
+        };
+
+        let updates = {
+            let mut info = info_rc.borrow_mut();
+            let mut pending = Vec::new();
+            while info.next_location_event < info.location_schedule.len() {
+                let entry = &info.location_schedule[info.next_location_event];
+                if entry.offset > offset {
+                    break;
+                }
+                pending.push(entry.clone());
+                info.next_location_event += 1;
+            }
+            pending
+        };
+
+        for entry in updates {
+            self.emit_scheduled_dbg_value(entry, span, wasm_stack);
+        }
+    }
+
+    fn emit_scheduled_dbg_value(
+        &mut self,
+        entry: LocationScheduleEntry,
+        span: SourceSpan,
+        wasm_stack: &[ValueRef],
+    ) {
+        let Some(info) = self.debug_info.clone() else {
+            return;
+        };
+        let idx = entry.var_index;
+        let attr_opt = {
+            let info = info.borrow();
+            info.local_attr(idx).cloned()
+        };
+        let Some(mut attr) = attr_opt else {
+            return;
+        };
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            attr.file = file_symbol;
+            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+                attr.line = line;
+                attr.column = column;
+            }
+        }
+
+        let Some(storage) = entry.storage else {
+            self.remove_active_wasm_local_debug_var(idx);
+            if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
+                warn!("failed to emit scheduled dbg.kill for local {idx}: {err:?}");
+            }
+            return;
+        };
+        if storage.is_empty() {
+            return;
+        }
+
+        if let Some(value) = wasm_stack_value_from_expression(&storage, wasm_stack) {
+            if let Err(err) =
+                DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, None, span)
+            {
+                warn!("failed to emit scheduled stack dbg.value for local {idx}: {err:?}");
+            }
+            return;
+        }
+
+        if let Some(local_index) = wasm_local_index_from_expression(&storage) {
+            self.set_active_wasm_local_debug_var(local_index, idx);
+            self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
+            return;
+        }
+
+        self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
+    }
+
+    pub fn emit_debug_values_for_wasm_local(
+        &mut self,
+        local_index: u32,
+        value: ValueRef,
+        span: SourceSpan,
+    ) {
+        let Some(info) = self.debug_info.clone() else {
+            return;
+        };
+        let Some(var_indices) = self.active_wasm_local_debug_vars.get(&local_index).cloned() else {
+            return;
+        };
+
+        for idx in var_indices {
+            let attr_opt = {
+                let info = info.borrow();
+                info.local_attr(idx).cloned()
+            };
+            let Some(mut attr) = attr_opt else {
+                continue;
+            };
+            if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+                attr.file = file_symbol;
+                if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+                    attr.line = line;
+                    attr.column = column;
+                }
+            }
+            if let Err(err) = DIBuilder::builder_mut(self).debug_value(value, attr, span) {
+                warn!("failed to emit local-backed dbg.value for local {local_index}: {err:?}");
+            }
+        }
+    }
+
+    fn set_active_wasm_local_debug_var(&mut self, local_index: u32, var_index: usize) {
+        self.remove_active_wasm_local_debug_var(var_index);
+        let active = self.active_wasm_local_debug_vars.entry(local_index).or_default();
+        if !active.contains(&var_index) {
+            active.push(var_index);
+        }
+    }
+
+    fn remove_active_wasm_local_debug_var(&mut self, var_index: usize) {
+        self.active_wasm_local_debug_vars.retain(|_, active| {
+            active.retain(|idx| *idx != var_index);
+            !active.is_empty()
+        });
+    }
+
+    fn emit_scheduled_dbg_declare_with_attr(
+        &mut self,
+        idx: usize,
+        attr: midenc_hir::dialects::debuginfo::attributes::Variable,
+        expression: Expression,
+        span: SourceSpan,
+    ) {
+        if let Err(err) = DIBuilder::builder_mut(self).debug_declare(attr, expression, span) {
+            warn!("failed to emit scheduled dbg.declare for local {idx}: {err:?}");
+        }
+    }
+
     pub fn name(&self) -> Ident {
         *self.inner.func.borrow().get_name()
     }
@@ -197,7 +458,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
 
         let results = SmallVec::<[_; 2]>::from_iter(self.signature().results().iter().cloned());
         for argtyp in results {
-            self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::default());
+            self.inner.append_block_param(block, argtyp.ty.clone(), SourceSpan::SYNTHETIC);
         }
     }
 
@@ -295,6 +556,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         self.func_ctx.borrow().locals[&var]
     }
 
+    /// Allocates a function-local storage slot of the given type, without binding it to an SSA
+    /// variable.
+    pub fn alloc_local(&mut self, ty: Type) -> LocalVariable {
+        self.inner.alloc_local(ty)
+    }
+
     pub fn declare_local(&mut self, var: Variable, ty: Type) -> LocalVariable {
         let mut ctx = self.func_ctx.borrow_mut();
         assert_eq!(
@@ -306,6 +573,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         ctx.types[var] = ty;
         ctx.locals.insert(var, local);
         local
+    }
+
+    /// Declare an SSA variable without allocating an HIR local.
+    ///
+    /// Used for FrameBase-only debug variables that live in linear memory
+    /// and don't need a real function-local storage slot. This avoids
+    /// inflating `num_locals` which would corrupt FMP offset calculations.
+    pub fn declare_var_only(&mut self, var: Variable, ty: Type) {
+        let mut ctx = self.func_ctx.borrow_mut();
+        if ctx.types[var] != Type::Unknown {
+            return; // Already declared
+        }
+        ctx.types[var] = ty;
     }
 
     /// Declares the type of a variable, so that it can be used later (by calling
@@ -367,12 +647,15 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     /// an error if the value supplied does not match the type the variable was
     /// declared to have.
     pub fn try_def_var(&mut self, var: Variable, val: ValueRef) -> Result<(), DefVariableError> {
-        let mut func_ctx = self.func_ctx.borrow_mut();
-        let var_ty = func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
-        if var_ty != val.borrow().ty() {
-            return Err(DefVariableError::TypeMismatch(var, val));
+        {
+            let mut func_ctx = self.func_ctx.borrow_mut();
+            let var_ty =
+                func_ctx.types.get(var).ok_or(DefVariableError::DefinedBeforeDeclared(var))?;
+            if var_ty != val.borrow().ty() {
+                return Err(DefVariableError::TypeMismatch(var, val));
+            }
+            func_ctx.ssa.def_var(var, val, self.inner.current_block());
         }
-        func_ctx.ssa.def_var(var, val, self.inner.current_block());
         Ok(())
     }
 
@@ -437,6 +720,107 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         inst_branch.change_branch_destination(old_block, new_block);
         self.func_ctx.borrow_mut().ssa.declare_block_predecessor(new_block, branch_inst);
     }
+
+    fn refresh_function_debug_attrs(&mut self) {
+        let Some(info) = self.debug_info.as_ref() else {
+            return;
+        };
+        let info = info.borrow();
+        let context = self.inner.builder().context_rc();
+        let cu_attr = context
+            .create_attribute::<CompileUnitAttr, _>(info.compile_unit.clone())
+            .as_attribute_ref();
+        let sp_attr = context
+            .create_attribute::<SubprogramAttr, _>(info.subprogram.clone())
+            .as_attribute_ref();
+        let mut func = self.inner.func.borrow_mut();
+        let op = func.as_operation_mut();
+        op.set_attribute(Self::DI_COMPILE_UNIT_ATTR, cu_attr);
+        op.set_attribute(Self::DI_SUBPROGRAM_ATTR, sp_attr);
+    }
+
+    fn emit_parameter_dbg_if_needed(&mut self, span: SourceSpan) {
+        if self.param_dbg_emitted {
+            return;
+        }
+        self.param_dbg_emitted = true;
+        let params: Vec<_> = self.param_values.to_vec();
+        for (var, value) in &params {
+            self.emit_dbg_value_for_var(*var, *value, span);
+        }
+        // FrameBase-only variables (e.g. local `sum`) are emitted solely via
+        // the location schedule in apply_location_schedule/emit_scheduled_dbg_value,
+        // avoiding duplicate DebugVar emissions.
+    }
+
+    fn span_to_location(
+        &self,
+        span: SourceSpan,
+    ) -> Option<(Symbol, Option<Symbol>, u32, Option<u32>)> {
+        if span == SourceSpan::UNKNOWN {
+            return None;
+        }
+
+        let context = self.inner.builder().context();
+        let session = context.session();
+        let source_file = session.source_manager.get(span.source_id()).ok()?;
+        let uri = source_file.uri();
+        let file = session
+            .options
+            .remap_path_prefixes
+            .iter()
+            .filter_map(|prefix| {
+                Path::new(uri.path())
+                    .strip_prefix(prefix.source_prefix())
+                    .ok()
+                    .and_then(|path| match prefix.to.as_deref() {
+                        Some(parent) => parent.join(path).to_str().map(ToOwned::to_owned),
+                        None => path.to_str().map(ToOwned::to_owned),
+                    })
+            })
+            .max_by_key(|path| path.len())
+            .unwrap_or_else(|| uri.as_str().to_owned());
+        let path = Path::new(&file);
+        let file_symbol = Symbol::intern(&file);
+        let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
+        let location = source_file.location(span);
+        let line = location.line.to_u32();
+        let column = location.column.to_u32();
+        Some((file_symbol, directory_symbol, line, Some(column)))
+    }
+}
+
+fn wasm_local_index_from_expression(expression: &Expression) -> Option<u32> {
+    expression.operations.iter().find_map(|op| match op {
+        ExpressionOp::WasmLocal(index) => Some(*index),
+        _ => None,
+    })
+}
+
+fn wasm_stack_value_from_expression(
+    expression: &Expression,
+    wasm_stack: &[ValueRef],
+) -> Option<ValueRef> {
+    let index = expression.operations.iter().find_map(|op| match op {
+        ExpressionOp::WasmStack(index) => Some(*index as usize),
+        _ => None,
+    })?;
+    wasm_stack.iter().rev().nth(index).copied()
+}
+
+fn should_fill_debug_attr_location(
+    current_line: u32,
+    current_column: Option<u32>,
+    span_line: u32,
+    span_column: Option<u32>,
+) -> bool {
+    if current_line != 0 || current_column.is_some() || span_line == 0 {
+        return false;
+    }
+
+    // Rust/wasm DWARF sometimes maps prologue/epilogue-style instructions to the first byte of
+    // the source file. Keep real declaration metadata rather than showing these fallback spans.
+    !(span_line == 1 && span_column.is_none_or(|column| column == 1))
 }
 
 impl<'f, B: ?Sized + Builder> ArithOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
@@ -488,6 +872,18 @@ impl<'f, B: ?Sized + Builder> WasmOpBuilder<'f, B> for FunctionBuilderExt<'f, B>
 }
 
 impl<'f, B: ?Sized + Builder> BuiltinOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {
+    #[inline(always)]
+    fn builder(&self) -> &B {
+        self.inner.builder()
+    }
+
+    #[inline(always)]
+    fn builder_mut(&mut self) -> &mut B {
+        self.inner.builder_mut()
+    }
+}
+
+impl<'f, B: ?Sized + Builder> DIBuilder<'f, B> for FunctionBuilderExt<'f, B> {
     #[inline(always)]
     fn builder(&self) -> &B {
         self.inner.builder()

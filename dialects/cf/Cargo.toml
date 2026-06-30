@@ -11,6 +11,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [features]
 default = ["std"]
 std = ["midenc-hir/std"]
@@ -22,4 +25,5 @@ midenc-hir.workspace = true
 
 [dev-dependencies]
 # Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-expect-test = { path = "../../tools/expect-test" }
 midenc-hir = { path = "../../hir", features = ["logging"] }

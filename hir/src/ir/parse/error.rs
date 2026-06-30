@@ -79,6 +79,14 @@ pub enum ParserError {
         num_operands: usize,
         num_types: usize,
     },
+    #[error("invalid operand list")]
+    #[diagnostic()]
+    InvalidOperandCount {
+        #[label("expected {expected} operands in this list, but found {actual}")]
+        span: SourceSpan,
+        expected: usize,
+        actual: usize,
+    },
     #[error("use of undeclared values")]
     #[diagnostic()]
     UndeclaredValueUses {

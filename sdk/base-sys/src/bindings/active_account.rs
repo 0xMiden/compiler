@@ -4,20 +4,28 @@ use super::types::{AccountId, Asset, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_id"]
     fn extern_active_account_get_id(ptr: *mut RawAccountId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_nonce"]
     fn extern_active_account_get_nonce() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_commitment"]
     fn extern_active_account_get_initial_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::compute_commitment"]
     fn extern_active_account_compute_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_code_commitment"]
     fn extern_active_account_get_code_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_storage_commitment"]
     fn extern_active_account_get_initial_storage_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
     fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_asset"]
     fn extern_active_account_get_asset(
         asset_key_0: Felt,
@@ -26,6 +34,7 @@ unsafe extern "C" {
         asset_key_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_asset"]
     fn extern_active_account_get_initial_asset(
         asset_key_0: Felt,
@@ -34,13 +43,23 @@ unsafe extern "C" {
         asset_key_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_balance"]
-    fn extern_active_account_get_balance(faucet_id_suffix: Felt, faucet_id_prefix: Felt) -> Felt;
+    fn extern_active_account_get_balance(
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
+    ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_balance"]
     fn extern_active_account_get_initial_balance(
-        faucet_id_suffix: Felt,
-        faucet_id_prefix: Felt,
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
     ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
     fn extern_active_account_has_non_fungible_asset(
         asset_0: Felt,
@@ -48,14 +67,19 @@ unsafe extern "C" {
         asset_2: Felt,
         asset_3: Felt,
     ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_initial_vault_root"]
     fn extern_active_account_get_initial_vault_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_vault_root"]
     fn extern_active_account_get_vault_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_num_procedures"]
     fn extern_active_account_get_num_procedures() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_procedure_root"]
     fn extern_active_account_get_procedure_root(index: Felt, ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::has_procedure"]
     fn extern_active_account_has_procedure(
         proc_root_0: Felt,
@@ -160,20 +184,29 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
     }
 }
 
-/// Returns the balance of the fungible asset identified by `faucet_id`.
+/// Returns the balance of the fungible asset identified by `asset_key`.
 ///
 /// # Panics
 ///
 /// Propagates kernel errors if the referenced asset is non-fungible or the
 /// account vault invariants are violated.
-pub fn get_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_balance(faucet_id.suffix, faucet_id.prefix) }
+pub fn get_balance(asset_key: Word) -> Felt {
+    unsafe {
+        extern_active_account_get_balance(asset_key[0], asset_key[1], asset_key[2], asset_key[3])
+    }
 }
 
-/// Returns the initial balance of the fungible asset identified by `faucet_id`.
+/// Returns the initial balance of the fungible asset identified by `asset_key`.
 #[inline]
-pub fn get_initial_balance(faucet_id: AccountId) -> Felt {
-    unsafe { extern_active_account_get_initial_balance(faucet_id.suffix, faucet_id.prefix) }
+pub fn get_initial_balance(asset_key: Word) -> Felt {
+    unsafe {
+        extern_active_account_get_initial_balance(
+            asset_key[0],
+            asset_key[1],
+            asset_key[2],
+            asset_key[3],
+        )
+    }
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
@@ -185,7 +218,7 @@ pub fn has_non_fungible_asset(asset: Asset) -> bool {
             asset.key[1],
             asset.key[2],
             asset.key[3],
-        ) != Felt::new(0)
+        ) != Felt::new(0).unwrap()
     }
 }
 
@@ -220,7 +253,10 @@ pub fn get_num_procedures() -> Felt {
 pub fn get_procedure_root(index: u8) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_active_account_get_procedure_root(Felt::new(index as u64), ret_area.as_mut_ptr());
+        extern_active_account_get_procedure_root(
+            Felt::new(index as u64).unwrap(),
+            ret_area.as_mut_ptr(),
+        );
         ret_area.assume_init()
     }
 }
@@ -230,53 +266,74 @@ pub fn get_procedure_root(index: u8) -> Word {
 pub fn has_procedure(proc_root: Word) -> bool {
     unsafe {
         extern_active_account_has_procedure(proc_root[0], proc_root[1], proc_root[2], proc_root[3])
-            != Felt::new(0)
+            != Felt::new(0).unwrap()
     }
 }
 
 /// Trait that provides active account operations for components.
 ///
-/// This trait is automatically implemented for types marked with the `#[component]` macro.
+/// This trait is automatically implemented for the storage struct marked with the
+/// `#[component_storage]` macro.
+///
+/// NOTE: when adding methods, also update `ACTIVE_ACCOUNT_METHODS` in
+/// `sdk/base-macros/src/fpi.rs`, which rejects dependency functions that would shadow them.
 pub trait ActiveAccount {
+    /// Guard hook invoked by every active-account operation before it runs.
+    ///
+    /// The default implementation is a no-op. Types that can also represent a *foreign* account
+    /// (for example the struct generated by the `#[account(...)]` macro) override this to reject
+    /// calls made on a foreign binding, because the active-account operations always target the
+    /// transaction's active account rather than the foreign one.
+    #[doc(hidden)]
+    #[inline]
+    fn __assert_active_account(&self) {}
+
     /// Returns the account ID of the active account.
     #[inline]
     fn get_id(&self) -> AccountId {
+        self.__assert_active_account();
         get_id()
     }
 
     /// Returns the nonce of the active account.
     #[inline]
     fn get_nonce(&self) -> Felt {
+        self.__assert_active_account();
         get_nonce()
     }
 
     /// Returns the active account commitment at the beginning of the transaction.
     #[inline]
     fn get_initial_commitment(&self) -> Word {
+        self.__assert_active_account();
         get_initial_commitment()
     }
 
     /// Computes and returns the commitment of the current account data.
     #[inline]
     fn compute_commitment(&self) -> Word {
+        self.__assert_active_account();
         compute_commitment()
     }
 
     /// Returns the code commitment of the active account.
     #[inline]
     fn get_code_commitment(&self) -> Word {
+        self.__assert_active_account();
         get_code_commitment()
     }
 
     /// Returns the initial storage commitment of the active account.
     #[inline]
     fn get_initial_storage_commitment(&self) -> Word {
+        self.__assert_active_account();
         get_initial_storage_commitment()
     }
 
     /// Computes the latest storage commitment of the active account.
     #[inline]
     fn compute_storage_commitment(&self) -> Word {
+        self.__assert_active_account();
         compute_storage_commitment()
     }
 
@@ -284,6 +341,7 @@ pub trait ActiveAccount {
     /// vault.
     #[inline]
     fn get_asset(&self, asset_key: Word) -> Word {
+        self.__assert_active_account();
         get_asset(asset_key)
     }
 
@@ -291,59 +349,91 @@ pub trait ActiveAccount {
     /// vault.
     #[inline]
     fn get_initial_asset(&self, asset_key: Word) -> Word {
+        self.__assert_active_account();
         get_initial_asset(asset_key)
     }
 
-    /// Returns the balance of the fungible asset identified by `faucet_id`.
+    /// Returns the balance of the fungible asset identified by `asset_key`.
     ///
     /// # Panics
     ///
     /// Propagates kernel errors if the referenced asset is non-fungible or the
     /// account vault invariants are violated.
     #[inline]
-    fn get_balance(&self, faucet_id: AccountId) -> Felt {
-        get_balance(faucet_id)
+    fn get_balance(&self, asset_key: Word) -> Felt {
+        self.__assert_active_account();
+        get_balance(asset_key)
     }
 
-    /// Returns the initial balance of the fungible asset identified by `faucet_id`.
+    /// Returns the initial balance of the fungible asset identified by `asset_key`.
     #[inline]
-    fn get_initial_balance(&self, faucet_id: AccountId) -> Felt {
-        get_initial_balance(faucet_id)
+    fn get_initial_balance(&self, asset_key: Word) -> Felt {
+        self.__assert_active_account();
+        get_initial_balance(asset_key)
     }
 
     /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
     #[inline]
     fn has_non_fungible_asset(&self, asset: Asset) -> bool {
+        self.__assert_active_account();
         has_non_fungible_asset(asset)
     }
 
     /// Returns the vault root of the active account at the beginning of the transaction.
     #[inline]
     fn get_initial_vault_root(&self) -> Word {
+        self.__assert_active_account();
         get_initial_vault_root()
     }
 
     /// Returns the current vault root of the active account.
     #[inline]
     fn get_vault_root(&self) -> Word {
+        self.__assert_active_account();
         get_vault_root()
     }
 
     /// Returns the number of procedures exported by the active account.
     #[inline]
     fn get_num_procedures(&self) -> Felt {
+        self.__assert_active_account();
         get_num_procedures()
     }
 
     /// Returns the procedure root for the procedure at `index`.
     #[inline]
     fn get_procedure_root(&self, index: u8) -> Word {
+        self.__assert_active_account();
         get_procedure_root(index)
     }
 
     /// Returns `true` if the procedure identified by `proc_root` exists on the active account.
     #[inline]
     fn has_procedure(&self, proc_root: Word) -> bool {
+        self.__assert_active_account();
         has_procedure(proc_root)
+    }
+}
+
+/// Marker trait for account API wrapper types.
+///
+/// The `#[note]` and `#[tx_script]` macros instantiate their entrypoint account parameter
+/// through this trait, so that parameter must be a type implementing it. The `ActiveAccount`
+/// supertrait guarantees that parameter is usable as the transaction's active account and keeps
+/// unrelated `Default` types from satisfying the bound. The `#[account(...)]` macro implements
+/// both automatically; it is not a sealed capability boundary, so manual implementations are
+/// possible but normally unnecessary.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an account wrapper generated by `#[account(...)]`",
+    note = "define a struct with `#[account(...)]` and use it as the entrypoint account parameter"
+)]
+pub trait AccountWrapper: ActiveAccount + Default {
+    /// Creates a binding to the transaction's active account.
+    ///
+    /// This is the account the transaction executes against, as opposed to a foreign account
+    /// reached through FPI (created with `new`).
+    #[inline(always)]
+    fn active() -> Self {
+        Self::default()
     }
 }

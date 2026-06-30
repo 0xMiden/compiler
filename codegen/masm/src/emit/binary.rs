@@ -1,4 +1,4 @@
-use core::assert_matches::assert_matches;
+use core::assert_matches;
 
 use miden_core::Felt;
 use midenc_hir::{Immediate, Overflow, SourceSpan, Type};
@@ -53,7 +53,9 @@ impl OpEmitter<'_> {
             }
             Type::I32 | Type::I16 | Type::I8 => {
                 self.emit(
-                    masm::Instruction::EqImm(Felt::new(imm.as_i32().unwrap() as u32 as u64).into()),
+                    masm::Instruction::EqImm(
+                        Felt::new_unchecked(imm.as_i32().unwrap() as u32 as u64).into(),
+                    ),
                     span,
                 );
             }
@@ -108,7 +110,7 @@ impl OpEmitter<'_> {
             Type::I32 | Type::I16 | Type::I8 => {
                 self.emit(
                     masm::Instruction::NeqImm(
-                        Felt::new(imm.as_i32().unwrap() as u32 as u64).into(),
+                        Felt::new_unchecked(imm.as_i32().unwrap() as u32 as u64).into(),
                     ),
                     span,
                 );
@@ -652,6 +654,7 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected mod operands to be the same type");
         match &ty {
             Type::U64 => self.checked_mod_u64(span),
+            Type::I32 => self.checked_mod_i32(span),
             Type::U32 => self.checked_mod_u32(span),
             ty @ (Type::U16 | Type::U8) => {
                 self.checked_mod_uint(ty.size_in_bits() as u32, span);
@@ -675,6 +678,7 @@ impl OpEmitter<'_> {
                 self.push_immediate(imm, span);
                 self.checked_mod_u64(span);
             }
+            Type::I32 => self.checked_mod_imm_i32(imm.as_i32().unwrap(), span),
             Type::U32 => self.checked_mod_imm_u32(imm.as_u32().unwrap(), span),
             ty @ (Type::U16 | Type::U8) => {
                 self.checked_mod_imm_uint(imm.as_u32().unwrap(), ty.size_in_bits() as u32, span);
@@ -861,12 +865,12 @@ impl OpEmitter<'_> {
         match &ty {
             Type::U64 => todo!("exponentiation by squaring"),
             Type::Felt => {
-                self.emit(masm::Instruction::ExpImm(Felt::new(exp as u64).into()), span);
+                self.emit(masm::Instruction::ExpImm(Felt::new_unchecked(exp as u64).into()), span);
             }
             Type::U32 => {
                 self.emit_all(
                     [
-                        masm::Instruction::ExpImm(Felt::new(exp as u64).into()),
+                        masm::Instruction::ExpImm(Felt::new_unchecked(exp as u64).into()),
                         masm::Instruction::U32Assert,
                     ],
                     span,
@@ -879,7 +883,7 @@ impl OpEmitter<'_> {
             ty @ (Type::U16 | Type::U8) => {
                 self.emit_all(
                     [
-                        masm::Instruction::ExpImm(Felt::new(exp as u64).into()),
+                        masm::Instruction::ExpImm(Felt::new_unchecked(exp as u64).into()),
                         masm::Instruction::U32Assert,
                     ],
                     span,

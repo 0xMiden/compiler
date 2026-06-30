@@ -37,10 +37,7 @@ impl FromStrRadix for Felt {
 
     fn try_from_str_radix(source: &str, radix: u32) -> Result<Self, Self::Error> {
         let value = u64::try_from_str_radix(source, radix).map_err(FeltOutOfRangeError::Parse)?;
-        if value > Felt::ORDER {
-            return Err(FeltOutOfRangeError::OutOfRange(value));
-        }
-        Ok(Felt::new(value))
+        Felt::new(value).map_err(|err| FeltOutOfRangeError::OutOfRange(err.as_u64()))
     }
 }
 

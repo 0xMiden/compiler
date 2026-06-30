@@ -713,12 +713,16 @@ impl quote::ToTokens for WithResults<'_> {
 struct WithSuccessors<'a>(&'a OpDefinition);
 impl quote::ToTokens for WithSuccessors<'_> {
     fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
-        for group in self.0.successors.iter() {
+        for (group_index, group) in self.0.successors.iter().enumerate() {
+            let group_index = syn::Lit::Int(syn::LitInt::new(
+                &format!("{group_index}usize"),
+                proc_macro2::Span::call_site(),
+            ));
             match group {
                 SuccessorGroup::Unnamed(successors) => {
                     let successor_args = successors.iter().map(|s| format_ident!("{s}_args"));
                     tokens.extend(quote! {
-                        op_builder.with_successors([
+                        op_builder.with_successors_in_group(#group_index, [
                             #((
                                 #successors,
                                 #successor_args.into_iter().collect::<::alloc::vec::Vec<_>>(),
@@ -729,13 +733,13 @@ impl quote::ToTokens for WithSuccessors<'_> {
                 SuccessorGroup::Named(name) => {
                     let span = name.span();
                     tokens.extend(quote_spanned! { span =>
-                        op_builder.with_successors(#name);
+                        op_builder.with_successors_in_group(#group_index, #name);
                     });
                 }
                 SuccessorGroup::Keyed(name, _) => {
                     let span = name.span();
                     tokens.extend(quote_spanned! { span =>
-                        op_builder.with_keyed_successors(#name);
+                        op_builder.with_keyed_successors_in_group(#group_index, #name);
                     });
                 }
             }
@@ -1933,6 +1937,7 @@ impl quote::ToTokens for OpBuilderImpl {
                 {
                     #op_builder_new_doc
                     #[inline(always)]
+                    #[allow(unused)]
                     pub fn new(builder: &'a mut B, span: ::midenc_hir::diagnostics::SourceSpan) -> Self {
                         Self {
                             builder,
@@ -2233,6 +2238,7 @@ impl quote::ToTokens for OpVerifierImpl {
                         _derived: ::core::marker::PhantomData<(#(&'a dyn #derived_traits,)* #(&'a dyn #implemented_traits),*)>,
                     }
                     impl<'a, T> OpVerifierImpl<'a, T> {
+                        #[allow(unused)]
                         const fn new(op: &'a ::midenc_hir::Operation) -> Self {
                             Self {
                                 op,

@@ -9,15 +9,21 @@
 // extern crate alloc;
 // use alloc::vec::Vec;
 
-use miden::{Word, component};
+use miden::{Word, component, component_storage};
 
-#[component]
-struct AuthComponent;
+#[component_storage]
+struct AuthComponentStorage;
 
+/// API of the no-auth authentication component.
 #[component]
-impl AuthComponent {
+trait AuthComponent {
     #[auth_script]
-    pub fn auth_procedure(&mut self, _arg: Word) {
+    fn auth_procedure(&mut self, _arg: Word);
+}
+
+#[component]
+impl AuthComponent for AuthComponentStorage {
+    fn auth_procedure(&mut self, _arg: Word) {
         // translated from MASM at
         // https://github.com/0xMiden/miden-base/blob/e4912663276ab8eebb24b84d318417cb4ea0bba3/crates/miden-lib/asm/account_components/no_auth.masm?plain=1
         let init_comm = self.get_initial_commitment();

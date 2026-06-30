@@ -32,7 +32,7 @@ impl PoisonAttr {
             Type::I32 => Immediate::I32(0xdeadc0deu32 as i32),
             Type::U64 => Immediate::U64(0xdeadc0dedeadc0de),
             Type::I64 => Immediate::I64(0xdeadc0dedeadc0deu64 as i64),
-            Type::Felt => Immediate::Felt(Felt::new(0xdeadc0de)),
+            Type::Felt => Immediate::Felt(Felt::new_unchecked(0xdeadc0de)),
             Type::U128 => Immediate::U128(0xdeadc0dedeadc0dedeadc0dedeadc0de),
             Type::I128 => Immediate::I128(0xdeadc0dedeadc0dedeadc0dedeadc0deu128 as i128),
             // We emit a pointer that can never refer to a valid object in memory

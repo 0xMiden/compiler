@@ -1,0 +1,283 @@
+use super::*;
+
+#[allow(clippy::uninlined_format_args)]
+fn run_account_binding_test_with_struct(name: &str, account_struct: &str, method: &str) {
+    let component = account_component_source_with_storage(account_struct, "TestAccount", method);
+    let lib_rs = format!(
+        r"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::*;
+
+{component}
+"
+    );
+
+    let sdk_path = sdk_crate_path();
+    let namespace = account_component_namespace(name, "test-account");
+    let miden_project_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[lib]
+kind = "account-component"
+namespace = "{namespace}"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+"#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+
+"#,
+        name = name,
+        sdk_path = sdk_path.display(),
+    );
+
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", &lib_rs)
+        .build();
+
+    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    )
+    .build();
+
+    test.compile_package();
+}
+
+#[allow(clippy::uninlined_format_args)]
+fn run_account_binding_test(name: &str, method: &str) {
+    run_account_binding_test_with_struct(name, "struct TestAccountStorage;", method)
+}
+
+#[test]
+fn account_get_code_commitment_binding() {
+    run_account_binding_test(
+        "account_get_code_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        self.get_code_commitment()
+    }",
+    );
+}
+
+#[test]
+fn account_get_initial_storage_commitment_binding() {
+    run_account_binding_test(
+        "account_get_initial_storage_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        self.get_initial_storage_commitment()
+    }",
+    );
+}
+
+#[test]
+fn account_compute_storage_commitment_binding() {
+    run_account_binding_test(
+        "account_compute_storage_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        self.compute_storage_commitment()
+    }",
+    );
+}
+
+#[test]
+fn account_compute_commitment_binding() {
+    run_account_binding_test(
+        "account_compute_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        self.compute_commitment()
+    }",
+    );
+}
+
+#[test]
+fn account_compute_delta_commitment_binding() {
+    run_account_binding_test(
+        "account_compute_delta_commitment_binding",
+        "pub fn binding(&self) -> Word {
+        self.compute_delta_commitment()
+    }",
+    );
+}
+
+#[test]
+fn account_native_account_get_id_binding() {
+    run_account_binding_test(
+        "account_native_account_get_id_binding",
+        "pub fn binding(&self) -> AccountId {
+        native_account::get_id()
+    }",
+    );
+}
+
+#[test]
+fn account_get_initial_balance_binding() {
+    run_account_binding_test(
+        "account_get_initial_balance_binding",
+        "pub fn binding(&self) -> Felt {
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
+        self.get_initial_balance(asset_key)
+    }",
+    );
+}
+
+#[test]
+fn account_get_asset_binding() {
+    run_account_binding_test(
+        "account_get_asset_binding",
+        "pub fn binding(&self) -> Word {
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
+        self.get_asset(asset_key)
+    }",
+    );
+}
+
+#[test]
+fn account_get_initial_asset_binding() {
+    run_account_binding_test(
+        "account_get_initial_asset_binding",
+        "pub fn binding(&self) -> Word {
+        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
+        self.get_initial_asset(asset_key)
+    }",
+    );
+}
+
+#[test]
+fn account_has_non_fungible_asset_binding() {
+    run_account_binding_test(
+        "account_has_non_fungible_asset_binding",
+        "pub fn binding(&self) -> Felt {
+        let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
+         Word::from([Felt::new(0).unwrap(); 4]));
+        if self.has_non_fungible_asset(asset) {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
+#[test]
+fn account_get_initial_vault_root_binding() {
+    run_account_binding_test(
+        "account_get_initial_vault_root_binding",
+        "pub fn binding(&self) -> Word {
+        self.get_initial_vault_root()
+    }",
+    );
+}
+
+#[test]
+fn account_get_vault_root_binding() {
+    run_account_binding_test(
+        "account_get_vault_root_binding",
+        "pub fn binding(&self) -> Word {
+        self.get_vault_root()
+    }",
+    );
+}
+
+#[test]
+fn account_get_num_procedures_binding() {
+    run_account_binding_test(
+        "account_get_num_procedures_binding",
+        "pub fn binding(&self) -> Felt {
+        self.get_num_procedures()
+    }",
+    );
+}
+
+#[test]
+fn account_get_procedure_root_binding() {
+    run_account_binding_test(
+        "account_get_procedure_root_binding",
+        "pub fn binding(&self) -> Word {
+        self.get_procedure_root(0)
+    }",
+    );
+}
+
+#[test]
+fn account_has_procedure_binding() {
+    run_account_binding_test(
+        "account_has_procedure_binding",
+        "pub fn binding(&self) -> Felt {
+        let proc_root = Word::from([Felt::new(0).unwrap(); 4]);
+        if self.has_procedure(proc_root) {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
+#[test]
+fn account_was_procedure_called_binding() {
+    run_account_binding_test(
+        "account_was_procedure_called_binding",
+        "pub fn binding(&self) -> Felt {
+        let proc_root = Word::from([Felt::new(0).unwrap(); 4]);
+        if self.was_procedure_called(proc_root) {
+            Felt::new(1).unwrap()
+        } else {
+            Felt::new(0).unwrap()
+        }
+    }",
+    );
+}
+
+#[test]
+fn account_storage_get_initial_item_binding() {
+    run_account_binding_test_with_struct(
+        "account_storage_get_initial_item_binding",
+        r#"struct TestAccountStorage {
+    #[storage(description = "test value")]
+    value: StorageValue<Word>,
+}"#,
+        "pub fn binding(&self) -> Word {
+        storage::get_initial_item(Self::default().value.slot)
+    }",
+    );
+}
+
+#[test]
+fn account_storage_get_initial_map_item_binding() {
+    run_account_binding_test_with_struct(
+        "account_storage_get_initial_map_item_binding",
+        r#"struct TestAccountStorage {
+    #[storage(description = "test map")]
+    map: StorageMap<Word, Word>,
+}"#,
+        "pub fn binding(&self) -> Word {
+        let key = Word::from([Felt::new(0).unwrap(); 4]);
+        storage::get_initial_map_item(Self::default().map.slot, &key)
+    }",
+    );
+}

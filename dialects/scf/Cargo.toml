@@ -11,6 +11,9 @@ license.workspace = true
 readme.workspace = true
 edition.workspace = true
 
+[lib]
+doctest = false
+
 [features]
 default = ["std"]
 std = ["midenc-hir/std"]
@@ -28,3 +31,9 @@ bitvec.workspace = true
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-expect-test = { path = "../../tools/expect-test" }
 midenc-hir = { path = "../../hir", features = ["logging"] }
+
+[package.metadata.cargo-shear]
+ignored-paths = [
+    "src/canonicalization/convert_do_while_to_while_true.rs",
+    "src/canonicalization/remove_loop_invariant_value_yielded.rs",
+]

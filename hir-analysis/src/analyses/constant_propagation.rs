@@ -190,7 +190,7 @@ impl SparseForwardDataFlowAnalysis for SparseConstantPropagation {
 
         // Merge the fold results into the lattice for this operation.
         assert_eq!(fold_results.len(), op.num_results());
-        for (lattice, fold_result) in results.iter_mut().zip(fold_results.into_iter()) {
+        for (lattice, fold_result) in results.iter_mut().zip(fold_results) {
             // Merge in the result of the fold, either a constant or a value.
             match fold_result {
                 OpFoldResult::Attribute(value) => {

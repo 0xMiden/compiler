@@ -1,10 +1,15 @@
 use midenc_hir::{
-    CallConv, FunctionType, SymbolNameComponent, SymbolPath,
+    CallConv, FunctionType, SmallVec, SymbolNameComponent, SymbolPath,
     Type::*,
+    effects::{AdviceEffect, AdviceMapResource, AdviceStackResource, MemoryEffect},
     interner::{Symbol, symbols},
+    smallvec,
 };
 
-use crate::miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap};
+use crate::{
+    intrinsics::IntrinsicEffect,
+    miden_abi::{FunctionTypeMap, ModuleFunctionTypeMap},
+};
 
 pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
     SymbolNameComponent::Root,
@@ -71,4 +76,55 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), funcs);
     m
+}
+
+pub(crate) fn function_effects(function: Symbol) -> Option<SmallVec<[IntrinsicEffect; 2]>> {
+    let memory_write = || IntrinsicEffect::Memory {
+        effect: MemoryEffect::Write,
+        result: None,
+        argument: None,
+    };
+
+    match function.as_str() {
+        PIPE_WORDS_TO_MEMORY | PIPE_DOUBLE_WORDS_TO_MEMORY => Some(smallvec![
+            IntrinsicEffect::Advice {
+                effect: AdviceEffect::Read,
+                resource: Box::new(AdviceStackResource),
+                result: None,
+                argument: None,
+            },
+            memory_write(),
+        ]),
+        PIPE_PREIMAGE_TO_MEMORY => Some(smallvec![
+            IntrinsicEffect::Advice {
+                effect: AdviceEffect::Read,
+                resource: Box::new(AdviceMapResource),
+                result: None,
+                argument: None,
+            },
+            memory_write(),
+        ]),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipe_words_to_memory_declares_advice_effects() {
+        let effects = function_effects(Symbol::from(PIPE_WORDS_TO_MEMORY))
+            .expect("pipe_words_to_memory should have stdlib effects");
+
+        assert!(effects.iter().any(|effect| {
+            matches!(
+                effect,
+                IntrinsicEffect::Advice {
+                    effect: AdviceEffect::Read,
+                    ..
+                }
+            )
+        }));
+    }
 }

@@ -1,4 +1,6 @@
-use midenc_hir::{FunctionType, SymbolPath};
+use midenc_hir::SymbolPath;
+
+use crate::component::ComponentFunctionType;
 
 /// Represents module argument that is used to instantiate a module.
 #[derive(Debug, Clone)]
@@ -6,7 +8,7 @@ pub enum ModuleArgument {
     /// Represents function that is exported from another module.
     Function(SymbolPath),
     /// Represents component import (component level type signature) that is lowered to a module import.
-    ComponentImport(FunctionType),
+    ComponentImport(ComponentFunctionType),
     /// Represents table exported from another module.
     Table,
 }

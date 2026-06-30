@@ -305,7 +305,7 @@ where
                         call.results().all(),
                         solver,
                     );
-                    for (op, result) in operands.iter_mut().zip(call_result_lattices.into_iter()) {
+                    for (op, result) in operands.iter_mut().zip(call_result_lattices) {
                         op.meet(result.lattice());
                     }
                 }

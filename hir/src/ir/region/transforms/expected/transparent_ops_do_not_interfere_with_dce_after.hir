@@ -1,0 +1,5 @@
+builtin.function public extern("C") @transparent_ops_no_dce_interference(%0: u32) -> u32 {
+    %2 = test.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+    "test.debug_value"(%2) : u32 -> ();
+    builtin.ret %2 : (u32);
+};

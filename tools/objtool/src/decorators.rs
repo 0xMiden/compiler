@@ -9,8 +9,10 @@ use miden_core::{
 use miden_mast_package::{Package, TargetType};
 
 #[derive(Debug, Clone, Args)]
+#[command(arg_required_else_help = true)]
 pub struct DecoratorsCommand {
     /// Path to the input .masp file
+    #[arg(required = true)]
     pub path: PathBuf,
 }
 
@@ -39,7 +41,7 @@ impl std::fmt::Display for ArtifactKind {
     }
 }
 
-pub fn run(command: DecoratorsCommand) -> Result<()> {
+pub fn run(command: &DecoratorsCommand) -> Result<()> {
     let input_bytes = fs::read(&command.path)
         .with_context(|| format!("failed to read input file '{}'", command.path.display()))?;
     let masp_size = input_bytes.len();

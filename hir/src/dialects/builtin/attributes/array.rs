@@ -26,6 +26,33 @@ struct U32Array;
 #[allow(unused)]
 struct TypeArray;
 
+#[derive(DialectAttribute)]
+#[attribute(
+    dialect = BuiltinDialect,
+    remote = "Array<super::MemoryEffectDescriptor>",
+    implements(AttrPrinter),
+)]
+#[allow(unused)]
+struct MemoryEffectArray;
+
+#[derive(DialectAttribute)]
+#[attribute(
+    dialect = BuiltinDialect,
+    remote = "Array<super::AdviceEffectDescriptor>",
+    implements(AttrPrinter),
+)]
+#[allow(unused)]
+struct AdviceEffectArray;
+
+#[derive(DialectAttribute)]
+#[attribute(
+    dialect = BuiltinDialect,
+    remote = "Array<super::LocalVariable>",
+    implements(AttrPrinter),
+)]
+#[allow(unused)]
+struct LocalVariableArray;
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Array<T>(SmallVec<[T; 2]>);
 
@@ -234,6 +261,77 @@ impl crate::print::AttrPrinter for TypeArrayAttr {
                 *printer += const_text(", ");
             }
             printer.print_type(value);
+        }
+    }
+}
+
+impl crate::print::AttrPrinter for LocalVariableArrayAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        for (i, value) in self.0.iter().enumerate() {
+            if i > 0 {
+                *printer += const_text(", ");
+            }
+            *printer += text(alloc::format!("{value}"));
+        }
+    }
+}
+
+impl crate::print::AttrPrinter for MemoryEffectArrayAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        for (i, value) in self.0.iter().enumerate() {
+            if i > 0 {
+                *printer += const_text(", ");
+            }
+            *printer += const_text("{");
+            printer.print_bare_identifier("effect".into());
+            *printer += const_text(" = ");
+            printer.print_string(value.effect);
+            if let Some(argument) = value.argument {
+                *printer += const_text(", ");
+                printer.print_bare_identifier("effect".into());
+                *printer += const_text(" = ");
+                printer.print_decimal_integer(argument);
+            }
+            if let Some(result) = value.result {
+                *printer += const_text(", ");
+                printer.print_bare_identifier("effect".into());
+                *printer += const_text(" = ");
+                printer.print_decimal_integer(result);
+            }
+            *printer += const_text("}");
+        }
+    }
+}
+
+impl crate::print::AttrPrinter for AdviceEffectArrayAttr {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        for (i, value) in self.0.iter().enumerate() {
+            if i > 0 {
+                *printer += const_text(", ");
+            }
+            *printer += const_text("{");
+            printer.print_bare_identifier("effect".into());
+            *printer += const_text(" = ");
+            printer.print_string(value.effect);
+            if let Some(argument) = value.argument {
+                *printer += const_text(", ");
+                printer.print_bare_identifier("effect".into());
+                *printer += const_text(" = ");
+                printer.print_decimal_integer(argument);
+            }
+            if let Some(result) = value.result {
+                *printer += const_text(", ");
+                printer.print_bare_identifier("effect".into());
+                *printer += const_text(" = ");
+                printer.print_decimal_integer(result);
+            }
+            *printer += const_text("}");
         }
     }
 }

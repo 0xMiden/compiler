@@ -3,8 +3,8 @@ use std::rc::Rc;
 use cranelift_entity::PrimaryMap;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
-    self as hir2, BuilderExt, CallConv, Context, FunctionType, FxHashMap, FxHashSet, Ident,
-    SymbolNameComponent, SymbolPath,
+    self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, SymbolNameComponent,
+    SymbolPath,
     diagnostics::Report,
     dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
     formatter::DisplayValues,
@@ -15,11 +15,11 @@ use wasmparser::{component_types::ComponentEntityType, types::TypesRef};
 
 use super::{
     CanonLift, CanonLower, ClosedOverComponent, ClosedOverModule, ComponentFuncIndex,
-    ComponentIndex, ComponentInstanceIndex, ComponentInstantiation, ComponentTypesBuilder,
-    ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex, ParsedComponent,
-    StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex, TypeModuleIndex,
+    ComponentFunctionType, ComponentIndex, ComponentInstanceIndex, ComponentInstantiation,
+    ComponentTypesBuilder, ComponentUpvarIndex, ModuleIndex, ModuleInstanceIndex, ModuleUpvarIndex,
+    ParsedComponent, StaticModuleIndex, TypeComponentInstanceIndex, TypeDef, TypeFuncIndex,
+    TypeModuleIndex,
     flat::CanonicalAbiMode,
-    interface_type_to_ir,
     shim_bypass::{self, ShimBypassInfo},
 };
 use crate::{
@@ -159,6 +159,7 @@ impl<'a> ComponentTranslator<'a> {
         types: &mut ComponentTypesBuilder,
     ) -> WasmResult<FrontendOutput> {
         self.detect_shim_modules(root_component);
+        self.register_component_export_type_names(root_component, types)?;
 
         let mut frame = ComponentFrame::new(root_component.types_ref(), FxHashMap::default());
 
@@ -417,25 +418,24 @@ impl<'a> ComponentTranslator<'a> {
                     "Component aliases are not yet supported"
                 )
             }
-            LocalInitializer::Export(_name, component_item) => {
-                match component_item {
-                    ComponentItem::Func(i) => {
-                        frame.component_funcs.push(frame.component_funcs[*i].clone());
-                    }
-                    ComponentItem::ComponentInstance(_) => {
-                        let unwrap_instance = component_item.unwrap_instance();
-                        self.component_export(frame, types, unwrap_instance)?;
-                    }
-                    ComponentItem::Type(_) => {
-                        // do nothing
-                    }
-                    _ => unsupported_diag!(
-                        self.context.diagnostics(),
-                        "Exporting of {:?} is not yet supported",
-                        component_item
-                    ),
+            LocalInitializer::Export(name, component_item) => match component_item {
+                ComponentItem::Func(i) => {
+                    frame.component_funcs.push(frame.component_funcs[*i].clone());
                 }
-            }
+                ComponentItem::ComponentInstance(_) => {
+                    let unwrap_instance = component_item.unwrap_instance();
+                    self.component_export(frame, types, unwrap_instance)?;
+                }
+                ComponentItem::Type(ty) => {
+                    let ty = types.convert_type(frame.types, *ty).map_err(Report::msg)?;
+                    types.register_type_name(ty, (*name).to_owned());
+                }
+                _ => unsupported_diag!(
+                    self.context.diagnostics(),
+                    "Exporting of {:?} is not yet supported",
+                    component_item
+                ),
+            },
         }
         Ok(())
     }
@@ -449,6 +449,7 @@ impl<'a> ComponentTranslator<'a> {
         let instance = &frame.component_instances[component_instance_idx].unwrap_instantiated();
         let static_component_idx = frame.components[instance.component].index;
         let parsed_component = &self.nested_components[static_component_idx];
+        self.register_component_export_type_names(parsed_component, types)?;
         for (name, item) in parsed_component.exports.iter() {
             if let ComponentItem::Func(f) = item {
                 self.define_component_export_lift_func(
@@ -466,6 +467,21 @@ impl<'a> ComponentTranslator<'a> {
         Ok(())
     }
 
+    fn register_component_export_type_names(
+        &self,
+        parsed_component: &ParsedComponent<'a>,
+        types: &mut ComponentTypesBuilder,
+    ) -> WasmResult<()> {
+        let component_types = parsed_component.types_ref();
+        for (name, item) in parsed_component.exports.iter() {
+            if let ComponentItem::Type(ty) = item {
+                let ty = types.convert_type(component_types, *ty).map_err(Report::msg)?;
+                types.register_type_name(ty, (*name).to_owned());
+            }
+        }
+        Ok(())
+    }
+
     fn define_component_export_lift_func(
         &mut self,
         frame: &ComponentFrame<'a>,
@@ -479,6 +495,7 @@ impl<'a> ComponentTranslator<'a> {
         let type_func_idx = types.convert_component_func_type(frame.types, canon_lift.ty).unwrap();
 
         let component_types = types.resources_mut_and_types().1;
+        let type_func = component_types[type_func_idx].clone();
         let func_ty =
             convert_lifted_func_ty(CanonicalAbiMode::Export, &type_func_idx, component_types);
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
@@ -491,6 +508,7 @@ impl<'a> ComponentTranslator<'a> {
             &mut self.result,
             name,
             func_ty,
+            &type_func.param_names,
             core_export_func_path,
             protocol_export_kind,
             self.context.diagnostics(),
@@ -633,8 +651,9 @@ impl<'a> ComponentTranslator<'a> {
                                     &self.shim_bypass_info,
                                 )?;
                                 log::trace!(target: "component-translator",
-                                    "canon_lower_func returned signature '{signature}' for function '{func_name}' \
+                                    "canon_lower_func returned signature '{}' for function '{func_name}' \
                                      at path '{path}'"
+                                    , signature.ir
                                 );
                                 import_canon_lower_args
                                     .insert(path, ModuleArgument::ComponentImport(signature));
@@ -688,6 +707,7 @@ impl<'a> ComponentTranslator<'a> {
             TypeDef::ComponentInstance(type_component_instance_idx) => type_component_instance_idx,
             _ => panic!("expected component instance"),
         };
+        types.register_component_instance_export_type_names(ty, Some(name.0));
         frame
             .component_instances
             .push(ComponentInstanceDef::Import(ComponentInstanceImport {
@@ -703,23 +723,8 @@ fn convert_lifted_func_ty(
     _mode: CanonicalAbiMode,
     ty: &TypeFuncIndex,
     component_types: &super::ComponentTypes,
-) -> FunctionType {
-    let type_func = component_types[*ty].clone();
-    let params_types = component_types[type_func.params].clone().types;
-    let results_types = component_types[type_func.results].clone().types;
-    let params = params_types
-        .iter()
-        .map(|ty| interface_type_to_ir(ty, component_types))
-        .collect();
-    let results = results_types
-        .iter()
-        .map(|ty| interface_type_to_ir(ty, component_types))
-        .collect();
-    FunctionType {
-        params,
-        results,
-        abi: CallConv::ComponentModel,
-    }
+) -> ComponentFunctionType {
+    ComponentFunctionType::from_component_type(&component_types[*ty], component_types)
 }
 
 fn canon_lower_func(
@@ -729,7 +734,7 @@ fn canon_lower_func(
     func_name: &str,
     entity: &EntityIndex,
     shim_bypass_info: &ShimBypassInfo,
-) -> WasmResult<(FunctionType, SymbolPath)> {
+) -> WasmResult<(ComponentFunctionType, SymbolPath)> {
     let func_id = entity.unwrap_func();
     log::debug!(target: "component-translator", "canon_lower_func: function '{}', func_id: {}", func_name, func_id.as_u32());
 
@@ -774,7 +779,7 @@ fn canon_lower_from_alias_export(
     module_instance_idx: &ModuleInstanceIndex,
     export_name: &str,
     shim_bypass_info: &ShimBypassInfo,
-) -> WasmResult<(FunctionType, SymbolPath)> {
+) -> WasmResult<(ComponentFunctionType, SymbolPath)> {
     log::debug!(target: "component-translator",
         "Function {} is an alias export from module instance {} export '{}'",
         func_name,
@@ -833,7 +838,7 @@ fn canon_lower_from_alias_export(
             let mut path = module_path.clone();
             path.path.push(SymbolNameComponent::Leaf(Symbol::intern(func_name)));
 
-            log::debug!(target: "component-translator", "Created signature for '{func_name}' from type information: {func_ty}");
+            log::debug!(target: "component-translator", "Created signature for '{func_name}' from type information: {}", func_ty.ir);
 
             Ok((func_ty, path))
         } else {

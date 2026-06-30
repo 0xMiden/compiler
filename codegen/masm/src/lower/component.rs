@@ -1,16 +1,22 @@
-use alloc::{collections::BTreeSet, sync::Arc};
+use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
+use miden_core::operations::DebugVarLocation;
 use midenc_hir::{
-    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, ValueRef,
-    diagnostics::IntoDiagnostic, dialects::builtin, pass::AnalysisManager,
+    FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
+    diagnostics::IntoDiagnostic,
+    dialects::{
+        builtin,
+        debuginfo::attributes::{
+            SubprogramAttr, decode_frame_base_local_index, encode_frame_base_local_offset,
+        },
+    },
+    interner,
+    pass::AnalysisManager,
 };
 use midenc_hir_analysis::analyses::LivenessAnalysis;
-use midenc_session::{
-    TargetEnv,
-    diagnostics::{Report, Spanned, WrapErr},
-};
+use midenc_session::diagnostics::{Report, Spanned, WrapErr};
 use smallvec::SmallVec;
 
 use crate::{
@@ -27,6 +33,106 @@ pub trait ToMasmComponent {
     -> Result<MasmComponent, Report>;
 }
 
+/// Derivation of a MASM component from an HIR world
+///
+/// This currently works by treating all definition-carrying modules in the world as part of a
+/// single logical component.
+impl ToMasmComponent for builtin::World {
+    fn to_masm_component(
+        &self,
+        analysis_manager: AnalysisManager,
+    ) -> Result<MasmComponent, Report> {
+        // Get the current compiler context
+        let context = self.as_operation().context_rc();
+
+        // Run the linker for this component in order to compute its data layout
+        let link_info = Linker::default().link(None, self.as_operation()).map_err(Report::msg)?;
+
+        // Get the entrypoint, if specified
+        let entrypoint = match context.session().options.entrypoint.as_deref() {
+            Some(entry) => {
+                let entry_id = entry.parse::<FunctionIdent>().map_err(|_| {
+                    Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
+                })?;
+                let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
+                    Span::new(entry_id.function.span, entry_id.function.as_str().into()),
+                ));
+
+                let path = LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?;
+                let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
+                Some(masm::InvocationTarget::Path(Span::new(
+                    entry_id.function.span,
+                    qualified.into_inner(),
+                )))
+            }
+            None => None,
+        };
+
+        // If we have global variables or data segments, we will require a component initializer
+        // function, as well as a module to hold component-level functions such as init
+        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        let init = if requires_init {
+            let name = masm::ProcedureName::new("init").unwrap();
+            let qualified = masm::QualifiedProcedureName::new("::init", name);
+            Some(masm::InvocationTarget::Path(Span::new(
+                SourceSpan::default(),
+                qualified.into_inner(),
+            )))
+        } else {
+            None
+        };
+
+        // Define the initial component modules set
+        //
+        // The top-level component module is always defined, but may be empty
+        let root =
+            Arc::<miden_assembly_syntax::Path>::from(miden_assembly_syntax::Path::new("::init"));
+        let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
+        let modules = vec![init_module];
+
+        let rodata = data_segments_to_rodata(&link_info)?;
+
+        let kernel = if context.session().options.target_requires_protocol() {
+            Some(miden_protocol::transaction::TransactionKernel::kernel())
+        } else {
+            None
+        };
+
+        // Compute the first page boundary after the end of the globals table (or reserved memory
+        // if no globals) to use as the start of the dynamic heap when the program is executed
+        let heap_base = core::cmp::max(
+            link_info.reserved_memory_bytes(),
+            link_info.globals_layout().next_page_boundary() as usize,
+        );
+        let heap_base = u32::try_from(heap_base)
+            .expect("unable to allocate dynamic heap: global table too large");
+        let stack_pointer = link_info.globals_layout().stack_pointer_offset();
+        let mut masm_component = MasmComponent {
+            id: None,
+            root,
+            init,
+            entrypoint,
+            kernel,
+            rodata,
+            heap_base,
+            stack_pointer,
+            modules,
+        };
+        let builder = MasmComponentBuilder {
+            analysis_manager,
+            component: &mut masm_component,
+            link_info: &link_info,
+            source_manager: context.session().source_manager.clone(),
+            init_body: Default::default(),
+            invoked_from_init: Default::default(),
+        };
+
+        builder.build(self.as_operation())?;
+
+        Ok(masm_component)
+    }
+}
+
 /// 1:1 conversion from HIR component to MASM component
 impl ToMasmComponent for builtin::Component {
     fn to_masm_component(
@@ -37,10 +143,13 @@ impl ToMasmComponent for builtin::Component {
         let context = self.as_operation().context_rc();
 
         // Run the linker for this component in order to compute its data layout
-        let link_info = Linker::default().link(self).map_err(Report::msg)?;
+        let id = self.id();
+        let link_info = Linker::default()
+            .link(Some(id.clone()), self.as_operation())
+            .map_err(Report::msg)?;
 
         // Get the library path of the component
-        let component_path = link_info.component().to_library_path();
+        let component_path = id.to_library_path();
 
         // Get the entrypoint, if specified
         let entrypoint = match context.session().options.entrypoint.as_deref() {
@@ -60,7 +169,7 @@ impl ToMasmComponent for builtin::Component {
                 // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
                 // cannot currently do so because we do not have sufficient Cargo metadata yet in
                 // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-                let is_wrapper = link_info.component().is_synthetic_wrapper();
+                let is_wrapper = id.is_synthetic_wrapper();
                 let path = if is_wrapper {
                     let mut path = component_path.clone();
                     path.push(entry_id.module.as_str());
@@ -84,7 +193,8 @@ impl ToMasmComponent for builtin::Component {
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
-            let qualified = masm::QualifiedProcedureName::new(component_path.as_path(), name);
+            let qualified =
+                masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
             Some(masm::InvocationTarget::Path(Span::new(
                 SourceSpan::default(),
                 qualified.into_inner(),
@@ -93,18 +203,16 @@ impl ToMasmComponent for builtin::Component {
             None
         };
 
-        // Initialize the MASM component with basic information we have already
-        let id = link_info.component().clone();
-
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let modules =
-            vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, id.to_library_path()))];
+        let root: Arc<miden_assembly_syntax::Path> =
+            id.to_library_path().to_absolute().into_owned().into();
+        let modules = vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, &root))];
 
         let rodata = data_segments_to_rodata(&link_info)?;
 
-        let kernel = if matches!(context.session().options.target, TargetEnv::Rollup { .. }) {
+        let kernel = if context.session().options.target_requires_protocol() {
             Some(miden_protocol::transaction::TransactionKernel::kernel())
         } else {
             None
@@ -120,7 +228,8 @@ impl ToMasmComponent for builtin::Component {
             .expect("unable to allocate dynamic heap: global table too large");
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
-            id,
+            id: Some(id),
+            root,
             init,
             entrypoint,
             kernel,
@@ -138,7 +247,7 @@ impl ToMasmComponent for builtin::Component {
             invoked_from_init: Default::default(),
         };
 
-        builder.build(self)?;
+        builder.build(self.as_operation())?;
 
         Ok(masm_component)
     }
@@ -164,7 +273,11 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
             let felts = crate::Rodata::bytes_to_elements(data.as_slice());
             let digest = miden_core::crypto::hash::Poseidon2::hash_elements(&felts);
             alloc::vec![crate::Rodata {
-                component: link_info.component().clone(),
+                component: link_info.component().cloned().unwrap_or(builtin::ComponentId {
+                    namespace: interner::Symbol::intern("root_ns"),
+                    name: interner::Symbol::intern("root"),
+                    version: midenc_hir::version::Version::new(1, 0, 0)
+                }),
                 digest,
                 start: super::NativePtr::from_ptr(merged.offset),
                 data,
@@ -184,7 +297,7 @@ struct MasmComponentBuilder<'a> {
 
 impl MasmComponentBuilder<'_> {
     /// Convert the component body to Miden Assembly
-    pub fn build(mut self, component: &builtin::Component) -> Result<(), Report> {
+    pub fn build(mut self, component: &midenc_hir::Operation) -> Result<(), Report> {
         use masm::{Instruction as Inst, InvocationTarget, Op};
 
         // If a component-level init is required, emit code to initialize the heap before any other
@@ -217,7 +330,7 @@ impl MasmComponentBuilder<'_> {
         }
 
         // Translate component body
-        let region = component.body();
+        let region = component.region(0);
         let block = region.entry();
         for op in block.body() {
             if let Some(module) = op.downcast_ref::<builtin::Module>() {
@@ -243,11 +356,16 @@ impl MasmComponentBuilder<'_> {
             let init_body = core::mem::take(&mut self.init_body);
             let init = masm::Procedure::new(
                 Default::default(),
-                masm::Visibility::Private,
+                masm::Visibility::Public,
                 init_name,
                 0,
                 masm::Block::new(component.span(), init_body),
-            );
+            )
+            .with_signature(masm::FunctionType::new(
+                midenc_hir::CallConv::Fast,
+                vec![],
+                vec![],
+            ));
 
             module
                 .define_procedure(init, self.source_manager.clone())
@@ -264,9 +382,13 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_interface(&mut self, interface: &builtin::Interface) -> Result<(), Report> {
-        let component_path = self.component.id.to_library_path();
-        let mut interface_path = component_path;
-        interface_path.push(interface.name().as_str());
+        let interface_path = if let Some(id) = self.component.id.as_ref() {
+            let mut path = id.to_library_path();
+            path.push(interface.name().as_str());
+            path
+        } else {
+            interface.path().to_library_path()
+        };
         let mut masm_module =
             Box::new(masm::Module::new(masm::ModuleKind::Library, interface_path));
         let builder = MasmModuleBuilder {
@@ -287,9 +409,13 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_module(&mut self, module: &builtin::Module) -> Result<(), Report> {
-        let component_path = self.component.id.to_library_path();
-        let mut module_path = component_path;
-        module_path.push(module.name().as_str());
+        let module_path = if let Some(id) = self.component.id.as_ref() {
+            let mut path = id.to_library_path();
+            path.push(module.name().as_str());
+            path
+        } else {
+            module.path().to_library_path()
+        };
         let mut masm_module = Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
         let builder = MasmModuleBuilder {
             module: &mut masm_module,
@@ -547,14 +673,8 @@ impl MasmFunctionBuilder {
                 .into_report()
         })?;
 
-        let sig = function.signature();
-        let args = sig.params.iter().map(|param| masm::TypeExpr::from(param.ty.clone())).collect();
-        let results = sig
-            .results
-            .iter()
-            .map(|result| masm::TypeExpr::from(result.ty.clone()))
-            .collect();
-        let signature = masm::FunctionType::new(sig.cc, args, results);
+        let signature =
+            semantic_debug_signature(function).unwrap_or_else(|| lowered_signature(function));
 
         Ok(Self {
             span: function.span(),
@@ -606,17 +726,22 @@ impl MasmFunctionBuilder {
         if function.signature().cc.is_wasm_canonical_abi()
             && (link_info.has_globals() || link_info.has_data_segments())
         {
-            let component_path = link_info.component().to_library_path();
-            let init = {
-                let name = masm::ProcedureName::new("init").unwrap();
-                let qualified = masm::QualifiedProcedureName::new(component_path.as_path(), name);
-                InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
-            };
-            let span = SourceSpan::default();
-            // Add init call to the emitter's target before emitting the function body
-            emitter
-                .target
-                .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(init))));
+            // Resolve `init` symbolically within the containing module instead of through a
+            // fully-qualified component path, which depends on the (user-editable)
+            // `[lib].namespace` matching the component's library identity.
+            //
+            // INVARIANT: this relies on the canonical-ABI export wrappers being emitted into the
+            // root component module — the same module where `MasmComponentBuilder` defines
+            // `init` (`self.component.modules[0]`); the inner lifted functions in interface and
+            // core child modules carry no init prologue. If export wrappers ever move into child
+            // modules, this symbol stops resolving and the init target must be threaded in as a
+            // qualified path instead. A user-exported method named `init` collides with the
+            // generated procedure at definition time ("symbol conflict: found duplicate
+            // definitions"), so it cannot silently shadow this target.
+            let init = InvocationTarget::Symbol("init".parse().unwrap());
+            // Add init call to the emitter's target before emitting the function body; `emit`
+            // also registers the invocation so the assembler can resolve the symbolic target.
+            emitter.emitter().emit(masm::Instruction::Exec(init), SourceSpan::default());
         }
 
         let mut body = emitter.emit(&entry.borrow());
@@ -636,6 +761,7 @@ impl MasmFunctionBuilder {
                 InvocationTarget::Path(Span::new(SourceSpan::default(), qualified.into_inner()))
             };
             let span = SourceSpan::default();
+            invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, truncate_stack.clone()));
             body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(truncate_stack))));
         }
         let Self {
@@ -645,6 +771,32 @@ impl MasmFunctionBuilder {
             visibility,
             num_locals,
         } = self;
+
+        // Align num_locals to WORD_SIZE, matching the assembler's FMP frame sizing.
+        // num_locals already counts all HIR locals (including those allocated for params).
+        // The assembler rounds up to next_multiple_of(WORD_SIZE) when advancing FMP
+        // (see fmp.rs fmp_start_frame_sequence and mem_ops.rs locaddr), so we must use
+        // the same alignment for debug var offset computation.
+        let aligned_num_locals = num_locals.next_multiple_of(miden_core::WORD_SIZE as u16);
+
+        // Resolve FrameBase global_index → Miden memory address.
+        // Use the stack pointer offset from the linker's global layout.
+        let stack_pointer_addr = link_info.globals_layout().stack_pointer_offset();
+
+        // Patch DebugVar Local locations to compute FMP offset.
+        // During lowering, Local(idx) stores the raw WASM local index.
+        // Now convert to FMP offset: idx - aligned_num_locals
+        // This matches locaddr.N which computes -(aligned_num_locals - N).
+        patch_debug_var_locals_in_block(&mut body, aligned_num_locals, stack_pointer_addr);
+
+        // If a function body after lowering produces a MASM procedure with an empty body aside
+        // from debug decorators, then we must emit a `nop` at the end of the block which will
+        // act as the anchor for those decorators. Such a procedure is basically useless, as it is
+        // just passing through arguments as results - but the assembler currently rejects empty
+        // procedures (not counting decorators), so we must handle this edge case.
+        if !block_has_real_instructions(&body) {
+            body.push(masm::Op::Inst(Span::unknown(masm::Instruction::Nop)));
+        }
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
@@ -658,5 +810,249 @@ impl MasmFunctionBuilder {
         procedure.extend_invoked(invoked);
 
         Ok(procedure)
+    }
+}
+
+fn lowered_signature(function: &builtin::Function) -> masm::FunctionType {
+    let sig = function.signature();
+    let args = sig.params.iter().map(|param| masm::TypeExpr::from(param.ty.clone())).collect();
+    let results = sig
+        .results
+        .iter()
+        .map(|result| masm::TypeExpr::from(result.ty.clone()))
+        .collect();
+    masm::FunctionType::new(sig.cc, args, results)
+}
+
+fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::FunctionType> {
+    let subprogram = function
+        .as_operation()
+        .get_attribute("di.subprogram")?
+        .try_downcast_attr::<SubprogramAttr>()
+        .ok()?;
+    let subprogram = subprogram.borrow();
+    let Type::Function(ty) = subprogram.ty.as_ref()? else {
+        return None;
+    };
+
+    let args = ty.params().iter().map(component_abi_type_expr_from_hir).collect();
+    let results = ty.results().iter().map(component_abi_type_expr_from_hir).collect();
+    Some(masm::FunctionType::new(ty.calling_convention(), args, results))
+}
+
+/// Convert HIR types from a Component Model/WIT signature into MASM syntax types.
+///
+/// This intentionally differs from `From<Type> for TypeExpr`, which describes the lowered MASM
+/// representation and expands wide integer primitives like `u64`/`u128` into 32-bit limb arrays.
+/// Component export metadata should preserve the Component ABI shape instead, including nominal
+/// struct and field names used by debuggers and typed clients.
+///
+/// TODO(pauls): Remove once miden-vm#XXXX is merged and ships in the next stable release,
+/// expected to be v0.24.
+fn component_abi_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
+    match ty {
+        Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
+            component_abi_type_expr_from_hir(array.element_type()),
+            array.len(),
+        )),
+        Type::Struct(struct_ty) => {
+            let name = struct_ty.name().and_then(|name| masm::Ident::new(name.as_ref()).ok());
+            let fields = struct_ty.fields().iter().enumerate().map(|(index, field)| {
+                let name = field
+                    .name
+                    .as_deref()
+                    .map(masm::Ident::new)
+                    .and_then(Result::ok)
+                    .unwrap_or_else(|| masm::Ident::new(format!("field{index}")).unwrap());
+                masm::StructField {
+                    span: SourceSpan::UNKNOWN,
+                    name,
+                    ty: component_abi_type_expr_from_hir(&field.ty),
+                }
+            });
+            masm::TypeExpr::Struct(
+                masm::StructType::new(name, fields)
+                    .with_repr(Span::unknown(struct_ty.repr()))
+                    .with_span(SourceSpan::UNKNOWN),
+            )
+        }
+        Type::Ptr(ptr) => masm::TypeExpr::Ptr(
+            masm::PointerType::new(component_abi_type_expr_from_hir(ptr.pointee()))
+                .with_address_space(ptr.addrspace()),
+        ),
+        Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
+            masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
+        )),
+        Type::List(element_ty) => masm::TypeExpr::Ptr(
+            masm::PointerType::new(component_abi_type_expr_from_hir(element_ty))
+                .with_address_space(masm::types::AddressSpace::Byte),
+        ),
+        Type::Unknown | Type::Never | Type::F64 => panic!("unrepresentable type value: {ty}"),
+        ty => masm::TypeExpr::Primitive(Span::unknown(ty.clone())),
+    }
+}
+
+/// Returns true if the block contains at least one real (non-decorator) instruction.
+///
+/// DebugVar instructions are decorator-only and don't produce MAST nodes. If a procedure
+/// body contains only DebugVar ops, the assembler will reject it.
+fn block_has_real_instructions(block: &masm::Block) -> bool {
+    block.iter().any(|op| match op {
+        masm::Op::Inst(inst) => !matches!(
+            inst.inner(),
+            masm::Instruction::Debug(_)
+                | masm::Instruction::DebugVar(_)
+                | masm::Instruction::Trace(_)
+        ),
+        masm::Op::If {
+            then_blk, else_blk, ..
+        } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
+        masm::Op::While { body, .. } => block_has_real_instructions(body),
+        masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
+    })
+}
+
+/// Recursively patch DebugVar locations in a block.
+///
+/// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)` where
+/// `offset = idx - aligned_num_locals` (the FMP-relative offset, typically negative). This matches
+/// the assembler's `locaddr.N` formula, i.e. `FMP - aligned_num_locals + N`.
+///
+/// Also resolves `FrameBase { global_index, byte_offset }` by replacing the WASM global index with
+/// the resolved Miden memory address of the stack pointer.
+fn patch_debug_var_locals_in_block(
+    block: &mut masm::Block,
+    aligned_num_locals: u16,
+    stack_pointer_addr: Option<u32>,
+) {
+    for op in block.iter_mut() {
+        match op {
+            masm::Op::Inst(span_inst) => {
+                // Use DerefMut to get mutable access to the inner Instruction
+                if let masm::Instruction::DebugVar(info) = &mut **span_inst {
+                    if let DebugVarLocation::Local(idx) = info.value_location() {
+                        // Convert raw WASM local index to FMP offset
+                        let fmp_offset = *idx - (aligned_num_locals as i16);
+                        info.set_value_location(DebugVarLocation::Local(fmp_offset));
+                    } else if let DebugVarLocation::FrameBase {
+                        global_index,
+                        byte_offset,
+                    } = info.value_location()
+                    {
+                        let byte_offset = *byte_offset;
+                        if let Some(local_index) = decode_frame_base_local_index(*global_index) {
+                            if let Ok(local_index) = i16::try_from(local_index) {
+                                let local_offset = local_index - (aligned_num_locals as i16);
+                                info.set_value_location(DebugVarLocation::FrameBase {
+                                    global_index: encode_frame_base_local_offset(local_offset),
+                                    byte_offset,
+                                });
+                            }
+                        } else {
+                            // Resolve FrameBase: replace WASM global index with
+                            // the Miden memory address of the stack pointer global.
+                            if let Some(resolved_addr) = stack_pointer_addr {
+                                info.set_value_location(DebugVarLocation::FrameBase {
+                                    global_index: resolved_addr,
+                                    byte_offset,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            masm::Op::If {
+                then_blk, else_blk, ..
+            } => {
+                patch_debug_var_locals_in_block(then_blk, aligned_num_locals, stack_pointer_addr);
+                patch_debug_var_locals_in_block(else_blk, aligned_num_locals, stack_pointer_addr);
+            }
+            masm::Op::While {
+                body: while_body, ..
+            } => {
+                patch_debug_var_locals_in_block(while_body, aligned_num_locals, stack_pointer_addr);
+            }
+            masm::Op::Repeat {
+                body: repeat_body, ..
+            } => {
+                patch_debug_var_locals_in_block(
+                    repeat_body,
+                    aligned_num_locals,
+                    stack_pointer_addr,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::sync::Arc;
+
+    use midenc_hir::{PointerType, StructType, TypeRepr};
+
+    use super::*;
+
+    #[test]
+    fn type_expr_from_hir_pointer_conversion_preserves_address_space() {
+        for addrspace in [masm::types::AddressSpace::Byte, masm::types::AddressSpace::Element] {
+            let ty = Type::from(PointerType::new_with_address_space(Type::U32, addrspace));
+
+            let masm::TypeExpr::Ptr(ptr) = component_abi_type_expr_from_hir(&ty) else {
+                panic!("expected pointer type expression");
+            };
+            assert_eq!(ptr.address_space(), addrspace);
+
+            let masm::TypeExpr::Ptr(ptr) = masm::TypeExpr::from(ty) else {
+                panic!("expected pointer type expression");
+            };
+            assert_eq!(ptr.address_space(), addrspace);
+        }
+    }
+
+    #[test]
+    fn component_abi_type_conversion_preserves_wide_primitives() {
+        let masm::TypeExpr::Primitive(ty) = component_abi_type_expr_from_hir(&Type::U64) else {
+            panic!("expected primitive component ABI type");
+        };
+        assert_eq!(ty.inner(), &Type::U64);
+
+        let masm::TypeExpr::Array(ty) = masm::TypeExpr::from(Type::U64) else {
+            panic!("expected lowered MASM type");
+        };
+        assert_eq!(ty.arity, 2);
+        let masm::TypeExpr::Primitive(element_ty) = ty.elem.as_ref() else {
+            panic!("expected primitive array element type");
+        };
+        assert_eq!(element_ty.inner(), &Type::U32);
+    }
+
+    #[test]
+    fn component_abi_type_conversion_preserves_nominal_struct_metadata() {
+        let ty = Type::Struct(Arc::new(StructType::from_parts(
+            Some(Arc::from("miden:base/core-types@1.0.0/account-id")),
+            TypeRepr::Default,
+            [
+                (Arc::<str>::from("prefix"), Type::Felt),
+                (Arc::<str>::from("suffix"), Type::Felt),
+            ],
+        )));
+
+        let masm::TypeExpr::Struct(struct_ty) = component_abi_type_expr_from_hir(&ty) else {
+            panic!("expected struct component ABI type");
+        };
+        assert_eq!(
+            struct_ty.name.as_ref().map(|name| name.as_str()),
+            Some("miden:base/core-types@1.0.0/account-id"),
+        );
+        assert_eq!(struct_ty.fields[0].name.as_str(), "prefix");
+        assert_eq!(struct_ty.fields[1].name.as_str(), "suffix");
+
+        let masm::TypeExpr::Struct(struct_ty) = masm::TypeExpr::from(ty) else {
+            panic!("expected lowered struct type");
+        };
+        assert!(struct_ty.name.is_none());
+        assert_eq!(struct_ty.fields[0].name.as_str(), "field0");
+        assert_eq!(struct_ty.fields[1].name.as_str(), "field1");
     }
 }

@@ -1,0 +1,6 @@
+use example::support
+
+pub proc entry() -> u32
+   adv_push
+   exec.support::dirty
+end

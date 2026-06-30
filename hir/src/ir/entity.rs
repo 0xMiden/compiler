@@ -1168,25 +1168,24 @@ impl<T: ?Sized, Metadata> RawEntityMetadata<T, Metadata> {
     /// The pointer must point to (and have valid metadata for) a previously valid instance of T, but
     /// the T is allowed to be dropped.
     unsafe fn data_offset(ptr: *const T) -> usize {
-        use core::mem::align_of_val_raw;
-
         // Align the unsized value to the end of the RawEntityMetadata.
         // Because RawEntityMetadata/RawEntity is repr(C), it will always be the last field in memory.
         //
         // SAFETY: since the only unsized types possible are slices, trait objects, and extern types,
         // the input safety requirement is currently enough to satisfy the requirements of
         // align_of_val_raw; but this is an implementation detail of the language that is unstable
-        unsafe { RawEntityMetadata::<(), Metadata>::data_offset_align(align_of_val_raw(ptr)) }
+        let align = unsafe { core::mem::Alignment::of_val_raw(ptr) };
+        RawEntityMetadata::<(), Metadata>::data_offset_align(align)
     }
 
     #[inline]
-    fn data_offset_align(align: usize) -> usize {
+    fn data_offset_align(align: core::mem::Alignment) -> usize {
         raw_entity_value_offset_for_align::<Metadata>(align)
     }
 }
 
 fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layout {
-    let value_offset = raw_entity_value_offset_for_align::<Metadata>(layout.align());
+    let value_offset = raw_entity_value_offset_for_align::<Metadata>(layout.alignment());
     let header_layout = Layout::new::<RawEntity<()>>();
     let align = Layout::new::<Metadata>().align().max(header_layout.align()).max(layout.align());
     Layout::from_size_align(value_offset + layout.size(), align)
@@ -1194,10 +1193,10 @@ fn raw_entity_metadata_layout_for_value_layout<Metadata>(layout: Layout) -> Layo
         .pad_to_align()
 }
 
-fn raw_entity_value_offset_for_align<Metadata>(value_align: usize) -> usize {
+fn raw_entity_value_offset_for_align<Metadata>(value_align: core::mem::Alignment) -> usize {
     let metadata_layout = Layout::new::<Metadata>();
     let header_layout = Layout::new::<RawEntity<()>>();
-    let entity_align = header_layout.align().max(value_align);
+    let entity_align = header_layout.alignment().max(value_align);
     let entity_offset = metadata_layout.size() + metadata_layout.padding_needed_for(entity_align);
     let cell_offset = header_layout.size() + header_layout.padding_needed_for(value_align);
     entity_offset + cell_offset

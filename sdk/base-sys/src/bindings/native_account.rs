@@ -1,9 +1,10 @@
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::Asset;
+use super::types::{AccountId, Asset, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::add_asset"]
     fn extern_native_account_add_asset(
         asset_key_0: Felt,
@@ -16,6 +17,7 @@ unsafe extern "C" {
         asset_value_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::remove_asset"]
     fn extern_native_account_remove_asset(
         asset_key_0: Felt,
@@ -28,10 +30,16 @@ unsafe extern "C" {
         asset_value_3: Felt,
         ptr: *mut Word,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::get_id"]
+    fn extern_native_account_get_id(ptr: *mut RawAccountId);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::incr_nonce"]
     fn extern_native_account_incr_nonce() -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::compute_delta_commitment"]
     fn extern_native_account_compute_delta_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::was_procedure_called"]
     fn extern_native_account_was_procedure_called(
         proc_root_0: Felt,
@@ -54,14 +62,19 @@ unsafe extern "C" {
 /// Implement a basic-wallet style `receive_asset` method by adding the asset to the vault:
 ///
 /// ```rust,ignore
-/// use miden::{component, native_account::NativeAccount, Asset};
+/// use miden::{component, component_storage, native_account::NativeAccount, Asset};
+///
+/// #[component_storage]
+/// struct MyAccountStorage;
 ///
 /// #[component]
-/// struct MyAccount;
+/// trait MyAccount {
+///     fn receive_asset(&mut self, asset: Asset);
+/// }
 ///
 /// #[component]
-/// impl MyAccount {
-///     pub fn receive_asset(&mut self, asset: Asset) {
+/// impl MyAccount for MyAccountStorage {
+///     fn receive_asset(&mut self, asset: Asset) {
 ///         self.add_asset(asset);
 ///     }
 /// }
@@ -108,6 +121,15 @@ pub fn remove_asset(asset: Asset) -> Word {
     }
 }
 
+/// Returns the native account ID for the current transaction.
+pub fn get_id() -> AccountId {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        extern_native_account_get_id(ret_area.as_mut_ptr());
+        ret_area.assume_init().into_account_id()
+    }
+}
+
 /// Increments the account nonce by one and returns the new nonce.
 #[inline]
 pub fn incr_nonce() -> Felt {
@@ -133,13 +155,14 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
             proc_root[1],
             proc_root[2],
             proc_root[3],
-        ) != Felt::new(0)
+        ) != Felt::new(0).unwrap()
     }
 }
 
 /// Trait that provides native account operations for components.
 ///
-/// This trait is automatically implemented for types marked with the `#[component]` macro.
+/// This trait is automatically implemented for the storage struct marked with the
+/// `#[component_storage]` macro.
 pub trait NativeAccount {
     /// Adds the specified asset to the vault and returns the resulting asset value word stored
     /// under that asset key.
@@ -155,14 +178,19 @@ pub trait NativeAccount {
     /// Implement a basic-wallet style `receive_asset` method by adding the asset to the vault:
     ///
     /// ```rust,ignore
-    /// use miden::{component, native_account::NativeAccount, Asset};
+    /// use miden::{component, component_storage, native_account::NativeAccount, Asset};
+    ///
+    /// #[component_storage]
+    /// struct MyAccountStorage;
     ///
     /// #[component]
-    /// struct MyAccount;
+    /// trait MyAccount {
+    ///     fn receive_asset(&mut self, asset: Asset);
+    /// }
     ///
     /// #[component]
-    /// impl MyAccount {
-    ///     pub fn receive_asset(&mut self, asset: Asset) {
+    /// impl MyAccount for MyAccountStorage {
+    ///     fn receive_asset(&mut self, asset: Asset) {
     ///         self.add_asset(asset);
     ///     }
     /// }

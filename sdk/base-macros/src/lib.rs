@@ -2,9 +2,14 @@
 //!
 //! ### How to use WIT generation.
 //!
-//! 1. Add `#[component]` on you `impl MyAccountType {`.
-//! 2. Add `#[export_type]` on every defined type that is used in the public(exported) method
-//!    signature.
+//! An account component is written in three parts:
+//!
+//! 1. A `#[component_storage]` struct declaring the component's `#[storage(...)]` fields.
+//! 2. A `#[component]` `trait` declaring the component's API. The trait name yields the WIT
+//!    interface name and its methods yield the exported functions.
+//! 3. A `#[component]` `impl Trait for Storage` block providing the behavior.
+//!
+//! Add `#[export_type]` on every type that is used in an exported method signature.
 //!
 //! Example:
 //! ```rust,ignore
@@ -21,16 +26,24 @@
 //!     pub baz: Felt,
 //! }
 //!
-//! #[component]
-//! struct MyAccount;
+//! #[component_storage]
+//! struct MyAccountStorage;
 //!
 //! #[component]
-//! impl MyAccount {
-//!     pub fn foo(&self, a: StructA) -> StructB {
+//! trait MyAccount {
+//!     fn foo(&self, a: StructA) -> StructB;
+//! }
+//!
+//! #[component]
+//! impl MyAccount for MyAccountStorage {
+//!     fn foo(&self, a: StructA) -> StructB {
 //!         ...
 //!     }
 //! }
 //! ```
+//!
+//! Custom `#[export_type]` types referenced in component method signatures must be nameable from
+//! the crate root (declared at, or `use`-imported into, the crate root).
 //!
 
 //! ### Escape hatch (disable WIT generation)
@@ -39,12 +52,13 @@
 //! only in an external WIT file) or not desirable the WIT generation can be disabled:
 //!
 //! To disable WIT interface generation:
-//! - Don't use `#[component]` attribute macro in the `impl MyAccountType` section;
+//! - Don't use the `#[component]` trait/impl macros; keep `#[component_storage]` on the storage
+//!   struct;
 //!
 //! To use manually crafted WIT interface:
 //! - Put the WIT file in the `wit` folder;
-//! - call `miden::generate!();` and `bindings::export!(MyAccountType);`
-//! - implement `impl Guest for MyAccountType`;
+//! - call `miden::generate!();` and `bindings::export!(MyAccountStorage);`
+//! - implement `impl Guest for MyAccountStorage`;
 
 use crate::script::ScriptConfig;
 
@@ -53,7 +67,10 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
+mod dependency_ref;
 mod export_type;
+mod foreign_account;
+mod fpi;
 mod generate;
 mod manifest_paths;
 mod note;
@@ -63,17 +80,101 @@ mod util;
 mod wit_builder;
 mod wit_world;
 
-/// Generates the WIT interface and storage metadata.
+/// Defines an account component's API and generates the WIT interface.
 ///
-/// **NOTE:** Mark each type used in the public method with `#[export_type]` attribute macro.
+/// Apply `#[component]` to a `trait` (the API, and the source of the WIT interface — its name yields
+/// the interface name) and to the matching `impl Trait for Storage` block (the behavior). Storage
+/// lives on a separate `#[component_storage]` struct.
+///
+/// Both the trait and the implementation block must carry `#[component]`, and the storage struct
+/// must carry `#[component_storage]`. A missing trait annotation surfaces as a missing-item error
+/// naming `__MIDEN_COMPONENT_TRAIT_MARKER`, and a missing storage annotation as one naming
+/// `__MIDEN_COMPONENT_STORAGE_MARKER` — hidden constants those expansions inject and the
+/// implementation expansion checks for.
+///
+/// **NOTE:** Mark each type used in an exported method with the `#[export_type]` attribute macro.
+///
+/// # Sibling component calls
+///
+/// An account may be deployed with several components. To call the other ("sibling") components
+/// of the same account, list them on the component trait as `package::Interface` references — the
+/// Rust-style Miden package name (replace `-` with `_`) followed by the sibling's exported WIT
+/// interface in UpperCamelCase. Each reference generates a `pub trait` named after the interface
+/// whose default methods call the sibling through the Wasm component-model boundary (a
+/// cross-context `call`, the same mechanism note scripts use to call the account). The generated
+/// traits attach to `#[component_storage]` structs automatically, and may be declared as
+/// supertraits of the component trait to make the dependency part of its API:
+///
+/// ```rust,ignore
+/// use miden::{component, component_storage, native_account::NativeAccount, Asset};
+///
+/// #[component_storage]
+/// struct MyComponentStorage;
+///
+/// // Generates `trait Pausable` and `trait CounterContract` with default methods that
+/// // call the sibling components deployed on the same account.
+/// #[component(pausable::Pausable, counter_contract::CounterContract)]
+/// trait MyComponent: NativeAccount + Pausable + CounterContract {
+///     fn receive_asset(&mut self, asset: Asset);
+/// }
+///
+/// #[component] // the implementation block takes no arguments
+/// impl MyComponent for MyComponentStorage {
+///     fn receive_asset(&mut self, asset: Asset) {
+///         assert!(!self.is_paused()); // sibling call into `pausable`
+///         self.increment_count();     // sibling call into `counter-contract`
+///         self.add_asset(asset);      // native account built-in
+///     }
+/// }
+/// ```
+///
+/// Each referenced package must be declared as a dependency in `miden-project.toml`, and the
+/// account must be deployed with the sibling components for the calls to resolve at runtime.
+///
+/// # Foreign Procedure Invocation (FPI)
+///
+/// Use `#[account(...)]` on an empty struct to generate typed account wrappers for account
+/// dependencies. Each dependency is referenced as `package::Interface`: the package is the
+/// Rust-style Miden package name (write the Miden package name as a Rust identifier by replacing
+/// `-` with `_`) and the interface names the dependency's exported WIT interface in
+/// UpperCamelCase.
+///
+/// ```rust,ignore
+/// use miden::{account, component, component_storage, AccountId, Felt};
+///
+/// #[account(counter_contract::CounterContract)]
+/// struct CounterContract;
+///
+/// #[component_storage]
+/// struct CallerAccountStorage;
+///
+/// #[component]
+/// trait CallerAccount {
+///     fn read_counter(&self, counter_account_id: AccountId) -> Felt;
+/// }
+///
+/// #[component]
+/// impl CallerAccount for CallerAccountStorage {
+///     fn read_counter(&self, counter_account_id: AccountId) -> Felt {
+///         let counter = CounterContract::new(counter_account_id);
+///         counter.get_count()
+///     }
+/// }
+/// ```
+///
+/// The generated methods invoke the active account by default. Wrappers created with
+/// `new(AccountId)` invoke a foreign account through the transaction kernel's
+/// `execute_foreign_procedure` operation; the foreign account must be deployed with code matching
+/// the dependency package used while compiling the caller.
 ///
 /// To disable WIT interface generation:
-/// - don't use `#[component]` attribute macro in the `impl MyAccountType` section;
+/// - don't use the `#[component]` trait/impl macros; keep `#[component_storage]` on the storage
+///   struct;
 ///
 /// To use manually crafted WIT interface:
 /// - put WIT interface file in the `wit` folder;
-/// - call `miden::generate!();` and `bindings::export!(MyAccountType);`
-/// - implement `impl Guest for MyAccountType`;
+/// - call `miden::generate!();` and `bindings::export!(MyAccountStorage);`
+/// - implement `impl Guest for MyAccountStorage`;
 #[proc_macro_attribute]
 pub fn component(
     attr: proc_macro::TokenStream,
@@ -82,9 +183,60 @@ pub fn component(
     component_macro::component(attr, item)
 }
 
+/// Wires storage metadata for an account component's storage struct.
+///
+/// Apply this to the `struct` that declares the component's `#[storage(...)]` fields. It generates
+/// the `Default` implementation and implements the account traits so the component's methods can
+/// access storage and account operations. Use it together with a `#[component]` trait (the API) and
+/// a `#[component]` trait implementation (the behavior).
+///
+/// ```rust,ignore
+/// use miden::{StorageValue, Word, component, component_storage};
+///
+/// #[component_storage]
+/// struct MyComponentStorage {
+///     #[storage(description = "some field")]
+///     foo: StorageValue<Word>,
+/// }
+///
+/// #[component]
+/// trait MyComponent {
+///     fn get_foo(&self) -> Word;
+/// }
+///
+/// #[component]
+/// impl MyComponent for MyComponentStorage {
+///     fn get_foo(&self) -> Word {
+///         self.foo.get()
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn component_storage(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    component_macro::component_storage(attr, item)
+}
+
+/// Generates typed active and foreign account bindings for account dependencies on an empty
+/// wrapper struct.
+///
+/// The attribute accepts `package::Interface` references. Write the Miden package name as a Rust
+/// identifier by replacing `-` with `_`, followed by the dependency's exported WIT interface in
+/// UpperCamelCase. For example, the `counter-contract` interface of a dependency named
+/// `counter-contract` is requested with `#[account(counter_contract::CounterContract)]`.
+#[proc_macro_attribute]
+pub fn account(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    foreign_account::expand(attr, item)
+}
+
 /// Marks a component method as the authentication procedure entrypoint (`#[auth_script]`).
 ///
-/// The method must be contained within an inherent `impl` block annotated with `#[component]`.
+/// The method must be declared within a `trait` annotated with `#[component]`.
 /// Authentication components must annotate exactly one method with `#[auth_script]`.
 /// At most one method in a crate may be annotated with `#[auth_script]`.
 #[proc_macro_attribute]
@@ -114,11 +266,50 @@ pub fn export_type(
 /// - the associated inherent `impl` block that contains an entrypoint method annotated with
 ///   `#[note_script]`
 ///
-/// # Example
+/// # Foreign Procedure Invocation (FPI)
+///
+/// Use `#[account(...)]` on an empty struct to generate typed active and foreign account wrappers
+/// for account dependencies. Each dependency is referenced as `package::Interface`: the
+/// Rust-style Miden package name (replace `-` with `_`) followed by the dependency's exported WIT
+/// interface in UpperCamelCase.
 ///
 /// ```rust,ignore
 /// use miden::*;
-/// use crate::bindings::Account;
+///
+/// #[account(counter_contract::CounterContract)]
+/// struct CounterContract;
+///
+/// #[note]
+/// struct CounterCaller {
+///     counter_account_id: AccountId,
+/// }
+///
+/// #[note]
+/// impl CounterCaller {
+///     #[note_script]
+///     pub fn run(self, _arg: Word) {
+///         let counter = CounterContract::new(self.counter_account_id);
+///         let count = counter.get_count();
+///         assert_eq(count, felt!(1));
+///     }
+/// }
+/// ```
+///
+/// The generated methods invoke the active account when the wrapper is passed to the note
+/// entrypoint. Wrappers created with `new(AccountId)` invoke a foreign account through the
+/// transaction kernel's `execute_foreign_procedure` operation; the foreign account must be
+/// deployed with code matching the dependency package used while compiling the note.
+///
+/// # Example
+///
+/// The note's native (active) account is declared with `#[account(...)]`, listing the account
+/// component packages whose methods should be available on it.
+///
+/// ```rust,ignore
+/// use miden::*;
+///
+/// #[account(basic_wallet::BasicWallet)]
+/// struct Wallet;
 ///
 /// #[note]
 /// struct MyNote {
@@ -128,7 +319,7 @@ pub fn export_type(
 /// #[note]
 /// impl MyNote {
 ///     #[note_script]
-///     pub fn run(self, _arg: Word, account: &mut Account) {
+///     pub fn run(self, _arg: Word, account: &mut Wallet) {
 ///         assert_eq!(account.get_id(), self.recipient);
 ///     }
 /// }
@@ -154,7 +345,8 @@ pub fn note(
 /// - The method must return `()`.
 /// - Excluding `self`, the method must accept:
 ///   - exactly one `Word` argument, and
-///   - optionally a single `&Account` or `&mut Account` argument (in either order).
+///   - optionally a single reference to an `#[account(...)]` type (`&MyAccount` or `&mut
+///     MyAccount`, in either order).
 /// - Generic methods and `async fn` are not supported.
 #[proc_macro_attribute]
 pub fn note_script(

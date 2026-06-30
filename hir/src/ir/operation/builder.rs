@@ -134,18 +134,22 @@ where
         op.regions.push_back(region);
     }
 
-    // TODO: This needs to replicate the behavior of with_(keyed_)successor
     pub fn with_pending_successor(&mut self, succ: PendingSuccessorInfo) {
         let owner = self.op;
         let mut op = self.op.borrow_mut();
-        // Record SuccessorInfo for this successor in the op
+        // Record SuccessorInfo for this successor in the op, in the successor group expected
+        // by the operation's accessors. Pending successors must be added in non-decreasing
+        // successor group order.
         let succ_index = u8::try_from(op.successors.len()).expect("too many successors");
         let successor = self.builder.context().make_block_operand(succ.block, owner, succ_index);
-        op.successors.push(SuccessorInfo {
-            block: successor,
-            key: succ.key,
-            operand_group: succ.operand_group,
-        });
+        op.successors.push_to_group(
+            succ.successor_group as usize,
+            SuccessorInfo {
+                block: successor,
+                key: succ.key,
+                operand_group: succ.operand_group,
+            },
+        );
     }
 
     pub fn with_successor(
@@ -172,7 +176,11 @@ where
         });
     }
 
-    pub fn with_successors<I>(&mut self, succs: I)
+    /// Record a successor group at `group_index`, creating intervening groups as needed.
+    ///
+    /// The explicit `group_index` mirrors [`Self::with_operands_in_group`] and ensures the group
+    /// this call commits matches the index the macro-generated accessors use.
+    pub fn with_successors_in_group<I>(&mut self, group_index: usize, succs: I)
     where
         I: IntoIterator<Item = (BlockRef, Vec<ValueRef>)>,
     {
@@ -191,16 +199,11 @@ where
                 operand_group: operand_group.try_into().expect("too many operand groups"),
             });
         }
-        if op.successors.is_empty() {
-            // Extend the empty default group
-            op.successors.extend_group(0, group);
-        } else {
-            // Create new group
-            op.successors.push_group(group);
-        }
+        op.successors.extend_group(group_index, group);
     }
 
-    pub fn with_keyed_successors<I, S>(&mut self, succs: I)
+    /// Record a keyed successor group at `group_index`; see [`Self::with_successors_in_group`].
+    pub fn with_keyed_successors_in_group<I, S>(&mut self, group_index: usize, succs: I)
     where
         S: KeyedSuccessor,
         I: IntoIterator<Item = S>,
@@ -221,13 +224,7 @@ where
                 operand_group: operand_group.try_into().expect("too many operand groups"),
             });
         }
-        if op.successors.is_empty() {
-            // Extend the empty default group
-            op.successors.extend_group(0, group);
-        } else {
-            // Create new group
-            op.successors.push_group(group);
-        }
+        op.successors.extend_group(group_index, group);
     }
 
     /// Append operands to the set of operands given to this op so far.

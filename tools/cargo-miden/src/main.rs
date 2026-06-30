@@ -1,5 +1,4 @@
 use anyhow::Ok;
-use cargo_miden::{OutputType, run};
 
 fn main() -> anyhow::Result<()> {
     // Initialize logger
@@ -8,7 +7,7 @@ fn main() -> anyhow::Result<()> {
     builder.format_timestamp(None);
     builder.init();
 
-    if let Err(e) = run(std::env::args(), OutputType::Masm) {
+    if let Err(e) = cargo_miden::run(std::env::args()) {
         eprintln!("{e:?}");
         std::process::exit(1);
     }

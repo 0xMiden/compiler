@@ -6,10 +6,11 @@ use smallvec::SmallVec;
 
 use crate::{
     BlockRef, Builder, Context, InsertionGuard, Listener, ListenerType, OpBuilder, OpOperandImpl,
-    OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable,
+    OperationRef, PostOrderBlockIter, ProgramPoint, RegionRef, Report, SourceSpan, Usable, Value,
     ValueRef,
     formatter::{DisplayOptional, DisplayValues},
     patterns::Pattern,
+    traits::Transparent,
 };
 
 /// A [Rewriter] is a [Builder] extended with additional functionality that is of primary use when
@@ -51,7 +52,24 @@ pub trait Rewriter: Builder + RewriterListener {
 
     /// This method erases an operation that is known to have no uses.
     fn erase_op(&mut self, mut op: OperationRef) {
-        assert!(!op.borrow().is_used(), "expected op to have no uses");
+        // Assert `op` has no real uses, and erase any transparent users as they are now dead
+        {
+            let op = op.borrow();
+            for result in op.results().iter() {
+                let result = result.borrow();
+                for user in result.iter_uses() {
+                    log::info!(target: "erase_op", "{}", user.owner.borrow());
+                }
+                assert!(!result.has_real_uses(), "expected op to have no real uses");
+                // If there are remaining uses, they must be transparent, so remove them
+                for user in result.iter_uses() {
+                    let owner = user.owner;
+                    drop(user);
+                    assert!(owner.borrow().implements::<dyn Transparent>());
+                    self.erase_op(owner);
+                }
+            }
+        }
 
         // If no listener is attached, the op can be dropped all at once.
         if !self.has_listener() {
@@ -518,10 +536,12 @@ pub trait RewriterExt: Rewriter {
         let mut from = from.borrow_mut();
         let from_uses = from.uses_mut();
         let mut cursor = from_uses.front_mut();
-        while let Some(user) = cursor.as_pointer() {
+        while let Some(mut user) = cursor.as_pointer() {
             if should_replace(&user.borrow()) {
                 let owner = user.borrow().owner;
                 self.notify_operation_modification_started(&owner);
+                // Keep the operand payload in sync with the use-list move below.
+                user.borrow_mut().value = Some(to);
                 let operand = cursor.remove().unwrap();
                 to.borrow_mut().insert_use(operand);
                 self.notify_operation_modified(owner);
@@ -905,7 +925,9 @@ impl RewriterListener for TracingRewriterListener {
             log::trace!(
                 target: "rewriter",
                 rewrite_event = "replaced";
-                "replaced {_op} with {_replacement}"
+                "replaced {} with {}",
+                _op.name(),
+                _replacement.name(),
             );
         }
     }
@@ -928,7 +950,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "modification-started";
-                "starting modification of {_op}"
+                "starting modification of {name}",
             );
         }
     }
@@ -941,7 +963,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "modification-canceled";
-                "canceled modification"
+                "canceled modification of {name}",
             );
         }
     }
@@ -954,7 +976,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "modified";
-                "completed modification of {_op}"
+                "completed modification of {name}"
             );
         }
     }
@@ -971,7 +993,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "replaced";
-                "replaced op with {}: {_op}",
+                "replaced op with {}: {name}",
                 DisplayValues::new(_replacement.iter().map(|v| {
                     DisplayOptional(v.as_ref())
                 }))
@@ -987,7 +1009,7 @@ impl RewriterListener for TracingRewriterListener {
                 dialect = name.dialect().as_str(),
                 op = name.name().as_str(),
                 rewrite_event = "erased";
-                "erased op {_op}"
+                "erased op {name}"
             );
         }
     }
@@ -1422,5 +1444,92 @@ impl<L: RewriterListener> RewriterListener for RewriterImpl<L> {
         if let Some(listener) = self.listener.as_ref() {
             listener.notify_match_failure(span, reason);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::*;
+    use crate::{
+        Type,
+        dialects::{builtin::BuiltinOpBuilder, test::TestOpBuilder},
+        testing::Test,
+    };
+
+    #[test]
+    fn conditional_value_replacement_updates_operand_payloads() {
+        let mut test = Test::new("conditional_value_replacement", &[], &[Type::U32, Type::U32]);
+        let (from, to, replaced_user, retained_user) = {
+            let mut builder = test.function_builder();
+            let from = builder.u32(1, SourceSpan::UNKNOWN).unwrap();
+            let to = builder.u32(2, SourceSpan::UNKNOWN).unwrap();
+            let rhs = builder.u32(3, SourceSpan::UNKNOWN).unwrap();
+            let replaced = builder.add(from, rhs, SourceSpan::UNKNOWN).unwrap();
+            let retained = builder.mul(from, rhs, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([replaced, retained], SourceSpan::UNKNOWN).unwrap();
+
+            let replaced_user = replaced.borrow().get_defining_op().unwrap();
+            let retained_user = retained.borrow().get_defining_op().unwrap();
+            (from, to, replaced_user, retained_user)
+        };
+
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+        let all_replaced = rewriter
+            .maybe_replace_uses_of_value_with(from, to, |operand| operand.owner == replaced_user);
+        assert!(!all_replaced);
+
+        let replaced_operand = {
+            let op = replaced_user.borrow();
+            op.operands().all()[0].borrow().as_value_ref()
+        };
+        let retained_operand = {
+            let op = retained_user.borrow();
+            op.operands().all()[0].borrow().as_value_ref()
+        };
+        assert_eq!(replaced_operand, to);
+        assert_eq!(retained_operand, from);
+
+        let from_users = {
+            let from = from.borrow();
+            from.iter_uses().map(|user| user.owner).collect::<Vec<_>>()
+        };
+        let to_users = {
+            let to = to.borrow();
+            to.iter_uses().map(|user| user.owner).collect::<Vec<_>>()
+        };
+        assert_eq!(from_users, [retained_user]);
+        assert_eq!(to_users, [replaced_user]);
+    }
+
+    #[test]
+    fn conditional_value_replacement_updates_multiple_operands_in_same_owner() {
+        let mut test = Test::new("conditional_value_replacement_same_owner", &[], &[Type::U32]);
+        let (from, to, replaced_user) = {
+            let mut builder = test.function_builder();
+            let from = builder.u32(1, SourceSpan::UNKNOWN).unwrap();
+            let to = builder.u32(2, SourceSpan::UNKNOWN).unwrap();
+            let replaced = builder.add(from, from, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([replaced], SourceSpan::UNKNOWN).unwrap();
+
+            let replaced_user = replaced.borrow().get_defining_op().unwrap();
+            (from, to, replaced_user)
+        };
+
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+        let all_replaced = rewriter
+            .maybe_replace_uses_of_value_with(from, to, |operand| operand.owner == replaced_user);
+        assert!(all_replaced);
+
+        let (lhs, rhs) = {
+            let op = replaced_user.borrow();
+            let operands = op.operands().all();
+            (operands[0].borrow().as_value_ref(), operands[1].borrow().as_value_ref())
+        };
+        assert_eq!(lhs, to);
+        assert_eq!(rhs, to);
+        assert_eq!(from.borrow().iter_uses().count(), 0);
+        assert_eq!(to.borrow().iter_uses().filter(|user| user.owner == replaced_user).count(), 2);
     }
 }

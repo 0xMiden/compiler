@@ -3,6 +3,8 @@ use core::ffi::c_void;
 /// Unreachable stubs for std::crypto::hashes::sha256
 
 #[unsafe(export_name = "miden::core::crypto::hashes::sha256::hash")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn sha256_hash_stub(
     _e1: u32,
     _e2: u32,
@@ -18,6 +20,8 @@ pub extern "C" fn sha256_hash_stub(
 }
 
 #[unsafe(export_name = "miden::core::crypto::hashes::sha256::merge")]
+#[optimize(none)]
+#[inline(never)]
 pub extern "C" fn sha256_merge_stub(
     _e1: u32,
     _e2: u32,

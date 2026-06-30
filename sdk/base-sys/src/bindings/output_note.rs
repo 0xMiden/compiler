@@ -3,10 +3,14 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word};
 
-use super::types::{Asset, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
+use super::types::{Asset, AttachmentLocation, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
+
+const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
+const MAX_ATTACHMENT_WORDS: usize = 256;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::create"]
     pub fn extern_output_note_create(
         tag: Tag,
@@ -16,7 +20,7 @@ unsafe extern "C" {
         recipient_f2: Felt,
         recipient_f3: Felt,
     ) -> NoteIdx;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::add_asset"]
     pub fn extern_output_note_add_asset(
         asset_key_f0: Felt,
@@ -29,49 +33,69 @@ unsafe extern "C" {
         asset_value_f3: Felt,
         note_idx: NoteIdx,
     );
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_assets_info"]
     pub fn extern_output_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_assets"]
     pub fn extern_output_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::get_attachments_commitment"]
+    pub fn extern_output_note_get_attachments_commitment(note_index: Felt, ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_recipient"]
     pub fn extern_output_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
-
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::get_metadata"]
     pub fn extern_output_note_get_metadata(note_index: Felt, ptr: *mut NoteMetadata);
-
-    #[link_name = "miden::protocol::output_note::set_attachment"]
-    pub fn extern_output_note_set_attachment(
-        note_idx: NoteIdx,
-        attachment_scheme: Felt,
-        attachment_kind: Felt,
-        attachment_f0: Felt,
-        attachment_f1: Felt,
-        attachment_f2: Felt,
-        attachment_f3: Felt,
-    );
-
-    #[link_name = "miden::protocol::output_note::set_word_attachment"]
-    pub fn extern_output_note_set_word_attachment(
-        note_idx: NoteIdx,
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::add_word_attachment"]
+    pub fn extern_output_note_add_word_attachment(
         attachment_scheme: Felt,
         attachment_f0: Felt,
         attachment_f1: Felt,
         attachment_f2: Felt,
         attachment_f3: Felt,
-    );
-
-    #[link_name = "miden::protocol::output_note::set_array_attachment"]
-    pub fn extern_output_note_set_array_attachment(
         note_idx: NoteIdx,
+    );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::add_attachment"]
+    pub fn extern_output_note_add_attachment(
         attachment_scheme: Felt,
         attachment_f0: Felt,
         attachment_f1: Felt,
         attachment_f2: Felt,
         attachment_f3: Felt,
+        note_idx: NoteIdx,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::add_attachment_from_memory"]
+    pub fn extern_output_note_add_attachment_from_memory(
+        attachment_scheme: Felt,
+        num_words: usize,
+        attachment_ptr: *const Felt,
+        note_idx: NoteIdx,
+    );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::find_attachment"]
+    pub fn extern_output_note_find_attachment(
+        attachment_scheme: Felt,
+        note_index: Felt,
+        ptr: *mut AttachmentLocation,
+    );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::write_attachment_commitments_to_memory"]
+    pub fn extern_output_note_write_attachment_commitments_to_memory(
+        dest_ptr: *mut Felt,
+        note_index: Felt,
+    ) -> usize;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::output_note::write_attachment_to_memory"]
+    pub fn extern_output_note_write_attachment_to_memory(
+        dest_ptr: *mut Felt,
+        attachment_idx: Felt,
+        note_index: Felt,
+    ) -> usize;
 }
 
 /// Creates a new output note and returns its index.
@@ -118,36 +142,37 @@ pub fn create(tag: Tag, note_type: NoteType, recipient: Recipient) -> NoteIdx {
     }
 }
 
-/// Sets the attachment of the output note specified by `note_idx`.
-pub fn set_attachment(
-    note_idx: NoteIdx,
-    attachment_scheme: Felt,
-    attachment_kind: Felt,
-    attachment: Word,
-) {
+/// Adds a single-word attachment to the output note specified by `note_idx`.
+pub fn add_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
     unsafe {
-        extern_output_note_set_attachment(
-            note_idx,
+        extern_output_note_add_word_attachment(
             attachment_scheme,
-            attachment_kind,
             attachment[0],
             attachment[1],
             attachment[2],
             attachment[3],
+            note_idx,
         );
     }
 }
 
 /// Sets the attachment of the output note specified by `note_idx` to the provided word.
 pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
+    add_word_attachment(note_idx, attachment_scheme, attachment);
+}
+
+/// Adds an attachment commitment to the output note specified by `note_idx`.
+///
+/// The advice map must contain an entry for the attachment elements committed to by `attachment`.
+pub fn add_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
     unsafe {
-        extern_output_note_set_word_attachment(
-            note_idx,
+        extern_output_note_add_attachment(
             attachment_scheme,
             attachment[0],
             attachment[1],
             attachment[2],
             attachment[3],
+            note_idx,
         );
     }
 }
@@ -156,14 +181,23 @@ pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachmen
 ///
 /// The advice map must contain an entry for the attachment elements committed to by `attachment`.
 pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
+    add_attachment(note_idx, attachment_scheme, attachment);
+}
+
+/// Adds a multi-word attachment from linear memory to the output note specified by `note_idx`.
+pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, attachment: &[Word]) {
+    let ptr = if attachment.is_empty() {
+        0
+    } else {
+        (attachment.as_ptr().addr() / 4) as u32
+    };
+
     unsafe {
-        extern_output_note_set_array_attachment(
-            note_idx,
+        extern_output_note_add_attachment_from_memory(
             attachment_scheme,
-            attachment[0],
-            attachment[1],
-            attachment[2],
-            attachment[3],
+            attachment.len(),
+            ptr as *const Felt,
+            note_idx,
         );
     }
 }
@@ -233,6 +267,15 @@ pub fn get_assets(note_index: NoteIdx) -> Vec<Asset> {
     assets
 }
 
+/// Returns the commitment over all attachments of the output note at `note_index`.
+pub fn get_attachments_commitment(note_index: NoteIdx) -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_output_note_get_attachments_commitment(note_index.inner, ret_area.as_mut_ptr());
+        ret_area.assume_init()
+    }
+}
+
 /// Returns the recipient of the output note at `note_index`.
 pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     unsafe {
@@ -249,4 +292,58 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
         extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
         ret_area.assume_init()
     }
+}
+
+/// Searches the output note metadata for `attachment_scheme`.
+pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> AttachmentLocation {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<AttachmentLocation>::uninit();
+        extern_output_note_find_attachment(
+            attachment_scheme,
+            note_index.inner,
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.assume_init()
+    }
+}
+
+/// Writes attachment commitments to memory and returns them as protocol words.
+pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> {
+    let mut commitments: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENTS_PER_NOTE);
+    let num_attachments = unsafe {
+        let ptr = (commitments.as_mut_ptr() as usize) / 4;
+        extern_output_note_write_attachment_commitments_to_memory(
+            ptr as *mut Felt,
+            note_index.inner,
+        )
+    };
+    assert!(
+        num_attachments <= MAX_ATTACHMENTS_PER_NOTE,
+        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
+    );
+    unsafe {
+        commitments.set_len(num_attachments);
+    }
+    commitments
+}
+
+/// Writes the selected output-note attachment to memory and returns it as protocol words.
+pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: Felt) -> Vec<Word> {
+    let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
+    let num_words = unsafe {
+        let ptr = (attachment.as_mut_ptr() as usize) / 4;
+        extern_output_note_write_attachment_to_memory(
+            ptr as *mut Felt,
+            attachment_idx,
+            note_index.inner,
+        )
+    };
+    assert!(
+        num_words <= MAX_ATTACHMENT_WORDS,
+        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
+    );
+    unsafe {
+        attachment.set_len(num_words);
+    }
+    attachment
 }

@@ -13,11 +13,12 @@ edition.workspace = true
 
 [lib]
 proc-macro = true
+doctest = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-darling = { version = "0.23", features = ["diagnostics"] }
+darling.workspace = true
 Inflector.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true

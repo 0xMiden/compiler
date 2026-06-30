@@ -29,6 +29,7 @@ unsafe extern "C" {
     ///
     /// Fails if the tree with the specified `root` does not exist in the VM's advice provider. When
     /// no value has previously been inserted under `key`, the procedure returns the empty word.
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::collections::smt::get"]
     fn extern_smt_get(
         k0: Felt,
@@ -53,6 +54,7 @@ unsafe extern "C" {
     /// `value` is the empty word, the new tree state is equivalent to omitting the update.
     ///
     /// Fails if the tree with the specified `root` does not exist in the VM's advice provider.
+    #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
     #[link_name = "miden::core::collections::smt::set"]
     fn extern_smt_set(
         v0: Felt,

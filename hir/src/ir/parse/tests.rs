@@ -1,15 +1,16 @@
 use alloc::{format, rc::Rc, string::ToString};
 use core::ops::{Deref, DerefMut};
 
-use litcheck_filecheck::filecheck;
+use litcheck_filecheck::{filecheck, litcheck};
 use pretty_assertions::assert_eq;
 
 use crate::{
-    BuilderExt, CallConv, Context, FunctionType, OpParser, OpRegistration, OperationRef, Symbol,
-    SymbolTable, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
+    BuilderExt, CallConv, Context, FunctionType, Immediate, OpParser, OpRegistration, OperationRef,
+    Symbol, SymbolTable, Type, UnsafeIntrusiveEntityRef, ValueRef, Visibility,
+    attributes::IntegerLikeAttr,
     diagnostics::{Report, SourceSpan, Uri},
     dialects::builtin::{
-        BuiltinOpBuilder, Function, Module, Ret, UnrealizedConversionCast, WorldRef,
+        BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, WorldRef,
         attributes::{AbiParam, Signature},
     },
     parse::{self, ParseResult, ParserConfig},
@@ -140,6 +141,49 @@ fn derive_roundtrip_test() -> TestResult {
     // CHECK-NEXT: };
     "#
     );
+
+    Ok(())
+}
+
+#[test]
+fn parse_ret_imm_coerces_literal_to_declared_type() -> TestResult {
+    let test = ParserTest::default();
+
+    let source = "\
+builtin.function public extern(\"C\") @retconst() -> u32 {
+    builtin.ret_imm 42 : u32;
+};";
+
+    let function = test.parse::<Function>("parse_ret_imm.hir", source)?;
+    let printed = format!("{}", function.as_operation_ref().borrow());
+    assert!(
+        printed.contains("builtin.ret_imm 42 : u32"),
+        "expected the declared type to survive the round trip, got:\n{printed}"
+    );
+
+    let function = function.borrow();
+    let ret_imm = function
+        .body()
+        .entry()
+        .terminator()
+        .unwrap()
+        .try_downcast_op::<RetImm>()
+        .expect("expected the function terminator to be builtin.ret_imm");
+    let imm = ret_imm.borrow().value().as_ref().as_immediate();
+    assert!(
+        matches!(imm, Immediate::U32(42)),
+        "expected the literal to be coerced to the declared type, got {imm:?}"
+    );
+
+    // A literal that cannot be represented in the declared type must be rejected.
+    let result = test.parse::<Function>(
+        "parse_ret_imm_invalid.hir",
+        "\
+builtin.function public extern(\"C\") @retconst() -> u8 {
+    builtin.ret_imm 300 : u8;
+};",
+    );
+    assert!(result.is_err(), "expected an out-of-range immediate to be rejected");
 
     Ok(())
 }

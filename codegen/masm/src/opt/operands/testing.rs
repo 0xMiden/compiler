@@ -330,7 +330,7 @@ pub fn solve_problem(problem: ProblemInputs) -> Result<(), TestCaseError> {
             // that has all of the expected operands on top of the stack,
             // ordered by id, e.g. [v1, v2, ..vN]
             let mut stack = problem.stack.clone();
-            for action in actions.into_iter() {
+            for action in actions {
                 reject_out_of_scope(action)?;
                 match action {
                     Action::Copy(index) => {
@@ -397,7 +397,7 @@ pub fn solve_problem_with_tactic<T: tactics::Tactic + Default>(
             // that has all of the expected operands on top of the stack,
             // ordered by id, e.g. [v1, v2, ..vN]
             let mut stack = problem.stack.clone();
-            for action in actions.into_iter() {
+            for action in actions {
                 reject_out_of_scope(action)?;
                 match action {
                     Action::Copy(index) => {

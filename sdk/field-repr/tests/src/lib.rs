@@ -13,8 +13,8 @@ extern crate alloc;
 
 use std::path::PathBuf;
 
-use miden_integration_tests::{CompilerTest, project};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::{CompilerTest, project};
 
 /// Get the path to the `miden-field-repr` crate.
 fn felt_repr_path() -> PathBuf {
@@ -112,6 +112,24 @@ pub extern "C" fn entrypoint{fn_body}
     );
 
     let cargo_proj = project(name)
+        .file(
+            "miden-project.toml",
+            format!(
+                r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+
+[[bin]]
+name = "{name}"
+path = "<virtual>"
+
+[dependencies]
+miden-core = "*"
+"#
+            )
+            .as_str(),
+        )
         .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", &lib_rs)
         .build();

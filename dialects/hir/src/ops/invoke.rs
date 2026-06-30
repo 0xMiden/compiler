@@ -1,7 +1,12 @@
 use alloc::format;
 
 use midenc_hir::{
-    derive::operation, dialects::builtin::attributes::SignatureAttr, print::AsmPrinter, traits::*,
+    derive::{EffectOpInterface, OpParser, OpPrinter, operation},
+    dialects::builtin::attributes::{LocalVariableArrayAttr, SignatureAttr},
+    effects::*,
+    interner::symbols,
+    print::AsmPrinter,
+    traits::*,
     *,
 };
 
@@ -9,7 +14,12 @@ use crate::HirDialect;
 
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Exec {
     #[symbol(callable)]
@@ -30,6 +40,12 @@ impl InferTypeOpInterface for Exec {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Exec {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 
@@ -105,11 +121,95 @@ impl OpParser for Exec {
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         let type_params =
-            signature.results.iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
 
         state.operands.push(operand_values);
+
+        Ok(())
+    }
+}
+
+/// Invoke a foreign account procedure via the transaction kernel FPI executor.
+///
+/// This op is the canonical HIR form of a foreign procedure invocation, targeting
+/// `miden::protocol::tx::execute_foreign_procedure`. Its operands are the flattened procedure
+/// input felts (at most [`ExecFpi::MAX_INPUT_FELTS`]), while `prefix_locals` references the six
+/// function locals holding the executor prefix in protocol order: account id suffix, account id
+/// prefix, and the four procedure root felts. The locals must be stored before this op executes.
+///
+/// Keeping the prefix in locals means lowering only ever schedules the procedure inputs on the
+/// operand stack: it pads them with zeroes to [`ExecFpi::MAX_INPUT_FELTS`], then loads the six
+/// locals on top to form the full [`ExecFpi::EXECUTOR_INPUT_FELTS`]-felt executor ABI without any
+/// stack shuffling beyond the addressable 16-element window.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+#[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
+pub struct ExecFpi {
+    #[attr]
+    prefix_locals: LocalVariableArrayAttr,
+    #[operands]
+    inputs: IntFelt,
+    #[results]
+    outputs: IntFelt,
+}
+
+impl ExecFpi {
+    /// Total number of felt operands expected by the executor.
+    pub const EXECUTOR_INPUT_FELTS: usize = Self::PREFIX_FELTS + Self::MAX_INPUT_FELTS;
+    /// Number of felts returned by the executor, one per procedure input slot.
+    pub const EXECUTOR_RESULT_FELTS: usize = 16;
+    /// Maximum number of flattened procedure input felts accepted by the executor.
+    pub const MAX_INPUT_FELTS: usize = 16;
+    /// Number of executor prefix felts referenced by `prefix_locals`.
+    pub const PREFIX_FELTS: usize = 6;
+
+    /// Returns the symbol path of the transaction kernel FPI executor.
+    pub fn executor_symbol_path() -> SymbolPath {
+        SymbolPath::from_iter([
+            SymbolNameComponent::Root,
+            SymbolNameComponent::Component(symbols::Miden),
+            SymbolNameComponent::Component(symbols::Protocol),
+            SymbolNameComponent::Component(symbols::Tx),
+            SymbolNameComponent::Leaf(symbols::ExecuteForeignProcedure),
+        ])
+    }
+}
+
+impl InferTypeOpInterface for ExecFpi {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        if self.inputs().len() > Self::MAX_INPUT_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_fpi: expected at most {} procedure input operand(s), but got {}",
+                Self::MAX_INPUT_FELTS,
+                self.inputs().len()
+            )));
+        }
+
+        let num_prefix_locals = self.get_prefix_locals().len();
+        if num_prefix_locals != Self::PREFIX_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_fpi: expected {} prefix local(s), but got {num_prefix_locals}",
+                Self::PREFIX_FELTS,
+            )));
+        }
+
+        if self.op.results.is_empty() {
+            let span = self.span();
+            let owner = self.as_operation_ref();
+            for i in 0..Self::EXECUTOR_RESULT_FELTS {
+                let value = context.make_result(span, Type::Felt, owner, i as u8);
+                self.op.results.push(value);
+            }
+        } else {
+            for result in self.op.results.iter_mut() {
+                result.borrow_mut().set_type(Type::Felt);
+            }
+        }
 
         Ok(())
     }
@@ -180,7 +280,12 @@ impl CallOpInterface for Exec {
 // any types which are invalid for cross-context calls
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface, InferTypeOpInterface, OpPrinter)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Call {
     #[symbol(callable)]
@@ -201,6 +306,12 @@ impl InferTypeOpInterface for Call {
             self.op.results.push(value);
         }
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Call {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
     }
 }
 
@@ -286,15 +397,187 @@ impl CallOpInterface for Call {
     }
 }
 
+// TODO(pauls): Validate that the arguments/results of the callee of this operation do not contain
+// any types which are invalid for syscalls
+#[operation(
+    dialect = HirDialect,
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
+)]
+pub struct Syscall {
+    #[symbol(callable)]
+    callee: SymbolPath,
+    #[attr]
+    signature: SignatureAttr,
+    #[operands]
+    arguments: AnyType,
+}
+
+impl InferTypeOpInterface for Syscall {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        let span = self.span();
+        let signature = self.signature.borrow();
+        let owner = self.as_operation_ref();
+        for (i, result) in signature.results().iter().enumerate() {
+            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+            self.op.results.push(value);
+        }
+        Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Syscall {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
+}
+
+impl OpPrinter for Syscall {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        let callee = self.callee();
+        printer.print_space();
+        printer.print_symbol_path(callee.path());
+        printer.print_operand_list(self.arguments());
+        *printer += const_text(" <");
+        printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
+        *printer += const_text(" >");
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl CallOpInterface for Syscall {
+    #[inline(always)]
+    fn callable_for_callee(&self) -> Callable {
+        self.callee().path().into()
+    }
+
+    fn set_callee(&mut self, callable: Callable) {
+        let callee = callable.unwrap_symbol_path();
+        let symbol_table = self
+            .as_operation()
+            .nearest_symbol_table()
+            .expect("cannot set callee outside of symbol table");
+        let resolved = symbol_table
+            .borrow()
+            .as_symbol_table()
+            .unwrap()
+            .resolve(&callee)
+            .expect("invalid callee: could not be resolved");
+        let callable = resolved
+            .as_trait_ref::<dyn CallableSymbol>()
+            .expect("invalid callee: not a callable symbol");
+        Syscall::set_callee(self, callable).expect("invalid callee");
+    }
+
+    #[inline(always)]
+    fn arguments(&self) -> OpOperandRange<'_> {
+        self.operands().group(0)
+    }
+
+    #[inline(always)]
+    fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().group_mut(0)
+    }
+
+    fn resolve(&self) -> Option<SymbolRef> {
+        let callee = self.callee();
+        let symbol_table = self.as_operation().nearest_symbol_table()?;
+        let symbol_table = symbol_table.borrow();
+        let symbol_table = symbol_table.as_symbol_table().unwrap();
+        symbol_table.resolve(callee.path())
+    }
+
+    fn resolve_in_symbol_table(&self, symbols: &dyn SymbolTable) -> Option<SymbolRef> {
+        let callee = self.callee();
+        symbols.resolve(callee.path())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use midenc_hir::{
         CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        conversion::{
+            TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
+            verify_call_signature_operands_and_results,
+        },
+        diagnostics::Uri,
         dialects::builtin::{BuiltinOpBuilder, attributes::Signature},
+        parse::{self, ParserConfig},
         testing::Test,
     };
 
     use crate::HirOpBuilder;
+
+    #[test]
+    fn exec_parser_resolves_operand_types_from_signature_params() {
+        let test = Test::default();
+        let source = r#"
+builtin.module public @test {
+    builtin.function private extern("C") @callee(%arg: i32) -> u64 {
+        %result = builtin.unrealized_conversion_cast %arg <{ ty = #builtin.type<u64> }>;
+        builtin.ret %result : (u64);
+    };
+
+    builtin.function public extern("C") @entrypoint(%arg: i32) -> u64 {
+        %result = hir.exec @callee(%arg) : extern("C") (i32) -> u64;
+        builtin.ret %result : (u64);
+    };
+};"#;
+
+        parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("exec_parser_resolves_operand_types_from_signature_params.hir"),
+            source,
+        )
+        .expect("hir.exec parser should type operands from signature params");
+    }
+
+    #[test]
+    fn conversion_helpers_resolve_and_convert_call_signatures() {
+        let mut test =
+            Test::named("conversion_helpers_resolve_and_convert_call_signatures").in_module("test");
+        let callee = test.define_function("callee", &[Type::U32], &[Type::U32]);
+        test.with_function("caller", &[Type::U32], &[]);
+
+        let signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+        let call = {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let arg = entry.borrow().arguments()[0].borrow().as_value_ref();
+            builder.call(callee, signature, [arg], SourceSpan::default()).unwrap()
+        };
+
+        verify_call_signature_operands_and_results(call.as_operation_ref()).unwrap();
+
+        let mut converter = TypeConverter::new();
+        converter.add_conversion(|ty| {
+            if ty == &Type::U32 {
+                Some(TypeConversion::One(Type::I32))
+            } else {
+                None
+            }
+        });
+        let converted =
+            converted_resolved_call_signature_1_to_1(call.as_operation_ref(), &converter)
+                .unwrap()
+                .expect("call should resolve to a callable signature");
+
+        assert_eq!(converted.params()[0].ty, Type::I32);
+        assert_eq!(converted.results()[0].ty, Type::I32);
+    }
 
     #[test]
     fn call_set_callee_rebinds_property_backed_symbol_use() {
@@ -405,6 +688,37 @@ mod tests {
 
         let replacement_path = replacement.borrow().path();
         assert_eq!(call.borrow().callee().path(), &replacement_path);
+        assert_eq!(original.borrow().iter_uses().count(), 0);
+        assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    #[test]
+    fn syscall_set_callee_rebinds_property_backed_symbol_use() {
+        let mut test =
+            Test::named("syscall_set_callee_rebinds_property_backed_symbol_use").in_module("test");
+        let original = test.define_function("original", &[], &[]);
+        let replacement = test.define_function("replacement", &[], &[]);
+        test.with_function("caller", &[], &[]);
+
+        let signature = Signature::new(
+            &test.context_rc(),
+            core::iter::empty::<Type>(),
+            core::iter::empty::<Type>(),
+        );
+        let mut syscall = {
+            let mut builder = test.function_builder();
+            let syscall = builder.syscall(original, signature, [], SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            syscall
+        };
+
+        assert_eq!(original.borrow().iter_uses().count(), 1);
+        assert_eq!(replacement.borrow().iter_uses().count(), 0);
+
+        syscall.borrow_mut().set_callee(replacement).unwrap();
+
+        let replacement_path = replacement.borrow().path();
+        assert_eq!(syscall.borrow().callee().path(), &replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
     }

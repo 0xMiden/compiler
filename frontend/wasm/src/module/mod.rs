@@ -12,6 +12,7 @@ use self::types::*;
 use crate::{component::SignatureIndex, error::WasmResult, unsupported_diag};
 
 pub mod build_ir;
+pub mod debug_info;
 pub mod func_translation_state;
 pub mod func_translator;
 pub mod function_builder_ext;
@@ -320,6 +321,28 @@ impl Module {
             .get(&index)
             .cloned()
             .unwrap_or(Symbol::intern(format!("func{}", index.as_u32())))
+    }
+
+    /// Returns the name of the given data segment.
+    ///
+    /// If the wasm name section does not include an entry for this segment
+    /// (e.g. when the binary was built with `strip = true` or the producer
+    /// did not emit a name subsection for data segments), falls back to a
+    /// synthesized `data{index}` name.
+    pub fn data_segment_name(&self, index: DataSegmentIndex) -> Symbol {
+        self.name_section
+            .data_segment_names
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(|| Symbol::intern(format!("data{}", index.as_u32())))
+    }
+
+    /// Returns the name of the given local (including parameters) if available in the name section.
+    pub fn local_name(&self, func: FuncIndex, index: u32) -> Option<Symbol> {
+        self.name_section
+            .locals_names
+            .get(&func)
+            .and_then(|locals| locals.get(&index).copied())
     }
 
     /// Sets the fallback name of this module, used if there is no module name in the name section

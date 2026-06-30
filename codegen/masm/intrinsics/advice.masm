@@ -20,7 +20,7 @@ pub proc adv_push_mapvaln
     # The adv.push_mapvaln instruction pushes the count on top of the advice stack
     # We need to pop it from the advice stack to return it
     # Note: The advice stack now has [ele1, ele2, ...] with count removed
-    adv_push.1
+    adv_push
     # Stack: [num_elements, ...]
 end
 

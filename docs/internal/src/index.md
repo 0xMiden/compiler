@@ -7,5 +7,6 @@ This document provides an index of the various design documents for the compiler
 - [Data Layout](data_layout.md)
 - [Analyses](analyses.md)
 - [Rewrites](rewrites.md)
+- [Dialect Conversion](dialect_conversion.md)
 - [Code Generation](codegen.md)
 - [Packaging](packaging.md)

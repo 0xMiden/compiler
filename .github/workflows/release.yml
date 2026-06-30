@@ -26,7 +26,7 @@ jobs:
       releases_created: ${{ steps.publish.outputs.releases_created }}
     steps:
       - &checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -38,7 +38,7 @@ jobs:
           rustc --version
       - name: Publish
         id: publish
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
         with:
           command: release
         env:
@@ -101,9 +101,8 @@ jobs:
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
         run: |
           set -e
-          ARGS="--release --target ${{ matrix.target }}"
-          cargo make --profile production midenc ${ARGS}
-          cargo make --profile production cargo-miden ${ARGS}
+          cargo make --profile production midenc --release --target "${{ matrix.target }}"
+          cargo make --profile production cargo-miden --release --target "${{ matrix.target }}"
       - name: prepare artifacts
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
         run: |
@@ -112,12 +111,12 @@ jobs:
           mv bin/cargo-miden cargo-miden-${{ matrix.target }}
       - name: attest midenc
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: midenc-${{ matrix.target }}
       - name: attest cargo-miden
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: cargo-miden-${{ matrix.target }}
       - name: upload
@@ -127,8 +126,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          gh release upload ${RELEASE_TAG} midenc-${{ matrix.target }}
-          gh release upload ${RELEASE_TAG} cargo-miden-${{ matrix.target }}
+          gh release upload "${RELEASE_TAG}" "midenc-${{ matrix.target }}"
+          gh release upload "${RELEASE_TAG}" "cargo-miden-${{ matrix.target }}"
 
   release:
     name: prepare the next release
@@ -152,14 +151,14 @@ jobs:
       - *install-rust
       - name: Create release PR
         id: release-pr
-        uses: release-plz/action@v0.5
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Trigger CI for release PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

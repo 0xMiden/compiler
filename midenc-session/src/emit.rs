@@ -1,6 +1,5 @@
-use alloc::{boxed::Box, fmt, format, string::ToString, sync::Arc, vec};
+use alloc::{boxed::Box, string::ToString, sync::Arc};
 
-use miden_core::{prettier::PrettyPrint, serde::Serializable};
 use midenc_hir_symbol::Symbol;
 
 use crate::{OutputMode, OutputType, Session};
@@ -16,7 +15,7 @@ pub trait Emit {
         &self,
         writer: W,
         mode: OutputMode,
-        session: &Session,
+        _session: &Session,
     ) -> anyhow::Result<()>;
 }
 
@@ -223,7 +222,7 @@ impl Emit for alloc::string::String {
     }
 }
 
-impl Emit for miden_assembly::ast::Module {
+impl Emit for miden_assembly_syntax::ast::Module {
     fn name(&self) -> Option<Symbol> {
         Some(Symbol::intern(self.path().to_string()))
     }
@@ -243,179 +242,6 @@ impl Emit for miden_assembly::ast::Module {
     }
 }
 
-#[cfg(feature = "std")]
-macro_rules! serialize_into {
-    ($serializable:ident, $writer:expr) => {
-        // NOTE: We're protecting against unwinds here due to i/o errors that will get turned into
-        // panics if writing to the underlying file fails. This is because ByteWriter does not have
-        // fallible APIs, thus WriteAdapter has to panic if writes fail. This could be fixed, but
-        // that has to happen upstream in winterfell
-        std::panic::catch_unwind(move || {
-            let mut writer = ByteWriterAdapter($writer);
-            $serializable.write_into(&mut writer)
-        })
-        .map_err(|p| {
-            match p.downcast::<anyhow::Error>() {
-                // SAFETY: It is guaranteed to be safe to read Box<anyhow::Error>
-                Ok(err) => unsafe { core::ptr::read(&*err) },
-                // Propagate unknown panics
-                Err(err) => std::panic::resume_unwind(err),
-            }
-        })
-    };
-}
-
-struct ByteWriterAdapter<'a, W>(&'a mut W);
-impl<W: Writer> miden_assembly::serde::ByteWriter for ByteWriterAdapter<'_, W> {
-    fn write_u8(&mut self, value: u8) {
-        self.0.write_all(&[value]).unwrap()
-    }
-
-    fn write_bytes(&mut self, values: &[u8]) {
-        self.0.write_all(values).unwrap()
-    }
-}
-
-impl Emit for miden_assembly::Library {
-    fn name(&self) -> Option<Symbol> {
-        None
-    }
-
-    fn output_type(&self, mode: OutputMode) -> OutputType {
-        let _ = mode;
-        OutputType::Mast
-    }
-
-    fn write_to<W: Writer>(
-        &self,
-        mut writer: W,
-        mode: OutputMode,
-        _session: &Session,
-    ) -> anyhow::Result<()> {
-        struct LibraryTextFormatter<'a>(&'a miden_assembly::Library);
-        impl miden_core::prettier::PrettyPrint for LibraryTextFormatter<'_> {
-            fn render(&self) -> miden_core::prettier::Document {
-                use miden_core::{mast::MastNodeExt, prettier::*};
-
-                let mast_forest = self.0.mast_forest();
-                let mut library_doc = Document::Empty;
-                for module_info in self.0.module_infos() {
-                    let mut fragments = vec![];
-                    for (_, info) in module_info.procedures() {
-                        if let Some(proc_node_id) = mast_forest.find_procedure_root(info.digest) {
-                            let proc = mast_forest
-                                .get_node_by_id(proc_node_id)
-                                .expect("malformed mast forest")
-                                .to_pretty_print(mast_forest)
-                                .render();
-                            fragments.push(indent(
-                                4,
-                                display(format!("procedure {} ({})", &info.name, &info.digest))
-                                    + nl()
-                                    + proc
-                                    + nl()
-                                    + const_text("end"),
-                            ));
-                        }
-                    }
-                    let module_doc = indent(
-                        4,
-                        display(format!("module {}", module_info.path()))
-                            + nl()
-                            + fragments
-                                .into_iter()
-                                .reduce(|l, r| l + nl() + nl() + r)
-                                .unwrap_or_default()
-                            + const_text("end"),
-                    );
-                    if matches!(library_doc, Document::Empty) {
-                        library_doc = module_doc;
-                    } else {
-                        library_doc += nl() + nl() + module_doc;
-                    }
-                }
-                library_doc
-            }
-        }
-        impl fmt::Display for LibraryTextFormatter<'_> {
-            #[inline]
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.pretty_print(f)
-            }
-        }
-
-        match mode {
-            OutputMode::Text => writer.write_fmt(format_args!("{}", LibraryTextFormatter(self))),
-            OutputMode::Binary => {
-                let mut writer = ByteWriterAdapter(&mut writer);
-                self.write_into(&mut writer);
-                Ok(())
-            }
-        }
-    }
-}
-
-impl Emit for miden_core::program::Program {
-    fn name(&self) -> Option<Symbol> {
-        None
-    }
-
-    fn output_type(&self, mode: OutputMode) -> OutputType {
-        let _ = mode;
-        OutputType::Mast
-    }
-
-    fn write_to<W: Writer>(
-        &self,
-        mut writer: W,
-        mode: OutputMode,
-        _session: &Session,
-    ) -> anyhow::Result<()> {
-        match mode {
-            //OutputMode::Text => writer.write_fmt(format_args!("{}", self)),
-            OutputMode::Text => unimplemented!("emitting mast in text form is currently broken"),
-            OutputMode::Binary => {
-                let mut writer = ByteWriterAdapter(&mut writer);
-                self.write_into(&mut writer);
-                Ok(())
-            }
-        }
-    }
-}
-
-#[cfg(feature = "std")]
-impl EmitExt for miden_core::program::Program {
-    fn write_to_file(
-        &self,
-        path: &std::path::Path,
-        mode: OutputMode,
-        session: &Session,
-    ) -> anyhow::Result<()> {
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
-        }
-        let mut file = std::fs::File::create(path)?;
-        match mode {
-            OutputMode::Text => self.write_to(&mut file, mode, session),
-            OutputMode::Binary => serialize_into!(self, &mut file),
-        }
-    }
-
-    fn write_to_stdout(&self, session: &Session) -> anyhow::Result<()> {
-        use std::io::IsTerminal;
-        let mut stdout = std::io::stdout().lock();
-        let mode = if stdout.is_terminal() {
-            OutputMode::Text
-        } else {
-            OutputMode::Binary
-        };
-        match mode {
-            OutputMode::Text => self.write_to(&mut stdout, mode, session),
-            OutputMode::Binary => serialize_into!(self, &mut stdout),
-        }
-    }
-}
-
 impl Emit for miden_mast_package::Package {
     fn name(&self) -> Option<Symbol> {
         Some(Symbol::intern(&self.name))
@@ -432,17 +258,13 @@ impl Emit for miden_mast_package::Package {
         &self,
         mut writer: W,
         mode: OutputMode,
-        session: &Session,
+        _session: &Session,
     ) -> anyhow::Result<()> {
+        use miden_core::serde::Serializable;
         match mode {
             OutputMode::Text => {
-                if self.is_program() {
-                    self.try_into_program()
-                        .map_err(|err| anyhow::Error::msg(err.to_string()))?
-                        .write_to(writer, mode, session)
-                } else {
-                    self.mast.write_to(writer, mode, session)
-                }
+                let bytes = self.to_bytes();
+                writer.write_all(bytes.as_slice())
             }
             OutputMode::Binary => {
                 let bytes = self.to_bytes();

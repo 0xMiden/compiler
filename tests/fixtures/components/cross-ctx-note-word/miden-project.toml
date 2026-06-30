@@ -1,0 +1,13 @@
+[package]
+name = "cross-ctx-note-word"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:cross-ctx-note-word/miden-cross-ctx-note-word@0.1.0"
+
+[dependencies]
+cross-ctx-account-word = { path = "../cross-ctx-account-word" }
+
+[package.metadata.miden.dependencies]
+cross-ctx-account-word = { wit = "../cross-ctx-account-word/wit/cross-ctx-account-word.wit" }

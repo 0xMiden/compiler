@@ -183,7 +183,7 @@ impl Foldable for IntToPtr {
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, CheckedCastOpInterface, OpPrinter)
 )]
 pub struct Cast {
     #[operand]
@@ -199,6 +199,26 @@ impl InferTypeOpInterface for Cast {
         let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
+    }
+}
+
+impl CheckedCastOpInterface for Cast {
+    fn checked_cast_refinement(&self, result: ValueRef) -> Option<ValueRangeRefinement> {
+        let cast_result = self.result().as_value_ref();
+        if cast_result != result {
+            return None;
+        }
+
+        let input = self.operand().as_value_ref();
+        if input.borrow().ty() != &Type::Felt {
+            return None;
+        }
+
+        Some(ValueRangeRefinement {
+            input,
+            result: cast_result,
+            constraint: ValueRangeConstraint::from_type(self.result().ty())?,
+        })
     }
 }
 

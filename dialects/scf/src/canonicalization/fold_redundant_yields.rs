@@ -116,7 +116,7 @@ impl RewritePattern for FoldRedundantYields {
             // The entire operation is actually redundant; just remove it.  Make sure the yield
             // vals are sorted first.
             let mut sorted_vals = redundant_yield_vals.into_vec();
-            sorted_vals.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+            sorted_vals.sort_unstable_by_key(|val| val.0);
 
             // Wrap each of the values in Some.
             let some_vals =

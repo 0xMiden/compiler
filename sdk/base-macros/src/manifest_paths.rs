@@ -8,9 +8,11 @@ use std::{
 
 use proc_macro2::Span;
 use syn::Error;
-use toml::Value;
 
-use crate::util::{bundled_wit_folder, strip_line_comment};
+use crate::{
+    util::{bundled_wit_folder, strip_line_comment},
+    wit_world::ProjectPackageMetadata,
+};
 
 /// File name for the embedded Miden SDK WIT.
 const SDK_WIT_FILE_NAME: &str = "miden.wit";
@@ -29,26 +31,9 @@ pub(crate) struct ResolveOptions {
     pub allow_missing_local_wit: bool,
 }
 
-/// Collects WIT search paths and the target world from `Cargo.toml` + local files.
+/// Collects WIT search paths and the target world from `miden-project.toml` + local files.
 pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, Error> {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
-        Error::new(Span::call_site(), format!("failed to read CARGO_MANIFEST_DIR: {err}"))
-    })?;
-    let manifest_path = Path::new(&manifest_dir).join("Cargo.toml");
-
-    let manifest_content = fs::read_to_string(&manifest_path).map_err(|err| {
-        Error::new(
-            Span::call_site(),
-            format!("failed to read manifest '{}': {err}", manifest_path.display()),
-        )
-    })?;
-
-    let manifest: Value = manifest_content.parse().map_err(|err| {
-        Error::new(
-            Span::call_site(),
-            format!("failed to parse manifest '{}': {err}", manifest_path.display()),
-        )
-    })?;
+    let manifest = ProjectPackageMetadata::load_or_default(Span::call_site())?;
 
     let canonical_prelude_dir = ensure_sdk_wit()?;
 
@@ -67,49 +52,82 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
     resolved.push(prelude_dir);
 
     if let Some(dependencies) = manifest
-        .get("package")
-        .and_then(Value::as_table)
-        .and_then(|package| package.get("metadata"))
-        .and_then(Value::as_table)
-        .and_then(|metadata| metadata.get("component"))
-        .and_then(Value::as_table)
-        .and_then(|component| component.get("target"))
-        .and_then(Value::as_table)
-        .and_then(|target| target.get("dependencies"))
-        .and_then(Value::as_table)
+        .package
+        .metadata()
+        .get("miden")
+        .and_then(|meta| meta.get("dependencies"))
+        .and_then(|v| v.as_table())
     {
-        for (name, dependency) in dependencies.iter() {
-            let table = dependency.as_table().ok_or_else(|| {
-                Error::new(
+        // Try to locate wit for path dependencies that don't have an explicit wit path configured.
+        // We look for a `wit` directory in the dependency project's root
+        for dependency in manifest.package.dependencies().iter() {
+            if dependencies.contains_key(dependency.name().as_ref()) {
+                continue;
+            }
+            // If wit wasn't specified for a dependency, and the dependency is on disk,
+            // look for it in common locations, just in case it's available there
+            match dependency.scheme() {
+                miden_project::DependencyVersionScheme::Path { path, .. } => {
+                    let raw_path = Path::new(path.path()).join("wit");
+                    let absolute = if raw_path.is_absolute() {
+                        raw_path.to_path_buf()
+                    } else {
+                        Path::new(&manifest.manifest_dir).join(raw_path)
+                    };
+                    let canonical =
+                        fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
+                    let Ok(metadata) = fs::metadata(&canonical) else {
+                        continue;
+                    };
+                    if !metadata.is_dir() {
+                        continue;
+                    }
+                    let Some(path_str) = canonical.to_str() else {
+                        continue;
+                    };
+                    if !resolved.iter().any(|existing| existing == path_str) {
+                        resolved.push(path_str.to_owned());
+                    }
+                }
+                // TODO(pauls): We should also handle git dependencies at some point
+                _ => continue,
+            }
+        }
+
+        for (dependency, config) in dependencies {
+            let Some(table) = config.as_table() else {
+                return Err(Error::new(
                     Span::call_site(),
                     format!(
-                        "dependency '{name}' under \
-                         [package.metadata.component.target.dependencies] must be a table"
+                        "invalid miden-project.toml configuration: expected \
+                         metadata.dependencies.{dependency} to be a table"
                     ),
-                )
-            })?;
-
-            let path_value = table.get("path").and_then(Value::as_str).ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("dependency '{name}' is missing a 'path' entry"),
-                )
-            })?;
-
-            let raw_path = PathBuf::from(path_value);
-            let absolute = if raw_path.is_absolute() {
-                raw_path
-            } else {
-                Path::new(&manifest_dir).join(&raw_path)
+                ));
             };
-
+            let Some(wit) = table.get("wit") else {
+                continue;
+            };
+            let Some(wit_path) = wit.as_str() else {
+                return Err(Error::new(
+                    Span::call_site(),
+                    format!(
+                        "invalid miden-project.toml configuration: expected \
+                         metadata.dependencies.{dependency}.wit to be a string"
+                    ),
+                ));
+            };
+            let raw_path = Path::new(wit_path);
+            let absolute = if raw_path.is_absolute() {
+                raw_path.to_path_buf()
+            } else {
+                Path::new(&manifest.manifest_dir).join(raw_path)
+            };
             let canonical = fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
-
             let metadata = fs::metadata(&canonical).map_err(|err| {
                 Error::new(
                     Span::call_site(),
                     format!(
-                        "failed to read metadata for dependency '{name}' path '{}': {err}",
+                        "failed to read metadata for dependency '{dependency}' path '{}': {err}",
                         canonical.display()
                     ),
                 )
@@ -123,7 +141,7 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
                 return Err(Error::new(
                     Span::call_site(),
                     format!(
-                        "dependency '{name}' path '{}' does not have a parent directory",
+                        "dependency '{dependency}' path '{}' does not have a parent directory",
                         canonical.display()
                     ),
                 ));
@@ -132,7 +150,7 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
             let path_str = search_path.to_str().ok_or_else(|| {
                 Error::new(
                     Span::call_site(),
-                    format!("dependency '{name}' path contains invalid UTF-8"),
+                    format!("dependency '{dependency}' path contains invalid UTF-8"),
                 )
             })?;
 
@@ -142,7 +160,7 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
         }
     }
 
-    let local_wit_root = Path::new(&manifest_dir).join("wit");
+    let local_wit_root = Path::new(&manifest.manifest_dir).join("wit");
     let mut world = None;
 
     if local_wit_root.exists() && !options.allow_missing_local_wit {

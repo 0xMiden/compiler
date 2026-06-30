@@ -109,6 +109,28 @@ impl Immediate {
         }
     }
 
+    /// Converts this immediate to the representation matching `ty`, if the value fits.
+    ///
+    /// Returns `None` when `ty` is not a representable numeric type, or the value is out of
+    /// range for it.
+    pub fn coerced_to(self, ty: &Type) -> Option<Self> {
+        match ty {
+            Type::I1 => self.as_bool().map(Self::I1),
+            Type::U8 => self.as_u8().map(Self::U8),
+            Type::I8 => self.as_i8().map(Self::I8),
+            Type::U16 => self.as_u16().map(Self::U16),
+            Type::I16 => self.as_i16().map(Self::I16),
+            Type::U32 => self.as_u32().map(Self::U32),
+            Type::I32 => self.as_i32().map(Self::I32),
+            Type::U64 => self.as_u64().map(Self::U64),
+            Type::I64 => self.as_i64().map(Self::I64),
+            Type::U128 => self.as_u128().map(Self::U128),
+            Type::I128 => self.as_i128().map(Self::I128),
+            Type::Felt => self.as_felt().map(Self::Felt),
+            _ => None,
+        }
+    }
+
     /// Returns true if this immediate is a non-negative value
     pub fn is_non_negative(&self) -> bool {
         match self {
@@ -402,7 +424,7 @@ impl Immediate {
     pub fn bitcast_felt(self) -> Option<Felt> {
         match self {
             Self::Felt(value) => Some(value),
-            imm => imm.bitcast_u64().map(Felt::new),
+            imm => imm.bitcast_u64().and_then(|value| Felt::new(value).ok()),
         }
     }
 
@@ -571,18 +593,18 @@ impl Immediate {
     /// Attempts to convert this value to a field element
     pub fn as_felt(self) -> Option<Felt> {
         match self {
-            Self::I1(b) => Some(Felt::new(b as u64)),
-            Self::U8(b) => Some(Felt::new(b as u64)),
-            Self::I8(b) => u64::try_from(b).ok().map(Felt::new),
-            Self::U16(b) => Some(Felt::new(b as u64)),
-            Self::I16(b) => u64::try_from(b).ok().map(Felt::new),
-            Self::U32(b) => Some(Felt::new(b as u64)),
-            Self::I32(b) => u64::try_from(b).ok().map(Felt::new),
-            Self::U64(b) => Some(Felt::new(b)),
-            Self::I64(b) => u64::try_from(b).ok().map(Felt::new),
+            Self::I1(b) => Felt::new(b as u64).ok(),
+            Self::U8(b) => Felt::new(b as u64).ok(),
+            Self::I8(b) => u64::try_from(b).ok().and_then(|value| Felt::new(value).ok()),
+            Self::U16(b) => Felt::new(b as u64).ok(),
+            Self::I16(b) => u64::try_from(b).ok().and_then(|value| Felt::new(value).ok()),
+            Self::U32(b) => Felt::new(b as u64).ok(),
+            Self::I32(b) => u64::try_from(b).ok().and_then(|value| Felt::new(value).ok()),
+            Self::U64(b) => Felt::new(b).ok(),
+            Self::I64(b) => u64::try_from(b).ok().and_then(|value| Felt::new(value).ok()),
             Self::Felt(i) => Some(i),
-            Self::U128(b) => u64::try_from(b).ok().map(Felt::new),
-            Self::I128(b) => u64::try_from(b).ok().map(Felt::new),
+            Self::U128(b) => u64::try_from(b).ok().and_then(|value| Felt::new(value).ok()),
+            Self::I128(b) => u64::try_from(b).ok().and_then(|value| Felt::new(value).ok()),
             Self::F64(f) => FloatToInt::<Felt>::to_int(f).ok(),
         }
     }
@@ -1145,11 +1167,11 @@ impl FloatToInt<Felt> for f64 {
     }
 
     fn to_int(self) -> Result<Felt, ()> {
-        float_to_int(self).map(Felt::new)
+        float_to_int(self).and_then(|value| Felt::new(value).map_err(|_| ()))
     }
 
     unsafe fn to_int_unchecked(self) -> Felt {
-        Felt::new(unsafe { f64::to_int_unchecked::<u64>(self) })
+        Felt::new_unchecked(unsafe { f64::to_int_unchecked::<u64>(self) })
     }
 }
 impl FloatToInt<u128> for f64 {

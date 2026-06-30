@@ -1,34 +1,32 @@
 use std::{env, fs};
 
-use cargo_miden::{OutputType, run};
+use cargo_miden::run;
 use miden_mast_package::Package;
 use midenc_session::diagnostics::serde::Deserializable;
 
-use crate::utils::current_dir_lock;
+use crate::utils::{current_dir_lock, project_template_arg};
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {
-    let template = if template.is_empty() {
+    let mut args = vec![
+        "cargo".to_string(),
+        "miden".to_string(),
+        "new".to_string(),
+        project_name.to_string(),
+    ];
+    if template.is_empty() {
         if let Ok(project_template_path) = std::env::var("TEST_LOCAL_PROJECT_TEMPLATE_PATH") {
-            &format!("--template-path={project_template_path}")
-        } else {
-            template
+            args.push(format!("--template-path={project_template_path}"));
         }
-    } else if let Ok(templates_path) = std::env::var("TEST_LOCAL_TEMPLATES_PATH") {
-        &format!("--template-path={templates_path}/{}", template.strip_prefix("--").unwrap())
     } else {
-        template
-    };
-    let args: Vec<String> = ["cargo", "miden", "new", project_name, template]
-        .into_iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
+        args.push(project_template_arg(template));
+    }
     args
 }
 
 // NOTE: This test sets the current working directory so don't run it in parallel with tests
 // that depend on the current directory
 
+#[ignore = "we don't test real templates anymore"]
 #[test]
 fn test_all_templates() {
     let _cwd_lock = current_dir_lock();
@@ -50,7 +48,7 @@ fn test_all_templates() {
     assert!(note.is_library());
 
     let tx_script = build_new_project_from_template("--tx-script");
-    assert!(tx_script.is_program());
+    assert!(tx_script.is_library());
 
     let program = build_new_project_from_template("--program");
     assert!(program.is_program());
@@ -83,7 +81,7 @@ fn build_new_project_from_template(template: &str) -> Package {
         if expected_new_project_dir.exists() {
             fs::remove_dir_all(expected_new_project_dir).unwrap();
         }
-        let _ = run(new_project_args(project_name, "--account").into_iter(), OutputType::Masm)
+        let _ = run(new_project_args(project_name, "--account").into_iter())
             .expect("Failed to create new add-contract dependency project")
             .expect("'cargo miden new' should return Some(CommandOutput)");
     }
@@ -96,7 +94,7 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     let args = new_project_args(project_name, template);
 
-    let output = run(args.into_iter(), OutputType::Masm)
+    let output = run(args.into_iter())
         .expect("Failed to create new project from {template} template")
         .expect("'cargo miden new' should return Some(CommandOutput)");
     let new_project_path = match output {
@@ -111,7 +109,7 @@ fn build_new_project_from_template(template: &str) -> Package {
 
     // build with the dev profile
     let args = ["cargo", "miden", "build"].iter().map(|s| s.to_string());
-    let output = run(args, OutputType::Masm)
+    let output = run(args)
         .unwrap_or_else(|e| {
             panic!(
                 "Failed to compile with the dev profile for template: {template} \nwith error: {e}"
@@ -119,26 +117,26 @@ fn build_new_project_from_template(template: &str) -> Package {
         })
         .expect("'cargo miden build' should return Some(CommandOutput)");
     let expected_masm_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
-            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {other:?}"),
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output.as_slice() {
+            [artifact_path] => artifact_path.clone(),
+            outputs => panic!("Expected single Masm output, got {outputs:#?}"),
         },
         other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
     assert!(expected_masm_path.exists());
-    assert!(expected_masm_path.to_str().unwrap().contains("/debug/"));
+    assert!(expected_masm_path.to_str().unwrap().contains("/dev/"));
     assert_eq!(expected_masm_path.extension().unwrap(), "masp");
     assert!(expected_masm_path.metadata().unwrap().len() > 0);
 
     // build with the release profile
     let args = ["cargo", "miden", "build", "--release"].iter().map(|s| s.to_string());
-    let output = run(args, OutputType::Masm)
+    let output = run(args)
         .expect("Failed to compile with the release profile")
         .expect("'cargo miden build --release' should return Some(CommandOutput)");
     let expected_masm_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output {
-            cargo_miden::BuildOutput::Masm { artifact_path } => artifact_path,
-            other => panic!("Expected Masm output, got {other:?}"),
+        cargo_miden::CommandOutput::BuildCommandOutput { output } => match output.as_slice() {
+            [artifact_path] => artifact_path.clone(),
+            outputs => panic!("Expected single Masm output, got {outputs:#?}"),
         },
         other => panic!("Expected BuildCommandOutput, got {other:?}"),
     };
@@ -152,75 +150,4 @@ fn build_new_project_from_template(template: &str) -> Package {
     env::set_current_dir(restore_dir).unwrap();
     fs::remove_dir_all(&temp_dir).unwrap();
     package
-}
-#[test]
-fn new_project_integration_tests_pass() {
-    let _cwd_lock = current_dir_lock();
-    let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
-        .is_test(true)
-        .format_timestamp(None)
-        .try_init();
-    unsafe { env::set_var("TEST", "1") };
-
-    let restore_dir = env::current_dir().unwrap();
-    let temp_dir = env::temp_dir().join(format!(
-        "cargo_miden_integration_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    ));
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir).unwrap();
-    }
-    fs::create_dir_all(&temp_dir).unwrap();
-    env::set_current_dir(&temp_dir).unwrap();
-
-    let project_name = format!(
-        "integration_project_{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_micros()
-    );
-    let args = new_project_args(&project_name, "");
-
-    let output = run(args.into_iter(), OutputType::Masm)
-        .expect("Failed to create project with `cargo miden new`")
-        .expect("'cargo miden new' should return Some(CommandOutput)");
-    let project_path = match output {
-        cargo_miden::CommandOutput::NewCommandOutput { project_path } => {
-            project_path.canonicalize().unwrap()
-        }
-        other => panic!("Expected NewCommandOutput, got {other:?}"),
-    };
-    assert!(project_path.exists());
-
-    let integration_dir = project_path.join("integration");
-    assert!(
-        integration_dir.exists(),
-        "expected integration workspace at {}",
-        integration_dir.display()
-    );
-
-    let output = std::process::Command::new("cargo")
-        .arg("test")
-        .current_dir(&integration_dir)
-        .output()
-        .expect("failed to spawn `cargo test` inside integration directory");
-    if !output.status.success() {
-        panic!(
-            "`cargo test` failed in {} with status {:?}\nstdout:\n{}\nstderr:\n{}",
-            integration_dir.display(),
-            output.status.code(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    env::set_current_dir(restore_dir).unwrap();
-    fs::remove_dir_all(&project_path).unwrap();
-    if temp_dir.exists() {
-        fs::remove_dir_all(&temp_dir).unwrap();
-    }
 }

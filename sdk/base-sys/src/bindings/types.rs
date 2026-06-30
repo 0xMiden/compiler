@@ -126,6 +126,24 @@ impl NoteMetadata {
     }
 }
 
+/// Result of searching note metadata for an attachment scheme.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(C)]
+pub struct AttachmentLocation {
+    /// Non-zero when the attachment scheme was found.
+    pub is_found: Felt,
+    /// The matching attachment index, valid only when `is_found` is non-zero.
+    pub index: Felt,
+}
+
+impl AttachmentLocation {
+    /// Returns whether the attachment scheme was found.
+    #[inline]
+    pub fn found(&self) -> bool {
+        self.is_found != Felt::new(0).unwrap()
+    }
+}
+
 impl From<[Felt; 4]> for Recipient {
     fn from(value: [Felt; 4]) -> Self {
         Recipient {

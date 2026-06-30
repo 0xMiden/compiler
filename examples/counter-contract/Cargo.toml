@@ -1,3 +1,5 @@
+cargo-features = ["trim-paths"]
+
 [package]
 name = "counter-contract"
 description = "A simple example of a Miden counter contract using the Account Storage API"
@@ -18,3 +20,9 @@ package = "miden:counter-contract"
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]

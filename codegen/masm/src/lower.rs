@@ -1,4 +1,5 @@
 mod component;
+mod fpi;
 mod lowering;
 mod native_ptr;
 mod utils;

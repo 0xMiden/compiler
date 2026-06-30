@@ -675,11 +675,13 @@ impl Block {
         &mut self.arguments
     }
 
-    pub fn argument_values(&self) -> impl ExactSizeIterator<Item = ValueRef> + '_ {
+    pub fn argument_values(
+        &self,
+    ) -> impl ExactSizeIterator<Item = ValueRef> + DoubleEndedIterator + '_ {
         self.arguments.iter().copied().map(|arg| arg as ValueRef)
     }
 
-    pub fn argument_types(&self) -> impl ExactSizeIterator<Item = Type> + '_ {
+    pub fn argument_types(&self) -> impl ExactSizeIterator<Item = Type> + DoubleEndedIterator + '_ {
         self.arguments.iter().copied().map(|arg| arg.borrow().ty().clone())
     }
 

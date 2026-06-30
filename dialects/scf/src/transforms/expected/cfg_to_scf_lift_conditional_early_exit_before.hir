@@ -9,13 +9,13 @@ builtin.function public extern("C") @cfg_to_scf_lift_conditional_early_exit(%0: 
     cf.cond_br %9 ^block6, ^block7 : (i1);
 ^block2:
     %10 = arith.incr %0;
-    cf.br ^block1:(%10);
+    cf.br ^block1(%10 : u32);
 ^block3:
     %11 = arith.neq %3, %5;
     cf.cond_br %11 ^block4, ^block5 : (i1);
 ^block4:
     %12 = arith.incr %3;
-    cf.br ^block1:(%12);
+    cf.br ^block1(%12 : u32);
 ^block5:
     builtin.ret %2 : (u32);
 ^block6:

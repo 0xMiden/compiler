@@ -8,6 +8,7 @@ static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 use heck::ToKebabCase;
 use proc_macro2::Span;
 use syn::{ItemStruct, Type, spanned::Spanned};
+use wit_bindgen_core::wit_parser::Type as WitType;
 
 use crate::manifest_paths::SDK_WIT_SOURCE;
 
@@ -16,6 +17,24 @@ pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
     pub(crate) is_custom: bool,
     pub(crate) path: Vec<String>,
+    pub(crate) dependencies: Vec<TypeRef>,
+}
+
+impl TypeRef {
+    /// Returns true when this type must be imported from the SDK core-types WIT interface.
+    pub(crate) fn requires_core_type_import(&self) -> bool {
+        !self.is_custom && sdk_core_type_names().contains(&self.wit_name)
+    }
+
+    /// Appends all SDK core-types imports referenced by this type.
+    pub(crate) fn add_required_core_type_imports(&self, imports: &mut impl Extend<String>) {
+        if self.requires_core_type_import() {
+            imports.extend([self.wit_name.clone()]);
+        }
+        for dependency in &self.dependencies {
+            dependency.add_required_core_type_imports(imports);
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -91,14 +110,6 @@ pub(crate) fn map_type_to_type_ref(
             let last = path.path.segments.last().ok_or_else(|| {
                 syn::Error::new(ty.span(), "unsupported type in component interface")
             })?;
-
-            if !last.arguments.is_empty() {
-                return Err(syn::Error::new(
-                    last.span(),
-                    "generic type arguments are not supported in exported types",
-                ));
-            }
-
             let ident = last.ident.to_string();
             if ident.is_empty() {
                 return Err(syn::Error::new(
@@ -109,13 +120,60 @@ pub(crate) fn map_type_to_type_ref(
 
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
+
+            reject_unsupported_component_primitive(&ident, last.span())?;
+
+            if !last.arguments.is_empty() {
+                if ident == "Option" {
+                    let inner = single_generic_type_argument(last)?;
+                    let inner = map_type_to_type_ref(inner, exported_types)?;
+                    let wit_name = format!("option<{}>", inner.wit_name);
+
+                    return Ok(TypeRef {
+                        wit_name,
+                        is_custom: false,
+                        path: path_segments,
+                        dependencies: vec![inner],
+                    });
+                }
+
+                if ident == "Result" {
+                    let args = generic_type_arguments(last, "Result<T, E>", 2)?;
+                    let ok = map_result_argument_type_to_type_ref(args[0], exported_types)?;
+                    let err = map_result_argument_type_to_type_ref(args[1], exported_types)?;
+                    let wit_name = format!("result<{}, {}>", ok.wit_name, err.wit_name);
+
+                    return Ok(TypeRef {
+                        wit_name,
+                        is_custom: false,
+                        path: path_segments,
+                        dependencies: vec![ok, err],
+                    });
+                }
+
+                return Err(syn::Error::new(
+                    last.span(),
+                    "generic type arguments are not supported in exported types",
+                ));
+            }
+
             let wit_name = ident.to_kebab_case();
+
+            if let Some(wit_type) = rust_type_to_wit_type(&ident) {
+                return Ok(TypeRef {
+                    wit_name: wit_type_name(wit_type).to_string(),
+                    is_custom: false,
+                    path: path_segments,
+                    dependencies: Vec::new(),
+                });
+            }
 
             if exported_types.contains_key(&ident) {
                 return Ok(TypeRef {
                     wit_name,
                     is_custom: true,
                     path: path_segments,
+                    dependencies: Vec::new(),
                 });
             }
 
@@ -124,6 +182,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name,
                     is_custom: false,
                     path: path_segments,
+                    dependencies: Vec::new(),
                 });
             }
 
@@ -131,12 +190,116 @@ pub(crate) fn map_type_to_type_ref(
                 wit_name,
                 is_custom: true,
                 path: path_segments,
+                dependencies: Vec::new(),
             })
         }
         _ => Err(syn::Error::new(
             ty.span(),
             "unsupported type in component interface; only paths are supported",
         )),
+    }
+}
+
+/// Returns the single type argument from a supported generic Rust type path segment.
+fn single_generic_type_argument(segment: &syn::PathSegment) -> Result<&Type, syn::Error> {
+    let args = generic_type_arguments(segment, "Option<T>", 1)?;
+    Ok(args[0])
+}
+
+/// Returns type arguments from a supported generic Rust type path segment.
+fn generic_type_arguments<'a>(
+    segment: &'a syn::PathSegment,
+    type_name: &str,
+    expected_len: usize,
+) -> Result<Vec<&'a Type>, syn::Error> {
+    let syn::PathArguments::AngleBracketed(args) = &segment.arguments else {
+        return Err(syn::Error::new(
+            segment.arguments.span(),
+            "generic type arguments must be angle-bracketed",
+        ));
+    };
+    if args.args.len() != expected_len {
+        let plural = if expected_len == 1 { "" } else { "s" };
+        return Err(syn::Error::new(
+            args.span(),
+            format!("{type_name} must have exactly {expected_len} type argument{plural}"),
+        ));
+    }
+    args.args
+        .iter()
+        .map(|arg| match arg {
+            syn::GenericArgument::Type(ty) => Ok(ty),
+            other => Err(syn::Error::new(
+                other.span(),
+                format!("{type_name} only supports type arguments"),
+            )),
+        })
+        .collect()
+}
+
+/// Converts one Rust `Result` type argument into its WIT representation.
+fn map_result_argument_type_to_type_ref(
+    ty: &Type,
+    exported_types: &HashMap<String, ExportedTypeDef>,
+) -> Result<TypeRef, syn::Error> {
+    match ty {
+        Type::Tuple(tuple) if tuple.elems.is_empty() => Ok(TypeRef {
+            wit_name: "_".to_string(),
+            is_custom: false,
+            path: Vec::new(),
+            dependencies: Vec::new(),
+        }),
+        _ => map_type_to_type_ref(ty, exported_types),
+    }
+}
+
+/// Rejects Rust primitives that WIT can express but the Wasm frontend cannot lower yet.
+fn reject_unsupported_component_primitive(ident: &str, span: Span) -> Result<(), syn::Error> {
+    if matches!(ident, "f32" | "f64" | "char") {
+        return Err(syn::Error::new(
+            span,
+            format!("`{ident}` is not supported in component interfaces yet"),
+        ));
+    }
+
+    Ok(())
+}
+
+/// Converts a Rust primitive type identifier into the equivalent WIT primitive type.
+///
+/// `f32`, `f64`, and `char` intentionally have no mapping; they are rejected earlier by
+/// [`reject_unsupported_component_primitive`].
+fn rust_type_to_wit_type(ident: &str) -> Option<WitType> {
+    match ident {
+        "bool" => Some(WitType::Bool),
+        "i8" => Some(WitType::S8),
+        "u8" => Some(WitType::U8),
+        "i16" => Some(WitType::S16),
+        "u16" => Some(WitType::U16),
+        "i32" => Some(WitType::S32),
+        "u32" => Some(WitType::U32),
+        "i64" => Some(WitType::S64),
+        "u64" => Some(WitType::U64),
+        _ => None,
+    }
+}
+
+/// Returns the canonical WIT syntax for a WIT type produced by [`rust_type_to_wit_type`].
+fn wit_type_name(ty: WitType) -> &'static str {
+    match ty {
+        WitType::Bool => "bool",
+        WitType::U8 => "u8",
+        WitType::U16 => "u16",
+        WitType::U32 => "u32",
+        WitType::U64 => "u64",
+        WitType::S8 => "s8",
+        WitType::S16 => "s16",
+        WitType::S32 => "s32",
+        WitType::S64 => "s64",
+        WitType::F32 | WitType::F64 | WitType::Char | WitType::String | WitType::ErrorContext => {
+            unreachable!("`{ty:?}` has no Rust mapping in component interfaces")
+        }
+        WitType::Id(_) => unreachable!("named WIT type ids are not primitive syntax"),
     }
 }
 
@@ -286,6 +449,9 @@ pub(crate) fn ensure_custom_type_defined(
                  #[export_type] to its definition"
             ),
         ));
+    }
+    for dependency in &type_ref.dependencies {
+        ensure_custom_type_defined(dependency, exported_type_names, span)?;
     }
     Ok(())
 }

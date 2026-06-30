@@ -1,7 +1,7 @@
-use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use miden_protocol::account::{
-    AccountType, StorageSlotName,
+    StorageSlotName,
     component::{
         AccountComponentMetadata, MapSlotSchema, StorageSchema, StorageSlotSchema, ValueSlotSchema,
         WordSchema, storage::SchemaType,
@@ -71,13 +71,10 @@ pub struct AccountComponentMetadataBuilder {
     name: String,
 
     /// A brief description of what this component is and how it works.
-    description: String,
+    description: Arc<str>,
 
     /// The version of the component using semantic versioning.
     version: Version,
-
-    /// A set of supported target account types for this component.
-    supported_types: BTreeSet<AccountType>,
 
     /// Storage schema entries defining the component's storage layout.
     storage: Vec<(StorageSlotName, StorageSlotSchema)>,
@@ -85,19 +82,13 @@ pub struct AccountComponentMetadataBuilder {
 
 impl AccountComponentMetadataBuilder {
     /// Creates a new metadata builder.
-    pub fn new(name: String, version: Version, description: String) -> Self {
+    pub fn new(name: String, version: Version, description: impl Into<Arc<str>>) -> Self {
         Self {
             name,
-            description,
+            description: description.into(),
             version,
-            supported_types: BTreeSet::new(),
             storage: Vec::new(),
         }
-    }
-
-    /// Adds a supported account type to this component metadata.
-    pub fn add_supported_type(&mut self, account_type: AccountType) {
-        self.supported_types.insert(account_type);
     }
 
     /// Adds a storage-schema entry derived from a component field.
@@ -158,8 +149,8 @@ impl AccountComponentMetadataBuilder {
             syn::Error::new(span, format!("failed to build component storage schema: {err}"))
         })?;
 
-        Ok(AccountComponentMetadata::new(self.name, self.supported_types)
-            .with_description(self.description)
+        Ok(AccountComponentMetadata::new(self.name)
+            .with_description(self.description.as_ref())
             .with_version(self.version)
             .with_storage_schema(storage_schema))
     }

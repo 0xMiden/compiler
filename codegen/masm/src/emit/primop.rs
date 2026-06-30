@@ -1,7 +1,7 @@
 use miden_assembly_syntax::parser::WordValue;
 use midenc_dialect_hir::assertions;
 use midenc_hir::{
-    Felt, Immediate, SourceSpan, Type,
+    ArrayType, Felt, Immediate, SourceSpan, Type,
     dialects::builtin::attributes::{ArgumentExtension, Signature},
 };
 
@@ -9,8 +9,28 @@ use super::{OpEmitter, int64, masm};
 use crate::TraceEvent;
 
 impl OpEmitter<'_> {
+    /// Push the caller procedure hash as a word.
+    pub fn caller(&mut self, span: SourceSpan) {
+        self.emit(masm::Instruction::Caller, span);
+        self.push(Type::from(ArrayType::new(Type::Felt, 4)));
+    }
+
+    /// Push the current VM clock cycle.
+    pub fn clk(&mut self, span: SourceSpan) {
+        self.emit(masm::Instruction::Clk, span);
+        self.push(Type::Felt);
+    }
+
     /// Format a diagnostic message for a HIR assertion code when one is available.
-    fn assertion_message(code: Option<u32>, default: impl Into<String>) -> String {
+    fn assertion_message(
+        code: Option<u32>,
+        message: Option<&str>,
+        default: impl Into<String>,
+    ) -> String {
+        if let Some(message) = message.filter(|message| !message.is_empty()) {
+            return message.to_owned();
+        }
+
         let default = default.into();
         match code.filter(|code| *code != 0) {
             Some(assertions::ASSERT_FAILED_ALIGNMENT) => {
@@ -24,10 +44,11 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 1
     ///
     /// This operation consumes the input value.
-    pub fn assert(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assert(&mut self, code: Option<u32>, message: Option<&str>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
         let ty = arg.ty().clone();
-        let message = Self::assertion_message(code, format!("expected {ty} value to equal 1"));
+        let message =
+            Self::assertion_message(code, message, format!("expected {ty} value to equal 1"));
         match ty {
             Type::Felt
             | Type::U32
@@ -70,10 +91,11 @@ impl OpEmitter<'_> {
     /// Assert that an integer value on the stack has the value 0
     ///
     /// This operation consumes the input value.
-    pub fn assertz(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assertz(&mut self, code: Option<u32>, message: Option<&str>, span: SourceSpan) {
         let arg = self.stack.pop().expect("operand stack is empty");
         let ty = arg.ty().clone();
-        let message = Self::assertion_message(code, format!("expected {ty} value to equal 0"));
+        let message =
+            Self::assertion_message(code, message, format!("expected {ty} value to equal 0"));
         match ty {
             Type::Felt
             | Type::U32
@@ -116,12 +138,13 @@ impl OpEmitter<'_> {
     /// Assert that the top two integer values on the stack have the same value
     ///
     /// This operation consumes the input values.
-    pub fn assert_eq(&mut self, code: Option<u32>, span: SourceSpan) {
+    pub fn assert_eq(&mut self, code: Option<u32>, message: Option<&str>, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");
         let lhs = self.pop().expect("operand stack is empty");
         let ty = lhs.ty().clone();
         assert_eq!(ty, rhs.ty(), "expected assert_eq operands to have the same type");
-        let message = Self::assertion_message(code, format!("expected {ty} values to be equal"));
+        let message =
+            Self::assertion_message(code, message, format!("expected {ty} values to be equal"));
         match ty {
             Type::Felt
             | Type::U32
@@ -195,9 +218,9 @@ impl OpEmitter<'_> {
                 let (hi, lo) = int64::to_raw_parts(imm);
                 self.emit_all(
                     [
-                        masm::Instruction::EqImm(Felt::new(hi as u64).into()),
+                        masm::Instruction::EqImm(Felt::new_unchecked(hi as u64).into()),
                         Self::assert_with_message_inst(message.clone(), span),
-                        masm::Instruction::EqImm(Felt::new(lo as u64).into()),
+                        masm::Instruction::EqImm(Felt::new_unchecked(lo as u64).into()),
                         Self::assert_with_message_inst(message, span),
                     ],
                     span,
@@ -265,6 +288,26 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    /// Emit a `println` trace that can be handled by the debug executor.
+    pub fn println(&mut self, span: SourceSpan) {
+        // Don't `pop` operands as the debug executor reads them from the stack to handle printing.
+        let ptr = &self.stack[0];
+        let len = &self.stack[1];
+
+        assert_eq!(
+            ptr.ty(),
+            Type::from(midenc_hir::PointerType::new(Type::U8)),
+            "expected println pointer operand to be a ptr<u8>"
+        );
+        assert_eq!(len.ty(), Type::U32, "expected println length operand to be a u32");
+
+        self.emit(masm::Instruction::Trace(TraceEvent::PrintLn.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+
+        // Clean up the stack after the debug executor handled printing.
+        self.dropn(2, span);
+    }
+
     /// Execute the given procedure.
     ///
     /// A function called using this operation is invoked in the same memory context as the caller.
@@ -297,6 +340,22 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
         self.emit(masm::Instruction::Nop, span);
         self.emit(masm::Instruction::Call(callee), span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+    }
+
+    /// Execute the given kernel procedure as a syscall.
+    pub fn syscall(
+        &mut self,
+        callee: masm::InvocationTarget,
+        signature: &Signature,
+        span: SourceSpan,
+    ) {
+        self.process_call_signature(&callee, signature, span);
+
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::SysCall(callee), span);
         self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
         self.emit(masm::Instruction::Nop, span);
     }
@@ -413,5 +472,47 @@ impl OpEmitter<'_> {
         for result in signature.results.iter().rev() {
             self.push(result.ty.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{collections::BTreeSet, rc::Rc};
+
+    use midenc_hir::{ArrayType, Context};
+
+    use super::*;
+    use crate::{OperandStack, masm::Op};
+
+    #[test]
+    fn caller_emits_vm_instruction_and_pushes_word() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let span = SourceSpan::default();
+        emitter.caller(span);
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::from(ArrayType::new(Type::Felt, 4)));
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
+    }
+
+    #[test]
+    fn clk_emits_vm_instruction_and_pushes_felt() {
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context);
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let span = SourceSpan::default();
+        emitter.clk(span);
+
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::Felt);
+        assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Clk)));
     }
 }

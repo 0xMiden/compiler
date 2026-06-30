@@ -141,23 +141,35 @@ pub proc overflowing_mul # [b, a]
     # if either operand are MIN, then the following rules apply
     #
     # 1. If the other operand is 1, then there is no overflow and the result is MIN
-    # 2. If the other operand is -1, then there is overflow and the result is MIN
-    # 3. For any other value, there is overflow, and the result is zero
+    # 2. If the other operand is 0, then there is no overflow and the result is zero
+    # 3. For any other value, there is overflow, and the result is MIN if the other
+    #    operand is odd, or zero otherwise.
     if.true
-        # if either are 1, rule 1 applies
-        dup.0 eq.1  # [is_b_1, b, a]
-        dup.2 eq.1  # [is_a_1, is_b_1, b, a]
-        or          # [is_either_1, b, a]
-        # either are -1, rule 2 applies
-        movup.2 push.NEG1 eq # [is_a_neg1, is_either_1, b]
-        movup.2 push.NEG1 eq # [is_b_neg1, is_a_neg1, is_either_1]
-        or                   # [is_either_neg1, is_either_1]
-        # choose between rule 1/2 or rule 3 result
-        dup.1 or           # [result_is_MIN, is_either_1]
-        push.MIN push.0    # [0, MIN, result_is_MIN, is_either_1]
-        swap.2 cdrop       # [result, is_either_1]
-        # overflow occurred if neither operand was 1
-        swap.1 not         # [overflowed, result]
+        # check if either operand is odd
+        dup.0 push.1 u32and # [b_odd, b, a]
+        dup.2 push.1 u32and # [a_odd, b_odd, b, a]
+        or                  # [result_is_MIN, b, a]
+        movdn.2             # [b, a, result_is_MIN]
+
+        # check if either operand is 0
+        dup.0 eq.0           # [is_b_0, b, a, result_is_MIN]
+        dup.2 eq.0           # [is_a_0, is_b_0, b, a, result_is_MIN]
+        or                   # [is_either_0, b, a, result_is_MIN]
+        movdn.2              # [b, a, is_either_0, result_is_MIN]
+
+        # check if either operand is 1
+        eq.1        # [is_b_1, a, is_either_0, result_is_MIN]
+        swap.1 eq.1 # [is_a_1, is_b_1, is_either_0, result_is_MIN]
+        or          # [is_either_1, is_either_0, result_is_MIN]
+
+        # choose between the MIN and zero result
+        movup.2           # [result_is_MIN, is_either_1, is_either_0]
+        push.MIN push.0    # [0, MIN, result_is_MIN, is_either_1, is_either_0]
+        swap.2 cdrop       # [result, is_either_1, is_either_0]
+
+        # overflow occurred unless the other operand is 1 or 0
+        swap.2 or         # [is_either_0_or_1, result]
+        not               # [overflowed, result]
     else
         # determine what sign the result should have
         #
@@ -174,14 +186,24 @@ pub proc overflowing_mul # [b, a]
         movup.2 cdrop                     # [-a or a, is_b_signed, b, negate_result]
         swap.2 dup.0 exec.unchecked_neg   # [-b, b, is_b_signed, -a or a, negate_result]
         movup.2 cdrop                     # [-b or b, -a or a, negate_result]
-        u32widening_mul swap.1         # [overflowed, result, negate_result]
+        u32widening_mul swap.1            # [hi, lo, negate_result]
 
-        # if the unsigned op overflowed, we definitely overflowed, but overflow
-        # also occurred if the supposedly unsigned result has its sign bit set,
-        # which could only happen if we overflowed the positive i32 range
-        dup.1 exec.is_signed or           # [overflowed, result, negate_result]
-        swap.1 dup.0 exec.unchecked_neg   # [-result, result, overflowed, negate_result]
-        movup.3 cdrop swap.1              # [overflowed, -result or result]
+        # Overflow occurs when the product of |a| and |b| exceeds the signed i32 range.
+        # A positive result may be at most i32::MAX = 2^31 - 1, while a negative result
+        # of 2^31 is valid because that equals i32::MIN.
+        dup.0 eq.0 not                    # [hi != 0, hi, lo, negate_result]
+        dup.2 exec.is_signed              # [lo >= 2^31, hi != 0, hi, lo, negate_result]
+        or                                # [magnitude > MAX, hi, lo, negate_result]
+        dup.2 push.MIN eq                 # [lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        dup.4                             # [negate_result, lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        and                               # [negate_result && lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        dup.2 eq.0                        # [hi == 0, negate_result && lo == MIN, magnitude > MAX, hi, lo, negate_result]
+        and                               # [allowed_i32_MIN, magnitude > MAX, hi, lo, negate_result]
+        not                               # [!allowed_i32_MIN, magnitude > MAX, hi, lo, negate_result]
+        and                               # [overflowed, hi, lo, negate_result]
+        swap.1 drop                       # [overflowed, lo, negate_result]
+        swap.1 dup.0 exec.unchecked_neg   # [-lo, lo, overflowed, negate_result]
+        movup.3 cdrop swap.1              # [overflowed, result]
     end
 end
 
@@ -216,10 +238,74 @@ pub proc checked_div # [b, a]
     # divide
     u32div            # [|a / b|, is_a_signed, is_b_signed]
 
-    # if the signs differ, negate the result
+    # if the signs differ, negate the result. Division overflows only for
+    # i32::MIN / -1, which corresponds to `signs_differ == 0` and `|a/b| == MIN`
     movdn.2 neq                 # [signs_differ, |a / b|]
-    dup.1 exec.unchecked_neg    # [-|a / b|, signs_differ, |a / b|]
-    swap.1 cdrop                # [result]
+    if.true
+        # no overflow if the signs differ
+        exec.unchecked_neg      # [result]
+    else
+        # trap on overflow
+        dup.0 push.MIN eq assertz       # [|a / b|]
+    end
+end
+
+# Computes `a % b`, asserting that both inputs are valid i32.
+#
+# Returns the remainder modulo 2^32, plus a boolean indicating whether or not the operation
+# overflowed.
+#
+# This will trap on division by zero. For `i32::MIN % -1` it returns `(overflowed=true, result=0)`
+# because the underlying division overflows.
+pub proc overflowing_mod(b: i32, a: i32) -> (overflowed: i1, result: i32)
+    u32assert2
+
+    # check for i32::MIN % -1, which is the only overflow case for signed remainder
+    dup.0 push.NEG1 eq          # [b == -1, b, a]
+    dup.2 push.MIN eq           # [a == MIN, b == -1, b, a]
+    and                         # [overflows, b, a]
+    if.true
+        drop drop push.0 push.1 # [1, 0]
+    else
+        # get positive dividend
+        dup.1 exec.unchecked_neg    # [-a, b, a]
+        dup.2 swap.1                # [-a, a, b, a]
+        movup.3 exec.is_signed      # [is_a_signed, -a, a, b]
+        dup.0 movdn.4 cdrop         # [|a|, b, is_a_signed]
+
+        # get positive divisor
+        dup.1 exec.unchecked_neg    # [-b, |a|, b, is_a_signed]
+        dup.2 swap.1                # [-b, b, |a|, b, is_a_signed]
+        movup.3 exec.is_signed      # [is_b_signed, -b, b, |a|, is_a_signed]
+        cdrop                       # [|b|, |a|, is_a_signed]
+
+        u32mod                      # [|a % b|, is_a_signed]
+
+        # apply the dividend's sign to the result
+        dup.0 exec.unchecked_neg     # [neg(|a % b|), |a % b|, is_a_signed]
+        movup.2                      # [is_a_signed, neg(|a % b|), |a % b|]
+        cdrop                        # [result]
+
+        # no overflow in this branch
+        push.0                       # [0, result]
+    end
+end
+
+# Computes `a % b`, asserting that both inputs are valid i32.
+#
+# This will trap on division by zero, and on `i32::MIN % -1`.
+pub proc checked_mod(b: i32, a: i32) -> i32
+    exec.overflowing_mod # [overflowed, result]
+    assertz              # [result]
+end
+
+# Computes `a % b`, wrapping around on overflow.
+#
+# This will trap on division by zero. It will NOT trap on `i32::MIN % -1` instead it wraps and
+# returns 0.
+pub proc wrapping_mod(b: i32, a: i32) -> i32
+    exec.overflowing_mod # [overflowed, result]
+    drop
 end
 
 # Given two i32 values in two's complement representation, compare them,

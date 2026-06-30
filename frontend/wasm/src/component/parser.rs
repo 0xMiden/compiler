@@ -3,9 +3,11 @@
 
 // Based on wasmtime v16.0 Wasm component translation
 
+use alloc::sync::Arc;
 use std::mem;
 
 use cranelift_entity::PrimaryMap;
+use gimli::Section;
 use indexmap::IndexMap;
 use midenc_hir::{FxBuildHasher, FxHashMap};
 use midenc_session::{Session, diagnostics::IntoDiagnostic};
@@ -22,7 +24,7 @@ use crate::{
     component::*,
     error::WasmResult,
     module::{
-        module_env::{ModuleEnvironment, ParsedModule},
+        module_env::{DebugInfoData, Dwarf, ModuleEnvironment, ParsedModule},
         types::{
             EntityIndex, FuncIndex, GlobalIndex, MemoryIndex, TableIndex, WasmType,
             convert_func_type, convert_valtype,
@@ -76,6 +78,14 @@ pub struct ComponentParser<'a, 'data> {
     /// As frames are popped from `lexical_scopes` their completed component
     /// will be pushed onto this list.
     pub static_components: PrimaryMap<StaticComponentIndex, ParsedComponent<'data>>,
+
+    /// DWARF debug info parsed from component-level custom sections.
+    /// This will be injected into the parsed modules after component parsing completes.
+    component_debuginfo: DebugInfoData<'data>,
+
+    /// The byte offset where the first module starts within the component.
+    /// Used to adjust DWARF addresses when looking up source locations.
+    first_module_base_offset: Option<usize>,
 }
 
 pub struct ParsedRootComponent<'data> {
@@ -291,7 +301,9 @@ pub struct LocalCanonicalOptions {
     pub realloc: Option<FuncIndex>,
     pub post_return: Option<FuncIndex>,
     pub is_async: bool,
+    pub gc: bool,
     pub async_callback: Option<FuncIndex>,
+    pub core_type: Option<crate::module::types::TypeIndex>,
 }
 
 /// Action to take after parsing a payload.
@@ -322,6 +334,8 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
             lexical_scopes: Vec::new(),
             static_components: Default::default(),
             static_modules: Default::default(),
+            component_debuginfo: Default::default(),
+            first_module_base_offset: None,
         }
     }
 
@@ -345,6 +359,22 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         }
         assert!(remaining.is_empty());
         assert!(self.lexical_scopes.is_empty());
+
+        // Inject component-level DWARF debug info into the first module.
+        // In wasm components, DWARF sections are stored at the component level
+        // but reference the embedded module's code. We need to:
+        // 1. Copy the DWARF data to the module's debuginfo
+        // 2. Store the module's base offset for address translation
+        if let Some(first_module) = self.static_modules.values_mut().next() {
+            // Only inject if DWARF was actually parsed
+            if !self.component_debuginfo.dwarf.debug_info.reader().is_empty() {
+                first_module.debuginfo = self.component_debuginfo;
+                // Store the module's base offset for DWARF address translation
+                if let Some(base_offset) = self.first_module_base_offset {
+                    first_module.wasm_file.module_base_offset = base_offset as u64;
+                }
+            }
+        }
 
         Ok(ParsedRootComponent {
             root_component: self.result,
@@ -424,8 +454,9 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 );
             }
             Payload::ComponentAliasSection(s) => self.component_alias_section(s)?,
-            // All custom sections are ignored at this time.
-            // and parse a `name` section here.
+            // Parse DWARF debug sections at component level.
+            // Other custom sections are ignored.
+            Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
             Payload::CustomSection { .. } => {}
             // Anything else is either not reachable since we never enable the
             // feature or we do enable it and it's a bug we don't
@@ -455,10 +486,11 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         // Note that the push/pop of the component types scope happens above in
         // `Version` and `End` since multiple type sections can appear within a
         // component.
-        let mut component_type_index = self.validator.types(0).unwrap().component_type_count();
         self.validator.component_type_section(&s).into_diagnostic()?;
         let types = self.validator.types(0).unwrap();
-        for ty in s {
+        for (component_type_index, ty) in
+            (0..self.validator.types(0).unwrap().component_type_count()).zip(s)
+        {
             match ty.into_diagnostic()? {
                 wasmparser::ComponentType::Resource { rep, dtor } => {
                     let rep = convert_valtype(rep);
@@ -473,8 +505,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 | wasmparser::ComponentType::Instance(_)
                 | wasmparser::ComponentType::Component(_) => {}
             }
-
-            component_type_index += 1;
         }
         Ok(())
     }
@@ -563,10 +593,19 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 wasmparser::CanonicalFunction::ErrorContextNew { .. }
                 | wasmparser::CanonicalFunction::ErrorContextDrop
                 | wasmparser::CanonicalFunction::ErrorContextDebugMessage { .. }
-                | wasmparser::CanonicalFunction::ThreadSpawn { .. }
+                | wasmparser::CanonicalFunction::ThreadSpawnRef { .. }
+                | wasmparser::CanonicalFunction::ThreadSpawnIndirect { .. }
+                | wasmparser::CanonicalFunction::ThreadNewIndirect { .. }
                 | wasmparser::CanonicalFunction::ThreadAvailableParallelism
-                | wasmparser::CanonicalFunction::Yield { .. }
-                | wasmparser::CanonicalFunction::BackpressureSet
+                | wasmparser::CanonicalFunction::ThreadIndex
+                | wasmparser::CanonicalFunction::ThreadSuspend { .. }
+                | wasmparser::CanonicalFunction::ThreadSuspendTo { .. }
+                | wasmparser::CanonicalFunction::ThreadSuspendToSuspended { .. }
+                | wasmparser::CanonicalFunction::ThreadUnsuspend
+                | wasmparser::CanonicalFunction::ThreadYield { .. }
+                | wasmparser::CanonicalFunction::ThreadYieldToSuspended { .. }
+                | wasmparser::CanonicalFunction::BackpressureInc
+                | wasmparser::CanonicalFunction::BackpressureDec
                 | wasmparser::CanonicalFunction::WaitableJoin
                 | wasmparser::CanonicalFunction::WaitableSetNew
                 | wasmparser::CanonicalFunction::WaitableSetDrop
@@ -577,17 +616,21 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 | wasmparser::CanonicalFunction::FutureWrite { .. }
                 | wasmparser::CanonicalFunction::FutureCancelRead { .. }
                 | wasmparser::CanonicalFunction::FutureCancelWrite { .. }
-                | wasmparser::CanonicalFunction::FutureCloseWritable { .. }
-                | wasmparser::CanonicalFunction::FutureCloseReadable { .. }
+                | wasmparser::CanonicalFunction::FutureDropWritable { .. }
+                | wasmparser::CanonicalFunction::FutureDropReadable { .. }
                 | wasmparser::CanonicalFunction::SubtaskDrop
+                | wasmparser::CanonicalFunction::SubtaskCancel { .. }
+                | wasmparser::CanonicalFunction::ContextGet { .. }
+                | wasmparser::CanonicalFunction::ContextSet { .. }
+                | wasmparser::CanonicalFunction::TaskCancel
                 | wasmparser::CanonicalFunction::TaskReturn { .. }
                 | wasmparser::CanonicalFunction::StreamNew { .. }
                 | wasmparser::CanonicalFunction::StreamRead { .. }
                 | wasmparser::CanonicalFunction::StreamWrite { .. }
                 | wasmparser::CanonicalFunction::StreamCancelRead { .. }
                 | wasmparser::CanonicalFunction::StreamCancelWrite { .. }
-                | wasmparser::CanonicalFunction::StreamCloseWritable { .. }
-                | wasmparser::CanonicalFunction::StreamCloseReadable { .. } => unimplemented!(),
+                | wasmparser::CanonicalFunction::StreamDropWritable { .. }
+                | wasmparser::CanonicalFunction::StreamDropReadable { .. } => unimplemented!(),
             };
             log::debug!(target: "component-parser", "Adding canonical initializer: {init:?}");
             self.result.initializers.push(init);
@@ -610,6 +653,13 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         // module and actual function translation is deferred until this
         // entire process has completed.
         self.validator.module_section(&range).into_diagnostic()?;
+
+        // Track the first module's base offset for DWARF address translation.
+        // DWARF addresses in components reference the module's position within the component.
+        if self.first_module_base_offset.is_none() {
+            self.first_module_base_offset = Some(range.start);
+        }
+
         let module_environment = ModuleEnvironment::new(
             self.config,
             self.validator,
@@ -682,9 +732,10 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         &mut self,
         s: wasmparser::ComponentInstanceSectionReader<'data>,
     ) -> WasmResult<()> {
-        let mut index = self.validator.types(0).unwrap().component_instance_count();
         self.validator.component_instance_section(&s).into_diagnostic()?;
-        for instance in s {
+        for (index, instance) in
+            (0..self.validator.types(0).unwrap().component_instance_count()).zip(s)
+        {
             let init = match instance.into_diagnostic()? {
                 wasmparser::ComponentInstance::Instantiate {
                     component_index,
@@ -700,7 +751,6 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
                 }
             };
             self.result.initializers.push(init);
-            index += 1;
         }
         Ok(())
     }
@@ -883,6 +933,96 @@ impl<'a, 'data> ComponentParser<'a, 'data> {
         let ty = convert_func_type(ty);
         self.types.module_types_builder_mut().wasm_func_type(id, ty)
     }
+
+    /// Parses a DWARF debug section from the component.
+    /// These sections are stored at the component level but contain debug info
+    /// for the embedded modules.
+    fn dwarf_section(&mut self, section: &wasmparser::CustomSectionReader<'data>) {
+        let name = section.name();
+        if !self.config.generate_native_debuginfo && !self.config.parse_wasm_debuginfo {
+            return;
+        }
+        let info = &mut self.component_debuginfo;
+        let dwarf = &mut info.dwarf;
+        let endian = gimli::LittleEndian;
+        let data = section.data();
+        let slice = gimli::EndianSlice::new(data, endian);
+
+        match name {
+            // `gimli::Dwarf` fields.
+            ".debug_abbrev" => dwarf.debug_abbrev = gimli::DebugAbbrev::new(data, endian),
+            ".debug_addr" => dwarf.debug_addr = gimli::DebugAddr::from(slice),
+            ".debug_info" => dwarf.debug_info = gimli::DebugInfo::new(data, endian),
+            ".debug_line" => dwarf.debug_line = gimli::DebugLine::new(data, endian),
+            ".debug_line_str" => dwarf.debug_line_str = gimli::DebugLineStr::from(slice),
+            ".debug_str" => dwarf.debug_str = gimli::DebugStr::new(data, endian),
+            ".debug_str_offsets" => dwarf.debug_str_offsets = gimli::DebugStrOffsets::from(slice),
+            ".debug_str_sup" => {
+                let dwarf_sup: Dwarf<'data> = Dwarf {
+                    debug_str: gimli::DebugStr::from(slice),
+                    ..Default::default()
+                };
+                dwarf.sup = Some(Arc::new(dwarf_sup));
+            }
+            ".debug_types" => dwarf.debug_types = gimli::DebugTypes::from(slice),
+
+            // Additional fields.
+            ".debug_loc" => info.debug_loc = gimli::DebugLoc::from(slice),
+            ".debug_loclists" => info.debug_loclists = gimli::DebugLocLists::from(slice),
+            ".debug_ranges" => info.debug_ranges = gimli::DebugRanges::new(data, endian),
+            ".debug_rnglists" => info.debug_rnglists = gimli::DebugRngLists::new(data, endian),
+
+            // We don't use these at the moment.
+            ".debug_aranges" | ".debug_pubnames" | ".debug_pubtypes" => return,
+
+            other => {
+                log::warn!(target: "component-parser", "unknown debug section `{other}`");
+                return;
+            }
+        }
+
+        dwarf.ranges = gimli::RangeLists::new(info.debug_ranges, info.debug_rnglists);
+        dwarf.locations = gimli::LocationLists::new(info.debug_loc, info.debug_loclists);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::Context;
+    use wasmparser::Validator;
+
+    use super::*;
+    use crate::supported_component_model_features;
+
+    #[test]
+    fn injects_component_level_dwarf_into_first_module() {
+        let component = wat::parse_str(
+            r#"
+            (component
+                (@custom ".debug_info" "\01\02\03")
+                (core module
+                    (func (export "f"))
+                )
+            )
+            "#,
+        )
+        .expect("component wat should compile");
+        let context = Context::default();
+        let config = WasmTranslationConfig::default();
+        let mut validator = Validator::new_with_features(supported_component_model_features());
+        let mut types = ComponentTypesBuilder::default();
+        let parser = ComponentParser::new(&config, context.session(), &mut validator, &mut types);
+
+        let parsed = parser.parse(&component).expect("component should parse");
+        let first_module = parsed
+            .static_modules
+            .values()
+            .next()
+            .expect("component should contain a core module");
+
+        assert_eq!(first_module.debuginfo.dwarf.debug_info.reader().len(), 3);
+        assert!(first_module.wasm_file.module_base_offset > 0);
+    }
 }
 
 /// Parses core module instance
@@ -910,7 +1050,7 @@ fn instantiate_module_from_exports<'data>(
     let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher);
     for export in exports {
         let idx = match export.kind {
-            wasmparser::ExternalKind::Func => {
+            wasmparser::ExternalKind::Func | wasmparser::ExternalKind::FuncExact => {
                 let index = FuncIndex::from_u32(export.index);
                 EntityIndex::Function(index)
             }
@@ -943,7 +1083,9 @@ fn canonical_options(opts: &[wasmparser::CanonicalOption]) -> LocalCanonicalOpti
         realloc: None,
         post_return: None,
         is_async: false,
+        gc: false,
         async_callback: None,
+        core_type: None,
     };
     for opt in opts {
         match opt {
@@ -974,6 +1116,13 @@ fn canonical_options(opts: &[wasmparser::CanonicalOption]) -> LocalCanonicalOpti
             wasmparser::CanonicalOption::Callback(idx) => {
                 ret.async_callback = Some(FuncIndex::from_u32(*idx));
             }
+            wasmparser::CanonicalOption::Gc => {
+                ret.gc = true;
+            }
+            wasmparser::CanonicalOption::CoreType(ty) => {
+                // TODO(pauls): Figure out what we do with this option
+                ret.core_type = Some(crate::module::types::TypeIndex::from_u32(*ty));
+            }
         }
     }
     ret
@@ -986,7 +1135,9 @@ fn alias_module_instance_export(
     name: &str,
 ) -> LocalInitializer<'_> {
     match kind {
-        wasmparser::ExternalKind::Func => LocalInitializer::AliasExportFunc(instance, name),
+        wasmparser::ExternalKind::Func | wasmparser::ExternalKind::FuncExact => {
+            LocalInitializer::AliasExportFunc(instance, name)
+        }
         wasmparser::ExternalKind::Memory => LocalInitializer::AliasExportMemory(instance, name),
         wasmparser::ExternalKind::Table => LocalInitializer::AliasExportTable(instance, name),
         wasmparser::ExternalKind::Global => LocalInitializer::AliasExportGlobal(instance, name),

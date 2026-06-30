@@ -19,13 +19,14 @@ pub use self::{
 };
 use super::{
     effects::{
-        Effect, EffectInstance, HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface,
+        AdviceEffectOpInterface, Effect, EffectInstance, HasRecursiveAdviceEffects,
+        HasRecursiveMemoryEffects, MemoryEffect, MemoryEffectOpInterface,
     },
     *,
 };
 use crate::{
     Attribute, AttributeRef, AttributeRegistration, Forward, NamedAttribute, ProgramPoint,
-    attributes::OpAttribute, dialects::builtin::attributes::SymbolRefAttr,
+    attributes::OpAttribute, dialects::builtin::attributes::SymbolRefAttr, effects::AdviceEffect,
     patterns::RewritePatternSet,
 };
 
@@ -1215,6 +1216,23 @@ impl Operation {
             }
         }
 
+        let effects = RecursiveEffectIterator::<AdviceEffect>::new(this_op);
+        for (_, effect) in effects {
+            // Advice ffects are precise, so we don't need to be conservative in the face
+            // of unknown effects
+            let Some(effect) = effect else {
+                continue;
+            };
+
+            // We can drop effects if:
+            //
+            // * the effect is a read
+            match effect.effect() {
+                AdviceEffect::Read => (),
+                _ => return false,
+            }
+        }
+
         // If we get here, none of the operations had effects that prevented marking this operation
         // as dead.
         true
@@ -1262,6 +1280,48 @@ impl Operation {
         true
     }
 
+    /// Returns true if the given operation is free of advice provider effects.
+    ///
+    /// An operation is free of advice effects if its implementation of `AdviceEffectOpInterface`
+    /// indicates that it has no effects. Alternatively, if the operation has the
+    /// `HasRecursiveAdviceEffects` trait, then it is free of advice effects if all of its nested
+    /// operations are free of advice effects.
+    ///
+    /// If the operation has both, then it is free of advice effects if both conditions are
+    /// satisfied.
+    pub fn is_advice_effect_free(&self) -> bool {
+        if let Some(adv_interface) = self.as_trait::<dyn AdviceEffectOpInterface>() {
+            if !adv_interface.has_no_effect() {
+                return false;
+            }
+
+            // If the op does not have recursive side effects, then it is advice effect free
+            if !self.implements::<dyn HasRecursiveAdviceEffects>() {
+                return true;
+            }
+        } else if !self.implements::<dyn HasRecursiveAdviceEffects>() {
+            // Otherwise, if the op does not implement the advice effect interface and it does not
+            // have recursive side effects, then it cannot be known that the op is moveable.
+            return false;
+        }
+
+        // Recurse into the regions and ensure that all nested ops are advice effect free
+        for region in self.regions() {
+            let walk_result = region.prewalk(|op| {
+                if !op.is_advice_effect_free() {
+                    WalkResult::Break(())
+                } else {
+                    WalkResult::Continue(())
+                }
+            });
+            if walk_result.was_interrupted() {
+                return false;
+            }
+        }
+
+        true
+    }
+
     pub fn get_effects_recursively<T: Effect>(&self) -> Option<SmallVec<[EffectInstance<T>; 2]>> {
         use crate::effects::RecursiveEffectIterator;
 
@@ -1286,6 +1346,18 @@ impl Operation {
         mem_interface.effects().any(|effect| effect.effect() == expected_effect)
     }
 
+    /// Returns true if this operation is known to have `expected_effect`.
+    ///
+    /// Returns false if the op has unknown effects, no effects, or does not have `expected_effect`
+    /// amongst its effects.
+    pub fn has_advice_effect(&self, expected_effect: AdviceEffect) -> bool {
+        let Some(adv_interface) = self.as_trait::<dyn AdviceEffectOpInterface>() else {
+            return false;
+        };
+
+        adv_interface.effects().any(|effect| effect.effect() == expected_effect)
+    }
+
     /// Returns true if this operation has `expected_effect` and _only_ `expected_effect`.
     ///
     /// Returns false if the op has no effects, or has any effect other than `expected_effect`.
@@ -1297,6 +1369,24 @@ impl Operation {
             return false;
         }
         for effect in mem_interface.effects() {
+            if effect.effect() != expected_effect {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Returns true if this operation has `expected_effect` and _only_ `expected_effect`.
+    ///
+    /// Returns false if the op has no effects, or has any effect other than `expected_effect`.
+    pub fn has_single_advice_effect(&self, expected_effect: AdviceEffect) -> bool {
+        let Some(adv_interface) = self.as_trait::<dyn AdviceEffectOpInterface>() else {
+            return false;
+        };
+        if adv_interface.has_no_effect() {
+            return false;
+        }
+        for effect in adv_interface.effects() {
             if effect.effect() != expected_effect {
                 return false;
             }
@@ -1430,6 +1520,7 @@ impl Operation {
             if OperationRef::ptr_eq(&a, &b) {
                 return true;
             }
+            next = b.parent_op();
         }
         false
     }

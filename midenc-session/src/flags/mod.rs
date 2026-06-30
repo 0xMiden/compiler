@@ -12,6 +12,7 @@ pub use self::{
 };
 use crate::diagnostics::Report;
 
+#[derive(Clone)]
 pub struct CompileFlags {
     flags: Vec<CompileFlag>,
     arg_matches: ArgMatches,

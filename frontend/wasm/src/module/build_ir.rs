@@ -8,14 +8,14 @@ use midenc_hir::{
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
     },
-    interner::Symbol,
     version::Version,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Severity, SourceSpan};
 use wasmparser::Validator;
 
 use super::{
-    MemoryIndex, module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
+    MemoryIndex, debug_info::collect_function_debug_info,
+    module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
 };
 use crate::{
     WasmTranslationConfig,
@@ -117,6 +117,19 @@ pub fn build_ir_module(
         ..Default::default()
     })
     .into_diagnostic()?;
+    parsed_module.function_debug =
+        if context.session().options.debug == midenc_session::DebugInfo::Full {
+            collect_function_debug_info(
+                parsed_module,
+                module_types,
+                &parsed_module.module,
+                &addr2line,
+                context.diagnostics(),
+            )
+        } else {
+            Default::default()
+        };
+
     let mut func_translator = FuncTranslator::new(context.clone());
     // Although this renders this parsed module invalid(without function
     // bodies), we don't support multiple module instances. Thus, this
@@ -189,8 +202,12 @@ pub fn build_ir_module(
             continue;
         }
 
-        let FunctionBodyData { validator, body } = body_data;
+        let FunctionBodyData {
+            validator, body, ..
+        } = body_data;
         let mut func_validator = validator.into_validator(Default::default());
+        let debug_info = parsed_module.function_debug.get(&func_index).cloned();
+
         func_translator.translate_body(
             &body,
             function_ref,
@@ -201,6 +218,7 @@ pub fn build_ir_module(
             context.session(),
             &mut func_validator,
             _config,
+            debug_info,
         )?;
     }
     Ok(())
@@ -213,12 +231,7 @@ fn build_globals(
 ) -> WasmResult<()> {
     let span = SourceSpan::default();
     for (global_idx, global) in &wasm_module.globals {
-        let global_name = wasm_module
-            .name_section
-            .globals_names
-            .get(&global_idx)
-            .cloned()
-            .unwrap_or(Symbol::intern(format!("gv{}", global_idx.as_u32())));
+        let global_name = wasm_module.global_name(global_idx);
         let global_init = wasm_module.try_global_initializer(global_idx, diagnostics)?;
         let visibility = if wasm_module.is_exported(global_idx.into()) {
             Visibility::Public
@@ -260,8 +273,7 @@ fn build_data_segments(
     diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     for (data_segment_idx, data_segment) in &translation.data_segments {
-        let data_segment_name =
-            translation.module.name_section.data_segment_names[&data_segment_idx];
+        let data_segment_name = translation.module.data_segment_name(data_segment_idx);
         let readonly = data_segment_name.as_str().contains(".rodata");
         let offset = data_segment.offset.as_i32(&translation.module, diagnostics)? as u32;
         let init = ConstantData::from(data_segment.data.to_vec());

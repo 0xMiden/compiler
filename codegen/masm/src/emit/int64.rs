@@ -51,7 +51,7 @@ impl OpEmitter<'_> {
             ],
             span,
         );
-        self.emit_push(Felt::new(2u64.pow(n) - 1), span);
+        self.emit_push(Felt::new_unchecked(2u64.pow(n) - 1), span);
         self.emit_all(
             [
                 masm::Instruction::U32Lte,
@@ -868,14 +868,14 @@ pub fn from_raw_parts(lo: u32, hi: u32, block: &mut Vec<masm::Op>, span: SourceS
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(hi as u64).into(),
+            Felt::new_unchecked(hi as u64).into(),
         ))),
     )));
     block.push(masm::Op::Inst(Span::new(
         span,
         masm::Instruction::Push(masm::Immediate::Value(Span::new(
             span,
-            Felt::new(lo as u64).into(),
+            Felt::new_unchecked(lo as u64).into(),
         ))),
     )));
 }

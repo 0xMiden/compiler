@@ -17,6 +17,7 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
+        #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
         #[link_name = "miden::core::crypto::hashes::blake3::hash"]
         fn extern_blake3_hash(
             e1: u32,
@@ -35,6 +36,7 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element)
         /// The output is passed back to the caller via a pointer.
+        #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
         #[link_name = "miden::core::crypto::hashes::blake3::merge"]
         fn extern_blake3_merge(
             e1: u32,
@@ -63,6 +65,7 @@ mod imp {
         /// Input: 32-bytes stored in the first 8 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
+        #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
         #[link_name = "miden::core::crypto::hashes::sha256::hash"]
         fn extern_sha256_hash(
             e1: u32,
@@ -81,6 +84,7 @@ mod imp {
         /// Input: 64-bytes stored in the first 16 elements of the stack (32 bits per element).
         /// Output: A 32-byte digest stored in the first 8 elements of stack (32 bits per element).
         /// The output is passed back to the caller via a pointer.
+        #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
         #[link_name = "miden::core::crypto::hashes::sha256::merge"]
         fn extern_sha256_merge(
             e1: u32,
@@ -112,6 +116,7 @@ mod imp {
         /// Input: A pointer to the memory location and the number of elements to hash
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
+        #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
         #[link_name = "miden::core::crypto::hashes::poseidon2::hash_elements"]
         pub fn extern_hash_elements(ptr: u32, num_elements: u32, result_ptr: *mut Felt);
 
@@ -123,6 +128,7 @@ mod imp {
         /// Input: The start and end addresses (in field elements) of the words to hash.
         /// Output: One digest (4 field elements)
         /// The output is passed back to the caller via a pointer.
+        #[cfg_attr(all(target_family = "wasm", miden), linkage = "extern_weak")]
         #[link_name = "miden::core::crypto::hashes::poseidon2::hash_words"]
         pub fn extern_hash_words(start_addr: u32, end_addr: u32, result_ptr: *mut Felt);
     }
@@ -258,7 +264,7 @@ mod imp {
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
             let miden_ptr = rust_ptr / 4;
             // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
-            assert_eq(Felt::new((miden_ptr % 4) as u64), felt!(0));
+            assert_eq(Felt::new((miden_ptr % 4) as u64).unwrap(), felt!(0));
 
             if element_count.is_multiple_of(4) {
                 let start_addr = miden_ptr;
@@ -285,7 +291,7 @@ mod imp {
 
         let miden_ptr = rust_ptr / 4;
         // It's safe to assume the `words` ptr is word-aligned.
-        assert_eq(Felt::new((miden_ptr % 4) as u64), felt!(0));
+        assert_eq(Felt::new((miden_ptr % 4) as u64).unwrap(), felt!(0));
 
         unsafe {
             let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
