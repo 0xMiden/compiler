@@ -1840,3 +1840,10 @@ impl_hir_lowering_load_sext!(wasm::I32Load16S);
 impl_hir_lowering_load_sext!(wasm::I64Load8S);
 impl_hir_lowering_load_sext!(wasm::I64Load16S);
 impl_hir_lowering_load_sext!(wasm::I64Load32S);
+
+impl HirLowering for wasm::I32RemS {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).wrapping_mod(self.span());
+        Ok(())
+    }
+}

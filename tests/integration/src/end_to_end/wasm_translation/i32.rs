@@ -114,7 +114,6 @@ fn i32_div_s() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1206"]
 fn i32_rem_s() {
     test_i32_wasm_op_binary("i32.rem_s", NumericStrategy::<i32>::rem_signed_checked());
 }

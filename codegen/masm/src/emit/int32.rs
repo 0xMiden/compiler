@@ -785,6 +785,7 @@ impl OpEmitter<'_> {
     /// Pops two i32 values off the stack, `b` and `a`, and performs `a % b`.
     ///
     /// This operation is checked, so if the operands or result are not valid i32, execution traps.
+    /// It also traps for `i32::MIN % -1` since the underlying division overflows.
     pub fn checked_mod_i32(&mut self, span: SourceSpan) {
         self.raw_exec("::intrinsics::i32::checked_mod", span);
     }
@@ -794,10 +795,19 @@ impl OpEmitter<'_> {
     /// This function will panic if the divisor is zero.
     ///
     /// This operation is checked, so if the operand or result are not valid i32, execution traps.
+    /// It also traps for `i32::MIN % -1` since the underlying division overflows.
     pub fn checked_mod_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         assert_ne!(imm, 0, "division by zero is not allowed");
         self.emit_push(imm as u32, span);
         self.raw_exec("::intrinsics::i32::checked_mod", span);
+    }
+
+    /// Pops two i32 values off the stack, `b` and `a`, and performs `a % b`.
+    ///
+    /// This operation wraps around on overflow, so for `i32::MIN % -1` it returns `0` instead of
+    /// trapping. It will still trap on division by zero (i.e. when `b` == 0).
+    pub fn wrapping_mod_i32(&mut self, span: SourceSpan) {
+        self.raw_exec("::intrinsics::i32::wrapping_mod", span);
     }
 
     /// Pops two u32 values off the stack, `b` and `a`, and performs `a / b`.

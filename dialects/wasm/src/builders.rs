@@ -78,6 +78,17 @@ pub trait WasmOpBuilder<'f, B: ?Sized + Builder>: WasmMemOpBuilder<'f, B> {
         Ok(op.borrow().result().as_value_ref())
     }
 
+    fn i32_rem_s(
+        &mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder = WasmOpBuilder::builder_mut(self).create::<crate::ops::I32RemS, _>(span);
+        let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
     fn builder(&self) -> &B;
     fn builder_mut(&mut self) -> &mut B;
 }
