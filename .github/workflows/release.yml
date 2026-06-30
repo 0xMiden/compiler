@@ -38,7 +38,7 @@ jobs:
           rustc --version
       - name: Publish
         id: publish
-        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
         with:
           command: release
         env:
@@ -111,12 +111,12 @@ jobs:
           mv bin/cargo-miden cargo-miden-${{ matrix.target }}
       - name: attest midenc
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: midenc-${{ matrix.target }}
       - name: attest cargo-miden
         if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
         with:
           subject-path: cargo-miden-${{ matrix.target }}
       - name: upload
@@ -151,14 +151,14 @@ jobs:
       - *install-rust
       - name: Create release PR
         id: release-pr
-        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
       - name: Trigger CI for release PR
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
