@@ -49,12 +49,12 @@ fn expand_inner(
         .iter()
         .map(|dependency| dependency.import().to_owned())
         .collect::<Vec<_>>();
-    // The trait name generated for each component is the interface segment as written, parallel to
-    // `dependencies` (both follow the order of `args.refs`).
+    // The trait name generated for each component is its `as Alias` override, or the interface
+    // segment as written. Parallel to `dependencies` (both follow the order of `args.refs`).
     let trait_idents = args
         .refs
         .iter()
-        .map(|reference| reference.interface_ident.clone())
+        .map(|reference| reference.trait_ident().clone())
         .collect::<Vec<_>>();
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
     let inline_wit = import_world_wit(FOREIGN_ACCOUNT_WORLD, &imports);
@@ -81,49 +81,51 @@ fn expand_inner(
 
 /// Rejects references whose generated component traits would share a name with the wrapper struct.
 ///
-/// Each `package::Interface` reference generates a `pub trait <Interface>` next to the `#[account]`
-/// struct, so a reference whose interface segment equals the struct name would put a struct and a
+/// Each reference generates a `trait` named after its interface (or its `as Alias`) next to the
+/// `#[account]` struct, so a generated trait name equal to the struct name would put a struct and a
 /// trait with the same name in one module — a raw `E0428` far from its cause. Catch it here.
 fn reject_struct_trait_name_collision(
     account_struct: &ItemStruct,
     refs: &[DependencyRef],
 ) -> syn::Result<()> {
     if let Some(reference) =
-        refs.iter().find(|reference| reference.interface_ident == account_struct.ident)
+        refs.iter().find(|reference| reference.trait_ident() == &account_struct.ident)
     {
         return Err(Error::new(
             reference.span,
             format!(
                 "account reference `{}::{}` generates a trait named `{}`, which collides with the \
-                 `#[account]` struct `{}`; rename the struct so it differs from its component \
-                 interface names",
+                 `#[account]` struct `{}`; rename the struct, or rename the generated trait with \
+                 `{}::{} as OtherName`",
                 reference.package_ident,
                 reference.interface_ident,
-                reference.interface_ident,
+                reference.trait_ident(),
                 account_struct.ident,
+                reference.package_ident,
+                reference.interface_ident,
             ),
         ));
     }
     Ok(())
 }
 
-/// Rejects references whose interface segments would generate identically named component traits.
+/// Rejects references whose generated component traits would have identical names.
 fn reject_duplicate_trait_names(refs: &[DependencyRef]) -> syn::Result<()> {
     for (index, reference) in refs.iter().enumerate() {
         if let Some(previous) = refs[..index]
             .iter()
-            .find(|previous| previous.interface_ident == reference.interface_ident)
+            .find(|previous| previous.trait_ident() == reference.trait_ident())
         {
             return Err(Error::new(
                 reference.span,
                 format!(
                     "account references `{}::{}` and `{}::{}` would both generate a trait named \
-                     `{}`; component interface names must be unique within one `#[account]`",
+                     `{}`; give them distinct names with `package::Interface as Alias`",
                     previous.package_ident,
                     previous.interface_ident,
                     reference.package_ident,
                     reference.interface_ident,
-                    reference.interface_ident,
+                    reference.trait_ident(),
                 ),
             ));
         }
@@ -252,5 +254,36 @@ mod tests {
         assert!(message.contains("would both generate a trait named `Counter`"), "{message}");
         assert!(message.contains("first_counter::Counter"));
         assert!(message.contains("second_counter::Counter"));
+    }
+
+    #[test]
+    fn alias_resolves_duplicate_trait_names() {
+        // The same interface name from two packages collides without aliases, but distinct
+        // `as Alias` overrides give the generated traits distinct names.
+        let args = syn::parse2::<DependencyRefArgs>(quote::quote!(
+            first_counter::Counter as First,
+            second_counter::Counter as Second
+        ))
+        .unwrap();
+        reject_duplicate_trait_names(&args.refs).expect("aliases must resolve the trait clash");
+
+        let wallet: ItemStruct = syn::parse_quote!(
+            struct Wallet;
+        );
+        reject_struct_trait_name_collision(&wallet, &args.refs).unwrap();
+    }
+
+    #[test]
+    fn alias_is_checked_against_the_struct_name() {
+        // `as Wallet` aliases the generated trait to `Wallet`, which clashes with the struct.
+        let args = syn::parse2::<DependencyRefArgs>(quote::quote!(
+            counter_contract::CounterContract as Wallet
+        ))
+        .unwrap();
+        let wallet: ItemStruct = syn::parse_quote!(
+            struct Wallet;
+        );
+        let err = reject_struct_trait_name_collision(&wallet, &args.refs).unwrap_err();
+        assert!(err.to_string().contains("generates a trait named `Wallet`"), "{err}");
     }
 }

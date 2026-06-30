@@ -18,7 +18,7 @@ use syn::{
 
 use crate::wit_world::{ManifestPackage, SelectedDependency};
 
-/// One parsed `package::Interface` dependency reference.
+/// One parsed `package::Interface` (optionally `… as Alias`) dependency reference.
 #[derive(Debug)]
 pub(crate) struct DependencyRef {
     /// Kebab-case Miden package dependency name used for the manifest lookup.
@@ -28,10 +28,42 @@ pub(crate) struct DependencyRef {
     pub(crate) package_ident: syn::Ident,
     /// Kebab-case WIT interface name used for the dependency lookup.
     pub(crate) interface: String,
-    /// Interface path segment as written, used verbatim for generated trait names.
+    /// Interface path segment as written; the generated trait name unless `alias` overrides it.
     pub(crate) interface_ident: syn::Ident,
+    /// Optional `as Alias` override for the generated trait name. Lets a reference select an
+    /// interface while naming the generated trait differently — e.g. to avoid a clash when one
+    /// crate uses the same interface as both a sibling component and an `#[account]` FPI wrapper,
+    /// or when two packages export the same interface name.
+    pub(crate) alias: Option<syn::Ident>,
     /// Span of the whole reference, for diagnostics.
     pub(crate) span: Span,
+}
+
+impl DependencyRef {
+    /// The name of the Rust trait generated for this component: the `as Alias` override when
+    /// present, otherwise the interface segment as written.
+    pub(crate) fn trait_ident(&self) -> &syn::Ident {
+        self.alias.as_ref().unwrap_or(&self.interface_ident)
+    }
+}
+
+/// One `package::Interface` or `package::Interface as Alias` item, before validation.
+struct RawDependencyRef {
+    path: syn::Path,
+    alias: Option<syn::Ident>,
+}
+
+impl Parse for RawDependencyRef {
+    fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
+        let path = input.parse::<syn::Path>()?;
+        let alias = if input.peek(Token![as]) {
+            input.parse::<Token![as]>()?;
+            Some(input.parse::<syn::Ident>()?)
+        } else {
+            None
+        };
+        Ok(Self { path, alias })
+    }
 }
 
 /// Parsed `#[account(...)]` / `#[component(...)]` dependency reference list.
@@ -42,11 +74,12 @@ pub(crate) struct DependencyRefArgs {
 
 impl Parse for DependencyRefArgs {
     fn parse(input: ParseStream<'_>) -> syn::Result<Self> {
-        let paths = Punctuated::<syn::Path, Token![,]>::parse_terminated(input)?;
-        let mut refs = Vec::with_capacity(paths.len());
+        let raw = Punctuated::<RawDependencyRef, Token![,]>::parse_terminated(input)?;
+        let mut refs = Vec::with_capacity(raw.len());
         let mut seen = HashSet::new();
-        for path in &paths {
-            let dependency_ref = parse_dependency_ref(path)?;
+        for raw_ref in &raw {
+            let mut dependency_ref = parse_dependency_ref(&raw_ref.path)?;
+            dependency_ref.alias = raw_ref.alias.clone();
             if !seen.insert((dependency_ref.package.clone(), dependency_ref.interface.clone())) {
                 return Err(Error::new(
                     dependency_ref.span,
@@ -86,6 +119,7 @@ fn parse_dependency_ref(path: &syn::Path) -> syn::Result<DependencyRef> {
                 package_ident,
                 interface: interface_ident.to_string().to_kebab_case(),
                 interface_ident,
+                alias: None,
                 span: path.span(),
             })
         }
@@ -233,5 +267,29 @@ mod tests {
         })
         .unwrap();
         assert_eq!(args.refs.len(), 2);
+    }
+
+    #[test]
+    fn parses_as_alias_overriding_the_trait_name() {
+        let args = syn::parse2::<DependencyRefArgs>(quote! {
+            counter_contract::CounterContract as RemoteCounter
+        })
+        .unwrap();
+
+        assert_eq!(args.refs.len(), 1);
+        // The interface lookup still uses the path segment, not the alias.
+        assert_eq!(args.refs[0].interface, "counter-contract");
+        assert_eq!(args.refs[0].interface_ident, "CounterContract");
+        // The generated trait name is the alias.
+        assert_eq!(args.refs[0].alias.as_ref().unwrap(), "RemoteCounter");
+        assert_eq!(args.refs[0].trait_ident().to_string(), "RemoteCounter");
+    }
+
+    #[test]
+    fn trait_ident_defaults_to_the_interface_without_an_alias() {
+        let args =
+            syn::parse2::<DependencyRefArgs>(quote!(counter_contract::CounterContract)).unwrap();
+        assert!(args.refs[0].alias.is_none());
+        assert_eq!(args.refs[0].trait_ident().to_string(), "CounterContract");
     }
 }

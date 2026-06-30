@@ -38,6 +38,7 @@ pub(super) fn expand_sibling_traits(
     component_trait_ident: &Ident,
     refs: &[DependencyRef],
 ) -> syn::Result<TokenStream2> {
+    reject_aliases(refs)?;
     reject_duplicate_trait_names(refs)?;
     reject_component_trait_name_collision(component_trait_ident, refs)?;
 
@@ -172,6 +173,25 @@ fn reject_component_trait_name_collision(
                 reference.interface_ident,
                 reference.interface_ident,
                 component_trait_ident,
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects `as` aliases on sibling references.
+///
+/// The `as Alias` override that renames a generated trait is an `#[account(...)]`-only affordance
+/// (used there to avoid name clashes); sibling component traits are always named after their
+/// interface. Rejecting it loudly avoids silently ignoring a user's alias.
+fn reject_aliases(refs: &[DependencyRef]) -> syn::Result<()> {
+    if let Some(reference) = refs.iter().find(|reference| reference.alias.is_some()) {
+        return Err(Error::new(
+            reference.span,
+            format!(
+                "sibling component reference `{}::{}` cannot use an `as` alias; sibling traits \
+                 are named after their interface",
+                reference.package_ident, reference.interface_ident,
             ),
         ));
     }

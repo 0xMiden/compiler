@@ -8,7 +8,56 @@ The most recent migration is at the top. When cutting a new release, add its mig
 directly below this paragraph, above the previous one (newest first, like the
 [CHANGELOG](./CHANGELOG.md)).
 
-<!-- Add the next migration section here, above `## 0.12.0 -> 0.13.0`. -->
+<!-- Add the next migration section here, above `## 0.13.0 -> 0.14.0`. -->
+
+## 0.13.0 -> 0.14.0
+
+### `#[account(...)]` generates one trait per component
+
+In 0.13 the `#[account(...)]` macro generated each component's methods as inherent methods on the
+wrapper struct. In 0.14 it generates **one trait per referenced interface** (named after the
+interface, with the wrapper's visibility) and implements it for the wrapper, so two components that
+export the same method name can coexist on one wrapper. Single-component accounts keep calling
+`account.method(..)` unchanged — the generated trait sits in the same module and is in scope.
+
+**The wrapper struct must be named differently from every generated trait.**
+`#[account(counter_contract::CounterContract)] struct CounterContract;` no longer compiles; rename
+the struct (e.g. `Counter`):
+
+```rust
+#[account(counter_contract::CounterContract)]
+struct Counter;
+
+let counter = Counter::new(counter_account_id);
+let count = counter.get_count();
+```
+
+**Shared method names are disambiguated with UFCS.** When an account derives two components that
+export the same method name — or a component method shares a name with an `ActiveAccount` built-in
+such as `get_id` — the bare call is ambiguous:
+
+```rust
+#[account(basic_wallet::BasicWallet, vault::Vault)]
+struct Wallet;
+
+// both BasicWallet and Vault export `deposit`:
+<Wallet as BasicWallet>::deposit(account, asset);
+<Wallet as Vault>::deposit(account, asset);
+```
+
+**Name clashes between generated traits are resolved with `as`.** When the generated trait *name*
+would clash — the struct shares the interface name, two packages export the same interface name, or
+the crate already uses the interface as a sibling `#[component(...)]` — rename the generated trait
+with `as` (the path still selects the interface):
+
+```rust
+// a component that both calls a sibling counter and reaches a remote counter through FPI:
+#[account(counter_contract::CounterContract as RemoteCounter)] // FPI trait `RemoteCounter`
+struct Remote;
+
+#[component(counter_contract::CounterContract)]                // sibling trait `CounterContract`
+trait Caller: NativeAccount + CounterContract { /* ... */ }
+```
 
 ## Unreleased
 
@@ -273,29 +322,8 @@ it is the transaction's native (active) account. Constructed with `new(account_i
 (FPI):
 
 ```rust
-#[account(counter_contract::CounterContract)]
-struct Counter;
-
-let counter = Counter::new(counter_account_id);
+let counter = CounterContract::new(counter_account_id);
 let count = counter.get_count();
-```
-
-Each referenced interface now generates a `pub trait <Interface>` implemented for the wrapper
-(rather than inherent methods on it), so **the wrapper struct must be named differently from every
-referenced interface** — `#[account(counter_contract::CounterContract)] struct CounterContract;`
-no longer compiles; rename the struct (e.g. `Counter`). Single-component accounts keep calling
-`account.method(..)` unchanged, because the generated trait sits in the same module and is in
-scope. When an account derives two components that export the same method name — or a component
-method shares a name with an `ActiveAccount` built-in such as `get_id` — the bare call is
-ambiguous; disambiguate it with UFCS:
-
-```rust
-#[account(basic_wallet::BasicWallet, vault::Vault)]
-struct Wallet;
-
-// both BasicWallet and Vault export `deposit`:
-<Wallet as BasicWallet>::deposit(account, asset);
-<Wallet as Vault>::deposit(account, asset);
 ```
 
 **FPI is not limited to note/tx scripts — an account component can call another account through
