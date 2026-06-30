@@ -22,7 +22,9 @@ node_modules/
 *.masp
 book/
 
-# Ignore Cargo.lock in test projects
+# Ignore Cargo.lock in test projects, except the component fixtures that
+# intentionally commit their lockfile for reproducible builds.
 tests/**/Cargo.lock
+!tests/fixtures/components/**/Cargo.lock
 
 *.lit_test_times.txt*
