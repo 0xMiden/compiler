@@ -435,6 +435,7 @@ pub(crate) fn augment_foreign_account_bindings(
         }
 
         trait_items.push(build_account_trait(
+            &account_struct.vis,
             &dependency.trait_ident,
             &account_struct.ident,
             dependency.import.as_str(),
@@ -475,7 +476,12 @@ pub(crate) fn augment_foreign_account_bindings(
 }
 
 /// Builds one generated component trait and its empty attachment impl for the account wrapper.
+///
+/// The trait is emitted with the wrapper struct's visibility (`vis`): a `pub` wrapper gets a `pub`
+/// component trait so it can be imported cross-module, while a private wrapper keeps its component
+/// trait private rather than expanding the user's public API.
 fn build_account_trait(
+    vis: &syn::Visibility,
     trait_ident: &syn::Ident,
     account_ident: &syn::Ident,
     import: &str,
@@ -490,7 +496,7 @@ fn build_account_trait(
     );
     quote! {
         #[doc = #trait_doc]
-        pub trait #trait_ident: ::miden::active_account::AccountBinding {
+        #vis trait #trait_ident: ::miden::active_account::AccountBinding {
             #(#methods)*
         }
 
