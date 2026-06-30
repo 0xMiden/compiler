@@ -1317,6 +1317,54 @@ mod tests {
         assert!(rendered.contains("fpi_get_count"), "rendered: {rendered}");
     }
 
+    #[test]
+    fn build_account_trait_emits_one_trait_with_supertrait_and_empty_impl() {
+        let method: TraitItemFn = parse_quote! {
+            #[inline(always)]
+            fn get_count(&self) -> ::miden::Felt {
+                ::core::unreachable!()
+            }
+        };
+
+        let rendered = build_account_trait(
+            &parse_quote!(pub),
+            &quote::format_ident!("BasicWallet"),
+            &quote::format_ident!("Wallet"),
+            "miden:basic-wallet/basic-wallet@1.0.0",
+            vec![method],
+        )
+        .to_string();
+
+        // One public component trait with the `AccountBinding` supertrait.
+        assert!(rendered.contains("pub trait BasicWallet"), "rendered: {rendered}");
+        assert!(
+            rendered.contains(":: miden :: active_account :: AccountBinding"),
+            "rendered: {rendered}"
+        );
+        // The component method lives in the trait, and the wrapper gets an empty attachment impl.
+        assert!(rendered.contains("fn get_count"), "rendered: {rendered}");
+        assert!(rendered.contains("impl BasicWallet for Wallet"), "rendered: {rendered}");
+    }
+
+    #[test]
+    fn build_account_trait_matches_wrapper_visibility() {
+        // A private `#[account]` wrapper must not get a `pub` component trait.
+        let rendered = build_account_trait(
+            &syn::Visibility::Inherited,
+            &quote::format_ident!("Counter"),
+            &quote::format_ident!("Wallet"),
+            "miden:counter/counter@1.0.0",
+            Vec::new(),
+        )
+        .to_string();
+
+        assert!(rendered.contains("trait Counter"), "rendered: {rendered}");
+        assert!(
+            !rendered.contains("pub trait Counter"),
+            "private wrapper must keep its component trait private: {rendered}"
+        );
+    }
+
     fn test_function(name: &str) -> Function {
         Function {
             name: name.to_string(),
