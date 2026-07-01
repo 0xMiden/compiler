@@ -469,3 +469,74 @@ fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> 
         account_project_root,
     )
 }
+
+/// First counter component shared by the multi-package FPI tests.
+///
+/// Exports the `first-counter` interface with a `get_count` method returning the value stored under
+/// the counter key. Its method name deliberately matches [`SECOND_COUNTER_COMPONENT_SOURCE`] so a
+/// wrapper deriving both components must disambiguate the two generated traits with UFCS.
+pub(super) const FIRST_COUNTER_COMPONENT_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt, StorageMap, Word};
+
+/// Account component whose storage map holds the first counter value.
+#[component_storage]
+struct CounterContractStorage {
+    /// Storage map holding the counter value.
+    #[storage(description = "first counter contract storage map")]
+    count_map: StorageMap<Word, Felt>,
+}
+
+/// Account component whose storage map holds the first counter value.
+#[component]
+trait FirstCounter {
+    /// Returns the first counter value.
+    fn get_count(&self) -> Felt;
+}
+
+#[component]
+impl FirstCounter for CounterContractStorage {
+    /// Returns the first counter value.
+    fn get_count(&self) -> Felt {
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        self.count_map.get(key)
+    }
+}
+"#;
+
+/// Second counter component shared by the multi-package FPI tests.
+///
+/// Exports the `second-counter` interface; see [`FIRST_COUNTER_COMPONENT_SOURCE`] for the shared
+/// `get_count` method name that forces UFCS disambiguation on a wrapper deriving both.
+pub(super) const SECOND_COUNTER_COMPONENT_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt, StorageMap, Word};
+
+/// Account component whose storage map holds the second counter value.
+#[component_storage]
+struct CounterContractStorage {
+    /// Storage map holding the counter value.
+    #[storage(description = "second counter contract storage map")]
+    count_map: StorageMap<Word, Felt>,
+}
+
+/// Account component whose storage map holds the second counter value.
+#[component]
+trait SecondCounter {
+    /// Returns the second counter value.
+    fn get_count(&self) -> Felt;
+}
+
+#[component]
+impl SecondCounter for CounterContractStorage {
+    /// Returns the second counter value.
+    fn get_count(&self) -> Felt {
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        self.count_map.get(key)
+    }
+}
+"#;

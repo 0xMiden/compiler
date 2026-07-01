@@ -12,15 +12,21 @@ use miden_client::{
 };
 use miden_mast_package::Package;
 use miden_protocol::{
-    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
+    account::{AccountBuilder, AccountType, StorageSlotName, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::{account::auth::NoAuth, testing::note::NoteBuilder};
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::super::{
-    super::support::{COUNTER_CONTRACT_STORAGE_KEY, execute_tx, note_script_root, to_core_felts},
-    common::build_multi_package_fpi_test_packages,
+    super::support::{
+        COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, execute_tx, note_script_root,
+        to_core_felts,
+    },
+    common::{
+        FIRST_COUNTER_COMPONENT_SOURCE, SECOND_COUNTER_COMPONENT_SOURCE,
+        build_multi_package_fpi_test_packages,
+    },
 };
 
 /// Deploys an account with two components and consumes a note using one multi-package FPI binding.
@@ -34,8 +40,8 @@ pub fn multiple_packages() {
         second_storage_slot,
     ) = build_multi_package_fpi_test_packages(
         "multiple_packages",
-        FIRST_COUNTER_CONTRACT_SOURCE,
-        SECOND_COUNTER_CONTRACT_SOURCE,
+        FIRST_COUNTER_COMPONENT_SOURCE,
+        SECOND_COUNTER_COMPONENT_SOURCE,
         COUNTER_CALLER_SOURCE,
     );
 
@@ -111,12 +117,12 @@ fn execute_multiple_package_counter_caller_note(
     chain.prove_next_block().unwrap();
     chain.prove_next_block().unwrap();
 
-    assert_counter_storage_at_key(
+    assert_counter_storage(
         chain.committed_account(foreign_account.id()).unwrap().storage(),
         &first_storage_slot,
         41,
     );
-    assert_counter_storage_at_key(
+    assert_counter_storage(
         chain.committed_account(foreign_account.id()).unwrap().storage(),
         &second_storage_slot,
         73,
@@ -129,94 +135,17 @@ fn execute_multiple_package_counter_caller_note(
         .foreign_accounts([foreign_account_inputs]);
     execute_tx(&mut chain, tx_context_builder);
 
-    assert_counter_storage_at_key(
+    assert_counter_storage(
         chain.committed_account(foreign_account.id()).unwrap().storage(),
         &first_storage_slot,
         41,
     );
-    assert_counter_storage_at_key(
+    assert_counter_storage(
         chain.committed_account(foreign_account.id()).unwrap().storage(),
         &second_storage_slot,
         73,
     );
 }
-
-/// Asserts the counter value stored in the selected component storage slot.
-fn assert_counter_storage_at_key(
-    account_storage: &AccountStorage,
-    storage_slot: &StorageSlotName,
-    expected: u64,
-) {
-    let word = account_storage
-        .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
-        .expect("failed to get counter value from storage slot");
-
-    assert_eq!(word[0].as_canonical_u64(), expected);
-}
-
-/// First account component source used by the multi-package FPI test.
-const FIRST_COUNTER_CONTRACT_SOURCE: &str = r#"
-#![no_std]
-#![feature(alloc_error_handler)]
-
-use miden::{component, component_storage, felt, Felt, StorageMap, Word};
-
-/// Account component whose storage map holds the first counter value.
-#[component_storage]
-struct CounterContractStorage {
-    /// Storage map holding the counter value.
-    #[storage(description = "first counter contract storage map")]
-    count_map: StorageMap<Word, Felt>,
-}
-
-/// Account component whose storage map holds the first counter value.
-#[component]
-trait FirstCounter {
-    /// Returns the first counter value.
-    fn get_count(&self) -> Felt;
-}
-
-#[component]
-impl FirstCounter for CounterContractStorage {
-    /// Returns the first counter value.
-    fn get_count(&self) -> Felt {
-        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
-        self.count_map.get(key)
-    }
-}
-"#;
-
-/// Second account component source used by the multi-package FPI test.
-const SECOND_COUNTER_CONTRACT_SOURCE: &str = r#"
-#![no_std]
-#![feature(alloc_error_handler)]
-
-use miden::{component, component_storage, felt, Felt, StorageMap, Word};
-
-/// Account component whose storage map holds the second counter value.
-#[component_storage]
-struct CounterContractStorage {
-    /// Storage map holding the counter value.
-    #[storage(description = "second counter contract storage map")]
-    count_map: StorageMap<Word, Felt>,
-}
-
-/// Account component whose storage map holds the second counter value.
-#[component]
-trait SecondCounter {
-    /// Returns the second counter value.
-    fn get_count(&self) -> Felt;
-}
-
-#[component]
-impl SecondCounter for CounterContractStorage {
-    /// Returns the second counter value.
-    fn get_count(&self) -> Felt {
-        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
-        self.count_map.get(key)
-    }
-}
-"#;
 
 /// Note script source which invokes FPI methods from two imported packages on one account.
 const COUNTER_CALLER_SOURCE: &str = r#"

@@ -1,6 +1,7 @@
 //! Note-to-account foreign procedure invocation tests.
 
 mod four_words_struct;
+mod get_id_collision;
 mod mixed_scalar_struct;
 mod multi_call;
 mod multiple_components_active;

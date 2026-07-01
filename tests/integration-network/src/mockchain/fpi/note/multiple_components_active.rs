@@ -15,15 +15,20 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_protocol::{
-    account::{AccountBuilder, AccountStorage, AccountType, StorageSlotName, auth::AuthScheme},
+    account::{AccountBuilder, AccountType, auth::AuthScheme},
     crypto::rand::RandomCoin,
 };
 use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{AccountState, Auth, MockChain};
 
 use super::super::{
-    super::support::{COUNTER_CONTRACT_STORAGE_KEY, execute_tx, note_script_root},
-    common::build_multi_package_fpi_test_packages,
+    super::support::{
+        COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, execute_tx, note_script_root,
+    },
+    common::{
+        FIRST_COUNTER_COMPONENT_SOURCE, SECOND_COUNTER_COMPONENT_SOURCE,
+        build_multi_package_fpi_test_packages,
+    },
 };
 
 /// Deploys an active account carrying two counter components that share a method name, then consumes
@@ -33,8 +38,8 @@ pub fn multiple_components_active() {
     let (first_package, second_package, note_package, first_storage_slot, second_storage_slot) =
         build_multi_package_fpi_test_packages(
             "multiple_components_active",
-            FIRST_COUNTER_CONTRACT_SOURCE,
-            SECOND_COUNTER_CONTRACT_SOURCE,
+            FIRST_COUNTER_COMPONENT_SOURCE,
+            SECOND_COUNTER_COMPONENT_SOURCE,
             ACTIVE_CALLER_SOURCE,
         );
 
@@ -82,12 +87,12 @@ pub fn multiple_components_active() {
     chain.prove_next_block().unwrap();
     chain.prove_next_block().unwrap();
 
-    assert_count_at_slot(
+    assert_counter_storage(
         chain.committed_account(account.id()).unwrap().storage(),
         &first_storage_slot,
         41,
     );
-    assert_count_at_slot(
+    assert_counter_storage(
         chain.committed_account(account.id()).unwrap().storage(),
         &second_storage_slot,
         73,
@@ -97,85 +102,17 @@ pub fn multiple_components_active() {
     let tx_context_builder = chain.build_tx_context(account.clone(), &[note.id()], &[]).unwrap();
     execute_tx(&mut chain, tx_context_builder);
 
-    assert_count_at_slot(
+    assert_counter_storage(
         chain.committed_account(account.id()).unwrap().storage(),
         &first_storage_slot,
         41,
     );
-    assert_count_at_slot(
+    assert_counter_storage(
         chain.committed_account(account.id()).unwrap().storage(),
         &second_storage_slot,
         73,
     );
 }
-
-/// Asserts the counter value stored in the selected component storage slot.
-fn assert_count_at_slot(
-    account_storage: &AccountStorage,
-    storage_slot: &StorageSlotName,
-    expected: u64,
-) {
-    let word = account_storage
-        .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
-        .expect("failed to get counter value from storage slot");
-    assert_eq!(word[0].as_canonical_u64(), expected);
-}
-
-/// First account component: exports the `first-counter` interface, method `get_count` → 41.
-const FIRST_COUNTER_CONTRACT_SOURCE: &str = r#"
-#![no_std]
-#![feature(alloc_error_handler)]
-
-use miden::{component, component_storage, felt, Felt, StorageMap, Word};
-
-#[component_storage]
-struct CounterContractStorage {
-    #[storage(description = "first counter contract storage map")]
-    count_map: StorageMap<Word, Felt>,
-}
-
-#[component]
-trait FirstCounter {
-    /// Returns the first counter value.
-    fn get_count(&self) -> Felt;
-}
-
-#[component]
-impl FirstCounter for CounterContractStorage {
-    fn get_count(&self) -> Felt {
-        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
-        self.count_map.get(key)
-    }
-}
-"#;
-
-/// Second account component: exports the `second-counter` interface, method `get_count` → 73.
-const SECOND_COUNTER_CONTRACT_SOURCE: &str = r#"
-#![no_std]
-#![feature(alloc_error_handler)]
-
-use miden::{component, component_storage, felt, Felt, StorageMap, Word};
-
-#[component_storage]
-struct CounterContractStorage {
-    #[storage(description = "second counter contract storage map")]
-    count_map: StorageMap<Word, Felt>,
-}
-
-#[component]
-trait SecondCounter {
-    /// Returns the second counter value.
-    fn get_count(&self) -> Felt;
-}
-
-#[component]
-impl SecondCounter for CounterContractStorage {
-    fn get_count(&self) -> Felt {
-        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
-        self.count_map.get(key)
-    }
-}
-"#;
 
 /// Note script whose active account derives both counter components, read with UFCS.
 const ACTIVE_CALLER_SOURCE: &str = r#"
