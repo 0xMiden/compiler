@@ -1582,10 +1582,19 @@ fn debug_var_location_from_expression(
                 global_index: *global_index,
                 byte_offset: *byte_offset,
             }),
-            ExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new_unchecked(*val))),
-            ExpressionOp::ConstS64(val) => {
-                Some(DebugVarLocation::Const(Felt::new_unchecked(*val as u64)))
-            }
+            // Constants only lower to a Const location when they are canonical field elements;
+            // otherwise the felt would silently wrap modulo the field prime and the debugger
+            // would display a different value than the program's. Preserve such constants (and
+            // all negative ones) in serialized form instead.
+            ExpressionOp::ConstU64(val) => Felt::new(*val)
+                .ok()
+                .map(DebugVarLocation::Const)
+                .or_else(|| Some(DebugVarLocation::Expression(expr.to_bytes()))),
+            ExpressionOp::ConstS64(val) => u64::try_from(*val)
+                .ok()
+                .and_then(|val| Felt::new(val).ok())
+                .map(DebugVarLocation::Const)
+                .or_else(|| Some(DebugVarLocation::Expression(expr.to_bytes()))),
             // A DW_OP_WASM_stack index refers to the *Wasm* operand stack, which has no
             // correspondence to the Miden operand stack, and a Wasm global's runtime address is
             // not resolved here. When the SSA operand is live on the stack, its position is
