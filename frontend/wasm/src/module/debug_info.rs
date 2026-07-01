@@ -974,7 +974,7 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
                 });
             }
             Operation::Register { .. } => {
-                storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_breg(N)")));
+                storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_reg(N)")));
             }
             Operation::RegisterOffset { .. } => {
                 storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_bregx")));
