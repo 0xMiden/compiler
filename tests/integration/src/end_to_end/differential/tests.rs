@@ -225,12 +225,20 @@ fn mem_globals() {
     run_case("mem_globals", include_str!("cases/case_mem_globals.rs"));
 }
 
-/// `memory_grow(0, 0)` twice — MemoryGrow translation and
-/// `OpEmitter::mem_grow`, with a deterministic zero difference.
+/// `memory_grow(0, 0)` twice — MemoryGrow translation and `OpEmitter::mem_grow`.
+///
+/// Permanently ignored as out of scope rather than filed as a bug to fix:
+/// `memory.grow` is unreachable from real Miden programs. It is only emitted by a
+/// heap allocator growing linear memory, but the SDK's `BumpAlloc` (the global
+/// allocator every program links, see `sdk/alloc`) bump-allocates within a fixed
+/// region and aborts on exhaustion — it never grows. So the only way to reach the
+/// (genuinely buggy) intrinsic is a direct `core::arch::wasm32::memory_grow` call,
+/// which this case makes but no real program does. Kept as a coverage/repro
+/// artifact for the MemoryGrow translation arm.
 #[test]
-#[ignore = "VM error in ::intrinsics::mem::memory_grow on every input: 'if statement expected a \
-            binary value on top of the stack, but got 1179648' at cycle 76 (memory.grow with \
-            delta=0)"]
+#[ignore = "out of scope: memory.grow is unreachable from real Miden code (the SDK BumpAlloc never \
+            grows linear memory); only a direct core::arch::wasm32::memory_grow call reaches the \
+            intrinsic, which aborts 'if statement expected a binary value ... but got 1179648'"]
 fn mem_grow() {
     run_case("mem_grow", include_str!("cases/case_mem_grow.rs"));
 }
