@@ -104,7 +104,7 @@ impl Foo for u32 {
     fn is_foo(&self) -> bool { true }
 }
 
-fn has_foo(items: &[dyn Foo]) -> bool {
+fn has_foo(items: &[&dyn Foo]) -> bool {
     items.iter().any(|item| item.is_foo())
 }
 
