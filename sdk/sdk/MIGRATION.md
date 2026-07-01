@@ -8,9 +8,9 @@ The most recent migration is at the top. When cutting a new release, add its mig
 directly below this paragraph, above the previous one (newest first, like the
 [CHANGELOG](./CHANGELOG.md)).
 
-<!-- Add the next migration section here, above `## 0.13.0 -> 0.14.0`. -->
+<!-- Add the next migration section here, above `## 0.12.0 -> 0.13.0`. -->
 
-## 0.13.0 -> 0.14.0
+## Unreleased
 
 ### `#[account(...)]` generates one trait per component
 
@@ -81,8 +81,6 @@ struct Remote;
 #[component(counter_contract::CounterContract)]                // sibling trait `CounterContract`
 trait Caller: NativeAccount + CounterContract { /* ... */ }
 ```
-
-## Unreleased
 
 ## 0.13.0 -> 0.13.1
 
