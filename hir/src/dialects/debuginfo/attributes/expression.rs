@@ -268,10 +268,12 @@ impl ExpressionOp {
                 byte_offset,
             } => {
                 parser.parse_lparen()?;
-                parser
+                let is_local = parser
                     .token_stream_mut()
-                    .expect_if("'local' or 'global' modifier", |tok| {
-                        matches!(tok, Token::BareIdent("local" | "global"))
+                    .expect_map("'local' or 'global' modifier", |tok| match tok {
+                        Token::BareIdent("local") => Some(true),
+                        Token::BareIdent("global") => Some(false),
+                        _ => None,
                     })?
                     .into_inner();
                 parser.parse_comma()?;
@@ -298,7 +300,11 @@ impl ExpressionOp {
                         reason: format!("byte offset '{signed}' is out of range for i64"),
                     }
                 })?;
-                *global_index = encode_frame_base_local_index(index).unwrap_or(index);
+                *global_index = if is_local {
+                    encode_frame_base_local_index(index).unwrap_or(index)
+                } else {
+                    index
+                };
                 parser.parse_rparen()?;
             }
         }
