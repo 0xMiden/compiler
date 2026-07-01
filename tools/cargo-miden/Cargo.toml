@@ -40,6 +40,3 @@ liquid = "0.26"
 liquid-core = "0.26"
 tempfile.workspace = true
 walkdir = "2.5"
-
-[dev-dependencies]
-miden-mast-package.workspace = true
