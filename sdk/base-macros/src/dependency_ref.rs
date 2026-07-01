@@ -79,9 +79,8 @@ impl Parse for DependencyRefArgs {
         let raw = Punctuated::<RawDependencyRef, Token![,]>::parse_terminated(input)?;
         let mut refs = Vec::with_capacity(raw.len());
         let mut seen = HashSet::new();
-        for raw_ref in &raw {
-            let mut dependency_ref = parse_dependency_ref(&raw_ref.path)?;
-            dependency_ref.alias = raw_ref.alias.clone();
+        for raw_ref in raw {
+            let dependency_ref = parse_dependency_ref(raw_ref.path, raw_ref.alias)?;
             if !seen.insert((dependency_ref.package.clone(), dependency_ref.interface.clone())) {
                 return Err(Error::new(
                     dependency_ref.span,
@@ -97,6 +96,15 @@ impl Parse for DependencyRefArgs {
     }
 }
 
+/// The identifier text with any raw-identifier `r#` prefix stripped.
+///
+/// `Counter` and `r#Counter` are the same name in Rust's type namespace but distinct
+/// `proc_macro2::Ident`s, so trait-name collision checks compare on this normalized key rather than
+/// the raw ident to avoid missing a clash that would later surface as `E0428`.
+fn trait_name_key(ident: &syn::Ident) -> String {
+    ident.to_string().trim_start_matches("r#").to_owned()
+}
+
 /// Returns the first pair of references whose generated traits ([`DependencyRef::trait_ident`])
 /// would have identical names, if any. Both `#[account]` and `#[component]` generate one trait per
 /// reference, so two same-named generated traits collide (`E0428`); each caller formats its own
@@ -105,9 +113,10 @@ pub(crate) fn find_duplicate_trait_name(
     refs: &[DependencyRef],
 ) -> Option<(&DependencyRef, &DependencyRef)> {
     for (index, reference) in refs.iter().enumerate() {
+        let key = trait_name_key(reference.trait_ident());
         if let Some(previous) = refs[..index]
             .iter()
-            .find(|previous| previous.trait_ident() == reference.trait_ident())
+            .find(|previous| trait_name_key(previous.trait_ident()) == key)
         {
             return Some((previous, reference));
         }
@@ -121,11 +130,13 @@ pub(crate) fn find_trait_named<'a>(
     refs: &'a [DependencyRef],
     target: &syn::Ident,
 ) -> Option<&'a DependencyRef> {
-    refs.iter().find(|reference| reference.trait_ident() == target)
+    let target_key = trait_name_key(target);
+    refs.iter()
+        .find(|reference| trait_name_key(reference.trait_ident()) == target_key)
 }
 
-/// Validates one attribute path and splits it into package and interface names.
-fn parse_dependency_ref(path: &syn::Path) -> syn::Result<DependencyRef> {
+/// Validates one attribute path and splits it into package, interface, and optional trait alias.
+fn parse_dependency_ref(path: syn::Path, alias: Option<syn::Ident>) -> syn::Result<DependencyRef> {
     if path.leading_colon.is_some() {
         return Err(Error::new(
             path.span(),
@@ -148,7 +159,7 @@ fn parse_dependency_ref(path: &syn::Path) -> syn::Result<DependencyRef> {
                 package_ident,
                 interface: interface_ident.to_string().to_kebab_case(),
                 interface_ident,
-                alias: None,
+                alias,
                 span: path.span(),
             })
         }

@@ -52,13 +52,6 @@ fn expand_inner(
         .iter()
         .map(|dependency| dependency.import().to_owned())
         .collect::<Vec<_>>();
-    // The trait name generated for each component is its `as Alias` override, or the interface
-    // segment as written. Parallel to `dependencies` (both follow the order of `args.refs`).
-    let trait_idents = args
-        .refs
-        .iter()
-        .map(|reference| reference.trait_ident().clone())
-        .collect::<Vec<_>>();
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
     let inline_wit = import_world_wit(FOREIGN_ACCOUNT_WORLD, &imports);
     let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
@@ -77,7 +70,7 @@ fn expand_inner(
         bindings,
         account_struct,
         dependencies,
-        trait_idents,
+        &args.refs,
         binding_module_ident,
     )
 }
@@ -147,7 +140,7 @@ fn validate_empty_struct(account_struct: &ItemStruct) -> syn::Result<()> {
         _ => Err(Error::new(
             account_struct.fields.span(),
             "account must be applied to an empty struct; remove all fields because the macro \
-             generates account wrapper methods on that type",
+             replaces the struct with one holding a private foreign-account id",
         )),
     }
 }
@@ -301,5 +294,23 @@ mod tests {
         assert!(message.contains("would both generate a trait named `Counter`"), "{message}");
         assert!(message.contains("first::Counter"));
         assert!(message.contains("third::Counter"));
+    }
+
+    #[test]
+    fn rejects_alias_that_creates_a_duplicate_trait_name() {
+        // `as Foo` renames the second trait to `Foo`, colliding with the first reference's `Foo` —
+        // the alias-*creates*-a-clash direction (vs. an alias resolving one).
+        let err = expand_inner(
+            quote::quote!(first::Foo, second::Bar as Foo),
+            quote::quote! {
+                struct Wallet;
+            },
+        )
+        .unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("would both generate a trait named `Foo`"), "{message}");
+        assert!(message.contains("first::Foo"));
+        assert!(message.contains("second::Bar"));
     }
 }

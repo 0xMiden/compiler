@@ -184,10 +184,12 @@ fn reject_component_trait_name_collision(
 /// (used there to avoid name clashes); sibling component traits are always named after their
 /// interface. Rejecting it loudly avoids silently ignoring a user's alias.
 fn reject_aliases(refs: &[DependencyRef]) -> syn::Result<()> {
-    if let Some(reference) = refs.iter().find(|reference| reference.alias.is_some()) {
-        let alias_span = reference.alias.as_ref().map_or(reference.span, |alias| alias.span());
+    if let Some((reference, alias)) = refs
+        .iter()
+        .find_map(|reference| reference.alias.as_ref().map(|alias| (reference, alias)))
+    {
         return Err(Error::new(
-            alias_span,
+            alias.span(),
             format!(
                 "sibling component reference `{}::{}` cannot use an `as` alias; sibling traits \
                  are named after their interface",
@@ -246,6 +248,9 @@ fn build_sibling_trait(
         // The generated trait name is the interface segment as written; allow a
         // non-UpperCamelCase name rather than fire `non_camel_case_types` on generated code.
         #[allow(non_camel_case_types)]
+        // Always `pub` (unlike the `#[account]` trait's wrapper visibility): the user names this
+        // trait in their own component trait's supertrait bound (`trait Caller: … + CounterContract`),
+        // so it must be at least as visible as that trait.
         pub trait #trait_ident {
             #(#methods)*
         }
