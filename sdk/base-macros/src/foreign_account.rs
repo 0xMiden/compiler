@@ -6,7 +6,10 @@ use quote::format_ident;
 use syn::{Error, Fields, ItemStruct, spanned::Spanned};
 
 use crate::{
-    dependency_ref::{DependencyRef, DependencyRefArgs, select_dependencies},
+    dependency_ref::{
+        DependencyRef, DependencyRefArgs, find_duplicate_trait_name, find_trait_named,
+        select_dependencies,
+    },
     fpi, generate, manifest_paths,
     wit_world::{ManifestPackage, import_world_wit},
 };
@@ -88,9 +91,7 @@ fn reject_struct_trait_name_collision(
     account_struct: &ItemStruct,
     refs: &[DependencyRef],
 ) -> syn::Result<()> {
-    if let Some(reference) =
-        refs.iter().find(|reference| reference.trait_ident() == &account_struct.ident)
-    {
+    if let Some(reference) = find_trait_named(refs, &account_struct.ident) {
         return Err(Error::new(
             reference.span,
             format!(
@@ -111,26 +112,21 @@ fn reject_struct_trait_name_collision(
 
 /// Rejects references whose generated component traits would have identical names.
 fn reject_duplicate_trait_names(refs: &[DependencyRef]) -> syn::Result<()> {
-    for (index, reference) in refs.iter().enumerate() {
-        if let Some(previous) = refs[..index]
-            .iter()
-            .find(|previous| previous.trait_ident() == reference.trait_ident())
-        {
-            return Err(Error::new(
-                reference.span,
-                format!(
-                    "account references `{}::{}` and `{}::{}` would both generate a trait named \
-                     `{}`; give one a different name with `{}::{} as OtherName`",
-                    previous.package_ident,
-                    previous.interface_ident,
-                    reference.package_ident,
-                    reference.interface_ident,
-                    reference.trait_ident(),
-                    reference.package_ident,
-                    reference.interface_ident,
-                ),
-            ));
-        }
+    if let Some((previous, reference)) = find_duplicate_trait_name(refs) {
+        return Err(Error::new(
+            reference.span,
+            format!(
+                "account references `{}::{}` and `{}::{}` would both generate a trait named `{}`; \
+                 give one a different name with `{}::{} as OtherName`",
+                previous.package_ident,
+                previous.interface_ident,
+                reference.package_ident,
+                reference.interface_ident,
+                reference.trait_ident(),
+                reference.package_ident,
+                reference.interface_ident,
+            ),
+        ));
     }
     Ok(())
 }
@@ -287,5 +283,23 @@ mod tests {
         );
         let err = reject_struct_trait_name_collision(&wallet, &args.refs).unwrap_err();
         assert!(err.to_string().contains("generates a trait named `Wallet`"), "{err}");
+    }
+
+    #[test]
+    fn rejects_duplicate_trait_name_at_the_third_reference() {
+        // The duplicate is the third reference, colliding with the first — exercises the prefix
+        // scan beyond two elements.
+        let err = expand_inner(
+            quote::quote!(first::Counter, second::Other, third::Counter),
+            quote::quote! {
+                struct Wallet;
+            },
+        )
+        .unwrap_err();
+        let message = err.to_string();
+
+        assert!(message.contains("would both generate a trait named `Counter`"), "{message}");
+        assert!(message.contains("first::Counter"));
+        assert!(message.contains("third::Counter"));
     }
 }

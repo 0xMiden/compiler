@@ -81,9 +81,6 @@ impl Parse for DependencyRefArgs {
         let mut seen = HashSet::new();
         for raw_ref in &raw {
             let mut dependency_ref = parse_dependency_ref(&raw_ref.path)?;
-            if let Some(alias) = &raw_ref.alias {
-                validate_alias(alias)?;
-            }
             dependency_ref.alias = raw_ref.alias.clone();
             if !seen.insert((dependency_ref.package.clone(), dependency_ref.interface.clone())) {
                 return Err(Error::new(
@@ -100,25 +97,31 @@ impl Parse for DependencyRefArgs {
     }
 }
 
-/// Rejects an `as Alias` that is not UpperCamelCase.
-///
-/// The alias becomes the generated trait name, so a snake_case or lowercase alias would fire
-/// `non_camel_case_types` on macro-generated code the user cannot easily silence. Requiring an
-/// UpperCamelCase alias keeps the generated trait name idiomatic.
-fn validate_alias(alias: &syn::Ident) -> syn::Result<()> {
-    let name = alias.to_string();
-    let is_upper_camel =
-        name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && !name.contains('_');
-    if !is_upper_camel {
-        return Err(Error::new(
-            alias.span(),
-            format!(
-                "account trait alias `{name}` must be written in UpperCamelCase (e.g. \
-                 `RemoteCounter`) so the generated trait name is idiomatic"
-            ),
-        ));
+/// Returns the first pair of references whose generated traits ([`DependencyRef::trait_ident`])
+/// would have identical names, if any. Both `#[account]` and `#[component]` generate one trait per
+/// reference, so two same-named generated traits collide (`E0428`); each caller formats its own
+/// remediation because only `#[account]` can offer an `as` alias.
+pub(crate) fn find_duplicate_trait_name(
+    refs: &[DependencyRef],
+) -> Option<(&DependencyRef, &DependencyRef)> {
+    for (index, reference) in refs.iter().enumerate() {
+        if let Some(previous) = refs[..index]
+            .iter()
+            .find(|previous| previous.trait_ident() == reference.trait_ident())
+        {
+            return Some((previous, reference));
+        }
     }
-    Ok(())
+    None
+}
+
+/// Returns the first reference whose generated trait ([`DependencyRef::trait_ident`]) is named
+/// `target`, if any — used to detect a clash with a struct or component-trait name in scope.
+pub(crate) fn find_trait_named<'a>(
+    refs: &'a [DependencyRef],
+    target: &syn::Ident,
+) -> Option<&'a DependencyRef> {
+    refs.iter().find(|reference| reference.trait_ident() == target)
 }
 
 /// Validates one attribute path and splits it into package and interface names.
@@ -320,11 +323,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_upper_camel_case_alias() {
-        let err = syn::parse2::<DependencyRefArgs>(quote! {
+    fn accepts_non_upper_camel_case_alias() {
+        // Casing is no longer rejected: the generated trait carries `#[allow(non_camel_case_types)]`.
+        let args = syn::parse2::<DependencyRefArgs>(quote! {
             counter_contract::CounterContract as remote_counter
         })
-        .unwrap_err();
-        assert!(err.to_string().contains("must be written in UpperCamelCase"), "{err}");
+        .unwrap();
+        assert_eq!(args.refs[0].trait_ident().to_string(), "remote_counter");
     }
 }
