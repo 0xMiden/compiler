@@ -287,8 +287,7 @@ impl ExpressionOp {
                         _ => None,
                     })?
                     .into_inner();
-                let (offset_span, magnitude) =
-                    parser.parse_decimal_integer::<u64>()?.into_parts();
+                let (offset_span, magnitude) = parser.parse_decimal_integer::<u64>()?.into_parts();
                 let signed = if negative {
                     -(magnitude as i128)
                 } else {
