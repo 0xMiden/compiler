@@ -246,7 +246,8 @@ fn determine_location(addr2line: &Context<DwarfReader<'_>>, offset: u64) -> (u32
     match addr2line.find_location(offset).ok().flatten() {
         Some(location) => {
             let line = location.line.unwrap_or_default();
-            let column = location.column;
+            // In DWARF line programs a column of 0 means "no column information"
+            let column = location.column.filter(|&column| column != 0);
             (line, column)
         }
         None => (0, None),
