@@ -73,7 +73,14 @@ impl DeadCodeElimination {
             .with_listener(TracingRewriterListener);
         let mut changed = PostPassStatus::Unchanged;
         op.raw_postwalk_all::<Backward, _>(|op: OperationRef| {
-            let is_dead = op.borrow().is_trivially_dead();
+            // Transparent ops (e.g. debug info) have no results and no memory effects, so they
+            // always appear trivially dead; erasing them here would silently strip all debug
+            // info. They are only removed when their operand's producer is dead, which is the
+            // job of the region simplification DCE.
+            let is_dead = {
+                let op = op.borrow();
+                !op.implements::<dyn midenc_hir::traits::Transparent>() && op.is_trivially_dead()
+            };
             if is_dead {
                 changed = PostPassStatus::Changed;
                 rewriter.erase_op(op);
