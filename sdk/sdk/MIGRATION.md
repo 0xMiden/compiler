@@ -63,6 +63,10 @@ use miden::active_account::ActiveAccount;
 <Wallet as ActiveAccount>::get_id(account);   // the built-in
 ```
 
+For the same reason, a component method named `new` is now permitted (it was previously rejected):
+it lives on the generated trait and coexists with the inherent `Wallet::new(account_id)`
+constructor — `Wallet::new(id)` resolves to the constructor, `wallet.new()` to the component method.
+
 **Name clashes between generated traits are resolved with `as`.** When the generated trait *name*
 would clash — the struct shares the interface name, two packages export the same interface name,
 two separate `#[account]` wrappers in one module select the same interface, or the crate already

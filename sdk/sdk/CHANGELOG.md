@@ -44,7 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `use miden::active_account::ActiveAccount;` in scope) `<Wallet as ActiveAccount>::get_id(account)`.
   Single-component accounts whose method names do not overlap keep calling `account.method(..)`
   unchanged when the generated trait is in scope — a same-module entrypoint sees it automatically;
-  a cross-module call site needs a `use` of the generated trait #1208
+  a cross-module call site needs a `use` of the generated trait. Relatedly, a component method
+  named `new` is now permitted (previously a hard error): it lives on the generated trait and
+  coexists with the inherent `Wallet::new(account_id)` constructor #1208
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
