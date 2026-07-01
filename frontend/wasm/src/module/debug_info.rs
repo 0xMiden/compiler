@@ -175,8 +175,18 @@ fn build_function_debug_info(
 ) -> Option<FunctionDebugInfo> {
     let func_name = module.func_name(func_index);
 
-    let (file_symbol, directory_symbol) = determine_file_symbols(parsed_module, addr2line, body);
-    let (line, column) = determine_location(addr2line, body.body_offset);
+    // Translate the function body's file offset into the coordinate space used by the DWARF
+    // line info, mirroring the per-instruction lookups in `parse_function_body`: for standalone
+    // modules DWARF addresses are relative to the code section start, while for modules embedded
+    // in components they are offset by the module's base offset within the component.
+    let dwarf_offset = if parsed_module.wasm_file.module_base_offset > 0 {
+        parsed_module.wasm_file.module_base_offset + body.body_offset
+    } else {
+        body.body_offset.saturating_sub(parsed_module.wasm_file.code_section_offset)
+    };
+    let (file_symbol, directory_symbol) =
+        determine_file_symbols(parsed_module, addr2line, dwarf_offset);
+    let (line, column) = determine_location(addr2line, dwarf_offset);
 
     let mut compile_unit = CompileUnit::new(Symbol::intern("wasm"), file_symbol);
     compile_unit.directory = directory_symbol;
@@ -211,10 +221,10 @@ fn build_function_debug_info(
 fn determine_file_symbols(
     parsed_module: &ParsedModule,
     addr2line: &Context<DwarfReader<'_>>,
-    body: &FunctionBodyData,
+    dwarf_offset: u64,
 ) -> (Symbol, Option<Symbol>) {
     if let Some(location) = addr2line
-        .find_location(body.body_offset)
+        .find_location(dwarf_offset)
         .ok()
         .flatten()
         .and_then(|loc| loc.file.map(|file| file.to_owned()))
