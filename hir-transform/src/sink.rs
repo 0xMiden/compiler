@@ -26,6 +26,10 @@ fn is_sole_non_transparent_user(value: &dyn Value, operation: OperationRef) -> b
 /// This is used before erasing a defining op whose result is only kept alive by
 /// transparent uses.
 fn erase_transparent_users(value: ValueRef) {
+    // Handle debug value users first: erasing them must leave a `di.debug_kill` marker behind,
+    // so debuggers report the affected variables as optimized out instead of showing a stale
+    // earlier location.
+    midenc_hir::dialects::debuginfo::transform::erase_debug_info(&value);
     let transparent_ops: SmallVec<[OperationRef; 2]> = {
         let v = value.borrow();
         v.iter_uses()
