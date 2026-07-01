@@ -80,8 +80,9 @@ pub enum SalvageAction {
     /// The value was replaced by a new value with an arbitrary expression.
     ///
     /// Use this for complex transformations where the simple patterns don't apply. The caller
-    /// provides the full expression describing how to recover the source-level value from the new
-    /// IR value.
+    /// provides expression operations describing how to recover the *old* IR value from the new
+    /// one; they are prepended to any existing expression, which continues to describe how the
+    /// source-level value is recovered from the old value.
     WithExpression {
         /// The new value replacing the original.
         new_value: ValueRef,
@@ -130,10 +131,16 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
     action: &SalvageAction,
     builder: &mut B,
 ) {
-    // Collect all debug value ops that use the old value
+    // Collect all debug value ops that use the old value.
+    //
+    // Each replacement op is created at the position of the debug op it replaces — a
+    // `di.debug_value` records the variable's value *at a program point*, so salvaging must not
+    // move that point. The caller's insertion point is restored afterwards.
+    let ip = *builder.insertion_point();
     for mut debug_op in debug_value_users(old_value) {
         apply_salvage_action(&mut debug_op, action, builder);
     }
+    builder.restore_insertion_point(ip);
 }
 
 /// Erase all `di.debug_value` operations that use `old_value`, marking each affected variable as
@@ -159,12 +166,20 @@ pub fn erase_debug_info(old_value: &ValueRef) {
 }
 
 /// Apply a salvage action to a single debug value operation.
+///
+/// The replacement operation is created immediately before `debug_op`, which is then erased.
+///
+/// Inverse expression operations are always *prepended* to the existing expression: the existing
+/// expression describes how to recover the source-level value from the old IR value, and the
+/// salvage ops describe how to recover the old IR value from its replacement, so the salvage ops
+/// must run first (`source = old_expr(salvage_ops(new_value))`).
 fn apply_salvage_action<B: ?Sized + Builder>(
     debug_op: &mut OperationRef,
     action: &SalvageAction,
     builder: &mut B,
 ) {
     let span = debug_op.borrow().span();
+    builder.set_insertion_point_before(*debug_op);
 
     match action {
         SalvageAction::Deref { new_value } => {
@@ -176,9 +191,9 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             };
             expr.operations.insert(0, ExpressionOp::Deref);
 
-            // Erase old op and create new one with updated value and expression
-            debug_op.borrow_mut().erase();
+            // Create the replacement with updated value and expression, then erase the old op
             let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
+            debug_op.borrow_mut().erase();
         }
 
         SalvageAction::OffsetBy { new_value, offset } => {
@@ -187,12 +202,13 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
                 (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
-            // To recover: subtract the offset that was added
-            expr.operations.push(ExpressionOp::ConstU64(*offset));
-            expr.operations.push(ExpressionOp::Minus);
+            // To recover the old value: subtract the offset that was added, before any
+            // pre-existing expression is applied
+            expr.operations
+                .splice(0..0, [ExpressionOp::ConstU64(*offset), ExpressionOp::Minus]);
 
-            debug_op.borrow_mut().erase();
             let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
+            debug_op.borrow_mut().erase();
         }
 
         SalvageAction::WithExpression { new_value, ops } => {
@@ -201,10 +217,10 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
                 (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
-            expr.operations.extend(ops.iter().cloned());
+            expr.operations.splice(0..0, ops.iter().cloned());
 
-            debug_op.borrow_mut().erase();
             let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
+            debug_op.borrow_mut().erase();
         }
 
         SalvageAction::Constant { value } => {
@@ -214,10 +230,10 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 dv.variable().as_value().clone()
             };
 
-            debug_op.borrow_mut().erase();
             // Emit a kill since we can't create a di.value without a live SSA operand for constants
             // — the constant value is encoded in the expression
             let _ = builder.debug_kill(variable, span);
+            debug_op.borrow_mut().erase();
             // TODO: in the future, could emit a di.value with a materialized constant and a
             // ConstU64/StackValue expression pair
             let _ = value;
@@ -230,8 +246,8 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 dv.variable().as_value().clone()
             };
 
-            debug_op.borrow_mut().erase();
             let _ = builder.debug_kill(variable, span);
+            debug_op.borrow_mut().erase();
         }
     }
 }
