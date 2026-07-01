@@ -1,0 +1,28 @@
+// RUN: hir-opt %s | filecheck %s
+
+// Round-trip parse/print coverage for the debuginfo (di) dialect attributes:
+// variable attrs with column/arg/ty properties, and expression attrs covering
+// the DW_OP_fbreg local/global forms (with positive and negative offsets),
+// DW_OP_WASM_local, and multi-op expressions.
+// The body below is the canonical printer output, so the reprint must match it exactly.
+builtin.function public extern("C") @debuginfo(%0: i32, %1: i32) -> i32 {
+    di.debug_declare <{ variable = #di.variable<{ name = "a", file = "test.rs", line = 19, column = 7, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+8)]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 20, arg = 1 }>, expression = #di.expression<[DW_OP_fbreg(global, 5-16)]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "s", file = "test.rs", line = 21 }>, expression = #di.expression<[DW_OP_WASM_local(3), DW_OP_deref]> }>;
+    %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+    di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 22, ty = i32 }>, expression = #di.expression<[]> }> : (i32);
+    di.debug_value %2 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 23 }>, expression = #di.expression<[DW_OP_constu(4), DW_OP_plus, DW_OP_stack_value]> }> : (i32);
+    di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 22, ty = i32 }> }>;
+    builtin.ret %2 : (i32);
+};
+
+// CHECK: builtin.function public extern("C") @debuginfo(%0: i32, %1: i32) -> i32 {
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "a", file = "test.rs", line = 19, column = 7, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+8)]> }>;
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "b", file = "test.rs", line = 20, arg = 1 }>, expression = #di.expression<[DW_OP_fbreg(global, 5-16)]> }>;
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "s", file = "test.rs", line = 21 }>, expression = #di.expression<[DW_OP_WASM_local(3), DW_OP_deref]> }>;
+// CHECK-NEXT:     %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+// CHECK-NEXT:     di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 22, ty = i32 }>, expression = #di.expression<[]> }> : (i32);
+// CHECK-NEXT:     di.debug_value %2 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 23 }>, expression = #di.expression<[DW_OP_constu(4), DW_OP_plus, DW_OP_stack_value]> }> : (i32);
+// CHECK-NEXT:     di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 22, ty = i32 }> }>;
+// CHECK-NEXT:     builtin.ret %2 : (i32);
+// CHECK-NEXT: };
