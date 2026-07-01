@@ -389,16 +389,19 @@ pub(crate) fn augment_foreign_account_bindings(
     let mut trait_items = Vec::with_capacity(dependencies.len());
     let mut include_paths = Vec::new();
 
-    for module in modules {
-        let Some(dependency) = dependencies
-            .iter()
-            .find(|dependency| dependency.module_path == module.path_string)
+    // Iterate the selected references (not the generated modules) so a reference whose interface
+    // has no callable exports is reported per-reference instead of being silently skipped — a
+    // reference maps 1:1 to a generated trait, so every one must produce a module.
+    for dependency in &dependencies {
+        let Some(module) =
+            modules.iter().find(|module| module.path_string == dependency.module_path)
         else {
             return Err(Error::new(
-                Span::call_site(),
+                dependency.trait_ident.span(),
                 format!(
-                    "failed to resolve FPI dependency metadata for generated module `{}`",
-                    module.path_string
+                    "account interface `{}` has no callable exports; a referenced interface must \
+                     export at least one function",
+                    dependency.import
                 ),
             ));
         };
@@ -642,7 +645,7 @@ fn user_derived_names(attrs: &[Attribute]) -> HashSet<String> {
         .collect()
 }
 
-/// Creates the inherent impl block shared by all generated foreign account methods.
+/// Creates the constructor (`new`) inherent impl for the account wrapper.
 fn foreign_account_impl(account_struct: &ItemStruct) -> ItemImpl {
     let ident = &account_struct.ident;
     parse_quote! {
@@ -710,7 +713,7 @@ fn method_ident(func: &ItemFn) -> syn::Result<syn::Ident> {
 
     // Component methods that share a name with an `ActiveAccount` built-in (e.g. `get_id`) are no
     // longer rejected: both live on traits, so the clash is resolved by the caller with
-    // `<Wallet as Component>::get_id(account)` rather than silently shadowing the built-in.
+    // `<Wallet as Interface>::get_id(account)` rather than silently shadowing the built-in.
     Ok(syn::Ident::new(method_name, func.sig.ident.span()))
 }
 

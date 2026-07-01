@@ -277,7 +277,7 @@ pub fn has_procedure(proc_root: Word) -> bool {
 ///
 /// A `#[account(...)]` component method that shares a name with one of these built-ins does not
 /// shadow it: both live on traits, so the call is disambiguated with
-/// `<Wallet as ActiveAccount>::get_id(account)` or `<Wallet as Component>::get_id(account)`.
+/// `<Wallet as ActiveAccount>::get_id(account)` or `<Wallet as Interface>::get_id(account)`.
 pub trait ActiveAccount {
     /// Guard hook invoked by every active-account operation before it runs.
     ///

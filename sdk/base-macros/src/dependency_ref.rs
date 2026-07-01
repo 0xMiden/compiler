@@ -49,7 +49,9 @@ impl DependencyRef {
 
 /// One `package::Interface` or `package::Interface as Alias` item, before validation.
 struct RawDependencyRef {
+    /// The `package::Interface` path selecting the dependency and its exported WIT interface.
     path: syn::Path,
+    /// Optional `as Alias` override for the generated trait name.
     alias: Option<syn::Ident>,
 }
 
@@ -79,6 +81,9 @@ impl Parse for DependencyRefArgs {
         let mut seen = HashSet::new();
         for raw_ref in &raw {
             let mut dependency_ref = parse_dependency_ref(&raw_ref.path)?;
+            if let Some(alias) = &raw_ref.alias {
+                validate_alias(alias)?;
+            }
             dependency_ref.alias = raw_ref.alias.clone();
             if !seen.insert((dependency_ref.package.clone(), dependency_ref.interface.clone())) {
                 return Err(Error::new(
@@ -93,6 +98,27 @@ impl Parse for DependencyRefArgs {
         }
         Ok(Self { refs })
     }
+}
+
+/// Rejects an `as Alias` that is not UpperCamelCase.
+///
+/// The alias becomes the generated trait name, so a snake_case or lowercase alias would fire
+/// `non_camel_case_types` on macro-generated code the user cannot easily silence. Requiring an
+/// UpperCamelCase alias keeps the generated trait name idiomatic.
+fn validate_alias(alias: &syn::Ident) -> syn::Result<()> {
+    let name = alias.to_string();
+    let is_upper_camel =
+        name.chars().next().is_some_and(|c| c.is_ascii_uppercase()) && !name.contains('_');
+    if !is_upper_camel {
+        return Err(Error::new(
+            alias.span(),
+            format!(
+                "account trait alias `{name}` must be written in UpperCamelCase (e.g. \
+                 `RemoteCounter`) so the generated trait name is idiomatic"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// Validates one attribute path and splits it into package and interface names.
@@ -291,5 +317,14 @@ mod tests {
             syn::parse2::<DependencyRefArgs>(quote!(counter_contract::CounterContract)).unwrap();
         assert!(args.refs[0].alias.is_none());
         assert_eq!(args.refs[0].trait_ident().to_string(), "CounterContract");
+    }
+
+    #[test]
+    fn rejects_non_upper_camel_case_alias() {
+        let err = syn::parse2::<DependencyRefArgs>(quote! {
+            counter_contract::CounterContract as remote_counter
+        })
+        .unwrap_err();
+        assert!(err.to_string().contains("must be written in UpperCamelCase"), "{err}");
     }
 }

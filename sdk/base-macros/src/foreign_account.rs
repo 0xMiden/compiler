@@ -120,12 +120,14 @@ fn reject_duplicate_trait_names(refs: &[DependencyRef]) -> syn::Result<()> {
                 reference.span,
                 format!(
                     "account references `{}::{}` and `{}::{}` would both generate a trait named \
-                     `{}`; give them distinct names with `package::Interface as Alias`",
+                     `{}`; give one a different name with `{}::{} as OtherName`",
                     previous.package_ident,
                     previous.interface_ident,
                     reference.package_ident,
                     reference.interface_ident,
                     reference.trait_ident(),
+                    reference.package_ident,
+                    reference.interface_ident,
                 ),
             ));
         }

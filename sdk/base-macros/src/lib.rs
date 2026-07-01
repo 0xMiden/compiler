@@ -293,7 +293,7 @@ pub fn export_type(
 /// use miden::*;
 ///
 /// #[account(counter_contract::CounterContract)]
-/// struct CounterContract;
+/// struct Counter;
 ///
 /// #[note]
 /// struct CounterCaller {
@@ -304,7 +304,7 @@ pub fn export_type(
 /// impl CounterCaller {
 ///     #[note_script]
 ///     pub fn run(self, _arg: Word) {
-///         let counter = CounterContract::new(self.counter_account_id);
+///         let counter = Counter::new(self.counter_account_id);
 ///         let count = counter.get_count();
 ///         assert_eq(count, felt!(1));
 ///     }

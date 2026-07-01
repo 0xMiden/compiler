@@ -423,6 +423,16 @@ mod tests {
     }
 
     #[test]
+    fn reject_aliases_rejects_an_as_alias() {
+        let args = syn::parse2::<crate::dependency_ref::DependencyRefArgs>(quote! {
+            pausable::Pausable as Renamed
+        })
+        .unwrap();
+        let err = reject_aliases(&args.refs).unwrap_err();
+        assert!(err.to_string().contains("cannot use an `as` alias"), "{err}");
+    }
+
+    #[test]
     fn hidden_module_name_derives_from_component_trait() {
         let ident = sibling_bindings_module_ident(&format_ident!("MyComponent"));
         assert_eq!(ident.to_string(), "__miden_sibling_bindings_my_component");
