@@ -52,20 +52,29 @@ pub(super) fn build_fpi_test_packages(
 }
 
 /// Builds two isolated account projects and one note project for an FPI test case.
+///
+/// `first_interface` / `second_interface` are the kebab-case WIT interface names each component
+/// exports; passing the same name for both (disambiguated by `as Alias` in the caller) exercises
+/// the alias path, while distinct names exercise the plain multi-interface path. Storage slot names
+/// derive from the interface segment, so two same-interface packages still get distinct slots via
+/// their (distinct) package namespaces.
 pub(super) fn build_multi_package_fpi_test_packages(
     test_name: &str,
+    first_interface: &str,
+    second_interface: &str,
     first_account_source: &str,
     second_account_source: &str,
     caller_source: &str,
 ) -> (Arc<Package>, Arc<Package>, Arc<Package>, StorageSlotName, StorageSlotName) {
     let names = FpiMultiPackageProjectNames::new(test_name);
-    // The two components export distinct WIT interfaces (`first-counter`, `second-counter`) so the
-    // `#[account(...)]` macro generates two differently named traits. Storage slot names derive
-    // from the interface segment, so they track those interfaces too.
-    let first_storage_slot =
-        storage_slot_name_for_package(&names.first_account_package, "first_counter");
-    let second_storage_slot =
-        storage_slot_name_for_package(&names.second_account_package, "second_counter");
+    let first_storage_slot = storage_slot_name_for_package(
+        &names.first_account_package,
+        &first_interface.replace('-', "_"),
+    );
+    let second_storage_slot = storage_slot_name_for_package(
+        &names.second_account_package,
+        &second_interface.replace('-', "_"),
+    );
 
     let first_account_project = project(&names.first_account_name)
         .file(
@@ -73,7 +82,7 @@ pub(super) fn build_multi_package_fpi_test_packages(
             &account_miden_project_toml_with_interface(
                 &names.first_account_name,
                 &names.first_account_package,
-                "first-counter",
+                first_interface,
             ),
         )
         .file(
@@ -90,7 +99,7 @@ pub(super) fn build_multi_package_fpi_test_packages(
             &account_miden_project_toml_with_interface(
                 &names.second_account_name,
                 &names.second_account_package,
-                "second-counter",
+                second_interface,
             ),
         )
         .file(

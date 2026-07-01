@@ -6,6 +6,7 @@ mod mixed_scalar_struct;
 mod multi_call;
 mod multiple_components_active;
 mod multiple_packages;
+mod multiple_packages_aliased;
 mod no_arg;
 mod signed_narrow_indirect_struct;
 mod six_u64_struct;

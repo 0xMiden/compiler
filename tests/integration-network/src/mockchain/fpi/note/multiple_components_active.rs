@@ -38,6 +38,8 @@ pub fn multiple_components_active() {
     let (first_package, second_package, note_package, first_storage_slot, second_storage_slot) =
         build_multi_package_fpi_test_packages(
             "multiple_components_active",
+            "first-counter",
+            "second-counter",
             FIRST_COUNTER_COMPONENT_SOURCE,
             SECOND_COUNTER_COMPONENT_SOURCE,
             ACTIVE_CALLER_SOURCE,
