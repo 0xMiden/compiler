@@ -276,8 +276,28 @@ impl ExpressionOp {
                     .into_inner();
                 parser.parse_comma()?;
                 let index = parser.parse_decimal_integer::<u32>()?.into_inner();
-                parser.parse_comma()?;
-                *byte_offset = parser.parse_decimal_integer::<i64>()?.into_inner();
+                // The printed form is `INDEX{+|-}OFFSET`, e.g. `DW_OP_fbreg(local, 2+8)`
+                let negative = parser
+                    .token_stream_mut()
+                    .expect_map("'+' or '-' offset sign", |tok| match tok {
+                        Token::Plus => Some(false),
+                        Token::Minus => Some(true),
+                        _ => None,
+                    })?
+                    .into_inner();
+                let (offset_span, magnitude) =
+                    parser.parse_decimal_integer::<u64>()?.into_parts();
+                let signed = if negative {
+                    -(magnitude as i128)
+                } else {
+                    magnitude as i128
+                };
+                *byte_offset = i64::try_from(signed).map_err(|_| {
+                    crate::parse::ParserError::InvalidIntegerLiteral {
+                        span: offset_span,
+                        reason: format!("byte offset '{signed}' is out of range for i64"),
+                    }
+                })?;
                 *global_index = encode_frame_base_local_index(index).unwrap_or(index);
                 parser.parse_rparen()?;
             }
