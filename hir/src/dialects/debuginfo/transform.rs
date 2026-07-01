@@ -7,7 +7,7 @@
 //! # Design Philosophy
 //!
 //! The `di` dialect uses SSA use-def chains for debug values, which means transforms *cannot*
-//! silently drop debug info. When a transform replaces or deletes a value, any `di.value`
+//! silently drop debug info. When a transform replaces or deletes a value, any `di.debug_value`
 //! operations using that value must be updated. The standard `replace_all_uses_with` already
 //! handles this correctly for simple value replacements.
 //!
@@ -22,9 +22,9 @@
 //! When CSE replaces `%1 = add %a, %b` with an existing `%0 = add %a, %b`:
 //!
 //! ```text,ignore
-//! // Before: di.value %1 #[variable = x]
+//! // Before: di.debug_value %1 #[variable = x]
 //! rewriter.replace_all_uses_with(%1, %0)
-//! // After:  di.value %0 #[variable = x]  -- automatic!
+//! // After:  di.debug_value %0 #[variable = x]  -- automatic!
 //! ```
 //!
 //! ## Value promoted to memory (using `salvage_debug_info`)
@@ -32,11 +32,11 @@
 //! When a transform promotes a value to a stack allocation:
 //!
 //! ```text
-//! // Before: di.value %val #[variable = x]
+//! // Before: di.debug_value %val #[variable = x]
 //! // Transform creates: %ptr = alloca T
 //! //                    store %val, %ptr
 //! // Call: salvage_debug_info(%val, SalvageAction::Deref { new_value: %ptr })
-//! // After:  di.value %ptr #[variable = x, expression = di.expression(DW_OP_deref)]
+//! // After:  di.debug_value %ptr #[variable = x, expression = di.expression(DW_OP_deref)]
 //! ```
 use alloc::vec::Vec;
 
@@ -54,7 +54,7 @@ use super::{DIBuilder, ops::DebugValue};
 /// the debugger can still find the variable's value.
 ///
 /// Transform authors only need to pick the right variant — the framework handles updating all
-/// affected `di.value` operations.
+/// affected `di.debug_value` operations.
 #[derive(Clone, Debug)]
 pub enum SalvageAction {
     /// The value is now behind a pointer; dereference to recover the original.
@@ -100,12 +100,12 @@ pub enum SalvageAction {
 
     /// The value was completely removed with no recovery possible.
     ///
-    /// Use this as a last resort when the value cannot be recovered. This will emit a `di.kill` for
+    /// Use this as a last resort when the value cannot be recovered. This will emit a `di.debug_kill` for
     /// the affected variable.
     Undef,
 }
 
-/// Salvage debug info for all `di.value` operations that use `old_value`.
+/// Salvage debug info for all `di.debug_value` operations that use `old_value`.
 ///
 /// When a transform is about to delete or replace a value, call this function to update all debug
 /// uses. The `action` describes how the debugger can recover the original source-level value from
@@ -230,11 +230,11 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 dv.variable().as_value().clone()
             };
 
-            // Emit a kill since we can't create a di.value without a live SSA operand for constants
+            // Emit a kill since we can't create a di.debug_value without a live SSA operand for constants
             // — the constant value is encoded in the expression
             let _ = builder.debug_kill(variable, span);
             debug_op.borrow_mut().erase();
-            // TODO: in the future, could emit a di.value with a materialized constant and a
+            // TODO: in the future, could emit a di.debug_value with a materialized constant and a
             // ConstU64/StackValue expression pair
             let _ = value;
         }
@@ -260,7 +260,7 @@ pub fn is_debug_info_op(op: &Operation) -> bool {
     op.dialect().name() == super::DebugInfoDialect::NAMESPACE
 }
 
-/// Collect all `di.value` operations that reference the given value.
+/// Collect all `di.debug_value` operations that reference the given value.
 ///
 /// Useful for transforms that need to inspect or update debug info for a specific value.
 pub fn debug_value_users(value: &ValueRef) -> SmallVec<[OperationRef; 2]> {
