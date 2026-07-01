@@ -144,7 +144,7 @@ mod tests {
     use alloc::string::ToString;
 
     use midenc_hir::{
-        Builder, Report, SourceSpan, Type, ValueRef,
+        Builder, RawWalk, Report, SourceSpan, Type, ValueRef,
         dialects::{
             builtin::BuiltinOpBuilder,
             debuginfo::{
@@ -227,6 +227,18 @@ mod tests {
         producer_op.borrow_mut().erase();
 
         assert!(debug_op.borrow().parent().is_none());
+
+        // Erasing a debug value must leave an explicit end-of-lifetime marker behind
+        let mut found_kill = false;
+        test.function().as_operation_ref().raw_prewalk_all::<midenc_hir::Forward, _>(
+            |op: midenc_hir::OperationRef| {
+                if op.borrow().is::<super::DebugKill>() {
+                    found_kill = true;
+                }
+            },
+        );
+        assert!(found_kill, "expected a di.debug_kill to be emitted for the erased debug value");
+
         test.function().as_operation_ref().borrow().recursively_verify()?;
 
         Ok(())

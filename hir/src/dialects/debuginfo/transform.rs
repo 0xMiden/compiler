@@ -41,8 +41,8 @@
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, DialectRegistration, Operation, OperationRef, SmallVec, Spanned, ValueRef,
-    dialects::debuginfo::attributes::ExpressionOp,
+    Builder, DialectRegistration, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
+    Spanned, ValueRef, dialects::debuginfo::attributes::ExpressionOp,
 };
 
 use super::{DIBuilder, ops::DebugValue};
@@ -136,13 +136,24 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
     }
 }
 
-/// Erase all `di.value` operations that use `old_value`.
+/// Erase all `di.debug_value` operations that use `old_value`, marking each affected variable as
+/// dead at that point.
 ///
 /// Use this when a transform removes `old_value` and cannot preserve a meaningful source-level
-/// location for it. If the transform can recover the source value from another live SSA value, use
-/// [`salvage_debug_info`] instead.
+/// location for it. A `di.debug_kill` is emitted in place of each erased operation, so that
+/// debuggers report the variable as optimized out from that point on, rather than resurrecting a
+/// stale earlier location. If the transform can recover the source value from another live SSA
+/// value, use [`salvage_debug_info`] instead.
 pub fn erase_debug_info(old_value: &ValueRef) {
     for mut debug_op in debug_value_users(old_value) {
+        let (context, variable, span) = {
+            let op = debug_op.borrow();
+            let dv = op.downcast_ref::<DebugValue>().unwrap();
+            (op.context_rc(), dv.variable().as_value().clone(), op.span())
+        };
+        let mut builder = OpBuilder::new(context);
+        builder.set_insertion_point(ProgramPoint::before(debug_op));
+        let _ = builder.debug_kill(variable, span);
         debug_op.borrow_mut().erase();
     }
 }
