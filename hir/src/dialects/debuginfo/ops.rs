@@ -34,7 +34,7 @@ pub type DebugKillRef = UnsafeIntrusiveEntityRef<DebugKill>;
 /// # Example
 ///
 /// ```text
-/// di.value %0 #[variable = di.local_variable(name = x, ...)]
+/// di.debug_value %0 #[variable = di.local_variable(name = x, ...)]
 ///             #[expression = di.expression(DW_OP_WASM_local 0)]
 /// ```
 #[derive(EffectOpInterface, OpParser, OpPrinter)]
@@ -113,13 +113,13 @@ impl EffectOpInterface<MemoryEffect> for DebugDeclare {
 /// information about when a variable is no longer valid. Without this, debuggers must rely on
 /// scope-based heuristics which can be inaccurate after optimizations.
 ///
-/// After a `debuginfo.kill`, the debugger should report the variable as "optimized out" or "not
-/// available" until the next `di.value` or `di.debug_declare` for the same variable.
+/// After a `di.debug_kill`, the debugger should report the variable as "optimized out" or "not
+/// available" until the next `di.debug_value` or `di.debug_declare` for the same variable.
 ///
 /// # Example
 ///
 /// ```text
-/// di.kill #[variable = di.local_variable(name = x, ...)]
+/// di.debug_kill #[variable = di.local_variable(name = x, ...)]
 /// ```
 #[derive(EffectOpInterface, OpParser, OpPrinter)]
 #[operation(

@@ -26,7 +26,7 @@ use super::ops::*;
 /// builder.debug_kill(variable_attr, span)?;
 /// ```
 pub trait DIBuilder<'f, B: ?Sized + Builder> {
-    /// Emit a `di.value` operation that records the current value of a source-level variable.
+    /// Emit a `di.debug_value` operation that records the current value of a source-level variable.
     ///
     /// This creates an SSA use of `value`, ensuring that transforms cannot silently drop the value
     /// without updating the debug info.
@@ -39,7 +39,7 @@ pub trait DIBuilder<'f, B: ?Sized + Builder> {
         self.debug_value_with_expr(value, variable, None, span)
     }
 
-    /// Emit a `di.value` operation with an optional expression that describes how to recover the
+    /// Emit a `di.debug_value` operation with an optional expression that describes how to recover the
     /// source-level value from the IR value.
     ///
     /// The expression encodes the *inverse* of whatever transformation was applied to the value.
@@ -69,7 +69,7 @@ pub trait DIBuilder<'f, B: ?Sized + Builder> {
         op_builder(variable, expression)
     }
 
-    /// Emit a `di.kill` operation that marks a variable as dead.
+    /// Emit a `di.debug_kill` operation that marks a variable as dead.
     ///
     /// After this point, the debugger should report the variable as unavailable until the next
     /// `debug_value` or `debug_declare` for the same variable.
