@@ -40,9 +40,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `#[account(counter_contract::CounterContract)] struct CounterContract;` no longer compiles —
   rename the struct, or use `as` (see Added) to rename the trait), and a component method that
   shares a name with an `ActiveAccount` built-in (e.g. `get_id`) no longer shadows it —
-  disambiguate with `<Wallet as Interface>::get_id(account)` or
-  `<Wallet as ActiveAccount>::get_id(account)`. Single-component accounts whose method names do not
-  overlap keep calling `account.method(..)` unchanged #1208
+  disambiguate with `<Wallet as Interface>::get_id(account)`, or (with
+  `use miden::active_account::ActiveAccount;` in scope) `<Wallet as ActiveAccount>::get_id(account)`.
+  Single-component accounts whose method names do not overlap keep calling `account.method(..)`
+  unchanged when the generated trait is in scope — a same-module entrypoint sees it automatically;
+  a cross-module call site needs a `use` of the generated trait #1208
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
