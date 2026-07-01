@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-01
+
+### Added
+- Foreign Procedure Invocation (FPI): call procedures on foreign accounts, including account-to-account and raw foreign-procedure calls, exposed through the `#[account(...)]` SDK macro #1157
+- sibling account components: components deployed on the same account can call each other through generated traits declared on the `#[component(package::Interface, ...)]` trait #697
+- `println!` macro (and `debug::println`) for emitting debug messages during execution
+- debug information (DWARF) for compiled programs, via a new Debug Info dialect and source-level debug variable location tracking, with preserved function signatures and exported type names
+- new MASM frontend, with advice-provider taint analysis that flags unconstrained advice usage;
+- compile standalone Rust sources directly with `midenc`, including Cargo frontmatter support (`--cargo-frontmatter`)
+- new integer intrinsics: `i32`/`i64` `checked_mod`, `wrapping_mod`, `overflowing_mod`, `i64::wrapping_add`, `u128` load/store, and quad-word `load_qw`/`store_qw`
+- component-model support for WIT `variant`, `result`, and `option` types
+
+### Changed
+- migrate the compiler stack to Miden VM `v0.23`, protocol `v0.15`, and SDK `v0.13`; see `sdk/sdk/CHANGELOG.md` for the full list of SDK changes and `sdk/sdk/MIGRATION.md` for the step-by-step `0.12.0 -> 0.13.0` upgrade guide with before/after code
+- [**breaking**] redesign the `#[component]`/`#[account(...)]` SDK macros around a trait-based component API with an explicit `#[component_storage]` struct, and derive storage slot names from the `[lib].namespace` interface segment #697 #1157
+
+### Fixed
+- Wasm frontend: mask shift/rotate movement counts, sign-extend small integers for the operand stack (#1130), keep return types consistent with Wasm, and tolerate a missing Wasm name section (#1065)
+- correctness fixes across `i32`/`i64` overflow and checked arithmetic intrinsics, including overflow detection in `overflowing_mul`, trapping on overflow in `checked_div`, and `i32::MIN` handling in signed multiply
+- route successor groups by explicit index to avoid an `index out of bounds` codegen error (#1084)
+
 ## [0.8.1] - 2026-04-16
 
 ### Changed
