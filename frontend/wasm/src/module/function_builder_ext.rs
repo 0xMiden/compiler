@@ -239,11 +239,18 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         if let Some((file_symbol, directory_symbol, line, column)) = self.span_to_location(span) {
             {
                 let mut info = info_rc.borrow_mut();
-                info.compile_unit.file = file_symbol;
-                info.compile_unit.directory = directory_symbol;
-                info.subprogram.file = file_symbol;
-                info.subprogram.line = line;
-                info.subprogram.column = column;
+                // Fill in the subprogram/compile-unit location at most once, from the first
+                // instruction with a resolvable span. A location resolved from DWARF when the
+                // debug info was collected takes precedence; and later instructions must never
+                // reassign it, otherwise the subprogram "declaration" drifts to whatever source
+                // line happened to be translated last.
+                if info.subprogram.line == 0 {
+                    info.compile_unit.file = file_symbol;
+                    info.compile_unit.directory = directory_symbol;
+                    info.subprogram.file = file_symbol;
+                    info.subprogram.line = line;
+                    info.subprogram.column = column;
+                }
                 info.function_span.get_or_insert(span);
             }
             let current_span = self.inner.func.borrow().span();
