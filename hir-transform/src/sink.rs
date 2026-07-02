@@ -196,11 +196,17 @@ impl Pass for ControlFlowSink {
 ///
 /// The purpose of this rewrite is to improve the quality of generated code by reducing the live
 /// ranges of values that are trivial to materialize on-demand.
+#[derive(Default)]
 pub struct SinkOperandDefs;
 
 impl SinkOperandDefs {
     const NAME: &str = "sink-operand-defs";
 }
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<SinkOperandDefs>(
+    "sink-operand-defs",
+    "operand definition sinking"
+));
 
 impl Pass for SinkOperandDefs {
     type Target = Operation;
