@@ -60,10 +60,14 @@ after a bounds check on the table index which traps deterministically with a
 
 The following limitations remain:
 
-- The Wasm-mandated runtime type-signature check is not performed: an in-bounds call through a
-  table slot whose function has a different signature than the one expected at the call site
-  executes that function anyway, instead of trapping with an `indirect call type mismatch`. Safe
-  Rust cannot produce such a call.
+- The Wasm-mandated runtime type-signature check is intentionally omitted, with no plans to add
+  it: an in-bounds call through a table slot whose function has a different signature than the
+  one expected at the call site executes that function anyway, instead of trapping with an
+  `indirect call type mismatch`. Safe Rust cannot produce such a call — it requires code that is
+  already undefined behavior — so the check would only add runtime cost to every indirect call.
+  Note that a corrupted or mismatched slot can never escape the program: `dynexec` resolves the
+  slot's word as a MAST root digest, so it either matches a procedure already compiled into the
+  program or fails execution.
 - Calling a null (uninitialized) table slot fails inside the VM when `dynexec` encounters an
   all-zero MAST root, rather than with a Wasm-style "uninitialized element" trap.
 - Imported tables, non-`funcref` tables, element segments with `global.get`-relative offsets, the
