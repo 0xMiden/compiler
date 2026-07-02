@@ -95,6 +95,20 @@ fn check_module(wat: &str, expected_ir: midenc_expect_test::ExpectFile) {
     expected_ir.assert_eq(&w);
 }
 
+/// Check that translating a complete Wasm module fails with an error containing `expected_msg`.
+fn check_module_err(wat: &str, expected_msg: &str) {
+    let context = Rc::new(midenc_hir::Context::default());
+    let wasm = wat::parse_str(wat).unwrap();
+    let msg = match translate(&wasm, &WasmTranslationConfig::default(), context) {
+        Ok(_) => panic!("expected translation to fail"),
+        Err(err) => format!("{err}"),
+    };
+    assert!(
+        msg.contains(expected_msg),
+        "expected error containing '{expected_msg}', got: {msg}"
+    );
+}
+
 #[test]
 fn call_indirect() {
     check_module(
@@ -120,6 +134,63 @@ fn call_indirect() {
             (export "dispatch" (func $dispatch))
         )"#,
         expect_file!["./expected/call_indirect.hir"],
+    )
+}
+
+/// The final table image must honor Wasm initialization order: the whole-table `(ref.func ..)`
+/// default is overwritten by later element segments, and an explicit `ref.null` entry clears a
+/// previously initialized slot (so dispatching through it traps instead of calling a stale
+/// function).
+#[test]
+fn call_indirect_ref_null_overwrites_earlier_entry() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref (ref.func $add))
+            (elem (i32.const 1) func $mul)
+            (elem (i32.const 2) funcref (ref.null func))
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_ref_null.hir"],
+    )
+}
+
+#[test]
+fn call_indirect_rejects_oversized_table() {
+    check_module_err(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 2000000 2000000 funcref)
+            (elem (i32.const 0) func $add)
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        "exceeds the supported maximum",
     )
 }
 
