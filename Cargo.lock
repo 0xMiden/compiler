@@ -3578,6 +3578,7 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-frontend-masm",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",

@@ -27,6 +27,7 @@ use alloc::rc::Rc;
 
 use component::build_ir::translate_component;
 use error::WasmResult;
+use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{Context, dialects::builtin};
 use module::build_ir::translate_module_as_component;
 use wasmparser::WasmFeatures;
@@ -39,10 +40,8 @@ pub use self::{config::*, emit::WatEmit, error::WasmError};
 pub struct FrontendOutput {
     /// The IR component translated from the Wasm
     pub component: builtin::ComponentRef,
-    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
-    pub account_component_metadata_bytes: Option<Vec<u8>>,
-    /// The component's public WIT source emitted by the `#[component]` macro.
-    pub component_wit_bytes: Option<Vec<u8>>,
+    /// Out-of-band payloads destined for the compiled package's sections.
+    pub sections: PackageSections,
 }
 
 /// Translate a valid Wasm core module or Wasm Component Model binary into Miden
@@ -58,8 +57,7 @@ pub fn translate(
         let component = translate_module_as_component(wasm, config, context)?;
         Ok(FrontendOutput {
             component,
-            account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+            sections: PackageSections::default(),
         })
     } else {
         translate_component(wasm, config, context)

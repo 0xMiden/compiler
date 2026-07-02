@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
-use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
+use midenc_frontend_wasm_metadata::{FrontendMetadata, PackageSections, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, SymbolNameComponent,
     SymbolPath,
@@ -197,8 +197,10 @@ impl<'a> ComponentTranslator<'a> {
 
         let output = FrontendOutput {
             component: self.result.component,
-            account_component_metadata_bytes,
-            component_wit_bytes,
+            sections: PackageSections {
+                account_component_metadata: account_component_metadata_bytes,
+                component_wit: component_wit_bytes,
+            },
         };
         Ok(output)
     }

@@ -71,7 +71,6 @@ fn build_test_component(
     MidenComponent {
         world,
         component: Some(component),
-        account_component_metadata_bytes: None,
-        component_wit_bytes: None,
+        sections: Default::default(),
     }
 }

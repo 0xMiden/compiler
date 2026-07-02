@@ -4,6 +4,7 @@ use core::fmt;
 use miden_assembly::{Path, ast::InvocationTarget};
 use miden_core::Word;
 use miden_mast_package::Package;
+use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
@@ -180,33 +181,20 @@ impl MasmComponent {
     /// Assemble this component into a Miden package.
     pub fn assemble(
         &self,
-        account_component_metadata_bytes: Option<&[u8]>,
-        component_wit_bytes: Option<&[u8]>,
+        sections: &PackageSections,
         session: &Session,
     ) -> Result<Arc<Package>, Report> {
-        project_support::assemble(
-            self,
-            account_component_metadata_bytes,
-            component_wit_bytes,
-            session,
-        )
+        project_support::assemble(self, sections, session)
     }
 
     /// Assemble this component into a Miden package using a pre-populated package registry.
     pub fn assemble_with_registry(
         &self,
-        account_component_metadata_bytes: Option<&[u8]>,
-        component_wit_bytes: Option<&[u8]>,
+        sections: &PackageSections,
         session: &Session,
         registry: &mut midenc_session::registry::HybridPackageRegistry,
     ) -> Result<Arc<Package>, Report> {
-        project_support::assemble_with_registry(
-            self,
-            account_component_metadata_bytes,
-            component_wit_bytes,
-            session,
-            registry,
-        )
+        project_support::assemble_with_registry(self, sections, session, registry)
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be

@@ -75,8 +75,7 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
     MidenComponent {
         world,
         component: Some(component),
-        account_component_metadata_bytes: None,
-        component_wit_bytes: None,
+        sections: Default::default(),
     }
 }
 

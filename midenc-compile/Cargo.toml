@@ -42,6 +42,7 @@ miden-assembly.workspace = true
 miden-mast-package.workspace = true
 miden-package-registry.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-frontend-masm.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-hir.workspace = true

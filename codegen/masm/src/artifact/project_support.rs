@@ -7,7 +7,7 @@ use miden_assembly::{
     library::{LibraryExport, ProcedureExport},
 };
 use miden_mast_package::{PackageManifest, Section, SectionId};
-use midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID;
+use midenc_frontend_wasm_metadata::{PACKAGE_WIT_SECTION_ID, PackageSections};
 use midenc_session::{
     Session,
     diagnostics::{Report, Span},
@@ -19,24 +19,16 @@ use crate::{intrinsics::INTRINSICS_MODULE_NAMES, masm};
 /// Assemble a MASM component through the VM project assembler.
 pub(super) fn assemble(
     component: &MasmComponent,
-    account_component_metadata_bytes: Option<&[u8]>,
-    component_wit_bytes: Option<&[u8]>,
+    sections: &PackageSections,
     session: &Session,
 ) -> Result<Arc<Package>, Report> {
     let mut registry = session.package_registry()?;
-    assemble_with_registry(
-        component,
-        account_component_metadata_bytes,
-        component_wit_bytes,
-        session,
-        &mut registry,
-    )
+    assemble_with_registry(component, sections, session, &mut registry)
 }
 
 pub(super) fn assemble_with_registry(
     component: &MasmComponent,
-    account_component_metadata_bytes: Option<&[u8]>,
-    component_wit_bytes: Option<&[u8]>,
+    sections: &PackageSections,
     session: &Session,
     registry: &mut midenc_session::registry::HybridPackageRegistry,
 ) -> Result<Arc<Package>, Report> {
@@ -97,8 +89,7 @@ pub(super) fn assemble_with_registry(
     {
         let package = Arc::make_mut(&mut package);
 
-        attach_account_component_metadata(package, account_component_metadata_bytes);
-        attach_component_wit(package, component_wit_bytes);
+        attach_package_sections(package, sections);
         extend_rodata_advice_map(package, &component.rodata);
         normalize_library_exports(package)?;
     }
@@ -167,24 +158,17 @@ fn prepare_sources(
     Ok(ProjectSourceInputs { root, support })
 }
 
-/// Attach serialized account component metadata to the assembled package.
-fn attach_account_component_metadata(
-    package: &mut Package,
-    account_component_metadata_bytes: Option<&[u8]>,
-) {
-    if let Some(bytes) = account_component_metadata_bytes {
+/// Attach the out-of-band section payloads carried through the pipeline to the assembled package.
+fn attach_package_sections(package: &mut Package, sections: &PackageSections) {
+    if let Some(bytes) = &sections.account_component_metadata {
         package
             .sections
-            .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes.to_vec()));
+            .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes.clone()));
     }
-}
-
-/// Attach the component's public WIT source to the assembled package.
-fn attach_component_wit(package: &mut Package, component_wit_bytes: Option<&[u8]>) {
-    if let Some(bytes) = component_wit_bytes {
+    if let Some(bytes) = &sections.component_wit {
         let id = SectionId::custom(PACKAGE_WIT_SECTION_ID)
             .expect("the WIT section id must be a valid custom section id");
-        package.sections.push(Section::new(id, bytes.to_vec()));
+        package.sections.push(Section::new(id, bytes.clone()));
     }
 }
 
