@@ -1,0 +1,18 @@
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<1073741824> } {
+    builtin.function public extern("C") @dispatch(%0: i32, %1: i32, %2: i32) -> i32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+        hir.store_local %2 <{ local = #builtin.local_variable<2, i32> }> : (i32);
+        %4 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+        %5 = hir.load_local <{ local = #builtin.local_variable<2, i32> }>;
+        %6 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+        %7 = hir.bitcast %6 <{ ty = #builtin.type<u32> }>;
+        %8 = hir.exec_indirect ::@root_ns:root@1.0.0::@noname::@__indirect_function_table_0[%7](%4, %5) : extern("C") (i32, i32) -> i32;
+        cf.br ^block4(%8 : i32);
+    ^block4(%3: i32):
+        builtin.ret %3 : (i32);
+    };
+    builtin.function_table private @__indirect_function_table_0 : 2 {
+
+    };
+};

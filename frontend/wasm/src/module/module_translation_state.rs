@@ -15,7 +15,7 @@ use super::{
     DefinedTableIndex, FuncIndex, Module, TableIndex, TableInitialValue,
     instance::ModuleArgument,
     ir_func_type,
-    types::{EntityIndex, ModuleTypesBuilder, WasmRefType},
+    types::{ModuleTypesBuilder, WasmRefType},
 };
 use crate::{
     callable::CallableFunction,
@@ -131,8 +131,8 @@ impl<'a> ModuleTranslationState<'a> {
     /// or entirely empty) in modules that never perform an indirect call, and lowering those
     /// would burden every compiled program with a useless table and its initialization code.
     ///
-    /// Only locally-defined `funcref` tables with statically-known (constant-offset, non-empty)
-    /// element segments are supported; anything else produces a compile-time error.
+    /// Only locally-defined `funcref` tables with statically-known (constant-offset) element
+    /// segments are supported; anything else produces a compile-time error.
     pub(crate) fn get_or_build_table(
         &mut self,
         table_index: TableIndex,
@@ -166,23 +166,13 @@ impl<'a> ModuleTranslationState<'a> {
             );
         }
 
+        // An all-`None` image is fine: every dispatch through such a table fails at runtime on
+        // the zero MAST root of a null slot, matching Wasm's uninitialized-element trap
         let image = collect_table_image(table_index, defined_idx, module, diagnostics)?;
-        if image.iter().all(Option::is_none) {
-            unsupported_diag!(
-                diagnostics,
-                "unsupported `call_indirect`: table {} has no statically-initialized entries",
-                table_index.as_u32()
-            );
-        }
 
-        let name = module
-            .exports
-            .iter()
-            .find_map(|(name, entity)| match entity {
-                EntityIndex::Table(t) if *t == table_index => Some(name.clone()),
-                _ => None,
-            })
-            .unwrap_or_else(|| format!("__indirect_function_table_{}", table_index.as_u32()));
+        // The table symbol is internal to the compiler, so use a hygienic generated name; a Wasm
+        // export name is an arbitrary string that could collide with other module symbols
+        let name = format!("__indirect_function_table_{}", table_index.as_u32());
         let table_ref = self
             .module_builder
             .define_function_table(Ident::from(name.as_str()), Visibility::Private, table.minimum)
@@ -406,7 +396,7 @@ fn process_module_arg(
 ) -> WasmResult<CallableFunction> {
     Ok(match module_arg {
         ModuleArgument::Function(_) => {
-            // TODO: generate the internal function and call the import argument function
+            // Support would generate an internal function which calls the import argument
             crate::unsupported_diag!(
                 diagnostics,
                 "core Wasm function imports are not supported yet"
