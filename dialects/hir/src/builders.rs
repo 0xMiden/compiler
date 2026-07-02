@@ -924,6 +924,23 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(callee, signature, args)
     }
 
+    /// Execute the function whose MAST root is stored in slot `index` of `table`, i.e. a Wasm
+    /// `call_indirect`; a same-context indirect invocation.
+    fn exec_indirect<A>(
+        &mut self,
+        table: FunctionTableRef,
+        signature: Signature,
+        index: ValueRef,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ExecIndirect>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::ExecIndirect, (_, _, _, A)>(span);
+        op_builder(table, signature, index, args)
+    }
+
     /// Invoke a foreign account procedure via the transaction kernel FPI executor.
     ///
     /// `prefix_locals` must reference the six felt locals holding the executor prefix in protocol

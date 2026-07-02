@@ -43,79 +43,35 @@ find a better/more natural representation for `Felt` in WebAssembly.
 
 ### Function call indirection
 
-- Status: **Unimplemented**
+- Status: **Partially implemented**
 - Tracking Issue: [#32](https://github.com/0xMiden/compiler/issues/32)
 - Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
 This feature corresponds to `call_indirect` in WebAssembly, and is associated with Rust features
-such as trait objects (which use indirection to call trait methods), and closures. Note that the
-Rust compiler is able to erase the indirection associated with certain abstractions statically
-in some cases, as shown below. If Rust is unable to statically resolve all call targets, then
-`midenc` will raise an error when it encounters any use of `call_indirect`.
+such as function pointers, trait objects (which use indirection to call trait methods), and
+closures.
 
-:::warning
+The compiler lowers each locally-defined Wasm `funcref` table to a word-aligned region of linear
+memory holding one word (the MAST root digest of the referenced function) per table slot. The
+region is populated at program startup by the component initialization procedure using `procref`,
+and `call_indirect` dispatches through it with `dynexec` (i.e. in the caller's memory context),
+after a bounds check on the table index which traps deterministically with a
+"call_indirect: table index out of bounds" assertion failure.
 
-The following examples rely on `rustc`/LLVM inlining enough code to be able to convert indirect
-calls to direct calls. This may require you to enable link-time optimization with `lto = "fat"`
-and compile all of the code in the crate together with `codegen-units = 1`, in order to maximize
-the amount of inlining that can occur. Even then, it may not be possible to remove some forms of
-indirection, in which case you will need to find another workaround.
+The following limitations remain:
 
-:::
-
-#### Iterator lowered to loop
-
-```rust
-pub fn is_zeroed(bytes: &[u8; 32]) -> bool {
-    // Rust is able to convert this to a loop, erasing the closure completely
-    bytes.iter().copied().all(|b| b == 0)
-}
-```
-
-#### Monomorphization + inlining
-
-```rust
-pub fn call<F, T>(fun: F) -> T
-where
-    F: Fn() -> T,
-{
-    fun()
-}
-
-#[inline(never)]
-pub fn foo() -> bool { true }
-
-fn main() {
-    // Rust is able to inline the body of `call` after monomorphization, which results in
-    // the call to `foo` being resolved statically.
-    call(foo)
-}
-```
-
-#### Inlined trait impl
-
-```rust
-pub trait Foo {
-    fn is_foo(&self) -> bool;
-}
-
-impl Foo for u32 {
-    #[inline(never)]
-    fn is_foo(&self) -> bool { true }
-}
-
-fn has_foo(items: &[dyn Foo]) -> bool {
-    items.iter().any(|item| item.is_foo())
-}
-
-fn main() -> u32 {
-    // Rust inlines `has_foo`, converts the iterator chain to a loop, and is able to realize
-    // that the `dyn Foo` items are actually `u32`, and resolves the call to `is_foo` to
-    // `<u32 as Foo>::is_foo`.
-    let foo: &dyn Foo = &u32::MAX as &dyn Foo;
-    has_foo(&[foo]) as u32
-}
-```
+- The Wasm-mandated runtime type-signature check is not performed: an in-bounds call through a
+  table slot whose function has a different signature than the one expected at the call site
+  executes that function anyway, instead of trapping with an `indirect call type mismatch`. Safe
+  Rust cannot produce such a call.
+- Calling a null (uninitialized) table slot fails inside the VM when `dynexec` encounters an
+  all-zero MAST root, rather than with a Wasm-style "uninitialized element" trap.
+- Imported tables, non-`funcref` tables, element segments with `global.get`-relative offsets, the
+  table mutation ops (`table.set`, `table.get`, `table.grow`, etc.), `ref.func`/`ref.null` as
+  function body instructions, and `return_call_indirect` are unsupported, and produce a
+  compile-time error.
+- The callee arguments plus the table index must fit in Miden's 16-element operand stack window,
+  so indirect callee signatures are limited to 15 field elements worth of arguments.
 
 ### Miden SDK
 

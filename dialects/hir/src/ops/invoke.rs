@@ -2,7 +2,10 @@ use alloc::format;
 
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
-    dialects::builtin::attributes::{LocalVariableArrayAttr, SignatureAttr},
+    dialects::builtin::{
+        FunctionTable,
+        attributes::{LocalVariableArrayAttr, SignatureAttr},
+    },
     effects::*,
     interner::symbols,
     print::AsmPrinter,
@@ -215,19 +218,103 @@ impl InferTypeOpInterface for ExecFpi {
     }
 }
 
-/*
+/// Indirect same-context invocation through a slot of a
+/// [midenc_hir::dialects::builtin::FunctionTable], i.e. a Wasm `call_indirect`.
+///
+/// `index` is the table slot to dispatch through; lowering bounds-checks it against the table
+/// size, computes the slot's memory address, and executes the procedure whose MAST root is
+/// stored there via `dynexec`. The Wasm-mandated runtime type-signature check is not performed;
+/// only the bounds check traps deterministically.
 #[operation(
     dialect = HirDialect,
-    implements(CallOpInterface)
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct ExecIndirect {
-    #[attr]
-    signature: Signature,
-    /// TODO(pauls): Change this to FunctionType
+    /// The function table being indexed
+    #[symbol]
+    table: FunctionTable,
+    /// The signature of the callee, per the Wasm instruction's type index
+    #[attr(hidden)]
+    signature: SignatureAttr,
+    /// The table slot holding the callee's MAST root
     #[operand]
-    callee: AnyType,
+    index: UInt32,
+    #[operands]
+    arguments: AnyType,
 }
- */
+
+impl InferTypeOpInterface for ExecIndirect {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        let span = self.span();
+        let sig = self.signature.borrow();
+        let owner = self.as_operation_ref();
+        for (i, result) in sig.results().iter().enumerate() {
+            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+            self.op.results.push(value);
+        }
+        Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for ExecIndirect {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
+}
+
+impl OpPrinter for ExecIndirect {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        printer.print_space();
+        printer.print_symbol_path(self.get_table().path());
+        {
+            let index = self.index().as_value_ref();
+            let index = index.borrow();
+            *printer += const_text("[") + display(index.id()) + const_text("]");
+        }
+        printer.print_operand_list(self.arguments());
+        let callee_sig = self.signature();
+        *printer += const_text(" : ");
+        callee_sig.print(printer);
+    }
+}
+
+impl CallOpInterface for ExecIndirect {
+    /// The callee is the table index value: the function it names is only known at runtime.
+    #[inline(always)]
+    fn callable_for_callee(&self) -> Callable {
+        Callable::Value(self.index().as_value_ref())
+    }
+
+    fn set_callee(&mut self, _callable: Callable) {
+        unimplemented!("hir.exec_indirect does not support replacing its callee")
+    }
+
+    #[inline(always)]
+    fn arguments(&self) -> OpOperandRange<'_> {
+        self.operands().group(1)
+    }
+
+    #[inline(always)]
+    fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().group_mut(1)
+    }
+
+    fn resolve(&self) -> Option<SymbolRef> {
+        None
+    }
+
+    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<SymbolRef> {
+        None
+    }
+}
+
 impl CallOpInterface for Exec {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {

@@ -110,6 +110,8 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_legal_op::<builtin::Function>()
         .add_legal_op::<builtin::GlobalVariable>()
         .add_legal_op::<builtin::Segment>()
+        .add_legal_op::<builtin::FunctionTable>()
+        .add_legal_op::<builtin::FunctionTableEntry>()
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
                 "operation '{}' is temporary dialect-conversion scaffolding and must be \

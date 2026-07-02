@@ -33,3 +33,9 @@ fn wide_calls() {
 fn call_mix() {
     run_case("call_mix", include_str!("../cases/case_call_mix.rs"));
 }
+
+/// Exercises wasm `call_indirect` (funcref table dispatch through function pointers).
+#[test]
+fn call_indirect() {
+    run_case("call_indirect", include_str!("../cases/case_call_indirect.rs"));
+}

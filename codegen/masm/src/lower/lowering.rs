@@ -986,6 +986,69 @@ impl HirLowering for hir::Exec {
     }
 }
 
+impl HirLowering for hir::ExecIndirect {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let context = self.as_operation().context();
+
+        // Resolve the function table symbol to its computed base address in linear memory
+        let current_module = self
+            .nearest_parent_op::<builtin::Module>()
+            .expect("expected 'hir.exec_indirect' op to have a module ancestor");
+        let symbol = current_module.borrow().resolve(self.table().path()).ok_or_else(|| {
+            context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid indirect call operation: unable to resolve function table")
+                .with_primary_label(
+                    self.span(),
+                    "this function table symbol is not resolvable from this operation",
+                )
+                .into_report()
+        })?;
+        let table = symbol
+            .borrow()
+            .downcast_ref::<builtin::FunctionTable>()
+            .map(|table| unsafe { builtin::FunctionTableRef::from_raw(table) })
+            .ok_or_else(|| {
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid indirect call operation")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolves to a '{}', but a 'builtin.function_table' was \
+                             expected",
+                            symbol.borrow().as_symbol_operation().name()
+                        ),
+                    )
+                    .into_report()
+            })?;
+
+        let base_addr = emitter
+            .link_info
+            .function_tables()
+            .get_computed_addr(table)
+            .expect("link error: missing function table in computed layout");
+        let base = NativePtr::from_ptr(base_addr);
+        assert!(base.is_word_aligned(), "function tables must be word-aligned");
+        let num_slots = *table.borrow().get_size();
+
+        let signature = self.get_signature().clone();
+
+        // The default operand schedule puts the index operand on top of the stack, followed by
+        // the arguments in signature order — exactly the layout `exec_indirect` expects
+        emitter.inst_emitter(self.as_operation()).exec_indirect(
+            num_slots,
+            base.addr,
+            &signature,
+            self.span(),
+        );
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Call {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};

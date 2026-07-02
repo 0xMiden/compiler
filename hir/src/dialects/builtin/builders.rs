@@ -41,6 +41,16 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(name, visibility, ty)
     }
 
+    fn create_function_table(
+        &mut self,
+        name: Ident,
+        visibility: Visibility,
+        size: u32,
+    ) -> Result<FunctionTableRef, Report> {
+        let op_builder = self.builder_mut().create::<FunctionTable, (_, _, _)>(name.span());
+        op_builder(name, visibility, size)
+    }
+
     fn create_data_segment(
         &mut self,
         offset: u32,
