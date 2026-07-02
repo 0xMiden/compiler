@@ -376,8 +376,15 @@ fn resolve_source_location(
         absolute_path.display()
     );
 
+    // A line number of 0 in DWARF line programs means "this instruction has no source line";
+    // treat such rows as unresolved instead of defaulting to line 1, so that an outer inline
+    // frame (the call site) or the last valid span provides the location, rather than a bogus
+    // `file:1:1` span polluting the line table.
+    let Some(line) = loc.line.and_then(LineNumber::new) else {
+        return Ok(None);
+    };
+
     let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
     let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
     let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
 
