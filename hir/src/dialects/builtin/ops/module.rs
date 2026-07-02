@@ -34,6 +34,8 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///   whether or not the [super::Function] operation has a region (no region == declaration).
 /// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
 ///   definition, same as [super::Function].
+/// * [super::FunctionTable], describing a function-reference table in the component's shared
+///   memory, along with its statically-initialized entries.
 ///
 /// Multiple modules can be grouped together into a [super::Component] or [super::World]. Doing so
 /// allows interprocedural analysis to reason across call boundaries for functions defined in
@@ -97,11 +99,20 @@ impl Module {
 
 impl OpPrinter for Module {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
         printer.print_symbol_name(self.get_name().as_symbol());
         printer.print_space();
+        if self.op.has_attributes() {
+            *printer += const_text("attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+            printer.print_space();
+        }
         printer.print_region(&self.body());
     }
 }
@@ -129,6 +140,8 @@ impl OpParser for Module {
 
         let name = parser.parse_symbol_name()?;
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         let region = parser.context().create_region();
         parser.parse_region(region, &[], true)?;

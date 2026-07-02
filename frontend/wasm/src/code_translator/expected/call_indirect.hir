@@ -1,4 +1,4 @@
-builtin.module private @noname {
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<1073741824> } {
     builtin.function internal extern("C") @add(%0: i32, %1: i32) -> i32 {
         hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
         hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
