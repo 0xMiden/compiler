@@ -1,0 +1,25 @@
+// RUN: hir-opt %s --pass-pipeline 'builtin.function(sink-operand-defs)' | filecheck %s
+
+// When operand-def sinking erases a dead computation whose only remaining use is a
+// di.debug_value, the debug value cannot be preserved — but the variable must be explicitly
+// marked dead with a di.debug_kill at the same program point, so a debugger reports it as
+// optimized out instead of resurrecting a stale earlier location.
+//
+// %3 below is dead apart from its debug use, and is on the pass's worklist because it consumes
+// a constant-like operand.
+builtin.function public extern("C") @sink_test(%0: i32, %1: i32) -> i32 {
+    %2 = arith.constant 7 : i32;
+    %3 = arith.mul %0, %2 <{ overflow = #builtin.overflow<wrapping> }>;
+    di.debug_value %3 <{ variable = #di.variable<{ name = "dead", file = "test.rs", line = 3 }>, expression = #di.expression<[]> }> : (i32);
+    %4 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+    builtin.ret %4 : (i32);
+};
+
+// CHECK: builtin.function public extern("C") @sink_test(%0: i32, %1: i32) -> i32 {
+// CHECK-NEXT:     %2 = arith.constant 7 : i32;
+// CHECK-NEXT:     di.debug_kill <{ variable = #di.variable<{ name = "dead", file = "test.rs", line = 3 }> }>;
+// CHECK-NEXT:     %4 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+// CHECK-NEXT:     builtin.ret %4 : (i32);
+// CHECK-NEXT: };
+// CHECK-NOT: arith.mul
+// CHECK-NOT: di.debug_value
