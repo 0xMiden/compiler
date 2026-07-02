@@ -1,0 +1,29 @@
+// RUN: hir-opt %s | filecheck %s
+
+builtin.module public @test attributes { reserved_memory = #builtin.u64<1114112> } {
+    builtin.function public extern("C") @dispatch(%idx: u32, %a: i32, %b: i32) -> i32 {
+        %result = hir.exec_indirect @tbl[%idx](%a, %b) : extern("C") (i32, i32) -> (i32);
+        builtin.ret %result : (i32);
+    };
+
+    builtin.function internal extern("C") @callee(%x: i32, %y: i32) -> i32 {
+        builtin.ret %x : (i32);
+    };
+
+    builtin.function_table private @tbl : 3 {
+        builtin.function_table_entry 1 @callee;
+    };
+};
+
+// CHECK: builtin.module public @test attributes { reserved_memory = #builtin.u64<1114112> } {
+// CHECK-NEXT:    builtin.function public extern("C") @dispatch([[IDX:%\d+]]: u32, [[A:%\d+]]: i32, [[B:%\d+]]: i32) -> i32 {
+// CHECK-NEXT:        [[RET:%\d+]] = hir.exec_indirect @tbl[[[IDX]]]([[A]], [[B]]) : extern("C") (i32, i32) -> i32;
+// CHECK-NEXT:        builtin.ret [[RET]] : (i32);
+// CHECK-NEXT:    };
+// CHECK-NEXT:    builtin.function internal extern("C") @callee([[X:%\d+]]: i32, [[Y:%\d+]]: i32) -> i32 {
+// CHECK-NEXT:        builtin.ret [[X]] : (i32);
+// CHECK-NEXT:    };
+// CHECK-NEXT:    builtin.function_table private @tbl : 3 {
+// CHECK-NEXT:        builtin.function_table_entry 1 @callee;
+// CHECK-NEXT:    };
+// CHECK-NEXT: };

@@ -1032,7 +1032,7 @@ impl HirLowering for hir::ExecIndirect {
             .expect("link error: missing function table in computed layout");
         let base = NativePtr::from_ptr(base_addr);
         assert!(base.is_word_aligned(), "function tables must be word-aligned");
-        let num_slots = *table.borrow().get_size();
+        let num_slots = *table.borrow().get_num_slots();
 
         let signature = self.get_signature().clone();
 

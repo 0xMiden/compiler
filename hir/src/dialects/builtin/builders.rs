@@ -41,14 +41,15 @@ pub trait BuiltinOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(name, visibility, ty)
     }
 
+    /// Create a [FunctionTable] with `num_slots` slots and no initialized entries.
     fn create_function_table(
         &mut self,
         name: Ident,
         visibility: Visibility,
-        size: u32,
+        num_slots: u32,
     ) -> Result<FunctionTableRef, Report> {
         let op_builder = self.builder_mut().create::<FunctionTable, (_, _, _)>(name.span());
-        op_builder(name, visibility, size)
+        op_builder(name, visibility, num_slots)
     }
 
     fn create_data_segment(

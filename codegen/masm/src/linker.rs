@@ -204,7 +204,7 @@ impl Linker {
                         log::debug!(target: "linker",
                             "discovered function table '{}' with {} slots",
                             table.get_name().as_str(),
-                            *table.get_size()
+                            *table.get_num_slots()
                         );
                         self.function_tables
                             .push(unsafe { builtin::FunctionTableRef::from_raw(table) });
@@ -248,7 +248,7 @@ impl Linker {
         let mut function_tables = FunctionTableLayout::default();
         let mut next_table_offset = self.globals_layout.next_page_boundary();
         for table_ref in self.function_tables.drain(..) {
-            let slots = *table_ref.borrow().get_size();
+            let slots = *table_ref.borrow().get_num_slots();
             let size_in_bytes =
                 slots.checked_mul(16).expect("invalid function table: too many slots");
             log::debug!(target: "linker",

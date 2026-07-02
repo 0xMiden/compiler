@@ -106,6 +106,66 @@ fn parse_module_with_intra_function_symbol_references() -> TestResult {
     Ok(())
 }
 
+/// The `reserved_memory` module attribute and the function-table ops are inputs to the linker's
+/// memory layout, so they must survive a print/parse round-trip of the textual HIR.
+#[test]
+fn module_reserved_memory_and_function_table_roundtrip() -> TestResult {
+    use crate::{Op, dialects::builtin::attributes::U64Attr};
+
+    let mut test = ParserTest::default();
+
+    let source = "\
+    builtin.module public @test {
+        builtin.function internal extern(\"C\") @callee(%a: i32, %b: i32) -> i32 {
+            builtin.ret %a : (i32);
+        };
+
+        builtin.function_table private @tbl : 3 {
+            builtin.function_table_entry 1 @callee;
+        };
+    };";
+
+    let parsed = test.parse_any("function_table_roundtrip.hir", source)?;
+
+    // Attach the linker-facing memory reservation, then round-trip through print/parse and
+    // verify nothing is lost
+    {
+        let attr = test.context_rc().create_attribute::<U64Attr, _>(0x110000u64);
+        let mut op = parsed;
+        let mut op = op.borrow_mut();
+        op.set_attribute(Module::RESERVED_MEMORY_ATTR, attr);
+    }
+
+    let flags = Default::default();
+    let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+    printer.print_operation(parsed.borrow());
+    let printed = printer.finish().to_string();
+    std::println!("{printed}");
+
+    let reparsed = test.parse_any("function_table_roundtrip2.hir", &printed)?;
+    let reparsed = reparsed.borrow();
+    let module = reparsed.downcast_ref::<Module>().unwrap();
+
+    let reserved = module
+        .as_operation()
+        .get_typed_attribute::<U64Attr>(Module::RESERVED_MEMORY_ATTR)
+        .expect("reserved_memory attribute lost in print/parse round-trip");
+    assert_eq!(**reserved.borrow(), 0x110000);
+
+    let table = module
+        .symbol_manager()
+        .lookup_op("tbl")
+        .expect("'tbl' was not registered in symbol table after parsing");
+    let table = table.borrow();
+    let table = table
+        .downcast_ref::<crate::dialects::builtin::FunctionTable>()
+        .expect("expected 'tbl' to be a function table");
+    assert_eq!(*table.get_num_slots(), 3);
+    assert_eq!(table.entries().entry().body().iter().count(), 1);
+
+    Ok(())
+}
+
 #[test]
 fn derive_roundtrip_test() -> TestResult {
     let test = Test::new("derive_roundtrip_test", &[Type::I32], &[Type::U32]);

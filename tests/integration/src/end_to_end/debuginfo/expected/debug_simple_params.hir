@@ -1,5 +1,5 @@
 builtin.component private @root_ns:root@1.0.0 {
-    builtin.module private @test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537 {
+    builtin.module private @test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537 attributes { reserved_memory = #builtin.u64<1048576> } {
         builtin.function public extern("C") @entrypoint(%0: i32, %1: i32) -> i32 {
             hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
             hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
