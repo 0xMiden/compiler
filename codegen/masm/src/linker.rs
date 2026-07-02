@@ -206,8 +206,7 @@ impl Linker {
                             table.get_name().as_str(),
                             *table.get_num_slots()
                         );
-                        self.function_tables
-                            .push(unsafe { builtin::FunctionTableRef::from_raw(table) });
+                        self.function_tables.push(table.as_function_table_ref());
                     }
                 }
             }
@@ -219,13 +218,24 @@ impl Linker {
         // We add a page after the data segments as headroom for producer-placed data that
         // occupies address space without being visible as data segments (e.g. zero-initialized
         // statics).
-        let next_available_offset_with_headroom = next_available_offset + DEFAULT_PAGE_SIZE;
+        let next_available_offset_with_headroom = next_available_offset
+            .checked_add(DEFAULT_PAGE_SIZE)
+            .ok_or_else(|| LinkerError::LayoutOverflow {
+                reason: alloc::format!(
+                    "data segments ending at {next_available_offset:#x} leave no room for \
+                     compiler-managed memory"
+                ),
+            })?;
         // A module's declared memory reservation is a sound upper bound on everything its
         // producer placed in linear memory, whereas the one-page allowance above the data
         // segments is only a heuristic.
-        let declared_reserved_offset = u32::try_from(declared_reserved_memory).expect(
-            "invalid module memory reservation: it leaves no room for compiler-managed memory",
-        );
+        let declared_reserved_offset =
+            u32::try_from(declared_reserved_memory).map_err(|_| LinkerError::LayoutOverflow {
+                reason: alloc::format!(
+                    "the declared module memory reservation ({declared_reserved_memory} bytes) \
+                     leaves no room for compiler-managed memory"
+                ),
+            })?;
         log::debug!(target: "linker",
             "next_available_offset (with headroom) from segments: {:#x}, reserved_offset: {:#x}, \
              declared_reserved_offset: {:#x}, segment_count: {}",
@@ -235,7 +245,8 @@ impl Linker {
             self.segment_layout.len()
         );
         self.globals_layout.update_global_table_offset(
-            core::cmp::max(reserved_offset, next_available_offset_with_headroom)
+            reserved_offset
+                .max(next_available_offset_with_headroom)
                 .max(declared_reserved_offset),
         );
         log::debug!(target: "linker",
@@ -243,21 +254,28 @@ impl Linker {
             self.globals_layout.global_table_offset()
         );
 
-        // 4. Lay out function tables in the page following the global table, one word (16 bytes)
-        // per slot; page alignment implies the word alignment required by `dynexec`.
+        // 4. Lay out function tables in the page following the global table, one word per slot.
+        // Page alignment makes the first table word-aligned as `dynexec` requires, and each
+        // table's byte size is a word multiple, so subsequent tables stay word-aligned too.
         let mut function_tables = FunctionTableLayout::default();
         let mut next_table_offset = self.globals_layout.next_page_boundary();
         for table_ref in self.function_tables.drain(..) {
             let slots = *table_ref.borrow().get_num_slots();
-            let size_in_bytes =
-                slots.checked_mul(16).expect("invalid function table: too many slots");
+            let size_in_bytes = slots
+                .checked_mul(FunctionTableLayout::SLOT_SIZE_BYTES)
+                .and_then(|size| next_table_offset.checked_add(size).and(Some(size)))
+                .ok_or_else(|| LinkerError::LayoutOverflow {
+                    reason: alloc::format!(
+                        "a function table with {slots} slots at offset {next_table_offset:#x} \
+                         does not fit in linear memory"
+                    ),
+                })?;
             log::debug!(target: "linker",
-                "function table with {slots} slots allocated at offset {next_table_offset:#x}"
+                "function table '{}' with {slots} slots allocated at offset {next_table_offset:#x}",
+                table_ref.borrow().get_name().as_str()
             );
             function_tables.tables.push((table_ref, next_table_offset));
-            next_table_offset = next_table_offset
-                .checked_add(size_in_bytes)
-                .expect("invalid function table: table does not fit in linear memory");
+            next_table_offset += size_in_bytes;
             function_tables.end_offset = next_table_offset;
         }
 
@@ -291,6 +309,9 @@ pub enum LinkerError {
         #[source]
         err: DataSegmentError,
     },
+    /// A computed memory layout does not fit in the 32-bit linear address space
+    #[error("invalid memory layout: {reason}")]
+    LayoutOverflow { reason: alloc::string::String },
 }
 
 /// This struct contains data about the layout of global variables in linear memory
@@ -349,21 +370,27 @@ impl GlobalVariableLayout {
 
         // If there are existing globals, we need to adjust their offsets
         if !self.offsets.is_empty() {
-            // Calculate the difference between old and new offset
-            let offset_diff = new_offset as i32 - old_offset as i32;
+            // Calculate the difference between old and new offset. The arithmetic is done in
+            // 64 bits with checked conversions back: `link` validates that all layout inputs fit
+            // the 32-bit address space, so a failure here indicates a corrupted layout rather
+            // than merely unusual input.
+            const OVERFLOW_MSG: &str =
+                "invalid memory layout: global variable offsets overflow the 32-bit address space";
+            let offset_diff = new_offset as i64 - old_offset as i64;
 
             // Update all existing global offsets
             for offset in self.offsets.values_mut() {
-                *offset = (*offset as i32 + offset_diff) as u32;
+                *offset = u32::try_from(*offset as i64 + offset_diff).expect(OVERFLOW_MSG);
             }
 
             // Update the stack pointer offset if it exists
             if let Some(sp_offset) = self.stack_pointer.as_mut() {
-                *sp_offset = (*sp_offset as i32 + offset_diff) as u32;
+                *sp_offset = u32::try_from(*sp_offset as i64 + offset_diff).expect(OVERFLOW_MSG);
             }
 
             // Update the next offset to maintain the same relative position
-            self.next_offset = (self.next_offset as i32 + offset_diff) as u32;
+            self.next_offset =
+                u32::try_from(self.next_offset as i64 + offset_diff).expect(OVERFLOW_MSG);
         } else {
             // If no globals have been inserted yet, just update next_offset to match
             self.next_offset = new_offset;
@@ -414,9 +441,22 @@ pub struct FunctionTableLayout {
 }
 
 impl FunctionTableLayout {
+    /// The size in bytes of one function table slot (one word, holding a MAST root digest)
+    pub const SLOT_SIZE_BYTES: u32 = 16;
+    /// The size in field elements of one function table slot
+    pub const SLOT_SIZE_ELEMENTS: u32 = 4;
+
     /// Returns true if the layout has no function tables
     pub fn is_empty(&self) -> bool {
         self.tables.is_empty()
+    }
+
+    /// Get the statically-allocated base of `table` as a word-aligned element address, the form
+    /// expected by `dynexec` and the memory instructions that fill the table.
+    pub fn element_addr_of(&self, table: builtin::FunctionTableRef) -> Option<u32> {
+        let base = crate::lower::NativePtr::from_ptr(self.get_computed_addr(table)?);
+        assert!(base.is_word_aligned(), "function tables must be word-aligned");
+        Some(base.addr)
     }
 
     /// Traverse the function tables and their base addresses (byte offsets)

@@ -23,7 +23,7 @@ use crate::{
     OperandStack, TraceEvent,
     artifact::MasmComponent,
     emitter::BlockEmitter,
-    linker::{LinkInfo, Linker},
+    linker::{FunctionTableLayout, LinkInfo, Linker},
     masm,
 };
 
@@ -317,7 +317,7 @@ impl MasmComponentBuilder<'_> {
             self.emit_data_segment_initialization();
 
             // Function table initialization
-            self.emit_function_table_initialization();
+            self.emit_function_table_initialization()?;
         }
 
         // Translate component body
@@ -515,21 +515,22 @@ impl MasmComponentBuilder<'_> {
     /// Emit the sequence of instructions necessary to populate the function tables of this
     /// component with the MAST roots of their entries.
     ///
-    /// For each initialized slot: `procref` pushes the callee's MAST root word (`root[0]` on
-    /// top), `mem_storew_le` writes it to the slot's word-aligned element address (leaving the
-    /// word on the stack), and `dropw` cleans up. Uninitialized (null) slots are left as the
-    /// zero word, since VM memory is zero-initialized; `dynexec` on such a slot fails at
-    /// runtime.
+    /// Populate the function tables of this component with the MAST roots of their entries.
     ///
-    /// The referenced procedures are registered as `procref` invocations so the assembler's
-    /// linker treats them as reachable and resolves their MAST roots.
-    fn emit_function_table_initialization(&mut self) {
+    /// Uninitialized (null) slots are left as the zero word, since VM memory is
+    /// zero-initialized; `dynexec` on such a slot fails at runtime. The referenced procedures
+    /// are registered as `procref` invocations so the assembler's linker treats them as
+    /// reachable and resolves their MAST roots.
+    fn emit_function_table_initialization(&mut self) -> Result<(), Report> {
         use masm::{Instruction as Inst, Op};
+        use midenc_hir::Visibility;
 
         let span = SourceSpan::default();
-        for (table_ref, base_addr) in self.link_info.function_tables().iter() {
-            let base = super::NativePtr::from_ptr(base_addr);
-            assert!(base.is_word_aligned(), "function tables must be word-aligned");
+        let layout = self.link_info.function_tables();
+        for (table_ref, _) in layout.iter() {
+            let base_addr = layout
+                .element_addr_of(table_ref)
+                .expect("link error: missing function table in computed layout");
             let table = table_ref.borrow();
             let entries = table.entries();
             if entries.is_empty() {
@@ -537,51 +538,64 @@ impl MasmComponentBuilder<'_> {
             }
             for op in entries.entry().body() {
                 let Some(entry) = op.downcast_ref::<builtin::FunctionTableEntry>() else {
-                    panic!(
+                    return Err(Report::msg(format!(
                         "invalid function table entry: '{}' is not supported in a function table \
                          body",
                         op.name()
-                    );
+                    )));
                 };
                 let slot = *entry.get_index();
-                assert!(
-                    slot < *table.get_num_slots(),
-                    "invalid function table entry: slot {slot} is out of bounds for table '{}' \
-                     with {} slots",
-                    table.get_name().as_str(),
-                    *table.get_num_slots()
-                );
-                let callee = entry
-                    .as_operation()
-                    .nearest_symbol_table()
-                    .and_then(|symbol_table| {
+                if slot >= *table.get_num_slots() {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: slot {slot} is out of bounds for table \
+                         '{}' with {} slots",
+                        table.get_name().as_str(),
+                        *table.get_num_slots()
+                    )));
+                }
+                let Some(mut callee) =
+                    entry.as_operation().nearest_symbol_table().and_then(|symbol_table| {
                         symbol_table
                             .borrow()
                             .as_symbol_table()
                             .unwrap()
                             .resolve(entry.callee().path())
                     })
-                    .unwrap_or_else(|| {
-                        panic!(
-                            "invalid function table entry: unable to resolve callee '{}'",
-                            entry.callee().path()
-                        )
-                    });
+                else {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: unable to resolve callee '{}'",
+                        entry.callee().path()
+                    )));
+                };
+                // This init procedure lives in the root component module and takes the callee's
+                // MAST root with a cross-module `procref`, which the assembler rejects for
+                // private procedures; since that is a codegen constraint, the required
+                // visibility promotion is applied here rather than expected of IR producers
+                {
+                    let mut callee = callee.borrow_mut();
+                    if callee.visibility() == Visibility::Private {
+                        callee.set_visibility(Visibility::Internal);
+                    }
+                }
                 let callee_path = callee.borrow().path();
                 let target =
                     super::lowering::invocation_target_from_symbol_path(&callee_path, span);
                 self.invoked_from_init
                     .insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
 
-                // The slot's element address; the base is word-aligned and each slot is exactly
-                // one word (4 elements), so the result stays word-aligned
-                let slot_addr = base.addr + slot * 4;
+                // `procref` pushes the callee's MAST root word (`root[0]` on top),
+                // `mem_storew_le` writes it to the slot's element address (leaving the word on
+                // the stack), and `dropw` cleans up. The base is word-aligned and each slot is
+                // exactly one word, so every slot address stays word-aligned as `dynexec`
+                // requires.
+                let slot_addr = base_addr + slot * FunctionTableLayout::SLOT_SIZE_ELEMENTS;
                 self.init_body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
                 self.init_body
                     .push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
                 self.init_body.push(Op::Inst(Span::new(span, Inst::DropW)));
             }
         }
+        Ok(())
     }
 }
 
