@@ -1,4 +1,4 @@
-use anyhow::Ok;
+use cargo_miden::CommandOutput;
 
 fn main() -> anyhow::Result<()> {
     // Initialize logger
@@ -7,9 +7,17 @@ fn main() -> anyhow::Result<()> {
     builder.format_timestamp(None);
     builder.init();
 
-    if let Err(e) = cargo_miden::run(std::env::args()) {
-        eprintln!("{e:?}");
-        std::process::exit(1);
+    match cargo_miden::run(std::env::args()) {
+        Ok(Some(CommandOutput::BuildCommandOutput { output })) => {
+            for artifact_path in output {
+                println!("Compiled {}", artifact_path.display());
+            }
+        }
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("{e:?}");
+            std::process::exit(1);
+        }
     }
     Ok(())
 }
