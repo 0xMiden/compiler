@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interface; only the generated trait is renamed. Use it when the interface name would clash with
   the wrapper struct, with another referenced interface, or with a sibling `#[component(...)]`
   trait of the same interface in the same crate #1208
+- Foreign procedure invocation (`#[account(...)]` methods on a foreign account) now supports
+  payload-carrying variants in procedure signatures: `Option<T>`, `Result<T, E>`, and
+  `#[export_type]` enums with payload values can be passed and returned across the FPI
+  boundary, in both direct and tupled (more than sixteen flattened parameters) call shapes.
+  Out-of-range variant discriminants trap on both the argument and result directions. #1177
+
+### Fixed
+- `#[account(...)]` no longer panics ("no entry found for key") when the referenced dependency
+  interface uses no `felt`/`word` core types in its own signatures. #1177
 
 ## [0.13.1] - 2026-07-09
 

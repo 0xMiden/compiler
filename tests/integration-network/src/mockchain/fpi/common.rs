@@ -384,6 +384,87 @@ pub(super) fn execute_counter_caller_note(
     );
 }
 
+/// Deploys a callee account and a caller account, then consumes the forwarding note.
+pub(super) fn execute_account_to_account_note(
+    callee_package: Arc<Package>,
+    caller_package: Arc<Package>,
+    note_package: Arc<Package>,
+    callee_storage_slot: StorageSlotName,
+    callee_storage_key: Word,
+    expected_count: u64,
+) {
+    let callee_component = {
+        let mut init_storage_data = InitStorageData::default();
+        init_storage_data
+            .insert_map_entry(callee_storage_slot.clone(), callee_storage_key, expected_count)
+            .unwrap();
+        AccountComponent::from_package(&callee_package, &init_storage_data).unwrap()
+    };
+    let caller_component =
+        AccountComponent::from_package(&caller_package, &InitStorageData::default()).unwrap();
+
+    let mut builder = MockChain::builder();
+    let callee_account = AccountBuilder::new([0_u8; 32])
+        .account_type(AccountType::Public)
+        .with_auth_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_component(callee_component)
+        .build_existing()
+        .expect("failed to build callee account");
+    builder
+        .add_account(callee_account.clone())
+        .expect("failed to add callee account to mock chain builder");
+
+    let caller_builder = AccountBuilder::new([1_u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(BasicWallet)
+        .with_component(caller_component);
+    let caller_account = builder
+        .add_account_from_builder(
+            Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            },
+            caller_builder,
+            AccountState::Exists,
+        )
+        .expect("failed to add caller account to mock chain builder");
+
+    let rng = RandomCoin::new(note_script_root(note_package.as_ref()));
+    let caller_note = NoteBuilder::new(caller_account.id(), rng)
+        .package((*note_package).clone())
+        .note_storage(to_core_felts(&callee_account.id()))
+        .unwrap()
+        .tag(NoteTag::with_account_target(caller_account.id()).into())
+        .build()
+        .unwrap();
+    builder.add_output_note(RawOutputNote::Full(caller_note.clone()));
+
+    let mut chain = builder.build().expect("failed to build mock chain");
+    chain.prove_next_block().unwrap();
+    chain.prove_next_block().unwrap();
+
+    assert_counter_storage_at_key(
+        chain.committed_account(callee_account.id()).unwrap().storage(),
+        &callee_storage_slot,
+        callee_storage_key,
+        expected_count,
+    );
+
+    let foreign_account_inputs = chain.get_foreign_account_inputs(callee_account.id()).unwrap();
+    let tx_context_builder = chain
+        .build_tx_context(caller_account.clone(), &[caller_note.id()], &[])
+        .unwrap()
+        .foreign_accounts([foreign_account_inputs]);
+    execute_tx(&mut chain, tx_context_builder);
+
+    assert_counter_storage_at_key(
+        chain.committed_account(callee_account.id()).unwrap().storage(),
+        &callee_storage_slot,
+        callee_storage_key,
+        expected_count,
+    );
+}
+
 /// Returns the generated account project manifest used by an FPI test.
 fn account_miden_project_toml(names: &FpiTestProjectNames) -> String {
     account_miden_project_toml_for(&names.account_name, &names.account_package)
