@@ -351,8 +351,7 @@ impl Frontend for HirFrontend {
         let LoweredTarget {
             sources,
             component,
-            account_component_metadata_bytes,
-            component_wit_bytes,
+            sections,
             source_provenance,
         } = match backend::hir_to_masm(cx, hir)? {
             Flow::Continue(lowered) => lowered,
@@ -362,8 +361,7 @@ impl Frontend for HirFrontend {
             cx.target_key(),
             CodegenOutput {
                 component,
-                account_component_metadata_bytes,
-                component_wit_bytes,
+                sections,
                 source_provenance,
             },
         );
@@ -394,8 +392,7 @@ impl Frontend for HirFrontend {
         crate::pipeline::assembly::post_process_package(
             package,
             &found.component,
-            found.account_component_metadata_bytes.as_deref(),
-            found.component_wit_bytes.as_deref(),
+            &found.sections,
             cx.assembly().target,
             cx.assembly().package_registry,
         )
@@ -470,8 +467,7 @@ pub fn extract_miden_component_or_bail(
         Ok(MidenComponent {
             world,
             component: None,
-            account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+            sections: Default::default(),
             source_provenance,
         })
     } else if let Ok(component) = op.try_downcast_op::<builtin::Component>() {
@@ -479,8 +475,7 @@ pub fn extract_miden_component_or_bail(
         Ok(MidenComponent {
             world,
             component: Some(component),
-            account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+            sections: Default::default(),
             source_provenance,
         })
     } else if let Ok(module) = op.try_downcast_op::<builtin::Module>() {
@@ -490,16 +485,14 @@ pub fn extract_miden_component_or_bail(
                 Ok(MidenComponent {
                     world,
                     component: Some(component),
-                    account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+                    sections: Default::default(),
                     source_provenance,
                 })
             } else if let Ok(world) = parent.try_downcast_op::<builtin::World>() {
                 Ok(MidenComponent {
                     world,
                     component: None,
-                    account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+                    sections: Default::default(),
                     source_provenance,
                 })
             } else {
@@ -513,8 +506,7 @@ pub fn extract_miden_component_or_bail(
             Ok(MidenComponent {
                 world,
                 component: None,
-                account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+                sections: Default::default(),
                 source_provenance,
             })
         }

@@ -59,8 +59,7 @@ pub(crate) fn prepare_assembler(
 pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
-    account_component_metadata_bytes: Option<&[u8]>,
-    component_wit_bytes: Option<&[u8]>,
+    sections: &midenc_frontend_wasm_metadata::PackageSections,
     target: &midenc_session::miden_project::Target,
     registry: &dyn miden_package_registry::PackageRegistryAndProvider,
 ) -> Result<(), Report> {
@@ -68,8 +67,8 @@ pub(crate) fn post_process_package(
     use miden_mast_package::{Section, SectionId};
     use midenc_session::miden_project::TargetType;
 
-    attach_account_component_metadata(package, account_component_metadata_bytes);
-    attach_component_wit(package, component_wit_bytes);
+    attach_account_component_metadata(package, sections.account_component_metadata.as_deref());
+    attach_component_wit(package, sections.component_wit.as_deref());
     extend_rodata_advice_map(package, &component.rodata);
 
     // Embed the kernel in note/transaction script packages, if not already embedded

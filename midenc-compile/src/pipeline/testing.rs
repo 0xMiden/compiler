@@ -212,8 +212,10 @@ pub(crate) fn component_in_namespace(
     crate::MidenComponent {
         world,
         component: Some(component),
-        account_component_metadata_bytes: metadata,
-        component_wit_bytes: None,
+        sections: midenc_frontend_wasm_metadata::PackageSections {
+            account_component_metadata: metadata,
+            component_wit: None,
+        },
         source_provenance: ProjectSourceProvenanceInputs {
             root: SourceFileProvenance {
                 path: FsPath::new(file!()).to_path_buf().into_boxed_path(),

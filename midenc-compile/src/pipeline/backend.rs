@@ -14,12 +14,13 @@
 //! goal (see [`StopFlag`](super::StopFlag)) rather than checked at a phase boundary. A phase
 //! called directly simply runs.
 
-use alloc::{boxed::Box, rc::Rc, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, rc::Rc, sync::Arc};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
 use midenc_codegen_masm::{LegalizeForMasm, MasmComponent, ToMasmComponent};
 use midenc_dialect_hir::transforms::{Local2Reg, TransformSpills};
 use midenc_dialect_scf::transforms::LiftControlFlowToSCF;
+use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{
     Context, Op, OperationRef,
     dialects::builtin,
@@ -49,10 +50,8 @@ use crate::{CodegenOutput, CompilerResult, MidenComponent};
 ///   section but a silent miscompile: the lowered code pushes each segment's commitment and
 ///   asks the advice provider for the data behind it, so a package assembled without the
 ///   advice map fails at run time, in the VM, with nothing in the build to point at.
-/// - [`account_component_metadata_bytes`](LoweredTarget::account_component_metadata_bytes)
-///   becomes the package's account-component metadata section.
-/// - [`component_wit_bytes`](LoweredTarget::component_wit_bytes) becomes the package's
-///   component WIT section.
+/// - [`sections`](LoweredTarget::sections) carries the out-of-band payloads — the serialized
+///   account-component metadata and the component's public WIT — that become package sections.
 /// - [`source_provenance`](LoweredTarget::source_provenance) is what the assembler hashes to
 ///   decide whether a cached build of this target is still current.
 ///
@@ -66,10 +65,8 @@ pub struct LoweredTarget {
     pub sources: ProjectSourceInputs,
     /// The lowered component, whose rodata becomes the package's advice map.
     pub component: Arc<MasmComponent>,
-    /// The serialized account-component metadata, if this target has any.
-    pub account_component_metadata_bytes: Option<Vec<u8>>,
-    /// The component's public WIT source, if this target embeds any.
-    pub component_wit_bytes: Option<Vec<u8>>,
+    /// Out-of-band payloads destined for the compiled package's sections.
+    pub sections: PackageSections,
     /// The provenance of the sources this target was built from.
     pub source_provenance: ProjectSourceProvenanceInputs,
 }
@@ -127,8 +124,7 @@ pub fn masm_from_transformed_hir(
     let context = hir.world.borrow().as_operation().context_rc();
     let CodegenOutput {
         component,
-        account_component_metadata_bytes,
-        component_wit_bytes,
+        sections,
         source_provenance,
     } = codegen(hir, context)?;
     let session = cx.session();
@@ -138,8 +134,7 @@ pub fn masm_from_transformed_hir(
             let lowered = LoweredTarget {
                 sources,
                 component,
-                account_component_metadata_bytes,
-                component_wit_bytes,
+                sections,
                 source_provenance,
             };
             // After the checkpoint, so that a run stopping at `masm.lowered` does not reach it:
@@ -300,8 +295,7 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
     let MidenComponent {
         world,
         component,
-        account_component_metadata_bytes,
-        component_wit_bytes,
+        sections,
         #[cfg(feature = "std")]
         source_provenance,
     } = hir;
@@ -325,8 +319,7 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
 
     Ok(CodegenOutput {
         component: Arc::from(masm_component),
-        account_component_metadata_bytes,
-        component_wit_bytes,
+        sections,
         #[cfg(feature = "std")]
         source_provenance,
     })
@@ -807,16 +800,14 @@ mod tests {
             let LoweredTarget {
                 sources,
                 component,
-                account_component_metadata_bytes,
-                component_wit_bytes,
+                sections,
                 source_provenance,
             } = lowered;
             self.lowered.borrow_mut().insert(
                 cx.target_key(),
                 CodegenOutput {
                     component,
-                    account_component_metadata_bytes,
-                    component_wit_bytes,
+                    sections,
                     source_provenance,
                 },
             );
@@ -838,8 +829,7 @@ mod tests {
             crate::pipeline::assembly::post_process_package(
                 package,
                 &found.component,
-                found.account_component_metadata_bytes.as_deref(),
-                found.component_wit_bytes.as_deref(),
+                &found.sections,
                 cx.assembly().target,
                 cx.assembly().package_registry,
             )

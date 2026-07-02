@@ -21,6 +21,19 @@ pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
 /// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
 pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
 
+/// Out-of-band payloads extracted from the input binary and attached to the compiled Miden
+/// package as sections.
+///
+/// Carried through the compiler pipeline as one unit so that adding a payload does not require
+/// threading a new field through every stage.
+#[derive(Clone, Debug, Default)]
+pub struct PackageSections {
+    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.).
+    pub account_component_metadata: Option<Vec<u8>>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit: Option<Vec<u8>>,
+}
+
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

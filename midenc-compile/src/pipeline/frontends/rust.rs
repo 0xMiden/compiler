@@ -1182,8 +1182,7 @@ impl Frontend for RustProjectFrontend {
         crate::pipeline::assembly::post_process_package(
             package,
             &found.component,
-            found.account_component_metadata_bytes.as_deref(),
-            found.component_wit_bytes.as_deref(),
+            &found.sections,
             cx.assembly().target,
             cx.assembly().package_registry,
         )
@@ -2141,8 +2140,7 @@ mod tests {
                 stack_pointer: None,
                 modules: Vec::new(),
             }),
-            account_component_metadata_bytes: None,
-            component_wit_bytes: None,
+            sections: Default::default(),
             source_provenance: ProjectSourceProvenanceInputs {
                 root: SourceFileProvenance {
                     path: std::path::PathBuf::from("seeded.wat").into_boxed_path(),

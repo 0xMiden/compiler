@@ -393,8 +393,7 @@ impl Frontend for SeedFrontend {
         let LoweredTarget {
             sources,
             component,
-            account_component_metadata_bytes,
-            component_wit_bytes,
+            sections,
             source_provenance,
         } = match self.resume(cx, hir)? {
             Flow::Continue(lowered) => lowered,
@@ -404,8 +403,7 @@ impl Frontend for SeedFrontend {
             cx.target_key(),
             CodegenOutput {
                 component,
-                account_component_metadata_bytes,
-                component_wit_bytes,
+                sections,
                 source_provenance,
             },
         );
@@ -439,8 +437,7 @@ impl Frontend for SeedFrontend {
         crate::pipeline::assembly::post_process_package(
             package,
             &found.component,
-            found.account_component_metadata_bytes.as_deref(),
-            found.component_wit_bytes.as_deref(),
+            &found.sections,
             cx.assembly().target,
             cx.assembly().package_registry,
         )
@@ -558,8 +555,7 @@ mod tests {
             let LoweredTarget {
                 sources,
                 component,
-                account_component_metadata_bytes,
-                component_wit_bytes,
+                sections,
                 source_provenance,
             } = match backend::hir_to_masm(cx, hir)? {
                 Flow::Continue(lowered) => lowered,
@@ -569,8 +565,7 @@ mod tests {
                 cx.target_key(),
                 CodegenOutput {
                     component,
-                    account_component_metadata_bytes,
-                    component_wit_bytes,
+                    sections,
                     source_provenance,
                 },
             );
@@ -609,8 +604,7 @@ mod tests {
             crate::pipeline::assembly::post_process_package(
                 package,
                 &found.component,
-                found.account_component_metadata_bytes.as_deref(),
-                found.component_wit_bytes.as_deref(),
+                &found.sections,
                 cx.assembly().target,
                 cx.assembly().package_registry,
             )

@@ -469,8 +469,7 @@ impl WasmFrontend {
 
         let FrontendOutput {
             component,
-            account_component_metadata_bytes,
-            component_wit_bytes,
+            sections,
         } = midenc_frontend_wasm::translate(&source.wasm, &config, context.clone())?;
         log::debug!(
             "parsed hir component from wasm bytes with first module name: {}",
@@ -482,8 +481,7 @@ impl WasmFrontend {
         Ok(MidenComponent {
             world,
             component: Some(component),
-            account_component_metadata_bytes,
-            component_wit_bytes,
+            sections,
             source_provenance,
         })
     }
@@ -528,8 +526,7 @@ impl WasmFrontend {
         let LoweredTarget {
             sources,
             component,
-            account_component_metadata_bytes,
-            component_wit_bytes,
+            sections,
             source_provenance,
         } = match backend::hir_to_masm(cx, hir)? {
             Flow::Continue(lowered) => lowered,
@@ -539,8 +536,7 @@ impl WasmFrontend {
             cx.target_key(),
             CodegenOutput {
                 component,
-                account_component_metadata_bytes,
-                component_wit_bytes,
+                sections,
                 source_provenance,
             },
         );
@@ -594,8 +590,7 @@ impl Frontend for WasmFrontend {
         crate::pipeline::assembly::post_process_package(
             package,
             &found.component,
-            found.account_component_metadata_bytes.as_deref(),
-            found.component_wit_bytes.as_deref(),
+            &found.sections,
             cx.assembly().target,
             cx.assembly().package_registry,
         )
