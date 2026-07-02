@@ -1,13 +1,17 @@
 use midenc_hir::{
-    Alignable, FxHashMap, Symbol,
-    dialects::builtin::{self, DataSegmentError, SegmentRef},
+    Alignable, FxHashMap, Op, Symbol,
+    dialects::builtin::{self, DataSegmentError, SegmentRef, attributes::U64Attr},
 };
 
+/// The page size used for the linker's own memory layout, in bytes.
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
-/// Currently, Wasm modules produced by rustc reserve 16 pages for the Rust stack
-/// (see __stack_pointer global variable value in Wasm).
-// We start our reserved memory from the next page after the rustc reserved for the
-// Rust stack to avoid overlapping with Rust `static` vars.
+/// The default number of pages reserved before any compiler-managed memory region.
+///
+/// This is a fallback floor for modules that carry no
+/// [builtin::Module::RESERVED_MEMORY_ATTR] attribute, conservatively sized to cover the stack
+/// and static-data conventions of common module producers (e.g. rustc's default 16-page shadow
+/// stack plus a page of `static` data). Modules with the attribute are laid out past their
+/// declared reservation instead, which dominates this default whenever it is larger.
 const DEFAULT_RESERVATION: u32 = 17;
 
 pub struct LinkInfo {
@@ -147,10 +151,19 @@ impl Linker {
             return Err(LinkerError::Undefined);
         }
 
-        // 2. Visit each Module in the component and discover Segment and GlobalVariable items
+        // 2. Visit each Module in the component and discover Segment, GlobalVariable, and
+        // FunctionTable items, along with the memory claimed by the modules themselves
+        let mut declared_reserved_memory = 0u64;
         let body = body.entry();
         for item in body.body() {
             if let Some(module) = item.downcast_ref::<builtin::Module>() {
+                if let Some(reserved) = module
+                    .as_operation()
+                    .get_typed_attribute::<U64Attr>(builtin::Module::RESERVED_MEMORY_ATTR)
+                {
+                    declared_reserved_memory = declared_reserved_memory.max(**reserved.borrow());
+                }
+
                 let module_body = module.body();
                 if module_body.is_empty() {
                     continue;
@@ -200,23 +213,31 @@ impl Linker {
             }
         }
 
-        // 3. Layout global variables in the next page following the last data segment
+        // 3. Layout global variables past all memory claimed by the modules themselves
         let next_available_offset = self.segment_layout.next_available_offset();
         let reserved_offset = (self.reserved_memory_pages * self.page_size).next_multiple_of(4);
-        // We add a page after the data segments to avoid overlapping with Rust `static` vars which
-        // are placed after data segments (if present).
-        let next_available_offset_after_rust_statics = next_available_offset + DEFAULT_PAGE_SIZE;
+        // We add a page after the data segments as headroom for producer-placed data that
+        // occupies address space without being visible as data segments (e.g. zero-initialized
+        // statics).
+        let next_available_offset_with_headroom = next_available_offset + DEFAULT_PAGE_SIZE;
+        // A module's declared memory reservation is a sound upper bound on everything its
+        // producer placed in linear memory, whereas the one-page allowance above the data
+        // segments is only a heuristic.
+        let declared_reserved_offset = u32::try_from(declared_reserved_memory).expect(
+            "invalid module memory reservation: it leaves no room for compiler-managed memory",
+        );
         log::debug!(target: "linker",
-            "next_available_offset (after Rust statics) from segments: {:#x}, reserved_offset: {:#x}, \
-             segment_count: {}",
-            next_available_offset_after_rust_statics,
+            "next_available_offset (with headroom) from segments: {:#x}, reserved_offset: {:#x}, \
+             declared_reserved_offset: {:#x}, segment_count: {}",
+            next_available_offset_with_headroom,
             reserved_offset,
+            declared_reserved_offset,
             self.segment_layout.len()
         );
-        self.globals_layout.update_global_table_offset(core::cmp::max(
-            reserved_offset,
-            next_available_offset_after_rust_statics,
-        ));
+        self.globals_layout.update_global_table_offset(
+            core::cmp::max(reserved_offset, next_available_offset_with_headroom)
+                .max(declared_reserved_offset),
+        );
         log::debug!(target: "linker",
             "global_table_offset set to: {:#x}",
             self.globals_layout.global_table_offset()
