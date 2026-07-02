@@ -12,7 +12,7 @@ use midenc_hir::{
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
 use super::{
-    FuncIndex, Module, TableIndex, TableInitialValue,
+    DefinedTableIndex, FuncIndex, Module, TableIndex, TableInitialValue,
     instance::ModuleArgument,
     ir_func_type,
     types::{EntityIndex, ModuleTypesBuilder, WasmRefType},
@@ -25,6 +25,13 @@ use crate::{
     translation_utils::sig_from_func_type,
     unsupported_diag,
 };
+
+/// A practical bound on the number of slots in a lowered function table.
+///
+/// Each slot occupies one word of linear memory, and each initialized slot materializes IR and
+/// startup code, so absurdly-sized tables (which no real program produces) are rejected up front
+/// rather than exhausting memory or overflowing the memory layout.
+const MAX_FUNCTION_TABLE_SLOTS: u32 = 1 << 20;
 
 pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
@@ -139,7 +146,7 @@ impl<'a> ModuleTranslationState<'a> {
         let Some(defined_idx) = module.defined_table_index(table_index) else {
             unsupported_diag!(
                 diagnostics,
-                "unsupported `call_indirect`: imported tables are not supported"
+                "unsupported `call_indirect`: imported tables are not supported yet"
             );
         };
         let table = &module.tables[table_index];
@@ -150,48 +157,17 @@ impl<'a> ModuleTranslationState<'a> {
                 table.wasm_ty
             );
         }
+        if table.minimum > MAX_FUNCTION_TABLE_SLOTS {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported `call_indirect`: table has {} slots, which exceeds the supported \
+                 maximum of {MAX_FUNCTION_TABLE_SLOTS}",
+                table.minimum
+            );
+        }
 
-        // Collect the statically-known slot initializers, in application order (at runtime later
-        // writes win, which order of application preserves)
-        let mut entries: Vec<(u32, FuncIndex)> = Vec::new();
-        match &module.table_initialization.initial_values[defined_idx] {
-            TableInitialValue::Null { precomputed } => {
-                entries.extend(precomputed.iter().enumerate().map(|(i, f)| (i as u32, *f)));
-            }
-            TableInitialValue::FuncRef(func_index) => {
-                entries.extend((0..table.minimum).map(|i| (i, *func_index)));
-            }
-        }
-        for segment in module
-            .table_initialization
-            .segments
-            .iter()
-            .filter(|segment| segment.table_index == table_index)
-        {
-            if segment.base.is_some() {
-                unsupported_diag!(
-                    diagnostics,
-                    "unsupported element segment: global-relative offsets are not supported"
-                );
-            }
-            let end = segment.offset as u64 + segment.elements.len() as u64;
-            if end > table.minimum as u64 {
-                unsupported_diag!(
-                    diagnostics,
-                    "invalid element segment: initializes slots {}..{end} of a table with {} slots",
-                    segment.offset,
-                    table.minimum
-                );
-            }
-            for (i, func_index) in segment.elements.iter().enumerate() {
-                // A `ref.null` element expression leaves the slot uninitialized (a zero word)
-                if func_index.is_reserved_value() {
-                    continue;
-                }
-                entries.push((segment.offset + i as u32, *func_index));
-            }
-        }
-        if entries.is_empty() {
+        let image = collect_table_image(table_index, defined_idx, module, diagnostics)?;
+        if image.iter().all(Option::is_none) {
             unsupported_diag!(
                 diagnostics,
                 "unsupported `call_indirect`: table {} has no statically-initialized entries",
@@ -217,8 +193,11 @@ impl<'a> ModuleTranslationState<'a> {
                     .into_report()
             })?;
         let span = SourceSpan::default();
-        for (slot, func_index) in entries {
-            self.add_table_entry(table_ref, slot, func_index, span)?;
+        for (slot, func_index) in image.into_iter().enumerate() {
+            let Some(func_index) = func_index else {
+                continue;
+            };
+            self.add_table_entry(table_ref, slot as u32, func_index, module, span, diagnostics)?;
         }
         self.tables.insert(table_index, table_ref);
         Ok(table_ref)
@@ -230,7 +209,9 @@ impl<'a> ModuleTranslationState<'a> {
         table: FunctionTableRef,
         index: u32,
         func_index: FuncIndex,
+        module: &Module,
         span: SourceSpan,
+        diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<()> {
         match self.get_direct_func(func_index)? {
             CallableFunction::Function {
@@ -252,12 +233,13 @@ impl<'a> ModuleTranslationState<'a> {
                 self.module_builder
                     .append_function_table_entry(table, index, function_ref, span)
             }
-            CallableFunction::Instruction { intrinsic, .. } => {
-                Err(midenc_hir::Report::msg(format!(
-                    "unsupported function table element: function {} is the inlined intrinsic \
-                     '{intrinsic:?}' without a procedure body",
-                    func_index.as_u32()
-                )))
+            CallableFunction::Instruction { .. } => {
+                unsupported_diag!(
+                    diagnostics,
+                    "unsupported function table element: '{}' is an inlined intrinsic without a \
+                     procedure body",
+                    module.func_name(func_index)
+                );
             }
         }
     }
@@ -340,6 +322,63 @@ impl<'a> ModuleTranslationState<'a> {
     }
 }
 
+/// Compute the final compile-time image of a table: for each slot, the function whose MAST root
+/// it holds at startup, or `None` for a null slot.
+///
+/// The table's initial value and its active element segments are applied in order, with later
+/// writes — including explicit `ref.null` entries — replacing earlier ones, matching Wasm
+/// table-initialization semantics.
+fn collect_table_image(
+    table_index: TableIndex,
+    defined_idx: DefinedTableIndex,
+    module: &Module,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<Vec<Option<FuncIndex>>> {
+    let table = &module.tables[table_index];
+    let mut image: Vec<Option<FuncIndex>> = vec![None; table.minimum as usize];
+    match &module.table_initialization.initial_values[defined_idx] {
+        TableInitialValue::Null { precomputed } => {
+            // NOTE: this parser never populates `precomputed` (element segments are kept as-is),
+            // but handle it as a full image for robustness; null slots are encoded there as the
+            // reserved function index
+            for (slot, func_index) in precomputed.iter().enumerate().take(image.len()) {
+                image[slot] = (!func_index.is_reserved_value()).then_some(*func_index);
+            }
+        }
+        TableInitialValue::FuncRef(func_index) => {
+            image.fill(Some(*func_index));
+        }
+    }
+    for segment in module
+        .table_initialization
+        .segments
+        .iter()
+        .filter(|segment| segment.table_index == table_index)
+    {
+        if segment.base.is_some() {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported element segment: global-relative offsets are not supported"
+            );
+        }
+        let end = segment.offset as u64 + segment.elements.len() as u64;
+        if end > image.len() as u64 {
+            unsupported_diag!(
+                diagnostics,
+                "invalid element segment: initializes slots {}..{end} of a table with {} slots",
+                segment.offset,
+                image.len()
+            );
+        }
+        for (i, func_index) in segment.elements.iter().enumerate() {
+            // An explicit `ref.null` entry clears the slot
+            image[segment.offset as usize + i] =
+                (!func_index.is_reserved_value()).then_some(*func_index);
+        }
+    }
+    Ok(image)
+}
+
 /// Returns [`CallableFunction`] translated from the core Wasm module import
 fn process_import(
     module_builder: &mut ModuleBuilder,
@@ -382,8 +421,11 @@ fn process_module_arg(
 ) -> WasmResult<CallableFunction> {
     Ok(match module_arg {
         ModuleArgument::Function(_) => {
-            todo!("core Wasm function import is not implemented yet");
-            //generate the internal function and call the import argument  function"
+            // TODO: generate the internal function and call the import argument function
+            crate::unsupported_diag!(
+                diagnostics,
+                "core Wasm function imports are not supported yet"
+            );
         }
         ModuleArgument::ComponentImport(signature) => generate_import_lowering_function(
             world_builder,
@@ -394,7 +436,7 @@ fn process_module_arg(
             sig,
         )?,
         ModuleArgument::Table => {
-            crate::unsupported_diag!(diagnostics, "imported tables are not supported");
+            crate::unsupported_diag!(diagnostics, "imported tables are not supported yet");
         }
     })
 }
