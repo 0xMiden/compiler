@@ -95,7 +95,10 @@ pub(crate) fn read_package_wit(package_path: &Path) -> Result<String, Error> {
             format!(
                 "dependency package '{}' does not embed component WIT (missing package section \
                  '{PACKAGE_WIT_SECTION_ID}'); it was likely built with an older Miden toolchain. \
-                 Rebuild the dependency with the current `cargo miden build`.",
+                 Rebuild the dependency with the current `cargo miden build`. For manually \
+                 authored components (a hand-written `wit/` directory with a bare \
+                 `miden::generate!()`), the WIT is embedded only when the `wit/` directory \
+                 contains exactly one `.wit` file.",
                 package_path.display()
             ),
         ));

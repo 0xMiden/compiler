@@ -23,9 +23,13 @@ pub(crate) const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 
 /// WIT metadata extracted from the consuming crate.
 pub(crate) struct ResolvedWit {
+    /// WIT search paths loaded before any dependency source (the SDK prelude).
     pub paths: Vec<String>,
     /// WIT sources read from the compiled packages of Miden path dependencies.
     pub dependency_sources: Vec<DependencyWitSource>,
+    /// The crate's local `wit/` directory, loaded after the dependency sources so its WIT can
+    /// import the dependency packages.
+    pub local_wit_root: Option<PathBuf>,
     pub world: Option<String>,
     /// The world-defining local WIT file, present when it is the crate's only WIT file and can
     /// therefore be embedded verbatim as the component's public WIT.
@@ -63,30 +67,24 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
     let dependency_sources =
         collect_dependency_wit_sources(&manifest.manifest_dir, &manifest.package)?;
 
-    let local_wit_root = Path::new(&manifest.manifest_dir).join("wit");
+    let raw_local_wit_root = Path::new(&manifest.manifest_dir).join("wit");
+    let mut local_wit_root = None;
     let mut world = None;
     let mut embeddable_local_wit = None;
 
-    if local_wit_root.exists() && !options.allow_missing_local_wit {
-        let local_root = fs::canonicalize(&local_wit_root).unwrap_or(local_wit_root);
-        let local_root_str = local_root.to_str().ok_or_else(|| {
-            Error::new(
-                Span::call_site(),
-                format!("path '{}' contains invalid UTF-8", local_root.display()),
-            )
-        })?;
-        if !resolved.iter().any(|existing| existing == local_root_str) {
-            resolved.push(local_root_str.to_owned());
-        }
+    if raw_local_wit_root.exists() && !options.allow_missing_local_wit {
+        let local_root = fs::canonicalize(&raw_local_wit_root).unwrap_or(raw_local_wit_root);
         if let Some(local_world) = detect_world(&local_root)? {
             world = Some(local_world.world);
             embeddable_local_wit = local_world.embeddable_file;
         }
+        local_wit_root = Some(local_root);
     }
 
     Ok(ResolvedWit {
         paths: resolved,
         dependency_sources,
+        local_wit_root,
         world,
         embeddable_local_wit,
     })

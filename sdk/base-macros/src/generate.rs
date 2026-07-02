@@ -18,7 +18,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{dependency_package::DependencyWitSource, fpi, manifest_paths};
+use crate::{fpi, manifest_paths};
 
 /// Fully-qualified WIT interface path for Miden SDK core types.
 pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
@@ -114,16 +114,6 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 
     match manifest_paths::resolve_wit_paths(resolve_opts) {
         Ok(config) => {
-            if config.paths.is_empty() {
-                return Error::new(
-                    Span::call_site(),
-                    "no WIT dependencies declared under \
-                     [package.metadata.component.target.dependencies]",
-                )
-                .to_compile_error()
-                .into();
-            }
-
             let inline_world = args
                 .inline
                 .as_ref()
@@ -203,8 +193,7 @@ fn generate_bindings(
     world: Option<&str>,
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
-        &config.paths,
-        &config.dependency_sources,
+        config,
         args.inline.as_ref().map(|src| src.value()).as_deref(),
         world,
         &args.with_entries,
@@ -222,8 +211,7 @@ pub(crate) fn generate_inline_fpi_bindings(
     with_entries: &[(String, WithOption)],
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
-        &config.paths,
-        &config.dependency_sources,
+        config,
         Some(inline_source),
         Some(world),
         with_entries,
@@ -243,8 +231,7 @@ pub(crate) fn generate_inline_import_bindings(
     with_entries: &[(String, WithOption)],
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
-        &config.paths,
-        &config.dependency_sources,
+        config,
         Some(inline_source),
         Some(world),
         with_entries,
@@ -255,15 +242,14 @@ pub(crate) fn generate_inline_import_bindings(
 
 /// Generates WIT bindings from resolved source paths and optional inline source.
 fn generate_bindings_from_sources(
-    paths: &[String],
-    dependency_sources: &[DependencyWitSource],
+    config: &manifest_paths::ResolvedWit,
     inline_source: Option<&str>,
     world: Option<&str>,
     with_entries: &[(String, WithOption)],
     fpi_imports: &[fpi::FpiImportSpec],
     scope_component_type_sections: bool,
 ) -> Result<TokenStream2, Error> {
-    let mut wit_sources = load_wit_sources(paths, dependency_sources, inline_source)?;
+    let mut wit_sources = load_wit_sources(config, inline_source)?;
 
     let world_id = wit_sources
         .resolve
@@ -514,9 +500,12 @@ struct LoadedWitSources {
 }
 
 /// Loads WIT sources from file paths, dependency packages, and optionally an inline source.
+///
+/// Sources are pushed in dependency order — SDK prelude paths, then WIT embedded in dependency
+/// packages, then the crate's local `wit/` directory — because the resolver eagerly resolves each
+/// pushed package against the ones already present, and local WIT may import dependency packages.
 fn load_wit_sources(
-    paths: &[String],
-    dependency_sources: &[DependencyWitSource],
+    config: &manifest_paths::ResolvedWit,
     inline_source: Option<&str>,
 ) -> Result<LoadedWitSources, Error> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
@@ -528,14 +517,15 @@ fn load_wit_sources(
     let mut packages = Vec::new();
     let mut files = Vec::new();
 
-    // Load WIT definitions from file paths. These are always loaded to populate the resolver
-    // with type definitions that the inline source may depend on.
-    for path in paths {
-        let path_buf = PathBuf::from(path);
-        let absolute = if path_buf.is_absolute() {
-            path_buf
+    let push_path = |resolve: &mut Resolve,
+                     packages: &mut Vec<PackageId>,
+                     files: &mut Vec<PathBuf>,
+                     path: PathBuf|
+     -> Result<(), Error> {
+        let absolute = if path.is_absolute() {
+            path
         } else {
-            manifest_dir.join(path_buf)
+            manifest_dir.join(path)
         };
         let normalized = fs::canonicalize(&absolute).unwrap_or(absolute);
         let (pkg, sources) = resolve.push_path(normalized.clone()).map_err(|err| {
@@ -546,12 +536,19 @@ fn load_wit_sources(
         })?;
         packages.push(pkg);
         files.extend(sources.paths().map(|p| p.to_owned()));
+        Ok(())
+    };
+
+    // Load WIT definitions from file paths (the SDK prelude). These are always loaded to
+    // populate the resolver with type definitions the other sources may depend on.
+    for path in &config.paths {
+        push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(path))?;
     }
 
     // Load WIT definitions embedded in the compiled packages of Miden path dependencies. The
     // `.masp` paths are recorded like read files so rustc recompiles when a dependency package
     // changes.
-    for source in dependency_sources {
+    for source in &config.dependency_sources {
         let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
             Error::new(
                 Span::call_site(),
@@ -563,6 +560,11 @@ fn load_wit_sources(
         })?;
         packages.push(pkg);
         files.push(source.package_path.clone());
+    }
+
+    // Load the crate's own `wit/` directory last so it can reference the dependency packages.
+    if let Some(local_wit_root) = &config.local_wit_root {
+        push_path(&mut resolve, &mut packages, &mut files, local_wit_root.clone())?;
     }
 
     if let Some(src) = inline_source {
