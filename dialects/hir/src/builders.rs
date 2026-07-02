@@ -924,8 +924,8 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(callee, signature, args)
     }
 
-    /// Execute the function whose MAST root is stored in slot `index` of `table`, i.e. a Wasm
-    /// `call_indirect`; a same-context indirect invocation.
+    /// Execute the function whose MAST root is stored in slot `index` of `table`; a same-context
+    /// indirect invocation (the lowering of Wasm `call_indirect`).
     fn exec_indirect<A>(
         &mut self,
         table: FunctionTableRef,

@@ -16,8 +16,8 @@ use crate::{
 
 pub type FunctionTableRef = UnsafeIntrusiveEntityRef<FunctionTable>;
 
-/// A [FunctionTable] declares a function-reference table (i.e. a Wasm `funcref` table) in the
-/// shared memory of a [super::Component].
+/// A [FunctionTable] declares a function-reference table in the shared memory of a
+/// [super::Component]; the Wasm frontend lowers `funcref` tables to it.
 ///
 /// The table occupies one word (4 field elements, 16 bytes) of linear memory per slot, holding
 /// the MAST root digest of the referenced function; an all-zero word denotes a null entry. The
@@ -46,7 +46,7 @@ pub struct FunctionTable {
     visibility: VisibilityAttr,
     /// The number of slots in the table
     #[attr]
-    size: U32Attr,
+    num_slots: U32Attr,
     #[region]
     entries: RegionRef,
     #[default]
@@ -126,7 +126,7 @@ impl OpPrinter for FunctionTable {
         printer.print_space();
         printer.print_symbol_name(self.get_name().as_symbol());
         *printer += const_text(" : ");
-        *printer += display(*self.get_size());
+        *printer += display(*self.get_num_slots());
         printer.print_space();
         printer.print_region(&self.entries());
     }
@@ -157,8 +157,11 @@ impl OpParser for FunctionTable {
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
 
         parser.parse_colon()?;
-        let size = parser.parse_decimal_integer::<u32>()?.into_inner();
-        state.add_attribute("size", parser.context_rc().create_attribute::<U32Attr, _>(size));
+        let num_slots = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute(
+            "num_slots",
+            parser.context_rc().create_attribute::<U32Attr, _>(num_slots),
+        );
 
         let entries = parser.parse_optional_region(&[], /*enable_name_shadowing=*/ false)?;
         // We always add the entries region, even if empty

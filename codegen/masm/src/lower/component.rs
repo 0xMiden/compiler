@@ -545,11 +545,11 @@ impl MasmComponentBuilder<'_> {
                 };
                 let slot = *entry.get_index();
                 assert!(
-                    slot < *table.get_size(),
+                    slot < *table.get_num_slots(),
                     "invalid function table entry: slot {slot} is out of bounds for table '{}' \
                      with {} slots",
                     table.get_name().as_str(),
-                    *table.get_size()
+                    *table.get_num_slots()
                 );
                 let callee = entry
                     .as_operation()
