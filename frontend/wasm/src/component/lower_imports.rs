@@ -7,8 +7,7 @@ use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    AddressSpace, Builder, FunctionType, Op, PointerType, SourceSpan, SymbolPath, Type, ValueRef,
-    Visibility,
+    Builder, FunctionType, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         BuiltinOpBuilder, ComponentBuilder, ComponentId, ModuleBuilder, WorldBuilder,
@@ -19,13 +18,12 @@ use midenc_session::diagnostics::Report;
 
 use super::{
     ComponentFunctionType, MAX_DIRECT_STACK_FELTS, MAX_FLAT_PARAMS, MAX_FLAT_RESULTS,
-    canon_abi_utils::{store, validate_flat_variants},
-    contains_unsupported_canonical_abi_type,
+    canon_abi_utils::{load, offset_addr, store, validate_flat_variants},
+    canonical_abi_info, canonical_flat_types, contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
         classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
     },
-    flat_tuple_layout,
 };
 use crate::{
     callable::CallableFunction,
@@ -191,6 +189,9 @@ fn generate_fpi_lowering(
     fb.seal_block(exit_block);
     fb.switch_to_block(exit_block);
     let results = lower_fpi_result_felts(fb, &shape.flattened_results, &results, span)?;
+    // Result felts come from the foreign account, so variant discriminants are validated before
+    // the values are stored or returned, mirroring the transformed component import path.
+    validate_flat_variants(fb, &import_func_ty.ir.results, &results, span)?;
     if let Some(output_ptr) = lowered.output_ptr {
         if import_func_ty.ir.results.len() != 1 {
             return Err(midenc_session::diagnostics::Report::msg(format!(
@@ -282,13 +283,16 @@ fn validate_fpi_value_type(
             )?;
         }
         Type::Enum(enum_ty) => {
-            if !enum_ty.is_c_like() {
-                return Err(midenc_session::diagnostics::Report::msg(format!(
-                    "FPI import `{import_func_path}` {location} contains non-C-like enum \
-                     `{enum_ty}`; typed FPI only supports enums without payload values"
-                )));
-            }
             validate_fpi_value_type(import_func_path, location, enum_ty.discriminant())?;
+            for variant in enum_ty.variants() {
+                if let Some(payload_ty) = variant.value.as_ref() {
+                    validate_fpi_value_type(
+                        import_func_path,
+                        &format!("{location}::{}", variant.name),
+                        payload_ty,
+                    )?;
+                }
+            }
         }
         Type::I1
         | Type::I8
@@ -309,8 +313,7 @@ fn validate_fpi_value_type(
         | Type::Function(_) => {
             return Err(midenc_session::diagnostics::Report::msg(format!(
                 "FPI import `{import_func_path}` {location} contains unsupported type `{ty}`; \
-                 typed FPI only supports felt-width integers, felt, C-like enums, structs, and \
-                 arrays"
+                 typed FPI only supports felt-width integers, felt, enums, structs, and arrays"
             )));
         }
     }
@@ -444,12 +447,12 @@ fn lower_fpi_canonical_args(
         })?;
         lower_fpi_indirect_args(fb, arg_ptr, &import_func_ty.ir.params, span)?
     } else {
-        lower_fpi_direct_args(
-            fb,
-            &shape.flattened_params,
-            &args[..shape.flattened_params.len()],
-            span,
-        )?
+        // Arguments cross the FPI boundary as bare felts, so variant discriminants must be
+        // range-checked here, mirroring the direct component wrappers. The indirect path
+        // validates during the canonical loads instead.
+        let flat_args = &args[..shape.flattened_params.len()];
+        validate_flat_variants(fb, &import_func_ty.ir.params, flat_args, span)?;
+        lower_fpi_direct_args(fb, &shape.flattened_params, flat_args, span)?
     };
 
     if fpi_args.len() != shape.flattened_arg_felts {
@@ -492,8 +495,9 @@ fn lower_fpi_direct_args(
 ///
 /// Canonical ABI passes more than 16 flattened parameters indirectly through one pointer. The
 /// generated wrapper reloads every flattened value here, so all FPI calls reach the backend in
-/// the same direct, felt-only form. Load offsets come from the canonical ABI metadata trees,
-/// matching the tuple layout the calling convention requires of the stored arguments.
+/// the same direct, felt-only form. Each parameter is loaded with the canonical ABI load
+/// algorithm, which switches over variant discriminants to load the active case payload
+/// (trapping on out-of-range discriminants) and zero-fills unused payload lanes.
 fn lower_fpi_indirect_args(
     fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
     arg_ptr: ValueRef,
@@ -501,44 +505,26 @@ fn lower_fpi_indirect_args(
     span: SourceSpan,
 ) -> WasmResult<Vec<ValueRef>> {
     let mut fpi_args = Vec::new();
-    for entry in flat_tuple_layout(params)? {
-        let value = load_fpi_tuple_value(fb, arg_ptr, entry.offset, &entry.ty, span)?;
-        push_fpi_arg_felts(fb, &entry.ty, value, &mut fpi_args, span)?;
+    let mut offset = 0u32;
+    for param in params {
+        let param_offset = canonical_abi_info(param)?.next_field32(&mut offset);
+        let param_addr = offset_addr(fb, arg_ptr, param_offset, span)?;
+        let mut values = SmallVec::<[ValueRef; 8]>::new();
+        load(fb, param_addr, param, &mut values, span)?;
+        let flat_types = canonical_flat_types(param)?;
+        if values.len() != flat_types.len() {
+            return Err(midenc_session::diagnostics::Report::msg(format!(
+                "FPI argument load for `{param}` produced {} values, but its canonical flat shape \
+                 has {}",
+                values.len(),
+                flat_types.len()
+            )));
+        }
+        for (value, flat_ty) in values.into_iter().zip(flat_types.iter()) {
+            push_fpi_arg_felts(fb, flat_ty, value, &mut fpi_args, span)?;
+        }
     }
     Ok(fpi_args)
-}
-
-/// Loads one canonical ABI tuple value and converts it to its flattened core form.
-fn load_fpi_tuple_value(
-    fb: &mut FunctionBuilderExt<'_, impl midenc_hir::Builder>,
-    arg_ptr: ValueRef,
-    byte_offset: u32,
-    ty: &Type,
-    span: SourceSpan,
-) -> WasmResult<ValueRef> {
-    let addr = if byte_offset == 0 {
-        arg_ptr
-    } else {
-        let byte_offset = i32::try_from(byte_offset).map_err(|_| {
-            midenc_session::diagnostics::Report::msg(format!(
-                "FPI argument layout contains byte offset {byte_offset}, which does not fit in i32"
-            ))
-        })?;
-        let byte_offset = fb.i32(byte_offset, span);
-        fb.add_unchecked(arg_ptr, byte_offset, span)?
-    };
-    let ptr_ty = Type::from(PointerType::new_with_address_space(ty.clone(), AddressSpace::Byte));
-    let typed_ptr = fb.inttoptr(addr, ptr_ty, span)?;
-    let value = fb.load(typed_ptr, span)?;
-
-    // Narrow integers are stored in their memory width; extend them to the 32-bit form canonical
-    // ABI flattening produces, so the felt conversion sees the correct value (signed values must
-    // be sign-extended).
-    match ty {
-        Type::I8 | Type::I16 => Ok(fb.sext(value, Type::I32, span)?),
-        Type::I1 | Type::U8 | Type::U16 => Ok(fb.zext(value, Type::U32, span)?),
-        _ => Ok(value),
-    }
 }
 
 /// Appends the FPI felt representation for one canonical ABI flat value.
@@ -1061,8 +1047,8 @@ mod tests {
 
     use super::*;
     use crate::component::test_support::{
-        count_validation_ops, scalar_payload_variant_type, two_field_record_type,
-        unit_only_variant_type, world_with_core_module,
+        count_validation_ops, mixed_payload_variant_type, scalar_payload_variant_type,
+        two_field_record_type, unit_only_variant_type, world_with_core_module,
     };
 
     fn test_import_path(name: &str) -> SymbolPath {
@@ -1313,14 +1299,27 @@ mod tests {
     }
 
     #[test]
-    fn validate_fpi_typed_signature_rejects_non_c_like_enum_param() {
+    fn validate_fpi_typed_signature_accepts_payload_enum_param() {
+        let import_func_ty = FunctionType::new(
+            CallConv::Wasm,
+            fpi_params_with_user_args([scalar_payload_variant_type()]),
+            vec![Type::Felt],
+        );
+        let import_func_path = test_import_path("fpi-read-payload-enum");
+
+        validate_fpi_typed_signature(&import_func_path, &import_func_ty)
+            .expect("payload-carrying enum parameters are supported over typed FPI");
+    }
+
+    #[test]
+    fn validate_fpi_typed_signature_rejects_pointer_inside_enum_payload() {
         let enum_ty = Type::Enum(Arc::new(
             EnumType::new(
-                "result".into(),
+                "request".into(),
                 Type::U8,
                 [
-                    Variant::c_like("ok".into(), Some(0)),
-                    Variant::new("err".into(), Type::I32, Some(1)),
+                    Variant::c_like("empty".into(), Some(0)),
+                    Variant::new("items".into(), Type::from(PointerType::new(Type::U8)), Some(1)),
                 ],
             )
             .unwrap(),
@@ -1330,16 +1329,14 @@ mod tests {
             fpi_params_with_user_args([enum_ty]),
             vec![Type::Felt],
         );
-        let import_func_path = test_import_path("fpi-read-non-c-like-enum");
+        let import_func_path = test_import_path("fpi-read-pointer-payload-enum");
 
         let err = validate_fpi_typed_signature(&import_func_path, &import_func_ty)
-            .expect_err("non-C-like enum parameters must be rejected before flattening");
+            .expect_err("pointer-like enum payloads must be rejected before flattening");
         let message = err.to_string();
 
         assert!(
-            message.contains("parameter 6")
-                && message.contains("non-C-like enum")
-                && message.contains("enums without payload values"),
+            message.contains("parameter 6::items") && message.contains("pointer-like type"),
             "unexpected error: {message}"
         );
     }
@@ -1462,6 +1459,66 @@ mod tests {
         assert!(
             message.contains("lowers to 19 operand stack felts")
                 && message.contains("direct FPI calls support at most 16"),
+            "unexpected error message: {message}"
+        );
+    }
+
+    #[test]
+    fn plan_fpi_call_counts_variant_payload_lanes() {
+        let context = Rc::new(Context::default());
+        // The mixed-width variant flattens to a discriminant lane plus one joined i64 payload
+        // lane, i.e. three protocol felts.
+        let import_func_ty = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([mixed_payload_variant_type()]),
+            vec![Type::Felt],
+        );
+
+        let shape = plan_fpi_call_for(&context, &import_func_ty, "fpi-send-mixed-variant")
+            .expect("payload variant params fit the direct FPI shape");
+
+        assert!(!shape.has_arg_ptr, "three variant lanes stay within the direct shape");
+        assert_eq!(shape.flattened_arg_felts, FPI_ABI_PREFIX_ARGS + 3);
+    }
+
+    #[test]
+    fn plan_fpi_call_routes_variant_results_through_output_pointer() {
+        let context = Rc::new(Context::default());
+        let import_func_ty = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([]),
+            vec![mixed_payload_variant_type()],
+        );
+
+        let shape = plan_fpi_call_for(&context, &import_func_ty, "fpi-get-mixed-variant")
+            .expect("payload variant results are supported over typed FPI");
+
+        assert!(
+            shape.has_output_ptr,
+            "multi-lane variant results must use the canonical output pointer"
+        );
+    }
+
+    #[test]
+    fn plan_fpi_call_counts_variant_lanes_against_procedure_input_limit() {
+        let context = Rc::new(Context::default());
+        // Nine u64 params plus the joined variant lanes only just cross the count-based
+        // indirect threshold, but their felt expansion exceeds the executor's input window.
+        let import_func_ty = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args(
+                (0..9).map(|_| Type::U64).chain([mixed_payload_variant_type()]),
+            ),
+            vec![Type::Felt],
+        );
+
+        let err = plan_fpi_call_for(&context, &import_func_ty, "fpi-send-wide-variant")
+            .expect_err("variant payload lanes must count against the FPI input budget");
+        let message = err.to_string();
+
+        assert!(
+            message.contains("passes 21 flattened procedure input felts")
+                && message.contains("`execute_foreign_procedure` supports at most 16"),
             "unexpected error message: {message}"
         );
     }
@@ -1624,6 +1681,113 @@ mod tests {
         assert_eq!(
             unreachable_count, 2,
             "invalid transformed import result tag should be unreachable before storing"
+        );
+    }
+
+    #[test]
+    fn fpi_direct_lowering_validates_variant_param_discriminant() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([scalar_payload_variant_type()]),
+            vec![Type::Felt],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let mut core_params = vec![AbiParam::new(Type::Felt); FPI_ABI_PREFIX_ARGS];
+        core_params.extend([AbiParam::new(Type::I32), AbiParam::new(Type::I32)]);
+        let core_func_sig = Signature {
+            params: core_params,
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::Wasm,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            test_import_path("fpi-send-variant"),
+            &import_func_ty,
+            core_function_path("fpi-send-variant"),
+            core_func_sig,
+        )
+        .expect("FPI import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(switch_count, 1, "direct FPI variant params should validate the tag");
+        assert_eq!(unreachable_count, 1, "invalid direct FPI variant tag should be unreachable");
+    }
+
+    #[test]
+    fn fpi_indirect_lowering_validates_variant_param_discriminant() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        // Nine u32 params plus the variant push the flat count past the indirect threshold, so
+        // the wrapper reloads every argument from the canonical tuple pointer.
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args(
+                (0..9).map(|_| Type::U32).chain([scalar_payload_variant_type()]),
+            ),
+            vec![Type::Felt],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::Wasm,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            test_import_path("fpi-send-variant-indirect"),
+            &import_func_ty,
+            core_function_path("fpi-send-variant-indirect"),
+            core_func_sig,
+        )
+        .expect("FPI import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(switch_count, 1, "indirect FPI variant args should switch on the loaded tag");
+        assert_eq!(unreachable_count, 1, "invalid indirect FPI variant tag should be unreachable");
+    }
+
+    #[test]
+    fn fpi_lowering_validates_variant_result_before_store() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([]),
+            vec![scalar_payload_variant_type()],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let mut core_params = vec![AbiParam::new(Type::Felt); FPI_ABI_PREFIX_ARGS];
+        core_params.push(AbiParam::new(Type::I32));
+        let core_func_sig = Signature {
+            params: core_params,
+            results: vec![],
+            cc: CallConv::Wasm,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            test_import_path("fpi-get-variant"),
+            &import_func_ty,
+            core_function_path("fpi-get-variant"),
+            core_func_sig,
+        )
+        .expect("FPI import lowering should build");
+
+        let (switch_count, unreachable_count) =
+            count_validation_ops(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(switch_count, 2, "FPI variant results should validate the tag before storing");
+        assert_eq!(
+            unreachable_count, 2,
+            "invalid FPI variant result tag should be unreachable before storing"
         );
     }
 

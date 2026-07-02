@@ -33,12 +33,6 @@ pub enum CanonicalTypeError {
     #[error("type '{0}' is not supported by the canonical abi")]
     #[diagnostic()]
     Unsupported(Type),
-    #[error("non-C-like enum '{0}' is not supported by the canonical abi")]
-    #[diagnostic()]
-    NonCLikeEnum(Type),
-    #[error("canonical abi layout for type '{ty}' overflowed u32 offsets")]
-    #[diagnostic()]
-    LayoutOverflow { ty: Type },
 }
 
 /// Identifies the pointer indirection used by our internal canonical ABI parameter/result passing.

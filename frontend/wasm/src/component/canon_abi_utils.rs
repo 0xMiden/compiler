@@ -671,7 +671,7 @@ fn block_arguments(block: BlockRef) -> Vec<ValueRef> {
 }
 
 /// Returns `ptr + offset`, preserving `ptr` when no offset is needed.
-fn offset_addr<B: ?Sized + Builder>(
+pub(super) fn offset_addr<B: ?Sized + Builder>(
     fb: &mut FunctionBuilderExt<B>,
     ptr: ValueRef,
     offset: u32,

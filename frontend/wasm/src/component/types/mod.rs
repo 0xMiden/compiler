@@ -1524,90 +1524,6 @@ pub fn canonical_variant_payload_flat_types(
     Ok(join_variant_payloads(case_payloads, join_flat_types)?.into_boxed_slice())
 }
 
-/// Returns the memory load layout for this type's flattened canonical ABI values.
-///
-/// Produces exactly one entry per flat type returned by [`canonical_flat_types`], in the same order,
-/// pairing the canonical ABI byte offset (relative to `offset`) with the source type to load from
-/// memory. Payload-carrying variants have no static load layout because their payload lanes depend
-/// on the runtime discriminant, so they are rejected.
-pub fn canonical_flat_layout(
-    ty: &Type,
-    offset: u32,
-) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
-    let mut layout = Vec::new();
-    push_canonical_flat_layout(ty, offset, &mut layout)?;
-    Ok(layout)
-}
-
-/// Appends the memory load layout for this type's flattened canonical ABI values.
-fn push_canonical_flat_layout(
-    ty: &Type,
-    offset: u32,
-    layout: &mut Vec<CanonicalFlatLayoutEntry>,
-) -> Result<(), CanonicalTypeError> {
-    match ty {
-        Type::I1
-        | Type::I8
-        | Type::U8
-        | Type::I16
-        | Type::U16
-        | Type::I32
-        | Type::U32
-        | Type::I64
-        | Type::U64
-        | Type::Felt => layout.push(CanonicalFlatLayoutEntry {
-            offset,
-            ty: ty.clone(),
-        }),
-        Type::Struct(struct_ty) => {
-            let mut field_offset = 0u32;
-            for field in struct_ty.fields() {
-                let field_abi = canonical_abi_info(&field.ty)?;
-                let field_start = field_abi.next_field32(&mut field_offset);
-                let absolute_offset = offset.checked_add(field_start).ok_or_else(|| {
-                    CanonicalTypeError::LayoutOverflow {
-                        ty: field.ty.clone(),
-                    }
-                })?;
-                push_canonical_flat_layout(&field.ty, absolute_offset, layout)?;
-            }
-        }
-        Type::Enum(enum_ty) => {
-            if !enum_ty.is_c_like() {
-                return Err(CanonicalTypeError::NonCLikeEnum(ty.clone()));
-            }
-            push_canonical_flat_layout(enum_ty.discriminant(), offset, layout)?;
-        }
-        Type::Array(array_ty) => {
-            let element_abi = canonical_abi_info(array_ty.element_type())?;
-            let mut element_offset = 0u32;
-            for _ in 0..array_ty.len() {
-                let element_start = element_abi.next_field32(&mut element_offset);
-                let absolute_offset = offset.checked_add(element_start).ok_or_else(|| {
-                    CanonicalTypeError::LayoutOverflow {
-                        ty: array_ty.element_type().clone(),
-                    }
-                })?;
-                layout.push(CanonicalFlatLayoutEntry {
-                    offset: absolute_offset,
-                    ty: array_ty.element_type().clone(),
-                });
-            }
-        }
-        Type::Unknown
-        | Type::Never
-        | Type::I128
-        | Type::U128
-        | Type::U256
-        | Type::F64
-        | Type::Ptr(_)
-        | Type::List(_)
-        | Type::Function(_) => return Err(CanonicalTypeError::Unsupported(ty.clone())),
-    }
-
-    Ok(())
-}
-
 /// Returns the canonical ABI information for a HIR enum without using HIR's ordinary layout.
 fn canonical_variant_abi_info(enum_ty: &EnumType) -> Result<CanonicalAbiInfo, CanonicalTypeError> {
     let discriminant = canonical_abi_info(enum_ty.discriminant())?;
@@ -1651,32 +1567,6 @@ pub fn canonical_variant_payload_offset32(enum_ty: &EnumType) -> Result<u32, Can
     let discriminant = canonical_abi_info(enum_ty.discriminant())?;
     let abi = canonical_variant_abi_info(enum_ty)?;
     Ok(align_to(discriminant.size32, abi.align32))
-}
-
-/// Byte layout for one value produced by canonical ABI flattening.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CanonicalFlatLayoutEntry {
-    /// Byte offset of this flattened value relative to the containing tuple.
-    pub offset: u32,
-    /// Source type to load from memory for this flattened value.
-    pub ty: Type,
-}
-
-/// Returns the memory load layout for a canonical ABI tuple of flattened parameters.
-///
-/// The tuple is laid out as a canonical ABI record of the parameter types, matching how
-/// canonical lowering stores an oversized argument list behind a single pointer.
-pub fn flat_tuple_layout(
-    params: &[Type],
-) -> Result<Vec<CanonicalFlatLayoutEntry>, CanonicalTypeError> {
-    let mut layout = Vec::new();
-    let mut offset = 0u32;
-    for param in params {
-        let param_abi = canonical_abi_info(param)?;
-        let param_offset = param_abi.next_field32(&mut offset);
-        push_canonical_flat_layout(param, param_offset, &mut layout)?;
-    }
-    Ok(layout)
 }
 
 /// Shape of a "record" type in interface types.
@@ -2302,62 +2192,6 @@ mod tests {
         supported_component_model_features,
     };
 
-    /// Returns true when this type contains a payload-carrying variant with no static flat layout.
-    fn contains_payload_variant(ty: &Type) -> bool {
-        match ty {
-            Type::Struct(struct_ty) => {
-                struct_ty.fields().iter().any(|field| contains_payload_variant(&field.ty))
-            }
-            Type::Enum(enum_ty) => enum_ty.variants().iter().any(|case| case.value.is_some()),
-            _ => false,
-        }
-    }
-
-    #[test]
-    fn flat_layout_agrees_with_flat_types_shape() {
-        // `lower_fpi_indirect_args` reloads tuple values through `flat_tuple_layout` while the
-        // FPI call shape counts felts from the flattened signature, so the layout must produce
-        // exactly one entry per flat type, with the canonical scalar mapping relating the two.
-        for ty in crate::component::test_support::canonical_agreement_fixtures() {
-            if contains_payload_variant(&ty) {
-                let err = canonical_flat_layout(&ty, 0)
-                    .expect_err("payload variants must not produce a static load layout");
-                assert!(
-                    err.to_string().contains("non-C-like enum"),
-                    "unexpected error for {}: {err}",
-                    ty
-                );
-                continue;
-            }
-
-            let layout = canonical_flat_layout(&ty, 0)
-                .unwrap_or_else(|err| panic!("flat layout failed for {ty}: {err}"));
-            let flat_types = canonical_flat_types(&ty).expect("fixture should flatten");
-
-            assert_eq!(
-                layout
-                    .iter()
-                    .map(|entry| canonical_flat_scalar_type(&entry.ty))
-                    .collect::<Vec<_>>(),
-                flat_types.into_vec(),
-                "flat_layout and flat_types disagree for {}",
-                ty
-            );
-        }
-    }
-
-    #[test]
-    fn canonical_record_layout_aligns_u64_to_eight_bytes() {
-        let ty = Type::from(StructType::new(vec![Type::U8, Type::U64]));
-
-        let layout = canonical_flat_layout(&ty, 0).expect("record layout should succeed");
-
-        assert_eq!(
-            layout.iter().map(|entry| (entry.offset, entry.ty.clone())).collect::<Vec<_>>(),
-            vec![(0, Type::U8), (8, Type::U64)]
-        );
-    }
-
     #[test]
     fn canonical_variant_payload_offset_aligns_u64_to_eight_bytes() {
         let enum_ty = EnumType::new(
@@ -2374,37 +2208,6 @@ mod tests {
             canonical_variant_payload_offset32(&enum_ty)
                 .expect("payload offset should be computable"),
             8
-        );
-    }
-
-    #[test]
-    fn flat_tuple_layout_uses_canonical_abi_offsets() {
-        let params = [
-            Type::U8,
-            crate::component::test_support::two_field_record_type(),
-            crate::component::test_support::unit_only_variant_type(),
-        ];
-
-        let layout = flat_tuple_layout(&params).expect("tuple layout should succeed");
-
-        // The record aligns to 4 past the u8, its second field sits 4 bytes further, and the
-        // unit-only variant discriminant byte follows the record directly.
-        assert_eq!(
-            layout.iter().map(|entry| (entry.offset, entry.ty.clone())).collect::<Vec<_>>(),
-            vec![(0, Type::U8), (4, Type::U32), (8, Type::U32), (12, Type::U8),]
-        );
-    }
-
-    #[test]
-    fn flat_tuple_layout_rejects_unsupported_types() {
-        let params = [Type::List(std::sync::Arc::new(Type::U32))];
-
-        let err = flat_tuple_layout(&params)
-            .expect_err("unsupported type must not produce a load layout");
-
-        assert!(
-            err.to_string().contains("not supported by the canonical abi"),
-            "unexpected error: {err}"
         );
     }
 
