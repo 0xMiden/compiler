@@ -75,8 +75,8 @@ The following limitations remain:
   table mutation ops (`table.set`, `table.get`, `table.grow`, etc.), `ref.func`/`ref.null` as
   function body instructions, and `return_call_indirect` are unsupported, and produce a
   compile-time error.
-- A `call_indirect` through a table with no statically-initialized entries is rejected at compile
-  time, although Wasm semantics would be a guaranteed runtime trap.
+- A `call_indirect` through a table with no statically-initialized entries compiles, and every
+  dispatch through it fails at runtime on the zero MAST root of a null slot.
 - The callee arguments plus the table index must fit in Miden's 16-element operand stack window,
   so indirect callee signatures are limited to 15 field elements worth of arguments.
 
