@@ -407,21 +407,30 @@ fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationSch
         let Some(info) = info_opt else {
             continue;
         };
-        for descriptor in &info.locations {
-            if !is_supported_location_expression(&descriptor.storage) {
-                continue;
-            }
+        let supported: Vec<_> = info
+            .locations
+            .iter()
+            .filter(|descriptor| is_supported_location_expression(&descriptor.storage))
+            .collect();
+        for descriptor in &supported {
             schedule.push(LocationScheduleEntry {
                 offset: descriptor.start,
                 var_index,
                 storage: Some(descriptor.storage.clone()),
             });
             if let Some(end) = descriptor.end {
-                schedule.push(LocationScheduleEntry {
-                    offset: end,
-                    var_index,
-                    storage: None,
-                });
+                // Only schedule a kill when the lifetime actually has a gap here: when another
+                // location for this variable begins exactly at this offset, the variable is
+                // merely changing location, and the kill would only produce a spurious
+                // dead-then-redeclared flicker in the record stream.
+                let contiguous = supported.iter().any(|other| other.start == end);
+                if !contiguous {
+                    schedule.push(LocationScheduleEntry {
+                        offset: end,
+                        var_index,
+                        storage: None,
+                    });
+                }
             }
         }
     }
@@ -793,7 +802,9 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 if let Some(local_index) = local_index {
                     locations.push(LocationDescriptor {
                         start: low_pc,
-                        end: high_pc,
+                        // A single-location description is valid for the variable's whole scope;
+                        // there is no lifetime end to schedule
+                        end: None,
                         storage,
                     });
                     let data = DwarfLocalData {
@@ -809,7 +820,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                     // location expression instead of being dropped.
                     locations.push(LocationDescriptor {
                         start: low_pc,
-                        end: high_pc,
+                        end: None,
                         storage,
                     });
                     let data = DwarfLocalData {
@@ -839,9 +850,16 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                     decode_storage_from_expression(&storage_expr, unit, frame_base_global)?
                     && is_supported_location_expression(&storage)
                 {
+                    // A range covering through the end of the subprogram means the variable is
+                    // live at this location until scope end; suppress the end event so no
+                    // pointless (and harmfully placed) terminal kill is scheduled
+                    let end = match high_pc {
+                        Some(high_pc) if entry.range.end >= high_pc => None,
+                        _ => Some(entry.range.end),
+                    };
                     locations.push(LocationDescriptor {
                         start: entry.range.begin,
-                        end: Some(entry.range.end),
+                        end,
                         storage,
                     });
                 }
