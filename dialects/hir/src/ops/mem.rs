@@ -26,8 +26,10 @@ pub struct LocalAddress {
 
 impl InferTypeOpInterface for LocalAddress {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        // Use the attribute-level type accessor: locals reconstructed from parsed HIR are not
+        // bound to a function, and carry their type on the attribute instead
         let ty = Type::from(PointerType::new_with_address_space(
-            self.get_local().ty(),
+            self.local().local_type(),
             AddressSpace::Element,
         ));
         self.result_mut().set_type(ty);
@@ -139,7 +141,9 @@ pub struct LoadLocal {
 
 impl InferTypeOpInterface for LoadLocal {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
-        let ty = self.get_local().ty();
+        // Use the attribute-level type accessor: locals reconstructed from parsed HIR are not
+        // bound to a function, and carry their type on the attribute instead
+        let ty = self.local().local_type();
         self.result_mut().set_type(ty);
 
         Ok(())
