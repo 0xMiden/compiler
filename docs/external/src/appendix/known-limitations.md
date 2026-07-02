@@ -45,14 +45,15 @@ find a better/more natural representation for `Felt` in WebAssembly.
 
 - Status: **Partially implemented**
 - Tracking Issue: [#32](https://github.com/0xMiden/compiler/issues/32)
-- Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
 This feature corresponds to `call_indirect` in WebAssembly, and is associated with Rust features
 such as function pointers, trait objects (which use indirection to call trait methods), and
 closures.
 
-The compiler lowers each locally-defined Wasm `funcref` table to a word-aligned region of linear
-memory holding one word (the MAST root digest of the referenced function) per table slot. The
+The compiler lowers each locally-defined Wasm `funcref` table through which a `call_indirect`
+dispatches (tables that are never dispatched through, which Wasm toolchains routinely emit, are
+ignored) to a word-aligned region of linear memory holding one word (the MAST root digest of the
+referenced function) per table slot. The
 region is populated at program startup by the component initialization procedure using `procref`,
 and `call_indirect` dispatches through it with `dynexec` (i.e. in the caller's memory context),
 after a bounds check on the table index which traps deterministically with a
@@ -74,6 +75,8 @@ The following limitations remain:
   table mutation ops (`table.set`, `table.get`, `table.grow`, etc.), `ref.func`/`ref.null` as
   function body instructions, and `return_call_indirect` are unsupported, and produce a
   compile-time error.
+- A `call_indirect` through a table with no statically-initialized entries is rejected at compile
+  time, although Wasm semantics would be a guaranteed runtime trap.
 - The callee arguments plus the table index must fit in Miden's 16-element operand stack window,
   so indirect callee signatures are limited to 15 field elements worth of arguments.
 
@@ -120,28 +123,18 @@ and Miden packaging. Once present, we can open up the FFI for general use.
 
 ### Dynamic procedure invocation
 
-- Status: **Unimplemented**
+- Status: **Partially implemented**
 - Tracking Issue: [#32](https://github.com/0xMiden/compiler/issues/32)
-- Release Milestone: [Beta 1](https://github.com/0xMiden/compiler/milestone/4)
 
-This is a dependency of [Function Call Indirection](#function-call-indirection) described above,
-and is the mechanism by which we can perform indirect calls in Miden. In order to implement support
-for indirect calls in the Wasm frontend, we need underlying support for `dynexec`, which is not yet
-implemented.
+This is the mechanism behind [Function Call Indirection](#function-call-indirection) described
+above. Same-context indirect calls are lowered to `dynexec`: the VM pops a word-aligned memory
+address from the operand stack, reads the word at that address as the MAST root of the callee,
+and transfers control to it, so the callee observes its arguments in the normal order with no
+extra stack fixup (older VM versions kept the callee hash on the operand stack, which would have
+required per-callee stubs; that design is obsolete).
 
-This feature adds support for lowering indirect calls to `dynexec` or `dyncall` instructions,
-depending on the ABI of the callee. `dyncall` has an additional dependency on support for
+Cross-context indirect calls via `dyncall` are not lowered yet; they additionally depend on
 [Cross-Context Procedure Invocation](#cross-context-procedure-invocation).
-
-A known issue with this feature is that `dyn(exec|call)` consumes a word on the operand stack
-for the hash of the callee being invoked, but this word _remains_ on the stack when entering the
-callee, which has the effect of requiring procedures to have a different ABI depending on whether
-they expect to be dynamically-invoked or not.
-
-Our solution to that issue is to generate stubs which are used as the target of `dyn(exec|call)`,
-the body of which drops the callee hash, fixes up the operand stack as necessary, and then uses a
-simple `exec` or `call` to invoke the "real" callee. We will emit a single stub for every function
-which has its "address" taken, and use the hash of the stub in place of the actual callee hash.
 
 ### Cross-context procedure invocation
 

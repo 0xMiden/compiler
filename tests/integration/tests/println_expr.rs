@@ -4,7 +4,9 @@ use miden_debug::logger::DebugLogger;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_tests::{CompilerTest, testing::eval_package};
 
-// Manipulates bytes to avoid `call_indirect`, which gets triggered by Rust's formatting infra.
+// Manipulates bytes directly instead of going through Rust's formatting infra: `core::fmt` is
+// dominated by indirect calls (now supported) and trait-object dispatch, which are far too
+// expensive on the VM for a logging test.
 #[test]
 fn println_dynamic() {
     DebugLogger::init_for_tests()
