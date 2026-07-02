@@ -11,7 +11,3 @@ namespace = "miden:increment-note/miden-increment-note@0.1.0"
 miden-core = "*"
 miden-protocol = "*"
 counter-account = { path = "../counter-account" }
-
-# WIT for the account component this note calls, produced by building counter-account.
-[package.metadata.miden.dependencies]
-counter-account = { wit = "../counter-account/target/generated-wit/" }

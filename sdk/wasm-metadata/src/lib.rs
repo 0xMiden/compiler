@@ -15,6 +15,12 @@ use serde::{Deserialize, Serialize};
 pub const WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME: &str =
     "rodata,miden_account_component_frontend";
 
+/// Name of the Wasm custom section used to store the component's public WIT source.
+pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
+
+/// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
+pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
+
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

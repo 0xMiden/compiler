@@ -11,7 +11,3 @@ miden-core = "*"
 miden-protocol = "*"
 # TODO: Add your account contract dependencies here
 add-contract = { path = "../add-contract" }
-
-[package.metadata.miden.dependencies]
-# TODO: Add your account contract WIT dependencies here
-add-contract = { wit = "../add-contract/target/generated-wit/" }

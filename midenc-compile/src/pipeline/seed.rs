@@ -394,6 +394,7 @@ impl Frontend for SeedFrontend {
             sources,
             component,
             account_component_metadata_bytes,
+            component_wit_bytes,
             source_provenance,
         } = match self.resume(cx, hir)? {
             Flow::Continue(lowered) => lowered,
@@ -404,6 +405,7 @@ impl Frontend for SeedFrontend {
             CodegenOutput {
                 component,
                 account_component_metadata_bytes,
+                component_wit_bytes,
                 source_provenance,
             },
         );
@@ -438,6 +440,7 @@ impl Frontend for SeedFrontend {
             package,
             &found.component,
             found.account_component_metadata_bytes.as_deref(),
+            found.component_wit_bytes.as_deref(),
             cx.assembly().target,
             cx.assembly().package_registry,
         )
@@ -556,6 +559,7 @@ mod tests {
                 sources,
                 component,
                 account_component_metadata_bytes,
+                component_wit_bytes,
                 source_provenance,
             } = match backend::hir_to_masm(cx, hir)? {
                 Flow::Continue(lowered) => lowered,
@@ -566,6 +570,7 @@ mod tests {
                 CodegenOutput {
                     component,
                     account_component_metadata_bytes,
+                    component_wit_bytes,
                     source_provenance,
                 },
             );
@@ -605,6 +610,7 @@ mod tests {
                 package,
                 &found.component,
                 found.account_component_metadata_bytes.as_deref(),
+                found.component_wit_bytes.as_deref(),
                 cx.assembly().target,
                 cx.assembly().package_registry,
             )

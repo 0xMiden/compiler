@@ -10,6 +10,7 @@ use proc_macro2::Span;
 use syn::Error;
 
 use crate::{
+    dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
     util::{bundled_wit_folder, strip_line_comment},
     wit_world::ProjectPackageMetadata,
 };
@@ -23,7 +24,12 @@ pub(crate) const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 /// WIT metadata extracted from the consuming crate.
 pub(crate) struct ResolvedWit {
     pub paths: Vec<String>,
+    /// WIT sources read from the compiled packages of Miden path dependencies.
+    pub dependency_sources: Vec<DependencyWitSource>,
     pub world: Option<String>,
+    /// The world-defining local WIT file, present when it is the crate's only WIT file and can
+    /// therefore be embedded verbatim as the component's public WIT.
+    pub embeddable_local_wit: Option<PathBuf>,
 }
 
 #[derive(Default)]
@@ -51,117 +57,15 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
 
     resolved.push(prelude_dir);
 
-    if let Some(dependencies) = manifest
-        .package
-        .metadata()
-        .get("miden")
-        .and_then(|meta| meta.get("dependencies"))
-        .and_then(|v| v.as_table())
-    {
-        // Try to locate wit for path dependencies that don't have an explicit wit path configured.
-        // We look for a `wit` directory in the dependency project's root
-        for dependency in manifest.package.dependencies().iter() {
-            if dependencies.contains_key(dependency.name().as_ref()) {
-                continue;
-            }
-            // If wit wasn't specified for a dependency, and the dependency is on disk,
-            // look for it in common locations, just in case it's available there
-            match dependency.scheme() {
-                miden_project::DependencyVersionScheme::Path { path, .. } => {
-                    let raw_path = Path::new(path.path()).join("wit");
-                    let absolute = if raw_path.is_absolute() {
-                        raw_path.to_path_buf()
-                    } else {
-                        Path::new(&manifest.manifest_dir).join(raw_path)
-                    };
-                    let canonical =
-                        fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
-                    let Ok(metadata) = fs::metadata(&canonical) else {
-                        continue;
-                    };
-                    if !metadata.is_dir() {
-                        continue;
-                    }
-                    let Some(path_str) = canonical.to_str() else {
-                        continue;
-                    };
-                    if !resolved.iter().any(|existing| existing == path_str) {
-                        resolved.push(path_str.to_owned());
-                    }
-                }
-                // TODO(pauls): We should also handle git dependencies at some point
-                _ => continue,
-            }
-        }
-
-        for (dependency, config) in dependencies {
-            let Some(table) = config.as_table() else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!(
-                        "invalid miden-project.toml configuration: expected \
-                         metadata.dependencies.{dependency} to be a table"
-                    ),
-                ));
-            };
-            let Some(wit) = table.get("wit") else {
-                continue;
-            };
-            let Some(wit_path) = wit.as_str() else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!(
-                        "invalid miden-project.toml configuration: expected \
-                         metadata.dependencies.{dependency}.wit to be a string"
-                    ),
-                ));
-            };
-            let raw_path = Path::new(wit_path);
-            let absolute = if raw_path.is_absolute() {
-                raw_path.to_path_buf()
-            } else {
-                Path::new(&manifest.manifest_dir).join(raw_path)
-            };
-            let canonical = fs::canonicalize(&absolute).unwrap_or_else(|_| absolute.clone());
-            let metadata = fs::metadata(&canonical).map_err(|err| {
-                Error::new(
-                    Span::call_site(),
-                    format!(
-                        "failed to read metadata for dependency '{dependency}' path '{}': {err}",
-                        canonical.display()
-                    ),
-                )
-            })?;
-
-            let search_path = if metadata.is_dir() {
-                canonical
-            } else if let Some(parent) = canonical.parent() {
-                parent.to_path_buf()
-            } else {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!(
-                        "dependency '{dependency}' path '{}' does not have a parent directory",
-                        canonical.display()
-                    ),
-                ));
-            };
-
-            let path_str = search_path.to_str().ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("dependency '{dependency}' path contains invalid UTF-8"),
-                )
-            })?;
-
-            if !resolved.iter().any(|existing| existing == path_str) {
-                resolved.push(path_str.to_owned());
-            }
-        }
-    }
+    // Dependency WIT is read from each path dependency's compiled `.masp` package rather than
+    // from files on disk; the sources are pushed into the wit-bindgen resolver alongside the
+    // file-based paths collected here.
+    let dependency_sources =
+        collect_dependency_wit_sources(&manifest.manifest_dir, &manifest.package)?;
 
     let local_wit_root = Path::new(&manifest.manifest_dir).join("wit");
     let mut world = None;
+    let mut embeddable_local_wit = None;
 
     if local_wit_root.exists() && !options.allow_missing_local_wit {
         let local_root = fs::canonicalize(&local_wit_root).unwrap_or(local_wit_root);
@@ -174,12 +78,17 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
         if !resolved.iter().any(|existing| existing == local_root_str) {
             resolved.push(local_root_str.to_owned());
         }
-        world = detect_world_name(&local_root)?;
+        if let Some(local_world) = detect_world(&local_root)? {
+            world = Some(local_world.world);
+            embeddable_local_wit = local_world.embeddable_file;
+        }
     }
 
     Ok(ResolvedWit {
         paths: resolved,
+        dependency_sources,
         world,
+        embeddable_local_wit,
     })
 }
 
@@ -216,8 +125,17 @@ fn ensure_sdk_wit() -> Result<PathBuf, Error> {
     Ok(fs::canonicalize(&autogenerated_wit_folder).unwrap_or(autogenerated_wit_folder))
 }
 
+/// A world detected in the crate's local `wit` directory.
+struct LocalWorld {
+    /// `package/world` id used for wit-bindgen world selection.
+    world: String,
+    /// The world-defining WIT file, present when it is the directory's only WIT file and can
+    /// therefore be embedded verbatim as the component's public WIT.
+    embeddable_file: Option<PathBuf>,
+}
+
 /// Scans the component's `wit` directory to find the default world.
-fn detect_world_name(wit_root: &Path) -> Result<Option<String>, Error> {
+fn detect_world(wit_root: &Path) -> Result<Option<LocalWorld>, Error> {
     let mut entries = fs::read_dir(wit_root)
         .map_err(|err| {
             Error::new(Span::call_site(), format!("failed to read '{}': {err}", wit_root.display()))
@@ -231,20 +149,23 @@ fn detect_world_name(wit_root: &Path) -> Result<Option<String>, Error> {
         })?;
     entries.sort_by_key(|entry| entry.file_name());
 
-    for entry in entries {
-        let path = entry.path();
-        if path.file_name().is_some_and(|name| name == "deps") {
-            continue;
-        }
-        if path.is_dir() {
-            continue;
-        }
-        if path.extension().and_then(|ext| ext.to_str()) != Some("wit") {
-            continue;
-        }
+    let wit_files = entries
+        .into_iter()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            !path.file_name().is_some_and(|name| name == "deps")
+                && !path.is_dir()
+                && path.extension().and_then(|ext| ext.to_str()) == Some("wit")
+        })
+        .collect::<Vec<_>>();
 
-        if let Some((package, world)) = parse_package_and_world(&path)? {
-            return Ok(Some(format!("{package}/{world}")));
+    for path in &wit_files {
+        if let Some((package, world)) = parse_package_and_world(path)? {
+            let embeddable_file = (wit_files.len() == 1).then(|| path.clone());
+            return Ok(Some(LocalWorld {
+                world: format!("{package}/{world}"),
+                embeddable_file,
+            }));
         }
     }
 

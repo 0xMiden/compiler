@@ -179,9 +179,6 @@ package = "miden:swapp-note"
 
 [package.metadata.miden.dependencies]
 "miden:basic-wallet" = {{ path = "../basic-wallet" }}
-
-[package.metadata.component.target.dependencies]
-"miden:basic-wallet" = {{ path = "../basic-wallet/target/generated-wit/" }}
 "#,
         sdk_path.display(),
     );
@@ -197,9 +194,6 @@ path = "src/lib.rs"
 
 [dependencies]
 basic-wallet = { path = "../basic-wallet" }
-
-[package.metadata.miden.dependencies]
-basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
 "#;
     let original_swapp_note_source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),

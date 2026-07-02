@@ -404,7 +404,6 @@ fn dependent_account_miden_project_toml(
 ) -> String {
     let namespace = account_component_namespace(account_package, "caller-account");
     let dependency_name = miden_dependency_name(dependency_package);
-    let dependency_wit_path = dependency_root.join("target/generated-wit");
     format!(
         r#"
 [package]
@@ -423,12 +422,8 @@ miden-protocol = "*"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
-
-[package.metadata.miden.dependencies]
-"{dependency_name}" = {{ wit = "{dependency_wit_path}" }}
 "#,
         dependency_root = dependency_root.display(),
-        dependency_wit_path = dependency_wit_path.display(),
     )
 }
 
@@ -440,18 +435,13 @@ fn dependent_account_cargo_toml(
     dependency_root: &Path,
 ) -> String {
     let mut manifest = account_cargo_toml_for(account_name, account_package);
-    let dependency_wit_path = dependency_root.join("target/generated-wit");
     manifest.push_str(&format!(
         r#"
 [package.metadata.miden.dependencies]
 "{dependency_package}" = {{ path = "{dependency_root}" }}
-
-[package.metadata.component.target.dependencies]
-"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
 "#,
         dependency_package = dependency_package,
         dependency_root = dependency_root.display(),
-        dependency_wit_path = dependency_wit_path.display(),
     ));
     manifest
 }

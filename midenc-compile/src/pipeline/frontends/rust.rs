@@ -1183,6 +1183,7 @@ impl Frontend for RustProjectFrontend {
             package,
             &found.component,
             found.account_component_metadata_bytes.as_deref(),
+            found.component_wit_bytes.as_deref(),
             cx.assembly().target,
             cx.assembly().package_registry,
         )
@@ -2141,6 +2142,7 @@ mod tests {
                 modules: Vec::new(),
             }),
             account_component_metadata_bytes: None,
+            component_wit_bytes: None,
             source_provenance: ProjectSourceProvenanceInputs {
                 root: SourceFileProvenance {
                     path: std::path::PathBuf::from("seeded.wat").into_boxed_path(),

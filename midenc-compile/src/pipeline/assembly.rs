@@ -60,6 +60,7 @@ pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
     account_component_metadata_bytes: Option<&[u8]>,
+    component_wit_bytes: Option<&[u8]>,
     target: &midenc_session::miden_project::Target,
     registry: &dyn miden_package_registry::PackageRegistryAndProvider,
 ) -> Result<(), Report> {
@@ -68,6 +69,7 @@ pub(crate) fn post_process_package(
     use midenc_session::miden_project::TargetType;
 
     attach_account_component_metadata(package, account_component_metadata_bytes);
+    attach_component_wit(package, component_wit_bytes);
     extend_rodata_advice_map(package, &component.rodata);
 
     // Embed the kernel in note/transaction script packages, if not already embedded
@@ -98,6 +100,16 @@ fn attach_account_component_metadata(
         package
             .sections
             .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes.to_vec()));
+    }
+}
+
+/// Attach the component's public WIT source to the assembled package.
+fn attach_component_wit(package: &mut Package, component_wit_bytes: Option<&[u8]>) {
+    use miden_mast_package::{Section, SectionId};
+    if let Some(bytes) = component_wit_bytes {
+        let id = SectionId::custom(midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID)
+            .expect("the WIT section id must be a valid custom section id");
+        package.sections.push(Section::new(id, bytes.to_vec()));
     }
 }
 

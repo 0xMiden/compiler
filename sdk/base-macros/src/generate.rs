@@ -18,7 +18,7 @@ use wit_bindgen_core::{
 };
 use wit_bindgen_rust::{Opts, WithOption};
 
-use crate::{fpi, manifest_paths};
+use crate::{dependency_package::DependencyWitSource, fpi, manifest_paths};
 
 /// Fully-qualified WIT interface path for Miden SDK core types.
 pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
@@ -139,6 +139,14 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 .into();
             }
 
+            // A bare `generate!()` over a local `wit/` directory is the manual component-authoring
+            // flow, so embed the crate's WIT the same way the `#[component]` macro does — the
+            // compiled package must carry it for dependent crates' macros to read.
+            let wit_link_section = match local_wit_link_section(&args, &config) {
+                Ok(tokens) => tokens,
+                Err(err) => return err.to_compile_error().into(),
+            };
+
             match generate_bindings(&args, &config, world_value.as_deref()) {
                 Ok(raw_bindings) => quote! {
                     // Wrap the bindings in the `bindings` module since `generate!` makes a top level
@@ -149,6 +157,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                     pub mod bindings {
                         #raw_bindings
                     }
+                    #wit_link_section
                 }
                 .into(),
                 Err(err) => err.to_compile_error().into(),
@@ -156,6 +165,31 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
         }
         Err(err) => err.to_compile_error().into(),
     }
+}
+
+/// Embeds the crate's local WIT into the component WIT custom section for bare `generate!()`.
+///
+/// Inline invocations come from other SDK macros (which embed the WIT themselves when the crate
+/// is a component), and multi-file `wit/` directories cannot be embedded verbatim, so both yield
+/// no section.
+fn local_wit_link_section(
+    args: &GenerateArgs,
+    config: &manifest_paths::ResolvedWit,
+) -> Result<TokenStream2, Error> {
+    if args.inline.is_some() {
+        return Ok(TokenStream2::new());
+    }
+    let Some(local_wit_path) = &config.embeddable_local_wit else {
+        return Ok(TokenStream2::new());
+    };
+
+    let wit_source = fs::read_to_string(local_wit_path).map_err(|err| {
+        Error::new(
+            Span::call_site(),
+            format!("failed to read WIT file '{}': {err}", local_wit_path.display()),
+        )
+    })?;
+    Ok(crate::util::generate_wit_link_section(&wit_source))
 }
 
 /// Generates WIT bindings using `wit-bindgen` directly instead of the `generate!` macro.
@@ -170,6 +204,7 @@ fn generate_bindings(
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
         &config.paths,
+        &config.dependency_sources,
         args.inline.as_ref().map(|src| src.value()).as_deref(),
         world,
         &args.with_entries,
@@ -188,6 +223,7 @@ pub(crate) fn generate_inline_fpi_bindings(
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
         &config.paths,
+        &config.dependency_sources,
         Some(inline_source),
         Some(world),
         with_entries,
@@ -208,6 +244,7 @@ pub(crate) fn generate_inline_import_bindings(
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
         &config.paths,
+        &config.dependency_sources,
         Some(inline_source),
         Some(world),
         with_entries,
@@ -219,13 +256,14 @@ pub(crate) fn generate_inline_import_bindings(
 /// Generates WIT bindings from resolved source paths and optional inline source.
 fn generate_bindings_from_sources(
     paths: &[String],
+    dependency_sources: &[DependencyWitSource],
     inline_source: Option<&str>,
     world: Option<&str>,
     with_entries: &[(String, WithOption)],
     fpi_imports: &[fpi::FpiImportSpec],
     scope_component_type_sections: bool,
 ) -> Result<TokenStream2, Error> {
-    let mut wit_sources = load_wit_sources(paths, inline_source)?;
+    let mut wit_sources = load_wit_sources(paths, dependency_sources, inline_source)?;
 
     let world_id = wit_sources
         .resolve
@@ -475,9 +513,10 @@ struct LoadedWitSources {
     files_read: Vec<PathBuf>,
 }
 
-/// Loads WIT sources from file paths and optionally an inline source.
+/// Loads WIT sources from file paths, dependency packages, and optionally an inline source.
 fn load_wit_sources(
     paths: &[String],
+    dependency_sources: &[DependencyWitSource],
     inline_source: Option<&str>,
 ) -> Result<LoadedWitSources, Error> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
@@ -507,6 +546,23 @@ fn load_wit_sources(
         })?;
         packages.push(pkg);
         files.extend(sources.paths().map(|p| p.to_owned()));
+    }
+
+    // Load WIT definitions embedded in the compiled packages of Miden path dependencies. The
+    // `.masp` paths are recorded like read files so rustc recompiles when a dependency package
+    // changes.
+    for source in dependency_sources {
+        let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
+            Error::new(
+                Span::call_site(),
+                format!(
+                    "failed to load WIT embedded in dependency package '{}': {err}",
+                    source.package_path.display()
+                ),
+            )
+        })?;
+        packages.push(pkg);
+        files.push(source.package_path.clone());
     }
 
     if let Some(src) = inline_source {

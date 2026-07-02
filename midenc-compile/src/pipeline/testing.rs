@@ -213,6 +213,7 @@ pub(crate) fn component_in_namespace(
         world,
         component: Some(component),
         account_component_metadata_bytes: metadata,
+        component_wit_bytes: None,
         source_provenance: ProjectSourceProvenanceInputs {
             root: SourceFileProvenance {
                 path: FsPath::new(file!()).to_path_buf().into_boxed_path(),

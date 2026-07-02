@@ -51,6 +51,8 @@ use crate::{CodegenOutput, CompilerResult, MidenComponent};
 ///   advice map fails at run time, in the VM, with nothing in the build to point at.
 /// - [`account_component_metadata_bytes`](LoweredTarget::account_component_metadata_bytes)
 ///   becomes the package's account-component metadata section.
+/// - [`component_wit_bytes`](LoweredTarget::component_wit_bytes) becomes the package's
+///   component WIT section.
 /// - [`source_provenance`](LoweredTarget::source_provenance) is what the assembler hashes to
 ///   decide whether a cached build of this target is still current.
 ///
@@ -66,6 +68,8 @@ pub struct LoweredTarget {
     pub component: Arc<MasmComponent>,
     /// The serialized account-component metadata, if this target has any.
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The component's public WIT source, if this target embeds any.
+    pub component_wit_bytes: Option<Vec<u8>>,
     /// The provenance of the sources this target was built from.
     pub source_provenance: ProjectSourceProvenanceInputs,
 }
@@ -124,6 +128,7 @@ pub fn masm_from_transformed_hir(
     let CodegenOutput {
         component,
         account_component_metadata_bytes,
+        component_wit_bytes,
         source_provenance,
     } = codegen(hir, context)?;
     let session = cx.session();
@@ -134,6 +139,7 @@ pub fn masm_from_transformed_hir(
                 sources,
                 component,
                 account_component_metadata_bytes,
+                component_wit_bytes,
                 source_provenance,
             };
             // After the checkpoint, so that a run stopping at `masm.lowered` does not reach it:
@@ -295,6 +301,7 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
         world,
         component,
         account_component_metadata_bytes,
+        component_wit_bytes,
         #[cfg(feature = "std")]
         source_provenance,
     } = hir;
@@ -319,6 +326,7 @@ pub fn codegen(hir: MidenComponent, context: Rc<Context>) -> CompilerResult<Code
     Ok(CodegenOutput {
         component: Arc::from(masm_component),
         account_component_metadata_bytes,
+        component_wit_bytes,
         #[cfg(feature = "std")]
         source_provenance,
     })
@@ -800,6 +808,7 @@ mod tests {
                 sources,
                 component,
                 account_component_metadata_bytes,
+                component_wit_bytes,
                 source_provenance,
             } = lowered;
             self.lowered.borrow_mut().insert(
@@ -807,6 +816,7 @@ mod tests {
                 CodegenOutput {
                     component,
                     account_component_metadata_bytes,
+                    component_wit_bytes,
                     source_provenance,
                 },
             );
@@ -829,6 +839,7 @@ mod tests {
                 package,
                 &found.component,
                 found.account_component_metadata_bytes.as_deref(),
+                found.component_wit_bytes.as_deref(),
                 cx.assembly().target,
                 cx.assembly().package_registry,
             )

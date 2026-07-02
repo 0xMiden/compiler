@@ -79,6 +79,7 @@ fn build_test_component(
         world,
         component: Some(component),
         account_component_metadata_bytes: None,
+        component_wit_bytes: None,
         source_provenance: ProjectSourceProvenanceInputs {
             root: SourceFileProvenance {
                 path: Path::new(file!()).to_path_buf().into_boxed_path(),

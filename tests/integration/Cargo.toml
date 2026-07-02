@@ -33,6 +33,7 @@ midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-wasm.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-hir = { workspace = true, features = ["logging"] }
 midenc-hir-eval.workspace = true
 midenc-session.workspace = true

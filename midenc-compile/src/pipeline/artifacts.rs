@@ -22,6 +22,7 @@ pub struct MidenComponent {
     pub world: builtin::WorldRef,
     pub component: Option<builtin::ComponentRef>,
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    pub component_wit_bytes: Option<Vec<u8>>,
     #[cfg(feature = "std")]
     pub source_provenance: miden_assembly::ProjectSourceProvenanceInputs,
 }
@@ -32,6 +33,7 @@ impl Clone for MidenComponent {
             world: self.world,
             component: self.component,
             account_component_metadata_bytes: self.account_component_metadata_bytes.clone(),
+            component_wit_bytes: self.component_wit_bytes.clone(),
             #[cfg(feature = "std")]
             source_provenance: miden_assembly::ProjectSourceProvenanceInputs {
                 root: miden_assembly::SourceFileProvenance {
@@ -57,6 +59,8 @@ pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit_bytes: Option<Vec<u8>>,
     #[cfg(feature = "std")]
     pub source_provenance: miden_assembly::ProjectSourceProvenanceInputs,
 }
@@ -88,6 +92,7 @@ impl Clone for CodegenOutput {
         Self {
             component: self.component.clone(),
             account_component_metadata_bytes: self.account_component_metadata_bytes.clone(),
+            component_wit_bytes: self.component_wit_bytes.clone(),
             source_provenance: self.source_provenance(),
         }
     }
