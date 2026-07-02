@@ -504,8 +504,8 @@ impl OpPrinter for Call {
     }
 }
 
-// TODO: if a cross-context indirect call is ever needed, model it as a `CallIndirect` twin of
-// `ExecIndirect` (table symbol + signature + u32 index operand), lowered via `dyncall`.
+// NOTE: should a cross-context indirect call ever be needed, model it as a `CallIndirect` twin
+// of `ExecIndirect` (table symbol + signature + u32 index operand), lowered via `dyncall`.
 impl CallOpInterface for Call {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
