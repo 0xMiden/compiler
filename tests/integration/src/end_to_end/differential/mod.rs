@@ -8,5 +8,5 @@
 //! compiler bug; the case file itself is the minimal reproducer (proptest
 //! shrinking is disabled).
 
-mod harness;
+pub(crate) mod harness;
 mod tests;

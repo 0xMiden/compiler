@@ -4,6 +4,7 @@ mod crypto;
 mod debuginfo;
 mod differential;
 mod examples;
+mod indirect_call_traps;
 mod intrinsics;
 mod memory;
 mod regressions;
