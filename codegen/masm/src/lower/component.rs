@@ -512,9 +512,6 @@ impl MasmComponentBuilder<'_> {
         }
     }
 
-    /// Emit the sequence of instructions necessary to populate the function tables of this
-    /// component with the MAST roots of their entries.
-    ///
     /// Populate the function tables of this component with the MAST roots of their entries.
     ///
     /// Uninitialized (null) slots are left as the zero word, since VM memory is

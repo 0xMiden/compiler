@@ -1,5 +1,5 @@
 use midenc_hir::{
-    Alignable, FxHashMap, Op, Symbol,
+    FxHashMap, Op, Symbol,
     dialects::builtin::{self, DataSegmentError, SegmentRef, attributes::U64Attr},
 };
 
@@ -78,7 +78,10 @@ impl LinkInfo {
     pub fn heap_base(&self) -> u32 {
         let after_static = core::cmp::max(
             self.globals_layout.next_page_boundary(),
-            self.function_tables.end_offset().next_multiple_of(self.page_size),
+            self.function_tables
+                .end_offset()
+                .checked_next_multiple_of(self.page_size)
+                .expect("invalid memory layout: page rounding overflows the 32-bit address space"),
         );
         let heap_base = core::cmp::max(self.reserved_memory_bytes(), after_static as usize);
         u32::try_from(heap_base)
@@ -347,7 +350,9 @@ impl GlobalVariableLayout {
 
     /// Get the address/offset of the next page boundary following the last inserted global variable
     pub fn next_page_boundary(&self) -> u32 {
-        self.next_offset.next_multiple_of(self.page_size)
+        self.next_offset
+            .checked_next_multiple_of(self.page_size)
+            .expect("invalid memory layout: page rounding overflows the 32-bit address space")
     }
 
     /// Get the statically-allocated address at which the global variable `gv` is to be placed.
@@ -411,8 +416,13 @@ impl GlobalVariableLayout {
             return;
         }
 
+        const OVERFLOW_MSG: &str =
+            "invalid memory layout: global variable placement overflows the 32-bit address space";
         let ty = gv.ty();
-        let offset = self.next_offset.align_up(ty.min_alignment() as u32);
+        let offset = self
+            .next_offset
+            .checked_next_multiple_of(ty.min_alignment() as u32)
+            .expect(OVERFLOW_MSG);
         if self.offsets.try_insert(key, offset).is_ok() {
             log::debug!(target: "linker",
                 "GlobalVariableLayout: allocated global '{}' at offset {:#x} (size: {} bytes)",
@@ -423,7 +433,7 @@ impl GlobalVariableLayout {
             if is_stack_pointer {
                 self.stack_pointer = Some(offset);
             }
-            self.next_offset = offset + ty.size_in_bytes() as u32;
+            self.next_offset = offset.checked_add(ty.size_in_bytes() as u32).expect(OVERFLOW_MSG);
         }
     }
 }
