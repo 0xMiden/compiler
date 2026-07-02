@@ -245,6 +245,74 @@ mod tests {
     }
 
     #[test]
+    fn salvage_debug_info_prepends_inverse_expression_ops() -> Result<(), Report> {
+        use midenc_hir::dialects::debuginfo::{
+            attributes::{Expression, ExpressionOp},
+            transform::debug_value_users,
+        };
+
+        use crate::dialects::debuginfo::DebugValue;
+
+        let mut test = Test::new(
+            "salvage_debug_info_prepends_inverse_expression_ops",
+            &[Type::U32],
+            &[Type::U32],
+        );
+        test.context().get_or_register_dialect::<DebugInfoDialect>();
+
+        let (old_value, replacement, mut producer_op) = {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+
+            let builder = builder.builder_mut();
+            builder.set_insertion_point_to_end(entry);
+
+            let input = entry.borrow().arguments()[0] as ValueRef;
+            let old_value = builder.add(input, input, SourceSpan::UNKNOWN)?;
+            let producer_op = old_value.borrow().get_defining_op().unwrap();
+            let replacement = builder.mul(input, input, SourceSpan::UNKNOWN)?;
+
+            let variable =
+                Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, Some(1));
+            // The pre-existing expression recovers the source value from the old IR value
+            let expr = Expression::with_ops(alloc::vec![ExpressionOp::Deref]);
+            builder.debug_value_with_expr(old_value, variable, Some(expr), SourceSpan::UNKNOWN)?;
+
+            builder.ret([replacement], SourceSpan::UNKNOWN)?;
+
+            (old_value, replacement, producer_op)
+        };
+
+        let mut builder = test.function_builder();
+        salvage_debug_info(
+            &old_value,
+            &SalvageAction::OffsetBy {
+                new_value: replacement,
+                offset: 4,
+            },
+            builder.builder_mut(),
+        );
+        producer_op.borrow_mut().erase();
+
+        // The inverse ops must be *prepended*: first recover the old value from the replacement
+        // (new - 4), then apply the pre-existing expression (deref)
+        let users = debug_value_users(&replacement);
+        assert_eq!(users.len(), 1, "expected exactly one salvaged debug value");
+        {
+            let op = users[0].borrow();
+            let dv = op.downcast_ref::<DebugValue>().unwrap();
+            assert_eq!(
+                dv.expression().as_value().operations.as_slice(),
+                &[ExpressionOp::ConstU64(4), ExpressionOp::Minus, ExpressionOp::Deref],
+            );
+        }
+
+        test.function().as_operation_ref().borrow().recursively_verify()?;
+
+        Ok(())
+    }
+
+    #[test]
     fn salvage_debug_info_rehomes_debug_value_before_producer_erasure() -> Result<(), Report> {
         let mut test = Test::new(
             "salvage_debug_info_rehomes_debug_value_before_producer_erasure",
