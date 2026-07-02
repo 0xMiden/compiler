@@ -49,6 +49,9 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+/// The number of field elements addressable on the Miden VM operand stack.
+const OPERAND_STACK_WINDOW_FELTS: usize = 16;
+
 /// Translates wasm operators into Miden IR instructions.
 #[allow(clippy::too_many_arguments)]
 pub fn translate_operator<B: ?Sized + Builder>(
@@ -910,13 +913,13 @@ fn translate_call_indirect<B: ?Sized + Builder>(
     let signature = sig_from_func_type(&ir_func_type, CallConv::C);
 
     // The lowering schedules the table index on the operand stack on top of the arguments, so
-    // together they must fit in Miden's 16-element addressable window
+    // together they must fit in the addressable operand stack window
     let arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
-    if arg_felts + 1 > 16 {
+    if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
         unsupported_diag!(
             diagnostics,
             "unsupported `call_indirect`: {arg_felts} argument field elements plus the table \
-             index exceed Miden's 16-element operand stack window"
+             index exceed Miden's {OPERAND_STACK_WINDOW_FELTS}-element operand stack window"
         );
     }
 

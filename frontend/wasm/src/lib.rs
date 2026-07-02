@@ -70,6 +70,7 @@ pub(crate) fn supported_features() -> WasmFeatures {
         | WasmFeatures::FUNCTION_REFERENCES
         | WasmFeatures::MULTI_VALUE
         | WasmFeatures::MUTABLE_GLOBAL
+        | WasmFeatures::REFERENCE_TYPES
         | WasmFeatures::SATURATING_FLOAT_TO_INT
         | WasmFeatures::SIGN_EXTENSION
         | WasmFeatures::TAIL_CALL
