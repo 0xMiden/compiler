@@ -68,6 +68,11 @@ fn convert_debug_declare_for_local<R: Rewriter>(
 #[derive(Default)]
 pub struct Local2Reg;
 
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Local2Reg>(
+    "local2reg",
+    "promote single-use locals to SSA registers"
+));
+
 impl Pass for Local2Reg {
     type Target = Function;
 
@@ -118,18 +123,6 @@ impl Pass for Local2Reg {
             return Ok(());
         }
 
-        if function.num_locals() == 0 {
-            log::debug!(
-                target: &trace_target,
-                sym = trace_target.relevant_symbol();
-                "function has no locals, nothing to do",
-            );
-            state.preserved_analyses_mut().preserve_all();
-            state.set_post_pass_status(PostPassStatus::Unchanged);
-            return Ok(());
-        }
-
-        let locals = SmallVec::<[_; 4]>::from_iter(function.iter_locals());
         let op = function.as_operation_ref();
         let context = function.as_operation().context_rc();
         drop(function);
@@ -169,6 +162,25 @@ impl Pass for Local2Reg {
                 stored.entry(local).or_default().push((op, stored_value));
             }
         });
+
+        // The candidate set is derived from the load/store ops themselves rather than the
+        // function's locals table: locals reconstructed from parsed HIR are not registered with
+        // the function, and locals that are neither loaded nor stored have nothing to rewrite
+        // anyway. Sort by index so rewrites are applied in a deterministic order.
+        let mut locals = SmallVec::<[_; 4]>::from_iter(loaded.keys().chain(stored.keys()).copied());
+        locals.sort_by_key(|local| local.as_usize());
+        locals.dedup_by_key(|local| local.as_usize());
+
+        if locals.is_empty() {
+            log::debug!(
+                target: &trace_target,
+                sym = trace_target.relevant_symbol();
+                "function has no locals in use, nothing to do",
+            );
+            state.preserved_analyses_mut().preserve_all();
+            state.set_post_pass_status(PostPassStatus::Unchanged);
+            return Ok(());
+        }
 
         let mut changed = PostPassStatus::Unchanged;
         'next_local: for local in locals {
