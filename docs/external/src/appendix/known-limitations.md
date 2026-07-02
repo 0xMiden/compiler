@@ -56,7 +56,7 @@ memory holding one word (the MAST root digest of the referenced function) per ta
 region is populated at program startup by the component initialization procedure using `procref`,
 and `call_indirect` dispatches through it with `dynexec` (i.e. in the caller's memory context),
 after a bounds check on the table index which traps deterministically with a
-"call_indirect: table index out of bounds" assertion failure.
+"indirect call: function table index out of bounds" assertion failure.
 
 The following limitations remain:
 

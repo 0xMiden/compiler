@@ -1,7 +1,7 @@
 use cranelift_entity::packed_option::ReservedValue;
 use midenc_hir::{
-    CallConv, FunctionType, FxHashMap, Ident, SourceSpan, Symbol as _, SymbolNameComponent,
-    SymbolPath, Visibility,
+    CallConv, FunctionType, FxHashMap, Ident, SourceSpan, SymbolNameComponent, SymbolPath,
+    Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         FunctionRef, FunctionTableRef, ModuleBuilder, WorldBuilder, attributes::Signature,
@@ -214,25 +214,10 @@ impl<'a> ModuleTranslationState<'a> {
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<()> {
         match self.get_direct_func(func_index)? {
-            CallableFunction::Function {
-                mut function_ref, ..
-            }
-            | CallableFunction::Intrinsic {
-                mut function_ref, ..
-            } => {
-                // The function's address escapes into the table, and the component `init`
-                // procedure takes its MAST root with `procref` from another MASM module; the
-                // assembler rejects cross-module references to private procedures, so promote to
-                // internal visibility.
-                {
-                    let mut function = function_ref.borrow_mut();
-                    if function.visibility() == Visibility::Private {
-                        function.set_visibility(Visibility::Internal);
-                    }
-                }
-                self.module_builder
-                    .append_function_table_entry(table, index, function_ref, span)
-            }
+            CallableFunction::Function { function_ref, .. }
+            | CallableFunction::Intrinsic { function_ref, .. } => self
+                .module_builder
+                .append_function_table_entry(table, index, function_ref, span),
             CallableFunction::Instruction { .. } => {
                 unsupported_diag!(
                     diagnostics,

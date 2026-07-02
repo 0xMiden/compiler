@@ -991,24 +991,29 @@ impl HirLowering for hir::ExecIndirect {
         let context = self.as_operation().context();
 
         // Resolve the function table symbol to its computed base address in linear memory
-        let current_module = self
-            .nearest_parent_op::<builtin::Module>()
-            .expect("expected 'hir.exec_indirect' op to have a module ancestor");
-        let symbol = current_module.borrow().resolve(self.table().path()).ok_or_else(|| {
-            context
-                .diagnostics()
-                .diagnostic(Severity::Error)
-                .with_message("invalid indirect call operation: unable to resolve function table")
-                .with_primary_label(
-                    self.span(),
-                    "this function table symbol is not resolvable from this operation",
-                )
-                .into_report()
-        })?;
+        let symbol = self
+            .as_operation()
+            .nearest_symbol_table()
+            .and_then(|symbol_table| {
+                symbol_table.borrow().as_symbol_table().unwrap().resolve(self.table().path())
+            })
+            .ok_or_else(|| {
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message(
+                        "invalid indirect call operation: unable to resolve function table",
+                    )
+                    .with_primary_label(
+                        self.span(),
+                        "this function table symbol is not resolvable from this operation",
+                    )
+                    .into_report()
+            })?;
         let table = symbol
             .borrow()
             .downcast_ref::<builtin::FunctionTable>()
-            .map(|table| unsafe { builtin::FunctionTableRef::from_raw(table) })
+            .map(|table| table.as_function_table_ref())
             .ok_or_else(|| {
                 context
                     .diagnostics()
@@ -1028,10 +1033,8 @@ impl HirLowering for hir::ExecIndirect {
         let base_addr = emitter
             .link_info
             .function_tables()
-            .get_computed_addr(table)
+            .element_addr_of(table)
             .expect("link error: missing function table in computed layout");
-        let base = NativePtr::from_ptr(base_addr);
-        assert!(base.is_word_aligned(), "function tables must be word-aligned");
         let num_slots = *table.borrow().get_num_slots();
 
         let signature = self.get_signature().clone();
@@ -1040,7 +1043,7 @@ impl HirLowering for hir::ExecIndirect {
         // the arguments in signature order — exactly the layout `exec_indirect` expects
         emitter.inst_emitter(self.as_operation()).exec_indirect(
             num_slots,
-            base.addr,
+            base_addr,
             &signature,
             self.span(),
         );
