@@ -1,5 +1,5 @@
 builtin.module private @noname attributes { reserved_memory = #builtin.u64<1073741824> } {
-    builtin.function internal extern("C") @add(%0: i32, %1: i32) -> i32 {
+    builtin.function private extern("C") @add(%0: i32, %1: i32) -> i32 {
         hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
         hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
         %3 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
@@ -9,7 +9,7 @@ builtin.module private @noname attributes { reserved_memory = #builtin.u64<10737
     ^block4(%2: i32):
         builtin.ret %2 : (i32);
     };
-    builtin.function internal extern("C") @mul(%6: i32, %7: i32) -> i32 {
+    builtin.function private extern("C") @mul(%6: i32, %7: i32) -> i32 {
         hir.store_local %6 <{ local = #builtin.local_variable<0, i32> }> : (i32);
         hir.store_local %7 <{ local = #builtin.local_variable<1, i32> }> : (i32);
         %9 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;

@@ -351,14 +351,23 @@ impl OpEmitter<'_> {
         self.emit_push(num_slots, span);
         self.emit(masm::Instruction::U32Lt, span);
         self.emit(
-            Self::assert_with_message_inst("call_indirect: table index out of bounds", span),
+            Self::assert_with_message_inst(
+                "indirect call: function table index out of bounds",
+                span,
+            ),
             span,
         );
 
-        // Rewrite the index to the slot's element address: base_elem_addr + index * 4. The felt
-        // arithmetic cannot overflow: index < num_slots, and the linker guarantees that
-        // base_elem_addr + 4 * num_slots is a valid element address.
-        self.emit(masm::Instruction::MulImm(Felt::new_unchecked(4).into()), span);
+        // Rewrite the index to the slot's element address: base_elem_addr + index * slot size.
+        // The felt arithmetic cannot overflow: index < num_slots, and the linker guarantees
+        // that the whole table fits in the 32-bit address space.
+        self.emit(
+            masm::Instruction::MulImm(
+                Felt::new_unchecked(crate::linker::FunctionTableLayout::SLOT_SIZE_ELEMENTS as u64)
+                    .into(),
+            ),
+            span,
+        );
         self.emit(
             masm::Instruction::AddImm(Felt::new_unchecked(base_elem_addr as u64).into()),
             span,
@@ -366,7 +375,9 @@ impl OpEmitter<'_> {
 
         // Consume the arguments and produce the results on the emulated stack. Signatures for
         // indirect calls never carry argument-extension attributes, so argument types must match
-        // the parameter types exactly.
+        // the parameter types exactly. NOTE: this deliberately does not reuse
+        // `process_call_signature`: its zext/sext paths emit instructions that operate on the
+        // physical stack top, which at this point holds the transient slot address.
         for (i, param) in signature.params.iter().enumerate() {
             assert!(
                 matches!(param.extension(), ArgumentExtension::None),
