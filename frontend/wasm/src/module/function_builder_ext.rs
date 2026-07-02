@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
+use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
 use std::path::Path;
 
@@ -143,7 +143,6 @@ pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     param_values: Vec<(Variable, ValueRef)>,
     param_dbg_emitted: bool,
-    active_wasm_local_debug_vars: BTreeMap<u32, Vec<usize>>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -159,7 +158,6 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
             debug_info: None,
             param_values: Vec::new(),
             param_dbg_emitted: false,
-            active_wasm_local_debug_vars: BTreeMap::new(),
         }
     }
 }
@@ -330,7 +328,6 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
 
         let Some(storage) = entry.storage else {
-            self.remove_active_wasm_local_debug_var(idx);
             if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
                 warn!("failed to emit scheduled dbg.kill for local {idx}: {err:?}");
             }
@@ -349,62 +346,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         }
 
-        if let Some(local_index) = wasm_local_index_from_expression(&storage) {
-            self.set_active_wasm_local_debug_var(local_index, idx);
-            self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
-            return;
-        }
-
         self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
-    }
-
-    pub fn emit_debug_values_for_wasm_local(
-        &mut self,
-        local_index: u32,
-        value: ValueRef,
-        span: SourceSpan,
-    ) {
-        let Some(info) = self.debug_info.clone() else {
-            return;
-        };
-        let Some(var_indices) = self.active_wasm_local_debug_vars.get(&local_index).cloned() else {
-            return;
-        };
-
-        for idx in var_indices {
-            let attr_opt = {
-                let info = info.borrow();
-                info.local_attr(idx).cloned()
-            };
-            let Some(mut attr) = attr_opt else {
-                continue;
-            };
-            if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
-                attr.file = file_symbol;
-                if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                    attr.line = line;
-                    attr.column = column;
-                }
-            }
-            if let Err(err) = DIBuilder::builder_mut(self).debug_value(value, attr, span) {
-                warn!("failed to emit local-backed dbg.value for local {local_index}: {err:?}");
-            }
-        }
-    }
-
-    fn set_active_wasm_local_debug_var(&mut self, local_index: u32, var_index: usize) {
-        self.remove_active_wasm_local_debug_var(var_index);
-        let active = self.active_wasm_local_debug_vars.entry(local_index).or_default();
-        if !active.contains(&var_index) {
-            active.push(var_index);
-        }
-    }
-
-    fn remove_active_wasm_local_debug_var(&mut self, var_index: usize) {
-        self.active_wasm_local_debug_vars.retain(|_, active| {
-            active.retain(|idx| *idx != var_index);
-            !active.is_empty()
-        });
     }
 
     fn emit_scheduled_dbg_declare_with_attr(
