@@ -327,8 +327,19 @@ impl Pass for SinkOperandDefs {
                 log::debug!(target: Self::NAME, "erasing unused, effect-free, non-terminator op {op}");
                 drop(op);
                 // Erase any remaining transparent uses before erasing the defining op.
-                for result in operation.borrow().results().iter() {
-                    erase_transparent_users(result.borrow().as_value_ref());
+                //
+                // NOTE: The result values are collected first, so that no borrow of the operation
+                // or its results is held while the transparent users are erased — erasing a user
+                // unlinks its operands, which requires mutable access to the referenced values.
+                let results = SmallVec::<[ValueRef; 2]>::from_iter(
+                    operation
+                        .borrow()
+                        .results()
+                        .iter()
+                        .map(|result| result.borrow().as_value_ref()),
+                );
+                for value in results {
+                    erase_transparent_users(value);
                 }
                 operation.borrow_mut().erase();
                 continue;
