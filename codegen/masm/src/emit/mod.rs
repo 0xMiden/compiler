@@ -262,6 +262,9 @@ impl<'a> OpEmitter<'a> {
             masm::Instruction::SysCall(id) => {
                 self.invoked.insert(masm::Invoke::new(InvokeKind::SysCall, id.clone()));
             }
+            masm::Instruction::ProcRef(id) => {
+                self.invoked.insert(masm::Invoke::new(InvokeKind::ProcRef, id.clone()));
+            }
             _ => (),
         }
     }

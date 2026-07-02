@@ -56,6 +56,73 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
     expected_ir.assert_eq(&w);
 }
 
+/// Check IR generated for a complete Wasm module.
+/// Unlike [check_op], prints every `builtin.module` wholesale, including module-level items such
+/// as function tables, so tests can cover more than function bodies.
+fn check_module(wat: &str, expected_ir: midenc_expect_test::ExpectFile) {
+    let context = Rc::new(midenc_hir::Context::default());
+
+    let wasm = wat::parse_str(wat).unwrap();
+    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+        .map_err(|e| {
+            if let Some(labels) = e.labels() {
+                for label in labels {
+                    eprintln!("{}", label.label().unwrap());
+                }
+            }
+            let report = midenc_session::diagnostics::PrintDiagnostic::new(e).to_string();
+            eprintln!("{report}");
+        })
+        .unwrap();
+
+    let component = output.component.borrow();
+    let mut w = String::new();
+    component
+        .as_operation()
+        .prewalk(|op: &Operation| {
+            if op.is::<builtin::Module>() {
+                match writeln!(&mut w, "{op}") {
+                    Ok(_) => WalkResult::Skip,
+                    Err(err) => WalkResult::Break(err),
+                }
+            } else {
+                WalkResult::Continue(())
+            }
+        })
+        .into_result()
+        .unwrap();
+
+    expected_ir.assert_eq(&w);
+}
+
+#[test]
+fn call_indirect() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref)
+            (elem (i32.const 1) func $add $mul)
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect.hir"],
+    )
+}
+
 #[test]
 fn memory_grow() {
     check_op(

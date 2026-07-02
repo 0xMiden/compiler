@@ -326,6 +326,72 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Nop, span);
     }
 
+    /// Execute the procedure whose MAST root is stored in slot `index` (stack top) of a function
+    /// table with `num_slots` slots based at `base_elem_addr` (a word-aligned element address).
+    ///
+    /// Traps with an assertion failure if `index >= num_slots`. The callee is invoked in the
+    /// same memory context as the caller (`dynexec`).
+    ///
+    /// Expects `[index, args...]` on the operand stack, with the index on top. The index is
+    /// rewritten in place to the slot's element address, which `dynexec` pops before
+    /// transferring control, so the callee observes `[args...]` in normal argument order.
+    pub fn exec_indirect(
+        &mut self,
+        num_slots: u32,
+        base_elem_addr: u32,
+        signature: &Signature,
+        span: SourceSpan,
+    ) {
+        // Consume the index operand; all further effects on it are transient
+        let index = self.stack.pop().expect("operand stack is empty");
+        assert_eq!(index.ty(), Type::U32, "expected u32 table index for exec_indirect");
+
+        // Bounds check: [index, ..] -> [index < num_slots, index, ..] -> [index, ..]
+        self.emit(masm::Instruction::Dup0, span);
+        self.emit_push(num_slots, span);
+        self.emit(masm::Instruction::U32Lt, span);
+        self.emit(
+            Self::assert_with_message_inst("call_indirect: table index out of bounds", span),
+            span,
+        );
+
+        // Rewrite the index to the slot's element address: base_elem_addr + index * 4. The felt
+        // arithmetic cannot overflow: index < num_slots, and the linker guarantees that
+        // base_elem_addr + 4 * num_slots is a valid element address.
+        self.emit(masm::Instruction::MulImm(Felt::new_unchecked(4).into()), span);
+        self.emit(
+            masm::Instruction::AddImm(Felt::new_unchecked(base_elem_addr as u64).into()),
+            span,
+        );
+
+        // Consume the arguments and produce the results on the emulated stack. Signatures for
+        // indirect calls never carry argument-extension attributes, so argument types must match
+        // the parameter types exactly.
+        for (i, param) in signature.params.iter().enumerate() {
+            assert!(
+                matches!(param.extension(), ArgumentExtension::None),
+                "invalid exec_indirect: argument extension is not supported for parameter at \
+                 index {i}"
+            );
+            let arg = self.stack.pop().expect("operand stack is empty");
+            assert_eq!(
+                arg.ty(),
+                param.ty,
+                "invalid exec_indirect: invalid argument type for parameter at index {i}"
+            );
+        }
+        for result in signature.results.iter().rev() {
+            self.push(result.ty.clone());
+        }
+
+        // `dynexec` pops the element address and reads the callee MAST root word at it
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::DynExec, span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+    }
+
     /// Execute the given procedure in a new context.
     ///
     /// A function called using this operation is invoked in a new memory context.

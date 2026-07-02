@@ -14,6 +14,7 @@ pub struct LinkInfo {
     component: Option<builtin::ComponentId>,
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
+    function_tables: FunctionTableLayout,
     reserved_memory_pages: u32,
     page_size: u32,
 }
@@ -25,6 +26,7 @@ impl LinkInfo {
             component: id,
             globals_layout: Default::default(),
             segment_layout: Default::default(),
+            function_tables: Default::default(),
             reserved_memory_pages: 0,
             page_size: DEFAULT_PAGE_SIZE,
         }
@@ -43,6 +45,10 @@ impl LinkInfo {
         !self.segment_layout.is_empty()
     }
 
+    pub fn has_function_tables(&self) -> bool {
+        !self.function_tables.is_empty()
+    }
+
     pub fn globals_layout(&self) -> &GlobalVariableLayout {
         &self.globals_layout
     }
@@ -50,6 +56,29 @@ impl LinkInfo {
     #[allow(unused)]
     pub fn segment_layout(&self) -> &builtin::DataSegmentLayout {
         &self.segment_layout
+    }
+
+    pub fn function_tables(&self) -> &FunctionTableLayout {
+        &self.function_tables
+    }
+
+    /// Returns true if the component requires an `init` procedure to set up linear memory
+    /// (data segments, global variables, or function tables) before execution.
+    pub fn requires_init(&self) -> bool {
+        self.has_globals() || self.has_data_segments() || self.has_function_tables()
+    }
+
+    /// Get the address of the first page boundary past all statically-allocated memory (global
+    /// variables and function tables), or the end of reserved memory if larger; this is where
+    /// the dynamic heap starts when the program is executed.
+    pub fn heap_base(&self) -> u32 {
+        let after_static = core::cmp::max(
+            self.globals_layout.next_page_boundary(),
+            self.function_tables.end_offset().next_multiple_of(self.page_size),
+        );
+        let heap_base = core::cmp::max(self.reserved_memory_bytes(), after_static as usize);
+        u32::try_from(heap_base)
+            .expect("unable to allocate dynamic heap: static memory layout too large")
     }
 
     #[inline(always)]
@@ -71,6 +100,7 @@ impl LinkInfo {
 pub struct Linker {
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
+    function_tables: Vec<builtin::FunctionTableRef>,
     reserved_memory_pages: u32,
     page_size: u32,
 }
@@ -93,6 +123,7 @@ impl Linker {
         Self {
             globals_layout: GlobalVariableLayout::new(globals_start, page_size),
             segment_layout: Default::default(),
+            function_tables: Default::default(),
             reserved_memory_pages,
             page_size,
         }
@@ -153,6 +184,17 @@ impl Linker {
                             continue;
                         }
                         self.globals_layout.insert(global);
+                        continue;
+                    }
+
+                    if let Some(table) = item.downcast_ref::<builtin::FunctionTable>() {
+                        log::debug!(target: "linker",
+                            "discovered function table '{}' with {} slots",
+                            table.get_name().as_str(),
+                            *table.get_size()
+                        );
+                        self.function_tables
+                            .push(unsafe { builtin::FunctionTableRef::from_raw(table) });
                     }
                 }
             }
@@ -180,10 +222,29 @@ impl Linker {
             self.globals_layout.global_table_offset()
         );
 
+        // 4. Lay out function tables in the page following the global table, one word (16 bytes)
+        // per slot; page alignment implies the word alignment required by `dynexec`.
+        let mut function_tables = FunctionTableLayout::default();
+        let mut next_table_offset = self.globals_layout.next_page_boundary();
+        for table_ref in self.function_tables.drain(..) {
+            let slots = *table_ref.borrow().get_size();
+            let size_in_bytes =
+                slots.checked_mul(16).expect("invalid function table: too many slots");
+            log::debug!(target: "linker",
+                "function table with {slots} slots allocated at offset {next_table_offset:#x}"
+            );
+            function_tables.tables.push((table_ref, next_table_offset));
+            next_table_offset = next_table_offset
+                .checked_add(size_in_bytes)
+                .expect("invalid function table: table does not fit in linear memory");
+            function_tables.end_offset = next_table_offset;
+        }
+
         Ok(LinkInfo {
             component: id,
             globals_layout: core::mem::take(&mut self.globals_layout),
             segment_layout: core::mem::take(&mut self.segment_layout),
+            function_tables,
             reserved_memory_pages: self.reserved_memory_pages,
             page_size: self.page_size,
         })
@@ -316,5 +377,41 @@ impl GlobalVariableLayout {
             }
             self.next_offset = offset + ty.size_in_bytes() as u32;
         }
+    }
+}
+
+/// This struct contains data about the layout of function tables in linear memory.
+///
+/// Each table occupies one word (16 bytes) of memory per slot, holding the MAST root of the
+/// referenced function, and its base address is word-aligned as required by `dynexec`.
+#[derive(Default, Clone)]
+pub struct FunctionTableLayout {
+    /// Tables and their base addresses (byte offsets), in discovery order
+    tables: Vec<(builtin::FunctionTableRef, u32)>,
+    /// The first byte offset past the end of the last table, or 0 if there are none
+    end_offset: u32,
+}
+
+impl FunctionTableLayout {
+    /// Returns true if the layout has no function tables
+    pub fn is_empty(&self) -> bool {
+        self.tables.is_empty()
+    }
+
+    /// Traverse the function tables and their base addresses (byte offsets)
+    pub fn iter(&self) -> impl Iterator<Item = (builtin::FunctionTableRef, u32)> + '_ {
+        self.tables.iter().copied()
+    }
+
+    /// Get the statically-allocated base address (byte offset) of `table`.
+    ///
+    /// This function returns `None` if the given function table is unresolvable.
+    pub fn get_computed_addr(&self, table: builtin::FunctionTableRef) -> Option<u32> {
+        self.tables.iter().find_map(|(t, offset)| (*t == table).then_some(*offset))
+    }
+
+    /// The first byte offset past the end of the last table, or 0 if there are none
+    pub fn end_offset(&self) -> u32 {
+        self.end_offset
     }
 }

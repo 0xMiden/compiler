@@ -1,24 +1,36 @@
+use cranelift_entity::packed_option::ReservedValue;
 use midenc_hir::{
-    CallConv, FunctionType, FxHashMap, SymbolNameComponent, SymbolPath, Visibility,
+    CallConv, FunctionType, FxHashMap, Ident, SourceSpan, Symbol as _, SymbolNameComponent,
+    SymbolPath, Visibility,
     diagnostics::WrapErr,
-    dialects::builtin::{FunctionRef, ModuleBuilder, WorldBuilder, attributes::Signature},
+    dialects::builtin::{
+        FunctionRef, FunctionTableRef, ModuleBuilder, WorldBuilder, attributes::Signature,
+    },
     interner::Symbol,
     smallvec,
 };
 use midenc_session::diagnostics::{DiagnosticsHandler, Severity};
 
-use super::{FuncIndex, Module, instance::ModuleArgument, ir_func_type, types::ModuleTypesBuilder};
+use super::{
+    FuncIndex, Module, TableIndex, TableInitialValue,
+    instance::ModuleArgument,
+    ir_func_type,
+    types::{EntityIndex, ModuleTypesBuilder, WasmRefType},
+};
 use crate::{
     callable::CallableFunction,
     component::lower_imports::generate_import_lowering_function,
     error::WasmResult,
     intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
     translation_utils::sig_from_func_type,
+    unsupported_diag,
 };
 
 pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
     functions: FxHashMap<FuncIndex, CallableFunction>,
+    /// Lowered function tables, keyed by Wasm table index
+    tables: FxHashMap<TableIndex, FunctionTableRef>,
     pub module_builder: &'a mut ModuleBuilder,
     pub world_builder: &'a mut WorldBuilder,
 }
@@ -93,6 +105,7 @@ impl<'a> ModuleTranslationState<'a> {
         }
         Ok(Self {
             functions,
+            tables: FxHashMap::default(),
             module_builder,
             world_builder,
         })
@@ -102,6 +115,151 @@ impl<'a> ModuleTranslationState<'a> {
     pub(crate) fn get_direct_func(&mut self, index: FuncIndex) -> WasmResult<CallableFunction> {
         let defined_func = self.functions[&index].clone();
         Ok(defined_func)
+    }
+
+    /// Get the lowered function table for the Wasm table `table_index`, building it on first use.
+    ///
+    /// Tables are lowered lazily, only when a `call_indirect` actually dispatches through them:
+    /// wit-bindgen and rustc routinely emit `funcref` tables (e.g. holding only `cabi_realloc`,
+    /// or entirely empty) in modules that never perform an indirect call, and lowering those
+    /// would burden every compiled program with a useless table and its initialization code.
+    ///
+    /// Only locally-defined `funcref` tables with statically-known (constant-offset, non-empty)
+    /// element segments are supported; anything else produces a compile-time error.
+    pub(crate) fn get_or_build_table(
+        &mut self,
+        table_index: TableIndex,
+        module: &Module,
+        diagnostics: &DiagnosticsHandler,
+    ) -> WasmResult<FunctionTableRef> {
+        if let Some(table_ref) = self.tables.get(&table_index) {
+            return Ok(*table_ref);
+        }
+
+        let Some(defined_idx) = module.defined_table_index(table_index) else {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported `call_indirect`: imported tables are not supported"
+            );
+        };
+        let table = &module.tables[table_index];
+        if table.wasm_ty != WasmRefType::FUNCREF {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported table type '{}': only 'funcref' tables are supported",
+                table.wasm_ty
+            );
+        }
+
+        // Collect the statically-known slot initializers, in application order (at runtime later
+        // writes win, which order of application preserves)
+        let mut entries: Vec<(u32, FuncIndex)> = Vec::new();
+        match &module.table_initialization.initial_values[defined_idx] {
+            TableInitialValue::Null { precomputed } => {
+                entries.extend(precomputed.iter().enumerate().map(|(i, f)| (i as u32, *f)));
+            }
+            TableInitialValue::FuncRef(func_index) => {
+                entries.extend((0..table.minimum).map(|i| (i, *func_index)));
+            }
+        }
+        for segment in module
+            .table_initialization
+            .segments
+            .iter()
+            .filter(|segment| segment.table_index == table_index)
+        {
+            if segment.base.is_some() {
+                unsupported_diag!(
+                    diagnostics,
+                    "unsupported element segment: global-relative offsets are not supported"
+                );
+            }
+            let end = segment.offset as u64 + segment.elements.len() as u64;
+            if end > table.minimum as u64 {
+                unsupported_diag!(
+                    diagnostics,
+                    "invalid element segment: initializes slots {}..{end} of a table with {} slots",
+                    segment.offset,
+                    table.minimum
+                );
+            }
+            for (i, func_index) in segment.elements.iter().enumerate() {
+                // A `ref.null` element expression leaves the slot uninitialized (a zero word)
+                if func_index.is_reserved_value() {
+                    continue;
+                }
+                entries.push((segment.offset + i as u32, *func_index));
+            }
+        }
+        if entries.is_empty() {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported `call_indirect`: table {} has no statically-initialized entries",
+                table_index.as_u32()
+            );
+        }
+
+        let name = module
+            .exports
+            .iter()
+            .find_map(|(name, entity)| match entity {
+                EntityIndex::Table(t) if *t == table_index => Some(name.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| format!("__indirect_function_table_{}", table_index.as_u32()));
+        let table_ref = self
+            .module_builder
+            .define_function_table(Ident::from(name.as_str()), Visibility::Private, table.minimum)
+            .map_err(|e| {
+                diagnostics
+                    .diagnostic(Severity::Error)
+                    .with_message(format!("Failed to add function table '{name}' to module: {e:?}"))
+                    .into_report()
+            })?;
+        let span = SourceSpan::default();
+        for (slot, func_index) in entries {
+            self.add_table_entry(table_ref, slot, func_index, span)?;
+        }
+        self.tables.insert(table_index, table_ref);
+        Ok(table_ref)
+    }
+
+    /// Record that slot `index` of `table` is initialized with the function `func_index`.
+    fn add_table_entry(
+        &mut self,
+        table: FunctionTableRef,
+        index: u32,
+        func_index: FuncIndex,
+        span: SourceSpan,
+    ) -> WasmResult<()> {
+        match self.get_direct_func(func_index)? {
+            CallableFunction::Function {
+                mut function_ref, ..
+            }
+            | CallableFunction::Intrinsic {
+                mut function_ref, ..
+            } => {
+                // The function's address escapes into the table, and the component `init`
+                // procedure takes its MAST root with `procref` from another MASM module; the
+                // assembler rejects cross-module references to private procedures, so promote to
+                // internal visibility.
+                {
+                    let mut function = function_ref.borrow_mut();
+                    if function.visibility() == Visibility::Private {
+                        function.set_visibility(Visibility::Internal);
+                    }
+                }
+                self.module_builder
+                    .append_function_table_entry(table, index, function_ref, span)
+            }
+            CallableFunction::Instruction { intrinsic, .. } => {
+                Err(midenc_hir::Report::msg(format!(
+                    "unsupported function table element: function {} is the inlined intrinsic \
+                     '{intrinsic:?}' without a procedure body",
+                    func_index.as_u32()
+                )))
+            }
+        }
     }
 
     /// Register a linker stub function as an intrinsic so that calls to it will be inlined.
@@ -209,6 +367,7 @@ fn process_import(
         core_func_sig,
         import_path,
         module_arg,
+        diagnostics,
     )
 }
 
@@ -219,6 +378,7 @@ fn process_module_arg(
     sig: Signature,
     wasm_import_path: SymbolPath,
     module_arg: &ModuleArgument,
+    diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<CallableFunction> {
     Ok(match module_arg {
         ModuleArgument::Function(_) => {
@@ -234,7 +394,7 @@ fn process_module_arg(
             sig,
         )?,
         ModuleArgument::Table => {
-            todo!("implement the table import module arguments")
+            crate::unsupported_diag!(diagnostics, "imported tables are not supported");
         }
     })
 }
