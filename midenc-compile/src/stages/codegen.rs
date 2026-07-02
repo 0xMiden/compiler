@@ -17,6 +17,8 @@ pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit_bytes: Option<Vec<u8>>,
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -35,6 +37,7 @@ impl Stage for CodegenStage {
             world,
             component,
             account_component_metadata_bytes,
+            component_wit_bytes,
         } = input;
 
         log::debug!("lowering miden component to masm");
@@ -73,6 +76,7 @@ impl Stage for CodegenStage {
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
             account_component_metadata_bytes,
+            component_wit_bytes,
         })
     }
 }

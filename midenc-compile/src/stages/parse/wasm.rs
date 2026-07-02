@@ -57,6 +57,7 @@ impl Stage for ParseWasmStage {
         let FrontendOutput {
             component,
             account_component_metadata_bytes,
+            component_wit_bytes,
         } = match input {
             #[cfg(feature = "std")]
             InputType::Real(path) => {
@@ -94,6 +95,7 @@ impl Stage for ParseWasmStage {
             world,
             component: Some(component),
             account_component_metadata_bytes,
+            component_wit_bytes,
         })
     }
 }

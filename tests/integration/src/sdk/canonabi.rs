@@ -1,6 +1,6 @@
 //! Integration tests for component-model CanonABI values.
 
-use std::{fs, path::Path};
+use std::path::Path;
 
 use miden_core::program::Program;
 use miden_mast_package::Package;
@@ -121,7 +121,6 @@ fn build_note_project(
     note_body: &str,
 ) -> Project {
     let sdk_path = sdk_crate_path();
-    let generated_wit = account_root.join("target/generated-wit");
     let cargo_toml = format!(
         r#"cargo-features = ["trim-paths"]
 
@@ -145,9 +144,6 @@ project-kind = "note-script"
 [package.metadata.miden.dependencies]
 "miden:{account_slug}" = {{ path = "{account_root}" }}
 
-[package.metadata.component.target.dependencies]
-"miden:{account_slug}" = {{ path = "{generated_wit}" }}
-
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 
@@ -159,7 +155,6 @@ trim-paths = ["diagnostics", "object"]
         account_slug = names.account_slug,
         sdk_path = sdk_path.display(),
         account_root = account_root.display(),
-        generated_wit = generated_wit.display(),
     );
     let miden_project_toml = format!(
         r#"[package]
@@ -174,15 +169,11 @@ namespace = "miden:{note_slug}/miden-{note_slug}@0.1.0"
 miden-core = "*"
 miden-protocol = "*"
 {account_crate} = {{ path = "{account_root}" }}
-
-[package.metadata.miden.dependencies]
-{account_crate} = {{ wit = "{generated_wit}" }}
 "#,
         note_crate = names.note_crate,
         note_slug = names.note_slug,
         account_crate = names.account_crate,
         account_root = account_root.display(),
-        generated_wit = generated_wit.display(),
     );
     let source = format!(
         r#"#![no_std]
@@ -230,21 +221,18 @@ fn note_script_program(package: &Package) -> Program {
     Program::new(note_script.mast(), note_script.entrypoint())
 }
 
-/// Reads the single generated WIT file emitted by the account project.
-fn read_generated_wit(project: &Project) -> String {
-    let generated_wit_dir = project.root().join("target/generated-wit");
-    let mut wit_paths = fs::read_dir(&generated_wit_dir)
-        .unwrap_or_else(|err| {
-            panic!("failed to read generated WIT dir {}: {err}", generated_wit_dir.display())
-        })
-        .map(|entry| entry.expect("failed to inspect generated WIT entry").path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("wit"))
-        .collect::<Vec<_>>();
-    wit_paths.sort();
-    assert_eq!(wit_paths.len(), 1, "expected one generated WIT file, got {wit_paths:?}");
-    fs::read_to_string(&wit_paths[0]).unwrap_or_else(|err| {
-        panic!("failed to read generated WIT {}: {err}", wit_paths[0].display())
-    })
+/// Extracts the component WIT embedded in a compiled account package.
+fn package_wit(package: &Package) -> String {
+    let wit_section_id = miden_mast_package::SectionId::custom(
+        midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
+    )
+    .expect("the WIT section id must be a valid custom section id");
+    let section = package
+        .sections
+        .iter()
+        .find(|section| section.id == wit_section_id)
+        .expect("compiled account package must embed its component WIT");
+    String::from_utf8(section.data.to_vec()).expect("embedded WIT must be UTF-8")
 }
 
 /// Runs a generated account/note pair by executing the compiled note script directly.
@@ -260,7 +248,7 @@ fn run_canonabi_case(
     let mut account_test = build_generated_test(&account_root);
     let account_package = account_test.compile_package();
     assert!(account_package.is_library());
-    let generated_wit = read_generated_wit(&account_project);
+    let generated_wit = package_wit(&account_package);
     assert_generated_wit(&generated_wit);
 
     let note_project = build_note_project(&names, &account_root, note_body);

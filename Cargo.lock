@@ -2770,6 +2770,7 @@ name = "miden-base-macros"
 version = "0.13.1"
 dependencies = [
  "heck",
+ "miden-assembly",
  "miden-assembly-syntax",
  "miden-debug-types",
  "miden-field",
@@ -3551,6 +3552,7 @@ dependencies = [
  "midenc-dialect-ub",
  "midenc-dialect-wasm",
  "midenc-expect-test",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-analysis",
  "midenc-session",
@@ -3929,6 +3931,7 @@ dependencies = [
  "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-eval",
  "midenc-integration-test-support",

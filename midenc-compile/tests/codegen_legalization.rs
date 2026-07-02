@@ -72,5 +72,6 @@ fn build_test_component(
         world,
         component: Some(component),
         account_component_metadata_bytes: None,
+        component_wit_bytes: None,
     }
 }

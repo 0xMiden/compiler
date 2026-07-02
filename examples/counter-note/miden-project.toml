@@ -10,6 +10,3 @@ namespace = "miden:counter-note/miden-counter-note@0.1.0"
 miden-core = "*"
 miden-protocol = "*"
 counter-contract = { path = "../counter-contract" }
-
-[package.metadata.miden.dependencies]
-counter-contract = { wit = "../counter-contract/target/generated-wit/" }

@@ -33,6 +33,7 @@ miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
 miden-protocol.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-dialect-arith.workspace = true

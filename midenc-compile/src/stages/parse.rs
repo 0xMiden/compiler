@@ -30,6 +30,8 @@ pub struct MidenComponent {
     pub world: builtin::WorldRef,
     pub component: Option<builtin::ComponentRef>,
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit_bytes: Option<Vec<u8>>,
 }
 
 /// Parses any input that can be converted to a [MidenComponent]

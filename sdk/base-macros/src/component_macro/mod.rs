@@ -20,14 +20,14 @@ use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
     boilerplate::runtime_boilerplate,
     component_macro::{
-        generate_wit::{ComponentWitSpec, build_component_wit, write_component_wit_file},
+        generate_wit::{ComponentWitSpec, build_component_wit},
         storage::process_storage_fields,
     },
     dependency_ref::{DependencyRef, DependencyRefArgs},
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
-    util::generate_frontend_link_section,
+    util::{generate_frontend_link_section, generate_wit_link_section},
 };
 
 mod generate_wit;
@@ -576,8 +576,8 @@ fn expand_component_trait_impl(
         exported_types: &exported_types,
     })?;
     // Dependency imports are only needed while generating this crate's bindings. The public WIT
-    // file stays export-only so downstream crates can depend on this account without also
-    // materializing all of its transitive FPI dependencies next to the generated WIT.
+    // stays export-only so downstream crates can depend on this account without also
+    // materializing all of its transitive FPI dependencies.
     let public_wit_source = build_component_wit(ComponentWitSpec {
         component_package: &package_name,
         component_version: metadata.package.version().inner(),
@@ -588,7 +588,9 @@ fn expand_component_trait_impl(
         methods: &methods,
         exported_types: &exported_types,
     })?;
-    write_component_wit_file(call_site_span, &public_wit_source, &package_name)?;
+    // The public WIT is embedded into a Wasm custom section, carried by the compiler into the
+    // Miden package (`.masp`), where dependent crates' macros read it back during expansion.
+    let wit_link_section = generate_wit_link_section(&public_wit_source);
     let inline_literal = Literal::string(&inline_wit_source);
 
     let interface_path =
@@ -632,6 +634,7 @@ fn expand_component_trait_impl(
         // Use the fully-qualified component type here so the export macro works even when
         // the impl block was declared through a module-qualified path (e.g. `impl Foo for super::Bar`).
         self::bindings::export!(#component_type);
+        #wit_link_section
     })
 }
 

@@ -41,6 +41,8 @@ pub struct FrontendOutput {
     pub component: builtin::ComponentRef,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit_bytes: Option<Vec<u8>>,
 }
 
 /// Translate a valid Wasm core module or Wasm Component Model binary into Miden
@@ -57,6 +59,7 @@ pub fn translate(
         Ok(FrontendOutput {
             component,
             account_component_metadata_bytes: None,
+            component_wit_bytes: None,
         })
     } else {
         translate_component(wasm, config, context)

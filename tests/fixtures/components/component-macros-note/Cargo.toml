@@ -19,6 +19,3 @@ project-kind = "note-script"
 
 [package.metadata.miden.dependencies]
 "miden:component-macros" = { path = "../component-macros-account" }
-
-[package.metadata.component.target.dependencies]
-"miden:basic-wallet" = { path = "../component-macros-account/target/generated-wit/" }

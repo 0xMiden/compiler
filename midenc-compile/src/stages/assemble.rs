@@ -46,12 +46,14 @@ impl Stage for AssembleStage {
         let CodegenOutput {
             component,
             account_component_metadata_bytes,
+            component_wit_bytes,
         } = input;
 
         let mut registry = session.package_registry()?;
         load_cargo_source_dependencies_for_assembly(session, &mut registry)?;
         let package = component.assemble_with_registry(
             account_component_metadata_bytes.as_deref(),
+            component_wit_bytes.as_deref(),
             session,
             &mut registry,
         )?;

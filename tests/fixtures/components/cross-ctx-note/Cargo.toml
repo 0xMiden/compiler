@@ -30,6 +30,3 @@ package = "miden:cross-ctx-note"
 # Miden dependencies for cargo-miden build/linking
 [package.metadata.miden.dependencies]
 "miden:cross-ctx-account" = { path = "../cross-ctx-account" }
-
-[package.metadata.component.target.dependencies]
-"miden:cross-ctx-account" = { path = "../cross-ctx-account/wit/cross-ctx-account.wit" }

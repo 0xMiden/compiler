@@ -67,6 +67,7 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
+mod dependency_package;
 mod dependency_ref;
 mod export_type;
 mod foreign_account;

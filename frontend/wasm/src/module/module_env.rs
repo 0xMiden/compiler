@@ -3,7 +3,10 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
+use midenc_frontend_wasm_metadata::{
+    FrontendMetadata, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+    WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
+};
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
@@ -84,6 +87,8 @@ pub struct ParsedModule<'data> {
 
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit_bytes: Option<&'data [u8]>,
     /// Frontend-only component metadata emitted by SDK macros.
     pub component_frontend_metadata: Option<FrontendMetadata>,
 }
@@ -328,6 +333,9 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
                 self.result.account_component_metadata_bytes = Some(s.data());
+            }
+            Payload::CustomSection(s) if s.name() == WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME => {
+                self.result.component_wit_bytes = Some(s.data());
             }
             Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
                 let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {

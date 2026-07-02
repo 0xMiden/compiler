@@ -592,7 +592,7 @@ impl TestComponent for TestComponentStorage {
 
 /// Hand-written stand-in for the generated WIT of a sibling component dependency.
 ///
-/// Mirrors the shape the `#[component]` macro writes to `target/generated-wit` so the sibling
+/// Mirrors the shape the `#[component]` macro embeds into the compiled package so the sibling
 /// tests don't have to compile a real dependency project with cargo-miden.
 const TEST_SIBLING_GENERATED_WIT: &str = r#"package miden:test-sibling@0.0.1;
 
@@ -636,37 +636,39 @@ world test-sibling-world {
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// The sibling exists only as its generated WIT (under `dep/target/generated-wit`), which is all
-/// the macros need: sibling calls resolve at link time and read no `.masp` during expansion.
+/// The sibling exists only as a synthesized `.masp` package (under `dep/target/miden/debug`)
+/// embedding its component WIT, which is all the macros need: sibling calls resolve at link time
+/// and read no procedure roots during expansion.
 fn account_component_project_with_sibling_dep(
     name: &str,
     lib_rs: &str,
 ) -> crate::cargo_proj::Project {
-    account_component_project_with_sibling_dep_inner(name, lib_rs, TEST_SIBLING_GENERATED_WIT, true)
+    account_component_project_with_sibling_dep_inner(name, lib_rs, Some(TEST_SIBLING_GENERATED_WIT))
 }
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// `sibling_wit` is the dependency's generated WIT written under `dep/target/generated-wit`.
-/// `declare_sibling_wit` controls whether that WIT is declared under
-/// `[package.metadata.miden.dependencies]` in `miden-project.toml`. Omitting it reproduces the
-/// case where the reference selects (the WIT is read from `target/generated-wit`) but the inline
-/// `generate!` cannot resolve the import, so the macro emits the missing-WIT diagnostic.
+/// `sibling_wit` is embedded into the WIT section of the dependency's synthesized `.masp`
+/// package. Passing `None` omits the section, reproducing a dependency package built by a
+/// toolchain that predates embedded WIT.
 fn account_component_project_with_sibling_dep_inner(
     name: &str,
     lib_rs: &str,
-    sibling_wit: &str,
-    declare_sibling_wit: bool,
+    sibling_wit: Option<&str>,
+) -> crate::cargo_proj::Project {
+    let cargo_proj = account_component_project_with_sibling_dep_root(name, lib_rs);
+    write_sibling_package(&cargo_proj, sibling_wit);
+    cargo_proj
+}
+
+/// Builds the sibling-dependency project skeleton without a compiled dependency package.
+fn account_component_project_with_sibling_dep_root(
+    name: &str,
+    lib_rs: &str,
 ) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
     let namespace = base::account_component_namespace(name, "test-component");
     let component_package = format!("miden:{}", name.replace('_', "-"));
-    let sibling_wit_entry = if declare_sibling_wit {
-        "\n[package.metadata.miden.dependencies]\ntest-sibling = { wit = \
-         \"dep/target/generated-wit\" }\n"
-    } else {
-        ""
-    };
     let miden_project_toml = format!(
         r#"
 [package]
@@ -681,7 +683,7 @@ namespace = "{namespace}"
 miden-core = "*"
 miden-protocol = "*"
 test-sibling = {{ path = "dep" }}
-{sibling_wit_entry}"#
+"#
     );
     let cargo_toml = format!(
         r#"
@@ -700,9 +702,6 @@ miden = {{ path = "{sdk_path}" }}
 [package.metadata.component]
 package = "{component_package}"
 
-[package.metadata.component.target.dependencies]
-"miden:test-sibling" = {{ path = "dep/target/generated-wit/test-sibling.wit" }}
-
 [package.metadata.miden]
 project-kind = "account"
 supported-types = ["RegularAccountUpdatableCode"]
@@ -713,9 +712,45 @@ supported-types = ["RegularAccountUpdatableCode"]
     project(name)
         .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
-        .file("dep/target/generated-wit/test-sibling.wit", sibling_wit)
+        // The dependency root must exist on disk for the macros to canonicalize it.
+        .file("dep/.gitkeep", "")
         .file("src/lib.rs", lib_rs)
         .build()
+}
+
+/// Synthesizes the sibling dependency `.masp` package under `dep/target/miden/debug`.
+fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&str>) {
+    use miden_assembly::{Assembler, DefaultSourceManager, Parse, ParseOptions, ast::ModuleKind};
+    use miden_core::serde::Serializable;
+
+    let source_manager = std::sync::Arc::new(DefaultSourceManager::default());
+    let module = "pub proc callee(a: felt) -> felt\n    add.1\nend"
+        .parse_with_options(source_manager.clone(), ParseOptions::new(ModuleKind::Library, "::dep"))
+        .expect("sibling fixture module must parse");
+    let library = Assembler::new(source_manager)
+        .assemble_library([module])
+        .expect("sibling fixture library must assemble");
+    let mut package = miden_mast_package::Package::from_library(
+        miden_mast_package::PackageId::from("test-sibling"),
+        "0.0.1".parse().expect("sibling fixture version must parse"),
+        miden_mast_package::TargetType::Library,
+        library,
+        core::iter::empty(),
+    );
+    if let Some(wit) = wit {
+        let wit_section_id = miden_mast_package::SectionId::custom(
+            midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
+        )
+        .expect("the WIT section id must be a valid custom section id");
+        package
+            .sections
+            .push(miden_mast_package::Section::new(wit_section_id, wit.as_bytes().to_vec()));
+    }
+
+    let package_dir = cargo_proj.root().join("dep/target/miden/debug");
+    std::fs::create_dir_all(&package_dir).expect("sibling package directory must be created");
+    std::fs::write(package_dir.join("test_sibling.masp"), package.to_bytes())
+        .expect("sibling package fixture must be written");
 }
 
 #[test]
@@ -903,10 +938,52 @@ impl TestComponent for TestComponentStorage {
 }
 
 #[test]
-fn component_sibling_reports_missing_wit_dependency_manifest_entry() {
-    // The reference is valid and the dependency WIT exists under `target/generated-wit`, but the
-    // `[package.metadata.miden.dependencies]` entry that puts it on the macro's WIT search path is
-    // omitted. Expansion should surface the actionable diagnostic, not a bare wit-parser error.
+fn component_sibling_reports_missing_dependency_package() {
+    // The reference is valid but the dependency has no compiled `.masp` package. Expansion should
+    // surface the actionable build-the-dependency diagnostic, not a bare wit-parser error.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, native_account::NativeAccount, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn value(&mut self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&mut self) -> Felt {
+        self.get_value()
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep_root(
+        "component_sibling_missing_dep_package",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected the missing dependency package to fail the build"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("could not find a built `.masp` package"),
+        "unexpected stderr: {stderr}"
+    );
+    assert!(stderr.contains("cargo miden build"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn component_sibling_reports_dependency_package_without_embedded_wit() {
+    // The dependency package exists but predates embedded WIT (no `wit` section). Expansion
+    // should tell the user to rebuild the dependency with the current toolchain.
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -929,26 +1006,19 @@ impl TestComponent for TestComponentStorage {
 "#;
 
     let cargo_proj = account_component_project_with_sibling_dep_inner(
-        "component_sibling_missing_wit_entry",
+        "component_sibling_package_without_wit",
         lib_rs,
-        TEST_SIBLING_GENERATED_WIT,
-        false,
+        None,
     );
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(
         !output.status.success(),
-        "expected the missing sibling WIT entry to fail the build"
+        "expected a dependency package without embedded WIT to fail the build"
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    assert!(
-        stderr.contains("could not resolve the WIT for sibling component dependencies"),
-        "unexpected stderr: {stderr}"
-    );
-    assert!(
-        stderr.contains("[package.metadata.miden.dependencies]"),
-        "unexpected stderr: {stderr}"
-    );
+    assert!(stderr.contains("does not embed component WIT"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("cargo miden build"), "unexpected stderr: {stderr}");
 }
 
 #[test]
@@ -984,8 +1054,7 @@ impl TestComponent for TestComponentStorage {
     let cargo_proj = account_component_project_with_sibling_dep_inner(
         "component_sibling_owned_record",
         lib_rs,
-        TEST_SIBLING_OWNED_TYPE_WIT,
-        true,
+        Some(TEST_SIBLING_OWNED_TYPE_WIT),
     );
     let output = cargo_check_miden_target(&cargo_proj);
     let stderr = String::from_utf8_lossy(&output.stderr);

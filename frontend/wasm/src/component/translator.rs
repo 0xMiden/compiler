@@ -172,6 +172,17 @@ impl<'a> ComponentTranslator<'a> {
             &self.lifted_export_names,
         )?;
 
+        let component_wit_bytes_vec: Vec<Vec<u8>> = self
+            .nested_modules
+            .iter()
+            .flat_map(|t| t.1.component_wit_bytes.map(|slice| slice.to_vec()))
+            .collect();
+        assert!(
+            component_wit_bytes_vec.len() <= 1,
+            "unexpected multiple core Wasm module to have a component WIT section",
+        );
+        let component_wit_bytes = component_wit_bytes_vec.first().map(ToOwned::to_owned);
+
         let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
             .nested_modules
             .into_iter()
@@ -187,6 +198,7 @@ impl<'a> ComponentTranslator<'a> {
         let output = FrontendOutput {
             component: self.result.component,
             account_component_metadata_bytes,
+            component_wit_bytes,
         };
         Ok(output)
     }
