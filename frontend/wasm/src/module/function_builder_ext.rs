@@ -197,15 +197,13 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         }
 
+        // Only fill in the variable's declaration location when DWARF did not provide one; in
+        // particular the file must never be overwritten with the current instruction's file, or
+        // records emitted while translating inlined code would corrupt the variable's identity
+        // (e.g. a kill for `a` declared in the user's source being attributed to
+        // `core/src/iter/range.rs`).
         if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
-            && should_fill_debug_attr_location(
-                attr.file,
-                attr.line,
-                attr.column,
-                file_symbol,
-                line,
-                column,
-            )
+            && should_fill_debug_attr_location(attr.line, attr.column, line, column)
         {
             attr.file = file_symbol;
             attr.line = line;
@@ -318,15 +316,13 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let Some(mut attr) = attr_opt else {
             return;
         };
+        // Only fill in the variable's declaration location when DWARF did not provide one; in
+        // particular the file must never be overwritten with the current instruction's file, or
+        // records emitted while translating inlined code would corrupt the variable's identity
+        // (e.g. a kill for `a` declared in the user's source being attributed to
+        // `core/src/iter/range.rs`).
         if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
-            && should_fill_debug_attr_location(
-                attr.file,
-                attr.line,
-                attr.column,
-                file_symbol,
-                line,
-                column,
-            )
+            && should_fill_debug_attr_location(attr.line, attr.column, line, column)
         {
             attr.file = file_symbol;
             attr.line = line;
