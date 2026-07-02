@@ -54,11 +54,7 @@ pub fn translate(
     if wasm[4..8] == [0x01, 0x00, 0x00, 0x00] {
         // Wasm core module
         // see https://github.com/WebAssembly/component-model/blob/main/design/mvp/Binary.md#component-definitions
-        let component = translate_module_as_component(wasm, config, context)?;
-        Ok(FrontendOutput {
-            component,
-            sections: PackageSections::default(),
-        })
+        translate_module_as_component(wasm, config, context)
     } else {
         translate_component(wasm, config, context)
     }

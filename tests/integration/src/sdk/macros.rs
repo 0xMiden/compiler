@@ -1022,6 +1022,55 @@ impl TestComponent for TestComponentStorage {
 }
 
 #[test]
+fn bare_generate_local_wit_imports_dependency_package() {
+    // A manually authored crate's local `wit/` world may import a Miden dependency's interface.
+    // The dependency WIT (read from its compiled `.masp`) must be in the resolver before the
+    // local WIT is parsed, or resolution fails with a bare "package not found".
+    let lib_rs = r#"#![no_std]
+
+#[global_allocator]
+static ALLOC: miden::BumpAlloc = miden::BumpAlloc::new();
+
+#[cfg(not(test))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    loop {}
+}
+
+miden::generate!();
+
+pub fn use_import() -> miden::Felt {
+    crate::bindings::miden::test_sibling::test_sibling::get_value()
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep_inner(
+        "bare_generate_local_wit_imports_dep",
+        lib_rs,
+        Some(TEST_SIBLING_GENERATED_WIT),
+    );
+    let wit_dir = cargo_proj.root().join("wit");
+    std::fs::create_dir_all(&wit_dir).expect("local wit directory must be created");
+    std::fs::write(
+        wit_dir.join("consumer.wit"),
+        r#"package miden:wit-consumer@0.0.1;
+
+world consumer {
+    import miden:test-sibling/test-sibling@0.0.1;
+}
+"#,
+    )
+    .expect("local wit fixture must be written");
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected local WIT importing a dependency package to resolve: {stderr}"
+    );
+}
+
+#[test]
 fn component_sibling_call_passes_an_interface_owned_record() {
     // The sibling interface owns the `point` record and passes it across a sibling call. This
     // exercises the dependency-type remap path (`dependency_type_with_entries`): the generated

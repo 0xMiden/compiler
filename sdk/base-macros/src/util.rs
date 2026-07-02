@@ -16,9 +16,6 @@ const FRONTEND_METADATA_BYTES_STATIC_IDENT: &str = "__miden_frontend_metadata_by
 /// Linker symbol used to reject multiple frontend-marked procedures in one project.
 pub(crate) const FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL: &str =
     "__MIDEN_FRONTEND_METADATA_UNIQUENESS_GUARD";
-/// Linker symbol used to reject multiple `#[component]` implementations in one project.
-pub(crate) const COMPONENT_WIT_UNIQUENESS_GUARD_SYMBOL: &str =
-    "__MIDEN_COMPONENT_WIT_UNIQUENESS_GUARD";
 
 fn target_folder() -> PathBuf {
     let mut manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
@@ -70,22 +67,17 @@ pub(crate) fn generate_frontend_link_section(metadata: &FrontendMetadata) -> Tok
 }
 
 /// Embeds the component's public WIT source into the dedicated Wasm custom section.
+///
+/// No linker uniqueness guard is emitted: custom-section bytes never reach executable data, so a
+/// guard export would be the only runtime cost of WIT embedding. Linking two component
+/// implementations concatenates their identically named sections instead, which the Wasm frontend
+/// rejects with a dedicated diagnostic when it parses the section.
 pub(crate) fn generate_wit_link_section(wit_source: &str) -> TokenStream2 {
     let wit_bytes = wit_source.as_bytes();
     let wit_len = wit_bytes.len();
     let encoded_bytes = Literal::byte_string(wit_bytes);
 
     quote! {
-        const _: () = {
-            // A linked binary may contain exactly one component implementation. Reusing a fixed
-            // symbol name lets the linker reject duplicates across modules or crates, which would
-            // otherwise concatenate into one unparseable WIT custom section.
-            #[doc(hidden)]
-            #[used]
-            #[unsafe(export_name = #COMPONENT_WIT_UNIQUENESS_GUARD_SYMBOL)]
-            static __miden_component_wit_uniqueness_guard: u8 = 0;
-        };
-
         #[unsafe(
             // Keep the Mach-O-friendly `segment,section` naming scheme used by the other metadata
             // sections so the linker preserves these bytes in test and release builds.

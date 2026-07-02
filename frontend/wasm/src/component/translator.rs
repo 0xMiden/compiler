@@ -1,7 +1,9 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
-use midenc_frontend_wasm_metadata::{FrontendMetadata, PackageSections, ProtocolExportKind};
+use midenc_frontend_wasm_metadata::{
+    FrontendMetadata, PackageSections, ProtocolExportKind, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+};
 use midenc_hir::{
     self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, SymbolNameComponent,
     SymbolPath,
@@ -177,10 +179,13 @@ impl<'a> ComponentTranslator<'a> {
             .iter()
             .flat_map(|t| t.1.component_wit_bytes.map(|slice| slice.to_vec()))
             .collect();
-        assert!(
-            component_wit_bytes_vec.len() <= 1,
-            "unexpected multiple core Wasm module to have a component WIT section",
-        );
+        if component_wit_bytes_vec.len() > 1 {
+            return Err(Report::msg(format!(
+                "found {} '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom sections across the \
+                 component's core modules; a component may embed at most one component WIT section",
+                component_wit_bytes_vec.len(),
+            )));
+        }
         let component_wit_bytes = component_wit_bytes_vec.first().map(ToOwned::to_owned);
 
         let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self

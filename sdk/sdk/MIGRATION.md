@@ -117,7 +117,10 @@ A `.masp` built by an older SDK has no embedded WIT and is rejected during macro
 "does not embed component WIT" error; rebuild each dependency with the current toolchain
 (`cargo miden build`). Components written without the `#[component]` macro — a hand-written `wit/`
 directory and a bare `miden::generate!()` — embed their WIT automatically when the `wit/`
-directory contains a single `.wit` file, so no changes are needed there.
+directory contains a single `.wit` file, so no changes are needed there. WIT split across multiple
+files, or referencing packages under `wit/deps/` other than the bundled SDK WIT, cannot be
+embedded verbatim yet; consolidate it into one self-contained file if the component is consumed as
+a Miden dependency.
 
 ## 0.13.0 -> 0.13.1
 

@@ -93,6 +93,52 @@ pub struct ParsedModule<'data> {
     pub component_frontend_metadata: Option<FrontendMetadata>,
 }
 
+/// Validates that a component WIT custom section holds exactly one top-level WIT package.
+///
+/// Linking two `#[component]` implementations into one binary concatenates their identically
+/// named custom sections into a single section whose merged text is not valid WIT; name the
+/// actual cause here instead of surfacing an opaque parse error in dependent crates.
+fn validate_component_wit_section(
+    bytes: &[u8],
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    let Ok(wit) = core::str::from_utf8(bytes) else {
+        return Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section does \
+                 not contain valid UTF-8 WIT source"
+            ))
+            .into_report());
+    };
+
+    let package_declarations = count_top_level_wit_packages(wit);
+    if package_declarations > 1 {
+        return Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: found {package_declarations} top-level WIT package declarations in \
+                 the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section; a linked binary \
+                 may contain at most one `#[component]` implementation"
+            ))
+            .into_report());
+    }
+
+    Ok(())
+}
+
+/// Counts top-level `package <id>;` declarations in WIT source.
+///
+/// Nested package declarations (`package <id> { ... }`) are excluded; a well-formed embedded WIT
+/// source contains exactly one top-level declaration, so a higher count indicates concatenated
+/// sections from multiple component implementations.
+fn count_top_level_wit_packages(wit: &str) -> usize {
+    wit.lines()
+        .map(|line| line.split_once("//").map(|(before, _)| before).unwrap_or(line).trim())
+        .filter(|line| line.starts_with("package ") && line.contains(';') && !line.contains('{'))
+        .count()
+}
+
 /// Aggregates frontend metadata from all core modules that participate in one component.
 pub(crate) fn merge_frontend_metadata<'data>(
     modules: impl Iterator<Item = &'data ParsedModule<'data>>,
@@ -335,6 +381,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 self.result.account_component_metadata_bytes = Some(s.data());
             }
             Payload::CustomSection(s) if s.name() == WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME => {
+                validate_component_wit_section(s.data(), diagnostics)?;
                 self.result.component_wit_bytes = Some(s.data());
             }
             Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {

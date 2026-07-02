@@ -230,7 +230,8 @@ impl ManifestPackage {
         self.project_kind.as_deref() == Some("authentication-component")
     }
 
-    /// Resolves fully-qualified imports exported by `package.metadata.miden.dependencies`.
+    /// Resolves fully-qualified imports exported by the compiled packages of the
+    /// `miden-project.toml` path dependencies.
     pub(crate) fn collect_miden_dependency_imports(
         &self,
         error_span: Span,
