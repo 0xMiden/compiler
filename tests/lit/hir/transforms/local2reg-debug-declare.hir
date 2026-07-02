@@ -1,0 +1,22 @@
+// RUN: hir-opt %s --pass-pipeline 'builtin.function(local2reg)' | filecheck %s
+
+// When local2reg promotes a local to an SSA register, a di.debug_declare describing that local
+// as a variable's storage must follow the value: the slot is no longer written, so the
+// declaration is rewritten into a di.debug_value anchored to the stored value at the erased
+// store's position (mirroring LLVM's mem2reg dbg.declare -> dbg.value conversion).
+builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+    %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    %3 = arith.add %2, %2 <{ overflow = #builtin.overflow<wrapping> }>;
+    builtin.ret %3 : (i32);
+};
+
+// CHECK: builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
+// CHECK-NEXT:     di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2, ty = i32 }>, expression = #di.expression<[]> }> : (i32);
+// CHECK-NEXT:     %2 = arith.add %0, %0 <{ overflow = #builtin.overflow<wrapping> }>;
+// CHECK-NEXT:     builtin.ret %2 : (i32);
+// CHECK-NEXT: };
+// CHECK-NOT: di.debug_declare
+// CHECK-NOT: hir.store_local
+// CHECK-NOT: hir.load_local

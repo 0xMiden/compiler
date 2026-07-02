@@ -1,0 +1,24 @@
+// RUN: hir-opt %s --pass-pipeline 'builtin.function(dce)' | filecheck %s
+
+// The standalone dead-code-elimination pass must not treat debug info ops as trivially dead:
+// they have no results and no memory effects, so without the Transparent-trait guard every
+// di.* op would be erased. It must still erase genuinely dead ops (%3 below), and a value whose
+// only remaining use is a debug op (%4) is conservatively retained together with its debug use.
+builtin.function public extern("C") @dce_test(%0: i32, %1: i32) -> i32 {
+    %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+    %3 = arith.mul %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+    %4 = arith.sub %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+    di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (i32);
+    di.debug_value %4 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (i32);
+    di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2 }> }>;
+    builtin.ret %2 : (i32);
+};
+
+// CHECK: builtin.function public extern("C") @dce_test(%0: i32, %1: i32) -> i32 {
+// CHECK-NEXT:     %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+// CHECK-NEXT:     %4 = arith.sub %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+// CHECK-NEXT:     di.debug_value %2 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2 }>, expression = #di.expression<[]> }> : (i32);
+// CHECK-NEXT:     di.debug_value %4 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 4 }>, expression = #di.expression<[]> }> : (i32);
+// CHECK-NEXT:     di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2 }> }>;
+// CHECK-NEXT:     builtin.ret %2 : (i32);
+// CHECK-NEXT: };
