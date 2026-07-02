@@ -19,7 +19,7 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_ub::UndefinedBehaviorOpBuilder;
 use midenc_dialect_wasm::{WasmMemArg, WasmOpBuilder, prepare_addr};
 use midenc_hir::{
-    BlockRef, Builder, Immediate, Op,
+    BlockRef, Builder, CallConv, Immediate, Op,
     Type::{self, *},
     ValueRef,
     dialects::builtin::BuiltinOpBuilder,
@@ -36,9 +36,13 @@ use crate::{
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
         module_translation_state::ModuleTranslationState,
-        types::{BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder},
+        types::{
+            BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder, TableIndex, TypeIndex,
+            ir_func_type,
+        },
     },
     ssa::Variable,
+    translation_utils::sig_from_func_type,
     unsupported_diag,
 };
 
@@ -210,10 +214,20 @@ pub fn translate_operator<B: ?Sized + Builder>(
             )?;
         }
         Operator::CallIndirect {
-            type_index: _,
-            table_index: _,
+            type_index,
+            table_index,
         } => {
-            todo!("CallIndirect is not supported yet");
+            translate_call_indirect(
+                state,
+                module_state,
+                builder,
+                module,
+                mod_types,
+                TypeIndex::from_u32(*type_index),
+                TableIndex::from_u32(*table_index),
+                span,
+                diagnostics,
+            )?;
         }
         /******************************* Memory management *********************************/
         Operator::MemoryGrow { .. } => {
@@ -869,6 +883,54 @@ fn translate_call<B: ?Sized + Builder>(
             func_state.pushn(&result_vals);
         }
     }
+    Ok(())
+}
+
+/// Translate a Wasm `call_indirect` into an `hir.exec_indirect` dispatching through the lowered
+/// function table on a runtime table index.
+#[allow(clippy::too_many_arguments)]
+fn translate_call_indirect<B: ?Sized + Builder>(
+    func_state: &mut FuncTranslationState,
+    module_state: &mut ModuleTranslationState,
+    builder: &mut FunctionBuilderExt<'_, B>,
+    module: &Module,
+    mod_types: &ModuleTypesBuilder,
+    type_index: TypeIndex,
+    table_index: TableIndex,
+    span: SourceSpan,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    // Tables are lowered lazily on their first use by a `call_indirect`
+    let table_ref = module_state.get_or_build_table(table_index, module, diagnostics)?;
+
+    // The expected callee signature per the instruction's type index
+    let sig_index = module.types[type_index].unwrap_function();
+    let wasm_func_type = mod_types[sig_index].clone();
+    let ir_func_type = ir_func_type(&wasm_func_type, diagnostics)?;
+    let signature = sig_from_func_type(&ir_func_type, CallConv::C);
+
+    // The lowering schedules the table index on the operand stack on top of the arguments, so
+    // together they must fit in Miden's 16-element addressable window
+    let arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
+    if arg_felts + 1 > 16 {
+        unsupported_diag!(
+            diagnostics,
+            "unsupported `call_indirect`: {arg_felts} argument field elements plus the table \
+             index exceed Miden's 16-element operand stack window"
+        );
+    }
+
+    // The Wasm operand stack is [..., args, index], with the index on top
+    let index = func_state.pop1_bitcasted(U32, builder, span);
+    let arity = signature.arity();
+    let args = func_state.peekn(arity);
+    let exec = builder.exec_indirect(table_ref, signature, index, args.iter().copied(), span)?;
+    let borrow = exec.borrow();
+    let results = borrow.results();
+    func_state.popn(arity);
+    let result_vals: Vec<ValueRef> =
+        results.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    func_state.pushn(&result_vals);
     Ok(())
 }
 

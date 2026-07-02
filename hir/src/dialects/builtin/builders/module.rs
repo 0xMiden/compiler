@@ -1,11 +1,11 @@
 use super::BuiltinOpBuilder;
 use crate::{
-    Builder, Ident, Op, OpBuilder, Report, SourceSpan, Spanned, SymbolName, SymbolTable, Type,
-    UnsafeIntrusiveEntityRef, Visibility,
+    AsCallableSymbolRef, Builder, BuilderExt, Ident, Op, OpBuilder, Report, SourceSpan, Spanned,
+    SymbolName, SymbolTable, Type, UnsafeIntrusiveEntityRef, Visibility,
     constants::ConstantData,
     dialects::builtin::{
-        Function, FunctionRef, GlobalVariable, GlobalVariableRef, Module, ModuleRef,
-        PrimModuleBuilder, Segment, attributes::Signature,
+        Function, FunctionRef, FunctionTableEntry, FunctionTableRef, GlobalVariable,
+        GlobalVariableRef, Module, ModuleRef, PrimModuleBuilder, Segment, attributes::Signature,
     },
 };
 
@@ -77,6 +77,49 @@ impl ModuleBuilder {
         span: SourceSpan,
     ) -> Result<UnsafeIntrusiveEntityRef<Segment>, Report> {
         self.builder.create_data_segment(offset, data, readonly, span)
+    }
+
+    /// Declare a new [FunctionTable] in this module with the given name, visibility, and slot
+    /// count, with an empty set of entries.
+    ///
+    /// Initialized slots are added with [Self::append_function_table_entry].
+    pub fn define_function_table(
+        &mut self,
+        name: Ident,
+        visibility: Visibility,
+        size: u32,
+    ) -> Result<FunctionTableRef, Report> {
+        let mut table_ref = self.builder.create_function_table(name, visibility, size)?;
+        let context = table_ref.borrow().as_operation().context_rc();
+        let entries_region_ref = {
+            let mut table = table_ref.borrow_mut();
+            table.entries_mut().as_region_ref()
+        };
+        let mut op_builder = OpBuilder::new(context);
+        op_builder.create_block(entries_region_ref, None, &[]);
+        Ok(table_ref)
+    }
+
+    /// Append a [FunctionTableEntry] to `table`, filling slot `index` with the MAST root of
+    /// `callee` at program startup.
+    pub fn append_function_table_entry<C: AsCallableSymbolRef>(
+        &mut self,
+        table: FunctionTableRef,
+        index: u32,
+        callee: C,
+        span: SourceSpan,
+    ) -> Result<(), Report> {
+        let context = table.borrow().as_operation().context_rc();
+        let entries_block = {
+            let table = table.borrow();
+            let entries = table.entries();
+            entries.entry_block_ref().expect("expected function table entries block")
+        };
+        let mut op_builder = OpBuilder::new(context);
+        op_builder.set_insertion_point_to_end(entries_block);
+        let entry_builder = op_builder.create::<FunctionTableEntry, (_, C)>(span);
+        entry_builder(index, callee)?;
+        Ok(())
     }
 
     pub fn get_function(&self, name: &str) -> Option<FunctionRef> {

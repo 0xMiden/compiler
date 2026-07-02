@@ -1,0 +1,39 @@
+builtin.module private @noname {
+    builtin.function internal extern("C") @add(%0: i32, %1: i32) -> i32 {
+        hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        hir.store_local %1 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+        %3 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+        %4 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+        %5 = arith.add %3, %4 <{ overflow = #builtin.overflow<wrapping> }>;
+        cf.br ^block4(%5 : i32);
+    ^block4(%2: i32):
+        builtin.ret %2 : (i32);
+    };
+    builtin.function internal extern("C") @mul(%6: i32, %7: i32) -> i32 {
+        hir.store_local %6 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        hir.store_local %7 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+        %9 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+        %10 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+        %11 = arith.mul %9, %10 <{ overflow = #builtin.overflow<wrapping> }>;
+        cf.br ^block6(%11 : i32);
+    ^block6(%8: i32):
+        builtin.ret %8 : (i32);
+    };
+    builtin.function public extern("C") @dispatch(%12: i32, %13: i32, %14: i32) -> i32 {
+        hir.store_local %12 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        hir.store_local %13 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+        hir.store_local %14 <{ local = #builtin.local_variable<2, i32> }> : (i32);
+        %16 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+        %17 = hir.load_local <{ local = #builtin.local_variable<2, i32> }>;
+        %18 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+        %19 = hir.bitcast %18 <{ ty = #builtin.type<u32> }>;
+        %20 = hir.exec_indirect ::@root_ns:root@1.0.0::@noname::@__indirect_function_table_0[%19](%16, %17) : extern("C") (i32, i32) -> i32;
+        cf.br ^block8(%20 : i32);
+    ^block8(%15: i32):
+        builtin.ret %15 : (i32);
+    };
+    builtin.function_table private @__indirect_function_table_0 : 3 {
+        builtin.function_table_entry 1 ::@root_ns:root@1.0.0::@noname::@add;
+        builtin.function_table_entry 2 ::@root_ns:root@1.0.0::@noname::@mul;
+    };
+};

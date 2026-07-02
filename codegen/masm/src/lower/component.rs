@@ -68,9 +68,10 @@ impl ToMasmComponent for builtin::World {
             None => None,
         };
 
-        // If we have global variables or data segments, we will require a component initializer
-        // function, as well as a module to hold component-level functions such as init
-        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        // If we have global variables, data segments, or function tables, we will require a
+        // component initializer function, as well as a module to hold component-level functions
+        // such as init
+        let requires_init = link_info.requires_init();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
             let qualified = masm::QualifiedProcedureName::new("::init", name);
@@ -98,14 +99,7 @@ impl ToMasmComponent for builtin::World {
             None
         };
 
-        // Compute the first page boundary after the end of the globals table (or reserved memory
-        // if no globals) to use as the start of the dynamic heap when the program is executed
-        let heap_base = core::cmp::max(
-            link_info.reserved_memory_bytes(),
-            link_info.globals_layout().next_page_boundary() as usize,
-        );
-        let heap_base = u32::try_from(heap_base)
-            .expect("unable to allocate dynamic heap: global table too large");
+        let heap_base = link_info.heap_base();
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
             id: None,
@@ -188,9 +182,10 @@ impl ToMasmComponent for builtin::Component {
             None => None,
         };
 
-        // If we have global variables or data segments, we will require a component initializer
-        // function, as well as a module to hold component-level functions such as init
-        let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        // If we have global variables, data segments, or function tables, we will require a
+        // component initializer function, as well as a module to hold component-level functions
+        // such as init
+        let requires_init = link_info.requires_init();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
             let qualified =
@@ -218,14 +213,7 @@ impl ToMasmComponent for builtin::Component {
             None
         };
 
-        // Compute the first page boundary after the end of the globals table (or reserved memory
-        // if no globals) to use as the start of the dynamic heap when the program is executed
-        let heap_base = core::cmp::max(
-            link_info.reserved_memory_bytes(),
-            link_info.globals_layout().next_page_boundary() as usize,
-        );
-        let heap_base = u32::try_from(heap_base)
-            .expect("unable to allocate dynamic heap: global table too large");
+        let heap_base = link_info.heap_base();
         let stack_pointer = link_info.globals_layout().stack_pointer_offset();
         let mut masm_component = MasmComponent {
             id: Some(id),
@@ -327,6 +315,9 @@ impl MasmComponentBuilder<'_> {
 
             // Data segment initialization
             self.emit_data_segment_initialization();
+
+            // Function table initialization
+            self.emit_function_table_initialization();
         }
 
         // Translate component body
@@ -354,7 +345,7 @@ impl MasmComponentBuilder<'_> {
 
             let init_name = masm::ProcedureName::new("init").unwrap();
             let init_body = core::mem::take(&mut self.init_body);
-            let init = masm::Procedure::new(
+            let mut init = masm::Procedure::new(
                 Default::default(),
                 masm::Visibility::Public,
                 init_name,
@@ -366,6 +357,10 @@ impl MasmComponentBuilder<'_> {
                 vec![],
                 vec![],
             ));
+            // Attach the set of procedures invoked from the init body: the assembler's linker
+            // derives procedure reachability from it, so without it any `exec`/`procref` targets
+            // referenced only by `init` would fail to resolve.
+            init.extend_invoked(core::mem::take(&mut self.invoked_from_init));
 
             module
                 .define_procedure(init, self.source_manager.clone())
@@ -516,6 +511,78 @@ impl MasmComponentBuilder<'_> {
             self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
         }
     }
+
+    /// Emit the sequence of instructions necessary to populate the function tables of this
+    /// component with the MAST roots of their entries.
+    ///
+    /// For each initialized slot: `procref` pushes the callee's MAST root word (`root[0]` on
+    /// top), `mem_storew_le` writes it to the slot's word-aligned element address (leaving the
+    /// word on the stack), and `dropw` cleans up. Uninitialized (null) slots are left as the
+    /// zero word, since VM memory is zero-initialized; `dynexec` on such a slot fails at
+    /// runtime.
+    ///
+    /// The referenced procedures are registered as `procref` invocations so the assembler's
+    /// linker treats them as reachable and resolves their MAST roots.
+    fn emit_function_table_initialization(&mut self) {
+        use masm::{Instruction as Inst, Op};
+
+        let span = SourceSpan::default();
+        for (table_ref, base_addr) in self.link_info.function_tables().iter() {
+            let base = super::NativePtr::from_ptr(base_addr);
+            assert!(base.is_word_aligned(), "function tables must be word-aligned");
+            let table = table_ref.borrow();
+            let entries = table.entries();
+            if entries.is_empty() {
+                continue;
+            }
+            for op in entries.entry().body() {
+                let Some(entry) = op.downcast_ref::<builtin::FunctionTableEntry>() else {
+                    panic!(
+                        "invalid function table entry: '{}' is not supported in a function table \
+                         body",
+                        op.name()
+                    );
+                };
+                let slot = *entry.get_index();
+                assert!(
+                    slot < *table.get_size(),
+                    "invalid function table entry: slot {slot} is out of bounds for table '{}' \
+                     with {} slots",
+                    table.get_name().as_str(),
+                    *table.get_size()
+                );
+                let callee = entry
+                    .as_operation()
+                    .nearest_symbol_table()
+                    .and_then(|symbol_table| {
+                        symbol_table
+                            .borrow()
+                            .as_symbol_table()
+                            .unwrap()
+                            .resolve(entry.callee().path())
+                    })
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "invalid function table entry: unable to resolve callee '{}'",
+                            entry.callee().path()
+                        )
+                    });
+                let callee_path = callee.borrow().path();
+                let target =
+                    super::lowering::invocation_target_from_symbol_path(&callee_path, span);
+                self.invoked_from_init
+                    .insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
+
+                // The slot's element address; the base is word-aligned and each slot is exactly
+                // one word (4 elements), so the result stays word-aligned
+                let slot_addr = base.addr + slot * 4;
+                self.init_body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
+                self.init_body
+                    .push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
+                self.init_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+            }
+        }
+    }
 }
 
 struct MasmModuleBuilder<'a> {
@@ -537,6 +604,10 @@ impl MasmModuleBuilder<'_> {
             } else if let Some(gv) = op.downcast_ref::<builtin::GlobalVariable>() {
                 self.emit_global_variable_initializer(gv)?;
             } else if op.is::<builtin::Segment>() {
+                continue;
+            } else if op.is::<builtin::FunctionTable>() {
+                // Laid out by the linker; slots are filled by the component-level init code
+                // emitted in `emit_function_table_initialization`
                 continue;
             } else {
                 panic!(
@@ -722,10 +793,8 @@ impl MasmFunctionBuilder {
         };
 
         // For component export functions, invoke the `init` procedure first if needed.
-        // It loads the data segments and global vars into memory.
-        if function.signature().cc.is_wasm_canonical_abi()
-            && (link_info.has_globals() || link_info.has_data_segments())
-        {
+        // It loads the data segments, global vars, and function tables into memory.
+        if function.signature().cc.is_wasm_canonical_abi() && link_info.requires_init() {
             // Resolve `init` symbolically within the containing module instead of through a
             // fully-qualified component path, which depends on the (user-editable)
             // `[lib].namespace` matching the component's library identity.
