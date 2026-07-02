@@ -170,6 +170,27 @@ fn call_indirect_ref_null_overwrites_earlier_entry() {
     )
 }
 
+/// A table with no statically-initialized entries still lowers: every dispatch through it fails
+/// at runtime on the zero MAST root of a null slot, matching Wasm's uninitialized-element trap.
+#[test]
+fn call_indirect_all_null_table() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 2 2 funcref)
+            (memory (;0;) 16384)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_all_null.hir"],
+    )
+}
+
 #[test]
 fn call_indirect_rejects_oversized_table() {
     check_module_err(
