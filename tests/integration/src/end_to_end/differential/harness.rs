@@ -188,7 +188,7 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
 /// `dlopen` rejects on Linux (macOS tolerates it). The no-op definition makes
 /// the library self-contained; it is never invoked, because panics abort. It is
 /// gated to non-wasm so the `cargo-miden` (wasm → MASM) build is unchanged.
-const CASE_HEADER: &str = r#"#![no_std]
+pub(crate) const CASE_HEADER: &str = r#"#![no_std]
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
@@ -201,7 +201,7 @@ extern "C" fn rust_eh_personality() {}
 
 "#;
 
-fn cargo_toml(pkg_name: &str) -> String {
+pub(crate) fn cargo_toml(pkg_name: &str) -> String {
     format!(
         r#"[package]
 name = "{pkg_name}"
@@ -222,7 +222,7 @@ panic = "abort"
     )
 }
 
-fn miden_project_toml(pkg_name: &str) -> String {
+pub(crate) fn miden_project_toml(pkg_name: &str) -> String {
     format!(
         r#"[package]
 name = "{pkg_name}"
