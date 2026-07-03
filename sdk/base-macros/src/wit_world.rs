@@ -389,11 +389,20 @@ fn collect_miden_dependencies(
 
 /// Formats the dependency WIT diagnostic emitted by SDK macros.
 fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> String {
+    // A "package not found" from wit-parser means the embedded WIT itself references another
+    // package: the rebuild advice cannot fix that, so name the self-containment requirement.
+    let guidance = if details.contains("not found") {
+        "The dependency's embedded WIT references a package that is not embedded alongside it; \
+         embedded WIT must be self-contained apart from the bundled SDK WIT (`miden:base`)."
+    } else {
+        "The SDK macros read the dependency's component WIT embedded in the `.masp` package during \
+         Rust macro expansion to construct dependency imports; rebuild the dependency with the \
+         current `cargo miden build`."
+    };
+
     format!(
         "failed to load dependency WIT metadata for dependency '{}' (root '{}') from its compiled \
-         package '{}': {details}. The SDK macros read the dependency's component WIT embedded in \
-         the `.masp` package during Rust macro expansion to construct dependency imports; rebuild \
-         the dependency with the current `cargo miden build`.",
+         package '{}': {details}. {guidance}",
         source.name,
         source.root.display(),
         source.package_path.display(),
@@ -402,12 +411,16 @@ fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> 
 
 /// WIT metadata extracted from a dependency package.
 #[derive(Debug)]
-struct DependencyWit {
+pub(crate) struct DependencyWit {
     interfaces: Vec<DependencyInterface>,
 }
 
 /// Parses dependency WIT source and returns metadata for its exported interfaces.
-fn parse_dependency_wit_source(wit_source: &str) -> Result<DependencyWit, String> {
+///
+/// The source is resolved against the bundled SDK WIT alone, which makes this doubly useful: it
+/// extracts the exported interfaces of a dependency's embedded WIT, and it is the self-containment
+/// check a WIT source must pass before being embedded in the first place.
+pub(crate) fn parse_dependency_wit_source(wit_source: &str) -> Result<DependencyWit, String> {
     let mut resolve = Resolve::default();
     resolve
         .push_str("miden.wit", crate::manifest_paths::SDK_WIT_SOURCE)
@@ -575,7 +588,7 @@ world basic-wallet-world {
             .assemble_library([module])
             .expect("fixture library must assemble");
         let mut package = miden_mast_package::Package::from_library(
-            miden_mast_package::PackageId::from("basic-wallet"),
+            miden_mast_package::PackageId::from("wit-world-fixture"),
             "0.1.0".parse().expect("fixture version must parse"),
             miden_mast_package::TargetType::Library,
             library,
@@ -595,11 +608,15 @@ world basic-wallet-world {
     }
 
     /// Creates a dependency project root with a compiled package under `target/miden/debug`.
-    fn basic_wallet_fixture_root() -> PathBuf {
+    ///
+    /// The dependency and its artifact carry fixture-unique names: the package search consults
+    /// ambient directories (`CARGO_TARGET_DIR`, cwd targets), so a name shared with a real
+    /// workspace artifact could make these tests observe it instead of the fixture.
+    fn dependency_fixture_root() -> PathBuf {
         let unique = unique_fixture_suffix();
         let root = std::env::temp_dir().join(format!("miden-base-macros-wit-world-{unique}"));
         write_masp_fixture(
-            &root.join("target/miden/debug/basic_wallet.masp"),
+            &root.join("target/miden/debug/wit_world_fixture_dep.masp"),
             Some(BASIC_WALLET_GENERATED_WIT),
         );
         root
@@ -619,7 +636,7 @@ world basic-wallet-world {
             ast::Path::new("empty"),
         );
         let dependency = miden_project::Dependency::new(
-            MidenSpan::unknown(Arc::<str>::from("basic-wallet")),
+            MidenSpan::unknown(Arc::<str>::from("wit-world-fixture-dep")),
             miden_project::DependencyVersionScheme::Path {
                 path: MidenSpan::unknown(miden_project::Uri::new(package_path.to_string_lossy())),
                 version: None,
@@ -794,7 +811,7 @@ world empty-export-world {
 
     #[test]
     fn collects_dependency_interfaces_from_compiled_package() {
-        let fixture_root = basic_wallet_fixture_root();
+        let fixture_root = dependency_fixture_root();
         let dependency_root = fixture_root.clone();
 
         let package = package_with_dependency(dependency_root.clone());
@@ -808,7 +825,9 @@ world empty-export-world {
         assert_eq!(dependencies[0].interfaces[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
         assert!(dependencies[0].interfaces[0].types.is_empty());
         assert!(
-            dependencies[0].package_path.ends_with("target/miden/debug/basic_wallet.masp"),
+            dependencies[0]
+                .package_path
+                .ends_with("target/miden/debug/wit_world_fixture_dep.masp"),
             "unexpected package path: {}",
             dependencies[0].package_path.display()
         );
@@ -821,7 +840,7 @@ world empty-export-world {
         // A dependency that points directly at a `.masp` file is self-contained: the embedded WIT
         // is read from that package with no additional manifest metadata.
         let fixture_root = empty_fixture_root();
-        let package_path = fixture_root.join("prebuilt/basic_wallet.masp");
+        let package_path = fixture_root.join("prebuilt/wit_world_fixture_dep.masp");
         write_masp_fixture(&package_path, Some(BASIC_WALLET_GENERATED_WIT));
 
         let package = package_with_dependency(package_path.clone());
@@ -843,7 +862,7 @@ world empty-export-world {
     #[test]
     fn missing_dependency_package_reports_actionable_error() {
         let fixture_root = empty_fixture_root();
-        let dependency_root = fixture_root.join("basic-wallet");
+        let dependency_root = fixture_root.join("wit-world-fixture-dep");
         fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
         let package = package_with_dependency(dependency_root);
 
@@ -857,7 +876,7 @@ world empty-export-world {
             "unexpected error: {message}"
         );
         assert!(
-            message.contains("Miden dependency 'basic-wallet'"),
+            message.contains("Miden dependency 'wit-world-fixture-dep'"),
             "unexpected error: {message}"
         );
         assert!(message.contains("during Rust macro expansion"), "unexpected error: {message}");
@@ -869,8 +888,11 @@ world empty-export-world {
     #[test]
     fn package_without_wit_section_reports_rebuild_error() {
         let fixture_root = empty_fixture_root();
-        let dependency_root = fixture_root.join("basic-wallet");
-        write_masp_fixture(&dependency_root.join("target/miden/debug/basic_wallet.masp"), None);
+        let dependency_root = fixture_root.join("wit-world-fixture-dep");
+        write_masp_fixture(
+            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
+            None,
+        );
         let package = package_with_dependency(dependency_root);
 
         let error =
@@ -881,6 +903,38 @@ world empty-export-world {
         assert!(message.contains("does not embed component WIT"), "unexpected error: {message}");
         assert!(message.contains("older Miden toolchain"), "unexpected error: {message}");
         assert!(message.contains("cargo miden build"), "unexpected error: {message}");
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn non_self_contained_embedded_wit_reports_self_containment_error() {
+        // A foreign-produced package may embed WIT that imports another package; the diagnostic
+        // must name the self-containment requirement instead of suggesting a rebuild.
+        let importing_wit = r#"package miden:importing@0.1.0;
+
+world importer {
+    import miden:not-embedded/api@0.1.0;
+}
+"#;
+        let fixture_root = empty_fixture_root();
+        let dependency_root = fixture_root.join("wit-world-fixture-dep");
+        write_masp_fixture(
+            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
+            Some(importing_wit),
+        );
+        let package = package_with_dependency(dependency_root);
+
+        let error =
+            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
+                .expect_err("embedded WIT referencing a foreign package must fail metadata load");
+        let message = error.to_string();
+
+        assert!(
+            message.contains("references a package that is not embedded alongside it"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("must be self-contained"), "unexpected error: {message}");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }

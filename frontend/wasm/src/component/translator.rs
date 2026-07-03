@@ -1,9 +1,7 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
-use midenc_frontend_wasm_metadata::{
-    FrontendMetadata, PackageSections, ProtocolExportKind, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
-};
+use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
     self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, SymbolNameComponent,
     SymbolPath,
@@ -35,7 +33,8 @@ use crate::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
         module_env::{
-            ParsedModule, merge_frontend_metadata, validate_lifted_frontend_metadata_exports,
+            ParsedModule, collect_package_sections, merge_frontend_metadata,
+            validate_lifted_frontend_metadata_exports,
         },
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
@@ -174,38 +173,12 @@ impl<'a> ComponentTranslator<'a> {
             &self.lifted_export_names,
         )?;
 
-        let component_wit_bytes_vec: Vec<Vec<u8>> = self
-            .nested_modules
-            .iter()
-            .flat_map(|t| t.1.component_wit_bytes.map(|slice| slice.to_vec()))
-            .collect();
-        if component_wit_bytes_vec.len() > 1 {
-            return Err(Report::msg(format!(
-                "found {} '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom sections across the \
-                 component's core modules; a component may embed at most one component WIT section",
-                component_wit_bytes_vec.len(),
-            )));
-        }
-        let component_wit_bytes = component_wit_bytes_vec.first().map(ToOwned::to_owned);
-
-        let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
-            .nested_modules
-            .into_iter()
-            .flat_map(|t| t.1.account_component_metadata_bytes.map(|slice| slice.to_vec()))
-            .collect();
-        assert!(
-            account_component_metadata_bytes_vec.len() <= 1,
-            "unexpected multiple core Wasm module to have account component metadata section",
-        );
-        let account_component_metadata_bytes =
-            account_component_metadata_bytes_vec.first().map(ToOwned::to_owned);
+        let sections =
+            collect_package_sections(self.nested_modules.iter().map(|(_, module)| module))?;
 
         let output = FrontendOutput {
             component: self.result.component,
-            sections: PackageSections {
-                account_component_metadata: account_component_metadata_bytes,
-                component_wit: component_wit_bytes,
-            },
+            sections,
         };
         Ok(output)
     }

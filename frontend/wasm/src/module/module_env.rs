@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{
-    FrontendMetadata, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+    FrontendMetadata, PackageSections, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
     WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
@@ -129,14 +129,90 @@ fn validate_component_wit_section(
 
 /// Counts top-level `package <id>;` declarations in WIT source.
 ///
-/// Nested package declarations (`package <id> { ... }`) are excluded; a well-formed embedded WIT
-/// source contains exactly one top-level declaration, so a higher count indicates concatenated
-/// sections from multiple component implementations.
+/// Comments — including nested `/* */` block comments — are stripped first so commented-out
+/// declarations are not counted, and nested package declarations (`package <id> { ... }`) are
+/// excluded. A well-formed embedded WIT source contains exactly one top-level declaration, so a
+/// higher count indicates concatenated sections from multiple component implementations.
 fn count_top_level_wit_packages(wit: &str) -> usize {
-    wit.lines()
-        .map(|line| line.split_once("//").map(|(before, _)| before).unwrap_or(line).trim())
+    strip_wit_comments(wit)
+        .lines()
+        .map(str::trim)
         .filter(|line| line.starts_with("package ") && line.contains(';') && !line.contains('{'))
         .count()
+}
+
+/// Strips `//` line comments and nested `/* */` block comments, preserving line structure.
+fn strip_wit_comments(wit: &str) -> String {
+    let mut stripped = String::with_capacity(wit.len());
+    let mut chars = wit.chars().peekable();
+    let mut block_depth = 0usize;
+    while let Some(ch) = chars.next() {
+        match ch {
+            '/' if block_depth == 0 && chars.peek() == Some(&'/') => {
+                for next in chars.by_ref() {
+                    if next == '\n' {
+                        stripped.push('\n');
+                        break;
+                    }
+                }
+            }
+            '/' if chars.peek() == Some(&'*') => {
+                chars.next();
+                block_depth += 1;
+            }
+            '*' if block_depth > 0 && chars.peek() == Some(&'/') => {
+                chars.next();
+                block_depth -= 1;
+            }
+            '\n' => stripped.push('\n'),
+            _ if block_depth == 0 => stripped.push(ch),
+            _ => {}
+        }
+    }
+    stripped
+}
+
+/// Merges the package-section payloads of all core modules that feed one component.
+///
+/// Each payload is a singleton of the final package, so at most one module may supply it.
+pub(crate) fn collect_package_sections<'data>(
+    modules: impl Iterator<Item = &'data ParsedModule<'data>>,
+) -> WasmResult<PackageSections> {
+    let mut account_component_metadata = None;
+    let mut component_wit = None;
+    for module in modules {
+        merge_section_payload(
+            &mut account_component_metadata,
+            module.account_component_metadata_bytes,
+            "rodata,miden_account",
+        )?;
+        merge_section_payload(
+            &mut component_wit,
+            module.component_wit_bytes,
+            WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+        )?;
+    }
+    Ok(PackageSections {
+        account_component_metadata: account_component_metadata.map(<[u8]>::to_vec),
+        component_wit: component_wit.map(<[u8]>::to_vec),
+    })
+}
+
+/// Records a module's section payload, rejecting a second module supplying the same section.
+fn merge_section_payload<'data>(
+    merged: &mut Option<&'data [u8]>,
+    payload: Option<&'data [u8]>,
+    section_name: &str,
+) -> WasmResult<()> {
+    if let Some(payload) = payload
+        && merged.replace(payload).is_some()
+    {
+        return Err(Report::msg(format!(
+            "found multiple '{section_name}' custom sections across the component's core modules; \
+             only one is allowed per component"
+        )));
+    }
+    Ok(())
 }
 
 /// Aggregates frontend metadata from all core modules that participate in one component.
@@ -378,11 +454,27 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
             }
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
             Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
-                self.result.account_component_metadata_bytes = Some(s.data());
+                if self.result.account_component_metadata_bytes.replace(s.data()).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(
+                            "wasm error: multiple 'rodata,miden_account' custom sections were \
+                             found; only one is allowed per core Wasm module",
+                        )
+                        .into_report());
+                }
             }
             Payload::CustomSection(s) if s.name() == WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME => {
                 validate_component_wit_section(s.data(), diagnostics)?;
-                self.result.component_wit_bytes = Some(s.data());
+                if self.result.component_wit_bytes.replace(s.data()).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "wasm error: multiple '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' \
+                             custom sections were found; only one is allowed per core Wasm module"
+                        ))
+                        .into_report());
+                }
             }
             Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
                 let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {

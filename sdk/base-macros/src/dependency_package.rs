@@ -133,9 +133,30 @@ pub(crate) fn resolve_dependency_package_path(name: &str, root: &Path) -> Result
 
     let package_stems = dependency_package_stems(name, root);
     let output_dirs = dependency_output_dirs(root, &profiles);
-    for dir in &output_dirs {
-        if let Some(package) = find_dependency_package_in_dir(dir, &package_stems)? {
-            return Ok(package.clone());
+
+    // Prefer the freshest name-matched package among the dependency's own output directories:
+    // `PROFILE` is never set for proc macros, so profile order alone would let a stale debug
+    // package shadow a fresh release build.
+    let own_matches = output_dirs
+        .own
+        .iter()
+        .filter_map(|dir| find_stem_match_in_dir(dir, &package_stems).transpose())
+        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(package) = latest_modified(own_matches) {
+        return Ok(package);
+    }
+
+    // A solitary `.masp` is accepted only in the dependency's own directories, where it cannot
+    // belong to anything else; an ambient directory may hold an unrelated package.
+    for dir in &output_dirs.own {
+        if let Some(package) = find_solitary_package_in_dir(dir)? {
+            return Ok(package);
+        }
+    }
+
+    for dir in &output_dirs.ambient {
+        if let Some(package) = find_stem_match_in_dir(dir, &package_stems)? {
+            return Ok(package);
         }
     }
 
@@ -145,16 +166,29 @@ pub(crate) fn resolve_dependency_package_path(name: &str, root: &Path) -> Result
     ))
 }
 
+/// Returns the most recently modified of the given package paths.
+///
+/// Ties (including unreadable timestamps) resolve to the earliest candidate, i.e. the most
+/// precise search directory.
+fn latest_modified(packages: Vec<PathBuf>) -> Option<PathBuf> {
+    packages
+        .into_iter()
+        .rev()
+        .max_by_key(|path| fs::metadata(path).and_then(|metadata| metadata.modified()).ok())
+}
+
 /// Formats the diagnostic emitted when a dependency's compiled package cannot be located.
 fn missing_dependency_package_message(
     name: &str,
     root: &Path,
     package_stems: &[String],
-    output_dirs: &[PathBuf],
+    output_dirs: &DependencyOutputDirs,
     profiles: &[String],
 ) -> String {
     let searched = output_dirs
+        .own
         .iter()
+        .chain(output_dirs.ambient.iter())
         .map(|dir| format!("'{}'", dir.display()))
         .collect::<Vec<_>>()
         .join(", ");
@@ -194,34 +228,43 @@ fn dependency_build_hint(root: &Path) -> String {
     }
 }
 
-/// Returns candidate output directories where a dependency `.masp` may have been written.
-fn dependency_output_dirs(root: &Path, profiles: &[String]) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
+/// Candidate output directories where a dependency `.masp` may have been written.
+struct DependencyOutputDirs {
+    /// Directories derived from the dependency's own root; a package found here belongs to it.
+    own: Vec<PathBuf>,
+    /// Ambient directories (`CARGO_TARGET_DIR`, `OUT_DIR`, cwd targets) that may also hold
+    /// packages of unrelated projects.
+    ambient: Vec<PathBuf>,
+}
 
+/// Returns candidate output directories where a dependency `.masp` may have been written.
+fn dependency_output_dirs(root: &Path, profiles: &[String]) -> DependencyOutputDirs {
     // The dependency root is the most precise location for path dependencies. Prefer it over
     // ambient target directories so restored or previously built artifacts cannot shadow the
     // package that belongs to the dependency being wrapped.
-    push_profile_dirs(&mut dirs, root.join("target"), profiles);
-    push_manifest_ancestor_target_profile_dirs(&mut dirs, root, profiles);
-    push_ancestor_target_profile_dirs(&mut dirs, root, profiles);
+    let mut own = Vec::new();
+    push_profile_dirs(&mut own, root.join("target"), profiles);
+    push_manifest_ancestor_target_profile_dirs(&mut own, root, profiles);
+    push_ancestor_target_profile_dirs(&mut own, root, profiles);
 
+    let mut ambient = Vec::new();
     if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
-        push_profile_dirs(&mut dirs, PathBuf::from(target_dir), profiles);
+        push_profile_dirs(&mut ambient, PathBuf::from(target_dir), profiles);
     }
 
     if let Ok(out_dir) = env::var("OUT_DIR") {
         for ancestor in Path::new(&out_dir).ancestors() {
-            push_profile_dirs(&mut dirs, ancestor.to_path_buf(), profiles);
+            push_profile_dirs(&mut ambient, ancestor.to_path_buf(), profiles);
         }
     }
 
     if let Ok(current_dir) = env::current_dir() {
-        push_profile_dirs(&mut dirs, current_dir.join("target"), profiles);
-        push_manifest_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
-        push_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
+        push_profile_dirs(&mut ambient, current_dir.join("target"), profiles);
+        push_manifest_ancestor_target_profile_dirs(&mut ambient, &current_dir, profiles);
+        push_ancestor_target_profile_dirs(&mut ambient, &current_dir, profiles);
     }
 
-    dirs
+    DependencyOutputDirs { own, ambient }
 }
 
 /// Adds `target/miden/<profile>` directories while preserving insertion order.
@@ -256,13 +299,10 @@ fn push_manifest_ancestor_target_profile_dirs(
     }
 }
 
-/// Finds a dependency package in `dir`, preferring filenames that match the package name.
-fn find_dependency_package_in_dir(
-    dir: &Path,
-    package_stems: &[String],
-) -> Result<Option<PathBuf>, Error> {
+/// Lists the `.masp` packages in `dir`, sorted by path.
+fn packages_in_dir(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     if !dir.is_dir() {
-        return Ok(None);
+        return Ok(Vec::new());
     }
 
     let mut packages = fs::read_dir(dir)
@@ -284,7 +324,12 @@ fn find_dependency_package_in_dir(
         .filter(|path| path.extension().is_some_and(|ext| ext == "masp"))
         .collect::<Vec<_>>();
     packages.sort();
+    Ok(packages)
+}
 
+/// Finds a package in `dir` whose filename matches one of the dependency's name stems.
+fn find_stem_match_in_dir(dir: &Path, package_stems: &[String]) -> Result<Option<PathBuf>, Error> {
+    let packages = packages_in_dir(dir)?;
     for stem in package_stems {
         if let Some(package) = packages.iter().find(|path| {
             path.file_stem()
@@ -294,8 +339,13 @@ fn find_dependency_package_in_dir(
             return Ok(Some(package.clone()));
         }
     }
+    Ok(None)
+}
 
-    Ok((packages.len() == 1).then(|| packages[0].clone()))
+/// Returns the package in `dir` when it is the directory's only one, regardless of its name.
+fn find_solitary_package_in_dir(dir: &Path) -> Result<Option<PathBuf>, Error> {
+    let mut packages = packages_in_dir(dir)?;
+    Ok((packages.len() == 1).then(|| packages.remove(0)))
 }
 
 /// Returns likely `.masp` filename stems for a dependency.
@@ -382,6 +432,51 @@ mod tests {
     }
 
     #[test]
+    fn prefers_the_freshest_stem_match_across_profile_dirs() {
+        let temp_root =
+            env::temp_dir().join(format!("midenc-dep-package-freshest-{}", std::process::id()));
+        let debug_dir = temp_root.join("target/miden/debug");
+        let release_dir = temp_root.join("target/miden/release");
+        std::fs::create_dir_all(&debug_dir).unwrap();
+        std::fs::create_dir_all(&release_dir).unwrap();
+        let debug_path = debug_dir.join("dep_fixture.masp");
+        let release_path = release_dir.join("dep_fixture.masp");
+        std::fs::write(&debug_path, b"stale").unwrap();
+        std::fs::write(&release_path, b"fresh").unwrap();
+        // `PROFILE` is unset for proc macros, so the debug dir is searched first; only the
+        // freshest-match rule makes the newer release artifact win.
+        let stale = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        std::fs::File::options()
+            .write(true)
+            .open(&debug_path)
+            .unwrap()
+            .set_modified(stale)
+            .unwrap();
+
+        let resolved = resolve_dependency_package_path("dep-fixture", &temp_root).unwrap();
+
+        assert_eq!(resolved, release_path);
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn accepts_a_solitary_package_in_the_dependency_own_dirs() {
+        let temp_root =
+            env::temp_dir().join(format!("midenc-dep-package-solitary-{}", std::process::id()));
+        let debug_dir = temp_root.join("target/miden/debug");
+        std::fs::create_dir_all(&debug_dir).unwrap();
+        let package_path = debug_dir.join("oddly_named.masp");
+        std::fs::write(&package_path, b"package bytes").unwrap();
+
+        let resolved = resolve_dependency_package_path("dep-fixture", &temp_root).unwrap();
+
+        assert_eq!(resolved, package_path);
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
     fn missing_dependency_package_message_explains_macro_time_requirement() {
         let temp_root =
             env::temp_dir().join(format!("midenc-fpi-missing-package-{}", std::process::id()));
@@ -390,8 +485,10 @@ mod tests {
 
         let profiles = vec!["release".to_string(), "debug".to_string()];
         let stems = vec!["counter".to_string(), "counter_component".to_string()];
-        let output_dirs =
-            vec![temp_root.join("target/miden/release"), temp_root.join("target/miden/debug")];
+        let output_dirs = DependencyOutputDirs {
+            own: vec![temp_root.join("target/miden/release"), temp_root.join("target/miden/debug")],
+            ambient: Vec::new(),
+        };
 
         let message = missing_dependency_package_message(
             "counter",

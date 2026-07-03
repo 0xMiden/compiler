@@ -52,6 +52,35 @@ package miden:nested@0.1.0 {
     assert_eq!(count_top_level_wit_packages(wit), 1);
 }
 
+/// Ensures declarations inside (nested) block comments are not counted as top-level packages.
+#[test]
+fn component_wit_ignores_block_commented_packages() {
+    let wit = r#"/* legacy:
+package miden:old@0.1.0;
+/* nested comment with package miden:inner@0.1.0; */
+still commented
+*/
+package miden:new@0.1.0;
+"#;
+
+    assert_eq!(count_top_level_wit_packages(wit), 1);
+}
+
+/// Documents the detector's boundary: byte-wise gluing without a newline hides the second
+/// declaration. The producers therefore wrap every embedded WIT payload in boundary newlines
+/// (`normalize_embedded_wit` in the SDK macros), which keeps concatenated sections detectable.
+#[test]
+fn component_wit_concatenation_needs_boundary_newlines() {
+    let first_without_trailing_newline = "package miden:first@0.1.0;\n\nworld first-world {\n}";
+    let second = "package miden:second@0.1.0;\n\nworld second-world {\n}\n";
+
+    let glued = format!("{first_without_trailing_newline}{second}");
+    assert_eq!(count_top_level_wit_packages(&glued), 1);
+
+    let normalized = format!("\n{first_without_trailing_newline}\n\n{second}\n");
+    assert_eq!(count_top_level_wit_packages(&normalized), 2);
+}
+
 /// Ensures duplicate `#[auth_script]` metadata across modules is rejected at merge time.
 #[test]
 fn component_frontend_metadata_rejects_duplicate_auth_exports() {

@@ -162,6 +162,12 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 /// Inline invocations come from other SDK macros (which embed the WIT themselves when the crate
 /// is a component), and multi-file `wit/` directories cannot be embedded verbatim, so both yield
 /// no section.
+///
+/// The WIT is embedded verbatim, and consumers resolve it against the bundled SDK WIT alone — so
+/// a file that is not self-contained (it imports other packages, e.g. from `wit/deps/`) or that
+/// exports no interface is skipped as well: embedding it would produce a package whose WIT no
+/// consumer can parse, while skipping routes consumers to the accurate "does not embed component
+/// WIT" diagnostic.
 fn local_wit_link_section(
     args: &GenerateArgs,
     config: &manifest_paths::ResolvedWit,
@@ -179,6 +185,9 @@ fn local_wit_link_section(
             format!("failed to read WIT file '{}': {err}", local_wit_path.display()),
         )
     })?;
+    if crate::wit_world::parse_dependency_wit_source(&wit_source).is_err() {
+        return Ok(TokenStream2::new());
+    }
     Ok(crate::util::generate_wit_link_section(&wit_source))
 }
 
@@ -1687,5 +1696,62 @@ interface api {
         }
 
         (resolve, world)
+    }
+
+    /// Builds a `ResolvedWit` whose embeddable local WIT is a temp file with the given source.
+    fn resolved_wit_with_local_file(name: &str, wit: &str) -> manifest_paths::ResolvedWit {
+        let dir = env::temp_dir()
+            .join(format!("miden-base-macros-generate-{name}-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("local WIT fixture directory must be created");
+        let path = dir.join("component.wit");
+        fs::write(&path, wit).expect("local WIT fixture must be written");
+        manifest_paths::ResolvedWit {
+            paths: Vec::new(),
+            dependency_sources: Vec::new(),
+            local_wit_root: Some(dir),
+            world: None,
+            embeddable_local_wit: Some(path),
+        }
+    }
+
+    #[test]
+    fn local_wit_link_section_embeds_self_contained_wit() {
+        let config = resolved_wit_with_local_file(
+            "self-contained",
+            r#"package miden:self-contained@0.1.0;
+
+interface api {
+    get: func() -> u64;
+}
+
+world api-world {
+    export api;
+}
+"#,
+        );
+
+        let tokens = local_wit_link_section(&GenerateArgs::default(), &config).unwrap();
+
+        assert!(!tokens.is_empty(), "self-contained local WIT must be embedded");
+    }
+
+    #[test]
+    fn local_wit_link_section_skips_non_self_contained_wit() {
+        // Consumers resolve embedded WIT against the SDK prelude alone, so a file importing
+        // another package must not be embedded — its package would be unusable as a dependency
+        // with a misleading parse error.
+        let config = resolved_wit_with_local_file(
+            "importing",
+            r#"package miden:importing@0.1.0;
+
+world importer {
+    import miden:not-embedded/api@0.1.0;
+}
+"#,
+        );
+
+        let tokens = local_wit_link_section(&GenerateArgs::default(), &config).unwrap();
+
+        assert!(tokens.is_empty(), "non-self-contained local WIT must not be embedded");
     }
 }
