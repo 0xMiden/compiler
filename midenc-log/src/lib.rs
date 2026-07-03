@@ -315,6 +315,7 @@
 
 pub mod filter;
 mod logger;
+mod suppress;
 mod writer;
 
 pub mod fmt;
@@ -322,6 +323,7 @@ pub mod fmt;
 pub use self::{
     fmt::{Target, TimestampPrecision, WriteStyle},
     logger::*,
+    suppress::SuppressKnownDependencyErrors,
 };
 
 #[doc = include_str!("../README.md")]
