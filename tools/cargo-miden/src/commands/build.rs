@@ -52,15 +52,17 @@ impl BuildCommand {
 
         match artifact {
             Artifact::Assembled(package) => {
-                let output_path = metadata_out_dir
-                    .join(&*package.name)
-                    .with_extension(miden_mast_package::Package::EXTENSION);
-                package.write_masp_file(&metadata_out_dir).with_context(|| {
-                    format!(
-                        "failed to write package artifact for {}@{}",
-                        &package.name, &package.version
-                    )
-                })?;
+                // Written atomically: dependent projects deserialize this artifact from disk
+                // while expanding their own macros, potentially in parallel with a rebuild.
+                let output_path =
+                    midenc_compile::cargo::write_package_atomic(&package, &metadata_out_dir)
+                        .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))
+                        .with_context(|| {
+                            format!(
+                                "failed to write package artifact for {}@{}",
+                                &package.name, &package.version
+                            )
+                        })?;
                 Ok(output_path)
             }
             _ => unreachable!(),

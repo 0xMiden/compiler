@@ -267,7 +267,7 @@ fn cargo_build(
         "debug"
     };
     let masp_out_dir = dependency_dir.join("target").join("miden").join(profile);
-    package.write_masp_file(&masp_out_dir).map_err(|err| {
+    write_package_atomic(&package, &masp_out_dir).map_err(|err| {
         Report::msg(format!(
             "failed to materialize dependency package '{package_name}' to '{}': {err}",
             masp_out_dir.display()
@@ -275,6 +275,55 @@ fn cargo_build(
     })?;
 
     Ok(package)
+}
+
+/// Write `package` to `<out_dir>/<package name>.masp`, atomically.
+///
+/// The package is serialized to a temporary file in the same directory and then renamed over
+/// the final path. Compiled packages are read concurrently by other build processes — e.g. the
+/// `#[account(..)]` proc macro of a dependent crate deserializes a dependency's `.masp` while a
+/// parallel build of that dependency may be rewriting it — and the rename guarantees a reader
+/// only ever observes a complete artifact.
+pub fn write_package_atomic(
+    package: &miden_mast_package::Package,
+    out_dir: &Path,
+) -> Result<PathBuf, Report> {
+    std::fs::create_dir_all(out_dir).map_err(|err| {
+        Report::msg(format!("failed to create output directory '{}': {err}", out_dir.display()))
+    })?;
+    let output_path = out_dir
+        .join(&*package.name)
+        .with_extension(miden_mast_package::Package::EXTENSION);
+    let tmp = tempfile::Builder::new()
+        .prefix(&format!(".{}", &*package.name))
+        .suffix(".masp.tmp")
+        .tempfile_in(out_dir)
+        .map_err(|err| {
+            Report::msg(format!(
+                "failed to create a temporary file for '{}': {err}",
+                output_path.display()
+            ))
+        })?;
+    let tmp_path = tmp.into_temp_path();
+    package.write_to_file(&tmp_path).map_err(|err| {
+        Report::msg(format!("failed to write package artifact '{}': {err}", output_path.display()))
+    })?;
+    tmp_path.persist(&output_path).map_err(|err| {
+        Report::msg(format!(
+            "failed to atomically replace package artifact '{}': {err}",
+            output_path.display()
+        ))
+    })?;
+
+    // Temporary files are created with restrictive permissions; restore the
+    // conventional mode for a build artifact
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&output_path, std::fs::Permissions::from_mode(0o644));
+    }
+
+    Ok(output_path)
 }
 
 /// Parse `cargo -Zscript`-style frontmatter from a given input string, if present.
