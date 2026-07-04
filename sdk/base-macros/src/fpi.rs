@@ -946,14 +946,24 @@ fn find_dependency_package_in_dir(
         .collect::<Vec<_>>();
     packages.sort();
 
-    for stem in package_stems {
-        if let Some(package) = packages.iter().find(|path| {
+    // Pool the candidates matching any expected stem and prefer the most recently written one.
+    // Multiple matches only occur when stale artifacts - from older builds or older package
+    // naming conventions - sit next to the current artifact; the dependent's build materializes
+    // its dependency packages immediately before compiling, so the newest artifact is the one
+    // belonging to this build, while first-stem-wins could resurrect a stale (and potentially
+    // unreadable) package.
+    let mut candidates = packages
+        .iter()
+        .filter(|path| {
             path.file_stem()
                 .and_then(|value| value.to_str())
-                .is_some_and(|file_stem| file_stem == stem)
-        }) {
-            return Ok(Some(package.clone()));
-        }
+                .is_some_and(|file_stem| package_stems.iter().any(|stem| stem == file_stem))
+        })
+        .collect::<Vec<_>>();
+    candidates
+        .sort_by_key(|path| std::cmp::Reverse(fs::metadata(path).and_then(|m| m.modified()).ok()));
+    if let Some(package) = candidates.first() {
+        return Ok(Some((*package).clone()));
     }
 
     Ok((packages.len() == 1).then(|| packages[0].clone()))
