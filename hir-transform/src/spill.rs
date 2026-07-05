@@ -79,11 +79,13 @@ pub trait SpillLike {
 /// An operation trait for operations that implement reload-like behavior for purposes of the
 /// spills transformation/rewrite.
 ///
-/// A reload-like operation is expected to take a single value, for which a dominating [SpillLike]
-/// op exists, and produce a new, unique SSA value corresponding to the reloaded spill value. The
-/// spills transformation will handle rewriting any uses of the [SpillLike] and [ReloadLike] ops
-/// such that they are not present after the transformation, in conjunction with an implementation
-/// of the [TransformSpillsInterface].
+/// A reload-like operation is expected to take a single value, for which at least one [SpillLike]
+/// op of that value executes on every control-flow path reaching the reload (a reload after a
+/// join may be covered by a set of per-path spills, none of which individually dominates it), and
+/// produce a new, unique SSA value corresponding to the reloaded spill value. The spills
+/// transformation will handle rewriting any uses of the [SpillLike] and [ReloadLike] ops such
+/// that they are not present after the transformation, in conjunction with an implementation of
+/// the [TransformSpillsInterface].
 pub trait ReloadLike {
     /// Returns the operand corresponding to the spilled value
     fn spilled(&self) -> OpOperand;
@@ -107,7 +109,9 @@ pub trait ReloadLike {
 /// * Rewrites `op` such that all uses of a spilled value dominated by a reload, are rewritten to
 ///   use that reload, or in the case of crossing a dominance frontier, a materialized block
 ///   argument/phi representing the closest definition of that value from each predecessor.
-/// * Rewrites all spill and reload instructions to their primitive memory store/load ops
+/// * Rewrites all spill and reload instructions to their primitive memory store/load ops.
+///   Dominance governs only the SSA use rewrite above; whether a spill is materialized or elided
+///   is decided by reachability to live reloads (see [rewrite_spill_pseudo_instructions]).
 pub fn transform_spills(
     op: OperationRef,
     analysis: &mut SpillAnalysis,
