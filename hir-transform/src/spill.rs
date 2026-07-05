@@ -926,6 +926,10 @@ fn rewrite_spill_pseudo_instructions(
 
 /// Returns true if some control-flow path from `spill` reaches `reload`.
 ///
+/// The result may be conservatively `true` when reachability cannot be reasoned about precisely;
+/// `false` means the reload is provably unreachable from the spill, which is the direction
+/// callers rely on when erasing spills.
+///
 /// Reachability, not dominance, is the criterion for keeping a spill: the spills analysis
 /// conservatively places spills per path (e.g. along each edge of a join), so a reload after the
 /// join is covered by a set of spills, none of which individually dominates it. Eliding a spill
@@ -975,6 +979,31 @@ pub fn spill_reaches_reload(spill: OperationRef, reload: OperationRef) -> bool {
             continue;
         }
         worklist.extend(BlockRef::children(block));
+    }
+
+    // No forward path within the common region. Control can still leave the region after the
+    // spill and come back around to the reload if the common region, or any region enclosing
+    // it, can execute more than once (e.g. the regions of an `scf.while`): such back edges are
+    // expressed in the region graph of the owning op, not as block successors.
+    let mut region = Some(common_region.as_region_ref());
+    while let Some(r) = region {
+        let Some(owner) = r.parent() else {
+            break;
+        };
+        let owner_op = owner.borrow();
+        if owner_op.implements::<dyn IsolatedFromAbove>() {
+            // Function boundary: every invocation gets fresh locals, so re-entry of the
+            // function is irrelevant to spill coverage.
+            break;
+        }
+        if !owner_op.implements::<dyn RegionBranchOpInterface>() {
+            // Unknown region semantics: conservatively treat re-entry as possible.
+            return true;
+        }
+        if r.borrow().is_repetitive_region() {
+            return true;
+        }
+        region = owner_op.parent_region();
     }
 
     false
