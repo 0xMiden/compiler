@@ -1,0 +1,68 @@
+// RUN: hir-opt %s --pass-pipeline='builtin.module(builtin.function(transform-spills))' | filecheck %s
+
+// Both arms of the diamond below spill the same value (each contains a copy of the
+// high-pressure call), while the only use of that value after the spills lies after the join.
+// The spills analysis places one spill per arm, and the single reload lands at the join, so the
+// reload is covered by the *set* of spills, none of which individually dominates it. This is a
+// regression test for spill pruning: pruning spills that do not dominate a live reload erased
+// both arm spills while keeping the reload, and reload materialization then failed because no
+// procedure local was ever allocated for the spilled value.
+//
+// Operand stack pressure at each call (the analysis models pressure in felts with K = 16): the
+// call arguments require 15 felts (%8: ptr = 1, %5: u128 = 4, %9: u128 passed twice = 8,
+// u64 = 2), and %1: u32 and %3: u32 are live across both calls (used only in the join block),
+// for a total of 15 + 2 = 17 > K, so exactly one of {%1, %3} is spilled in each arm.
+
+// COM: No spill materializes before the branch
+// CHECK-NOT: hir.store_local
+// CHECK: cf.cond_br %{{\d+}} ^[[THEN:block\d+]], ^[[ELSE:block\d+]]
+
+// COM: The then-arm spills the value live across both calls, before its call
+// CHECK: ^[[THEN]]:
+// CHECK: hir.store_local %[[V:\d+]] <{ local = #builtin.local_variable<[[L:\d+]], u32> }>
+// CHECK-NEXT: hir.exec ::@test::@example
+
+// COM: The else-arm spills the same value to the same local
+// CHECK: ^[[ELSE]]:
+// CHECK: hir.store_local %[[V]] <{ local = #builtin.local_variable<[[L]], u32> }>
+// CHECK-NEXT: hir.exec ::@test::@example
+// CHECK-NOT: hir.store_local
+
+// COM: The join holds the single reload of the spilled value
+// CHECK: hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>
+// CHECK-NOT: hir.load_local
+// CHECK-NOT: hir.store_local
+// CHECK: builtin.ret %
+builtin.module public @test {
+    builtin.function public extern("C") @join_covered_reload(%0: ptr<u8, element>) -> u32 {
+        %1 = hir.ptr_to_int %0 <{ ty = #builtin.type<u32> }>;
+        %2 = arith.constant 32 : u32;
+        %3 = arith.add %1, %2 <{ overflow = #builtin.overflow<unchecked> }>;
+        %4 = hir.int_to_ptr %3 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %5 = hir.load %4;
+        %6 = arith.constant 64 : u32;
+        %7 = arith.add %1, %6 <{ overflow = #builtin.overflow<unchecked> }>;
+        %8 = hir.int_to_ptr %7 <{ ty = #builtin.type<ptr<u128, element>> }>;
+        %9 = hir.load %8;
+        %10 = arith.constant 0 : u32;
+        %11 = arith.eq %1, %10;
+        cf.cond_br %11 ^then, ^else : (i1);
+    ^then:
+        %12 = arith.constant 1 : u64;
+        %13 = hir.exec ::@test::@example(%8, %5, %9, %9, %12) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%13 : u32);
+    ^else:
+        %14 = arith.constant 1 : u64;
+        %15 = hir.exec ::@test::@example(%8, %5, %9, %9, %14) : extern("C") (ptr<u128, element>, u128, u128, u128, u64) -> u32;
+        cf.br ^join(%15 : u32);
+    ^join(%16: u32):
+        %17 = arith.constant 5 : u32;
+        %18 = arith.add %1, %17 <{ overflow = #builtin.overflow<unchecked> }>;
+        %19 = arith.add %18, %16 <{ overflow = #builtin.overflow<unchecked> }>;
+        %20 = arith.add %19, %3 <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %20 : (u32);
+    };
+    builtin.function public extern("C") @example(%p: ptr<u128, element>, %x: u128, %y: u128, %z: u128, %w: u64) -> u32 {
+        builtin.ret_imm 42 : u32;
+    };
+};
