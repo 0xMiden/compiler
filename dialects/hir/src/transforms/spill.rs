@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{format, rc::Rc};
 
 use midenc_hir::{
     BlockRef, BuilderExt, EntityMut, Op, OpBuilder, OperationName, OperationRef, Report, Rewriter,
@@ -154,7 +154,12 @@ impl TransformSpillsInterface for TransformSpillsImpl {
         use crate::HirOpBuilder;
 
         let spilled = reload.borrow().as_trait::<dyn ReloadLike>().unwrap().spilled_value();
-        let local = self.locals[&spilled];
+        let Some(local) = self.locals.get(&spilled).copied() else {
+            return Err(Report::msg(format!(
+                "live reload of {spilled} has no corresponding spill: every kept reload must be \
+                 covered by at least one spill of the same value"
+            )));
+        };
         let reloaded = rewriter.load_local(local, reload.span())?;
 
         rewriter.replace_op_with_values(reload, &[Some(reloaded)]);
