@@ -21,6 +21,7 @@
 // CHECK: ^[[THEN]]:
 // CHECK: hir.store_local %[[V:\d+]] <{ local = #builtin.local_variable<[[L:\d+]], u32> }>
 // CHECK-NEXT: hir.exec ::@test::@example
+// CHECK-NOT: hir.store_local
 
 // COM: The else-arm spills the same value to the same local
 // CHECK: ^[[ELSE]]:
