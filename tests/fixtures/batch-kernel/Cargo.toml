@@ -1,0 +1,22 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "batch-kernel"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden-sdk-alloc = { path = "../../../sdk/alloc" }
+miden-stdlib-sys = { path = "../../../sdk/stdlib-sys" }
+
+[profile.release]
+panic = "abort"
+# optimize for size
+opt-level = "z"
+debug = false
+trim-paths = ["diagnostics", "object"]
