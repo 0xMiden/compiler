@@ -94,7 +94,8 @@ pub(crate) fn generate_wit_link_section(wit_source: &str) -> TokenStream2 {
 ///
 /// The linker concatenates identically named custom sections byte-wise; without the padding a
 /// blob missing a trailing newline would glue the next blob's `package ...;` declaration onto its
-/// last line, hiding the concatenation from the frontend's duplicate-implementation detector.
+/// last line, hiding the concatenation from the frontend's duplicate-implementation detector
+/// (`count_top_level_wit_packages` in `midenc-frontend-wasm`), which scans line-wise.
 fn normalize_embedded_wit(wit_source: &str) -> String {
     let mut normalized =
         String::with_capacity(wit_source.len() + 2 - usize::from(wit_source.starts_with('\n')));

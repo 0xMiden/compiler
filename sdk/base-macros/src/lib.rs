@@ -76,6 +76,8 @@ mod generate;
 mod manifest_paths;
 mod note;
 mod script;
+#[cfg(test)]
+mod test_support;
 mod types;
 mod util;
 mod wit_builder;

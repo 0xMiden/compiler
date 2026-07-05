@@ -122,6 +122,11 @@ files, or referencing packages under `wit/deps/` other than the bundled SDK WIT,
 embedded verbatim yet; consolidate it into one self-contained file if the component is consumed as
 a Miden dependency.
 
+Note for the editor workflow: previously, `cargo check` (or rust-analyzer) of the dependency crate
+regenerated its WIT under `target/generated-wit` as a macro side effect. Dependency WIT now comes
+from the compiled package, so run `cargo miden build` for the dependency once (and again after
+changing its interface) before checking a dependent crate.
+
 ## 0.13.0 -> 0.13.1
 
 ### `*_note::get_metadata` returns a single-word `NoteMetadata`

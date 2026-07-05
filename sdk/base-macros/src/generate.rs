@@ -501,7 +501,8 @@ struct LoadedWitSources {
     /// The resolved WIT definitions containing all types, interfaces, and worlds.
     resolve: Resolve,
     /// Package IDs to use for world selection. When inline source is provided, this contains
-    /// only the inline package; otherwise it contains all packages from file paths.
+    /// only the inline package; otherwise it contains the packages of every loaded source (the
+    /// SDK prelude paths, the dependency packages' embedded WIT, and the local `wit/` directory).
     packages: Vec<PackageId>,
     /// File paths that were read during WIT parsing. Used to generate dummy `include_bytes!`
     /// calls so rustc knows to recompile when these files change.
@@ -1733,6 +1734,9 @@ world api-world {
         let tokens = local_wit_link_section(&GenerateArgs::default(), &config).unwrap();
 
         assert!(!tokens.is_empty(), "self-contained local WIT must be embedded");
+
+        fs::remove_dir_all(config.local_wit_root.expect("fixture has a local wit root"))
+            .expect("temporary fixture directory must be removed");
     }
 
     #[test]
@@ -1753,5 +1757,8 @@ world importer {
         let tokens = local_wit_link_section(&GenerateArgs::default(), &config).unwrap();
 
         assert!(tokens.is_empty(), "non-self-contained local WIT must not be embedded");
+
+        fs::remove_dir_all(config.local_wit_root.expect("fixture has a local wit root"))
+            .expect("temporary fixture directory must be removed");
     }
 }
