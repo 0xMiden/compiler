@@ -11,7 +11,7 @@ use midenc_hir::{
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
     testing::{Test, parse_function_fixpoint},
 };
-use midenc_hir_transform::spill_reaches_reload;
+use midenc_hir_transform::op_reaches;
 
 use crate::{HirOpBuilder, transforms::TransformSpills};
 
@@ -643,21 +643,18 @@ fn spill_reachability_in_branching_cfg() -> TestResult<()> {
     let right_op = op_at(block_at(function, 2), 0);
     let join_op = op_at(block_at(function, 3), 0);
 
-    assert!(spill_reaches_reload(left_op, join_op), "arm must reach the join");
-    assert!(spill_reaches_reload(right_op, join_op), "arm must reach the join");
+    assert!(op_reaches(left_op, join_op), "arm must reach the join");
+    assert!(op_reaches(right_op, join_op), "arm must reach the join");
+    assert!(!op_reaches(left_op, right_op), "sibling arms must not reach each other");
     assert!(
-        !spill_reaches_reload(left_op, right_op),
-        "sibling arms must not reach each other"
-    );
-    assert!(
-        spill_reaches_reload(entry_first, entry_second),
+        op_reaches(entry_first, entry_second),
         "earlier op must reach a later op in the same block"
     );
     assert!(
-        !spill_reaches_reload(entry_second, entry_first),
+        !op_reaches(entry_second, entry_first),
         "later op must not reach an earlier op without a cycle"
     );
-    assert!(!spill_reaches_reload(join_op, left_op), "join must not reach an arm");
+    assert!(!op_reaches(join_op, left_op), "join must not reach an arm");
     Ok(())
 }
 
@@ -689,12 +686,12 @@ fn spill_reachability_through_loop_back_edge() -> TestResult<()> {
     let body_op = op_at(block_at(function, 2), 0);
     let exit_op = op_at(block_at(function, 3), 0);
 
-    assert!(spill_reaches_reload(body_op, header_op), "back edge must reach the header");
+    assert!(op_reaches(body_op, header_op), "back edge must reach the header");
     assert!(
-        spill_reaches_reload(header_second, header_op),
+        op_reaches(header_second, header_op),
         "later op must reach an earlier op in the same block through the loop"
     );
-    assert!(!spill_reaches_reload(exit_op, body_op), "exit must not reach the loop body");
+    assert!(!op_reaches(exit_op, body_op), "exit must not reach the loop body");
     Ok(())
 }
 
@@ -730,20 +727,14 @@ fn spill_reachability_across_nested_regions() -> TestResult<()> {
     let then_op = op_in_region(if_op, 0, 0);
     let else_op = op_in_region(if_op, 1, 0);
 
+    assert!(op_reaches(pre_op, then_op), "op before the region op must reach into it");
+    assert!(op_reaches(then_op, post_op), "nested op must reach past the region op");
     assert!(
-        spill_reaches_reload(pre_op, then_op),
-        "op before the region op must reach into it"
-    );
-    assert!(
-        spill_reaches_reload(then_op, post_op),
-        "nested op must reach past the region op"
-    );
-    assert!(
-        !spill_reaches_reload(post_op, then_op),
+        !op_reaches(post_op, then_op),
         "op after the region op must not reach back into it"
     );
     assert!(
-        spill_reaches_reload(then_op, else_op),
+        op_reaches(then_op, else_op),
         "sibling regions of one op conservatively reach each other"
     );
     Ok(())
@@ -788,16 +779,13 @@ fn spill_reachability_through_region_re_entry() -> TestResult<()> {
     let late_op = op_in_region(while_op, 0, 2);
 
     assert!(
-        spill_reaches_reload(late_op, early_op),
+        op_reaches(late_op, early_op),
         "a later op must reach an earlier op in the same repetitive region through re-entry"
     );
     assert!(
-        spill_reaches_reload(early_op, late_op),
+        op_reaches(early_op, late_op),
         "earlier op must reach a later op in the same block"
     );
-    assert!(
-        !spill_reaches_reload(ret_op, late_op),
-        "an op after the loop must not reach into it"
-    );
+    assert!(!op_reaches(ret_op, late_op), "an op after the loop must not reach into it");
     Ok(())
 }
