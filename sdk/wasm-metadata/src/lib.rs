@@ -1,4 +1,6 @@
-//! Shared encoding for frontend-only Wasm metadata emitted by SDK macros.
+//! Shared definitions for the out-of-band metadata exchanged between the Miden SDK macros and
+//! the compiler: Wasm custom-section names and encodings, and the package-section payloads
+//! carried through the compiler pipeline into the compiled Miden package (`.masp`).
 
 #![deny(warnings)]
 #![deny(missing_docs)]

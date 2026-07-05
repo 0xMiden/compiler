@@ -30,6 +30,8 @@ pub(crate) struct ResolvedWit {
     /// The crate's local `wit/` directory, loaded after the dependency sources so its WIT can
     /// import the dependency packages.
     pub local_wit_root: Option<PathBuf>,
+    /// The `package/world` id detected in the local WIT directory, used for wit-bindgen world
+    /// selection.
     pub world: Option<String>,
     /// The world-defining local WIT file, present when it is the crate's only WIT file and can
     /// therefore be embedded verbatim as the component's public WIT.

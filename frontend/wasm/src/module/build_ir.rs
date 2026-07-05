@@ -1,7 +1,6 @@
 use core::{mem, str::FromStr};
 use std::rc::Rc;
 
-use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::{
     Builder, BuilderExt, Context, FunctionIdent, FxHashMap, Ident, Op, OpBuilder, SymbolPath,
     Visibility,
@@ -24,7 +23,7 @@ use crate::{
         DefinedFuncIndex,
         func_translator::FuncTranslator,
         linker_stubs::{is_unreachable_stub, maybe_lower_linker_stub},
-        module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
+        module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule, collect_package_sections},
         types::ir_type,
     },
 };
@@ -53,12 +52,7 @@ pub fn translate_module_as_component(
     if let Some(name_override) = config.override_name.as_ref() {
         parsed_module.module.set_name_override(name_override.clone());
     }
-    let sections = PackageSections {
-        account_component_metadata: parsed_module
-            .account_component_metadata_bytes
-            .map(|bytes| bytes.to_vec()),
-        component_wit: parsed_module.component_wit_bytes.map(|bytes| bytes.to_vec()),
-    };
+    let sections = collect_package_sections(core::iter::once(&parsed_module))?;
     let module_types = module_types_builder;
 
     // If a world wasn't provided to us, create one

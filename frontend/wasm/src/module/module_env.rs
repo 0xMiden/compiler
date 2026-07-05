@@ -96,8 +96,9 @@ pub struct ParsedModule<'data> {
 /// Validates that a component WIT custom section holds exactly one top-level WIT package.
 ///
 /// Linking two `#[component]` implementations into one binary concatenates their identically
-/// named custom sections into a single section whose merged text is not valid WIT; name the
-/// actual cause here instead of surfacing an opaque parse error in dependent crates.
+/// named custom sections into a single section whose merged text is not valid WIT, and a section
+/// without any package declaration cannot be consumed either; name the actual cause here, at the
+/// producing crate, instead of surfacing an opaque parse error in dependent crates.
 fn validate_component_wit_section(
     bytes: &[u8],
     diagnostics: &DiagnosticsHandler,
@@ -112,19 +113,24 @@ fn validate_component_wit_section(
             .into_report());
     };
 
-    let package_declarations = count_top_level_wit_packages(wit);
-    if package_declarations > 1 {
-        return Err(diagnostics
+    match count_top_level_wit_packages(wit) {
+        1 => Ok(()),
+        0 => Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section does \
+                 not contain a top-level WIT package declaration"
+            ))
+            .into_report()),
+        package_declarations => Err(diagnostics
             .diagnostic(Severity::Error)
             .with_message(format!(
                 "wasm error: found {package_declarations} top-level WIT package declarations in \
                  the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section; a linked binary \
                  may contain at most one `#[component]` implementation"
             ))
-            .into_report());
+            .into_report()),
     }
-
-    Ok(())
 }
 
 /// Counts top-level `package <id>;` declarations in WIT source.
@@ -175,8 +181,8 @@ fn strip_wit_comments(wit: &str) -> String {
 /// Merges the package-section payloads of all core modules that feed one component.
 ///
 /// Each payload is a singleton of the final package, so at most one module may supply it.
-pub(crate) fn collect_package_sections<'data>(
-    modules: impl Iterator<Item = &'data ParsedModule<'data>>,
+pub(crate) fn collect_package_sections<'a, 'data: 'a>(
+    modules: impl Iterator<Item = &'a ParsedModule<'data>>,
 ) -> WasmResult<PackageSections> {
     let mut account_component_metadata = None;
     let mut component_wit = None;
