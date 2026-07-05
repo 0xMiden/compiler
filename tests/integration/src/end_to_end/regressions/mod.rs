@@ -2,4 +2,5 @@ mod func_arg_order;
 mod func_arg_same;
 mod invalid_stack_index_16_issue_872;
 mod invalid_stack_index_4_word_1_felt_args;
+mod issue1243;
 mod vec_realloc_copies_data_issue_811;
