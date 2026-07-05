@@ -748,3 +748,56 @@ fn spill_reachability_across_nested_regions() -> TestResult<()> {
     );
     Ok(())
 }
+
+/// Positional reachability through re-entry of a repetitive region.
+///
+/// A repetitive region (e.g. the `before` region of an `scf.while`) has no CFG back edge: its
+/// block ends in a region terminator with no block successors, and the loop is expressed in the
+/// region graph of the parent op. An op positioned after another op in such a region still
+/// reaches it, through the next iteration.
+#[test]
+fn spill_reachability_through_region_re_entry() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @spill_reachability_through_region_re_entry(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    %r = scf.while %zero before {
+    ^head(%i: u32):
+        %one = arith.constant 1 : u32;
+        %early = arith.add %i, %one <{ overflow = #builtin.overflow<unchecked> }>;
+        %late = arith.add %early, %early <{ overflow = #builtin.overflow<unchecked> }>;
+        %continue = arith.lt %late, %n;
+        scf.condition %continue, %late : (i1, u32);
+    } after {
+    ^body(%j: u32):
+        %next = arith.incr %j;
+        scf.yield %next : (u32);
+    } : (u32) -> u32;
+    builtin.ret %r : (u32);
+};"#;
+
+    let context = Rc::new(Context::default());
+    let (function, _) = parse_function_fixpoint(
+        &context,
+        "spill_reachability_through_region_re_entry.hir",
+        source,
+    )?;
+
+    let entry = block_at(function, 0);
+    let while_op = op_at(entry, 1);
+    let ret_op = op_at(entry, 2);
+    let early_op = op_in_region(while_op, 0, 1);
+    let late_op = op_in_region(while_op, 0, 2);
+
+    assert!(
+        spill_reaches_reload(late_op, early_op),
+        "a later op must reach an earlier op in the same repetitive region through re-entry"
+    );
+    assert!(
+        spill_reaches_reload(early_op, late_op),
+        "earlier op must reach a later op in the same block"
+    );
+    assert!(
+        !spill_reaches_reload(ret_op, late_op),
+        "an op after the loop must not reach into it"
+    );
+    Ok(())
+}
