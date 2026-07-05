@@ -1,0 +1,10 @@
+[package]
+name = "batch-kernel"
+version = "0.1.0"
+
+[[bin]]
+name = "batch-kernel"
+path = "<virtual>"
+
+[dependencies]
+miden-core = "*"
