@@ -13,6 +13,11 @@ use midenc_hir_transform::{self as transforms, ReloadLike, SpillLike, TransformS
 #[derive(Default)]
 pub struct TransformSpills;
 
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<TransformSpills>(
+    "transform-spills",
+    "materialize operand stack spills as stores/loads of procedure locals"
+));
+
 impl Pass for TransformSpills {
     type Target = Function;
 
