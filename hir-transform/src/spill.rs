@@ -454,7 +454,7 @@ fn rewrite_single_block_spills(
     }
 
     let context = { op.borrow().context_rc() };
-    rewrite_spill_pseudo_instructions(context, analysis, interface, None, trace_target)
+    rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
 fn rewrite_cfg_spills(
@@ -570,7 +570,7 @@ fn rewrite_cfg_spills(
         used_sets.insert(block_ref, used);
     }
 
-    rewrite_spill_pseudo_instructions(context, analysis, interface, Some(dominfo), trace_target)
+    rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
 /// Rewrite uses of spilled values in `op` and any nested regions of `op`.
@@ -838,19 +838,15 @@ fn rewrite_inserted_phi_uses(
 ///
 /// However, this produces dead spills on some paths through the function, which are not
 /// needed once rewrites have been performed. So we eliminate dead spills by identifying
-/// those spills which do not dominate any reloads - if a store to a spill slot can never
-/// be read, then the store can be elided.
+/// those spills which cannot reach any live reload of their value - if a store to a spill
+/// slot can never be read, then the store can be elided.
 fn rewrite_spill_pseudo_instructions(
     context: Rc<Context>,
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
-    dominfo: Option<&DominanceInfo>,
     trace_target: &TraceTarget,
 ) -> Result<(), Report> {
-    use midenc_hir::{
-        dominance::Dominates,
-        patterns::{RewriterImpl, TracingRewriterListener},
-    };
+    use midenc_hir::patterns::{RewriterImpl, TracingRewriterListener};
 
     let mut builder = RewriterImpl::<TracingRewriterListener>::new(context)
         .with_listener(TracingRewriterListener);
@@ -863,7 +859,7 @@ fn rewrite_spill_pseudo_instructions(
                 .expect("expected materialized spill operation to implement SpillLike");
             spill_like.spilled_value()
         };
-        // Only keep spills that feed a live reload dominated by this spill
+        // Only keep spills that can reach a live reload of their value
         let mut is_used = false;
         for rinfo in analysis.reloads() {
             if rinfo.value != spilled {
@@ -872,22 +868,14 @@ fn rewrite_spill_pseudo_instructions(
             let Some(reload_op) = rinfo.inst else {
                 continue;
             };
-            let (reload_used, dom_ok) = {
+            let reload_used = {
                 let rop = reload_op.borrow();
                 let rl = rop
                     .as_trait::<dyn ReloadLike>()
                     .expect("expected materialized reload op to implement ReloadLike");
-                let used = rl.reloaded().borrow().is_used();
-                let dom_ok = match dominfo {
-                    None => true,
-                    Some(dominfo) => {
-                        let sop = operation.borrow();
-                        sop.dominates(&rop, dominfo)
-                    }
-                };
-                (used, dom_ok)
+                rl.reloaded().borrow().is_used()
             };
-            if reload_used && dom_ok {
+            if reload_used && spill_reaches_reload(operation, reload_op) {
                 is_used = true;
                 break;
             }
@@ -934,4 +922,60 @@ fn rewrite_spill_pseudo_instructions(
     }
 
     Ok(())
+}
+
+/// Returns true if some control-flow path from `spill` reaches `reload`.
+///
+/// Reachability, not dominance, is the criterion for keeping a spill: the spills analysis
+/// conservatively places spills per path (e.g. along each edge of a join), so a reload after the
+/// join is covered by a set of spills, none of which individually dominates it. Eliding a spill
+/// is only sound when it provably cannot reach any live reload of its value, otherwise some path
+/// would reload from a local that was never written.
+pub fn spill_reaches_reload(spill: OperationRef, reload: OperationRef) -> bool {
+    // Normalize both operations to the innermost region containing them both: an operation
+    // nested in a sub-region (e.g. structured control flow) is represented by its ancestor
+    // operation in the common region.
+    let Some(common_region) = Region::find_common_ancestor(&[spill, reload]) else {
+        // Conservatively keep spills whose placement cannot be reasoned about.
+        return true;
+    };
+    let common_region = common_region.borrow();
+    let (Some(spill_ancestor), Some(reload_ancestor)) =
+        (common_region.find_ancestor_op(spill), common_region.find_ancestor_op(reload))
+    else {
+        return true;
+    };
+
+    // Both are nested under the same operation, in different sub-regions. Whether control can
+    // transfer between those regions depends on that operation's semantics (e.g. it can across
+    // loop iterations), so conservatively assume it can.
+    if spill_ancestor == reload_ancestor {
+        return true;
+    }
+
+    let (Some(spill_block), Some(reload_block)) =
+        (spill_ancestor.borrow().parent(), reload_ancestor.borrow().parent())
+    else {
+        return true;
+    };
+
+    // Within one block the spill directly reaches every later operation; earlier operations are
+    // only reachable through a cycle back into the block, which the successor walk finds.
+    if spill_block == reload_block && spill_ancestor.borrow().is_before_in_block(&reload_ancestor) {
+        return true;
+    }
+
+    let mut visited = SmallSet::<BlockRef, 8>::default();
+    let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(spill_block));
+    while let Some(block) = worklist.pop() {
+        if block == reload_block {
+            return true;
+        }
+        if !visited.insert(block) {
+            continue;
+        }
+        worklist.extend(BlockRef::children(block));
+    }
+
+    false
 }

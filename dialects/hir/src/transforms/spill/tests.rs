@@ -6,13 +6,19 @@ use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AddressSpace, Builder, Op, PointerType, ProgramPoint, Report, SourceSpan, Type, ValueRef,
-    dialects::builtin::BuiltinOpBuilder, testing::Test,
+    AddressSpace, Builder, Op, OperationRef, PointerType, ProgramPoint, Report, SourceSpan, Type,
+    ValueRef, dialects::builtin::BuiltinOpBuilder, testing::Test,
 };
+use midenc_hir_transform::spill_reaches_reload;
 
 use crate::{HirOpBuilder, transforms::TransformSpills};
 
 type TestResult<T> = Result<T, Report>;
+
+/// Returns the defining operation of `value`.
+fn defining_op(value: ValueRef) -> OperationRef {
+    value.borrow().get_defining_op().expect("expected value to have a defining op")
+}
 
 /// Build a simple single-block function which triggers spills and reloads,
 /// then run the `TransformSpills` pass and check that spills/reloads are
@@ -252,6 +258,134 @@ fn materializes_spills_branching_cfg() -> TestResult<()> {
         .count();
     assert!(stores == 1, "expected only one store_local ops\n{after}");
     assert!(loads == 1, "expected only one load_local op\n{after}");
+    Ok(())
+}
+
+/// Build a branching CFG in which *both* arms spill the same value (each contains a copy of the
+/// high-pressure call), while the only use of that value after the spills lies *after* the join.
+///
+/// The spills analysis places one spill per arm, and the single reload lands at the join, so the
+/// reload is covered by the *set* of spills, none of which individually dominates it. This is a
+/// regression test for spill pruning: pruning spills that do not dominate a live reload erased
+/// both arm spills while keeping the reload, and reload materialization then panicked because no
+/// procedure local was ever allocated for the spilled value.
+///
+/// Operand stack pressure at each call (the analysis models pressure in felts with `K = 16`):
+/// the call arguments require 15 felts (`v6: ptr` = 1, `v4: u128` = 4, `v7: u128` passed twice
+/// = 8, `u64` = 2), and `v1: u32` and `v2: u32` are live across both calls (used only in the
+/// join block), for a total of `15 + 2 = 17 > K`, so exactly one of `{v1, v2}` is spilled in
+/// each arm.
+#[test]
+fn materializes_spills_join_covered_reload() -> TestResult<()> {
+    let mut test = Test::named("materializes_spills_join_covered_reload").in_module("test");
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function(
+        test.name(),
+        &[Type::Ptr(Arc::new(PointerType::new_with_address_space(
+            Type::U8,
+            AddressSpace::Element,
+        )))],
+        &[Type::U32],
+    );
+    let func = test.function();
+
+    let callee = test.define_function(
+        "example",
+        &[
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            Type::U128,
+            Type::U128,
+            Type::U128,
+            Type::U64,
+        ],
+        &[Type::U32],
+    );
+
+    {
+        let mut b = test.function_builder();
+        let entry = b.current_block();
+        let v0 = entry.borrow().arguments()[0] as ValueRef;
+        let v1 = b.ptrtoint(v0, Type::U32, span)?;
+        let k32 = b.u32(32, span);
+        let v2 = b.add_unchecked(v1, k32, span)?;
+        let v3 = b.inttoptr(
+            v2,
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            span,
+        )?;
+        let v4 = b.load(v3, span)?;
+        let k64 = b.u32(64, span);
+        let v5 = b.add_unchecked(v1, k64, span)?;
+        let v6 = b.inttoptr(
+            v5,
+            Type::Ptr(Arc::new(PointerType::new_with_address_space(
+                Type::U128,
+                AddressSpace::Element,
+            ))),
+            span,
+        )?;
+        let v7 = b.load(v6, span)?;
+        let zero = b.u32(0, span);
+        let v8 = b.eq(v1, zero, span)?;
+        let t = b.create_block();
+        let f = b.create_block();
+        let join = b.create_block();
+        Cf::cond_br(&mut b, v8, t, [], f, [], span)?;
+
+        let callee_sig = callee.borrow().get_signature().clone();
+
+        // then: the high-pressure call forces a spill on this path
+        b.switch_to_block(t);
+        let v9 = b.u64(1, span);
+        let call = b.exec(callee, callee_sig.clone(), [v6, v4, v7, v7, v9], span)?;
+        let v10 = call.borrow().results()[0] as ValueRef;
+        b.br(join, [v10], span)?;
+
+        // else: the same call, so the same value is spilled on this path as well
+        b.switch_to_block(f);
+        let v11 = b.u64(1, span);
+        let call2 = b.exec(callee, callee_sig, [v6, v4, v7, v7, v11], span)?;
+        let v12 = call2.borrow().results()[0] as ValueRef;
+        b.br(join, [v12], span)?;
+
+        // join: the only uses of the values live across the calls
+        let v13 = b.append_block_param(join, Type::U32, span);
+        b.switch_to_block(join);
+        let k5 = b.u32(5, span);
+        let v14 = b.add_unchecked(v1, k5, span)?;
+        let v15 = b.add_unchecked(v14, v13, span)?;
+        let v16 = b.add_unchecked(v15, v2, span)?;
+        b.ret(Some(v16), span)?;
+    }
+
+    let before = func.as_operation_ref().borrow().to_string();
+    let before_file = format!("expected/{}_before.hir", test.name());
+    expect_file![&before_file].assert_eq(&before);
+
+    test.apply_pass::<TransformSpills>(false)?;
+
+    let after = func.as_operation_ref().borrow().to_string();
+    let after_file = format!("expected/{}_after.hir", test.name());
+    expect_file![&after_file].assert_eq(&after);
+
+    // The spilled value must be stored once per arm, and reloaded once at the join
+    let stores = after.lines().filter(|l| l.trim_start().starts_with("hir.store_local ")).count();
+    let loads = after
+        .lines()
+        .filter(|l| {
+            l.trim_start().contains("= hir.load_local ")
+                || l.trim_start().starts_with("hir.load_local ")
+        })
+        .count();
+    assert!(stores == 2, "expected one store_local op in each arm\n{after}");
+    assert!(loads == 1, "expected one load_local op at the join\n{after}");
     Ok(())
 }
 
@@ -571,5 +705,172 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
 "#
     );
 
+    Ok(())
+}
+
+/// Positional reachability over a diamond CFG.
+///
+/// This pins the join-covered shape that dominance-based spill pruning got wrong: a reload after
+/// the join is covered by the set of per-arm spills, none of which dominates it, so each arm must
+/// count as reaching the join. Sibling arms must stay mutually unreachable so the dead-edge-spill
+/// elimination keeps working.
+#[test]
+fn spill_reachability_in_branching_cfg() -> TestResult<()> {
+    let mut test = Test::named("spill_reachability_in_branching_cfg").in_module("test");
+    let span = SourceSpan::UNKNOWN;
+    test.with_function(test.name(), &[Type::U32], &[Type::U32]);
+
+    let mut b = test.function_builder();
+    let entry = b.current_block();
+    let v0 = entry.borrow().arguments()[0] as ValueRef;
+    let k1 = b.u32(1, span);
+    let entry_first = b.add_unchecked(v0, k1, span)?;
+    let cond = b.eq(entry_first, k1, span)?;
+    let left = b.create_block();
+    let right = b.create_block();
+    let join = b.create_block();
+    Cf::cond_br(&mut b, cond, left, [], right, [], span)?;
+
+    b.switch_to_block(left);
+    let left_value = b.add_unchecked(entry_first, k1, span)?;
+    b.br(join, [left_value], span)?;
+
+    b.switch_to_block(right);
+    let right_value = b.add_unchecked(entry_first, entry_first, span)?;
+    b.br(join, [right_value], span)?;
+
+    let join_arg = b.append_block_param(join, Type::U32, span);
+    b.switch_to_block(join);
+    let join_value = b.add_unchecked(join_arg, k1, span)?;
+    b.ret(Some(join_value), span)?;
+
+    let entry_first = defining_op(entry_first);
+    let entry_second = defining_op(cond);
+    let left_op = defining_op(left_value);
+    let right_op = defining_op(right_value);
+    let join_op = defining_op(join_value);
+
+    assert!(spill_reaches_reload(left_op, join_op), "arm must reach the join");
+    assert!(spill_reaches_reload(right_op, join_op), "arm must reach the join");
+    assert!(
+        !spill_reaches_reload(left_op, right_op),
+        "sibling arms must not reach each other"
+    );
+    assert!(
+        spill_reaches_reload(entry_first, entry_second),
+        "earlier op must reach a later op in the same block"
+    );
+    assert!(
+        !spill_reaches_reload(entry_second, entry_first),
+        "later op must not reach an earlier op without a cycle"
+    );
+    assert!(!spill_reaches_reload(join_op, left_op), "join must not reach an arm");
+    Ok(())
+}
+
+/// Positional reachability through a loop back-edge.
+#[test]
+fn spill_reachability_through_loop_back_edge() -> TestResult<()> {
+    let mut test = Test::named("spill_reachability_through_loop_back_edge").in_module("test");
+    let span = SourceSpan::UNKNOWN;
+    test.with_function(test.name(), &[Type::U32], &[Type::U32]);
+
+    let mut b = test.function_builder();
+    let entry = b.current_block();
+    let v0 = entry.borrow().arguments()[0] as ValueRef;
+    let header = b.create_block();
+    let body = b.create_block();
+    let exit = b.create_block();
+    b.br(header, [v0], span)?;
+
+    let header_arg = b.append_block_param(header, Type::U32, span);
+    b.switch_to_block(header);
+    let k1 = b.u32(1, span);
+    let header_value = b.add_unchecked(header_arg, k1, span)?;
+    let cond = b.eq(header_value, k1, span)?;
+    Cf::cond_br(&mut b, cond, body, [], exit, [], span)?;
+
+    b.switch_to_block(body);
+    let body_value = b.add_unchecked(header_value, k1, span)?;
+    b.br(header, [body_value], span)?;
+
+    b.switch_to_block(exit);
+    let exit_value = b.add_unchecked(header_value, header_value, span)?;
+    b.ret(Some(exit_value), span)?;
+
+    let header_op = defining_op(header_value);
+    let header_second = defining_op(cond);
+    let body_op = defining_op(body_value);
+    let exit_op = defining_op(exit_value);
+
+    assert!(spill_reaches_reload(body_op, header_op), "back edge must reach the header");
+    assert!(
+        spill_reaches_reload(header_second, header_op),
+        "later op must reach an earlier op in the same block through the loop"
+    );
+    assert!(!spill_reaches_reload(exit_op, body_op), "exit must not reach the loop body");
+    Ok(())
+}
+
+/// Positional reachability with operations nested in `scf.if` regions.
+///
+/// Nested operations are normalized to their ancestor in the common region; operations nested
+/// under the same region-branch op conservatively reach each other (e.g. across loop iterations).
+#[test]
+fn spill_reachability_across_nested_regions() -> TestResult<()> {
+    let mut test = Test::named("spill_reachability_across_nested_regions").in_module("test");
+    let span = SourceSpan::UNKNOWN;
+    test.with_function(test.name(), &[Type::U32], &[Type::U32]);
+
+    let mut b = test.function_builder();
+    let entry = b.current_block();
+    let v0 = entry.borrow().arguments()[0] as ValueRef;
+    let k1 = b.u32(1, span);
+    let pre_value = b.add_unchecked(v0, k1, span)?;
+    let cond = b.eq(pre_value, k1, span)?;
+
+    let mut if_op = b.r#if(cond, &[Type::U32], span)?;
+    let context = b.builder().context_rc();
+    let (then_block, else_block) = (context.create_block(), context.create_block());
+    {
+        let mut if_op = if_op.borrow_mut();
+        if_op.then_body_mut().push_back(then_block);
+        if_op.else_body_mut().push_back(else_block);
+    }
+
+    b.switch_to_block(then_block);
+    let then_value = b.add_unchecked(pre_value, k1, span)?;
+    b.r#yield([then_value], span)?;
+
+    b.switch_to_block(else_block);
+    let else_value = b.add_unchecked(pre_value, pre_value, span)?;
+    b.r#yield([else_value], span)?;
+
+    b.switch_to_block(entry);
+    let if_result = if_op.as_operation_ref().borrow().results()[0] as ValueRef;
+    let post_value = b.add_unchecked(if_result, k1, span)?;
+    b.ret(Some(post_value), span)?;
+
+    let pre_op = defining_op(pre_value);
+    let then_op = defining_op(then_value);
+    let else_op = defining_op(else_value);
+    let post_op = defining_op(post_value);
+
+    assert!(
+        spill_reaches_reload(pre_op, then_op),
+        "op before the region op must reach into it"
+    );
+    assert!(
+        spill_reaches_reload(then_op, post_op),
+        "nested op must reach past the region op"
+    );
+    assert!(
+        !spill_reaches_reload(post_op, then_op),
+        "op after the region op must not reach back into it"
+    );
+    assert!(
+        spill_reaches_reload(then_op, else_op),
+        "sibling regions of one op conservatively reach each other"
+    );
     Ok(())
 }

@@ -22,5 +22,7 @@ pub use self::{
     cse::CommonSubexpressionElimination,
     sccp::SparseConditionalConstantPropagation,
     sink::{ControlFlowSink, SinkOperandDefs},
-    spill::{ReloadLike, SpillLike, TransformSpillsInterface, transform_spills},
+    spill::{
+        ReloadLike, SpillLike, TransformSpillsInterface, spill_reaches_reload, transform_spills,
+    },
 };
