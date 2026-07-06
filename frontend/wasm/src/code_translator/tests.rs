@@ -227,6 +227,26 @@ fn memory_grow() {
     )
 }
 
+/// The `script_root` note intrinsic (the SDK's `get_entrypoint_root()`) requires the frontend
+/// metadata emitted by `#[note_script]`; in its absence the linker stub must be rejected with an
+/// actionable diagnostic rather than compiled to a runtime trap or a wrong digest.
+#[test]
+fn note_script_root_intrinsic_requires_note_script_metadata() {
+    check_module_err(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"intrinsics::note::script_root" (param i32)
+                unreachable)
+            (func $probe (param i32)
+                local.get 0
+                call $"intrinsics::note::script_root")
+            (export "probe" (func $probe))
+        )"#,
+        "requires a `#[note_script]` entrypoint",
+    )
+}
+
 #[test]
 fn memory_size() {
     check_op(
