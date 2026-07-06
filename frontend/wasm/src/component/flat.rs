@@ -289,6 +289,30 @@ pub fn flatten_function_type(
     })
 }
 
+/// Returns the core Wasm signature expected for a canonical lowered signature.
+///
+/// Canonical pointer parameters are passed as core `i32` values. The calling convention is
+/// carried over from the lowered signature; [`check_core_wasm_signature_equivalence`] does not
+/// compare calling conventions.
+pub fn expected_core_signature(lowered_sig: &Signature) -> Signature {
+    let params = lowered_sig
+        .params()
+        .iter()
+        .map(|param| {
+            if param.ty.is_pointer() {
+                AbiParam::new(Type::I32)
+            } else {
+                param.clone()
+            }
+        })
+        .collect();
+    Signature {
+        params,
+        results: lowered_sig.results().to_vec(),
+        cc: lowered_sig.cc,
+    }
+}
+
 /// Checks that the given core Wasm signature is equivalent to the flattened component signature.
 ///
 /// This compares the canonical ABI parameter/result shape (arity and core types), but not the
