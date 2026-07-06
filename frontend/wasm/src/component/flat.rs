@@ -81,7 +81,7 @@ pub fn flatten_type(context: &Rc<Context>, ty: &Type) -> Result<Vec<AbiParam>, C
             vec![AbiParam::new(canonical_flat_scalar_type(ty))]
         }
         Type::I128 | Type::U128 | Type::U256 => {
-            unimplemented!("flattening of {ty} in canonical abi")
+            return Err(CanonicalTypeError::Unsupported(ty.clone()));
         }
         Type::F64 => return Err(CanonicalTypeError::Reserved(ty.clone())),
         Type::Enum(enum_ty) => flatten_enum_type(context, enum_ty)?,
