@@ -6,7 +6,9 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_project::TargetType;
 use miden_protocol::utils::serde::Serializable;
-use midenc_frontend_wasm_metadata::FrontendMetadata;
+use midenc_frontend_wasm_metadata::{
+    FrontendMetadata, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+};
 use proc_macro::Span;
 use proc_macro2::{Ident, Literal, Span as Span2, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
@@ -1267,7 +1269,7 @@ fn auth_script_frontend_metadata(
     }
 }
 
-/// Emits the static metadata blob inside the `rodata,miden_account` link section.
+/// Emits the static metadata blob inside the account-component metadata link section.
 fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
     let link_section_bytes_len = metadata_bytes.len();
     let encoded_bytes_str = Literal::byte_string(metadata_bytes);
@@ -1276,7 +1278,7 @@ fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
         #[unsafe(
             // to test it in the integration(this crate) tests the section name needs to make mach-o section
             // specifier happy and to have "segment and section separated by comma"
-            link_section = "rodata,miden_account"
+            link_section = #WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME
         )]
         #[doc(hidden)]
         #[allow(clippy::octal_escapes)]

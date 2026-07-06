@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{
-    FrontendMetadata, PackageSections, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
-    WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
+    FrontendMetadata, PackageSections, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+    WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
@@ -195,7 +195,7 @@ pub(crate) fn collect_package_sections<'a, 'data: 'a>(
         merge_section_payload(
             &mut account_component_metadata,
             module.account_component_metadata_bytes,
-            "rodata,miden_account",
+            WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
         )?;
         merge_section_payload(
             &mut component_wit,
@@ -464,14 +464,17 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 }
             }
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
-            Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
+            Payload::CustomSection(s)
+                if s.name() == WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME =>
+            {
                 if self.result.account_component_metadata_bytes.replace(s.data()).is_some() {
                     return Err(diagnostics
                         .diagnostic(Severity::Error)
-                        .with_message(
-                            "wasm error: multiple 'rodata,miden_account' custom sections were \
-                             found; only one is allowed per core Wasm module",
-                        )
+                        .with_message(format!(
+                            "wasm error: multiple \
+                             '{WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME}' custom \
+                             sections were found; only one is allowed per core Wasm module"
+                        ))
                         .into_report());
                 }
             }
