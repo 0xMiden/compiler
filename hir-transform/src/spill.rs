@@ -940,6 +940,10 @@ fn rewrite_spill_pseudo_instructions(
 /// ancestor (e.g. one function invocation). Queries that cross an isolation boundary, or whose
 /// positions cannot otherwise be related (graph regions, no common ancestor region), are
 /// conservatively reachable.
+///
+/// This query is exported from the crate root chiefly so the behavioral tests in
+/// `midenc-dialect-hir` (which have the parser and control-flow dialects needed to build
+/// fixtures) can exercise it directly; the in-crate consumer is spill pruning.
 pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
     // Operations in different isolation scopes (e.g. two functions) share no control flow to
     // walk, so the query cannot be answered; report the conservative `true`.
@@ -973,7 +977,10 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
 
     // Ancestors that are themselves isolated from above (e.g. two functions in one module) are
     // symbol-container members, not control-flow positions; their block order proves nothing,
-    // so conservatively report reachable.
+    // so conservatively report reachable. This is not redundant with the isolation-scope guard
+    // above: sibling isolated ops share one scope and only this check catches them, while an
+    // isolated op nested under a non-isolated region op normalizes to that non-isolated
+    // wrapper and is caught only by the scope guard.
     if from_ancestor.borrow().implements::<dyn IsolatedFromAbove>()
         || to_ancestor.borrow().implements::<dyn IsolatedFromAbove>()
     {
@@ -1012,6 +1019,9 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
 
 /// Returns true if control leaving the end of `from` can reach the start of `to` by following
 /// block successors.
+///
+/// The walk is not reflexive: `from == to` returns true only when a cycle leads back into the
+/// block, which is what [region_can_re_execute] relies on for cycle detection.
 fn block_leads_to(from: BlockRef, to: BlockRef) -> bool {
     let mut visited = SmallSet::<BlockRef, 8>::default();
     let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(from));
