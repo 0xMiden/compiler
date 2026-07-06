@@ -1006,10 +1006,22 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
         }
     }
 
+    if block_leads_to(from_block, to_block) {
+        return true;
+    }
+
+    // No forward path within the common region. Control can still come back around to `to` if
+    // the common region can execute more than once.
+    region_can_re_execute(common_region.as_region_ref())
+}
+
+/// Returns true if control leaving the end of `from` can reach the start of `to` by following
+/// block successors.
+fn block_leads_to(from: BlockRef, to: BlockRef) -> bool {
     let mut visited = SmallSet::<BlockRef, 8>::default();
-    let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(from_block));
+    let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(from));
     while let Some(block) = worklist.pop() {
-        if block == to_block {
+        if block == to {
             return true;
         }
         if !visited.insert(block) {
@@ -1017,21 +1029,26 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
         }
         worklist.extend(BlockRef::children(block));
     }
+    false
+}
 
-    // No forward path within the common region. Control can still leave the region after
-    // `from` and come back around to `to` if the common region, or any region enclosing it,
-    // can execute more than once (e.g. the regions of an `scf.while`): such back edges are
-    // expressed in the region graph of the owning op, not as block successors.
-    let mut region = Some(common_region.as_region_ref());
-    while let Some(r) = region {
+/// Returns true if `region` can execute more than once within a single execution of its
+/// innermost isolated-from-above ancestor.
+///
+/// That is the case when an enclosing region is repetitive (e.g. the regions of an `scf.while`,
+/// whose back edges are expressed in the region graph of the owning op rather than as block
+/// successors), or when an enclosing op itself sits on a CFG cycle in its parent region.
+fn region_can_re_execute(region: RegionRef) -> bool {
+    let mut current = Some(region);
+    while let Some(r) = current {
         let Some(owner) = r.parent() else {
-            break;
+            return false;
         };
         let owner_op = owner.borrow();
         if owner_op.implements::<dyn IsolatedFromAbove>() {
             // An isolated-from-above boundary (e.g. a function): reachability is scoped to a
             // single execution of its body.
-            break;
+            return false;
         }
         if !owner_op.implements::<dyn RegionBranchOpInterface>() {
             // Unknown region semantics: conservatively treat re-entry as possible.
@@ -1040,9 +1057,13 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
         if r.borrow().is_repetitive_region() {
             return true;
         }
-        region = owner_op.parent_region();
+        if let Some(owner_block) = owner_op.parent()
+            && block_leads_to(owner_block, owner_block)
+        {
+            return true;
+        }
+        current = owner_op.parent_region();
     }
-
     false
 }
 
