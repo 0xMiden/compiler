@@ -16,9 +16,13 @@ use std::{
 use miden_core::{EMPTY_WORD, Felt, Word, crypto::hash::Poseidon2, utils::hash_string_to_word};
 use miden_debug::{DebugQuery, Felt as TestFelt};
 use miden_processor::advice::AdviceInputs;
+use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use crate::{CompilerTest, testing::executor_with_std};
+use crate::{
+    CompilerTest,
+    testing::{executor_with_std, stripped_mast_size_str},
+};
 
 /// Advice-map keys under which the sorted note lists are provided to the kernel. Must match the
 /// key constants baked into the fixture's `prologue.rs`.
@@ -271,15 +275,28 @@ fn batch_kernel() {
     let package = test.compile_package();
     let program = package.unwrap_program();
 
+    // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
+    expect!["180253"].assert_eq(stripped_mast_size_str(&package));
+
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
     let block_commitment = word(101, 102, 103, 104);
 
+    // Executes the kernel and returns the resulting trace along with the consumed VM cycles;
+    // this is `Executor::execute` unrolled through the debug executor to observe the cycle
+    // counter.
     let execute = |transactions: &[MockTransaction], advice: AdviceInputs| {
         let mut exec =
             executor_with_std(build_args(block_commitment, batch_id(transactions)), Some(&package));
         exec.with_advice_inputs(advice);
-        exec.execute(&program, test.session.source_manager.clone())
+        let mut executor = exec.into_debug(&program, test.session.source_manager.clone());
+        while !executor.stopped {
+            if let Err(err) = executor.step() {
+                panic!("batch kernel execution failed: {err}");
+            }
+        }
+        let cycles = executor.cycle;
+        (executor.into_execution_trace(), cycles)
     };
 
     // Scenario 1: two transactions, no intra-batch note relationships.
@@ -309,7 +326,10 @@ fn batch_kernel() {
             },
         ];
 
-        let trace = execute(&transactions, build_advice_inputs(&transactions));
+        let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions));
+
+        // The VM cycles consumed by the kernel for this two-transaction batch.
+        expect!["163006"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -357,7 +377,7 @@ fn batch_kernel() {
             },
         ];
 
-        let trace = execute(&transactions, build_advice_inputs(&transactions));
+        let (trace, _) = execute(&transactions, build_advice_inputs(&transactions));
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
