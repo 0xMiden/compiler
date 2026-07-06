@@ -160,9 +160,11 @@ impl TransformSpillsInterface for TransformSpillsImpl {
 
         let spilled = reload.borrow().as_trait::<dyn ReloadLike>().unwrap().spilled_value();
         let Some(local) = self.locals.get(&spilled).copied() else {
+            let function = self.function.borrow();
+            let function = function.get_name();
             return Err(Report::msg(format!(
-                "live reload of {spilled} has no corresponding spill: every kept reload must be \
-                 covered by at least one spill of the same value"
+                "internal error: live reload of {spilled} in {function} has no corresponding \
+                 spill: every kept reload must be covered by at least one spill of the same value"
             )));
         };
         let reloaded = rewriter.load_local(local, reload.span())?;
