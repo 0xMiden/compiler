@@ -792,6 +792,50 @@ fn spill_reachability_through_region_re_entry() -> TestResult<()> {
     Ok(())
 }
 
+/// Positional reachability through re-execution of a region whose owner sits on a CFG cycle.
+///
+/// The `then` region of the `scf.if` is not repetitive in the op's own region graph, but the
+/// block hosting the `scf.if` lies on a CFG cycle, so every iteration re-enters the region: an
+/// op positioned after another op inside it still reaches it, through the next iteration.
+#[test]
+fn op_reaches_through_cfg_cycle_re_entry() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @op_reaches_through_cfg_cycle_re_entry(%n: u32) -> u32 {
+    %zero = arith.constant 0 : u32;
+    cf.br ^head(%zero : u32);
+^head(%i: u32):
+    %one = arith.constant 1 : u32;
+    %c = arith.eq %i, %one;
+    %r = scf.if %c then {
+        %early = arith.add %i, %one <{ overflow = #builtin.overflow<unchecked> }>;
+        %late = arith.add %early, %early <{ overflow = #builtin.overflow<unchecked> }>;
+        scf.yield %late : (u32);
+    } else {
+        scf.yield %i : (u32);
+    } : (i1) -> (u32);
+    %done = arith.eq %r, %n;
+    cf.cond_br %done ^exit, ^head(%r : u32) : (i1);
+^exit:
+    builtin.ret %r : (u32);
+};"#;
+
+    let context = Rc::new(Context::default());
+    let (function, _) =
+        parse_function_fixpoint(&context, "op_reaches_through_cfg_cycle_re_entry.hir", source)?;
+
+    let head = block_at(function, 1);
+    let if_op = op_at(head, 2);
+    let early_op = op_in_region(if_op, 0, 0);
+    let late_op = op_in_region(if_op, 0, 1);
+    let ret_op = op_at(block_at(function, 2), 0);
+
+    assert!(
+        op_reaches(late_op, early_op),
+        "re-entry of a region through an outer CFG cycle must count as reachable"
+    );
+    assert!(!op_reaches(ret_op, early_op), "an op after the loop must not reach into it");
+    Ok(())
+}
+
 /// Queries that cross an isolation boundary are not control-flow questions.
 ///
 /// Operations in two different functions have no shared control flow to walk, and for the
