@@ -610,6 +610,102 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
     Ok(())
 }
 
+/// All spills of one value must share one procedure local, even when SSA reconstruction has
+/// rewritten a spill's operand.
+///
+/// We synthesize a `spill; reload; spill; reload` chain over a single value: the rewrite phase
+/// redirects the second spill's operand to the first reload's result (spill operands are not
+/// exempt from use rewriting), so pairing the local slot by the op operand would allocate a
+/// second local that no reload ever reads. Materialization must key locals by the value tracked
+/// in the spills analysis, storing the (possibly rewritten) operand into the shared slot.
+#[test]
+fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
+    let mut test =
+        Test::named("materializes_spills_shared_local_for_rewritten_spill").in_module("test");
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function(test.name(), &[Type::U32], &[Type::U32]);
+    let func = test.function();
+
+    let (spilled_value, spill_points, reload_points) = {
+        let mut b = test.function_builder();
+        let entry = b.current_block();
+        let v0 = entry.borrow().arguments()[0] as ValueRef;
+        let k1 = b.u32(1, span);
+        let v = b.add_unchecked(v0, k1, span)?;
+        // Anchor operations to place the spill/reload pseudo-ops in front of
+        let a1 = b.add_unchecked(v0, v0, span)?;
+        let a2 = b.add_unchecked(a1, k1, span)?;
+        let a3 = b.add_unchecked(a2, k1, span)?;
+        let a4 = b.add_unchecked(a3, k1, span)?;
+        // The post-reload use of the spilled value
+        let out = b.add_unchecked(v, a4, span)?;
+        b.ret(Some(out), span)?;
+
+        let anchor = |value: ValueRef| {
+            ProgramPoint::before(
+                value.borrow().get_defining_op().expect("expected anchor to have a defining op"),
+            )
+        };
+        (v, [anchor(a1), anchor(a3)], [anchor(a2), anchor(a4)])
+    };
+
+    let mut analysis = midenc_hir_analysis::analyses::SpillAnalysis::default();
+    analysis.spilled.insert(spilled_value);
+    for (index, place) in spill_points.into_iter().enumerate() {
+        analysis.spills.push(midenc_hir_analysis::analyses::spills::SpillInfo {
+            id: midenc_hir_analysis::analyses::spills::Spill::new(index),
+            place: midenc_hir_analysis::analyses::spills::Placement::At(place),
+            value: spilled_value,
+            span,
+            inst: None,
+        });
+    }
+    for (index, place) in reload_points.into_iter().enumerate() {
+        analysis.reloads.push(midenc_hir_analysis::analyses::spills::ReloadInfo {
+            id: midenc_hir_analysis::analyses::spills::Reload::new(index),
+            place: midenc_hir_analysis::analyses::spills::Placement::At(place),
+            value: spilled_value,
+            span,
+            inst: None,
+        });
+    }
+
+    let mut interface = super::TransformSpillsImpl {
+        function: func,
+        locals: Default::default(),
+    };
+    let analysis_manager = midenc_hir::pass::AnalysisManager::new(func.as_operation_ref(), None);
+    midenc_hir_transform::transform_spills(
+        func.as_operation_ref(),
+        &mut analysis,
+        &mut interface,
+        analysis_manager,
+    )?;
+
+    let after = func.as_operation_ref().borrow().to_string();
+    std::println!("{after}");
+
+    assert_eq!(
+        func.borrow().num_locals(),
+        1,
+        "all spills of one value must share one procedure local\n{after}"
+    );
+    // The second store must write the first reload's result into the same local, proving the
+    // rewritten operand landed in the shared slot
+    filecheck!(
+        &after,
+        r#"
+; CHECK: hir.store_local %{{\d+}} <{ local = #builtin.local_variable<[[L:\d+]], u32> }>
+; CHECK: %[[R0:\d+]] = hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>
+; CHECK: hir.store_local %[[R0]] <{ local = #builtin.local_variable<[[L]], u32> }>
+; CHECK: hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>
+"#
+    );
+
+    Ok(())
+}
+
 /// Positional reachability over a diamond CFG.
 ///
 /// This pins the join-covered shape that dominance-based spill pruning got wrong: a reload after

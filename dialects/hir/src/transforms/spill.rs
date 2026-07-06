@@ -8,7 +8,7 @@ use midenc_hir::{
     pass::{Pass, PassExecutionState, PostPassStatus},
 };
 use midenc_hir_analysis::analyses::SpillAnalysis;
-use midenc_hir_transform::{self as transforms, ReloadLike, SpillLike, TransformSpillsInterface};
+use midenc_hir_transform::{self as transforms, SpillLike, TransformSpillsInterface};
 
 #[derive(Default)]
 pub struct TransformSpills;
@@ -134,14 +134,18 @@ impl TransformSpillsInterface for TransformSpillsImpl {
         &mut self,
         rewriter: &mut dyn Rewriter,
         spill: OperationRef,
+        value: ValueRef,
     ) -> Result<(), Report> {
         use crate::HirOpBuilder;
 
+        // The local is keyed by the analysis's identity of the spilled value; the stored operand
+        // is the op's current one, which SSA reconstruction may have rewritten (e.g. to a
+        // preceding reload's result), but always carries the same runtime value.
         let spilled = spill.borrow().as_trait::<dyn SpillLike>().unwrap().spilled_value();
         let mut function = self.function;
-        let local = *self.locals.entry(spilled).or_insert_with(|| {
+        let local = *self.locals.entry(value).or_insert_with(|| {
             let mut function = function.borrow_mut();
-            function.alloc_local(spilled.borrow().ty().clone())
+            function.alloc_local(value.borrow().ty().clone())
         });
 
         let store = rewriter.store_local(local, spilled, spill.span())?;
@@ -155,16 +159,16 @@ impl TransformSpillsInterface for TransformSpillsImpl {
         &mut self,
         rewriter: &mut dyn Rewriter,
         reload: OperationRef,
+        value: ValueRef,
     ) -> Result<(), Report> {
         use crate::HirOpBuilder;
 
-        let spilled = reload.borrow().as_trait::<dyn ReloadLike>().unwrap().spilled_value();
-        let Some(local) = self.locals.get(&spilled).copied() else {
+        let Some(local) = self.locals.get(&value).copied() else {
             let function = self.function.borrow();
             let function = function.get_name();
             return Err(Report::msg(format!(
-                "internal error: live reload of {spilled} in {function} has no corresponding \
-                 spill: every kept reload must be covered by at least one spill of the same value"
+                "internal error: live reload of {value} in {function} has no corresponding spill: \
+                 every kept reload must be covered by at least one spill of the same value"
             )));
         };
         let reloaded = rewriter.load_local(local, reload.span())?;
