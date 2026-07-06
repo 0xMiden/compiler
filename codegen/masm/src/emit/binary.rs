@@ -691,6 +691,21 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    pub fn wrapping_mod(&mut self, span: SourceSpan) {
+        let rhs = self.pop().expect("operand stack is empty");
+        let lhs = self.pop().expect("operand stack is empty");
+        let ty = lhs.ty();
+        assert_eq!(ty, rhs.ty(), "expected wrapping_mod operands to be the same type");
+        match &ty {
+            Type::I32 => self.wrapping_mod_i32(span),
+            ty if !ty.is_integer() => {
+                panic!("invalid binary operand: wrapping_mod expects integer operands, got {ty}")
+            }
+            ty => unimplemented!("wrapping_mod for {ty} is not supported"),
+        }
+        self.push(ty);
+    }
+
     #[allow(unused)]
     pub fn unchecked_mod(&mut self, span: SourceSpan) {
         let rhs = self.pop().expect("operand stack is empty");

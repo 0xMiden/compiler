@@ -1,7 +1,7 @@
 builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 2 : i32;
     %1 = arith.constant 1 : i32;
-    %2 = arith.mod %0, %1;
+    %2 = wasm.i32_rem_s %0, %1;
     cf.br ^block5;
 ^block5:
     builtin.ret;

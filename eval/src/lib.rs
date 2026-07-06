@@ -160,6 +160,7 @@ fn eval_wasm_dialect(info: &mut ::midenc_hir::DialectInfo) {
     info.register_operation_trait::<wasm::I64Load8S, dyn Eval>();
     info.register_operation_trait::<wasm::I64Load16S, dyn Eval>();
     info.register_operation_trait::<wasm::I64Load32S, dyn Eval>();
+    info.register_operation_trait::<wasm::I32RemS, dyn Eval>();
 }
 
 fn eval_debuginfo_dialect(info: &mut ::midenc_hir::DialectInfo) {
