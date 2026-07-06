@@ -872,7 +872,7 @@ macro_rules! binop_overflowing {
         let rhs_value = $evaluator.use_value(&rhs.as_value_ref())?;
 
         let lhs_ty = lhs.ty();
-        let rhs_ty = lhs.ty();
+        let rhs_ty = rhs.ty();
         if lhs_ty != rhs_ty {
             return Err($evaluator.report(
                 "evaluation failed",
