@@ -942,8 +942,16 @@ fn rewrite_spill_pseudo_instructions(
 /// (e.g. spill pruning) rely on the `false` direction being a proof.
 ///
 /// Reachability is evaluated within a single execution of the innermost isolated-from-above
-/// ancestor (e.g. one function invocation).
+/// ancestor (e.g. one function invocation). Queries that cross an isolation boundary, or whose
+/// positions cannot otherwise be related (graph regions, no common ancestor region), are
+/// conservatively reachable.
 pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
+    // Operations in different isolation scopes (e.g. two functions) share no control flow to
+    // walk, so the query cannot be answered; report the conservative `true`.
+    if isolation_scope(from) != isolation_scope(to) {
+        return true;
+    }
+
     // Normalize both operations to the innermost region containing them both: an operation
     // nested in a sub-region (e.g. structured control flow) is represented by its ancestor
     // operation in the common region.
@@ -955,13 +963,25 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
     let (Some(from_ancestor), Some(to_ancestor)) =
         (common_region.find_ancestor_op(from), common_region.find_ancestor_op(to))
     else {
+        // Unreachable per find_common_ancestor's postcondition (the returned region contains
+        // every queried op); kept as a defensive fallback.
         return true;
     };
 
-    // Both are nested under the same operation, in different sub-regions. Whether control can
-    // transfer between those regions depends on that operation's semantics (e.g. it can across
-    // loop iterations), so conservatively assume it can.
+    // Both operations normalize to the same ancestor op: either one op encloses the other (and
+    // trivially reaches it), or they sit in different sub-regions of that op, where transfer
+    // between the regions depends on the op's semantics (e.g. it can happen across loop
+    // iterations), so conservatively assume it does.
     if from_ancestor == to_ancestor {
+        return true;
+    }
+
+    // Ancestors that are themselves isolated from above (e.g. two functions in one module) are
+    // symbol-container members, not control-flow positions; their block order proves nothing,
+    // so conservatively report reachable.
+    if from_ancestor.borrow().implements::<dyn IsolatedFromAbove>()
+        || to_ancestor.borrow().implements::<dyn IsolatedFromAbove>()
+    {
         return true;
     }
 
@@ -971,11 +991,19 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
         return true;
     };
 
-    // Within one block an operation directly reaches every later operation; earlier operations
-    // are only reachable through a cycle back into the block, which the successor walk and the
-    // repetitive-region check below find.
-    if from_block == to_block && from_ancestor.borrow().is_before_in_block(&to_ancestor) {
-        return true;
+    if from_block == to_block {
+        // In a region without SSA dominance, block order does not imply control-flow order
+        // (mirroring how dominance treats same-block queries in such regions), so the
+        // operations are conservatively mutually reachable.
+        if !from_block.borrow().has_ssa_dominance() {
+            return true;
+        }
+        // Within one block an operation directly reaches every later operation; earlier
+        // operations are only reachable through a cycle back into the block, which the
+        // successor walk and the repetitive-region check below find.
+        if from_ancestor.borrow().is_before_in_block(&to_ancestor) {
+            return true;
+        }
     }
 
     let mut visited = SmallSet::<BlockRef, 8>::default();
@@ -1016,4 +1044,17 @@ pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
     }
 
     false
+}
+
+/// Returns the nearest proper ancestor of `op` that is isolated from above, i.e. the operation
+/// whose single execution scopes a reachability query involving `op`.
+fn isolation_scope(op: OperationRef) -> Option<OperationRef> {
+    let mut current = op.borrow().parent_op();
+    while let Some(ancestor) = current {
+        if ancestor.borrow().implements::<dyn IsolatedFromAbove>() {
+            return Some(ancestor);
+        }
+        current = ancestor.borrow().parent_op();
+    }
+    None
 }
