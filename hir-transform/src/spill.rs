@@ -46,18 +46,27 @@ pub trait TransformSpillsInterface {
 
     /// Convert `spill`, a [SpillLike] operation, into a primitive memory store of the spilled
     /// value.
+    ///
+    /// `value` is the spilled value as tracked by the spills analysis; implementations must key
+    /// any per-value storage by it, while storing the operation's current operand (the live SSA
+    /// name at that point, which SSA reconstruction may have rewritten).
     fn convert_spill_to_store(
         &mut self,
         rewriter: &mut dyn Rewriter,
         spill: OperationRef,
+        value: ValueRef,
     ) -> Result<(), Report>;
 
     /// Convert `reload`, a [ReloadLike] operation, into a primitive memory load of the spilled
     /// value.
+    ///
+    /// `value` is the spilled value as tracked by the spills analysis; the lookup must use the
+    /// same key as [Self::convert_spill_to_store].
     fn convert_reload_to_load(
         &mut self,
         rewriter: &mut dyn Rewriter,
         reload: OperationRef,
+        value: ValueRef,
     ) -> Result<(), Report>;
 }
 
@@ -889,7 +898,7 @@ fn rewrite_spill_pseudo_instructions(
 
         if is_used {
             builder.set_insertion_point_after(operation);
-            interface.convert_spill_to_store(&mut builder, operation)?;
+            interface.convert_spill_to_store(&mut builder, operation, spill.value)?;
         } else {
             builder.erase_op(operation);
         }
@@ -915,7 +924,7 @@ fn rewrite_spill_pseudo_instructions(
                 reload.place
             );
             builder.set_insertion_point_after(operation);
-            interface.convert_reload_to_load(&mut builder, operation)?;
+            interface.convert_reload_to_load(&mut builder, operation, reload.value)?;
         } else {
             log::trace!(
                 target: trace_target,
