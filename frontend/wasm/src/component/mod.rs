@@ -25,8 +25,9 @@ pub(super) mod test_support {
     use midenc_dialect_cf::{self as cf, ControlFlowOpBuilder};
     use midenc_dialect_ub as ub;
     use midenc_hir::{
-        BuilderExt, CallConv, Context, EnumType, FunctionType, Ident, Op, Operation, SourceSpan,
-        StructType, SymbolName, SymbolTable, Type, ValueRef, Variant, Visibility, WalkResult,
+        BuilderExt, CallConv, Context, EnumType, FunctionType, Ident, Op, Operation, PointerType,
+        SourceSpan, StructType, SymbolName, SymbolTable, Type, ValueRef, Variant, Visibility,
+        WalkResult,
         dialects::builtin::{
             BuiltinOpBuilder, ComponentBuilder, Function, FunctionRef, ModuleBuilder, World,
             WorldBuilder, attributes::Signature,
@@ -105,6 +106,21 @@ pub(super) mod test_support {
     pub fn record_with_variant_field_type() -> Type {
         let variant_field = scalar_payload_variant_type();
         Type::from(StructType::new(vec![Type::U32, variant_field]))
+    }
+
+    /// Builds a HIR type for a two-case variant whose payload is a pointer.
+    pub fn pointer_payload_variant_type() -> Type {
+        Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::c_like("empty".into(), Some(0)),
+                    Variant::new("items".into(), Type::from(PointerType::new(Type::U8)), Some(1)),
+                ],
+            )
+            .expect("pointer-payload enum should be valid"),
+        ))
     }
 
     /// Returns HIR type fixtures whose type-only Canonical ABI helpers must agree with flattening.

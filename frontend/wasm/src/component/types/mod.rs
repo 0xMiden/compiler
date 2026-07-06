@@ -2212,6 +2212,26 @@ mod tests {
     }
 
     #[test]
+    fn canonical_record_field_offsets_align_u64_to_eight_bytes() {
+        // The canonical load/store walks derive record field offsets from `canonical_abi_info`
+        // plus `next_field32`; pin that a `u64` field following a `u8` field lands at offset 8.
+        let mut offset = 0u32;
+        let u8_offset = canonical_abi_info(&Type::U8)
+            .expect("u8 must have a canonical layout")
+            .next_field32(&mut offset);
+        let u64_offset = canonical_abi_info(&Type::U64)
+            .expect("u64 must have a canonical layout")
+            .next_field32(&mut offset);
+        assert_eq!(u8_offset, 0);
+        assert_eq!(u64_offset, 8);
+
+        let record = Type::from(StructType::new(vec![Type::U8, Type::U64]));
+        let abi = canonical_abi_info(&record).expect("record must have a canonical layout");
+        assert_eq!(abi.align32, 8);
+        assert_eq!(abi.size32, 16);
+    }
+
+    #[test]
     fn variant_discriminant_size_boundary() {
         let cases_255 = (0..255).map(|_| None::<&CanonicalAbiInfo>);
         let (info_255, _) = VariantInfo::new(cases_255);

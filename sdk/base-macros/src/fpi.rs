@@ -1502,16 +1502,14 @@ world bindings {
     ///
     /// WIT encoding registers world imports in order, so the `core-types` interface the injected
     /// prefix params refer to must be the first import, without duplicating an existing import.
-    fn inject_and_assert_core_types_first(
-        resolve: &mut Resolve,
-        world_id: WorldId,
-        expected_imports: usize,
-    ) {
+    fn inject_and_assert_core_types_first(resolve: &mut Resolve, world_id: WorldId) {
         inject_imports(resolve, world_id, &["miden:dep/counter@0.0.1".to_string()])
             .expect("injection must succeed");
 
+        // The dependency interface plus the core-types import, whether the latter was inserted,
+        // moved, or reused.
         let world = &resolve.worlds[world_id];
-        assert_eq!(world.imports.len(), expected_imports, "imports must not be duplicated");
+        assert_eq!(world.imports.len(), 2, "imports must not be duplicated");
         let Some(WorldItem::Interface { id, .. }) = world.imports.values().next() else {
             panic!("expected the first world import to be an interface");
         };
@@ -1528,7 +1526,7 @@ world bindings {
     fn inject_imports_adds_core_types_world_import_before_dependency() {
         let (mut resolve, world_id) = resolve_with_bindings_world();
 
-        inject_and_assert_core_types_first(&mut resolve, world_id, 2);
+        inject_and_assert_core_types_first(&mut resolve, world_id);
     }
 
     #[test]
@@ -1546,7 +1544,7 @@ world bindings {
             },
         );
 
-        inject_and_assert_core_types_first(&mut resolve, world_id, 2);
+        inject_and_assert_core_types_first(&mut resolve, world_id);
     }
 
     #[test]
@@ -1564,6 +1562,6 @@ world bindings {
             },
         );
 
-        inject_and_assert_core_types_first(&mut resolve, world_id, 2);
+        inject_and_assert_core_types_first(&mut resolve, world_id);
     }
 }
