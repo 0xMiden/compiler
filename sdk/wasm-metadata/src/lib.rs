@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 pub const WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME: &str =
     "rodata,miden_account_component_frontend";
 
+/// Name of the Wasm custom section used to store the serialized AccountComponentMetadata.
+pub const WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME: &str = "rodata,miden_account";
+
 /// Name of the Wasm custom section used to store the component's public WIT source.
 pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
 
