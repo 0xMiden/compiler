@@ -51,9 +51,12 @@ pub fn generate_import_lowering_function(
     let context = module_builder.builder().context_rc();
     // FPI imports bypass canonical ABI validation and classification: they use their own
     // typed-signature checks, and oversized argument lists take the FPI indirect lowering
-    // path instead of tupled parameters.
+    // path instead of tupled parameters. The typed checks run before canonical flattening so
+    // unsupported types fail with FPI diagnostics instead of flattening errors.
     let is_fpi = is_fpi_import(&import_func_path, &import_func_ty.ir)?;
-    if !is_fpi {
+    if is_fpi {
+        validate_fpi_typed_signature(&import_func_path, &import_func_ty.ir)?;
+    } else {
         reject_unsupported_import_canonical_abi_types(&import_func_path, import_func_ty)?;
     }
     let import_lowered_sig =
@@ -163,7 +166,6 @@ fn generate_fpi_lowering(
     span: SourceSpan,
 ) -> WasmResult<CallableFunction> {
     let context = core_func_ref.borrow().as_operation().context_rc();
-    validate_fpi_typed_signature(&core_func_path, &import_func_ty.ir)?;
     let shape = plan_fpi_call(
         &context,
         &import_func_ty.ir,
@@ -1866,6 +1868,95 @@ mod tests {
             unreachable_count, 2,
             "invalid FPI variant result tag should be unreachable before storing"
         );
+    }
+
+    #[test]
+    fn fpi_lowering_rejects_unsupported_result_type_before_flattening() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        // `u256` has no canonical flattening; the typed FPI validation must reject it before
+        // flattening is attempted.
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([]),
+            vec![Type::U256],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::Felt); FPI_ABI_PREFIX_ARGS],
+            results: vec![],
+            cc: CallConv::Wasm,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            test_import_path("fpi-get-u256"),
+            &import_func_ty,
+            core_function_path("fpi-get-u256"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("unsupported FPI result types must fail with the typed diagnostic"),
+            Err(err) => {
+                let message = err.to_string();
+                assert!(
+                    message.contains("result 0") && message.contains("typed FPI only supports"),
+                    "unexpected error: {message}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fpi_lowering_rejects_pointer_enum_payload_before_flattening() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let enum_ty = Type::Enum(Arc::new(
+            EnumType::new(
+                "request".into(),
+                Type::U8,
+                [
+                    Variant::c_like("empty".into(), Some(0)),
+                    Variant::new("items".into(), Type::from(PointerType::new(Type::U8)), Some(1)),
+                ],
+            )
+            .unwrap(),
+        ));
+        let ir = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([enum_ty]),
+            vec![Type::Felt],
+        );
+        let import_func_ty = ComponentFunctionType { ir };
+        let mut core_params = vec![AbiParam::new(Type::Felt); FPI_ABI_PREFIX_ARGS];
+        core_params.extend([AbiParam::new(Type::I32), AbiParam::new(Type::I32)]);
+        let core_func_sig = Signature {
+            params: core_params,
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::Wasm,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            test_import_path("fpi-send-pointer-enum"),
+            &import_func_ty,
+            core_function_path("fpi-send-pointer-enum"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("pointer-like enum payloads must fail with the typed diagnostic"),
+            Err(err) => {
+                let message = err.to_string();
+                assert!(
+                    message.contains("parameter 6::items") && message.contains("pointer-like type"),
+                    "unexpected error: {message}"
+                );
+            }
+        }
     }
 
     #[test]
