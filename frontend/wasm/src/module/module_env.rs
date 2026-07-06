@@ -136,14 +136,19 @@ fn validate_component_wit_section(
 /// Counts top-level `package <id>;` declarations in WIT source.
 ///
 /// Comments — including nested `/* */` block comments — are stripped first so commented-out
-/// declarations are not counted, and nested package declarations (`package <id> { ... }`) are
-/// excluded. A well-formed embedded WIT source contains exactly one top-level declaration, so a
-/// higher count indicates concatenated sections from multiple component implementations.
+/// declarations are not counted, and nested package declarations (`package <id> { ... }`, whose
+/// `{` precedes any `;`) are excluded. WIT is whitespace-insensitive, so other items may follow
+/// the declaration on the same line. A well-formed embedded WIT source contains exactly one
+/// top-level declaration; a higher count indicates concatenated sections from multiple component
+/// implementations.
 fn count_top_level_wit_packages(wit: &str) -> usize {
     strip_wit_comments(wit)
         .lines()
         .map(str::trim)
-        .filter(|line| line.starts_with("package ") && line.contains(';') && !line.contains('{'))
+        .filter(|line| {
+            line.starts_with("package ")
+                && line.find(';').is_some_and(|semi| !line[..semi].contains('{'))
+        })
         .count()
 }
 
@@ -213,10 +218,10 @@ fn merge_section_payload<'data>(
     if let Some(payload) = payload
         && merged.replace(payload).is_some()
     {
-        return Err(Report::msg(format!(
+        return Err(Report::from(WasmError::Unsupported(format!(
             "found multiple '{section_name}' custom sections across the component's core modules; \
              only one is allowed per component"
-        )));
+        ))));
     }
     Ok(())
 }

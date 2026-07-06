@@ -52,6 +52,24 @@ package miden:nested@0.1.0 {
     assert_eq!(count_top_level_wit_packages(wit), 1);
 }
 
+/// Ensures a one-line package declaration followed by other items on the same line is counted.
+///
+/// WIT is whitespace-insensitive; the `{` of a following item must not disqualify the
+/// declaration, while a nested `package <id> { ... }` (whose `{` precedes any `;`) still must.
+#[test]
+fn component_wit_counts_one_line_package_declarations() {
+    let wit =
+        "package miden:x@1.0.0; interface api { get: func() -> u64; }\n\nworld w { export api; }\n";
+    assert_eq!(count_top_level_wit_packages(wit), 1);
+
+    let nested_one_liner = "package miden:nested@0.1.0 { interface api { get: func() -> u64; } }\n";
+    assert_eq!(count_top_level_wit_packages(nested_one_liner), 0);
+
+    let concatenated = "package miden:first@0.1.0; world first-world { }\npackage \
+                        miden:second@0.1.0; world second-world { }\n";
+    assert_eq!(count_top_level_wit_packages(concatenated), 2);
+}
+
 /// Ensures declarations inside (nested) block comments are not counted as top-level packages.
 #[test]
 fn component_wit_ignores_block_commented_packages() {
