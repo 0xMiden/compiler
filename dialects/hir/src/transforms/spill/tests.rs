@@ -8,7 +8,9 @@ use midenc_expect_test::expect_file;
 use midenc_hir::{
     AddressSpace, BlockRef, Builder, Context, Op, OperationRef, PointerType, ProgramPoint, Report,
     SourceSpan, Type, ValueRef,
+    diagnostics::Uri,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
+    parse::{self, ParserConfig},
     testing::{Test, parse_function_fixpoint},
 };
 use midenc_hir_transform::op_reaches;
@@ -787,5 +789,55 @@ fn spill_reachability_through_region_re_entry() -> TestResult<()> {
         "earlier op must reach a later op in the same block"
     );
     assert!(!op_reaches(ret_op, late_op), "an op after the loop must not reach into it");
+    Ok(())
+}
+
+/// Queries that cross an isolation boundary are not control-flow questions.
+///
+/// Operations in two different functions have no shared control flow to walk, and for the
+/// function operations themselves the module body is a graph region where block order proves
+/// nothing. All such queries must answer with the conservative `true` in both directions, so
+/// that `false` remains a proof of unreachability.
+#[test]
+fn op_reaches_conservative_across_isolation_boundaries() -> TestResult<()> {
+    let source = r#"builtin.module public @test {
+    builtin.function public extern("C") @first(%a: u32) -> u32 {
+        %r = arith.add %a, %a <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %r : (u32);
+    };
+    builtin.function public extern("C") @second(%b: u32) -> u32 {
+        %r = arith.add %b, %b <{ overflow = #builtin.overflow<unchecked> }>;
+        builtin.ret %r : (u32);
+    };
+};"#;
+
+    let context = Rc::new(Context::default());
+    let module_op = parse::parse_any(
+        ParserConfig::new(context.clone()),
+        Uri::new("op_reaches_conservative_across_isolation_boundaries.hir"),
+        source,
+    )?;
+
+    let first_fn = op_in_region(module_op, 0, 0);
+    let second_fn = op_in_region(module_op, 0, 1);
+    let in_first = op_in_region(first_fn, 0, 0);
+    let in_second = op_in_region(second_fn, 0, 0);
+
+    assert!(
+        op_reaches(in_second, in_first),
+        "ops in different functions must be conservatively reachable regardless of module order"
+    );
+    assert!(
+        op_reaches(in_first, in_second),
+        "ops in different functions must be conservatively reachable"
+    );
+    assert!(
+        op_reaches(second_fn, first_fn),
+        "sibling isolated ops must be conservatively reachable regardless of module order"
+    );
+    assert!(
+        op_reaches(first_fn, second_fn),
+        "sibling isolated ops must be conservatively reachable"
+    );
     Ok(())
 }
