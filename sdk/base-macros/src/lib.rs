@@ -318,12 +318,36 @@ pub fn export_type(
 ///
 /// #[note]
 /// impl MyNote {
+///     /// Exported note constructor: creates this note as an output note of the current
+///     /// transaction and returns its index.
+///     #[note_constructor]
+///     pub fn create(recipient: AccountId, tag: Tag, note_type: NoteType, serial_num: Word) -> NoteIdx {
+///         let inputs = MyNote { recipient };
+///         let recipient = note::build_recipient(
+///             serial_num,
+///             note::get_entrypoint_root(),
+///             inputs.to_felt_repr(),
+///         );
+///         output_note::create(tag, note_type, recipient)
+///     }
+///
 ///     #[note_script]
 ///     pub fn run(self, _arg: Word, account: &mut Wallet) {
 ///         assert_eq!(account.get_id(), self.recipient);
 ///     }
 /// }
 /// ```
+///
+/// # Note constructors
+///
+/// Methods annotated with `#[note_constructor]` are exported through the note's WIT interface
+/// as note constructors. Other Miden packages — e.g. transaction scripts — can declare the note
+/// package as a dependency and create the note by calling its constructor. Unannotated methods
+/// stay plain Rust helpers and are not exported.
+///
+/// The note input struct also implements [`ToFeltRepr`](miden_field_repr::ToFeltRepr)
+/// (mirroring the generated storage decoding), so constructors can serialize the note inputs
+/// when computing the note recipient.
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
@@ -354,6 +378,29 @@ pub fn note_script(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     note::expand_note_script(attr, item)
+}
+
+/// Marks a method as an exported note constructor (`#[note_constructor]`).
+///
+/// The method must be contained within an inherent `impl` block annotated with `#[note]`. It is
+/// exported through the note's WIT interface (named by the kebab-cased method name), so other
+/// Miden packages — e.g. transaction scripts — can declare the note package as a dependency and
+/// create the note by calling the constructor.
+///
+/// # Supported constructor signature
+///
+/// - The method must be `pub` and must not take `self`: constructors run before the note exists
+///   (typically computing the note recipient via `note::get_entrypoint_root()` and calling
+///   `output_note::create`).
+/// - Parameter and return types are limited to SDK core types (e.g. `Felt`, `Word`, `AccountId`,
+///   `Tag`, `NoteType`, `NoteIdx`) and primitives.
+/// - Generic, `const`, `async`, `unsafe`, `extern`, and variadic methods are not supported.
+#[proc_macro_attribute]
+pub fn note_constructor(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    note::expand_note_constructor(attr, item)
 }
 
 /// Marks the function as a transaction script

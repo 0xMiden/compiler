@@ -19,6 +19,7 @@ use crate::{
 mod base;
 mod canonabi;
 mod macros;
+mod note_script_root;
 mod stdlib;
 
 /// Rebuilds an executable program from a compiled note-script package for direct execution tests.

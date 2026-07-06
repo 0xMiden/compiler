@@ -444,7 +444,7 @@ pub fn fpi_indirect_return_via_pointer<B: ?Sized + Builder>(
 }
 
 /// Stores flattened stack results into the Rust return pointer used by linker stubs.
-fn store_results_to_pointer<B: ?Sized + Builder>(
+pub(crate) fn store_results_to_pointer<B: ?Sized + Builder>(
     results: &[ValueRef],
     ptr_arg: ValueRef,
     builder: &mut FunctionBuilderExt<'_, B>,

@@ -129,6 +129,36 @@ fn transaction_script_from_package(package: &Package) -> TransactionScript {
     TransactionScript::from_parts(package.mast.mast_forest().clone(), entrypoint)
 }
 
+/// Builds a transaction script from a compiled transaction-script package, linking in the MAST
+/// forests of the provided Miden package dependencies.
+///
+/// The compiler links Miden package dependencies as libraries: calls into them are external MAST
+/// nodes referencing the dependency's procedure digests. Merging the dependency forests into the
+/// transaction script's forest makes those procedures resolvable during execution.
+pub(crate) fn transaction_script_from_package_with_deps(
+    package: &Package,
+    dependencies: &[&Package],
+) -> TransactionScript {
+    let base = transaction_script_from_package(package);
+    if dependencies.is_empty() {
+        return base;
+    }
+
+    let entrypoint_digest: Word = base.root().into();
+    let dep_forests: Vec<_> =
+        dependencies.iter().map(|dep| dep.mast.mast_forest().clone()).collect();
+    let mut forests = vec![base.mast()];
+    forests.extend(dep_forests);
+
+    let (merged, _root_map) = miden_core::mast::MastForest::merge(forests.iter().map(Arc::as_ref))
+        .expect("failed to merge dependency MAST forests into the transaction script");
+    let entrypoint = merged
+        .find_procedure_root(entrypoint_digest)
+        .expect("transaction script entrypoint should survive the MAST forest merge");
+
+    TransactionScript::from_parts(Arc::new(merged), entrypoint)
+}
+
 // ================================================================================================
 // ACCOUNT COMPONENT HELPERS
 // ================================================================================================

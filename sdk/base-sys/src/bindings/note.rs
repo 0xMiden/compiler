@@ -121,6 +121,24 @@ unsafe extern "C" {
         metadata_f3: Felt,
         ptr: *mut AttachmentLocation,
     );
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "intrinsics::note::script_root"]
+    fn extern_note_script_root(ptr: *mut Word);
+}
+
+/// Returns the MAST root digest of the note script defined by the current crate.
+///
+/// This is a compiler intrinsic: the call compiles to a MASM `procref` of the crate's
+/// `#[note_script]` entrypoint export, so the digest is the note script root observed by the
+/// transaction kernel when the note is executed. The digest is computed at assembly time.
+///
+/// Compilation fails if the current project does not define a `#[note_script]` entrypoint.
+pub fn get_entrypoint_root() -> Word {
+    unsafe {
+        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        extern_note_script_root(ret_area.as_mut_ptr());
+        ret_area.assume_init()
+    }
 }
 
 /// Computes and stores a note recipient from serial number, script root, and storage elements.

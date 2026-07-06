@@ -6,6 +6,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `note::get_entrypoint_root()` returns the MAST root digest of the note script defined by the
+  current crate (the `#[note_script]` entrypoint export). It is a compiler intrinsic resolved at
+  assembly time, so a note constructor can build a `Recipient` committing to its own note script
+  root (e.g. via `note::build_recipient`). Compilation fails if the project defines no
+  `#[note_script]` entrypoint #786
+- `#[note_constructor]` marks a method of a `#[note]` impl block as an exported note
+  constructor: it is exported through the note's WIT interface, so other Miden packages — e.g.
+  transaction scripts — can declare the note package as a dependency and create the note by
+  calling its constructor. Constructors must be `pub`, must not take `self`, and their
+  signatures are limited to SDK core types and primitives; unannotated methods stay plain Rust
+  helpers #786
+- `#[note]` structs now also implement `felt_repr::ToFeltRepr` (mirroring the generated
+  storage decoding), so note constructors can serialize the note inputs when computing the note
+  recipient; note input struct fields must now implement `ToFeltRepr` in addition to
+  `FromFeltRepr`. `AccountId` implements `ToFeltRepr` #786
+- The `#[note]` macro writes the note's WIT interface (entrypoint plus constructors) to
+  `target/generated-wit/`, so dependent crates can reference it via
+  `[package.metadata.component.target.dependencies]` #786
+
 ## [0.13.0] - 2026-06-29
 
 ### BREAKING

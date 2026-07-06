@@ -8,6 +8,7 @@ use alloc::rc::Rc;
 use core::{cell::RefCell, str::FromStr};
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
+use midenc_frontend_wasm_metadata::FrontendMetadata;
 use midenc_hir::{
     FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
     diagnostics::WrapErr,
@@ -20,6 +21,7 @@ use crate::{
     error::WasmResult,
     intrinsics::{
         Intrinsic, IntrinsicsConversionResult, attach_effects_to_function, convert_intrinsics_call,
+        convert_module_context_stub_call,
     },
     miden_abi::{
         is_miden_abi_module, miden_abi_function_effects, miden_abi_function_type,
@@ -59,10 +61,14 @@ pub fn is_unreachable_stub(body: &FunctionBody<'_>) -> bool {
 /// If `body` looks like a linker stub, lowers `function_ref` to a call to the
 /// MASM callee derived from the function name and applies the appropriate
 /// TransformStrategy. Returns `true` if handled, `false` otherwise.
+///
+/// `frontend_metadata` is the parsed core module's frontend metadata; it is consulted by
+/// module-context stub intrinsics (note intrinsics).
 pub fn maybe_lower_linker_stub(
     function_ref: FunctionRef,
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
+    frontend_metadata: Option<&FrontendMetadata>,
 ) -> WasmResult<bool> {
     if !is_unreachable_stub(body) {
         return Ok(false);
@@ -125,28 +131,45 @@ pub fn maybe_lower_linker_stub(
 
     // Declare MASM import callee in world and exec via TransformStrategy
     let results: Vec<ValueRef> = if let Some(intr) = intrinsic {
-        // Decide whether the intrinsic is implemented as a function or an operation
+        // Dispatch on how the intrinsic is lowered
         let Some(conv) = intr.conversion_result() else {
             return Ok(false);
         };
-        if let IntrinsicsConversionResult::FunctionType { effects, .. } = conv {
-            // Declare callee and call via convert_intrinsics_call with function_ref
-            let import_module_ref = module_state
-                .world_builder
-                .declare_module_tree(&import_path.without_leaf())
-                .wrap_err("failed to create module for intrinsics imports")?;
-            let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-            let mut intrinsic_func_ref = import_module_builder
-                .define_function(import_path.name().into(), Visibility::Public, import_sig.clone())
-                .wrap_err("failed to create intrinsic function ref")?;
-            {
-                let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
-                attach_effects_to_function(&mut intrinsic_func, effects.iter());
+        match conv {
+            IntrinsicsConversionResult::FunctionType { effects, .. } => {
+                // Declare callee and call via convert_intrinsics_call with function_ref
+                let import_module_ref = module_state
+                    .world_builder
+                    .declare_module_tree(&import_path.without_leaf())
+                    .wrap_err("failed to create module for intrinsics imports")?;
+                let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+                let mut intrinsic_func_ref = import_module_builder
+                    .define_function(
+                        import_path.name().into(),
+                        Visibility::Public,
+                        import_sig.clone(),
+                    )
+                    .wrap_err("failed to create intrinsic function ref")?;
+                {
+                    let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
+                    attach_effects_to_function(&mut intrinsic_func, effects.iter());
+                }
+                convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?
+                    .to_vec()
             }
-            convert_intrinsics_call(intr, Some(intrinsic_func_ref), &args, &mut fb, span)?.to_vec()
-        } else {
             // Inline conversion of intrinsic operation
-            convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
+            IntrinsicsConversionResult::MidenVmOp => {
+                convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
+            }
+            // The stub body is synthesized from module-level context (frontend metadata)
+            IntrinsicsConversionResult::ModuleContextStub => convert_module_context_stub_call(
+                intr,
+                function_ref,
+                &args,
+                frontend_metadata,
+                &mut fb,
+                span,
+            )?,
         }
     } else {
         // Miden ABI path: exec import with TransformStrategy
