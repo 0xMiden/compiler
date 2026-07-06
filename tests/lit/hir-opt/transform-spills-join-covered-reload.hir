@@ -22,14 +22,19 @@
 // CHECK: hir.store_local %[[V:\d+]] <{ local = #builtin.local_variable<[[L:\d+]], u32> }>
 // CHECK-NEXT: hir.exec ::@test::@example
 // CHECK-NOT: hir.store_local
+// CHECK: cf.br ^[[JOIN:block\d+]](
 
 // COM: The else-arm spills the same value to the same local
 // CHECK: ^[[ELSE]]:
 // CHECK: hir.store_local %[[V]] <{ local = #builtin.local_variable<[[L]], u32> }>
 // CHECK-NEXT: hir.exec ::@test::@example
 // CHECK-NOT: hir.store_local
+// CHECK: cf.br ^[[JOIN]](
 
-// COM: The join holds the single reload of the spilled value
+// COM: The join block holds the single reload of the spilled value
+// CHECK: ^[[JOIN]](
+// CHECK-NOT: hir.load_local
+// CHECK-NOT: hir.store_local
 // CHECK: hir.load_local <{ local = #builtin.local_variable<[[L]], u32> }>
 // CHECK-NOT: hir.load_local
 // CHECK-NOT: hir.store_local
