@@ -27,4 +27,11 @@ book/
 tests/**/Cargo.lock
 !tests/fixtures/components/**/Cargo.lock
 
+# fuzza-agent working notes — survive `cargo make fuzza-cov-clean` (which wipes
+# target/fuzza-coverage), but are local scratch and not committed. The
+# directory itself is kept (via .gitkeep) so it exists on a fresh checkout.
+tools/fuzza-agent/scratch/*
+!tools/fuzza-agent/scratch/.gitkeep
+tools/fuzza-agent/__pycache__/
+
 *.lit_test_times.txt*

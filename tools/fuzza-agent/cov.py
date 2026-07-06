@@ -80,6 +80,11 @@ def pct(a: int, b: int) -> str:
     return f"{100.0 * a / b:.1f}%" if b else "n/a"
 
 
+def in_area(func: dict, areas: tuple[str, ...]) -> bool:
+    """Return True if `func`'s workspace-relative file starts with any area prefix."""
+    return any(func["file"].startswith(a) for a in areas)
+
+
 def demangle_all(names: list[str]) -> list[str]:
     """Batch-demangle Rust symbols via `rustfilt` if available, else return as-is."""
     if not names or shutil.which("rustfilt") is None:
@@ -197,6 +202,104 @@ def emit_delta(current: list[dict], prev: list[dict], out) -> None:
         print(file=out)
 
 
+def emit_area(current: list[dict], prev: list[dict], areas: tuple[str, ...], out) -> None:
+    """Print the target-area section: scoped headline, delta, and cold-function tables.
+
+    This is the section the case-generation agent reads to drive its loop: the
+    headline and delta are restricted to `areas`, so the agent can judge whether
+    a case was productive *in the target area* without hand-summing the raw JSON.
+    The untouched/partial tables list every cold function in the area (not just
+    those over the global size threshold), so the remaining surface is visible in
+    full for exhaustion analysis.
+    """
+    area_cur = [f for f in current if in_area(f, areas)]
+
+    print(f"## Target area — {', '.join(areas)}\n", file=out)
+
+    if not area_cur:
+        print(
+            "_No compiler functions matched these prefixes. Check the path against "
+            "the `File:line` column below (paths are workspace-relative)._\n",
+            file=out,
+        )
+        return
+
+    cur_cov = sum(f["covered"] for f in area_cur)
+    cur_tot = sum(f["regions"] for f in area_cur)
+    cur_hit = sum(1 for f in area_cur if f["count"] > 0)
+    print(
+        f"- Regions covered:   **{cur_cov}/{cur_tot}** ({pct(cur_cov, cur_tot)})",
+        file=out,
+    )
+    print(
+        f"- Functions touched: **{cur_hit}/{len(area_cur)}** ({pct(cur_hit, len(area_cur))})",
+        file=out,
+    )
+
+    if prev:
+        prev_by_key = {(f["file"], f["name"]): f for f in prev if in_area(f, areas)}
+        prev_cov = sum(f["covered"] for f in prev_by_key.values())
+        prev_hit = sum(1 for f in prev_by_key.values() if f["count"] > 0)
+        print(
+            f"- **Area delta since previous run: {cur_cov - prev_cov:+d} regions, "
+            f"{cur_hit - prev_hit:+d} functions**",
+            file=out,
+        )
+        gained = sorted(
+            (
+                {
+                    **f,
+                    "gain": f["covered"]
+                    - prev_by_key.get((f["file"], f["name"]), {"covered": 0})["covered"],
+                }
+                for f in area_cur
+            ),
+            key=lambda f: -f["gain"],
+        )
+        gained = [f for f in gained if f["gain"] > 0]
+        if gained:
+            print("\n### Area functions that gained regions\n", file=out)
+            print("| Δ regions | Now hit | File:line | Function |", file=out)
+            print("| --- | --- | --- | --- |", file=out)
+            for f in gained[:TOP_N]:
+                print(
+                    f"| +{f['gain']} | {f['covered']}/{f['regions']} | "
+                    f"`{f['file']}:{f['line']}` | `{f['name']}` |",
+                    file=out,
+                )
+    print(file=out)
+
+    untouched = sorted(
+        (f for f in area_cur if f["count"] == 0),
+        key=lambda f: (-f["regions"], f["file"], f["line"]),
+    )
+    print(f"### Area — untouched functions (up to {TOP_N})\n", file=out)
+    print("| Regions | File:line | Function |", file=out)
+    print("| --- | --- | --- |", file=out)
+    for f in untouched[:TOP_N]:
+        print(f"| {f['regions']} | `{f['file']}:{f['line']}` | `{f['name']}` |", file=out)
+    if not untouched:
+        print("| _none_ | | |", file=out)
+    print(file=out)
+
+    partial = sorted(
+        (f for f in area_cur if f["count"] > 0 and f["covered"] < f["regions"]),
+        key=lambda f: (-(f["regions"] - f["covered"]), f["file"], f["line"]),
+    )
+    print(f"### Area — partially-covered functions (up to {TOP_N})\n", file=out)
+    print("| Uncovered | Regions | File:line | Function |", file=out)
+    print("| --- | --- | --- | --- |", file=out)
+    for f in partial[:TOP_N]:
+        uncov = f["regions"] - f["covered"]
+        print(
+            f"| {uncov} | {f['regions']} | `{f['file']}:{f['line']}` | `{f['name']}` |",
+            file=out,
+        )
+    if not partial:
+        print("| _none_ | | | |", file=out)
+    print(file=out)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("json", type=Path, help="current llvm-cov JSON")
@@ -207,7 +310,20 @@ def main() -> None:
         default=None,
         help="previous llvm-cov JSON; if present, emit a delta section",
     )
+    parser.add_argument(
+        "--area",
+        default=None,
+        help="comma-separated workspace-relative path prefix(es) for the target "
+        "area; if present, emit a scoped headline, delta, and cold-function "
+        "tables for just those paths (e.g. codegen/masm/src/emit/mem.rs)",
+    )
     args = parser.parse_args()
+
+    areas = (
+        tuple(p.strip() for p in args.area.split(",") if p.strip())
+        if args.area
+        else ()
+    )
 
     workspace = args.workspace.resolve()
     current = load_funcs(args.json, workspace)
@@ -240,6 +356,9 @@ def main() -> None:
 
     if prev:
         emit_delta(current, prev, out)
+
+    if areas:
+        emit_area(current, prev, areas, out)
 
     untouched = sorted(
         (f for f in current if f["count"] == 0),

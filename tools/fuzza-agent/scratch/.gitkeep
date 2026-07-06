@@ -1,0 +1,9 @@
+# fuzza-agent scratch directory
+#
+# The coverage-guided case-generation agent (see ../AGENT-PROMPT.md) writes its
+# per-run scratch log here, e.g. `<area>-log.md`, recording which case ideas
+# were productive and which target regions are unreachable.
+#
+# This directory lives outside `target/`, so it survives
+# `cargo make fuzza-cov-clean`. Everything in it except this file is gitignored:
+# the notes are local working state and are not committed.
