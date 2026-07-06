@@ -267,6 +267,9 @@ pub(crate) struct MidenDependency {
     pub(crate) name: String,
     /// Path of the compiled `.masp` package the dependency metadata was read from.
     pub(crate) package_path: PathBuf,
+    /// The deserialized package, shared so FPI procedure-root extraction reuses the exact read
+    /// the package identity was verified against.
+    pub(crate) package: Arc<miden_mast_package::Package>,
     /// Exported WIT interfaces loaded from the dependency metadata.
     pub(crate) interfaces: Vec<DependencyInterface>,
 }
@@ -279,6 +282,7 @@ impl MidenDependency {
             .find(|interface| interface.name == interface_name)
             .map(|interface| SelectedDependency {
                 package_path: self.package_path.clone(),
+                package: self.package.clone(),
                 interface: interface.clone(),
             })
     }
@@ -297,6 +301,8 @@ impl MidenDependency {
 pub(crate) struct SelectedDependency {
     /// Path of the compiled `.masp` package the dependency metadata was read from.
     pub(crate) package_path: PathBuf,
+    /// The deserialized package the metadata was read from.
+    pub(crate) package: Arc<miden_mast_package::Package>,
     /// The selected exported WIT interface.
     pub(crate) interface: DependencyInterface,
 }
@@ -378,6 +384,7 @@ fn collect_miden_dependencies(
         dependencies.push(MidenDependency {
             name: source.name,
             package_path: source.package_path,
+            package: source.package,
             interfaces: dependency_wit.interfaces,
         });
     }
@@ -725,6 +732,7 @@ world multi-account-world {
         let dependency = super::MidenDependency {
             name: "multi-account".to_string(),
             package_path: PathBuf::from("/tmp/multi-account/target/miden/debug/multi_account.masp"),
+            package: crate::test_support::build_package("multi-account", None),
             interfaces: dependency_wit.interfaces,
         };
 

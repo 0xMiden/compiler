@@ -1486,7 +1486,10 @@ fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
     quote!(::miden::Word::new([#(#felts),*]))
 }
 
-/// Loads a single dependency package and extracts exported procedure roots.
+/// Extracts exported procedure roots from a selected dependency's package.
+///
+/// The package was deserialized (and identity-checked) once during dependency resolution and is
+/// reused here rather than re-read from disk.
 fn load_dependency(
     dependency: SelectedDependency,
     trait_ident: syn::Ident,
@@ -1494,7 +1497,7 @@ fn load_dependency(
     let import = dependency.import().to_owned();
     let module_path = import_module_path(&import);
     let package_path = dependency.package_path.clone();
-    let package = crate::dependency_package::read_package(&package_path)?;
+    let package = dependency.package.clone();
 
     let mut roots = HashMap::new();
     for export in package.manifest.exports() {

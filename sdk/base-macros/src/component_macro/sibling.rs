@@ -279,6 +279,7 @@ mod tests {
             package_path: std::path::PathBuf::from(
                 "/tmp/pausable/target/miden/debug/pausable.masp",
             ),
+            package: crate::test_support::build_package("pausable", None),
             interface: crate::wit_world::DependencyInterface {
                 name: "pausable".to_string(),
                 import: "miden:pausable/pausable@0.1.0".to_string(),
