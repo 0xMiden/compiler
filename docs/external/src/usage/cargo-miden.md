@@ -69,7 +69,8 @@ following command from the root of the project directory:
 cargo miden build --release
 ```
 
-This will emit the compiled artifacts to `target/miden/release/foo.masp`.
+This will emit the compiled artifacts to `target/miden/release/foo.masp`, and print the path of
+the compiled Miden package on success.
 
 ## Running a compiled Miden VM program
 
