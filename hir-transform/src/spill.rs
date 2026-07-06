@@ -863,17 +863,12 @@ fn rewrite_spill_pseudo_instructions(
         .with_listener(TracingRewriterListener);
     for spill in analysis.spills() {
         let operation = spill.inst.expect("expected spill to have been materialized");
-        let spilled = {
-            let op = operation.borrow();
-            let spill_like = op
-                .as_trait::<dyn SpillLike>()
-                .expect("expected materialized spill operation to implement SpillLike");
-            spill_like.spilled_value()
-        };
-        // Only keep spills that can reach a live reload of their value
+        // Only keep spills that can reach a live reload of their value. Spills and reloads are
+        // paired through the analysis's value bookkeeping rather than the spill op's current
+        // operand, which SSA reconstruction may rewrite (only reload operands are exempt).
         let mut is_used = false;
         for rinfo in analysis.reloads() {
-            if rinfo.value != spilled {
+            if rinfo.value != spill.value {
                 continue;
             }
             let Some(reload_op) = rinfo.inst else {
