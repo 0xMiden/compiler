@@ -1047,15 +1047,15 @@ mod tests {
     use alloc::sync::Arc;
 
     use midenc_hir::{
-        CallConv, Context, EnumType, FunctionType, PointerType, StructType, SymbolName,
-        SymbolNameComponent, SymbolPath, Type, Variant, dialects::builtin::attributes::AbiParam,
-        interner::Symbol,
+        CallConv, Context, FunctionType, PointerType, StructType, SymbolName, SymbolNameComponent,
+        SymbolPath, Type, dialects::builtin::attributes::AbiParam, interner::Symbol,
     };
 
     use super::*;
     use crate::component::test_support::{
-        count_validation_ops, mixed_payload_variant_type, scalar_payload_variant_type,
-        two_field_record_type, unit_only_variant_type, world_with_core_module,
+        count_validation_ops, mixed_payload_variant_type, pointer_payload_variant_type,
+        scalar_payload_variant_type, two_field_record_type, unit_only_variant_type,
+        world_with_core_module,
     };
 
     fn test_import_path(name: &str) -> SymbolPath {
@@ -1320,17 +1320,7 @@ mod tests {
 
     #[test]
     fn validate_fpi_typed_signature_rejects_pointer_inside_enum_payload() {
-        let enum_ty = Type::Enum(Arc::new(
-            EnumType::new(
-                "request".into(),
-                Type::U8,
-                [
-                    Variant::c_like("empty".into(), Some(0)),
-                    Variant::new("items".into(), Type::from(PointerType::new(Type::U8)), Some(1)),
-                ],
-            )
-            .unwrap(),
-        ));
+        let enum_ty = pointer_payload_variant_type();
         let import_func_ty = FunctionType::new(
             CallConv::Wasm,
             fpi_params_with_user_args([enum_ty]),
@@ -1870,17 +1860,7 @@ mod tests {
     fn fpi_lowering_rejects_pointer_enum_payload_before_flattening() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
-        let enum_ty = Type::Enum(Arc::new(
-            EnumType::new(
-                "request".into(),
-                Type::U8,
-                [
-                    Variant::c_like("empty".into(), Some(0)),
-                    Variant::new("items".into(), Type::from(PointerType::new(Type::U8)), Some(1)),
-                ],
-            )
-            .unwrap(),
-        ));
+        let enum_ty = pointer_payload_variant_type();
         let ir = FunctionType::new(
             CallConv::ComponentModel,
             fpi_params_with_user_args([enum_ty]),
