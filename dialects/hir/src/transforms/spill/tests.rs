@@ -617,8 +617,8 @@ fn materializes_spills_nested_scf_while_after_region() -> TestResult<()> {
 /// count as reaching the join. Sibling arms must stay mutually unreachable so the dead-edge-spill
 /// elimination keeps working.
 #[test]
-fn spill_reachability_in_branching_cfg() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @spill_reachability_in_branching_cfg(%a: u32) -> u32 {
+fn op_reaches_in_branching_cfg() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @op_reaches_in_branching_cfg(%a: u32) -> u32 {
     %one = arith.constant 1 : u32;
     %first = arith.add %a, %one <{ overflow = #builtin.overflow<unchecked> }>;
     %cond = arith.eq %first, %one;
@@ -636,7 +636,7 @@ fn spill_reachability_in_branching_cfg() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "spill_reachability_in_branching_cfg.hir", source)?;
+        parse_function_fixpoint(&context, "op_reaches_in_branching_cfg.hir", source)?;
 
     let entry = block_at(function, 0);
     let entry_first = op_at(entry, 1);
@@ -662,8 +662,8 @@ fn spill_reachability_in_branching_cfg() -> TestResult<()> {
 
 /// Positional reachability through a loop back-edge.
 #[test]
-fn spill_reachability_through_loop_back_edge() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @spill_reachability_through_loop_back_edge(%n: u32) -> u32 {
+fn op_reaches_through_loop_back_edge() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @op_reaches_through_loop_back_edge(%n: u32) -> u32 {
     cf.br ^header(%n : u32);
 ^header(%i: u32):
     %one = arith.constant 1 : u32;
@@ -680,7 +680,7 @@ fn spill_reachability_through_loop_back_edge() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "spill_reachability_through_loop_back_edge.hir", source)?;
+        parse_function_fixpoint(&context, "op_reaches_through_loop_back_edge.hir", source)?;
 
     let header = block_at(function, 1);
     let header_op = op_at(header, 1);
@@ -702,8 +702,8 @@ fn spill_reachability_through_loop_back_edge() -> TestResult<()> {
 /// Nested operations are normalized to their ancestor in the common region; operations nested
 /// under the same region-branch op conservatively reach each other (e.g. across loop iterations).
 #[test]
-fn spill_reachability_across_nested_regions() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @spill_reachability_across_nested_regions(%a: u32) -> u32 {
+fn op_reaches_across_nested_regions() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @op_reaches_across_nested_regions(%a: u32) -> u32 {
     %one = arith.constant 1 : u32;
     %pre = arith.add %a, %one <{ overflow = #builtin.overflow<unchecked> }>;
     %cond = arith.eq %pre, %one;
@@ -720,7 +720,7 @@ fn spill_reachability_across_nested_regions() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "spill_reachability_across_nested_regions.hir", source)?;
+        parse_function_fixpoint(&context, "op_reaches_across_nested_regions.hir", source)?;
 
     let entry = block_at(function, 0);
     let pre_op = op_at(entry, 1);
@@ -749,8 +749,8 @@ fn spill_reachability_across_nested_regions() -> TestResult<()> {
 /// region graph of the parent op. An op positioned after another op in such a region still
 /// reaches it, through the next iteration.
 #[test]
-fn spill_reachability_through_region_re_entry() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @spill_reachability_through_region_re_entry(%n: u32) -> u32 {
+fn op_reaches_through_region_re_entry() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @op_reaches_through_region_re_entry(%n: u32) -> u32 {
     %zero = arith.constant 0 : u32;
     %r = scf.while %zero before {
     ^head(%i: u32):
@@ -768,11 +768,8 @@ fn spill_reachability_through_region_re_entry() -> TestResult<()> {
 };"#;
 
     let context = Rc::new(Context::default());
-    let (function, _) = parse_function_fixpoint(
-        &context,
-        "spill_reachability_through_region_re_entry.hir",
-        source,
-    )?;
+    let (function, _) =
+        parse_function_fixpoint(&context, "op_reaches_through_region_re_entry.hir", source)?;
 
     let entry = block_at(function, 0);
     let while_op = op_at(entry, 1);
