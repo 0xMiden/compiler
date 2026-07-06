@@ -681,7 +681,13 @@ pub(super) fn offset_addr<B: ?Sized + Builder>(
         return Ok(ptr);
     }
 
-    let offset = fb.i32(offset as i32, span);
+    let Ok(offset) = i32::try_from(offset) else {
+        return Err(WasmError::Unsupported(format!(
+            "canonical ABI layout offset {offset} does not fit in i32 pointer arithmetic"
+        ))
+        .into());
+    };
+    let offset = fb.i32(offset, span);
     fb.add_unchecked(ptr, offset, span)
 }
 

@@ -381,6 +381,33 @@ fn plan_fpi_call(
         }
     }
 
+    // Mirror the non-FPI lowering paths: the core import must carry the canonical lowered
+    // parameter and result types, with canonical pointer parameters passed as core `i32`
+    // values. Arity checks alone would let mismatched scalar widths reach felt conversion.
+    let expected_core_params = import_lowered_sig
+        .params()
+        .iter()
+        .map(|param| {
+            if param.ty.is_pointer() {
+                AbiParam::new(Type::I32)
+            } else {
+                param.clone()
+            }
+        })
+        .collect::<Vec<_>>();
+    let expected_core_sig = Signature {
+        params: expected_core_params,
+        results: import_lowered_sig.results().to_vec(),
+        cc: core_func_sig.cc,
+    };
+    check_core_wasm_signature_equivalence(core_func_sig, &expected_core_sig).map_err(
+        |message| {
+            midenc_session::diagnostics::Report::msg(format!(
+                "FPI import `{core_func_path}` has core Wasm signature mismatch: {message}"
+            ))
+        },
+    )?;
+
     let flattened_arg_felts = fpi_flat_value_count(&flattened_params)?;
     let procedure_input_count = flattened_arg_felts.saturating_sub(FPI_ABI_PREFIX_ARGS);
     if flattened_arg_felts < FPI_ABI_PREFIX_ARGS {
@@ -1368,14 +1395,64 @@ mod tests {
     ) -> WasmResult<FpiCallShape> {
         let import_lowered_sig =
             flatten_function_type(context, import_func_ty, CanonicalAbiMode::Import).unwrap();
+        let core_func_sig = core_sig_for_lowered(&import_lowered_sig);
         plan_fpi_call(
             context,
             import_func_ty,
             &import_lowered_sig,
             &test_import_path(core_func_name),
-            &import_lowered_sig,
-            import_lowered_sig.params().len(),
+            &core_func_sig,
+            core_func_sig.params().len(),
         )
+    }
+
+    /// Builds the core Wasm signature matching a canonical lowered signature, with canonical
+    /// pointer parameters passed as core `i32` values, mirroring wit-bindgen output.
+    fn core_sig_for_lowered(import_lowered_sig: &Signature) -> Signature {
+        let params = import_lowered_sig
+            .params()
+            .iter()
+            .map(|param| {
+                if param.ty.is_pointer() {
+                    AbiParam::new(Type::I32)
+                } else {
+                    param.clone()
+                }
+            })
+            .collect();
+        Signature {
+            params,
+            results: import_lowered_sig.results().to_vec(),
+            cc: import_lowered_sig.cc,
+        }
+    }
+
+    #[test]
+    fn plan_fpi_call_rejects_mismatched_core_param_types() {
+        let context = Rc::new(Context::default());
+        let import_func_ty = FunctionType::new(
+            CallConv::ComponentModel,
+            fpi_params_with_user_args([Type::U32]),
+            vec![Type::Felt],
+        );
+        let import_lowered_sig =
+            flatten_function_type(&context, &import_func_ty, CanonicalAbiMode::Import).unwrap();
+        // The user argument lowers to a core `i32`, but the core import declares `i64`.
+        let mut core_func_sig = core_sig_for_lowered(&import_lowered_sig);
+        *core_func_sig.params.last_mut().unwrap() = AbiParam::new(Type::I64);
+
+        let err = plan_fpi_call(
+            &context,
+            &import_func_ty,
+            &import_lowered_sig,
+            &test_import_path("fpi-mismatched-core-param"),
+            &core_func_sig,
+            core_func_sig.params().len(),
+        )
+        .expect_err("mismatched core parameter types must be rejected");
+        let message = err.to_string();
+
+        assert!(message.contains("core Wasm signature mismatch"), "unexpected error: {message}");
     }
 
     #[test]
