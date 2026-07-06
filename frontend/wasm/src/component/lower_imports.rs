@@ -819,15 +819,7 @@ fn generate_lowering_with_transformation(
 
     // The lowered core function takes the flattened parameters with the result out-pointer
     // passed as a core Wasm i32 pointer, and returns nothing.
-    let mut expected_core_params = import_func_sig_flat.params().to_vec();
-    *expected_core_params
-        .last_mut()
-        .expect("flattened import params cannot be empty") = AbiParam::new(Type::I32);
-    let expected_core_sig = Signature {
-        params: expected_core_params,
-        results: vec![],
-        cc: core_func_sig.cc,
-    };
+    let expected_core_sig = expected_core_signature(&import_func_sig_flat);
     check_core_wasm_signature_equivalence(&core_func_sig, &expected_core_sig).map_err(
         |message| {
             Report::msg(format!(
