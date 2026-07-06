@@ -22,7 +22,8 @@ use super::{
     canonical_abi_info, canonical_flat_types, contains_unsupported_canonical_abi_type,
     flat::{
         CanonicalAbiIndirection, CanonicalAbiMode, check_core_wasm_signature_equivalence,
-        classify_function_type, flat_params_need_tuple, flatten_function_type, flatten_types,
+        classify_function_type, expected_core_signature, flat_params_need_tuple,
+        flatten_function_type, flatten_types,
     },
 };
 use crate::{
@@ -386,22 +387,7 @@ fn plan_fpi_call(
     // Mirror the non-FPI lowering paths: the core import must carry the canonical lowered
     // parameter and result types, with canonical pointer parameters passed as core `i32`
     // values. Arity checks alone would let mismatched scalar widths reach felt conversion.
-    let expected_core_params = import_lowered_sig
-        .params()
-        .iter()
-        .map(|param| {
-            if param.ty.is_pointer() {
-                AbiParam::new(Type::I32)
-            } else {
-                param.clone()
-            }
-        })
-        .collect::<Vec<_>>();
-    let expected_core_sig = Signature {
-        params: expected_core_params,
-        results: import_lowered_sig.results().to_vec(),
-        cc: core_func_sig.cc,
-    };
+    let expected_core_sig = expected_core_signature(import_lowered_sig);
     check_core_wasm_signature_equivalence(core_func_sig, &expected_core_sig).map_err(
         |message| {
             midenc_session::diagnostics::Report::msg(format!(
@@ -1397,7 +1383,7 @@ mod tests {
     ) -> WasmResult<FpiCallShape> {
         let import_lowered_sig =
             flatten_function_type(context, import_func_ty, CanonicalAbiMode::Import).unwrap();
-        let core_func_sig = core_sig_for_lowered(&import_lowered_sig);
+        let core_func_sig = expected_core_signature(&import_lowered_sig);
         plan_fpi_call(
             context,
             import_func_ty,
@@ -1406,27 +1392,6 @@ mod tests {
             &core_func_sig,
             core_func_sig.params().len(),
         )
-    }
-
-    /// Builds the core Wasm signature matching a canonical lowered signature, with canonical
-    /// pointer parameters passed as core `i32` values, mirroring wit-bindgen output.
-    fn core_sig_for_lowered(import_lowered_sig: &Signature) -> Signature {
-        let params = import_lowered_sig
-            .params()
-            .iter()
-            .map(|param| {
-                if param.ty.is_pointer() {
-                    AbiParam::new(Type::I32)
-                } else {
-                    param.clone()
-                }
-            })
-            .collect();
-        Signature {
-            params,
-            results: import_lowered_sig.results().to_vec(),
-            cc: import_lowered_sig.cc,
-        }
     }
 
     #[test]
@@ -1440,7 +1405,7 @@ mod tests {
         let import_lowered_sig =
             flatten_function_type(&context, &import_func_ty, CanonicalAbiMode::Import).unwrap();
         // The user argument lowers to a core `i32`, but the core import declares `i64`.
-        let mut core_func_sig = core_sig_for_lowered(&import_lowered_sig);
+        let mut core_func_sig = expected_core_signature(&import_lowered_sig);
         *core_func_sig.params.last_mut().unwrap() = AbiParam::new(Type::I64);
 
         let err = plan_fpi_call(
