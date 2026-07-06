@@ -1,8 +1,9 @@
 //! Foreign procedure invocation tests for variant arguments in the indirect call shape.
 //!
-//! The record fields plus the option lanes push the flattened parameter count past the
+//! The record fields plus the variant lanes push the flattened parameter count past the
 //! canonical ABI's sixteen-value threshold, so the caller passes one argument tuple pointer
-//! and the FPI wrapper reloads the variant with a discriminant switch.
+//! and the FPI wrapper reloads each variant — an option and a mixed-width (`u64` + `felt`)
+//! payload variant — with a discriminant switch.
 
 use miden_client::Word;
 use miden_core::Felt;
@@ -44,6 +45,15 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 
 use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
 
+/// Variant whose cases join a double-word integer lane with a felt lane.
+#[export_type]
+pub enum MixedPayload {
+    /// Carries a double-word integer value.
+    Wide(u64),
+    /// Carries a single felt value.
+    Scalar(Felt),
+}
+
 /// Record whose ten fields fill most of the flattened parameter budget.
 #[export_type]
 pub struct TenU32Record {
@@ -82,6 +92,8 @@ struct CounterContractStorage {
 trait CounterContract {
     /// Adds the record's field sum to the optional value, preserving `None`.
     fn pick_sum(&self, input: TenU32Record, choice: Option<u32>) -> Option<u32>;
+    /// Adds the record's field sum to the payload of either mixed-width variant case.
+    fn fold_mixed(&self, input: TenU32Record, payload: MixedPayload) -> MixedPayload;
 }
 
 #[component]
@@ -89,18 +101,32 @@ impl CounterContract for CounterContractStorage {
     /// Adds the record's field sum to the optional value, preserving `None`.
     fn pick_sum(&self, input: TenU32Record, choice: Option<u32>) -> Option<u32> {
         let _ = &self.count_map;
-        let sum = input.f0
-            + input.f1
-            + input.f2
-            + input.f3
-            + input.f4
-            + input.f5
-            + input.f6
-            + input.f7
-            + input.f8
-            + input.f9;
-        choice.map(|value| value + sum)
+        choice.map(|value| value + field_sum(&input))
     }
+
+    /// Adds the record's field sum to the payload of either mixed-width variant case.
+    fn fold_mixed(&self, input: TenU32Record, payload: MixedPayload) -> MixedPayload {
+        let _ = &self.count_map;
+        let sum = field_sum(&input);
+        match payload {
+            MixedPayload::Wide(value) => MixedPayload::Wide(value + sum as u64),
+            MixedPayload::Scalar(value) => MixedPayload::Scalar(value + Felt::from_u32(sum)),
+        }
+    }
+}
+
+/// Returns the sum of all record fields.
+fn field_sum(input: &TenU32Record) -> u32 {
+    input.f0
+        + input.f1
+        + input.f2
+        + input.f3
+        + input.f4
+        + input.f5
+        + input.f6
+        + input.f7
+        + input.f8
+        + input.f9
 }
 "#;
 
@@ -111,9 +137,16 @@ const COUNTER_CALLER_SOURCE: &str = r#"
 
 use miden::*;
 
-use crate::bindings::miden::variant_indirect_args_account::counter_contract::TenU32Record;
+use crate::bindings::miden::variant_indirect_args_account::counter_contract::{
+    MixedPayload, TenU32Record,
+};
 #[account(variant_indirect_args_account::CounterContract)]
 struct Counter;
+
+/// Sum of the record fields sent by every call.
+const FIELD_SUM: u32 = 55;
+/// Double-word value whose limbs both stay non-zero across the fold.
+const WIDE_VALUE: u64 = 0x0000_0003_0000_0007;
 
 /// Note script input containing the foreign counter account id.
 #[note]
@@ -124,44 +157,56 @@ struct CounterCaller {
 
 #[note]
 impl CounterCaller {
-    /// Checks that a variant argument loaded from the argument tuple crosses the FPI boundary.
+    /// Checks that variant arguments loaded from the argument tuple cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
         let count_acc = Counter::new(self.counter_account_id);
-        let record = TenU32Record {
-            f0: 1,
-            f1: 2,
-            f2: 3,
-            f3: 4,
-            f4: 5,
-            f5: 6,
-            f6: 7,
-            f7: 8,
-            f8: 9,
-            f9: 10,
-        };
 
-        match count_acc.pick_sum(record, Some(100)) {
-            Some(value) => assert_eq(Felt::from_u32(value), Felt::from_u32(155)),
+        match count_acc.pick_sum(test_record(), Some(100)) {
+            Some(value) => assert_eq(Felt::from_u32(value), Felt::from_u32(100 + FIELD_SUM)),
             None => assert_eq(felt!(0), felt!(1)),
         }
-
-        let record = TenU32Record {
-            f0: 1,
-            f1: 2,
-            f2: 3,
-            f3: 4,
-            f4: 5,
-            f5: 6,
-            f6: 7,
-            f7: 8,
-            f8: 9,
-            f9: 10,
-        };
-        match count_acc.pick_sum(record, None) {
+        match count_acc.pick_sum(test_record(), None) {
             None => (),
             Some(_) => assert_eq(felt!(0), felt!(1)),
         }
+
+        match count_acc.fold_mixed(test_record(), MixedPayload::Wide(WIDE_VALUE)) {
+            MixedPayload::Wide(value) => assert_u64_eq(value, WIDE_VALUE + FIELD_SUM as u64),
+            MixedPayload::Scalar(_) => assert_eq(felt!(0), felt!(1)),
+        }
+        match count_acc.fold_mixed(test_record(), MixedPayload::Scalar(felt!(9))) {
+            MixedPayload::Scalar(value) => assert_eq(value, Felt::from_u32(9 + FIELD_SUM)),
+            MixedPayload::Wide(_) => assert_eq(felt!(0), felt!(1)),
+        }
     }
+}
+
+/// Returns the record whose fields sum to `FIELD_SUM`.
+fn test_record() -> TenU32Record {
+    TenU32Record {
+        f0: 1,
+        f1: 2,
+        f2: 3,
+        f3: 4,
+        f4: 5,
+        f5: 6,
+        f6: 7,
+        f7: 8,
+        f8: 9,
+        f9: 10,
+    }
+}
+
+/// Asserts that two u64 values contain the same two u32 limbs.
+fn assert_u64_eq(actual: u64, expected: u64) {
+    assert_eq(
+        Felt::from_u32((actual & 0xffff_ffff) as u32),
+        Felt::from_u32((expected & 0xffff_ffff) as u32),
+    );
+    assert_eq(
+        Felt::from_u32((actual >> 32) as u32),
+        Felt::from_u32((expected >> 32) as u32),
+    );
 }
 "#;

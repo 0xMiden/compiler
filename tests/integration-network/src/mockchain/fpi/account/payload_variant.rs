@@ -97,6 +97,9 @@ use crate::bindings::miden::payload_variant_callee_account::counter_contract::Mi
 #[account(payload_variant_callee_account::CounterContract)]
 struct CalleeAccount;
 
+/// Double-word value whose limbs both stay non-zero across the increment.
+const WIDE_VALUE: u64 = 0x0000_0002_0000_0005;
+
 /// Account component which bumps payload variants on another account through FPI.
 #[component_storage]
 struct CallerAccountStorage;
@@ -113,10 +116,8 @@ impl CallerAccount for CallerAccountStorage {
     /// Bumps both variant cases on the provided foreign account and returns the felt payload.
     fn relay_bump(&self, callee_account_id: AccountId) -> Felt {
         let callee = CalleeAccount::new(callee_account_id);
-        match callee.bump_mixed(MixedPayload::Wide(40)) {
-            MixedPayload::Wide(value) => {
-                assert_eq(Felt::from_u32(value as u32), Felt::from_u32(41))
-            }
+        match callee.bump_mixed(MixedPayload::Wide(WIDE_VALUE)) {
+            MixedPayload::Wide(value) => assert_u64_eq(value, WIDE_VALUE + 1),
             MixedPayload::Scalar(_) => assert_eq(felt!(0), felt!(1)),
         }
         match callee.bump_mixed(MixedPayload::Scalar(felt!(20))) {
@@ -124,6 +125,18 @@ impl CallerAccount for CallerAccountStorage {
             MixedPayload::Wide(_) => felt!(0),
         }
     }
+}
+
+/// Asserts that two u64 values contain the same two u32 limbs.
+fn assert_u64_eq(actual: u64, expected: u64) {
+    assert_eq(
+        Felt::from_u32((actual & 0xffff_ffff) as u32),
+        Felt::from_u32((expected & 0xffff_ffff) as u32),
+    );
+    assert_eq(
+        Felt::from_u32((actual >> 32) as u32),
+        Felt::from_u32((expected >> 32) as u32),
+    );
 }
 "#;
 
