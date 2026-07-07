@@ -45,18 +45,22 @@ fn find_key(entries: &[NoteEntry], key: &Word) -> Option<usize> {
 
 /// Compares two words, most-significant felt first. The Rust counterpart of the MASM kernel's
 /// `word::lt` (and the same order as `Word`'s host-side `Ord`).
+///
+/// Written as straight-line code with constant indices: an index loop compiles to
+/// bounds-checked dynamic indexing and memory-backed loop state, which costs an order of
+/// magnitude more VM cycles than these felt comparisons themselves.
+#[inline]
 pub fn word_lt(a: &Word, b: &Word) -> bool {
-    let mut i = 4;
-    while i > 0 {
-        i -= 1;
-        if a[i] < b[i] {
-            return true;
-        }
-        if b[i] < a[i] {
-            return false;
-        }
+    if a[3] != b[3] {
+        return a[3] < b[3];
     }
-    false
+    if a[2] != b[2] {
+        return a[2] < b[2];
+    }
+    if a[1] != b[1] {
+        return a[1] < b[1];
+    }
+    a[0] < b[0]
 }
 
 /// Asserts two words are equal, felt by felt. The Rust counterpart of `assert_eqw`.
