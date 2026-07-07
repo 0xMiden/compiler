@@ -341,7 +341,7 @@ pub fn export_type(
 ///         let inputs = MyNote { recipient };
 ///         let recipient = note::build_recipient(
 ///             serial_num,
-///             note::get_entrypoint_root(),
+///             MyNote::get_entrypoint_root(),
 ///             inputs.to_felt_repr(),
 ///         );
 ///         output_note::create(tag, note_type, recipient)
@@ -364,6 +364,13 @@ pub fn export_type(
 /// The note input struct also implements [`ToFeltRepr`](miden_field_repr::ToFeltRepr)
 /// (mirroring the generated storage decoding), so constructors can serialize the note inputs
 /// when computing the note recipient.
+///
+/// # Generated `get_entrypoint_root()` method
+///
+/// The impl-block expansion also generates a `pub fn get_entrypoint_root() -> Word` associated
+/// method on the note type. It returns the MAST root digest of the `#[note_script]` entrypoint
+/// export as executed by the transaction kernel — resolved by the compiler at assembly time —
+/// for use when building the note recipient in constructors (see the example above).
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
@@ -406,7 +413,8 @@ pub fn note_script(
 /// # Supported constructor signature
 ///
 /// - The method must be `pub` and must not take `self`: constructors run before the note exists
-///   (typically computing the note recipient via `note::get_entrypoint_root()` and calling
+///   (typically computing the note recipient via the generated `get_entrypoint_root()` method
+///   and calling
 ///   `output_note::create`).
 /// - Parameter and return types are limited to SDK core types (e.g. `Felt`, `Word`, `AccountId`,
 ///   `Tag`, `NoteType`, `NoteIdx`) and primitives.

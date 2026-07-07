@@ -50,6 +50,6 @@ impl P2idNote {
 
 /// Builds the note recipient committing to the note script root, serial number, and note inputs.
 fn build_recipient(inputs: P2idNote, serial_num: Word) -> Recipient {
-    let note_script_root = note::get_entrypoint_root();
+    let note_script_root = P2idNote::get_entrypoint_root();
     note::build_recipient(serial_num, note_script_root, inputs.to_felt_repr())
 }

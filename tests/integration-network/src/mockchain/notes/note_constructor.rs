@@ -2,8 +2,8 @@
 //!
 //! Exercises the flow where a transaction script creates an output note by calling the note
 //! package's exported constructor: the note recipient — including the note script root obtained
-//! via `note::get_entrypoint_root()` — is computed inside the note package, not supplied by the
-//! host.
+//! via the generated `get_entrypoint_root()` note method — is computed inside the note package,
+//! not supplied by the host.
 
 use miden_client::{
     account::{AccountComponent, component::InitStorageData},
@@ -28,7 +28,8 @@ use super::super::support::{
 /// note package.
 ///
 /// This proves that the note script root the constructor commits to (computed in-VM via
-/// `note::get_entrypoint_root()`) equals the root of the `@note_script` procedure of the
+/// the generated `get_entrypoint_root()` method) equals the root of the `@note_script`
+/// procedure of the
 /// compiled note package.
 #[test]
 pub fn tx_script_creates_p2id_note_via_note_constructor() {

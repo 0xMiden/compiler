@@ -431,10 +431,13 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         .iter()
         .map(|constructor| render_constructor_guest_method(constructor, &note_ty))
         .collect();
+    let entrypoint_root_method = render_entrypoint_root_method(&note_ty);
 
     quote! {
         #runtime_boilerplate
         #item_impl
+
+        #entrypoint_root_method
 
         ::miden::generate!(inline = #inline_literal);
         self::bindings::export!(#guest_struct_ident);
@@ -457,6 +460,28 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         }
 
         #frontend_link_section
+    }
+}
+
+/// Renders the generated associated method exposing the note script root.
+///
+/// Emitted from the `#[note]` impl expansion — not the struct expansion — so the method exists
+/// exactly when a `#[note_script]` entrypoint exists. `#[inline(always)]` keeps the compiled
+/// output identical to calling the SDK plumbing directly, even in unoptimized builds.
+fn render_entrypoint_root_method(note_ty: &syn::TypePath) -> TokenStream2 {
+    quote! {
+        impl #note_ty {
+            /// Returns the MAST root digest of this note's script.
+            ///
+            /// The digest is the root of the `#[note_script]` entrypoint export as executed by
+            /// the transaction kernel, resolved by the compiler at assembly time. Use it to
+            /// build the note recipient (e.g. via `note::build_recipient`) in note
+            /// constructors.
+            #[inline(always)]
+            pub fn get_entrypoint_root() -> ::miden::Word {
+                ::miden::note::__entrypoint_root()
+            }
+        }
     }
 }
 
@@ -1405,6 +1430,19 @@ mod tests {
             pub fn create(serial_num: Word) {}
         };
         assert!(qualified.attrs.iter().any(is_note_constructor_marker_attr));
+    }
+
+    #[test]
+    fn entrypoint_root_method_calls_the_sdk_plumbing() {
+        let note_ty: syn::TypePath = parse_quote!(crate::notes::PaymentNote);
+
+        let rendered = render_entrypoint_root_method(&note_ty).to_string();
+
+        assert!(rendered.contains("get_entrypoint_root"));
+        assert!(
+            rendered.contains("__entrypoint_root"),
+            "the generated method must delegate to the hidden SDK plumbing: {rendered}"
+        );
     }
 
     #[test]
