@@ -596,9 +596,7 @@ fn describe_program_point_owner(point: &ProgramPoint) -> alloc::string::String {
 }
 
 fn describe_program_point_owner_name(point: &ProgramPoint) -> Option<alloc::string::String> {
-    let Some(op_ref) = point.operation() else {
-        return None;
-    };
+    let op_ref = point.operation()?;
     let op = op_ref.borrow();
     if let Some(function) = op.downcast_ref::<builtin::Function>() {
         return Some(function.get_name().as_str().to_string());
