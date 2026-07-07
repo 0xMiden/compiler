@@ -28,7 +28,7 @@ use crate::memory::{
 ///
 /// Inlined into its callers: as an outlined procedure its search state spills into
 /// memory-backed VM locals, which costs more than the lookup itself.
-#[inline]
+#[inline(always)]
 fn find_key(list: &[Felt], key: &[Felt; 4]) -> Option<usize> {
     let mut lo = 0;
     let mut hi = list.len() / NOTE_ENTRY_FELT_LEN;
@@ -52,7 +52,7 @@ fn find_key(list: &[Felt], key: &[Felt; 4]) -> Option<usize> {
 /// Written as straight-line code over 4-felt arrays: constant indices need no bounds checks,
 /// while an index loop compiles to bounds-checked dynamic indexing and memory-backed loop state,
 /// which costs an order of magnitude more VM cycles than these felt comparisons themselves.
-#[inline]
+#[inline(always)]
 pub fn word_lt(a: &[Felt; 4], b: &[Felt; 4]) -> bool {
     if a[3] != b[3] {
         return a[3] < b[3];
@@ -67,7 +67,7 @@ pub fn word_lt(a: &[Felt; 4], b: &[Felt; 4]) -> bool {
 }
 
 /// Asserts two words are equal, felt by felt. The Rust counterpart of `assert_eqw`.
-#[inline]
+#[inline(always)]
 fn assert_eq_word(a: &[Felt; 4], b: &[Felt; 4]) {
     assert_eq(a[0], b[0]);
     assert_eq(a[1], b[1]);
@@ -226,10 +226,7 @@ fn bind_one_input_note(memory: &mut BatchMemory, note: &[Felt]) {
 
     // Assert the list entry's note id equals the per-transaction note's, binding the id as well
     // as the nullifier (so an unauthenticated note cannot be matched to the wrong list entry).
-    assert_eq_word(
-        memory::note_value(&memory.input_notes, idx),
-        memory::word_at(note, 4),
-    );
+    assert_eq_word(memory::note_value(&memory.input_notes, idx), memory::word_at(note, 4));
 
     // Enforce the erasure ordering gate (reject consume-before-create), then mark the entry
     // consumed.

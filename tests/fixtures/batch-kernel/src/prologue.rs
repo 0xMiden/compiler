@@ -75,7 +75,7 @@ fn load_note_list(key: Word) -> Vec<Felt> {
 
 /// Asserts a flat note list is strictly increasing by its KEY word, which also proves there are
 /// no duplicate keys.
-#[inline]
+#[inline(always)]
 fn assert_list_strictly_sorted(list: &[Felt]) {
     for index in 1..list.len() / NOTE_ENTRY_FELT_LEN {
         assert!(

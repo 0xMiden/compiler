@@ -72,40 +72,40 @@ pub fn erasure_erased() -> Felt {
 // =================================================================================================
 
 /// Returns the KEY word (the first 4 felts) of entry `index` of a flat note list.
-#[inline]
+#[inline(always)]
 pub fn note_key(list: &[Felt], index: usize) -> &[Felt; 4] {
     word_at(list, index * NOTE_ENTRY_FELT_LEN)
 }
 
 /// Returns the VALUE word (the last 4 felts) of entry `index` of a flat note list.
-#[inline]
+#[inline(always)]
 pub fn note_value(list: &[Felt], index: usize) -> &[Felt; 4] {
     word_at(list, index * NOTE_ENTRY_FELT_LEN + 4)
 }
 
 /// Returns the 8 felts of entry `index` of a flat note list.
-#[inline]
+#[inline(always)]
 pub fn note_entry(list: &[Felt], index: usize) -> &[Felt] {
     let start = index * NOTE_ENTRY_FELT_LEN;
     &list[start..start + NOTE_ENTRY_FELT_LEN]
 }
 
 /// Returns the 4-felt word at felt offset `start` of a flat felt buffer.
-#[inline]
+#[inline(always)]
 pub fn word_at(buffer: &[Felt], start: usize) -> &[Felt; 4] {
     (&buffer[start..start + 4]).try_into().unwrap()
 }
 
 /// Copies the 4-felt word at felt offset `start` of a flat felt buffer into a [`Word`] (needed
 /// where an intrinsic takes a `Word` by value).
-#[inline]
+#[inline(always)]
 pub fn load_word(buffer: &[Felt], start: usize) -> Word {
     let felts = word_at(buffer, start);
     Word::from([felts[0], felts[1], felts[2], felts[3]])
 }
 
 /// Returns whether the 4-felt word `word` is the empty word.
-#[inline]
+#[inline(always)]
 pub fn is_empty_word(word: &[Felt; 4]) -> bool {
     word[0] == felt!(0) && word[1] == felt!(0) && word[2] == felt!(0) && word[3] == felt!(0)
 }
@@ -146,92 +146,92 @@ pub struct BatchMemory {
 
 impl BatchMemory {
     /// Returns `num_transactions`.
-    #[inline]
+    #[inline(always)]
     pub fn num_transactions(&self) -> usize {
         self.tx_tuples.len() / TX_TUPLE_FELT_LEN
     }
 
     /// Returns the number of entries in the nullifier-sorted input-note list.
-    #[inline]
+    #[inline(always)]
     pub fn num_input_notes(&self) -> usize {
         self.input_notes.len() / NOTE_ENTRY_FELT_LEN
     }
 
     /// Returns the verified `TransactionId` of transaction `tx_index`.
-    #[inline]
+    #[inline(always)]
     pub fn tx_id(&self, tx_index: usize) -> Word {
         load_word(&self.tx_tuples, tx_index * TX_TUPLE_FELT_LEN)
     }
 
     /// Returns the verified per-transaction `INPUT_NOTES_COMMITMENT` for transaction `tx_index`.
-    #[inline]
+    #[inline(always)]
     pub fn tx_input_notes_commitment(&self, tx_index: usize) -> &[Felt; 4] {
         word_at(&self.tx_headers, tx_index * TX_HEADER_FELT_LEN + 8)
     }
 
     /// Returns the verified per-transaction `OUTPUT_NOTES_COMMITMENT` for transaction `tx_index`.
-    #[inline]
+    #[inline(always)]
     pub fn tx_output_notes_commitment(&self, tx_index: usize) -> &[Felt; 4] {
         word_at(&self.tx_headers, tx_index * TX_HEADER_FELT_LEN + 12)
     }
 
     /// Returns input-note entry `index`'s `erasure` flag.
-    #[inline]
+    #[inline(always)]
     pub fn input_note_erasure(&self, index: usize) -> Felt {
         self.input_note_flags[index * INPUT_FLAGS_STRIDE]
     }
 
     /// Sets input-note entry `index`'s `erasure` flag.
-    #[inline]
+    #[inline(always)]
     pub fn set_input_note_erasure(&mut self, index: usize, value: Felt) {
         self.input_note_flags[index * INPUT_FLAGS_STRIDE] = value;
     }
 
     /// Returns input-note entry `index`'s `consumed` flag.
-    #[inline]
+    #[inline(always)]
     pub fn input_note_consumed(&self, index: usize) -> Felt {
         self.input_note_flags[index * INPUT_FLAGS_STRIDE + 1]
     }
 
     /// Sets input-note entry `index`'s `consumed` flag.
-    #[inline]
+    #[inline(always)]
     pub fn set_input_note_consumed(&mut self, index: usize, value: Felt) {
         self.input_note_flags[index * INPUT_FLAGS_STRIDE + 1] = value;
     }
 
     /// Returns output-note entry `index`'s `will_be_erased` flag.
-    #[inline]
+    #[inline(always)]
     pub fn output_note_will_be_erased(&self, index: usize) -> Felt {
         self.output_note_flags[index * OUTPUT_FLAGS_STRIDE]
     }
 
     /// Sets output-note entry `index`'s `will_be_erased` flag.
-    #[inline]
+    #[inline(always)]
     pub fn set_output_note_will_be_erased(&mut self, index: usize, value: Felt) {
         self.output_note_flags[index * OUTPUT_FLAGS_STRIDE] = value;
     }
 
     /// Returns output-note entry `index`'s `is_created` flag.
-    #[inline]
+    #[inline(always)]
     pub fn output_note_created(&self, index: usize) -> Felt {
         self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 1]
     }
 
     /// Sets output-note entry `index`'s `is_created` flag.
-    #[inline]
+    #[inline(always)]
     pub fn set_output_note_created(&mut self, index: usize, value: Felt) {
         self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 1] = value;
     }
 
     /// Returns the input-note list index linked to output-note entry `index`. Meaningful only
     /// when the entry's `will_be_erased` flag is set (which implies the link was written).
-    #[inline]
+    #[inline(always)]
     pub fn output_note_linked_input(&self, index: usize) -> usize {
         self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 2].as_canonical_u64() as usize
     }
 
     /// Links output-note entry `index` to input-note list entry `input_index`.
-    #[inline]
+    #[inline(always)]
     pub fn set_output_note_linked_input(&mut self, index: usize, input_index: usize) {
         self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 2] = Felt::from(input_index as u32);
     }
