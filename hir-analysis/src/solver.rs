@@ -586,23 +586,7 @@ impl DataFlowSolver {
 fn summarize_queued_analyses(
     names: impl IntoIterator<Item = &'static str>,
 ) -> alloc::string::String {
-    let mut counts = Vec::<(&'static str, usize)>::new();
-    for name in names {
-        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| *existing == name) {
-            *count += 1;
-        } else {
-            counts.push((name, 1));
-        }
-    }
-    counts.sort_by(|(lhs_name, lhs_count), (rhs_name, rhs_count)| {
-        rhs_count.cmp(lhs_count).then_with(|| lhs_name.cmp(rhs_name))
-    });
-    counts
-        .into_iter()
-        .take(5)
-        .map(|(name, count)| format!("{name}={count}"))
-        .collect::<Vec<_>>()
-        .join(", ")
+    summarize_top_counts(names.into_iter().map(ToString::to_string))
 }
 
 fn describe_program_point_owner(point: &ProgramPoint) -> alloc::string::String {
@@ -628,15 +612,20 @@ fn describe_program_point_owner_name(point: &ProgramPoint) -> Option<alloc::stri
 fn summarize_queued_program_point_owners<'a>(
     points: impl IntoIterator<Item = &'a ProgramPoint>,
 ) -> alloc::string::String {
+    summarize_top_counts(points.into_iter().map(|point| {
+        describe_program_point_owner_name(point).unwrap_or_else(|| "<unknown>".into())
+    }))
+}
+
+fn summarize_top_counts(
+    items: impl IntoIterator<Item = alloc::string::String>,
+) -> alloc::string::String {
     let mut counts = Vec::<(alloc::string::String, usize)>::new();
-    for name in points
-        .into_iter()
-        .map(|point| describe_program_point_owner_name(point).unwrap_or_else(|| "<unknown>".into()))
-    {
-        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| *existing == name) {
+    for item in items {
+        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| *existing == item) {
             *count += 1;
         } else {
-            counts.push((name, 1));
+            counts.push((item, 1));
         }
     }
     counts.sort_by(|(lhs_name, lhs_count), (rhs_name, rhs_count)| {

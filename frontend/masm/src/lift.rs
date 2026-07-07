@@ -627,56 +627,41 @@ impl ModuleRegistry {
                 let Some(signature) = self.signatures.get(&path) else {
                     continue;
                 };
-                if signature.params().len() > u8::MAX as usize {
+                let checks = [
+                    (signature.params().len(), u8::MAX as usize, "has", "parameter", "HIR operand"),
+                    (
+                        signature.results().len(),
+                        u8::MAX as usize,
+                        "returns",
+                        "value",
+                        "HIR operand",
+                    ),
+                    (
+                        signature.params().len(),
+                        LINT_SIGNATURE_VALUE_LIMIT,
+                        "has",
+                        "parameter",
+                        "lint analysis signature",
+                    ),
+                    (
+                        signature.results().len(),
+                        LINT_SIGNATURE_VALUE_LIMIT,
+                        "returns",
+                        "value",
+                        "lint analysis signature",
+                    ),
+                ];
+                if let Some((count, limit, verb, noun, limit_name)) =
+                    checks.into_iter().find(|(count, limit, ..)| count > limit)
+                {
                     self.skip_procedure(
                         path,
                         procedure.span(),
                         format!(
-                            "procedure '{}::{}' has {} parameter(s), exceeding the HIR operand \
-                             limit of {}",
+                            "procedure '{}::{}' {verb} {count} {noun}(s), exceeding the \
+                             {limit_name} limit of {limit}",
                             module.path(),
                             procedure.name(),
-                            signature.params().len(),
-                            u8::MAX
-                        ),
-                    );
-                } else if signature.results().len() > u8::MAX as usize {
-                    self.skip_procedure(
-                        path,
-                        procedure.span(),
-                        format!(
-                            "procedure '{}::{}' returns {} value(s), exceeding the HIR operand \
-                             limit of {}",
-                            module.path(),
-                            procedure.name(),
-                            signature.results().len(),
-                            u8::MAX
-                        ),
-                    );
-                } else if signature.params().len() > LINT_SIGNATURE_VALUE_LIMIT {
-                    self.skip_procedure(
-                        path,
-                        procedure.span(),
-                        format!(
-                            "procedure '{}::{}' has {} parameter(s), exceeding the lint analysis \
-                             signature limit of {}",
-                            module.path(),
-                            procedure.name(),
-                            signature.params().len(),
-                            LINT_SIGNATURE_VALUE_LIMIT
-                        ),
-                    );
-                } else if signature.results().len() > LINT_SIGNATURE_VALUE_LIMIT {
-                    self.skip_procedure(
-                        path,
-                        procedure.span(),
-                        format!(
-                            "procedure '{}::{}' returns {} value(s), exceeding the lint analysis \
-                             signature limit of {}",
-                            module.path(),
-                            procedure.name(),
-                            signature.results().len(),
-                            LINT_SIGNATURE_VALUE_LIMIT
                         ),
                     );
                 }
