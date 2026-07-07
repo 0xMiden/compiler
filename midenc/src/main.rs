@@ -29,8 +29,10 @@ pub fn main() -> Result<(), Report> {
     } else {
         builder.format_timestamp(None);
     }
-    let logger = Box::new(builder.build());
+    let logger = builder.build();
     let filter = logger.filter();
+    // Suppress the known-harmless dependency errors until the upstream fix ships
+    let logger = Box::new(midenc_log::SuppressKnownDependencyErrors::new(logger));
 
     // Get current working directory
     let cwd = env::current_dir()

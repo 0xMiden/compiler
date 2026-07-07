@@ -285,3 +285,29 @@ impl InferTypeOpInterface for I64Load32S {
         Ok(())
     }
 }
+
+/// Signed integer remainder, traps on division by zero.
+///
+/// This corresponds to Wasm's `i32.rem_s` instruction. The result has the same sign as the
+/// dividend (lhs). For `i32::MIN % -1` the result wraps to `0`, matching Wasm semantics.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I32RemS {
+    #[operand]
+    lhs: Int32,
+    #[operand]
+    rhs: Int32,
+    #[result]
+    result: Int32,
+}
+
+impl InferTypeOpInterface for I32RemS {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I32);
+        Ok(())
+    }
+}

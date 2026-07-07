@@ -7,8 +7,6 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
         .arg("check")
         .arg("--target")
         .arg("wasm32-wasip2")
-        .arg("--target-dir")
-        .arg(project.build_dir())
         .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
         .current_dir(project.root())
         .output()

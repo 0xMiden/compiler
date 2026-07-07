@@ -872,7 +872,7 @@ macro_rules! binop_overflowing {
         let rhs_value = $evaluator.use_value(&rhs.as_value_ref())?;
 
         let lhs_ty = lhs.ty();
-        let rhs_ty = lhs.ty();
+        let rhs_ty = rhs.ty();
         if lhs_ty != rhs_ty {
             return Err($evaluator.report(
                 "evaluation failed",
@@ -926,6 +926,47 @@ macro_rules! binop_overflowing {
                 let value = x.$felt_operator(y);
                 (Immediate::Felt(value), false)
             }
+            _ => unreachable!(),
+        }
+    }};
+}
+
+macro_rules! binop_wrapping_nonzero_rhs {
+    ($op:ident, $evaluator:ident, $operator:ident) => {{
+        let lhs = $op.lhs();
+        let lhs_value = $evaluator.use_value(&lhs.as_value_ref())?;
+        let rhs = $op.rhs();
+        let rhs_value = $evaluator.use_value(&rhs.as_value_ref())?;
+
+        let lhs_ty = lhs.ty();
+        let rhs_ty = lhs.ty();
+        if lhs_ty != rhs_ty {
+            return Err($evaluator.report(
+                "evaluation failed",
+                $op.span(),
+                format!("operand types do not match: {lhs_ty} vs {rhs_ty}"),
+            ));
+        }
+
+        if rhs_value == 0 {
+            return Err($evaluator.report(
+                "evaluation failed",
+                $op.span(),
+                format!("rhs must not be zero"),
+            ));
+        }
+
+        match (lhs_value, rhs_value) {
+            (Immediate::I8(x), Immediate::I8(y)) => Immediate::I8(x.$operator(y)),
+            (Immediate::U8(x), Immediate::U8(y)) => Immediate::U8(x.$operator(y)),
+            (Immediate::I16(x), Immediate::I16(y)) => Immediate::I16(x.$operator(y)),
+            (Immediate::U16(x), Immediate::U16(y)) => Immediate::U16(x.$operator(y)),
+            (Immediate::I32(x), Immediate::I32(y)) => Immediate::I32(x.$operator(y)),
+            (Immediate::U32(x), Immediate::U32(y)) => Immediate::U32(x.$operator(y)),
+            (Immediate::I64(x), Immediate::I64(y)) => Immediate::I64(x.$operator(y)),
+            (Immediate::U64(x), Immediate::U64(y)) => Immediate::U64(x.$operator(y)),
+            (Immediate::I128(x), Immediate::I128(y)) => Immediate::I128(x.$operator(y)),
+            (Immediate::U128(x), Immediate::U128(y)) => Immediate::U128(x.$operator(y)),
             _ => unreachable!(),
         }
     }};
@@ -2172,3 +2213,11 @@ impl_eval_load_sext!(wasm::I32Load16S, I16, I32, i32);
 impl_eval_load_sext!(wasm::I64Load8S, I8, I64, i64);
 impl_eval_load_sext!(wasm::I64Load16S, I16, I64, i64);
 impl_eval_load_sext!(wasm::I64Load32S, I32, I64, i64);
+
+impl Eval for wasm::I32RemS {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let result = binop_wrapping_nonzero_rhs!(self, evaluator, wrapping_rem);
+        evaluator.set_value(self.result().as_value_ref(), result);
+        Ok(ControlFlowEffect::None)
+    }
+}

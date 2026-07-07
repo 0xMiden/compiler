@@ -212,6 +212,7 @@ fn lower_wasm_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<wasm::I64Load8S, dyn HirLowering>();
     info.register_operation_trait::<wasm::I64Load16S, dyn HirLowering>();
     info.register_operation_trait::<wasm::I64Load32S, dyn HirLowering>();
+    info.register_operation_trait::<wasm::I32RemS, dyn HirLowering>();
 }
 
 fn lower_debuginfo_ops(info: &mut midenc_hir::DialectInfo) {
