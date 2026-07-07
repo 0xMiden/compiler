@@ -101,7 +101,8 @@ pub extern "C" fn entrypoint(
 
     note_tracker::track_notes(&mut memory);
 
-    let (input_notes_commitment, batch_note_tree_root) = epilogue::finalize(&memory);
+    let batch_expiration_block_num = memory.batch_expiration_block_num;
+    let (input_notes_commitment, batch_note_tree_root) = epilogue::finalize(memory);
 
     // Lay the output words out at `out_ptr`: [INPUT_NOTES_COMMITMENT, BATCH_NOTE_TREE_ROOT].
     for (offset, felt) in input_notes_commitment
@@ -113,5 +114,5 @@ pub extern "C" fn entrypoint(
         unsafe { out_ptr.add(offset).write(*felt) };
     }
 
-    memory.batch_expiration_block_num
+    batch_expiration_block_num
 }
