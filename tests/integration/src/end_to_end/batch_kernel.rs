@@ -8,10 +8,7 @@
 //! `BatchKernel::prepare_inputs` does, executes the compiled kernel on the VM, and checks the
 //! outputs against commitments computed with the host hasher.
 
-use std::{
-    collections::BTreeSet,
-    panic::{AssertUnwindSafe, catch_unwind},
-};
+use std::collections::BTreeSet;
 
 use miden_core::{EMPTY_WORD, Felt, Word, crypto::hash::Poseidon2, utils::hash_string_to_word};
 use miden_debug::{DebugQuery, Felt as TestFelt};
@@ -282,21 +279,22 @@ fn batch_kernel() {
     // there), so any word will do.
     let block_commitment = word(101, 102, 103, 104);
 
-    // Executes the kernel and returns the resulting trace along with the consumed VM cycles;
-    // this is `Executor::execute` unrolled through the debug executor to observe the cycle
-    // counter.
-    let execute = |transactions: &[MockTransaction], advice: AdviceInputs| {
+    // Executes the kernel and returns the resulting trace along with the consumed VM cycles, or
+    // the execution error along with the cycle at which the kernel rejected the batch; this is
+    // `Executor::execute` unrolled through the debug executor to observe the cycle counter.
+    type ExecutionOutcome = Result<(miden_debug::ExecutionTrace, usize), (String, usize)>;
+    let execute = |transactions: &[MockTransaction], advice: AdviceInputs| -> ExecutionOutcome {
         let mut exec =
             executor_with_std(build_args(block_commitment, batch_id(transactions)), Some(&package));
         exec.with_advice_inputs(advice);
         let mut executor = exec.into_debug(&program, test.session.source_manager.clone());
         while !executor.stopped {
             if let Err(err) = executor.step() {
-                panic!("batch kernel execution failed: {err}");
+                return Err((err.to_string(), executor.cycle));
             }
         }
         let cycles = executor.cycle;
-        (executor.into_execution_trace(), cycles)
+        Ok((executor.into_execution_trace(), cycles))
     };
 
     // Scenario 1: two transactions, no intra-batch note relationships.
@@ -326,7 +324,8 @@ fn batch_kernel() {
             },
         ];
 
-        let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions));
+        let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions))
+            .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
         expect!["38740"].assert_eq(&cycles.to_string());
@@ -377,7 +376,11 @@ fn batch_kernel() {
             },
         ];
 
-        let (trace, _) = execute(&transactions, build_advice_inputs(&transactions));
+        let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions))
+            .expect("kernel should accept the batch");
+
+        // The VM cycles consumed for a batch that erases a note.
+        expect!["34096"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -409,10 +412,13 @@ fn batch_kernel() {
         tampered[0] += Felt::new_unchecked(1);
         advice.map.insert(key, tampered);
 
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            execute(&transactions, advice);
-        }));
-        assert!(result.is_err(), "kernel should reject a tampered BATCH_ID pre-image");
+        let cycles = match execute(&transactions, advice) {
+            Err((_, cycles)) => cycles,
+            Ok(_) => panic!("kernel should reject a tampered BATCH_ID pre-image"),
+        };
+
+        // The cycle at which the Layer 1 hash check rejects the tampered pre-image.
+        expect!["1086"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -440,10 +446,13 @@ fn batch_kernel() {
         ];
 
         let advice = build_advice_inputs(&transactions);
-        let result = catch_unwind(AssertUnwindSafe(|| {
-            execute(&transactions, advice);
-        }));
-        assert!(result.is_err(), "kernel should reject a note consumed before it is created");
+        let cycles = match execute(&transactions, advice) {
+            Err((_, cycles)) => cycles,
+            Ok(_) => panic!("kernel should reject a note consumed before it is created"),
+        };
+
+        // The cycle at which the consume-before-create ordering gate rejects the batch.
+        expect!["16522"].assert_eq(&cycles.to_string());
     }
 }
 
