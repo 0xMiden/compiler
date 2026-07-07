@@ -4,7 +4,7 @@ use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{
         FunctionTable,
-        attributes::{LocalVariableArrayAttr, SignatureAttr},
+        attributes::{LocalVariableArrayAttr, SignatureAttr, U32Attr},
     },
     effects::*,
     interner::symbols,
@@ -218,41 +218,41 @@ impl InferTypeOpInterface for ExecFpi {
     }
 }
 
-/// Materializes the MAST root digest of the referenced function as four felt values (one word).
+/// Materializes the MAST root digest of the function occupying a fixed slot of a
+/// [midenc_hir::dialects::builtin::FunctionTable] as four felt values.
 ///
-/// This op is the HIR form of the MASM `procref` instruction: the digest of `callee` is computed
-/// by the assembler when the containing component is assembled, and pushed on the operand stack
-/// as one word with `root[0]` on top, i.e. result `i` holds digest element `i`.
+/// The slot must be statically initialized: lowering resolves the slot's
+/// [midenc_hir::dialects::builtin::FunctionTableEntry] to its callee and emits a MASM `procref`
+/// of it, so the digest is computed by the assembler when the containing component is assembled
+/// and pushed on the operand stack as one word with `root[0]` on top, i.e. result `i` holds
+/// digest element `i`.
 ///
-/// The callee is referenced, not invoked: no arguments are consumed and control never transfers
-/// to it, so this op deliberately does not implement `CallOpInterface`. The symbol property still
-/// records a use of the callee, keeping it linked into the program.
+/// The table's in-memory image is not consulted — the result is available without the component
+/// `init` having run, and stays correct even for slots `init` does not populate (see
+/// [midenc_hir::dialects::builtin::FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR]). Unlike
+/// [ExecIndirect], nothing is invoked; the callee is referenced only, though the reference keeps
+/// it linked into the program.
 #[operation(
     dialect = HirDialect,
     implements(InferTypeOpInterface, OpPrinter)
 )]
-pub struct ProcedureRoot {
-    /// The function whose MAST root digest is materialized
-    #[symbol(callable)]
-    callee: SymbolPath,
+pub struct FunctionTableRoot {
+    /// The function table whose slot is referenced
+    #[symbol]
+    table: FunctionTable,
+    /// The table slot whose function's MAST root is materialized
+    #[attr]
+    index: U32Attr,
     #[results]
     digest: IntFelt,
 }
 
-impl ProcedureRoot {
+impl FunctionTableRoot {
     /// Number of felts in a MAST root digest word.
     pub const DIGEST_FELTS: usize = 4;
-    /// Marker attribute recording that this op must yield the note script root of the enclosing
-    /// component.
-    ///
-    /// The op is initially built against a placeholder callee (the note-script export wrapper
-    /// does not exist until component exports are lifted); export lifting repoints marked ops at
-    /// the lifted note-script export, and codegen refuses to lower a marked op whose callee does
-    /// not carry the `note_script` attribute.
-    pub const NOTE_SCRIPT_ROOT_ATTR: &'static str = "note_script_root";
 }
 
-impl InferTypeOpInterface for ProcedureRoot {
+impl InferTypeOpInterface for FunctionTableRoot {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
         if self.op.results.is_empty() {
             let span = self.span();
@@ -270,13 +270,13 @@ impl InferTypeOpInterface for ProcedureRoot {
     }
 }
 
-impl OpPrinter for ProcedureRoot {
+impl OpPrinter for FunctionTableRoot {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         use formatter::*;
 
         printer.print_space();
-        let callee = self.callee();
-        printer.print_symbol_path(callee.path());
+        printer.print_symbol_path(self.get_table().path());
+        *printer += const_text("[") + display(*self.get_index()) + const_text("]");
         if self.op.has_attributes() {
             printer.print_space();
             *printer += const_text(" attributes ");
@@ -287,10 +287,18 @@ impl OpPrinter for ProcedureRoot {
     }
 }
 
-impl OpParser for ProcedureRoot {
+impl OpParser for FunctionTableRoot {
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
-        let callee = parser.parse_symbol_ref()?;
-        state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
+        use midenc_hir::parse::{ParserExt, Token};
+
+        let table = parser.parse_symbol_ref()?;
+        state.attrs.push(NamedAttribute::new("table", table.into_inner()));
+
+        parser.token_stream_mut().expect(Token::Lbracket)?;
+        let index = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute("index", parser.context_rc().create_attribute::<U32Attr, _>(index));
+        parser.token_stream_mut().expect(Token::Rbracket)?;
+
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
         Ok(())
     }
@@ -781,12 +789,15 @@ builtin.module public @test {
     }
 
     #[test]
-    fn procedure_root_prints_and_reparses_with_intent_attribute() {
+    fn function_table_root_prints_and_reparses_with_slot_marker() {
         use alloc::{format, vec::Vec};
 
-        use midenc_hir::{Op, dialects::builtin::attributes::UnitAttr};
+        use midenc_hir::{
+            Op,
+            dialects::builtin::{FunctionTableEntry, ModuleBuilder, attributes::UnitAttr},
+        };
 
-        let mut test = Test::named("procedure_root_prints_and_reparses_with_intent_attribute")
+        let mut test = Test::named("function_table_root_prints_and_reparses_with_slot_marker")
             .in_module("test");
         let callee = test.define_function("callee", &[], &[]);
         test.with_function("caller", &[], &[Type::Felt, Type::Felt, Type::Felt, Type::Felt]);
@@ -799,42 +810,67 @@ builtin.module public @test {
         }
 
         let context = test.context_rc();
+
+        // A single-slot table whose slot 0 holds `callee`, with the entry carrying the
+        // note-script-root slot marker; both the marker and the read op must survive a textual
+        // round trip.
+        let table = {
+            let mut module_builder = ModuleBuilder::new(test.module());
+            let table = module_builder
+                .define_function_table("table".into(), midenc_hir::Visibility::Private, 1)
+                .unwrap();
+            module_builder
+                .append_function_table_entry(table, 0, callee, SourceSpan::default())
+                .unwrap();
+            // Collect first: iterating a block body holds a borrow of each visited operation
+            let entry_refs: Vec<_> = {
+                let table = table.borrow();
+                let entries = table.entries();
+                let block = entries.entry();
+                block.body().iter().map(|op| op.as_operation_ref()).collect()
+            };
+            for mut op_ref in entry_refs {
+                let mut op = op_ref.borrow_mut();
+                let entry = op
+                    .downcast_mut::<FunctionTableEntry>()
+                    .expect("expected a function table entry");
+                let attr = context.create_attribute::<UnitAttr, _>(());
+                entry
+                    .as_operation_mut()
+                    .set_attribute(FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR, attr);
+            }
+            table
+        };
+
         {
             let mut builder = test.function_builder();
-            let op = builder.procedure_root(callee, SourceSpan::default()).unwrap();
-            {
-                let mut op = op;
-                let attr = context.create_attribute::<UnitAttr, _>(());
-                op.borrow_mut()
-                    .as_operation_mut()
-                    .set_attribute(crate::ops::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR, attr);
-            }
+            let op = builder.function_table_root(table, 0, SourceSpan::default()).unwrap();
             let results: Vec<_> = {
                 let op = op.borrow();
                 op.results().iter().map(|result| result.borrow().as_value_ref()).collect()
             };
-            assert_eq!(results.len(), crate::ops::ProcedureRoot::DIGEST_FELTS);
+            assert_eq!(results.len(), crate::ops::FunctionTableRoot::DIGEST_FELTS);
             builder.ret(results, SourceSpan::default()).unwrap();
         }
 
         let printed = format!("{}", test.module().borrow().as_operation());
         assert!(
-            printed.contains("hir.procedure_root"),
+            printed.contains("hir.function_table_root"),
             "expected the printed module to contain the op: {printed}"
         );
         assert!(
-            printed.contains(crate::ops::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR),
-            "expected the printed op to carry the intent attribute: {printed}"
+            printed.contains(FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR),
+            "expected the printed table entry to carry the slot marker: {printed}"
         );
 
         // Re-parse in a fresh context: the printing context already owns the `@test` symbols.
         let reparse_context = Test::default().context_rc();
         parse::parse_any(
             ParserConfig::new(reparse_context),
-            Uri::new("procedure_root_prints_and_reparses_with_intent_attribute.hir"),
+            Uri::new("function_table_root_prints_and_reparses_with_slot_marker.hir"),
             &printed,
         )
-        .expect("printed hir.procedure_root should re-parse");
+        .expect("printed hir.function_table_root should re-parse");
     }
 
     #[test]

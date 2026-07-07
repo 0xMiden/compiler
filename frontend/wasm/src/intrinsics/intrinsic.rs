@@ -138,7 +138,7 @@ impl Intrinsic {
             // Crypto intrinsics are converted to function calls
             Self::Crypto(function) => crypto::function_type(*function),
             Self::Advice(function) => advice::function_type(*function),
-            // Note intrinsics synthesize their linker-stub bodies in place
+            // Note intrinsics are converted inline at call sites
             Self::Note(_) => None,
         }
     }
@@ -153,8 +153,9 @@ impl Intrinsic {
             Self::Advice(function) => advice::as_intrinsic(*function),
             // Crypto intrinsics are converted to function calls
             Self::Crypto(function) => crypto::as_intrinsic(*function),
-            // Note intrinsics need module context that only the linker-stub path provides
-            Self::Note(_) => Some(IntrinsicsConversionResult::ModuleContextStub),
+            // Note intrinsics are converted inline at call sites, where the module context their
+            // lowering requires (function tables and frontend metadata) is available
+            Self::Note(_) => Some(IntrinsicsConversionResult::MidenVmOp),
         }
     }
 }
@@ -168,9 +169,6 @@ pub enum IntrinsicsConversionResult {
     },
     /// As a native instruction
     MidenVmOp,
-    /// As a linker stub whose body is synthesized from module-level context (e.g. frontend
-    /// metadata); never inlined at call sites and not backed by a MASM import.
-    ModuleContextStub,
 }
 
 pub enum IntrinsicEffect {

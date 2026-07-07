@@ -8,7 +8,6 @@ use alloc::rc::Rc;
 use core::{cell::RefCell, str::FromStr};
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_frontend_wasm_metadata::FrontendMetadata;
 use midenc_hir::{
     FunctionType, Op, SmallVec, SymbolPath, ValueRef, Visibility,
     diagnostics::WrapErr,
@@ -21,7 +20,6 @@ use crate::{
     error::WasmResult,
     intrinsics::{
         Intrinsic, IntrinsicsConversionResult, attach_effects_to_function, convert_intrinsics_call,
-        convert_module_context_stub_call,
     },
     miden_abi::{
         is_miden_abi_module, miden_abi_function_effects, miden_abi_function_type,
@@ -61,14 +59,10 @@ pub fn is_unreachable_stub(body: &FunctionBody<'_>) -> bool {
 /// If `body` looks like a linker stub, lowers `function_ref` to a call to the
 /// MASM callee derived from the function name and applies the appropriate
 /// TransformStrategy. Returns `true` if handled, `false` otherwise.
-///
-/// `frontend_metadata` is the parsed core module's frontend metadata; it is consulted by
-/// module-context stub intrinsics (note intrinsics).
 pub fn maybe_lower_linker_stub(
     function_ref: FunctionRef,
     body: &FunctionBody<'_>,
     module_state: &mut ModuleTranslationState,
-    frontend_metadata: Option<&FrontendMetadata>,
 ) -> WasmResult<bool> {
     if !is_unreachable_stub(body) {
         return Ok(false);
@@ -161,15 +155,6 @@ pub fn maybe_lower_linker_stub(
             IntrinsicsConversionResult::MidenVmOp => {
                 convert_intrinsics_call(intr, None, &args, &mut fb, span)?.to_vec()
             }
-            // The stub body is synthesized from module-level context (frontend metadata)
-            IntrinsicsConversionResult::ModuleContextStub => convert_module_context_stub_call(
-                intr,
-                function_ref,
-                &args,
-                frontend_metadata,
-                &mut fb,
-                span,
-            )?,
         }
     } else {
         // Miden ABI path: exec import with TransformStrategy

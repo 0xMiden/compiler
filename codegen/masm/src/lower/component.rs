@@ -550,6 +550,19 @@ impl MasmComponentBuilder<'_> {
                         *table.get_num_slots()
                     )));
                 }
+                // Slots marked as holding the note script root are not populated at startup:
+                // their callee is the lifted note-script export, whose canonical-ABI wrapper
+                // `exec`s this very `init` procedure, so a `procref` of it here would make the
+                // two MAST roots circularly dependent. `hir.function_table_root` materializes
+                // the digest inline where it is read instead; the slot's in-memory word stays
+                // zero, like a null slot.
+                if entry
+                    .as_operation()
+                    .get_attribute(builtin::FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR)
+                    .is_some()
+                {
+                    continue;
+                }
                 let Some(mut callee) =
                     entry.as_operation().nearest_symbol_table().and_then(|symbol_table| {
                         symbol_table

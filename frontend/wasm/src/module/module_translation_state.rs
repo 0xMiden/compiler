@@ -1,4 +1,5 @@
 use cranelift_entity::packed_option::ReservedValue;
+use midenc_frontend_wasm_metadata::FrontendMetadata;
 use midenc_hir::{
     CallConv, FunctionType, FxHashMap, Ident, SourceSpan, SymbolNameComponent, SymbolPath,
     Visibility,
@@ -38,6 +39,9 @@ pub struct ModuleTranslationState<'a> {
     functions: FxHashMap<FuncIndex, CallableFunction>,
     /// Lowered function tables, keyed by Wasm table index
     tables: FxHashMap<TableIndex, FunctionTableRef>,
+    /// The frontend metadata emitted into the module by the SDK macros, consulted by intrinsics
+    /// whose lowering depends on it (note intrinsics)
+    frontend_metadata: Option<FrontendMetadata>,
     pub module_builder: &'a mut ModuleBuilder,
     pub world_builder: &'a mut WorldBuilder,
 }
@@ -51,12 +55,14 @@ impl<'a> ModuleTranslationState<'a> {
     /// `world_builder` - the Miden IR World builder
     /// `mod_types` - the Miden IR module types builder
     /// `module_args` - the module instantiation arguments, i.e. entities to "fill" module imports
+    /// `frontend_metadata` - the frontend metadata parsed from the module's custom section
     pub fn new(
         module: &Module,
         module_builder: &'a mut ModuleBuilder,
         world_builder: &'a mut WorldBuilder,
         mod_types: &ModuleTypesBuilder,
         module_args: FxHashMap<SymbolPath, ModuleArgument>,
+        frontend_metadata: Option<FrontendMetadata>,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<Self> {
         let mut functions = FxHashMap::default();
@@ -113,9 +119,15 @@ impl<'a> ModuleTranslationState<'a> {
         Ok(Self {
             functions,
             tables: FxHashMap::default(),
+            frontend_metadata,
             module_builder,
             world_builder,
         })
+    }
+
+    /// Get the frontend metadata emitted into the module by the SDK macros, if any.
+    pub(crate) fn frontend_metadata(&self) -> Option<&FrontendMetadata> {
+        self.frontend_metadata.as_ref()
     }
 
     /// Get the `CallableFunction` that should be used to make a direct call to function `index`.
@@ -191,6 +203,34 @@ impl<'a> ModuleTranslationState<'a> {
         }
         self.tables.insert(table_index, table_ref);
         Ok(table_ref)
+    }
+
+    /// Resolve the function occupying `slot` of the Wasm table `table_index` at startup, per the
+    /// table's final compile-time image; `None` if the slot is null.
+    ///
+    /// Produces an error if the table does not exist, is imported, or has unsupported element
+    /// segments.
+    pub(crate) fn resolve_table_slot(
+        &mut self,
+        table_index: TableIndex,
+        slot: u32,
+        module: &Module,
+        diagnostics: &DiagnosticsHandler,
+    ) -> WasmResult<Option<FuncIndex>> {
+        if module.tables.get(table_index).is_none() {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported function reference: the module declares no function table"
+            );
+        }
+        let Some(defined_idx) = module.defined_table_index(table_index) else {
+            unsupported_diag!(
+                diagnostics,
+                "unsupported function reference: imported tables are not supported yet"
+            );
+        };
+        let image = collect_table_image(table_index, defined_idx, module, diagnostics)?;
+        Ok(image.get(slot as usize).copied().flatten())
     }
 
     /// Record that slot `index` of `table` is initialized with the function `func_index`.
@@ -294,9 +334,6 @@ impl<'a> ModuleTranslationState<'a> {
                     },
                 );
             }
-            // Module-context stubs keep their defined function: the body is synthesized during
-            // translation, so calls to them remain ordinary calls
-            IntrinsicsConversionResult::ModuleContextStub => return Ok(None),
         }
 
         Ok(Some(function_ref))

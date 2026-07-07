@@ -986,44 +986,120 @@ impl HirLowering for hir::Exec {
     }
 }
 
-impl HirLowering for hir::ProcedureRoot {
+impl HirLowering for hir::FunctionTableRoot {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        let callee = self.callee();
-        let mut symbol = self
+        let context = self.as_operation().context();
+
+        // Resolve the function table symbol
+        let symbol = self
             .as_operation()
             .nearest_symbol_table()
             .and_then(|symbol_table| {
-                symbol_table.borrow().as_symbol_table().unwrap().resolve(callee.path())
+                symbol_table.borrow().as_symbol_table().unwrap().resolve(self.table().path())
             })
             .ok_or_else(|| {
-                let context = self.as_operation().context();
                 context
                     .diagnostics()
                     .diagnostic(Severity::Error)
-                    .with_message("invalid procedure_root operation: unable to resolve callee")
+                    .with_message(
+                        "invalid function_table_root operation: unable to resolve function table",
+                    )
                     .with_primary_label(
                         self.span(),
-                        "this symbol path is not resolvable from this operation",
+                        "this function table symbol is not resolvable from this operation",
+                    )
+                    .into_report()
+            })?;
+        let table = symbol
+            .borrow()
+            .downcast_ref::<builtin::FunctionTable>()
+            .map(|table| table.as_function_table_ref())
+            .ok_or_else(|| {
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid function_table_root operation")
+                    .with_primary_label(
+                        self.span(),
+                        format!(
+                            "this symbol resolves to a '{}', but a 'builtin.function_table' was \
+                             expected",
+                            symbol.borrow().as_symbol_operation().name()
+                        ),
                     )
                     .into_report()
             })?;
 
-        // An op marked as the note script root must have been repointed at the lifted
+        // Resolve the slot's entry to the function occupying it. Later entries overwrite
+        // earlier ones at startup, so the last entry for the slot is authoritative.
+        let index = *self.get_index();
+        let entry_op = {
+            let table = table.borrow();
+            let entries = table.entries();
+            let block = entries.entry();
+            let mut found = None;
+            for op in block.body() {
+                if op
+                    .downcast_ref::<builtin::FunctionTableEntry>()
+                    .is_some_and(|entry| *entry.get_index() == index)
+                {
+                    found = Some(op.as_operation_ref());
+                }
+            }
+            found
+        };
+        let Some(entry_op) = entry_op else {
+            return Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid function_table_root operation")
+                .with_primary_label(
+                    self.span(),
+                    format!("slot {index} of this function table is not statically initialized"),
+                )
+                .into_report());
+        };
+        let entry_op = entry_op.borrow();
+        let entry = entry_op
+            .downcast_ref::<builtin::FunctionTableEntry>()
+            .expect("entry ops are function table entries");
+
+        let mut callee = entry
+            .as_operation()
+            .nearest_symbol_table()
+            .and_then(|symbol_table| {
+                symbol_table.borrow().as_symbol_table().unwrap().resolve(entry.callee().path())
+            })
+            .ok_or_else(|| {
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message(
+                        "invalid function_table_root operation: unable to resolve the slot's \
+                         callee",
+                    )
+                    .with_primary_label(
+                        self.span(),
+                        format!("slot {index} names an unresolvable function"),
+                    )
+                    .into_report()
+            })?;
+
+        // A slot marked as holding the note script root must have been repointed at the lifted
         // note-script export by component export lifting; refusing anything else here turns a
         // missed retarget into a compile error instead of a silently wrong digest.
-        if self
+        if entry
             .as_operation()
-            .get_attribute(hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR)
+            .get_attribute(builtin::FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR)
             .is_some()
-            && symbol.borrow().as_symbol_operation().get_attribute("note_script").is_none()
+            && callee.borrow().as_symbol_operation().get_attribute("note_script").is_none()
         {
-            let context = self.as_operation().context();
             return Err(context
                 .diagnostics()
                 .diagnostic(Severity::Error)
                 .with_message(
-                    "invalid procedure_root operation: expected the note script root, but the \
-                     callee is not the `note_script`-attributed export",
+                    "invalid function_table_root operation: expected the note script root, but \
+                     the slot's callee is not the `note_script`-attributed export",
                 )
                 .with_primary_label(
                     self.span(),
@@ -1037,17 +1113,19 @@ impl HirLowering for hir::ProcedureRoot {
         }
 
         let callee_path = {
-            let mut symbol = symbol.borrow_mut();
+            let mut callee = callee.borrow_mut();
             // `procref` requires the callee to be linkable from outside its defining module, so
             // promote private callees the same way function-table initialization does.
-            if symbol.visibility() == midenc_hir::Visibility::Private {
-                symbol.set_visibility(midenc_hir::Visibility::Internal);
+            if callee.visibility() == midenc_hir::Visibility::Private {
+                callee.set_visibility(midenc_hir::Visibility::Internal);
             }
-            symbol.path()
+            callee.path()
         };
 
         let target = invocation_target_from_symbol_path(&callee_path, self.span());
-        emitter.inst_emitter(self.as_operation()).procedure_root(target, self.span());
+        emitter
+            .inst_emitter(self.as_operation())
+            .function_table_root(target, self.span());
 
         Ok(())
     }

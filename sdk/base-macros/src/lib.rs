@@ -352,9 +352,12 @@ pub fn export_type(
 /// # Generated `get_entrypoint_root()` method
 ///
 /// The impl-block expansion also generates a `pub fn get_entrypoint_root() -> Word` associated
-/// method on the note type. It returns the MAST root digest of the `#[note_script]` entrypoint
-/// export as executed by the transaction kernel — resolved by the compiler at assembly time —
-/// for use when building the note recipient in constructors (see the example above).
+/// method on the note type, returning the MAST root digest of the note script defined by the
+/// crate — the note script root the transaction kernel observes. Its body obtains the root
+/// through a Rust function reference to the `#[note_script]` entrypoint method, which the
+/// compiler resolves to the compiled note-script export; the digest itself is computed at
+/// assembly time. A constructor typically passes it to `note::build_recipient` so the created
+/// note commits to the crate's own note script (see the example above).
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
@@ -398,8 +401,7 @@ pub fn note_script(
 ///
 /// - The method must be `pub` and must not take `self`: constructors run before the note exists
 ///   (typically computing the note recipient via the generated `get_entrypoint_root()` method
-///   and calling
-///   `output_note::create`).
+///   and calling `output_note::create`).
 /// - Parameter and return types are limited to SDK core types (e.g. `Felt`, `Word`, `AccountId`,
 ///   `Tag`, `NoteType`, `NoteIdx`) and primitives.
 /// - Generic, `const`, `async`, `unsafe`, `extern`, and variadic methods are not supported.

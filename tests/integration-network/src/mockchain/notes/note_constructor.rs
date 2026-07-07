@@ -27,10 +27,9 @@ use super::super::support::{
 /// constructor, and that the created note is consumable with the note script of the standalone
 /// note package.
 ///
-/// This proves that the note script root the constructor commits to (computed in-VM via
-/// the generated `get_entrypoint_root()` method) equals the root of the `@note_script`
-/// procedure of the
-/// compiled note package.
+/// This proves that the note script root the constructor commits to (computed in-VM via the
+/// generated `get_entrypoint_root()` method) equals the root of the `@note_script` procedure of
+/// the compiled note package.
 #[test]
 pub fn tx_script_creates_p2id_note_via_note_constructor() {
     // Compile the contracts first (before creating any runtime)
@@ -171,7 +170,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .extend_advice_map([(commitment_key, commitment_input)])
         .extend_expected_output_notes(vec![RawOutputNote::Full(bob_note.clone())]);
     let tx_measurements = execute_tx(&mut chain, create_tx_context_builder);
-    expect!["12252"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["12268"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -180,7 +179,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .unwrap()
         .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["9311"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["9714"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
