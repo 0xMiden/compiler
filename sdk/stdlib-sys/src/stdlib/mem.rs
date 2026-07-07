@@ -83,6 +83,7 @@ unsafe extern "C" {
 /// Cycles:
 /// - Even num_words: 43 + 9 * num_words / 2
 /// - Odd num_words: 60 + 9 * round_down(num_words / 2)
+#[inline]
 #[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     use crate::intrinsics::WordAligned;
@@ -129,6 +130,7 @@ pub fn pipe_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 /// Returns an even number of words from the advice stack along with the RPO hash of all read words.
 ///
 /// Cycles: 9 + 6 * (num_words / 2)
+#[inline]
 #[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     use crate::intrinsics::WordAligned;

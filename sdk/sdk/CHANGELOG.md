@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the wrapper struct, with another referenced interface, or with a sibling `#[component(...)]`
   trait of the same interface in the same crate #1208
 
+### Improved
+- `miden::pipe_words_to_memory` and `miden::pipe_double_words_to_memory` are now `#[inline]`,
+  removing several hundred VM cycles of call overhead per invocation in guest programs.
+
 ## [0.13.1] - 2026-07-09
 
 ### Fixed
