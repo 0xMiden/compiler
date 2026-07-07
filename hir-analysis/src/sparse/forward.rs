@@ -288,8 +288,14 @@ where
         for predecessor in predecessors.known_predecessors() {
             let inputs = predecessors.successor_inputs(predecessor);
             let mut operand_lattices = SmallVec::<[_; 4]>::with_capacity(inputs.len());
+            let mut required_inputs = SmallVec::<[ValueRef; 4]>::new();
             for operand in inputs.iter().copied() {
-                let operand_lattice = get_lattice_element_for::<A>(current_point, operand, solver);
+                let operand_lattice = if required_inputs.contains(&operand) {
+                    get_lattice_element::<A>(operand, solver)
+                } else {
+                    required_inputs.push(operand);
+                    get_lattice_element_for::<A>(current_point, operand, solver)
+                };
                 operand_lattices.push(operand_lattice);
             }
             analysis.visit_call_control_flow_transfer(

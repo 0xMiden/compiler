@@ -93,7 +93,7 @@ pub(super) fn operation_result_has_advice_read_effect(
 #[cfg(test)]
 mod tests {
     use midenc_dialect_arith::ArithOpBuilder;
-    use midenc_hir::{SourceSpan, testing::Test};
+    use midenc_hir::{Felt, SourceSpan, testing::Test};
 
     use super::*;
     use crate::HirOpBuilder;
@@ -109,6 +109,27 @@ mod tests {
         let op = op.borrow();
 
         assert_eq!(range_constrained_operand_indices(&op), [0, 1]);
+    }
+
+    #[test]
+    fn exp_u32_exponent_adds_only_exponent_range_requirement() {
+        let mut test = Test::new("exp", &[], &[]);
+        let mut builder = test.function_builder();
+        let lhs = builder.felt(Felt::new(3).unwrap(), SourceSpan::UNKNOWN);
+        let rhs = builder.felt(Felt::new(2).unwrap(), SourceSpan::UNKNOWN);
+        let result = builder.exp(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+        let op = result.borrow().get_defining_op().unwrap();
+        let op = op.borrow();
+
+        assert!(range_constrained_operand_indices(&op).is_empty());
+
+        let lhs = builder.felt(Felt::new(3).unwrap(), SourceSpan::UNKNOWN);
+        let rhs = builder.felt(Felt::new(2).unwrap(), SourceSpan::UNKNOWN);
+        let result = builder.exp_u32_exponent(lhs, rhs, SourceSpan::UNKNOWN).unwrap();
+        let op = result.borrow().get_defining_op().unwrap();
+        let op = op.borrow();
+
+        assert_eq!(range_constrained_operand_indices(&op), [1]);
     }
 
     #[test]

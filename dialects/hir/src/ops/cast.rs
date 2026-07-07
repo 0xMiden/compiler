@@ -183,7 +183,13 @@ impl Foldable for IntToPtr {
 #[operation(
     dialect = HirDialect,
     traits(UnaryOp),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, CheckedCastOpInterface, OpPrinter)
+    implements(
+        InferTypeOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        CheckedCastOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Cast {
     #[operand]
@@ -199,6 +205,14 @@ impl InferTypeOpInterface for Cast {
         let ty = self.get_ty().clone();
         self.result_mut().set_type(ty);
         Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for Cast {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        // Casts may refine their result via `CheckedCastOpInterface`, but they are
+        // not themselves semantic consumers of a range-constrained value.
+        OperandRangeRequirement::None
     }
 }
 

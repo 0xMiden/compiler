@@ -359,8 +359,21 @@ pub trait ArithOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Exponentiation
     fn exp(&mut self, lhs: ValueRef, rhs: ValueRef, span: SourceSpan) -> Result<ValueRef, Report> {
-        let op_builder = self.builder_mut().create::<crate::ops::Exp, _>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::Exp, (ValueRef, ValueRef)>(span);
         let op = op_builder(lhs, rhs)?;
+        Ok(op.borrow().result().as_value_ref())
+    }
+
+    /// Exponentiation whose exponent operand must be u32-range constrained.
+    fn exp_u32_exponent(
+        &mut self,
+        lhs: ValueRef,
+        rhs: ValueRef,
+        span: SourceSpan,
+    ) -> Result<ValueRef, Report> {
+        let op_builder =
+            self.builder_mut().create::<crate::ops::Exp, (ValueRef, ValueRef, bool)>(span);
+        let op = op_builder(lhs, rhs, true)?;
         Ok(op.borrow().result().as_value_ref())
     }
 
