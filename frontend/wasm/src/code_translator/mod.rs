@@ -1029,12 +1029,11 @@ fn translate_br_table<B: ?Sized + Builder>(
         frame.br_destination()
     };
 
-    let selector = state.pop1();
-    let selector = if selector.borrow().ty().clone() != U32 {
-        builder.cast(selector, U32, span)?
-    } else {
-        selector
-    };
+    // The `br_table` selector is interpreted as unsigned, with any out-of-range value taking the
+    // default arm. LLVM relies on this by normalizing switch selectors with wrapping subtraction,
+    // so re-typing the sign-agnostic Wasm i32 selector must reinterpret the bits rather than
+    // assert that the value is a valid u32.
+    let selector = state.pop1_bitcasted(U32, builder, span);
 
     let mut cases = Vec::new();
     for (label_idx, depth) in targets.into_iter().enumerate() {
