@@ -620,32 +620,36 @@ impl ModuleRegistry {
 }
 
 fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()> {
-    if signature.params().len() > u8::MAX as usize {
-        return Err(Report::msg(format!(
-            "procedure '{path}' has {} parameter(s), exceeding the HIR operand limit of {}",
-            signature.params().len(),
-            u8::MAX
-        )));
-    }
-    if signature.results().len() > u8::MAX as usize {
-        return Err(Report::msg(format!(
-            "procedure '{path}' returns {} value(s), exceeding the HIR operand limit of {}",
+    let checks = [
+        (signature.params().len(), u8::MAX as usize, "has", "parameter", "HIR operand"),
+        (
             signature.results().len(),
-            u8::MAX
-        )));
-    }
-    if signature.params().len() > LINT_SIGNATURE_VALUE_LIMIT {
+            u8::MAX as usize,
+            "returns",
+            "value",
+            "HIR operand",
+        ),
+        (
+            signature.params().len(),
+            LINT_SIGNATURE_VALUE_LIMIT,
+            "has",
+            "parameter",
+            "lint analysis signature",
+        ),
+        (
+            signature.results().len(),
+            LINT_SIGNATURE_VALUE_LIMIT,
+            "returns",
+            "value",
+            "lint analysis signature",
+        ),
+    ];
+    if let Some((count, limit, verb, noun, limit_name)) =
+        checks.into_iter().find(|(count, limit, ..)| count > limit)
+    {
         return Err(Report::msg(format!(
-            "procedure '{path}' has {} parameter(s), exceeding the lint analysis signature limit \
-             of {LINT_SIGNATURE_VALUE_LIMIT}",
-            signature.params().len()
-        )));
-    }
-    if signature.results().len() > LINT_SIGNATURE_VALUE_LIMIT {
-        return Err(Report::msg(format!(
-            "procedure '{path}' returns {} value(s), exceeding the lint analysis signature limit \
-             of {LINT_SIGNATURE_VALUE_LIMIT}",
-            signature.results().len()
+            "procedure '{path}' {verb} {count} {noun}(s), exceeding the {limit_name} limit of \
+             {limit}"
         )));
     }
     Ok(())

@@ -336,9 +336,7 @@ impl ContextualAdviceTaintValue {
             .entry(context)
             .and_modify(|current| *current = LatticeLike::join(current, &taint))
             .or_insert(taint);
-        canonicalize_clean_contexts(contexts);
-        remove_redundant_clean_contexts(contexts);
-        collapse_contexts_if_needed(contexts);
+        normalize_contexts(contexts);
     }
 }
 
@@ -377,11 +375,18 @@ fn push_call_context(context: &CallContext, frame: CallContextFrame) -> CallCont
     pushed
 }
 
-fn collapse_contexts_if_needed(contexts: &mut BTreeMap<CallContext, AdviceTaintValue>) {
-    if contexts.len() <= MAX_CALL_CONTEXTS {
+fn normalize_contexts(contexts: &mut BTreeMap<CallContext, AdviceTaintValue>) {
+    if contexts.values().all(AdviceTaintValue::is_clean) {
+        contexts.clear();
+        contexts.insert(CallContext::new(), AdviceTaintValue::clean());
         return;
     }
-    if contexts.values().all(AdviceTaintValue::is_clean) {
+
+    if contexts.len() > 1 {
+        contexts.retain(|_, taint| !taint.is_clean());
+    }
+
+    if contexts.len() <= MAX_CALL_CONTEXTS {
         return;
     }
 
@@ -390,20 +395,6 @@ fn collapse_contexts_if_needed(contexts: &mut BTreeMap<CallContext, AdviceTaintV
         .fold(AdviceTaintValue::clean(), |acc, taint| LatticeLike::join(&acc, taint));
     contexts.clear();
     contexts.insert(CallContext::new(), collapsed);
-}
-
-fn remove_redundant_clean_contexts(contexts: &mut BTreeMap<CallContext, AdviceTaintValue>) {
-    if contexts.len() <= 1 {
-        return;
-    }
-    contexts.retain(|_, taint| !taint.is_clean());
-}
-
-fn canonicalize_clean_contexts(contexts: &mut BTreeMap<CallContext, AdviceTaintValue>) {
-    if contexts.values().all(AdviceTaintValue::is_clean) {
-        contexts.clear();
-        contexts.insert(CallContext::new(), AdviceTaintValue::clean());
-    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]

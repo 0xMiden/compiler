@@ -285,15 +285,6 @@ pub fn disassemble_project_target_for_lint(
     lift::lift_project_target(inputs, &lift::LiftConfig::lint(config), context)
 }
 
-/// Disassemble pre-resolved project target inputs.
-pub fn disassemble_project_target_input(
-    inputs: project::ProjectTargetInput,
-    config: &DisassemblerConfig,
-    context: Rc<Context>,
-) -> Result<DisassembledWorld> {
-    lift::lift_project_target(inputs, &lift::LiftConfig::strict(config), context)
-}
-
 /// Disassemble pre-resolved project target inputs for linting.
 pub fn disassemble_project_target_input_for_lint(
     inputs: project::ProjectTargetInput,
@@ -349,23 +340,6 @@ pub fn disassemble_project_target_with_dependency_graph(
         &context,
     )?;
     lift::lift_project_target(target, &lift::LiftConfig::strict(config), context)
-}
-
-/// Disassemble a target from a manifest and precomputed dependency graph for linting.
-pub fn disassemble_project_target_with_dependency_graph_for_lint(
-    manifest_path: impl AsRef<Path>,
-    target: Option<&str>,
-    dependency_graph: &miden_project::ProjectDependencyGraph,
-    config: &DisassemblerConfig,
-    context: Rc<Context>,
-) -> Result<DisassembledWorld> {
-    let target = project::resolve_project_target_from_manifest_path_with_dependency_graph(
-        manifest_path.as_ref(),
-        target,
-        dependency_graph,
-        &context,
-    )?;
-    lift::lift_project_target(target, &lift::LiftConfig::lint(config), context)
 }
 
 /// Disassemble a parsed MASM AST module into HIR.
