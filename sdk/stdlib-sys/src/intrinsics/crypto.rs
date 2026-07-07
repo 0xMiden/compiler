@@ -98,8 +98,10 @@ unsafe extern "C" {
 #[inline]
 #[cfg(all(target_family = "wasm", miden))]
 pub fn merge(digests: [Digest; 2]) -> Digest {
+    use crate::intrinsics::WordAligned;
+
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
         let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
 
         extern_poseidon2_merge(
@@ -114,7 +116,7 @@ pub fn merge(digests: [Digest; 2]) -> Digest {
             result_ptr,
         );
 
-        Digest::from_word(ret_area.assume_init())
+        Digest::from_word(ret_area.assume_init().into_inner())
     }
 }
 

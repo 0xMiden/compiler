@@ -85,6 +85,8 @@ unsafe extern "C" {
 /// - Odd num_words: 60 + 9 * round_down(num_words / 2)
 #[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
+    use crate::intrinsics::WordAligned;
+
     #[repr(C)]
     struct Result {
         r0: Word,
@@ -98,7 +100,7 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             usize::try_from(num_words.as_canonical_u64()).expect("num_words must fit in usize");
         let num_felts = num_words_usize.checked_mul(4).expect("num_words too large");
 
-        let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
+        let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<Result>>::uninit();
         let mut buf: Vec<Felt> = Vec::with_capacity(num_felts);
 
         let rust_write_ptr = buf.as_mut_ptr().addr();
@@ -112,7 +114,7 @@ pub fn pipe_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             ret_area.as_mut_ptr() as *mut Felt,
         );
         buf.set_len(num_felts);
-        let Result { r0, .. } = ret_area.assume_init();
+        let Result { r0, .. } = ret_area.assume_init().into_inner();
         (r0, buf)
     }
 }
@@ -129,6 +131,8 @@ pub fn pipe_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
 /// Cycles: 9 + 6 * (num_words / 2)
 #[cfg(all(target_family = "wasm", miden))]
 pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
+    use crate::intrinsics::WordAligned;
+
     #[repr(C)]
     struct Result {
         r0: Word,
@@ -151,7 +155,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
     let miden_end_ptr = miden_write_ptr + num_felts_u32;
 
     // Place for returned R0, R1, C, write_ptr
-    let mut ret_area = ::core::mem::MaybeUninit::<Result>::uninit();
+    let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<Result>>::uninit();
     let zero = felt!(0);
     unsafe {
         extern_pipe_double_words_to_memory(
@@ -172,7 +176,7 @@ pub fn pipe_double_words_to_memory(num_words: Felt) -> (Word, Vec<Felt>) {
             ret_area.as_mut_ptr() as *mut Felt,
         );
         buf.set_len(num_felts);
-        let Result { r0, .. } = ret_area.assume_init();
+        let Result { r0, .. } = ret_area.assume_init().into_inner();
         (r0, buf)
     }
 }

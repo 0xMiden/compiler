@@ -1,4 +1,4 @@
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::AccountId;
 
@@ -165,18 +165,18 @@ pub fn get_block_number() -> Felt {
 /// Returns the input notes commitment digest.
 pub fn get_input_notes_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_tx_get_input_notes_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the block commitment of the reference block.
 pub fn get_block_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_tx_get_block_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -210,18 +210,18 @@ pub fn update_expiration_block_delta(delta: Felt) {
 /// Returns the transaction script root.
 pub fn get_tx_script_root() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_tx_get_tx_script_root(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the output notes commitment digest.
 pub fn get_output_notes_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_tx_get_output_notes_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -244,8 +244,9 @@ pub fn execute_foreign_procedure(
     unsafe {
         let invocation =
             ForeignProcedureInvocation::new(foreign_account_id, foreign_proc_root, inputs);
-        let mut ret_area = ::core::mem::MaybeUninit::<ForeignProcedureOutputs>::uninit();
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<ForeignProcedureOutputs>::uninit());
         extern_tx_execute_foreign_procedure(&invocation, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }

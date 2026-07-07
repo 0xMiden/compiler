@@ -1,4 +1,4 @@
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::Asset;
 
@@ -48,16 +48,16 @@ unsafe extern "C" {
 /// Creates a fungible asset for the faucet bound to the current transaction.
 pub fn create_fungible_asset(amount: Felt) -> Asset {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Asset>::uninit());
         extern_faucet_create_fungible_asset(amount, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Creates a non-fungible asset for the faucet bound to the current transaction.
 pub fn create_non_fungible_asset(data_hash: Word) -> Asset {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Asset>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Asset>::uninit());
         extern_faucet_create_non_fungible_asset(
             data_hash[0],
             data_hash[1],
@@ -65,7 +65,7 @@ pub fn create_non_fungible_asset(data_hash: Word) -> Asset {
             data_hash[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 

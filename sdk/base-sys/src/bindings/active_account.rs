@@ -1,4 +1,4 @@
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{AccountId, Asset, RawAccountId};
 
@@ -92,9 +92,9 @@ unsafe extern "C" {
 /// Returns the account ID of the active account.
 pub fn get_id() -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
         extern_active_account_get_id(ret_area.as_mut_ptr());
-        ret_area.assume_init().into_account_id()
+        ret_area.into_inner().assume_init().into_account_id()
     }
 }
 
@@ -108,9 +108,9 @@ pub fn get_nonce() -> Felt {
 #[inline]
 pub fn get_initial_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_initial_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -118,9 +118,9 @@ pub fn get_initial_commitment() -> Word {
 #[inline]
 pub fn compute_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_compute_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -128,9 +128,9 @@ pub fn compute_commitment() -> Word {
 #[inline]
 pub fn get_code_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_code_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -138,9 +138,9 @@ pub fn get_code_commitment() -> Word {
 #[inline]
 pub fn get_initial_storage_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_initial_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -148,16 +148,16 @@ pub fn get_initial_storage_commitment() -> Word {
 #[inline]
 pub fn compute_storage_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_compute_storage_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the current value stored under the specified `asset_key` in the active account vault.
 pub fn get_asset(asset_key: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_asset(
             asset_key[0],
             asset_key[1],
@@ -165,14 +165,14 @@ pub fn get_asset(asset_key: Word) -> Word {
             asset_key[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the initial value stored under the specified `asset_key` in the active account vault.
 pub fn get_initial_asset(asset_key: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_initial_asset(
             asset_key[0],
             asset_key[1],
@@ -180,7 +180,7 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
             asset_key[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -226,9 +226,9 @@ pub fn has_non_fungible_asset(asset: Asset) -> bool {
 #[inline]
 pub fn get_initial_vault_root() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_initial_vault_root(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -236,9 +236,9 @@ pub fn get_initial_vault_root() -> Word {
 #[inline]
 pub fn get_vault_root() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_vault_root(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -252,12 +252,12 @@ pub fn get_num_procedures() -> Felt {
 #[inline]
 pub fn get_procedure_root(index: u8) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_procedure_root(
             Felt::new(index as u64).unwrap(),
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
