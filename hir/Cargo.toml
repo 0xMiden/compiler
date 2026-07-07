@@ -20,7 +20,6 @@ logging = ["dep:midenc-log", "std"]
 [dependencies]
 anyhow.workspace = true
 base64 = { version = "0.22", default-features = false, features = ["alloc"] }
-bitvec.workspace = true
 bitflags.workspace = true
 blink-alloc.workspace = true
 compact_str.workspace = true

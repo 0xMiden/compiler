@@ -3731,7 +3731,6 @@ dependencies = [
  "anyhow",
  "base64",
  "bitflags 2.13.0",
- "bitvec",
  "blink-alloc",
  "compact_str",
  "hashbrown 0.17.1",
