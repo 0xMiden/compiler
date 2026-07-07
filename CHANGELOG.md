@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `miden-objtool` - [0.9.1](https://github.com/0xMiden/compiler/compare/miden-objtool-v0.9.0...miden-objtool-v0.9.1) - 2026-07-07
+
+### Other
+- update Cargo.lock dependencies
+
+## `midenc-hir-opt` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-hir-opt-v0.9.0...midenc-hir-opt-v0.9.1) - 2026-07-07
+
+### Other
+- update Cargo.lock dependencies
+
+## `cargo-miden` - [0.9.1](https://github.com/0xMiden/compiler/compare/v0.9.0...v0.9.1) - 2026-07-07
+
+### Added
+- *(cargo-miden)* print the compiled artifact path on build
+
+### Fixed
+- temporarily suppress UntrustedMastForest error logs from miden-core
+
+## `midenc` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-v0.9.0...midenc-v0.9.1) - 2026-07-07
+
+### Fixed
+- temporarily suppress UntrustedMastForest error logs from miden-core
+
+## `midenc-frontend-wasm` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.9.0...midenc-frontend-wasm-v0.9.1) - 2026-07-07
+
+### Added
+- add `I32RemS` op to `wasm` dialect
+
+## `midenc-hir-eval` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-hir-eval-v0.9.0...midenc-hir-eval-v0.9.1) - 2026-07-07
+
+### Added
+- add `I32RemS` op to `wasm` dialect
+
+### Fixed
+- *(eval)* determine type of operand correctly
+
+## `midenc-codegen-masm` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.9.0...midenc-codegen-masm-v0.9.1) - 2026-07-07
+
+### Added
+- add `I32RemS` op to `wasm` dialect
+
+## `midenc-dialect-wasm` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-dialect-wasm-v0.9.0...midenc-dialect-wasm-v0.9.1) - 2026-07-07
+
+### Added
+- add `I32RemS` op to `wasm` dialect
+
+## `midenc-log` - [0.9.1](https://github.com/0xMiden/compiler/compare/midenc-log-v0.9.0...midenc-log-v0.9.1) - 2026-07-07
+
+### Fixed
+- temporarily suppress UntrustedMastForest error logs from miden-core
+
 ## [0.9.0] - 2026-07-01
 
 ### Added
