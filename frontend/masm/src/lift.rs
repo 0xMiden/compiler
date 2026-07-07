@@ -41,6 +41,7 @@ use crate::{
 
 const LINT_ESTIMATED_HIR_OP_LIMIT: usize = 900;
 const LINT_SIGNATURE_VALUE_LIMIT: usize = 8;
+type InitialSkip = (GlobalItemIndex, SourceSpan, String);
 
 pub(crate) struct LiftConfig {
     infer_missing_signatures: bool,
@@ -187,11 +188,12 @@ fn lift_modules(
     })
 }
 
+#[allow(clippy::vec_box)]
 fn link_modules_for_lint(
     linker: &mut Linker,
     root: Box<Module>,
     support: Vec<Box<Module>>,
-) -> Result<(Vec<ModuleIndex>, Vec<(GlobalItemIndex, SourceSpan, String)>)> {
+) -> Result<(Vec<ModuleIndex>, Vec<InitialSkip>)> {
     let mut module_indices = linker.link_modules([root])?;
     module_indices.extend(linker.link_modules(support)?);
 
@@ -219,9 +221,8 @@ fn link_modules_for_lint(
                     match linker.resolve_invoke_target(&resolution, &invoke.target) {
                         Ok(SymbolResolution::Exact { gid: callee, .. }) => {
                             if let Some((_, callee_reason)) = skipped.get(&callee) {
-                                let callee_path = linker[callee.module]
-                                    .path()
-                                    .join(linker[callee].name());
+                                let callee_path =
+                                    linker[callee.module].path().join(linker[callee].name());
                                 reason = Some(format!(
                                     "depends on skipped procedure '{callee_path}': {callee_reason}"
                                 ));
@@ -267,7 +268,7 @@ fn link_modules_for_lint(
         if let Some(signature) = signature {
             stub.set_signature(signature);
         }
-        *procedure = Box::new(stub);
+        **procedure = stub;
     }
 
     linker.link(core::iter::empty(), core::iter::empty())?;
@@ -299,7 +300,7 @@ impl ModuleRegistry {
         top_level_modules: Vec<ModuleIndex>,
         external_signatures: ExternalSignatureMap,
         external_types: ExternalTypeMap,
-        initial_skips: Vec<(GlobalItemIndex, SourceSpan, String)>,
+        initial_skips: Vec<InitialSkip>,
         context: Rc<Context>,
     ) -> Self {
         let external_signatures = external_signatures
@@ -401,16 +402,17 @@ impl ModuleRegistry {
                                             first_non_liftable_instruction(p.body())
                                         {
                                             return Err(Report::msg(format!(
-                                                "MASM instruction {inst:?} is not supported during \
-                                                 disassembly at {span:?}"
+                                                "MASM instruction {inst:?} is not supported \
+                                                 during disassembly at {span:?}"
                                             )));
                                         }
                                         let count = estimated_hir_operation_count(p.body());
                                         if count > LINT_ESTIMATED_HIR_OP_LIMIT {
                                             return Err(Report::msg(format!(
-                                                "procedure '{}' is estimated to expand to at least \
-                                                 {count} HIR operation(s), exceeding the lint \
-                                                 analysis limit of {LINT_ESTIMATED_HIR_OP_LIMIT}",
+                                                "procedure '{}' is estimated to expand to at \
+                                                 least {count} HIR operation(s), exceeding the \
+                                                 lint analysis limit of \
+                                                 {LINT_ESTIMATED_HIR_OP_LIMIT}",
                                                 self.item_path(gid)
                                             )));
                                         }
@@ -493,7 +495,8 @@ impl ModuleRegistry {
                                 Err(err) => return Err(err),
                             }
                         }
-                        SymbolItem::Constant(_) | SymbolItem::Type(_) | SymbolItem::Compiled(_) => {}
+                        SymbolItem::Constant(_) | SymbolItem::Type(_) | SymbolItem::Compiled(_) => {
+                        }
                     }
                 }
             }
@@ -512,11 +515,9 @@ impl ModuleRegistry {
 
     fn skip_item(&mut self, gid: GlobalItemIndex, span: SourceSpan, reason: String) {
         let path = self.item_path(gid);
-        self.skipped_procedures.entry(gid).or_insert(SkippedProcedure {
-            path,
-            span,
-            reason,
-        });
+        self.skipped_procedures
+            .entry(gid)
+            .or_insert(SkippedProcedure { path, span, reason });
     }
 
     fn skipped_procedures(&self) -> Vec<SkippedProcedure> {
@@ -528,6 +529,13 @@ impl ModuleRegistry {
     fn declare_modules(&mut self, world: midenc_hir::dialects::builtin::WorldRef) -> Result<()> {
         self.world = Some(world);
         let mut world_builder = WorldBuilder::new(world);
+
+        for module_index in self.top_level_modules.iter().copied() {
+            let module = &self.linker[module_index];
+            let symbol_path = masm_module_symbol_path(module.path());
+            let module_ref = world_builder.declare_module_tree(&symbol_path)?;
+            self.modules.insert(module_index, module_ref);
+        }
 
         for (gid, signature) in self.signatures.iter() {
             let gid = *gid;
@@ -622,13 +630,7 @@ impl ModuleRegistry {
 fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()> {
     let checks = [
         (signature.params().len(), u8::MAX as usize, "has", "parameter", "HIR operand"),
-        (
-            signature.results().len(),
-            u8::MAX as usize,
-            "returns",
-            "value",
-            "HIR operand",
-        ),
+        (signature.results().len(), u8::MAX as usize, "returns", "value", "HIR operand"),
         (
             signature.params().len(),
             LINT_SIGNATURE_VALUE_LIMIT,

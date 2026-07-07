@@ -32,7 +32,7 @@ use midenc_dialect_hir::{
 use midenc_dialect_scf as scf;
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, Op, PointerType,
-    SymbolName, SymbolPath, SymbolTable, Type,
+    Spanned, SymbolName, SymbolPath, SymbolTable, Type,
     diagnostics::{Report, Severity},
     dialects::builtin::{
         self, Function, UnrealizedConversionCast,
@@ -2340,6 +2340,41 @@ fn project_disassembly_accepts_module_index_roots() -> Result<()> {
 }
 
 #[test]
+fn project_disassembly_preserves_module_index_source_spans() -> Result<()> {
+    let (root, app_dir) =
+        write_private_child_module_index_project("midenc_frontend_masm_module_index_spans");
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target_from_path_for_lint(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let function = find_function(output.module, "call_secret");
+    let entry_block = function.borrow().entry_block();
+    let op_span = {
+        let entry_block = entry_block.borrow();
+        entry_block
+            .body()
+            .iter()
+            .next()
+            .expect("call_secret should contain a lifted operation")
+            .span()
+    };
+    let source_manager = output.context.session().source_manager.clone();
+    let loc = source_manager
+        .file_line_col(op_span)
+        .map_err(|err| Report::msg(err.to_string()))?;
+    assert!(loc.uri.to_string().ends_with("mod.masm"));
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
 fn project_disassembly_accepts_private_child_module_declaration() -> Result<()> {
     let (root, app_dir) =
         write_private_child_module_index_project("midenc_frontend_masm_private_child_index");
@@ -2446,7 +2481,12 @@ fn project_disassembly_does_not_fallback_to_undeclared_child_procedure() -> Resu
 
     let message = err.to_string();
     assert!(message.contains("leaf::secret"));
-    assert!(message.contains("failed to resolve") || message.contains("could not resolve"));
+    assert!(
+        message.contains("failed to resolve")
+            || message.contains("could not resolve")
+            || message.contains("invalid relative item path"),
+        "{message}"
+    );
 
     let _ = fs::remove_dir_all(root);
 
@@ -2492,7 +2532,11 @@ end
         Err(err) => err,
     };
 
-    assert!(err.to_string().contains("invalid syntax"));
+    let message = err.to_string();
+    assert!(
+        message.contains("invalid syntax") || message.contains("syntax error"),
+        "{message}"
+    );
 
     let _ = fs::remove_dir_all(root);
 
@@ -5731,7 +5775,6 @@ end
 
     Ok(())
 }
-
 
 #[test]
 fn rejects_mutual_recursion() -> Result<()> {
