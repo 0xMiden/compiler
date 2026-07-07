@@ -1,7 +1,7 @@
-//! Integration test for `note::get_entrypoint_root()`.
+//! Integration test for the generated `get_entrypoint_root()` note method.
 //!
-//! Executes a note constructor that returns `get_entrypoint_root()` verbatim and asserts the
-//! returned digest equals the note script root selected from the compiled package by
+//! Executes a note constructor that returns `Self::get_entrypoint_root()` verbatim and asserts
+//! the returned digest equals the note script root selected from the compiled package by
 //! `NoteScript::from_package` — i.e. the root the transaction kernel executes. This pins the
 //! whole intrinsic pipeline (linker stub → `hir.procedure_root` → retarget at export lifting →
 //! MASM `procref`) at the exact layer it can break, independently of the heavier mock-chain
@@ -72,7 +72,7 @@ impl ProbeNote {
     /// Returns the note script root of this crate, as the compiler resolved it.
     #[note_constructor]
     pub fn probe() -> Word {
-        note::get_entrypoint_root()
+        Self::get_entrypoint_root()
     }
 
     #[note_script]
