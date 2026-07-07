@@ -75,6 +75,19 @@ end
 }
 
 #[test]
+fn e2e_roundtrip_exp_u32() {
+    let source = r#"
+pub proc entry(base: felt, exponent: u32) -> felt
+    exp.u32
+end
+"#;
+    assert_roundtrip_outputs(source, &[3, 5], 1);
+
+    let emitted = render_roundtripped_masm(source, e2e_context());
+    assert!(emitted.contains("exp.u32"), "{emitted}");
+}
+
+#[test]
 fn e2e_roundtrip_word_immediate_order() {
     assert_roundtrip_outputs(
         r#"
@@ -251,15 +264,7 @@ end
 }
 
 fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program {
-    let disassembled =
-        disassemble_source(source, "test", &DisassemblerConfig::default(), context.clone())
-            .expect("MASM should disassemble to HIR");
-
-    let analysis_manager = AnalysisManager::new(disassembled.world.as_operation_ref(), None);
-    let world = disassembled.world.borrow();
-    let masm_component = world
-        .to_masm_component(analysis_manager)
-        .expect("HIR should lower back to MASM");
+    let masm_component = roundtrip_to_masm_component(source, context.clone());
     let source_manager = context.session().source_manager.clone();
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
@@ -268,9 +273,6 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
     assembler
         .compile_and_statically_link(mem_intrinsics)
         .expect("memory intrinsics should statically link");
-    for module in masm_component.modules.iter() {
-        std::dbg!(module.path());
-    }
     let library = assembler
         .assemble_library(masm_component.modules.iter().cloned())
         .unwrap_or_else(|err| {
@@ -295,6 +297,26 @@ end
 "#,
         )
         .expect("round-tripped MASM program should assemble")
+}
+
+fn render_roundtripped_masm(source: &str, context: Rc<Context>) -> String {
+    roundtrip_to_masm_component(source, context).to_string()
+}
+
+fn roundtrip_to_masm_component(
+    source: &str,
+    context: Rc<Context>,
+) -> midenc_codegen_masm::MasmComponent {
+    let disassembled =
+        disassemble_source(source, "test", &DisassemblerConfig::default(), context.clone())
+            .expect("MASM should disassemble to HIR");
+
+    let analysis_manager = AnalysisManager::new(disassembled.world.as_operation_ref(), None);
+    let world = disassembled.world.borrow();
+    let masm_component = world
+        .to_masm_component(analysis_manager)
+        .expect("HIR should lower back to MASM");
+    masm_component
 }
 
 fn execute_program(

@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
+use std::{cell::RefCell, collections::BTreeSet, ops::Range, rc::Rc, sync::Arc};
 
 use miden_assembly_syntax::{
     ast::{
@@ -23,19 +23,91 @@ use crate::{
 
 /// Infer a [Signature] for `procedure`, using `signatures` for inferring the stack effects of
 /// procedure invocations in its body. Signatures are keyed by absolute MASM procedure path.
+#[cfg(test)]
 pub(crate) fn infer_signature(
     context: &Rc<Context>,
     module: &Module,
     procedure: &Procedure,
     signatures: &FxHashMap<Arc<ast::Path>, Signature>,
 ) -> Result<Signature> {
-    let mut state = InferState::new(context, module, signatures);
+    infer_signature_with_relative_exports(context, module, procedure, signatures, &BTreeSet::new())
+}
+
+pub(crate) fn infer_signature_with_relative_exports(
+    context: &Rc<Context>,
+    module: &Module,
+    procedure: &Procedure,
+    signatures: &FxHashMap<Arc<ast::Path>, Signature>,
+    relative_exports: &BTreeSet<Arc<ast::Path>>,
+) -> Result<Signature> {
+    let mut state = InferState::new(context, module, signatures, relative_exports);
     state.infer_block(procedure.body())?;
 
     let params = state.inputs.iter().map(AbstractValue::ty_or_felt);
     let results = state.stack.iter().rev().map(AbstractValue::ty_or_felt);
 
     Ok(Signature::with_convention(context, CallConv::Fast, params, results))
+}
+
+pub(crate) fn validate_declared_signature_with_relative_exports(
+    context: &Rc<Context>,
+    module: &Module,
+    procedure: &Procedure,
+    signatures: &FxHashMap<Arc<ast::Path>, Signature>,
+    signature: &Signature,
+    relative_exports: &BTreeSet<Arc<ast::Path>>,
+) -> Result<()> {
+    let mut state = InferState::new(context, module, signatures, relative_exports);
+    state.stack = signature
+        .params()
+        .iter()
+        .rev()
+        .map(|param| AbstractValue::typed(param.ty.clone(), procedure.span()))
+        .collect();
+    state.infer_block(procedure.body())?;
+
+    if !state.inputs.is_empty() {
+        return Err(Report::msg(format!(
+            "declared signature for '{}::{}' requires {} undeclared input value(s); stack \
+             underflow at {}",
+            module.path(),
+            procedure.name(),
+            state.inputs.len(),
+            state.format_span(procedure.span())
+        )));
+    }
+
+    let expected_results = signature.results().len();
+    if state.stack.len() < expected_results {
+        return Err(Report::msg(format!(
+            "declared signature for '{}::{}' expects {} result value(s), but the body leaves only \
+             {}; stack underflow at {}",
+            module.path(),
+            procedure.name(),
+            expected_results,
+            state.stack.len(),
+            state.format_span(procedure.span())
+        )));
+    }
+
+    for result in signature.results() {
+        let value = state
+            .stack
+            .pop()
+            .expect("declared signature result count was checked before popping");
+        value.constrain(result.ty.clone(), procedure.span());
+    }
+
+    if !state.stack.is_empty() {
+        return Err(Report::msg(format!(
+            "declared signature for '{}::{}' leaves {} extra value(s) on the stack",
+            module.path(),
+            procedure.name(),
+            state.stack.len()
+        )));
+    }
+
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -139,6 +211,7 @@ struct InferState<'a> {
     module: &'a Module,
     source_manager: Arc<dyn SourceManager>,
     signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
+    relative_exports: &'a BTreeSet<Arc<ast::Path>>,
 }
 
 impl<'a> InferState<'a> {
@@ -146,6 +219,7 @@ impl<'a> InferState<'a> {
         context: &Rc<Context>,
         module: &'a Module,
         signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
+        relative_exports: &'a BTreeSet<Arc<ast::Path>>,
     ) -> Self {
         Self {
             stack: Vec::new(),
@@ -154,6 +228,7 @@ impl<'a> InferState<'a> {
             module,
             source_manager: context.session().source_manager.clone(),
             signatures,
+            relative_exports,
         }
     }
 
@@ -165,6 +240,7 @@ impl<'a> InferState<'a> {
             module: self.module,
             source_manager: self.source_manager.clone(),
             signatures: self.signatures,
+            relative_exports: self.relative_exports,
         }
     }
 
@@ -301,6 +377,12 @@ impl<'a> InferState<'a> {
             }
             Exp => {
                 self.pop_with_type(Type::Felt, span)?;
+                self.pop_with_type(Type::Felt, span)?;
+                self.push(Type::Felt);
+                Ok(())
+            }
+            ExpBitLength(32) => {
+                self.pop_with_type(Type::U32, span)?;
                 self.pop_with_type(Type::Felt, span)?;
                 self.push(Type::Felt);
                 Ok(())
@@ -628,7 +710,8 @@ impl<'a> InferState<'a> {
 
         if then_state.stack.len() != else_state.stack.len() {
             return Err(Report::msg(format!(
-                "if branches leave different inferred stack depths at {span:?}: then={}, else={}",
+                "if branches leave different inferred stack depths at {}: then={}, else={}",
+                self.format_span(span),
                 then_state.stack.len(),
                 else_state.stack.len()
             )));
@@ -653,8 +736,9 @@ impl<'a> InferState<'a> {
         let expected = inputs.len() + base_stack.len() + 1;
         if body_state.stack.len() != expected {
             return Err(Report::msg(format!(
-                "while body must leave {expected} inferred value(s) for the next iteration at \
-                 {span:?}, but left {}",
+                "while body must leave {expected} inferred value(s) for the next iteration at {}, \
+                 but left {}",
+                self.format_span(span),
                 body_state.stack.len()
             )));
         }
@@ -678,6 +762,13 @@ impl<'a> InferState<'a> {
         }
         self.push(Type::Felt);
         Ok(())
+    }
+
+    fn format_span(&self, span: SourceSpan) -> String {
+        match self.source_manager.file_line_col(span) {
+            Ok(location) => format!("{location}"),
+            Err(_) => format!("{span:?}"),
+        }
     }
 
     fn ext2_binary(&mut self, span: SourceSpan) -> Result<()> {
@@ -797,7 +888,12 @@ impl<'a> InferState<'a> {
     }
 
     fn invoke(&mut self, target: &InvocationTarget, span: SourceSpan) -> Result<()> {
-        let key = resolve_invocation_path(self.module, target, self.source_manager.clone())?;
+        let key = resolve_invocation_path(
+            self.module,
+            target,
+            self.source_manager.clone(),
+            self.relative_exports,
+        )?;
         let signature = self.signatures.get(&key).ok_or_else(|| {
             Report::msg(format!(
                 "signature inference could not resolve external callee '{key}' at {span:?}; \
@@ -1056,6 +1152,7 @@ fn resolve_invocation_path(
     module: &Module,
     target: &InvocationTarget,
     source_manager: Arc<dyn SourceManager>,
+    relative_exports: &BTreeSet<Arc<ast::Path>>,
 ) -> Result<Arc<ast::Path>> {
     match target {
         InvocationTarget::Symbol(name) => {
@@ -1096,10 +1193,15 @@ fn resolve_invocation_path(
                 Ok(SymbolResolution::MastRoot(_)) => Err(Report::msg(
                     "signature inference does not support MAST root invoke targets",
                 )),
-                Err(err) => Err(Report::msg(format!(
-                    "signature inference could not resolve target '{}': {err}",
-                    path.inner()
-                ))),
+                Err(err) => {
+                    match resolve_relative_invocation_path(module, path.inner(), relative_exports) {
+                        Ok(path) => Ok(path),
+                        Err(_) => Err(Report::msg(format!(
+                            "signature inference could not resolve target '{}': {err}",
+                            path.inner()
+                        ))),
+                    }
+                }
             }
         }
         InvocationTarget::MastRoot(_) => {
@@ -1108,12 +1210,39 @@ fn resolve_invocation_path(
     }
 }
 
+fn resolve_relative_invocation_path(
+    module: &Module,
+    path: &ast::Path,
+    relative_exports: &BTreeSet<Arc<ast::Path>>,
+) -> Result<Arc<ast::Path>> {
+    if path.is_absolute() {
+        return Err(Report::msg(format!(
+            "signature inference could not resolve absolute target '{path}'"
+        )));
+    }
+
+    let resolved = Arc::from(module.path().join(path).to_absolute().into_owned());
+    if !is_descendant_path(module.path(), &resolved) || !relative_exports.contains(&resolved) {
+        return Err(Report::msg(format!(
+            "signature inference could not resolve relative target '{path}'"
+        )));
+    }
+
+    Ok(resolved)
+}
+
 fn normalize_path(path: Arc<ast::Path>) -> Arc<ast::Path> {
     if path.is_absolute() {
         path
     } else {
         path.to_absolute().into()
     }
+}
+
+fn is_descendant_path(module_path: &ast::Path, resolved: &ast::Path) -> bool {
+    let module = module_path.as_str().trim_start_matches("::");
+    let resolved = resolved.as_str().trim_start_matches("::");
+    resolved.strip_prefix(module).is_some_and(|suffix| suffix.starts_with("::"))
 }
 
 fn signature_metadata_hint(signatures: &FxHashMap<Arc<ast::Path>, Signature>) -> String {

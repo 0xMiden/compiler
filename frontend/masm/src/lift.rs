@@ -30,21 +30,46 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     DisassembledWorld, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result,
+    SkippedProcedure,
     events::{system_event_id, system_event_read_count},
     infer, project,
     semantics::{self, InstructionSemantics},
     signatures, stack as masm_stack,
 };
 
+const LINT_ESTIMATED_HIR_OP_LIMIT: usize = 900;
+const LINT_SIGNATURE_VALUE_LIMIT: usize = 8;
+
+pub(crate) struct LiftConfig {
+    infer_missing_signatures: bool,
+    lint: bool,
+}
+
+impl LiftConfig {
+    pub(crate) fn strict(config: &DisassemblerConfig) -> Self {
+        Self {
+            infer_missing_signatures: config.infer_missing_signatures,
+            lint: false,
+        }
+    }
+
+    pub(crate) fn lint(config: &DisassemblerConfig) -> Self {
+        Self {
+            infer_missing_signatures: config.infer_missing_signatures,
+            lint: true,
+        }
+    }
+}
+
 /// Lift a standalone MASM module to HIR, allowing only local references and referenced
 /// `miden::core` declarations.
 pub(crate) fn lift_single_module(
     module: &Module,
-    config: &DisassemblerConfig,
+    config: &LiftConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let (external_signatures, external_types) =
-        collect_referenced_core_metadata([module], &context)?;
+        collect_referenced_core_metadata([module], &context, config.lint)?;
     lift_module(module, config, &external_signatures, &external_types, context)
 }
 
@@ -53,17 +78,25 @@ pub(crate) fn lift_single_module(
 /// contracts; project disassembly should use [`lift_project_target`].
 pub(crate) fn lift_module(
     module: &Module,
-    config: &DisassemblerConfig,
+    config: &LiftConfig,
     external_signatures: &ExternalSignatureMap,
     external_types: &ExternalTypeMap,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    lift_modules(module, [module], config, external_signatures, external_types, context)
+    lift_modules(
+        module,
+        [module],
+        config,
+        &BTreeSet::new(),
+        external_signatures,
+        external_types,
+        context,
+    )
 }
 
 pub(crate) fn lift_project_target(
     target: project::ProjectTargetInput,
-    config: &DisassemblerConfig,
+    config: &LiftConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let mut modules =
@@ -75,6 +108,7 @@ pub(crate) fn lift_project_target(
         target.sources.root.as_ref(),
         modules,
         config,
+        &target.relative_module_paths,
         &target.external_signatures,
         &target.external_types,
         context,
@@ -84,16 +118,18 @@ pub(crate) fn lift_project_target(
 fn lift_modules<'a>(
     root_module: &'a Module,
     modules: impl IntoIterator<Item = &'a Module>,
-    config: &DisassemblerConfig,
+    config: &LiftConfig,
+    relative_module_paths: &BTreeSet<Arc<ast::Path>>,
     external_signatures: &ExternalSignatureMap,
     external_types: &ExternalTypeMap,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let modules = modules.into_iter().collect::<Vec<_>>();
-    let mut registry = ModuleRegistry::new(context.clone());
+    let mut registry = ModuleRegistry::new(context.clone(), relative_module_paths);
     registry.register_source_modules(&modules)?;
     registry.collect_types(&modules, external_types)?;
-    registry.collect_declared_signatures(&modules, external_signatures)?;
+    registry.collect_declared_signatures(&modules, external_signatures, config)?;
+    registry.collect_lint_pre_inference_skips(&modules, config);
     registry.infer_missing_signatures(&modules, config)?;
 
     let mut builder = OpBuilder::new(context.clone());
@@ -106,15 +142,18 @@ fn lift_modules<'a>(
 
     registry.declare_modules(world)?;
     registry.create_external_declarations()?;
+    registry.collect_lint_skips(&modules, config)?;
     registry.create_source_functions(&modules)?;
     registry.lift_bodies(&modules)?;
 
     let root_path = module_key(root_module);
     let module = registry.module_ref(&root_path)?;
+    let skipped_procedures = registry.skipped_procedures();
     Ok(DisassembledWorld {
         context,
         world,
         module,
+        skipped_procedures,
     })
 }
 
@@ -125,13 +164,16 @@ struct ModuleRegistry {
     signatures: FxHashMap<Arc<ast::Path>, Signature>,
     functions: FxHashMap<Arc<ast::Path>, FunctionRef>,
     source_functions: FxHashMap<Arc<ast::Path>, FxHashMap<ast::Ident, Arc<ast::Path>>>,
+    relative_module_paths: BTreeSet<Arc<ast::Path>>,
+    relative_fallback_functions: BTreeSet<Arc<ast::Path>>,
     external_types: ExternalTypeMap,
     external_signatures: FxHashMap<Arc<ast::Path>, Signature>,
     referenced_external_signatures: FxHashMap<Arc<ast::Path>, Signature>,
+    skipped_procedures: FxHashMap<Arc<ast::Path>, SkippedProcedure>,
 }
 
 impl ModuleRegistry {
-    fn new(context: Rc<Context>) -> Self {
+    fn new(context: Rc<Context>, relative_module_paths: &BTreeSet<Arc<ast::Path>>) -> Self {
         Self {
             context,
             world: None,
@@ -139,9 +181,12 @@ impl ModuleRegistry {
             signatures: FxHashMap::default(),
             functions: FxHashMap::default(),
             source_functions: FxHashMap::default(),
+            relative_module_paths: relative_module_paths.clone(),
+            relative_fallback_functions: BTreeSet::new(),
             external_types: ExternalTypeMap::new(),
             external_signatures: FxHashMap::default(),
             referenced_external_signatures: FxHashMap::default(),
+            skipped_procedures: FxHashMap::default(),
         }
     }
 
@@ -156,6 +201,11 @@ impl ModuleRegistry {
             let mut locals = FxHashMap::default();
             for procedure in module.procedures() {
                 let path = procedure_key(module, procedure);
+                if procedure.visibility().is_public()
+                    && self.relative_module_paths.contains(&module_key(module))
+                {
+                    self.relative_fallback_functions.insert(path.clone());
+                }
                 if locals.insert(procedure.name().as_ident(), path.clone()).is_some() {
                     return Err(Report::msg(format!(
                         "duplicate MASM procedure '{}::{}'",
@@ -236,9 +286,10 @@ impl ModuleRegistry {
         &mut self,
         modules: &[&Module],
         external_signatures: &ExternalSignatureMap,
+        config: &LiftConfig,
     ) -> Result<()> {
         self.external_signatures = convert_external_signatures(&self.context, external_signatures)?;
-        for path in self.referenced_external_paths(modules)? {
+        for path in self.referenced_external_paths(modules, config)? {
             let Some(signature) = self.external_signatures.get(&path).cloned() else {
                 continue;
             };
@@ -267,14 +318,40 @@ impl ModuleRegistry {
         Ok(())
     }
 
-    fn referenced_external_paths(&self, modules: &[&Module]) -> Result<BTreeSet<Arc<ast::Path>>> {
+    fn referenced_external_paths(
+        &mut self,
+        modules: &[&Module],
+        config: &LiftConfig,
+    ) -> Result<BTreeSet<Arc<ast::Path>>> {
         let mut referenced = BTreeSet::new();
         let source_manager = self.context.session().source_manager.clone();
         for module in modules {
             for procedure in module.procedures() {
+                let procedure_path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&procedure_path) {
+                    continue;
+                }
                 for target in procedure.invoked() {
-                    let path =
-                        resolve_invocation_path(module, &target.target, source_manager.clone())?;
+                    let path = match resolve_invocation_path(
+                        module,
+                        &target.target,
+                        source_manager.clone(),
+                        &self.relative_fallback_functions,
+                    ) {
+                        Ok(path) => path,
+                        Err(err) if config.lint => {
+                            self.skip_procedure(
+                                procedure_path.clone(),
+                                procedure.span(),
+                                format!(
+                                    "failed to resolve invocation during signature metadata \
+                                     pre-scan: {err}"
+                                ),
+                            );
+                            continue;
+                        }
+                        Err(err) => return Err(err),
+                    };
                     if !self.is_source_function_path(&path) {
                         referenced.insert(path);
                     }
@@ -284,11 +361,7 @@ impl ModuleRegistry {
         Ok(referenced)
     }
 
-    fn infer_missing_signatures(
-        &mut self,
-        modules: &[&Module],
-        config: &DisassemblerConfig,
-    ) -> Result<()> {
+    fn infer_missing_signatures(&mut self, modules: &[&Module], config: &LiftConfig) -> Result<()> {
         let mut pending = Vec::new();
         for module in modules {
             for procedure in module.procedures() {
@@ -297,10 +370,12 @@ impl ModuleRegistry {
                     continue;
                 }
                 if !config.infer_missing_signatures {
-                    return Err(Report::msg(format!(
-                        "procedure '{}' is missing a signature",
-                        procedure.name()
-                    )));
+                    let reason = format!("procedure '{}' is missing a signature", procedure.name());
+                    if config.lint {
+                        self.skip_procedure(path, procedure.span(), reason);
+                        continue;
+                    }
+                    return Err(Report::msg(reason));
                 }
                 pending.push((*module, procedure));
             }
@@ -310,18 +385,67 @@ impl ModuleRegistry {
             let mut progress = false;
             let mut next = Vec::new();
             for (module, procedure) in pending {
-                if !self.procedure_dependencies_ready(module, procedure)? {
-                    next.push((module, procedure));
+                let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
                     continue;
                 }
-                let signature =
-                    infer::infer_signature(&self.context, module, procedure, &self.signatures)?;
-                insert_signature(
-                    &mut self.signatures,
-                    procedure_key(module, procedure),
-                    signature,
-                )?;
-                progress = true;
+                let dependency_state = match self.procedure_dependency_state(module, procedure) {
+                    Ok(state) => state,
+                    Err(err) if config.lint => {
+                        self.skip_procedure(path, procedure.span(), err.to_string());
+                        progress = true;
+                        continue;
+                    }
+                    Err(err) => return Err(err),
+                };
+                match dependency_state {
+                    ProcedureDependencyState::Ready => {}
+                    ProcedureDependencyState::Waiting => {
+                        next.push((module, procedure));
+                        continue;
+                    }
+                    ProcedureDependencyState::Skipped { path, reason } if config.lint => {
+                        self.skip_procedure(
+                            procedure_key(module, procedure),
+                            procedure.span(),
+                            format!("depends on skipped procedure '{path}': {reason}"),
+                        );
+                        progress = true;
+                        continue;
+                    }
+                    ProcedureDependencyState::Skipped { path, reason } => {
+                        return Err(Report::msg(format!(
+                            "procedure '{}::{}' depends on skipped procedure '{path}': {reason}",
+                            module.path(),
+                            procedure.name()
+                        )));
+                    }
+                    ProcedureDependencyState::MissingExternal(reason) if config.lint => {
+                        self.skip_procedure(path, procedure.span(), reason);
+                        progress = true;
+                        continue;
+                    }
+                    ProcedureDependencyState::MissingExternal(reason) => {
+                        return Err(Report::msg(reason));
+                    }
+                }
+                match infer::infer_signature_with_relative_exports(
+                    &self.context,
+                    module,
+                    procedure,
+                    &self.signatures,
+                    &self.relative_fallback_functions,
+                ) {
+                    Ok(signature) => {
+                        insert_signature(&mut self.signatures, path, signature)?;
+                        progress = true;
+                    }
+                    Err(err) if config.lint => {
+                        self.skip_procedure(path, procedure.span(), err.to_string());
+                        progress = true;
+                    }
+                    Err(err) => return Err(err),
+                }
             }
 
             if !progress {
@@ -330,6 +454,19 @@ impl ModuleRegistry {
                     .map(|(module, procedure)| format!("{}::{}", module.path(), procedure.name()))
                     .collect::<Vec<_>>()
                     .join(", ");
+                if config.lint {
+                    for (module, procedure) in next {
+                        self.skip_procedure(
+                            procedure_key(module, procedure),
+                            procedure.span(),
+                            format!(
+                                "signature inference cannot infer recursive or mutually dependent \
+                                 procedures: {names}"
+                            ),
+                        );
+                    }
+                    break;
+                }
                 return Err(Report::msg(format!(
                     "signature inference cannot infer recursive or mutually dependent procedures: \
                      {names}"
@@ -341,17 +478,32 @@ impl ModuleRegistry {
         Ok(())
     }
 
-    fn procedure_dependencies_ready(&self, module: &Module, procedure: &Procedure) -> Result<bool> {
+    fn procedure_dependency_state(
+        &self,
+        module: &Module,
+        procedure: &Procedure,
+    ) -> Result<ProcedureDependencyState> {
         let source_manager = self.context.session().source_manager.clone();
         for target in procedure.invoked() {
-            let path = resolve_invocation_path(module, &target.target, source_manager.clone())?;
+            let path = resolve_invocation_path(
+                module,
+                &target.target,
+                source_manager.clone(),
+                &self.relative_fallback_functions,
+            )?;
+            if let Some(skipped) = self.skipped_procedures.get(&path) {
+                return Ok(ProcedureDependencyState::Skipped {
+                    path,
+                    reason: skipped.reason.clone(),
+                });
+            }
             if self.signatures.contains_key(&path) {
                 continue;
             }
             if self.functions.contains_key(&path) || self.is_source_function_path(&path) {
-                return Ok(false);
+                return Ok(ProcedureDependencyState::Waiting);
             }
-            return Err(Report::msg(format!(
+            return Ok(ProcedureDependencyState::MissingExternal(format!(
                 "signature inference could not resolve external callee '{}' at {:?}; external \
                  signature metadata is missing{}",
                 path,
@@ -359,7 +511,245 @@ impl ModuleRegistry {
                 external_signature_metadata_hint(&self.external_signatures)
             )));
         }
-        Ok(true)
+        Ok(ProcedureDependencyState::Ready)
+    }
+
+    fn collect_lint_skips(&mut self, modules: &[&Module], config: &LiftConfig) -> Result<()> {
+        if !config.lint {
+            return Ok(());
+        }
+
+        self.skip_invalid_stack_shape_procedures(modules);
+        self.skip_oversized_signature_procedures(modules);
+        self.skip_callers_with_unavailable_dependencies(modules)
+    }
+
+    fn collect_lint_pre_inference_skips(&mut self, modules: &[&Module], config: &LiftConfig) {
+        if !config.lint {
+            return;
+        }
+
+        self.skip_unsupported_lift_procedures(modules);
+        self.skip_oversized_body_procedures(modules);
+    }
+
+    fn skip_unsupported_lift_procedures(&mut self, modules: &[&Module]) {
+        for module in modules {
+            for procedure in module.procedures() {
+                let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
+                    continue;
+                }
+                if let Some((inst, span)) = first_non_liftable_instruction(procedure.body()) {
+                    self.skip_procedure(
+                        path,
+                        procedure.span(),
+                        format!(
+                            "MASM instruction {inst:?} is not supported during disassembly at \
+                             {span:?}"
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    fn skip_oversized_body_procedures(&mut self, modules: &[&Module]) {
+        for module in modules {
+            for procedure in module.procedures() {
+                let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
+                    continue;
+                }
+
+                let count = estimated_hir_operation_count(procedure.body());
+                if count > LINT_ESTIMATED_HIR_OP_LIMIT {
+                    self.skip_procedure(
+                        path,
+                        procedure.span(),
+                        format!(
+                            "procedure '{}::{}' is estimated to expand to at least {} HIR \
+                             operation(s), exceeding the lint analysis limit of {}",
+                            module.path(),
+                            procedure.name(),
+                            count,
+                            LINT_ESTIMATED_HIR_OP_LIMIT,
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    fn skip_invalid_stack_shape_procedures(&mut self, modules: &[&Module]) {
+        for module in modules {
+            for procedure in module.procedures() {
+                let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
+                    continue;
+                }
+                let validation = if let Some(declared) = self.signatures.get(&path) {
+                    infer::validate_declared_signature_with_relative_exports(
+                        &self.context,
+                        module,
+                        procedure,
+                        &self.signatures,
+                        declared,
+                        &self.relative_fallback_functions,
+                    )
+                } else {
+                    infer::infer_signature_with_relative_exports(
+                        &self.context,
+                        module,
+                        procedure,
+                        &self.signatures,
+                        &self.relative_fallback_functions,
+                    )
+                    .map(|_| ())
+                };
+                match validation {
+                    Ok(()) => {}
+                    Err(err) => {
+                        self.skip_procedure(path, procedure.span(), err.to_string());
+                    }
+                }
+            }
+        }
+    }
+
+    fn skip_oversized_signature_procedures(&mut self, modules: &[&Module]) {
+        for module in modules {
+            for procedure in module.procedures() {
+                let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
+                    continue;
+                }
+                let Some(signature) = self.signatures.get(&path) else {
+                    continue;
+                };
+                if signature.params().len() > u8::MAX as usize {
+                    self.skip_procedure(
+                        path,
+                        procedure.span(),
+                        format!(
+                            "procedure '{}::{}' has {} parameter(s), exceeding the HIR operand \
+                             limit of {}",
+                            module.path(),
+                            procedure.name(),
+                            signature.params().len(),
+                            u8::MAX
+                        ),
+                    );
+                } else if signature.results().len() > u8::MAX as usize {
+                    self.skip_procedure(
+                        path,
+                        procedure.span(),
+                        format!(
+                            "procedure '{}::{}' returns {} value(s), exceeding the HIR operand \
+                             limit of {}",
+                            module.path(),
+                            procedure.name(),
+                            signature.results().len(),
+                            u8::MAX
+                        ),
+                    );
+                } else if signature.params().len() > LINT_SIGNATURE_VALUE_LIMIT {
+                    self.skip_procedure(
+                        path,
+                        procedure.span(),
+                        format!(
+                            "procedure '{}::{}' has {} parameter(s), exceeding the lint analysis \
+                             signature limit of {}",
+                            module.path(),
+                            procedure.name(),
+                            signature.params().len(),
+                            LINT_SIGNATURE_VALUE_LIMIT
+                        ),
+                    );
+                } else if signature.results().len() > LINT_SIGNATURE_VALUE_LIMIT {
+                    self.skip_procedure(
+                        path,
+                        procedure.span(),
+                        format!(
+                            "procedure '{}::{}' returns {} value(s), exceeding the lint analysis \
+                             signature limit of {}",
+                            module.path(),
+                            procedure.name(),
+                            signature.results().len(),
+                            LINT_SIGNATURE_VALUE_LIMIT
+                        ),
+                    );
+                }
+            }
+        }
+    }
+
+    fn skip_callers_with_unavailable_dependencies(&mut self, modules: &[&Module]) -> Result<()> {
+        let mut progress = true;
+        while progress {
+            progress = false;
+            for module in modules {
+                for procedure in module.procedures() {
+                    let path = procedure_key(module, procedure);
+                    if self.skipped_procedures.contains_key(&path) {
+                        continue;
+                    }
+                    if let Some(reason) = self.lint_dependency_skip_reason(module, procedure)? {
+                        self.skip_procedure(path, procedure.span(), reason);
+                        progress = true;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn lint_dependency_skip_reason(
+        &self,
+        module: &Module,
+        procedure: &Procedure,
+    ) -> Result<Option<String>> {
+        let source_manager = self.context.session().source_manager.clone();
+        for target in procedure.invoked() {
+            let path = resolve_invocation_path(
+                module,
+                &target.target,
+                source_manager.clone(),
+                &self.relative_fallback_functions,
+            )?;
+            if let Some(skipped) = self.skipped_procedures.get(&path) {
+                return Ok(Some(format!(
+                    "depends on skipped procedure '{}': {}",
+                    skipped.path, skipped.reason
+                )));
+            }
+            if self.signatures.contains_key(&path) {
+                continue;
+            }
+            if self.is_source_function_path(&path) {
+                return Ok(Some(format!("depends on procedure '{path}' with no known signature")));
+            }
+            return Ok(Some(format!(
+                "unresolved external callee '{}'; external signature metadata is missing{}",
+                path,
+                external_signature_metadata_hint(&self.external_signatures)
+            )));
+        }
+        Ok(None)
+    }
+
+    fn skip_procedure(&mut self, path: Arc<ast::Path>, span: SourceSpan, reason: String) {
+        self.skipped_procedures.entry(path.clone()).or_insert(SkippedProcedure {
+            path,
+            span,
+            reason,
+        });
+    }
+
+    fn skipped_procedures(&self) -> Vec<SkippedProcedure> {
+        let mut skipped = self.skipped_procedures.values().cloned().collect::<Vec<_>>();
+        skipped.sort_by(|lhs, rhs| lhs.path.as_str().cmp(rhs.path.as_str()));
+        skipped
     }
 
     fn is_source_function_path(&self, path: &Arc<ast::Path>) -> bool {
@@ -419,6 +809,9 @@ impl ModuleRegistry {
             let mut module_builder = ModuleBuilder::new(module_ref);
             for procedure in module.procedures() {
                 let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
+                    continue;
+                }
                 let signature = self.signatures.get(&path).cloned().ok_or_else(|| {
                     Report::msg(format!("procedure '{}' is missing a signature", procedure.name()))
                 })?;
@@ -446,6 +839,9 @@ impl ModuleRegistry {
         for module in modules {
             for procedure in module.procedures() {
                 let path = procedure_key(module, procedure);
+                if self.skipped_procedures.contains_key(&path) {
+                    continue;
+                }
                 let function = *self.functions.get(&path).ok_or_else(|| {
                     Report::msg(format!(
                         "unresolved function '{}::{}'",
@@ -473,7 +869,12 @@ impl ModuleRegistry {
 
     fn resolve_function(&self, module: &Module, target: &InvocationTarget) -> Result<FunctionRef> {
         let source_manager = self.context.session().source_manager.clone();
-        let path = resolve_invocation_path(module, target, source_manager)?;
+        let path = resolve_invocation_path(
+            module,
+            target,
+            source_manager,
+            &self.relative_fallback_functions,
+        )?;
         self.functions.get(&path).copied().ok_or_else(|| {
             Report::msg(format!(
                 "unresolved external callee '{}'; external signature metadata is missing{}",
@@ -481,6 +882,85 @@ impl ModuleRegistry {
                 external_signature_metadata_hint(&self.external_signatures)
             ))
         })
+    }
+}
+
+enum ProcedureDependencyState {
+    Ready,
+    Waiting,
+    Skipped {
+        path: Arc<ast::Path>,
+        reason: String,
+    },
+    MissingExternal(String),
+}
+
+fn first_non_liftable_instruction(block: &Block) -> Option<(&Instruction, SourceSpan)> {
+    for op in block.iter() {
+        match op {
+            Op::Inst(inst)
+                if semantics::instruction_semantics(inst.inner())
+                    != InstructionSemantics::LiftAndInfer =>
+            {
+                return Some((inst.inner(), inst.span()));
+            }
+            Op::Inst(_) => {}
+            Op::If {
+                then_blk, else_blk, ..
+            } => {
+                if let Some(unsupported) = first_non_liftable_instruction(then_blk) {
+                    return Some(unsupported);
+                }
+                if let Some(unsupported) = first_non_liftable_instruction(else_blk) {
+                    return Some(unsupported);
+                }
+            }
+            Op::While { body, .. } | Op::Repeat { body, .. } => {
+                if let Some(unsupported) = first_non_liftable_instruction(body) {
+                    return Some(unsupported);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn estimated_hir_operation_count(block: &Block) -> usize {
+    estimated_block_hir_operation_count(block, LINT_ESTIMATED_HIR_OP_LIMIT.saturating_add(1))
+}
+
+fn estimated_block_hir_operation_count(block: &Block, cap: usize) -> usize {
+    let mut total = 0usize;
+    for op in block.iter() {
+        total = total.saturating_add(estimated_op_hir_operation_count(op, cap));
+        if total >= cap {
+            return cap;
+        }
+    }
+    total
+}
+
+fn estimated_op_hir_operation_count(op: &Op, cap: usize) -> usize {
+    match op {
+        Op::Inst(_) => 4,
+        Op::If {
+            then_blk, else_blk, ..
+        } => 1usize
+            .saturating_add(estimated_block_hir_operation_count(then_blk, cap))
+            .saturating_add(estimated_block_hir_operation_count(else_blk, cap))
+            .min(cap),
+        Op::While { body, .. } => {
+            1usize.saturating_add(estimated_block_hir_operation_count(body, cap)).min(cap)
+        }
+        Op::Repeat { count, body, .. } => match count {
+            Immediate::Value(count) => {
+                let body_count = estimated_block_hir_operation_count(body, cap);
+                body_count.saturating_mul(count.into_inner() as usize).min(cap)
+            }
+            Immediate::Constant(_) => {
+                1usize.saturating_add(estimated_block_hir_operation_count(body, cap)).min(cap)
+            }
+        },
     }
 }
 
@@ -555,6 +1035,7 @@ fn resolve_invocation_path(
     module: &Module,
     target: &InvocationTarget,
     source_manager: Arc<dyn miden_assembly_syntax::debuginfo::SourceManager>,
+    relative_exports: &BTreeSet<Arc<ast::Path>>,
 ) -> Result<Arc<ast::Path>> {
     match target {
         InvocationTarget::Symbol(name) => {
@@ -599,16 +1080,46 @@ fn resolve_invocation_path(
                 Ok(SymbolResolution::MastRoot(_)) => {
                     Err(Report::msg("MAST root invocation targets are not supported"))
                 }
-                Err(err) => Err(Report::msg(format!(
-                    "failed to resolve MASM invocation target '{}': {err}",
-                    path.inner()
-                ))),
+                Err(err) => {
+                    match resolve_relative_invocation_path(module, path.inner(), relative_exports) {
+                        Ok(path) => Ok(path),
+                        Err(_) => Err(Report::msg(format!(
+                            "failed to resolve MASM invocation target '{}': {err}",
+                            path.inner()
+                        ))),
+                    }
+                }
             }
         }
         InvocationTarget::MastRoot(_) => {
             Err(Report::msg("MAST root invocation targets are not supported"))
         }
     }
+}
+
+fn resolve_relative_invocation_path(
+    module: &Module,
+    path: &ast::Path,
+    relative_exports: &BTreeSet<Arc<ast::Path>>,
+) -> Result<Arc<ast::Path>> {
+    if path.is_absolute() {
+        return Err(Report::msg(format!(
+            "failed to resolve absolute MASM invocation target '{path}'"
+        )));
+    }
+
+    let resolved = Arc::from(module.path().join(path).to_absolute().into_owned());
+    if !is_descendant_path(module.path(), &resolved) || !relative_exports.contains(&resolved) {
+        return Err(Report::msg(format!("failed to resolve relative MASM target '{path}'")));
+    }
+
+    Ok(resolved)
+}
+
+fn is_descendant_path(module_path: &ast::Path, resolved: &ast::Path) -> bool {
+    let module = module_path.as_str().trim_start_matches("::");
+    let resolved = resolved.as_str().trim_start_matches("::");
+    resolved.strip_prefix(module).is_some_and(|suffix| suffix.starts_with("::"))
 }
 
 fn masm_module_symbol_path(path: &ast::Path) -> SymbolPath {
@@ -619,19 +1130,31 @@ fn masm_module_symbol_path(path: &ast::Path) -> SymbolPath {
 fn collect_referenced_core_metadata<'a>(
     modules: impl IntoIterator<Item = &'a Module>,
     context: &Rc<Context>,
+    lint: bool,
 ) -> Result<(ExternalSignatureMap, ExternalTypeMap)> {
     let source_manager = context.session().source_manager.clone();
     let mut referenced = BTreeSet::<Arc<ast::Path>>::new();
     for module in modules {
         for procedure in module.procedures() {
             for invocation in procedure.invoked() {
-                let path =
-                    resolve_invocation_path(module, &invocation.target, source_manager.clone())?;
+                let path = match resolve_invocation_path(
+                    module,
+                    &invocation.target,
+                    source_manager.clone(),
+                    &BTreeSet::new(),
+                ) {
+                    Ok(path) => path,
+                    Err(_) if lint => continue,
+                    Err(err) => return Err(err),
+                };
                 if is_miden_core_path(&path) {
                     referenced.insert(path);
                     continue;
                 }
                 if module_contains_procedure(module, &path) {
+                    continue;
+                }
+                if lint {
                     continue;
                 }
                 return Err(Report::msg(format!(
@@ -662,6 +1185,9 @@ fn collect_referenced_core_metadata<'a>(
                 continue;
             }
             let Some(signature) = &procedure.signature else {
+                if lint {
+                    continue;
+                }
                 return Err(Report::msg(format!(
                     "referenced core procedure '{path}' has no signature metadata"
                 )));
@@ -672,6 +1198,9 @@ fn collect_referenced_core_metadata<'a>(
 
     for path in referenced {
         if !signatures.contains_key(&path) {
+            if lint {
+                continue;
+            }
             return Err(Report::msg(format!(
                 "referenced core procedure '{path}' was not found in CoreLibrary metadata"
             )));
@@ -781,6 +1310,15 @@ impl<'a> ProcedureLifter<'a> {
                 "procedure '{}' leaves {} extra value(s) on the stack",
                 self.procedure.name(),
                 self.stack.len()
+            )));
+        }
+        if results.len() > u8::MAX as usize {
+            return Err(Report::msg(format!(
+                "procedure '{}::{}' returns {} value(s), exceeding the HIR operand limit of {}",
+                self.module.path(),
+                self.procedure.name(),
+                results.len(),
+                u8::MAX
             )));
         }
         builder.ret(results, self.procedure.span())?;
@@ -1451,6 +1989,16 @@ impl<'a> ProcedureLifter<'a> {
             Exp => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
                 builder.exp(lhs, rhs, span)
             }),
+            ExpBitLength(32) => {
+                let exponent = self.pop(span)?;
+                let base = self.pop(span)?;
+                let base = self.cast(builder, base.value, Type::Felt, span)?;
+                let exponent = self.cast(builder, exponent.value, Type::U32, span)?;
+                let exponent = self.cast(builder, exponent, Type::Felt, span)?;
+                let result = builder.exp_u32_exponent(base, exponent, span)?;
+                self.push_value(result, span);
+                Ok(())
+            }
             ExpImm(value) => {
                 self.felt_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
                     builder.exp(lhs, rhs, span)
@@ -2807,9 +3355,7 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn pop(&mut self, span: SourceSpan) -> Result<StackValue> {
-        self.stack
-            .pop()
-            .ok_or_else(|| Report::msg(format!("stack underflow at {span:?}")))
+        self.stack.pop().ok_or_else(|| self.stack_underflow(span))
     }
 
     fn pop_binary(&mut self, span: SourceSpan) -> Result<(StackValue, StackValue)> {
@@ -2826,15 +3372,15 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn dup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::dup(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::dup(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn dup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::dup_word(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::dup_word(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn swap(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::swap(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::swap(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn swap_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2847,11 +3393,11 @@ impl<'a> ProcedureLifter<'a> {
 
     fn swap_chunks(&mut self, chunk_len: usize, depth: usize, span: SourceSpan) -> Result<()> {
         masm_stack::swap_chunks(&mut self.stack, chunk_len, depth)
-            .ok_or_else(|| stack_underflow(span))
+            .ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::movup(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::movup(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2865,11 +3411,11 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
     ) -> Result<()> {
         masm_stack::move_chunk_to_top(&mut self.stack, chunk_len, depth)
-            .ok_or_else(|| stack_underflow(span))
+            .ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movdn(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::movdn(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::movdn(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movdn_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2883,15 +3429,15 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
     ) -> Result<()> {
         masm_stack::move_top_chunk_down(&mut self.stack, chunk_len, depth)
-            .ok_or_else(|| stack_underflow(span))
+            .ok_or_else(|| self.stack_underflow(span))
     }
 
     fn reverse_word(&mut self, span: SourceSpan) -> Result<()> {
-        masm_stack::reverse_n(&mut self.stack, 4).ok_or_else(|| stack_underflow(span))
+        masm_stack::reverse_n(&mut self.stack, 4).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn reverse_double_word(&mut self, span: SourceSpan) -> Result<()> {
-        masm_stack::reverse_n(&mut self.stack, 8).ok_or_else(|| stack_underflow(span))
+        masm_stack::reverse_n(&mut self.stack, 8).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn pop_word(&mut self, span: SourceSpan) -> Result<Vec<StackValue>> {
@@ -2935,14 +3481,30 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Result<Vec<StackValue>> {
-        masm_stack::pop_chunk(&mut self.stack, chunk_len).ok_or_else(|| stack_underflow(span))
+        masm_stack::pop_chunk(&mut self.stack, chunk_len).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn require_depth(&self, depth: usize, span: SourceSpan) -> Result<()> {
         if self.stack.len() <= depth {
-            Err(stack_underflow(span))
+            Err(self.stack_underflow(span))
         } else {
             Ok(())
+        }
+    }
+
+    fn stack_underflow(&self, span: SourceSpan) -> Report {
+        Report::msg(format!(
+            "stack underflow in '{}::{}' at {}",
+            self.module.path(),
+            self.procedure.name(),
+            self.format_span(span)
+        ))
+    }
+
+    fn format_span(&self, span: SourceSpan) -> String {
+        match self.registry.context.session().source_manager.file_line_col(span) {
+            Ok(location) => format!("{location}"),
+            Err(_) => format!("{span:?}"),
         }
     }
 }
@@ -3041,10 +3603,6 @@ fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
     Err(Report::msg(format!(
         "MASM instruction {inst:?} is not supported during disassembly at {span:?}"
     )))
-}
-
-fn stack_underflow(span: SourceSpan) -> miden_assembly_syntax::diagnostics::Report {
-    Report::msg(format!("stack underflow at {span:?}"))
 }
 
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {

@@ -27,19 +27,53 @@ use crate::{ExternalSignatureMap, ExternalTypeMap, Result};
 pub struct ProjectTargetInput {
     pub sources: ProjectSourceInputs,
     pub dependency_modules: Vec<Box<Module>>,
+    pub relative_module_paths: BTreeSet<Arc<MasmPath>>,
     pub external_signatures: ExternalSignatureMap,
     pub external_types: ExternalTypeMap,
 }
 
 impl ProjectTargetInput {
-    pub fn new(sources: ProjectSourceInputs, external_metadata: ExternalMetadata) -> Self {
+    pub fn new(sources: LoadedProjectSources, external_metadata: ExternalMetadata) -> Self {
+        Self::with_relative_module_paths(
+            sources.sources,
+            sources.relative_module_paths,
+            external_metadata,
+        )
+    }
+
+    pub fn from_source_inputs(
+        sources: ProjectSourceInputs,
+        external_metadata: ExternalMetadata,
+    ) -> Self {
         ProjectTargetInput {
             sources,
             dependency_modules: external_metadata.source_modules,
+            relative_module_paths: external_metadata.relative_module_paths,
             external_signatures: external_metadata.signatures,
             external_types: external_metadata.types,
         }
     }
+
+    fn with_relative_module_paths(
+        sources: ProjectSourceInputs,
+        relative_module_paths: BTreeSet<Arc<MasmPath>>,
+        external_metadata: ExternalMetadata,
+    ) -> Self {
+        let mut relative_module_paths = relative_module_paths;
+        relative_module_paths.extend(external_metadata.relative_module_paths);
+        ProjectTargetInput {
+            sources,
+            dependency_modules: external_metadata.source_modules,
+            relative_module_paths,
+            external_signatures: external_metadata.signatures,
+            external_types: external_metadata.types,
+        }
+    }
+}
+
+pub struct LoadedProjectSources {
+    pub sources: ProjectSourceInputs,
+    pub relative_module_paths: BTreeSet<Arc<MasmPath>>,
 }
 
 #[derive(Default)]
@@ -47,6 +81,7 @@ pub struct ExternalMetadata {
     pub signatures: ExternalSignatureMap,
     pub types: ExternalTypeMap,
     pub source_modules: Vec<Box<Module>>,
+    pub relative_module_paths: BTreeSet<Arc<MasmPath>>,
 }
 
 /// Resolve disassembler inputs for `target_name` of `project`
@@ -189,10 +224,7 @@ fn collect_dependency_graph_node_metadata(
                 source_manager.as_ref(),
             )?;
             let package = project.package();
-            metadata
-                .source_modules
-                .extend(parse_source_package_modules(package.as_ref(), source_manager)?);
-            Ok(())
+            collect_source_package_metadata(metadata, package.as_ref(), source_manager)
         }
         ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
             library_path: None, ..
@@ -285,21 +317,28 @@ fn collect_source_package_metadata(
     package: &ProjectPackage,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
-    let modules = parse_source_package_modules(package, source_manager)?;
-    metadata.source_modules.extend(modules);
+    let Some(LoadedProjectSources {
+        sources,
+        relative_module_paths,
+    }) = parse_source_package_sources(package, source_manager)?
+    else {
+        return Ok(());
+    };
+    metadata.relative_module_paths.extend(relative_module_paths);
+    metadata
+        .source_modules
+        .extend(core::iter::once(sources.root).chain(sources.support));
     Ok(())
 }
 
-fn parse_source_package_modules(
+fn parse_source_package_sources(
     package: &ProjectPackage,
     source_manager: Arc<dyn SourceManager>,
-) -> Result<Vec<Box<Module>>> {
+) -> Result<Option<LoadedProjectSources>> {
     let Some(target) = package.library_target() else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
-    let ProjectSourceInputs { root, support } =
-        load_target_modules(package, target.inner(), source_manager)?;
-    Ok(core::iter::once(root).chain(support).collect())
+    load_target_modules(package, target.inner(), source_manager).map(Some)
 }
 
 fn package_base_dir(package: &ProjectPackage) -> Result<&Path> {
@@ -357,7 +396,7 @@ pub fn load_target_modules(
     package: &ProjectPackage,
     target: &Target,
     source_manager: Arc<dyn SourceManager>,
-) -> Result<ProjectSourceInputs> {
+) -> Result<LoadedProjectSources> {
     let target_path = target.path.as_ref().ok_or_else(|| {
         Report::msg(format!("target '{}' does not specify a MASM source path", target.name.inner()))
     })?;
@@ -376,6 +415,8 @@ pub fn load_target_modules(
     let root_dir = root_path.parent().map(Path::to_path_buf).ok_or_else(|| {
         Report::msg(format!("target source '{}' has no parent directory", root_path.display()))
     })?;
+    let mut relative_module_paths =
+        collect_module_declarations(&root_path, target.namespace.inner().as_ref())?;
     let root = parse_module_file(
         &root_path,
         target_root_module_kind(target.ty),
@@ -386,26 +427,39 @@ pub fn load_target_modules(
     let mut excluded = excluded_target_roots(package, target, &root_path)?;
     excluded.insert(root_path);
     let support_paths = read_support_module_paths(&root_dir, target.namespace.inner(), &excluded)?;
-    let support = support_paths
-        .iter()
-        .map(|path| {
-            let relative = path.strip_prefix(&root_dir).map_err(|error| {
-                Report::msg(format!(
-                    "failed to derive module path for '{}': {error}",
-                    path.display()
-                ))
-            })?;
-            let module_path = module_path_from_relative(target.namespace.inner(), relative)?;
-            parse_module_file(
-                path,
-                ModuleKind::Library,
-                module_path.as_ref(),
-                source_manager.clone(),
-            )
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let mut support = Vec::new();
+    let mut support_modules = Vec::new();
+    for path in &support_paths {
+        let relative = path.strip_prefix(&root_dir).map_err(|error| {
+            Report::msg(format!("failed to derive module path for '{}': {error}", path.display()))
+        })?;
+        let module_path = module_path_from_relative(target.namespace.inner(), relative)?;
+        support.push(parse_module_file(
+            path,
+            ModuleKind::Library,
+            module_path.as_ref(),
+            source_manager.clone(),
+        )?);
+        support_modules.push((path, module_path));
+    }
 
-    Ok(ProjectSourceInputs { root, support })
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for (path, module_path) in &support_modules {
+            if !relative_module_paths.contains(module_path) {
+                continue;
+            }
+            for child in collect_module_declarations(path, module_path.as_ref())? {
+                changed |= relative_module_paths.insert(child);
+            }
+        }
+    }
+
+    Ok(LoadedProjectSources {
+        sources: ProjectSourceInputs { root, support },
+        relative_module_paths,
+    })
 }
 
 fn parse_module_file(
@@ -414,8 +468,141 @@ fn parse_module_file(
     module_path: &MasmPath,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<Box<Module>> {
+    if let Some(source) = read_project_module_source(path, module_path)? {
+        if source.lines().all(is_ignorable_module_line) {
+            return Ok(Box::new(Module::new(kind, module_path)));
+        }
+        let mut parser = ModuleParser::new(kind);
+        return parser.parse_str(module_path, source, source_manager);
+    }
+
     let mut parser = ModuleParser::new(kind);
     parser.parse_file(module_path, path, source_manager)
+}
+
+fn read_project_module_source(path: &Path, module_path: &MasmPath) -> Result<Option<String>> {
+    if path.file_name().and_then(|name| name.to_str()) != Some(Module::ROOT_FILENAME) {
+        return Ok(None);
+    }
+
+    let source = fs::read_to_string(path).map_err(|error| {
+        Report::msg(format!("failed to read MASM module index '{}': {error}", path.display()))
+    })?;
+    let source = source
+        .lines()
+        .map(|line| {
+            if is_module_declaration(line) {
+                String::new()
+            } else if let Some(line) = rewrite_grouped_public_use_declaration(line, module_path) {
+                line
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(Some(source))
+}
+
+fn collect_module_declarations(
+    path: &Path,
+    module_path: &MasmPath,
+) -> Result<BTreeSet<Arc<MasmPath>>> {
+    if path.file_name().and_then(|name| name.to_str()) != Some(Module::ROOT_FILENAME) {
+        return Ok(BTreeSet::new());
+    }
+
+    let source = fs::read_to_string(path).map_err(|error| {
+        Report::msg(format!("failed to read MASM module index '{}': {error}", path.display()))
+    })?;
+    let mut modules = BTreeSet::new();
+    for line in source.lines() {
+        let line = line.split_once('#').map_or(line, |(code, _)| code).trim();
+        let module = line.strip_prefix("pub ").unwrap_or(line);
+        let Some(module) = module.strip_prefix("mod ") else {
+            continue;
+        };
+        let module = module.trim();
+        if !is_valid_module_declaration_path(module) {
+            continue;
+        }
+        let path = if module.starts_with("::") {
+            module.to_string()
+        } else {
+            format!("::{}::{module}", module_path.as_str().trim_start_matches("::"))
+        };
+        modules.insert(Arc::from(MasmPath::new(&path)));
+    }
+    Ok(modules)
+}
+
+fn is_module_declaration(line: &str) -> bool {
+    let line = line.split_once('#').map_or(line, |(code, _)| code).trim();
+    let line = line.strip_prefix("pub ").unwrap_or(line);
+    let Some(module) = line.strip_prefix("mod ") else {
+        return false;
+    };
+    let module = module.trim();
+    is_valid_module_declaration_path(module)
+}
+
+fn is_valid_module_declaration_path(module: &str) -> bool {
+    MasmPath::validate(module).is_ok()
+}
+
+fn rewrite_grouped_public_use_declaration(line: &str, module_path: &MasmPath) -> Option<String> {
+    let code_len = line.split_once('#').map_or(line.len(), |(code, _)| code.len());
+    let (code, comment) = line.split_at(code_len);
+    let pub_start = code.find(|c: char| !c.is_whitespace())?;
+    if !code[pub_start..].starts_with("pub use ") {
+        return None;
+    }
+
+    let indent = &code[..pub_start];
+    let use_body = code[pub_start + "pub use ".len()..].trim();
+    if let Some(imports) = expand_public_use_from(indent, use_body, comment, module_path) {
+        return Some(imports);
+    }
+
+    None
+}
+
+fn expand_public_use_from(
+    indent: &str,
+    use_body: &str,
+    comment: &str,
+    current_module: &MasmPath,
+) -> Option<String> {
+    let use_body = use_body.strip_prefix('{')?;
+    let (names, module_path) = use_body.split_once("} from ")?;
+    let module_path = module_path.trim();
+    let module_path = if let Some(relative) = module_path.strip_prefix("self::") {
+        format!("{}::{relative}", current_module.as_str().trim_start_matches("::"))
+    } else {
+        module_path.to_string()
+    };
+    if module_path.is_empty() {
+        return None;
+    }
+
+    let mut imports = Vec::new();
+    for name in names.split(',').map(str::trim).filter(|name| !name.is_empty()) {
+        let mut import = format!("{indent}pub use {module_path}::{name}->{name}");
+        if imports.is_empty() {
+            import.push_str(comment);
+        }
+        imports.push(import);
+    }
+    if imports.is_empty() {
+        None
+    } else {
+        Some(imports.join("\n"))
+    }
+}
+
+fn is_ignorable_module_line(line: &str) -> bool {
+    let line = line.trim();
+    line.is_empty() || line.starts_with('#')
 }
 
 fn target_root_module_kind(ty: TargetType) -> ModuleKind {

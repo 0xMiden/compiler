@@ -25,7 +25,7 @@ macro_rules! define_instruction_semantics {
     ) => {
         #[cfg(test)]
         pub(crate) const LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT: usize =
-            count_instruction_patterns!($($lift_and_infer),*);
+            count_instruction_patterns!($($lift_and_infer),*) + 1;
         #[cfg(test)]
         pub(crate) const INFER_ONLY_INSTRUCTION_VARIANT_COUNT: usize =
             count_instruction_patterns!($($infer_only),*);
@@ -35,6 +35,8 @@ macro_rules! define_instruction_semantics {
 
         pub(crate) fn instruction_semantics(instruction: &Instruction) -> InstructionSemantics {
             match instruction {
+                Instruction::ExpBitLength(32) => InstructionSemantics::LiftAndInfer,
+                Instruction::ExpBitLength(_) => InstructionSemantics::Unsupported,
                 $($lift_and_infer => InstructionSemantics::LiftAndInfer,)*
                 $($infer_only => InstructionSemantics::InferOnly,)*
                 $($unsupported => InstructionSemantics::Unsupported,)*
@@ -285,7 +287,6 @@ define_instruction_semantics! {
         Instruction::ProcRef(_),
     ],
     unsupported: [
-        Instruction::ExpBitLength(_),
         Instruction::DynExec,
         Instruction::DynCall,
     ],
