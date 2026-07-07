@@ -32,15 +32,40 @@ use rustc_hash::FxHashMap;
 
 use crate::{
     DisassembledWorld, DisassemblerConfig, ExternalSignatureMap, ExternalTypeMap, Result,
+    SkippedProcedure,
     events::{system_event_id, system_event_read_count},
     infer, project,
     semantics::{self, InstructionSemantics},
     stack as masm_stack,
 };
 
+const LINT_ESTIMATED_HIR_OP_LIMIT: usize = 900;
+const LINT_SIGNATURE_VALUE_LIMIT: usize = 8;
+
+pub(crate) struct LiftConfig {
+    infer_missing_signatures: bool,
+    lint: bool,
+}
+
+impl LiftConfig {
+    pub(crate) fn strict(config: &DisassemblerConfig) -> Self {
+        Self {
+            infer_missing_signatures: config.infer_missing_signatures,
+            lint: false,
+        }
+    }
+
+    pub(crate) fn lint(config: &DisassemblerConfig) -> Self {
+        Self {
+            infer_missing_signatures: config.infer_missing_signatures,
+            lint: true,
+        }
+    }
+}
+
 pub(crate) fn lift_project_target(
     target: project::ProjectTargetInput,
-    config: &DisassemblerConfig,
+    config: &LiftConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let project::ProjectTargetInput {
@@ -72,7 +97,7 @@ fn lift_modules(
     kernel: Option<Arc<miden_mast_package::Package>>,
     packages: Vec<Arc<miden_mast_package::Package>>,
     extra_modules: Vec<Box<Module>>,
-    config: &DisassemblerConfig,
+    config: &LiftConfig,
     external_signatures: ExternalSignatureMap,
     external_types: ExternalTypeMap,
     context: Rc<Context>,
@@ -124,7 +149,11 @@ fn lift_modules(
             }
         }
     }
-    let module_indices = linker.link([root], support)?;
+    let (module_indices, initial_skips) = if config.lint {
+        link_modules_for_lint(&mut linker, root, support)?
+    } else {
+        (linker.link([root], support)?, Vec::new())
+    };
     let root_index = module_indices[0];
 
     let mut registry = ModuleRegistry::new(
@@ -132,6 +161,7 @@ fn lift_modules(
         module_indices,
         external_signatures,
         external_types,
+        initial_skips,
         context.clone(),
     );
     registry.infer_missing_signatures(config)?;
@@ -148,11 +178,103 @@ fn lift_modules(
     registry.lift_bodies()?;
 
     let module = registry.modules[&root_index];
+    let skipped_procedures = registry.skipped_procedures();
     Ok(DisassembledWorld {
         context,
         world,
         module,
+        skipped_procedures,
     })
+}
+
+fn link_modules_for_lint(
+    linker: &mut Linker,
+    root: Box<Module>,
+    support: Vec<Box<Module>>,
+) -> Result<(Vec<ModuleIndex>, Vec<(GlobalItemIndex, SourceSpan, String)>)> {
+    let mut module_indices = linker.link_modules([root])?;
+    module_indices.extend(linker.link_modules(support)?);
+
+    let mut skipped = BTreeMap::<GlobalItemIndex, (SourceSpan, String)>::new();
+    loop {
+        let mut progress = false;
+        for module_index in 0..linker.modules().len() {
+            let module_index = ModuleIndex::new(module_index);
+            for (item_index, item) in linker[module_index].symbols().enumerate() {
+                let gid = module_index + ast::ItemIndex::new(item_index);
+                if skipped.contains_key(&gid) {
+                    continue;
+                }
+                let SymbolItem::Procedure(procedure) = item.item() else {
+                    continue;
+                };
+                let procedure = procedure.borrow();
+                let mut reason = None;
+                for invoke in procedure.invoked() {
+                    let resolution = SymbolResolutionContext {
+                        span: invoke.span(),
+                        module: module_index,
+                        kind: Some(invoke.kind),
+                    };
+                    match linker.resolve_invoke_target(&resolution, &invoke.target) {
+                        Ok(SymbolResolution::Exact { gid: callee, .. }) => {
+                            if let Some((_, callee_reason)) = skipped.get(&callee) {
+                                let callee_path = linker[callee.module]
+                                    .path()
+                                    .join(linker[callee].name());
+                                reason = Some(format!(
+                                    "depends on skipped procedure '{callee_path}': {callee_reason}"
+                                ));
+                                break;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(err) => {
+                            reason = Some(format!(
+                                "failed to resolve invocation during signature metadata pre-scan: \
+                                 {err}; external signature metadata is missing"
+                            ));
+                            break;
+                        }
+                    }
+                }
+                if let Some(reason) = reason {
+                    skipped.insert(gid, (procedure.span(), reason));
+                    progress = true;
+                }
+            }
+        }
+        if !progress {
+            break;
+        }
+    }
+
+    for gid in skipped.keys().copied() {
+        let SymbolItem::Procedure(procedure) = linker[gid].item() else {
+            continue;
+        };
+        let mut procedure = procedure.borrow_mut();
+        let span = procedure.span();
+        let signature = procedure.signature().cloned();
+        let mut stub = Procedure::new(
+            span,
+            procedure.visibility(),
+            procedure.name().clone(),
+            procedure.num_locals(),
+            Block::new(span, Vec::new()),
+        );
+        stub.set_syscall(procedure.is_syscall());
+        if let Some(signature) = signature {
+            stub.set_signature(signature);
+        }
+        *procedure = Box::new(stub);
+    }
+
+    linker.link(core::iter::empty(), core::iter::empty())?;
+    Ok((
+        module_indices,
+        skipped.into_iter().map(|(gid, (span, reason))| (gid, span, reason)).collect(),
+    ))
 }
 
 struct ModuleRegistry {
@@ -168,6 +290,7 @@ struct ModuleRegistry {
     external_signatures: FxHashMap<Arc<ast::Path>, Signature>,
     #[allow(unused)]
     referenced_external_signatures: FxHashMap<Arc<ast::Path>, Signature>,
+    skipped_procedures: FxHashMap<GlobalItemIndex, SkippedProcedure>,
 }
 
 impl ModuleRegistry {
@@ -176,6 +299,7 @@ impl ModuleRegistry {
         top_level_modules: Vec<ModuleIndex>,
         external_signatures: ExternalSignatureMap,
         external_types: ExternalTypeMap,
+        initial_skips: Vec<(GlobalItemIndex, SourceSpan, String)>,
         context: Rc<Context>,
     ) -> Self {
         let external_signatures = external_signatures
@@ -184,7 +308,7 @@ impl ModuleRegistry {
                 (path, Signature::with_convention(&context, ty.abi, ty.params, ty.results))
             })
             .collect::<FxHashMap<_, _>>();
-        Self {
+        let mut registry = Self {
             context,
             linker,
             top_level_modules,
@@ -195,103 +319,210 @@ impl ModuleRegistry {
             external_types,
             external_signatures,
             referenced_external_signatures: FxHashMap::default(),
+            skipped_procedures: FxHashMap::default(),
+        };
+        for (gid, span, reason) in initial_skips {
+            registry.skip_item(gid, span, reason);
         }
+        registry
     }
 
-    fn infer_missing_signatures(&mut self, config: &DisassemblerConfig) -> Result<()> {
+    fn infer_missing_signatures(&mut self, config: &LiftConfig) -> Result<()> {
         let mut visited = FxHashSet::default();
-        for root in self.top_level_modules.iter().copied() {
+        for root in self.top_level_modules.clone() {
             let root_path = self.linker[root].path().clone();
-            for (index, item) in self.linker[root].symbols().enumerate() {
-                let gid = root + ast::ItemIndex::new(index);
-                if !item.is_procedure() {
-                    continue;
-                }
-                let path = root_path.join(item.name());
-                let toposort = self.linker.topological_sort_from_root(gid).map_err(|cycle| {
-                    let iter = cycle.into_node_ids();
-                    let mut nodes = Vec::with_capacity(iter.len());
-                    for node in iter {
-                        let module = self.linker[node.module].path();
-                        let proc = self.linker[node].name();
-                        nodes.push(format!("{}", module.join(proc)));
+            let roots = self.linker[root]
+                .symbols()
+                .enumerate()
+                .filter_map(|(index, item)| {
+                    item.is_procedure().then_some(root + ast::ItemIndex::new(index))
+                })
+                .collect::<Vec<_>>();
+            for gid in roots {
+                let path = root_path.join(self.linker[gid].name());
+                let toposort = match self.linker.topological_sort_from_root(gid) {
+                    Ok(toposort) => toposort,
+                    Err(cycle) => {
+                        let cycle = cycle.into_node_ids().collect::<Vec<_>>();
+                        let mut nodes = Vec::with_capacity(cycle.len());
+                        for node in cycle.iter().copied() {
+                            let module = self.linker[node.module].path();
+                            let proc = self.linker[node].name();
+                            nodes.push(format!("{}", module.join(proc)));
+                        }
+                        let reason = format!(
+                            "found cycle in call graph rooted at '{path}' involving: {}",
+                            DisplayValues::new(nodes.iter())
+                        );
+                        if config.lint {
+                            for node in cycle {
+                                self.skip_item(node, SourceSpan::UNKNOWN, reason.clone());
+                            }
+                            self.skip_item(gid, SourceSpan::UNKNOWN, reason);
+                            continue;
+                        }
+                        return Err(Report::msg(reason));
                     }
-                    Report::msg(format!(
-                        "found cycle in call graph rooted at '{path}' involving: {}",
-                        DisplayValues::new(nodes.iter())
-                    ))
-                })?;
+                };
+
                 for gid in toposort.iter().rev().copied() {
-                    if !visited.insert(gid) {
+                    if !visited.insert(gid) || self.skipped_procedures.contains_key(&gid) {
                         continue;
                     }
 
-                    let item = self.linker[gid].item();
-                    match item {
+                    match self.linker[gid].item() {
                         SymbolItem::Procedure(p) => {
-                            let p = p.borrow();
-                            let signature = self.linker.resolve_signature(gid)?;
-                            match signature {
-                                Some(sig) => {
-                                    self.signatures.insert(
-                                        gid,
-                                        Signature::with_convention(
+                            let (span, signature) = {
+                                let p = p.borrow();
+                                let span = p.span();
+                                let signature = (|| {
+                                    if config.lint {
+                                        for invoke in p.invoked() {
+                                            let resolution = SymbolResolutionContext {
+                                                span: invoke.span(),
+                                                module: gid.module,
+                                                kind: Some(invoke.kind),
+                                            };
+                                            if let SymbolResolution::Exact { gid: callee, .. } =
+                                                self.linker.resolve_invoke_target(
+                                                    &resolution,
+                                                    &invoke.target,
+                                                )?
+                                                && let Some(skipped) =
+                                                    self.skipped_procedures.get(&callee)
+                                            {
+                                                return Err(Report::msg(format!(
+                                                    "depends on skipped procedure '{}': {}",
+                                                    skipped.path, skipped.reason
+                                                )));
+                                            }
+                                        }
+                                        if let Some((inst, span)) =
+                                            first_non_liftable_instruction(p.body())
+                                        {
+                                            return Err(Report::msg(format!(
+                                                "MASM instruction {inst:?} is not supported during \
+                                                 disassembly at {span:?}"
+                                            )));
+                                        }
+                                        let count = estimated_hir_operation_count(p.body());
+                                        if count > LINT_ESTIMATED_HIR_OP_LIMIT {
+                                            return Err(Report::msg(format!(
+                                                "procedure '{}' is estimated to expand to at least \
+                                                 {count} HIR operation(s), exceeding the lint \
+                                                 analysis limit of {LINT_ESTIMATED_HIR_OP_LIMIT}",
+                                                self.item_path(gid)
+                                            )));
+                                        }
+                                    }
+
+                                    let signature = match self.linker.resolve_signature(gid)? {
+                                        Some(sig) => Signature::with_convention(
                                             &self.context,
                                             sig.abi,
                                             sig.params.iter().cloned(),
                                             sig.results.iter().cloned(),
                                         ),
-                                    );
-                                }
-                                None if !config.infer_missing_signatures => {
-                                    let path = self.linker[gid.module].path();
-                                    return Err(Report::msg(format!(
-                                        "procedure '{}' is missing a signature",
-                                        path.join(p.name().as_str())
-                                    )));
-                                }
-                                None => {
-                                    let signature = infer::infer_signature(
-                                        gid,
-                                        &p,
-                                        &self.context,
-                                        &self.linker,
-                                        &self.signatures,
-                                    )?;
+                                        None if !config.infer_missing_signatures => {
+                                            return Err(Report::msg(format!(
+                                                "procedure '{}' is missing a signature",
+                                                self.item_path(gid)
+                                            )));
+                                        }
+                                        None => infer::infer_signature(
+                                            gid,
+                                            &p,
+                                            &self.context,
+                                            &self.linker,
+                                            &self.signatures,
+                                        )?,
+                                    };
+
+                                    if config.lint {
+                                        infer::validate_declared_signature(
+                                            gid,
+                                            &p,
+                                            &self.context,
+                                            &self.linker,
+                                            &self.signatures,
+                                            &signature,
+                                        )?;
+                                        validate_lint_signature(&self.item_path(gid), &signature)?;
+                                    }
+
+                                    Ok(signature)
+                                })();
+                                (span, signature)
+                            };
+                            match signature {
+                                Ok(signature) => {
                                     self.signatures.insert(gid, signature);
                                 }
+                                Err(err) if config.lint => {
+                                    self.skip_item(gid, span, err.to_string());
+                                }
+                                Err(err) => return Err(err),
                             }
                         }
                         SymbolItem::Compiled(ItemInfo::Procedure(p)) => {
-                            match p.signature.as_deref() {
-                                Some(sig) => {
-                                    self.signatures.insert(
-                                        gid,
-                                        Signature::with_convention(
-                                            &self.context,
-                                            sig.abi,
-                                            sig.params.iter().cloned(),
-                                            sig.results.iter().cloned(),
-                                        ),
-                                    );
+                            let signature = match p.signature.as_deref() {
+                                Some(sig) => Ok(Signature::with_convention(
+                                    &self.context,
+                                    sig.abi,
+                                    sig.params.iter().cloned(),
+                                    sig.results.iter().cloned(),
+                                )),
+                                None => Err(Report::msg(format!(
+                                    "compiled procedure '{}' is missing a signature",
+                                    self.item_path(gid)
+                                ))),
+                            }
+                            .and_then(|signature| {
+                                if config.lint {
+                                    validate_lint_signature(&self.item_path(gid), &signature)?;
                                 }
-                                None => {
-                                    let path = self.linker[gid.module].path();
-                                    return Err(Report::msg(format!(
-                                        "compiled procedure '{}' is missing a signature",
-                                        path.join(p.name.as_str())
-                                    )));
+                                Ok(signature)
+                            });
+                            match signature {
+                                Ok(signature) => {
+                                    self.signatures.insert(gid, signature);
                                 }
+                                Err(err) if config.lint => {
+                                    self.skip_item(gid, SourceSpan::UNKNOWN, err.to_string());
+                                }
+                                Err(err) => return Err(err),
                             }
                         }
-                        SymbolItem::Constant(_) | SymbolItem::Type(_) | SymbolItem::Compiled(_) => {
-                        }
+                        SymbolItem::Constant(_) | SymbolItem::Type(_) | SymbolItem::Compiled(_) => {}
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn item_path(&self, gid: GlobalItemIndex) -> Arc<ast::Path> {
+        self.linker[gid.module]
+            .path()
+            .join(self.linker[gid].name())
+            .into_boxed_path()
+            .into()
+    }
+
+    fn skip_item(&mut self, gid: GlobalItemIndex, span: SourceSpan, reason: String) {
+        let path = self.item_path(gid);
+        self.skipped_procedures.entry(gid).or_insert(SkippedProcedure {
+            path,
+            span,
+            reason,
+        });
+    }
+
+    fn skipped_procedures(&self) -> Vec<SkippedProcedure> {
+        let mut skipped = self.skipped_procedures.values().cloned().collect::<Vec<_>>();
+        skipped.sort_by(|lhs, rhs| lhs.path.as_str().cmp(rhs.path.as_str()));
+        skipped
     }
 
     fn declare_modules(&mut self, world: midenc_hir::dialects::builtin::WorldRef) -> Result<()> {
@@ -388,6 +619,106 @@ impl ModuleRegistry {
     }
 }
 
+fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()> {
+    if signature.params().len() > u8::MAX as usize {
+        return Err(Report::msg(format!(
+            "procedure '{path}' has {} parameter(s), exceeding the HIR operand limit of {}",
+            signature.params().len(),
+            u8::MAX
+        )));
+    }
+    if signature.results().len() > u8::MAX as usize {
+        return Err(Report::msg(format!(
+            "procedure '{path}' returns {} value(s), exceeding the HIR operand limit of {}",
+            signature.results().len(),
+            u8::MAX
+        )));
+    }
+    if signature.params().len() > LINT_SIGNATURE_VALUE_LIMIT {
+        return Err(Report::msg(format!(
+            "procedure '{path}' has {} parameter(s), exceeding the lint analysis signature limit \
+             of {LINT_SIGNATURE_VALUE_LIMIT}",
+            signature.params().len()
+        )));
+    }
+    if signature.results().len() > LINT_SIGNATURE_VALUE_LIMIT {
+        return Err(Report::msg(format!(
+            "procedure '{path}' returns {} value(s), exceeding the lint analysis signature limit \
+             of {LINT_SIGNATURE_VALUE_LIMIT}",
+            signature.results().len()
+        )));
+    }
+    Ok(())
+}
+
+fn first_non_liftable_instruction(block: &Block) -> Option<(&Instruction, SourceSpan)> {
+    for op in block.iter() {
+        match op {
+            Op::Inst(inst)
+                if semantics::instruction_semantics(inst.inner())
+                    != InstructionSemantics::LiftAndInfer =>
+            {
+                return Some((inst.inner(), inst.span()));
+            }
+            Op::Inst(_) => {}
+            Op::If {
+                then_blk, else_blk, ..
+            } => {
+                if let Some(unsupported) = first_non_liftable_instruction(then_blk) {
+                    return Some(unsupported);
+                }
+                if let Some(unsupported) = first_non_liftable_instruction(else_blk) {
+                    return Some(unsupported);
+                }
+            }
+            Op::While { body, .. } | Op::DoWhile { body, .. } | Op::Repeat { body, .. } => {
+                if let Some(unsupported) = first_non_liftable_instruction(body) {
+                    return Some(unsupported);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn estimated_hir_operation_count(block: &Block) -> usize {
+    estimated_block_hir_operation_count(block, LINT_ESTIMATED_HIR_OP_LIMIT.saturating_add(1))
+}
+
+fn estimated_block_hir_operation_count(block: &Block, cap: usize) -> usize {
+    let mut total = 0usize;
+    for op in block.iter() {
+        total = total.saturating_add(estimated_op_hir_operation_count(op, cap));
+        if total >= cap {
+            return cap;
+        }
+    }
+    total
+}
+
+fn estimated_op_hir_operation_count(op: &Op, cap: usize) -> usize {
+    match op {
+        Op::Inst(_) => 4,
+        Op::If {
+            then_blk, else_blk, ..
+        } => 1usize
+            .saturating_add(estimated_block_hir_operation_count(then_blk, cap))
+            .saturating_add(estimated_block_hir_operation_count(else_blk, cap))
+            .min(cap),
+        Op::While { body, .. } | Op::DoWhile { body, .. } => {
+            1usize.saturating_add(estimated_block_hir_operation_count(body, cap)).min(cap)
+        }
+        Op::Repeat { count, body, .. } => match count {
+            Immediate::Value(count) => estimated_block_hir_operation_count(body, cap)
+                .saturating_mul(count.into_inner() as usize)
+                .min(cap),
+            Immediate::Constant(_) => {
+                1usize.saturating_add(estimated_block_hir_operation_count(body, cap)).min(cap)
+            }
+        },
+    }
+}
+
 fn masm_module_symbol_path(path: &ast::Path) -> SymbolPath {
     let path = path.as_str().strip_prefix("::").unwrap_or(path.as_str());
     SymbolPath::from_masm_module_id(path)
@@ -449,6 +780,15 @@ impl<'a> ProcedureLifter<'a> {
                 "procedure '{}' leaves {} extra value(s) on the stack",
                 self.procedure.name(),
                 self.stack.len()
+            )));
+        }
+        if results.len() > u8::MAX as usize {
+            return Err(Report::msg(format!(
+                "procedure '{}::{}' returns {} value(s), exceeding the HIR operand limit of {}",
+                self.registry.linker[self.item.module].path(),
+                self.procedure.name(),
+                results.len(),
+                u8::MAX
             )));
         }
         builder.ret(results, self.procedure.span())?;
@@ -1131,6 +1471,16 @@ impl<'a> ProcedureLifter<'a> {
             Exp => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
                 builder.exp(lhs, rhs, span)
             }),
+            ExpBitLength(32) => {
+                let exponent = self.pop(span)?;
+                let base = self.pop(span)?;
+                let base = self.cast(builder, base.value, Type::Felt, span)?;
+                let exponent = self.cast(builder, exponent.value, Type::U32, span)?;
+                let exponent = self.cast(builder, exponent, Type::Felt, span)?;
+                let result = builder.exp_u32_exponent(base, exponent, span)?;
+                self.push_value(result, span);
+                Ok(())
+            }
             ExpImm(value) => {
                 self.felt_binary_imm(builder, value, span, |builder, lhs, rhs, span| {
                     builder.exp(lhs, rhs, span)
@@ -2521,9 +2871,7 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn pop(&mut self, span: SourceSpan) -> Result<StackValue> {
-        self.stack
-            .pop()
-            .ok_or_else(|| Report::msg(format!("stack underflow at {span:?}")))
+        self.stack.pop().ok_or_else(|| self.stack_underflow(span))
     }
 
     fn pop_binary(&mut self, span: SourceSpan) -> Result<(StackValue, StackValue)> {
@@ -2540,15 +2888,15 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn dup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::dup(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::dup(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn dup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::dup_word(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::dup_word(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn swap(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::swap(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::swap(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn swap_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2561,11 +2909,11 @@ impl<'a> ProcedureLifter<'a> {
 
     fn swap_chunks(&mut self, chunk_len: usize, depth: usize, span: SourceSpan) -> Result<()> {
         masm_stack::swap_chunks(&mut self.stack, chunk_len, depth)
-            .ok_or_else(|| stack_underflow(span))
+            .ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movup(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::movup(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::movup(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movup_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2579,11 +2927,11 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
     ) -> Result<()> {
         masm_stack::move_chunk_to_top(&mut self.stack, chunk_len, depth)
-            .ok_or_else(|| stack_underflow(span))
+            .ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movdn(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
-        masm_stack::movdn(&mut self.stack, depth).ok_or_else(|| stack_underflow(span))
+        masm_stack::movdn(&mut self.stack, depth).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn movdn_word(&mut self, depth: usize, span: SourceSpan) -> Result<()> {
@@ -2597,15 +2945,15 @@ impl<'a> ProcedureLifter<'a> {
         span: SourceSpan,
     ) -> Result<()> {
         masm_stack::move_top_chunk_down(&mut self.stack, chunk_len, depth)
-            .ok_or_else(|| stack_underflow(span))
+            .ok_or_else(|| self.stack_underflow(span))
     }
 
     fn reverse_word(&mut self, span: SourceSpan) -> Result<()> {
-        masm_stack::reverse_n(&mut self.stack, 4).ok_or_else(|| stack_underflow(span))
+        masm_stack::reverse_n(&mut self.stack, 4).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn reverse_double_word(&mut self, span: SourceSpan) -> Result<()> {
-        masm_stack::reverse_n(&mut self.stack, 8).ok_or_else(|| stack_underflow(span))
+        masm_stack::reverse_n(&mut self.stack, 8).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn pop_word(&mut self, span: SourceSpan) -> Result<Vec<StackValue>> {
@@ -2649,14 +2997,30 @@ impl<'a> ProcedureLifter<'a> {
     }
 
     fn pop_chunk(&mut self, chunk_len: usize, span: SourceSpan) -> Result<Vec<StackValue>> {
-        masm_stack::pop_chunk(&mut self.stack, chunk_len).ok_or_else(|| stack_underflow(span))
+        masm_stack::pop_chunk(&mut self.stack, chunk_len).ok_or_else(|| self.stack_underflow(span))
     }
 
     fn require_depth(&self, depth: usize, span: SourceSpan) -> Result<()> {
         if self.stack.len() <= depth {
-            Err(stack_underflow(span))
+            Err(self.stack_underflow(span))
         } else {
             Ok(())
+        }
+    }
+
+    fn stack_underflow(&self, span: SourceSpan) -> Report {
+        Report::msg(format!(
+            "stack underflow in '{}::{}' at {}",
+            self.registry.linker[self.item.module].path(),
+            self.procedure.name(),
+            self.format_span(span)
+        ))
+    }
+
+    fn format_span(&self, span: SourceSpan) -> String {
+        match self.registry.context.session().source_manager.file_line_col(span) {
+            Ok(location) => format!("{location}"),
+            Err(_) => format!("{span:?}"),
         }
     }
 }
@@ -2749,10 +3113,6 @@ fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {
     Err(Report::msg(format!(
         "MASM instruction {inst:?} is not supported during disassembly at {span:?}"
     )))
-}
-
-fn stack_underflow(span: SourceSpan) -> miden_assembly_syntax::diagnostics::Report {
-    Report::msg(format!("stack underflow at {span:?}"))
 }
 
 fn immediate_u32(immediate: &Immediate<u32>) -> Result<u32> {

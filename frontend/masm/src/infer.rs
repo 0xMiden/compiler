@@ -6,7 +6,7 @@ use miden_assembly::{
 };
 use miden_assembly_syntax::{
     ast::{Block, Immediate, Instruction, InvocationTarget, Op, Procedure, SymbolResolution},
-    debuginfo::{SourceManager, SourceSpan},
+    debuginfo::{SourceManager, SourceSpan, Spanned},
     parser::{IntValue, PushValue, WordValue},
 };
 use midenc_hir::{
@@ -38,6 +38,67 @@ pub(crate) fn infer_signature(
     let results = state.stack.iter().rev().map(AbstractValue::ty_or_felt);
 
     Ok(Signature::with_convention(context, CallConv::Fast, params, results))
+}
+
+pub(crate) fn validate_declared_signature(
+    gid: GlobalItemIndex,
+    procedure: &Procedure,
+    context: &Rc<Context>,
+    linker: &Linker,
+    signatures: &FxHashMap<GlobalItemIndex, Signature>,
+    signature: &Signature,
+) -> Result<()> {
+    let mut state = InferState::new(gid, context, linker, signatures);
+    state.stack = signature
+        .params()
+        .iter()
+        .rev()
+        .map(|param| AbstractValue::typed(param.ty.clone(), procedure.span()))
+        .collect();
+    state.infer_block(procedure.body())?;
+
+    if !state.inputs.is_empty() {
+        return Err(Report::msg(format!(
+            "declared signature for '{}::{}' requires {} undeclared input value(s); stack \
+             underflow at {}",
+            linker[gid.module].path(),
+            procedure.name(),
+            state.inputs.len(),
+            state.format_span(procedure.span())
+        )));
+    }
+
+    let expected_results = signature.results().len();
+    if state.stack.len() < expected_results {
+        return Err(Report::msg(format!(
+            "declared signature for '{}::{}' expects {} result value(s), but the body leaves only \
+             {}; stack underflow at {}",
+            linker[gid.module].path(),
+            procedure.name(),
+            expected_results,
+            state.stack.len(),
+            state.format_span(procedure.span())
+        )));
+    }
+
+    for result in signature.results() {
+        let value = state
+            .stack
+            .pop()
+            .expect("declared signature result count was checked before popping");
+        value.constrain(result.ty.clone(), procedure.span());
+    }
+
+    if !state.stack.is_empty() {
+        return Err(Report::msg(format!(
+            "declared signature for '{}::{}' leaves {} extra value(s) on the stack",
+            linker[gid.module].path(),
+            procedure.name(),
+            state.stack.len()
+        )));
+    }
+
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -312,6 +373,12 @@ impl<'a> InferState<'a> {
             }
             Exp => {
                 self.pop_with_type(Type::Felt, span)?;
+                self.pop_with_type(Type::Felt, span)?;
+                self.push(Type::Felt);
+                Ok(())
+            }
+            ExpBitLength(32) => {
+                self.pop_with_type(Type::U32, span)?;
                 self.pop_with_type(Type::Felt, span)?;
                 self.push(Type::Felt);
                 Ok(())
@@ -639,7 +706,8 @@ impl<'a> InferState<'a> {
 
         if then_state.stack.len() != else_state.stack.len() {
             return Err(Report::msg(format!(
-                "if branches leave different inferred stack depths at {span:?}: then={}, else={}",
+                "if branches leave different inferred stack depths at {}: then={}, else={}",
+                self.format_span(span),
                 then_state.stack.len(),
                 else_state.stack.len()
             )));
@@ -673,8 +741,9 @@ impl<'a> InferState<'a> {
         let expected = inputs.len() + base_stack.len() + 1;
         if body_state.stack.len() != expected {
             return Err(Report::msg(format!(
-                "while body must leave {expected} inferred value(s) for the next iteration at \
-                 {span:?}, but left {}",
+                "while body must leave {expected} inferred value(s) for the next iteration at {}, \
+                 but left {}",
+                self.format_span(span),
                 body_state.stack.len()
             )));
         }
@@ -698,6 +767,13 @@ impl<'a> InferState<'a> {
         }
         self.push(Type::Felt);
         Ok(())
+    }
+
+    fn format_span(&self, span: SourceSpan) -> String {
+        match self.source_manager.file_line_col(span) {
+            Ok(location) => format!("{location}"),
+            Err(_) => format!("{span:?}"),
+        }
     }
 
     fn ext2_binary(&mut self, span: SourceSpan) -> Result<()> {
