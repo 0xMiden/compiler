@@ -107,15 +107,13 @@ mod tests {
         for (num_inputs, expected_padding) in [(0usize, 16usize), (1, 15), (10, 6), (15, 1)] {
             let output = emit_exec_fpi(num_inputs)?.to_pretty_string();
 
-            // Each prefix local load contributes one `push.0` for its element pointer offset, in
-            // addition to one `push.0` per padded input slot.
+            // One `push.0` per padded input slot (the prefix local loads are direct
+            // `locaddr`/`mem_load` pairs and push nothing else).
             assert_eq!(
                 output.matches("push.0").count(),
-                expected_padding + 6,
+                expected_padding,
                 "unexpected padding for {num_inputs} inputs:\n{output}"
             );
-            // `swap.1` (the one-input shuffle) is ambiguous with the pointer setup emitted by the
-            // prefix local loads, so only the multi-input `movdn.n` shuffles are counted.
             if num_inputs >= 2 {
                 let shuffle = format!("movdn.{num_inputs}");
                 assert_eq!(
@@ -125,7 +123,7 @@ mod tests {
                 );
             }
             assert_eq!(
-                output.matches("exec.::intrinsics::mem::load_felt").count(),
+                output.matches("mem_load").count(),
                 6,
                 "exec_fpi must load all six prefix locals:\n{output}"
             );
@@ -154,10 +152,10 @@ mod tests {
     fn exec_fpi_full_width_inputs_need_no_padding() -> Result<(), Report> {
         let output = emit_exec_fpi(16)?.to_pretty_string();
 
-        // Only the six prefix local loads may push zeroes (their element pointer offsets).
+        // The prefix local loads are direct `locaddr`/`mem_load` pairs, so nothing pushes zeroes.
         assert_eq!(
             output.matches("push.0").count(),
-            6,
+            0,
             "full-width exec_fpi inputs must not be padded:\n{output}"
         );
         assert!(
