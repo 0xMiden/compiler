@@ -133,13 +133,13 @@ pub struct BatchMemory {
     /// VALUE word doubles as the second half of the `(nullifier, note_id_or_empty)` tuple hashed
     /// into `INPUT_NOTES_COMMITMENT`.
     pub input_notes: Vec<Felt>,
-    /// Parallel flags for `input_notes` ([`INPUT_FLAGS_STRIDE`] felts per entry).
-    pub input_note_flags: Vec<Felt>,
     /// The note-id-sorted output-note list: 8-felt `[KEY, VALUE]` entries where KEY is the note
     /// id; the VALUE word is unused.
     pub output_notes: Vec<Felt>,
-    /// Parallel flags for `output_notes` ([`OUTPUT_FLAGS_STRIDE`] felts per entry).
-    pub output_note_flags: Vec<Felt>,
+    /// The parallel note flags, in one buffer: the input-note flags
+    /// ([`INPUT_FLAGS_STRIDE`] felts per entry) followed by the output-note flags
+    /// ([`OUTPUT_FLAGS_STRIDE`] felts per entry) starting at `num_input_notes * INPUT_FLAGS_STRIDE`.
+    pub note_flags: Vec<Felt>,
     /// The running minimum of the transactions' expiration block numbers.
     pub batch_expiration_block_num: Felt,
 }
@@ -175,64 +175,74 @@ impl BatchMemory {
         word_at(&self.tx_headers, tx_index * TX_HEADER_FELT_LEN + 12)
     }
 
+    /// Returns the offset of the output-note flags within the shared flag buffer.
+    #[inline(always)]
+    fn output_flags_base(&self) -> usize {
+        self.num_input_notes() * INPUT_FLAGS_STRIDE
+    }
+
     /// Returns input-note entry `index`'s `erasure` flag.
     #[inline(always)]
     pub fn input_note_erasure(&self, index: usize) -> Felt {
-        self.input_note_flags[index * INPUT_FLAGS_STRIDE]
+        self.note_flags[index * INPUT_FLAGS_STRIDE]
     }
 
     /// Sets input-note entry `index`'s `erasure` flag.
     #[inline(always)]
     pub fn set_input_note_erasure(&mut self, index: usize, value: Felt) {
-        self.input_note_flags[index * INPUT_FLAGS_STRIDE] = value;
+        self.note_flags[index * INPUT_FLAGS_STRIDE] = value;
     }
 
     /// Returns input-note entry `index`'s `consumed` flag.
     #[inline(always)]
     pub fn input_note_consumed(&self, index: usize) -> Felt {
-        self.input_note_flags[index * INPUT_FLAGS_STRIDE + 1]
+        self.note_flags[index * INPUT_FLAGS_STRIDE + 1]
     }
 
     /// Sets input-note entry `index`'s `consumed` flag.
     #[inline(always)]
     pub fn set_input_note_consumed(&mut self, index: usize, value: Felt) {
-        self.input_note_flags[index * INPUT_FLAGS_STRIDE + 1] = value;
+        self.note_flags[index * INPUT_FLAGS_STRIDE + 1] = value;
     }
 
     /// Returns output-note entry `index`'s `will_be_erased` flag.
     #[inline(always)]
     pub fn output_note_will_be_erased(&self, index: usize) -> Felt {
-        self.output_note_flags[index * OUTPUT_FLAGS_STRIDE]
+        self.note_flags[self.output_flags_base() + index * OUTPUT_FLAGS_STRIDE]
     }
 
     /// Sets output-note entry `index`'s `will_be_erased` flag.
     #[inline(always)]
     pub fn set_output_note_will_be_erased(&mut self, index: usize, value: Felt) {
-        self.output_note_flags[index * OUTPUT_FLAGS_STRIDE] = value;
+        let base = self.output_flags_base();
+        self.note_flags[base + index * OUTPUT_FLAGS_STRIDE] = value;
     }
 
     /// Returns output-note entry `index`'s `is_created` flag.
     #[inline(always)]
     pub fn output_note_created(&self, index: usize) -> Felt {
-        self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 1]
+        self.note_flags[self.output_flags_base() + index * OUTPUT_FLAGS_STRIDE + 1]
     }
 
     /// Sets output-note entry `index`'s `is_created` flag.
     #[inline(always)]
     pub fn set_output_note_created(&mut self, index: usize, value: Felt) {
-        self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 1] = value;
+        let base = self.output_flags_base();
+        self.note_flags[base + index * OUTPUT_FLAGS_STRIDE + 1] = value;
     }
 
     /// Returns the input-note list index linked to output-note entry `index`. Meaningful only
     /// when the entry's `will_be_erased` flag is set (which implies the link was written).
     #[inline(always)]
     pub fn output_note_linked_input(&self, index: usize) -> usize {
-        self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 2].as_canonical_u64() as usize
+        self.note_flags[self.output_flags_base() + index * OUTPUT_FLAGS_STRIDE + 2]
+            .as_canonical_u64() as usize
     }
 
     /// Links output-note entry `index` to input-note list entry `input_index`.
     #[inline(always)]
     pub fn set_output_note_linked_input(&mut self, index: usize, input_index: usize) {
-        self.output_note_flags[index * OUTPUT_FLAGS_STRIDE + 2] = Felt::from(input_index as u32);
+        let base = self.output_flags_base();
+        self.note_flags[base + index * OUTPUT_FLAGS_STRIDE + 2] = Felt::from(input_index as u32);
     }
 }
