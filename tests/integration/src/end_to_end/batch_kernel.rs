@@ -276,7 +276,7 @@ fn batch_kernel() {
     let program = package.unwrap_program();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["148319"].assert_eq(stripped_mast_size_str(&package));
+    expect!["160697"].assert_eq(stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -329,7 +329,7 @@ fn batch_kernel() {
         let (trace, cycles) = execute(&transactions, build_advice_inputs(&transactions));
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["94090"].assert_eq(&cycles.to_string());
+        expect!["86894"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -454,4 +454,3 @@ fn read_word(trace: &miden_debug::ExecutionTrace, byte_addr: u32) -> Word {
         .unwrap_or_else(|| panic!("failed to read output word at {byte_addr:#x}"));
     Word::from([felts[0].0, felts[1].0, felts[2].0, felts[3].0])
 }
-
