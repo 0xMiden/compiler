@@ -123,25 +123,29 @@ unsafe extern "C" {
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "intrinsics::note::script_root"]
-    fn extern_note_script_root(ptr: *mut Word);
+    fn extern_note_script_root(entrypoint_fn_ref: usize, ptr: *mut Word);
 }
 
-/// Returns the MAST root digest of the note script defined by the current crate.
+/// Returns the MAST root digest of the note script whose entrypoint is referenced by
+/// `entrypoint_fn_ref` (a Rust function reference to the crate's `#[note_script]` entrypoint,
+/// cast to `usize`).
 ///
 /// Macro plumbing behind the `get_entrypoint_root()` associated method that `#[note]` generates
 /// on the note input type — call that method instead of this function. It lives here because
 /// the underlying weak extern requires `feature(linkage)`, which user crates do not enable.
 ///
-/// This is a compiler intrinsic: the call compiles to a MASM `procref` of the crate's
-/// `#[note_script]` entrypoint export, so the digest is the note script root observed by the
-/// transaction kernel when the note is executed. The digest is computed at assembly time.
+/// The compiler resolves the reference to its function-table slot and repoints the slot at the
+/// note-script export, so the returned word is the note script root observed by the transaction
+/// kernel; the digest itself is resolved at assembly time via `procref`.
 ///
-/// Compilation fails if the current project does not define a `#[note_script]` entrypoint.
+/// Compilation fails if the current project does not define a `#[note_script]` entrypoint, or if
+/// `entrypoint_fn_ref` is not a compile-time constant function reference.
 #[doc(hidden)]
-pub fn __entrypoint_root() -> Word {
+#[inline(always)]
+pub fn __entrypoint_root_from_fn_ref(entrypoint_fn_ref: usize) -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
-        extern_note_script_root(ret_area.as_mut_ptr());
+        extern_note_script_root(entrypoint_fn_ref, ret_area.as_mut_ptr());
         ret_area.assume_init()
     }
 }

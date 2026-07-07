@@ -30,7 +30,7 @@ use wasmparser::{MemArg, Operator};
 use crate::{
     callable::CallableFunction,
     error::WasmResult,
-    intrinsics::convert_intrinsics_call,
+    intrinsics::{Intrinsic, convert_intrinsics_call, note::convert_note_intrinsics_call},
     module::{
         Module,
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
@@ -211,6 +211,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
                 state,
                 module_state,
                 builder,
+                module,
                 FuncIndex::from_u32(*function_index),
                 span,
                 diagnostics,
@@ -843,9 +844,10 @@ fn translate_call<B: ?Sized + Builder>(
     func_state: &mut FuncTranslationState,
     module_state: &mut ModuleTranslationState,
     builder: &mut FunctionBuilderExt<'_, B>,
+    module: &Module,
     function_index: FuncIndex,
     span: SourceSpan,
-    _diagnostics: &DiagnosticsHandler,
+    diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     match module_state.get_direct_func(function_index)? {
         CallableFunction::Instruction {
@@ -854,7 +856,21 @@ fn translate_call<B: ?Sized + Builder>(
         } => {
             let arity = signature.arity();
             let args = func_state.peekn(arity);
-            let results = convert_intrinsics_call(intrinsic, None, args, builder, span)?;
+            // Note intrinsics require module context (function tables and frontend metadata)
+            // that the generic conversion entry point does not carry
+            let results = if let Intrinsic::Note(function) = intrinsic {
+                convert_note_intrinsics_call(
+                    function,
+                    args,
+                    module,
+                    module_state,
+                    builder,
+                    span,
+                    diagnostics,
+                )?
+            } else {
+                convert_intrinsics_call(intrinsic, None, args, builder, span)?
+            };
             func_state.popn(arity);
             func_state.pushn(&results);
         }

@@ -188,6 +188,25 @@ pub struct FunctionTableEntry {
     callee: SymbolPath,
 }
 
+impl FunctionTableEntry {
+    /// Marker attribute recording that this slot names the note script of the enclosing
+    /// component.
+    ///
+    /// The Wasm frontend marks the slot denoted by the entrypoint function reference inside the
+    /// note SDK's `get_entrypoint_root()`; the referenced function is only a placeholder, because
+    /// the note-script export wrapper does not exist until component exports are lifted. Export
+    /// lifting repoints marked entries at the lifted note-script export, and codegen refuses to
+    /// lower a `hir.function_table_root` of a marked slot whose callee does not carry the
+    /// `note_script` attribute.
+    ///
+    /// Marked slots are exempt from startup initialization (their in-memory word stays zero,
+    /// like a null slot): the note-script export's canonical-ABI wrapper `exec`s the component
+    /// `init` procedure, so a `procref` of it from `init` would make the two MAST roots
+    /// circularly dependent. The root is instead materialized inline where it is read, via
+    /// `hir.function_table_root`.
+    pub const NOTE_SCRIPT_ROOT_SLOT_ATTR: &'static str = "note_script_root_slot";
+}
+
 impl OpPrinter for FunctionTableEntry {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         use crate::formatter::*;
@@ -197,6 +216,15 @@ impl OpPrinter for FunctionTableEntry {
         printer.print_space();
         let callee = self.callee();
         printer.print_symbol_path(callee.path());
+        // Marker attributes (e.g. the note-script-root slot marker) are semantically
+        // load-bearing, so they must survive textual round trips
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
     }
 }
 
@@ -210,6 +238,8 @@ impl OpParser for FunctionTableEntry {
 
         let callee = parser.parse_symbol_ref()?;
         state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         Ok(())
     }

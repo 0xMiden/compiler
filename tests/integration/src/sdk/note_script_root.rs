@@ -3,9 +3,9 @@
 //! Executes a note constructor that returns `Self::get_entrypoint_root()` verbatim and asserts
 //! the returned digest equals the note script root selected from the compiled package by
 //! `NoteScript::from_package` — i.e. the root the transaction kernel executes. This pins the
-//! whole intrinsic pipeline (linker stub → `hir.procedure_root` → retarget at export lifting →
-//! MASM `procref`) at the exact layer it can break, independently of the heavier mock-chain
-//! note-creation flow.
+//! whole mechanism (entrypoint function reference → function-table slot → retarget at export
+//! lifting → `procref` at the read site) at the exact layer it can break, independently of the
+//! heavier mock-chain note-creation flow.
 
 use miden_core::program::Program;
 use miden_mast_package::{Package, PackageExport};

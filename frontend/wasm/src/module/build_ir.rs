@@ -79,6 +79,7 @@ pub fn translate_module_as_component(
         &mut world_builder,
         &module_types,
         FxHashMap::default(),
+        parsed_module.component_frontend_metadata.clone(),
         context.diagnostics(),
     )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
@@ -206,14 +207,9 @@ pub fn build_ir_module(
                 panic!("cannot build {func_name} function, since it is not defined in the module.")
             });
 
-        // If this is a linker stub that needs a synthesized body (function-type intrinsics,
-        // module-context stubs, or Miden ABI calls), handle it here.
-        if maybe_lower_linker_stub(
-            function_ref,
-            &body_data.body,
-            module_state,
-            parsed_module.component_frontend_metadata.as_ref(),
-        )? {
+        // If this is a linker stub that needs a synthesized body (function-type intrinsics
+        // or Miden ABI calls), handle it here.
+        if maybe_lower_linker_stub(function_ref, &body_data.body, module_state)? {
             continue;
         }
 

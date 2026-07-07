@@ -677,6 +677,7 @@ impl<'a> ComponentTranslator<'a> {
                     &mut self.world_builder,
                     module_types,
                     import_canon_lower_args,
+                    parsed_module.component_frontend_metadata.clone(),
                     self.context.diagnostics(),
                 )?;
 

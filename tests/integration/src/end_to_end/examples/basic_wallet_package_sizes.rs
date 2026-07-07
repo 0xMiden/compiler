@@ -37,7 +37,7 @@ fn basic_wallet_and_p2id() {
     );
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    expect!["26542"].assert_eq(stripped_mast_size_str(&note_package));
+    expect!["26338"].assert_eq(stripped_mast_size_str(&note_package));
     // The note package exports both the note script and the `create` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(

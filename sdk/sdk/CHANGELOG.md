@@ -9,10 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `#[note]` impl blocks generate a `get_entrypoint_root()` associated method on the note type,
   returning the MAST root digest of the note script defined by the current crate (the
-  `#[note_script]` entrypoint export). It is backed by a compiler intrinsic resolved at
-  assembly time, so a note constructor can build a `Recipient` committing to its own note
-  script root (e.g. via `note::build_recipient`). Compilation fails if the project defines no
-  `#[note_script]` entrypoint #786
+  `#[note_script]` entrypoint export). The method obtains the root through a Rust function
+  reference to the entrypoint method, which the compiler resolves to the compiled note-script
+  export and to a `procref` computed at assembly time, so a note constructor can build a
+  `Recipient` committing to its own note script root (e.g. via `note::build_recipient`).
+  Compilation fails if the project defines no `#[note_script]` entrypoint #786
 - `#[note_constructor]` marks a method of a `#[note]` impl block as an exported note
   constructor: it is exported through the note's WIT interface, so other Miden packages — e.g.
   transaction scripts — can declare the note package as a dependency and create the note by

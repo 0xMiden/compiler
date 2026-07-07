@@ -941,19 +941,16 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(table, signature, index, args)
     }
 
-    /// Materialize the MAST root digest of `callee` as four felt values (one word).
-    ///
-    /// The callee is referenced, not invoked; see [crate::ops::ProcedureRoot].
-    fn procedure_root<C>(
+    /// Materialize the MAST root digest of the function occupying slot `index` of `table` as
+    /// four felt values; see [crate::ops::FunctionTableRoot].
+    fn function_table_root(
         &mut self,
-        callee: C,
+        table: FunctionTableRef,
+        index: u32,
         span: SourceSpan,
-    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ProcedureRoot>, Report>
-    where
-        C: AsCallableSymbolRef,
-    {
-        let op_builder = self.builder_mut().create::<crate::ops::ProcedureRoot, (C,)>(span);
-        op_builder(callee)
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::FunctionTableRoot>, Report> {
+        let op_builder = self.builder_mut().create::<crate::ops::FunctionTableRoot, (_, _)>(span);
+        op_builder(table, index)
     }
 
     /// Invoke a foreign account procedure via the transaction kernel FPI executor.

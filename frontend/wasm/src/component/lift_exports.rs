@@ -127,7 +127,7 @@ pub fn generate_export_lifting_function(
 
     annotate_protocol_export(export_func_ref, protocol_export_kind);
     if matches!(protocol_export_kind, Some(ProtocolExportKind::NoteScript)) {
-        retarget_note_script_root_ops(&core_module_builder, export_func_ref);
+        retarget_note_script_root_slots(&core_module_builder, export_func_ref);
     }
 
     Ok(())
@@ -442,50 +442,62 @@ fn annotate_protocol_export(
     }
 }
 
-/// Repoints the note intrinsic's `hir.procedure_root` ops at the lifted note-script export.
+/// Repoints marked function-table slots at the lifted note-script export.
 ///
-/// The `script_root` intrinsic stub builds its op against a placeholder callee (the stub itself)
+/// The note SDK's `get_entrypoint_root()` takes a Rust function reference to the note-script
+/// entrypoint; the frontend resolves the reference to a function-table slot, marks that slot's
+/// entry (see [`FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR`]), and materializes the slot's
+/// MAST root via `hir.function_table_root`. The referenced function is only a placeholder,
 /// because the lifted export does not exist during core-module translation. The lifted wrapper —
 /// not the core function — is the procedure the transaction kernel executes as the note script,
-/// so its MAST root is the note script root that `get_entrypoint_root()` must observe.
+/// so its MAST root is the digest the marked slot must deliver; repointing the entry makes the
+/// `procref` the read site emits resolve the wrapper's root.
 ///
-/// Only ops carrying [`midenc_dialect_hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR`] are repointed;
-/// codegen refuses to lower a marked op whose callee does not carry the `note_script` attribute,
-/// so a missed retarget surfaces as a compile error rather than a wrong digest.
-fn retarget_note_script_root_ops(
+/// Only entries carrying the marker are repointed; codegen refuses to lower a
+/// `hir.function_table_root` of a marked slot whose callee does not carry the `note_script`
+/// attribute, so a missed retarget surfaces as a compile error rather than a wrong digest.
+fn retarget_note_script_root_slots(
     core_module_builder: &ModuleBuilder,
     lifted_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
 ) {
-    use midenc_dialect_hir::ProcedureRoot;
-    use midenc_hir::Usable;
+    use midenc_hir::dialects::builtin::{FunctionTable, FunctionTableEntry};
 
-    // The stub is absent when nothing in the module calls `get_entrypoint_root()`
-    let Some(stub_func_ref) =
-        core_module_builder.get_function(crate::intrinsics::note::SCRIPT_ROOT_STUB_NAME)
-    else {
-        return;
-    };
-
-    // Collect first: retargeting unlinks the use from the stub's use list. The stub's other
-    // uses are the ordinary calls from the SDK binding, which must not be retargeted.
-    let users: SmallVec<[midenc_hir::OperationRef; 2]> =
-        stub_func_ref.borrow().iter_uses().map(|symbol_use| symbol_use.owner).collect();
-
-    for mut owner in users {
-        let mut op = owner.borrow_mut();
-        let Some(procedure_root) = op.downcast_mut::<ProcedureRoot>() else {
-            continue;
+    // Collect first: iterating the module and entries regions holds borrows of the visited ops
+    let mut marked_entries: SmallVec<[midenc_hir::OperationRef; 2]> = SmallVec::new();
+    {
+        let module = core_module_builder.module.borrow();
+        let body = module.body();
+        let Some(module_block) = body.entry_block_ref() else {
+            return;
         };
-        if procedure_root
-            .as_operation()
-            .get_attribute(ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR)
-            .is_none()
-        {
-            continue;
+        let module_block = module_block.borrow();
+        for op in module_block.body() {
+            let Some(table) = op.downcast_ref::<FunctionTable>() else {
+                continue;
+            };
+            let entries = table.entries();
+            let entries_block = entries.entry();
+            for entry_op in entries_block.body() {
+                if entry_op.downcast_ref::<FunctionTableEntry>().is_some_and(|entry| {
+                    entry
+                        .as_operation()
+                        .get_attribute(FunctionTableEntry::NOTE_SCRIPT_ROOT_SLOT_ATTR)
+                        .is_some()
+                }) {
+                    marked_entries.push(entry_op.as_operation_ref());
+                }
+            }
         }
-        procedure_root
+    }
+
+    for mut entry_ref in marked_entries {
+        let mut op = entry_ref.borrow_mut();
+        let entry = op
+            .downcast_mut::<FunctionTableEntry>()
+            .expect("marked entries are function table entries");
+        entry
             .set_callee(lifted_export_func_ref)
-            .expect("failed to repoint hir.procedure_root at the lifted note-script export");
+            .expect("failed to repoint the note-script-root slot at the lifted export");
     }
 }
 
