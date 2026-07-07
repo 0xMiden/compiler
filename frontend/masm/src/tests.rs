@@ -177,7 +177,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     );
@@ -1004,7 +1003,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1034,7 +1032,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1061,7 +1058,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1095,7 +1091,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1142,7 +1137,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1186,7 +1180,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1225,7 +1218,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1274,7 +1266,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1306,7 +1297,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1335,7 +1325,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1378,7 +1367,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1476,7 +1464,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1512,7 +1499,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1538,7 +1524,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1566,7 +1551,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1596,7 +1580,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1623,7 +1606,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1668,7 +1650,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1714,7 +1695,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1746,7 +1726,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1804,7 +1783,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1864,7 +1842,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1920,7 +1897,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -1976,7 +1952,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     )?;
@@ -2072,7 +2047,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         &external_signatures,
         context,
@@ -2242,7 +2216,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         &external_signatures,
         context,
@@ -3195,7 +3168,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     ) {
@@ -4565,7 +4537,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         &external_signatures,
         context,
@@ -4607,7 +4578,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         &external_signatures,
         context,
@@ -5374,7 +5344,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     );
@@ -5429,7 +5398,6 @@ end
         "test",
         &DisassemblerConfig {
             infer_missing_signatures: true,
-            ..Default::default()
         },
         context,
     );
@@ -5497,9 +5465,7 @@ pub proc bad(cond: i1) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5527,9 +5493,7 @@ pub proc bad(value: felt) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5558,9 +5522,7 @@ pub proc bad(value: felt) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5590,9 +5552,7 @@ pub proc bad() -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5617,9 +5577,7 @@ pub proc id(value: felt) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5738,9 +5696,7 @@ pub proc dynamic(value: felt) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5770,9 +5726,7 @@ pub proc exp_u8(base: felt, exponent: u32) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5806,9 +5760,7 @@ pub proc capture() -> [felt; 4]
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5899,9 +5851,7 @@ pub proc huge(value: felt) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 
@@ -5944,9 +5894,7 @@ pub proc wide(value: word, other: word, extra: felt) -> felt
 end
 "#,
         "test",
-        &DisassemblerConfig {
-            ..Default::default()
-        },
+        &DisassemblerConfig::default(),
         context,
     )?;
 

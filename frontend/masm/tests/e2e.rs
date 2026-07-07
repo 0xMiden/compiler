@@ -313,10 +313,9 @@ fn roundtrip_to_masm_component(
 
     let analysis_manager = AnalysisManager::new(disassembled.world.as_operation_ref(), None);
     let world = disassembled.world.borrow();
-    let masm_component = world
+    world
         .to_masm_component(analysis_manager)
-        .expect("HIR should lower back to MASM");
-    masm_component
+        .expect("HIR should lower back to MASM")
 }
 
 fn execute_program(
