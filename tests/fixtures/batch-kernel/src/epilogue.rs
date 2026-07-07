@@ -20,7 +20,7 @@ use crate::memory::{self, BatchMemory, NOTE_ENTRY_FELT_LEN, erasure_erased, eras
 ///
 /// The matching input-note checks (every entry consumed exactly once, none left pending-erasure)
 /// are folded into the single pass in [`compute_input_notes_commitment`].
-#[inline]
+#[inline(always)]
 fn assert_all_output_notes_created(memory: &BatchMemory) {
     for index in 0..memory.output_notes.len() / NOTE_ENTRY_FELT_LEN {
         assert!(
@@ -46,7 +46,7 @@ fn assert_all_output_notes_created(memory: &BatchMemory) {
 /// case (which is why this takes `BatchMemory` by value), and only batches with erased notes
 /// collect the surviving entries into a fresh buffer first. Both produce the same sequential
 /// hash (matching `Hasher::hash_elements`).
-#[inline]
+#[inline(always)]
 fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
     let num_notes = memory.num_input_notes();
     let mut num_erased = 0;
@@ -97,7 +97,7 @@ fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
 /// Placeholder: returns the empty word until the batch note tree is wired up.
 ///
 /// TODO: hash the batch's output notes into the batch note tree (SMT) root.
-#[inline]
+#[inline(always)]
 fn compute_output_notes_commitment(_memory: &BatchMemory) -> Word {
     Word::empty()
 }
@@ -115,7 +115,7 @@ fn compute_output_notes_commitment(_memory: &BatchMemory) -> Word {
 ///
 /// TODO: authenticate unauthenticated, non-erased input notes against BLOCK_COMMITMENT's chain
 ///       MMR.
-#[inline]
+#[inline(always)]
 pub fn finalize(memory: BatchMemory) -> (Word, Word) {
     assert_all_output_notes_created(&memory);
     let output_notes_commitment = compute_output_notes_commitment(&memory);

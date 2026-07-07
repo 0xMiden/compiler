@@ -27,7 +27,7 @@ use crate::{
 /// word hash of the domain message `miden::batch_kernel::input_note_list` (the MASM kernel
 /// evaluates `word("miden::batch_kernel::input_note_list")` at assembly time; the value below is
 /// `miden_core::utils::hash_string_to_word` of the same message).
-#[inline]
+#[inline(always)]
 fn input_note_list_key() -> Word {
     Word::from([
         felt!(0x643bd4845322a3ce_u64),
@@ -39,7 +39,7 @@ fn input_note_list_key() -> Word {
 
 /// Advice-map key under which the note-id-sorted output-note list is provided: the word hash of
 /// the domain message `miden::batch_kernel::output_note_list`.
-#[inline]
+#[inline(always)]
 fn output_note_list_key() -> Word {
     Word::from([
         felt!(0x3526094d3f4b4d20_u64),
@@ -55,7 +55,7 @@ fn output_note_list_key() -> Word {
 /// Pipes a sorted note list (8-felt `[KEY, VALUE]` entries) from the advice map into memory and
 /// returns it as piped. The list is not hashed against a commitment; its integrity is
 /// established later by binding every entry to a verified per-transaction note.
-#[inline]
+#[inline(always)]
 fn load_note_list(key: Word) -> Vec<Felt> {
     let len_felts = adv_push_mapvaln(key).as_canonical_u64() as usize;
     // The MASM kernel derives `num_notes` with field divisions; a length that is not a multiple
@@ -85,24 +85,20 @@ fn assert_list_strictly_sorted(list: &[Felt]) {
     }
 }
 
-/// Loads and verifies the nullifier-sorted input-note list, along with its parallel flags
-/// initialized to `[erasure = 0, consumed = 0]`.
-#[inline]
-fn prepare_input_note_list() -> (Vec<Felt>, Vec<Felt>) {
+/// Loads and verifies the nullifier-sorted input-note list.
+#[inline(always)]
+fn prepare_input_note_list() -> Vec<Felt> {
     let entries = load_note_list(input_note_list_key());
     assert_list_strictly_sorted(&entries);
-    let flags = alloc::vec![felt!(0); (entries.len() / NOTE_ENTRY_FELT_LEN) * INPUT_FLAGS_STRIDE];
-    (entries, flags)
+    entries
 }
 
-/// Loads and verifies the note-id-sorted output-note list, along with its parallel flags
-/// initialized to `[will_be_erased = 0, is_created = 0, linked_input_index = 0]`.
-#[inline]
-fn prepare_output_note_list() -> (Vec<Felt>, Vec<Felt>) {
+/// Loads and verifies the note-id-sorted output-note list.
+#[inline(always)]
+fn prepare_output_note_list() -> Vec<Felt> {
     let entries = load_note_list(output_note_list_key());
     assert_list_strictly_sorted(&entries);
-    let flags = alloc::vec![felt!(0); (entries.len() / NOTE_ENTRY_FELT_LEN) * OUTPUT_FLAGS_STRIDE];
-    (entries, flags)
+    entries
 }
 
 // TRANSACTION EXPIRATIONS
@@ -118,7 +114,7 @@ fn prepare_output_note_list() -> (Vec<Felt>, Vec<Felt>) {
 /// TODO: assert each `expiration_block_num_i > reference_block_num`.
 /// TODO: derive each `expiration_block_num_i` from data committed-to in the verified transaction
 ///       header rather than from the unverified advice stack.
-#[inline]
+#[inline(always)]
 fn load_tx_expirations(num_transactions: usize) -> Felt {
     let (_hash, data) = pipe_words_to_memory(Felt::from(num_transactions as u32));
 
@@ -159,7 +155,7 @@ fn load_tx_expirations(num_transactions: usize) -> Felt {
 ///       BLOCK_COMMITMENT.
 /// TODO: verify that the partial-blockchain peaks hash matches the block header's chain
 ///       commitment.
-#[inline]
+#[inline(always)]
 pub fn prepare_batch(batch_id: Word) -> BatchMemory {
     // Layer 1: pipe BATCH_ID's mapped value + verify.
     // ---------------------------------------------------------------------------------------------
@@ -202,8 +198,16 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
     // Note lists: load the sorted note lists and assert each is strictly sorted by its key.
     // ---------------------------------------------------------------------------------------------
 
-    let (input_notes, input_note_flags) = prepare_input_note_list();
-    let (output_notes, output_note_flags) = prepare_output_note_list();
+    let input_notes = prepare_input_note_list();
+    let output_notes = prepare_output_note_list();
+    // One shared buffer for both parallel flag arrays: the input-note flags
+    // (`[erasure = 0, consumed = 0]` per entry) followed by the output-note flags
+    // (`[will_be_erased = 0, is_created = 0, linked_input_index = 0]` per entry).
+    let note_flags = alloc::vec![
+        felt!(0);
+        (input_notes.len() / NOTE_ENTRY_FELT_LEN) * INPUT_FLAGS_STRIDE
+            + (output_notes.len() / NOTE_ENTRY_FELT_LEN) * OUTPUT_FLAGS_STRIDE
+    ];
 
     // Expirations: accumulate the running minimum of the transactions' expiration block numbers.
     // ---------------------------------------------------------------------------------------------
@@ -214,9 +218,8 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         tx_tuples,
         tx_headers,
         input_notes,
-        input_note_flags,
         output_notes,
-        output_note_flags,
+        note_flags,
         batch_expiration_block_num,
     }
 }

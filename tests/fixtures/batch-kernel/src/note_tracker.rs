@@ -79,7 +79,7 @@ fn assert_eq_word(a: &[Felt; 4], b: &[Felt; 4]) {
 /// their sequential hash equals `commitment`, and returns them as piped. The Rust counterpart of
 /// the per-transaction scratch region loads in `process_tx_input_notes` /
 /// `process_tx_output_notes`.
-#[inline]
+#[inline(always)]
 fn load_tx_note_tuples(commitment: Word) -> Vec<Felt> {
     let len_felts = adv_push_mapvaln(commitment).as_canonical_u64() as usize;
     assert!(
@@ -104,7 +104,7 @@ fn load_tx_note_tuples(commitment: Word) -> Vec<Felt> {
 ///
 /// If two input entries carry the same note id (impossible for real notes, whose nullifier is
 /// derived from the note), the second link overwrites the first and the kernel later aborts.
-#[inline]
+#[inline(always)]
 fn cross_reference_one_input(memory: &mut BatchMemory, idx: usize) {
     let note_id = memory::note_value(&memory.input_notes, idx);
     if memory::is_empty_word(note_id) {
@@ -119,7 +119,7 @@ fn cross_reference_one_input(memory: &mut BatchMemory, idx: usize) {
 
 /// Cross-references the input and output note lists to determine erasure (see
 /// [`cross_reference_one_input`]).
-#[inline]
+#[inline(always)]
 fn cross_reference_erasure(memory: &mut BatchMemory) {
     for idx in 0..memory.num_input_notes() {
         cross_reference_one_input(memory, idx);
@@ -130,7 +130,7 @@ fn cross_reference_erasure(memory: &mut BatchMemory) {
 // =================================================================================================
 
 /// Marks output-note list entry `j` as created, asserting it was not already created.
-#[inline]
+#[inline(always)]
 fn mark_output_note_created(memory: &mut BatchMemory, j: usize) {
     assert!(
         memory.output_note_created(j) == felt!(0),
@@ -141,7 +141,7 @@ fn mark_output_note_created(memory: &mut BatchMemory, j: usize) {
 
 /// Advances input-note list entry `idx`'s erasure flag from expected (1) to erased (2) — its
 /// creator output note has been processed — asserting it was expected.
-#[inline]
+#[inline(always)]
 fn flip_input_erasure_created(memory: &mut BatchMemory, idx: usize) {
     assert!(
         memory.input_note_erasure(idx) == erasure_expected(),
@@ -153,7 +153,7 @@ fn flip_input_erasure_created(memory: &mut BatchMemory, idx: usize) {
 /// Binds one per-transaction output note (a `[DETAILS_COMMITMENT, METADATA_COMMITMENT]` tuple) to
 /// the note-id-sorted output-note list: derives its note id, looks it up, marks it created, and —
 /// if it erases an input note — advances that input note's erasure flag.
-#[inline]
+#[inline(always)]
 fn bind_one_output_note(memory: &mut BatchMemory, note: &[Felt]) {
     // Derive the output note's id as merge(details_commitment, metadata_commitment).
     let details_commitment = Digest::from_word(memory::load_word(note, 0));
@@ -177,7 +177,7 @@ fn bind_one_output_note(memory: &mut BatchMemory, note: &[Felt]) {
 /// Verifies transaction `tx_index`'s `OUTPUT_NOTES_COMMITMENT_idx` against its piped
 /// `(DETAILS_COMMITMENT, METADATA_COMMITMENT)` tuples, then binds each of those notes to the
 /// batch output-note list (see [`bind_per_tx_notes`] for what binding proves).
-#[inline]
+#[inline(always)]
 fn process_tx_output_notes(memory: &mut BatchMemory, tx_index: usize) {
     if memory::is_empty_word(memory.tx_output_notes_commitment(tx_index)) {
         // Empty commitment: the transaction has no output notes, so there is nothing to bind.
@@ -195,7 +195,7 @@ fn process_tx_output_notes(memory: &mut BatchMemory, tx_index: usize) {
 // =================================================================================================
 
 /// Marks input-note list entry `idx` as consumed, asserting it was not already consumed.
-#[inline]
+#[inline(always)]
 fn mark_input_note_consumed(memory: &mut BatchMemory, idx: usize) {
     assert!(
         memory.input_note_consumed(idx) == felt!(0),
@@ -207,7 +207,7 @@ fn mark_input_note_consumed(memory: &mut BatchMemory, idx: usize) {
 /// Asserts input-note list entry `idx` is not expected-to-be-erased at the point it is consumed:
 /// if it is created in this batch, its creator has already been processed. Rejects
 /// consume-before-create / circular dependencies.
-#[inline]
+#[inline(always)]
 fn assert_input_not_consumed_before_created(memory: &BatchMemory, idx: usize) {
     assert!(
         memory.input_note_erasure(idx) != erasure_expected(),
@@ -218,7 +218,7 @@ fn assert_input_not_consumed_before_created(memory: &BatchMemory, idx: usize) {
 /// Binds one per-transaction input note (a `[NULLIFIER, NOTE_ID_OR_EMPTY]` tuple) to the
 /// nullifier-sorted input-note list: looks it up by nullifier, asserts it is present and that its
 /// note id matches, enforces the erasure ordering gate, then marks it consumed.
-#[inline]
+#[inline(always)]
 fn bind_one_input_note(memory: &mut BatchMemory, note: &[Felt]) {
     // Look the per-transaction note up in the nullifier-sorted input-note list by its nullifier.
     let idx = find_key(&memory.input_notes, memory::word_at(note, 0))
@@ -237,7 +237,7 @@ fn bind_one_input_note(memory: &mut BatchMemory, note: &[Felt]) {
 /// Verifies transaction `tx_index`'s `INPUT_NOTES_COMMITMENT_idx` against its piped
 /// `(NULLIFIER, NOTE_ID_OR_EMPTY)` tuples, then binds each of those notes to the batch
 /// input-note list (see [`bind_per_tx_notes`] for what binding proves).
-#[inline]
+#[inline(always)]
 fn process_tx_input_notes(memory: &mut BatchMemory, tx_index: usize) {
     if memory::is_empty_word(memory.tx_input_notes_commitment(tx_index)) {
         // Empty commitment: the transaction has no input notes, so there is nothing to bind.
@@ -263,7 +263,7 @@ fn process_tx_input_notes(memory: &mut BatchMemory, tx_index: usize) {
 /// same transaction is rejected — at consume time its erasure flag is still `Expected` (its
 /// creating output has not been processed), tripping the gate in
 /// [`assert_input_not_consumed_before_created`].
-#[inline]
+#[inline(always)]
 fn bind_per_tx_notes(memory: &mut BatchMemory) {
     for tx_index in 0..memory.num_transactions() {
         process_tx_input_notes(memory, tx_index);
@@ -278,7 +278,7 @@ fn bind_per_tx_notes(memory: &mut BatchMemory) {
 /// and output-note lists, then binds both lists to the verified per-transaction notes while
 /// enforcing the creator-before-consumer ordering gate. Assumes the prologue has loaded and
 /// strict-sorted the two sorted note lists into memory.
-#[inline]
+#[inline(always)]
 pub fn track_notes(memory: &mut BatchMemory) {
     cross_reference_erasure(memory);
     bind_per_tx_notes(memory);
