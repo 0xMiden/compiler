@@ -12,7 +12,7 @@ use miden_assembly::ProjectSourceInputs;
 use miden_assembly_syntax::{
     ModuleParser, Path as MasmPath,
     ast::{self, Module, ModuleKind},
-    debuginfo::SourceManager,
+    debuginfo::{SourceLanguage, SourceManager, Uri},
 };
 use miden_core::serde::Deserializable;
 use miden_mast_package::{Package as MastPackage, PackageExport, TargetType};
@@ -473,7 +473,8 @@ fn parse_module_file(
             return Ok(Box::new(Module::new(kind, module_path)));
         }
         let mut parser = ModuleParser::new(kind);
-        return parser.parse_str(module_path, source, source_manager);
+        let source_file = source_manager.load(SourceLanguage::Masm, Uri::from(path), source);
+        return parser.parse(module_path, source_file, source_manager);
     }
 
     let mut parser = ModuleParser::new(kind);
