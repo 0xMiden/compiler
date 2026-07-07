@@ -682,7 +682,12 @@ impl HirLowering for arith::MulOverflowing {
 
 impl HirLowering for arith::Exp {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        emitter.inst_emitter(self.as_operation()).exp(self.span());
+        let mut emitter = emitter.inst_emitter(self.as_operation());
+        if *self.get_exponent_must_be_u32() {
+            emitter.exp_u32_exponent(self.span());
+        } else {
+            emitter.exp(self.span());
+        }
         Ok(())
     }
 }

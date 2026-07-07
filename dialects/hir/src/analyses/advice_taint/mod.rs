@@ -5,7 +5,11 @@ mod propagation;
 mod sinks;
 mod storage;
 
-use alloc::{rc::Rc, vec::Vec};
+use alloc::{
+    rc::Rc,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::any::Any;
 
 use midenc_hir::{
@@ -42,6 +46,11 @@ pub struct AdviceTaintAnalysis {
     findings: Vec<AdviceTaintFinding>,
     exit_findings: Vec<AdviceTaintExitFinding>,
     external_call_findings: Vec<AdviceTaintExternalCallFinding>,
+}
+
+pub struct AdviceTaintAnalysisResult {
+    pub analysis: AdviceTaintAnalysis,
+    pub incomplete_reason: Option<String>,
 }
 
 impl AdviceTaintAnalysis {
@@ -86,6 +95,68 @@ impl AdviceTaintAnalysis {
     pub fn solver(&self) -> &DataFlowSolver {
         &self.solver
     }
+
+    pub fn analyze_with_config(
+        &mut self,
+        op: &Operation,
+        analysis_manager: AnalysisManager,
+        config: DataFlowConfig,
+    ) -> Result<(), Report> {
+        self.run_solver_with_config(op, analysis_manager, config)?;
+        self.collect_analysis_results(op);
+        Ok(())
+    }
+
+    fn run_solver_with_config(
+        &mut self,
+        op: &Operation,
+        analysis_manager: AnalysisManager,
+        config: DataFlowConfig,
+    ) -> Result<(), Report> {
+        self.solver = DataFlowSolver::new(config);
+        self.solver.load::<AdviceTaintPropagation>();
+        self.solver.load::<AdviceTaintStoragePropagation>();
+        self.solver.initialize_and_run(op, analysis_manager)
+    }
+
+    fn collect_analysis_results(&mut self, op: &Operation) {
+        self.findings = collect_findings(op, &self.solver);
+        self.exit_findings = collect_exit_findings(op, &self.solver);
+        self.external_call_findings = collect_external_call_findings(op, &self.solver);
+    }
+
+    pub fn run_with_config(
+        op: &Operation,
+        analysis_manager: AnalysisManager,
+        config: DataFlowConfig,
+    ) -> Result<Self, Report> {
+        let mut analysis = Self::default();
+        analysis.analyze_with_config(op, analysis_manager, config)?;
+        Ok(analysis)
+    }
+
+    pub fn run_with_config_allow_partial(
+        op: &Operation,
+        analysis_manager: AnalysisManager,
+        config: DataFlowConfig,
+    ) -> Result<AdviceTaintAnalysisResult, Report> {
+        let mut analysis = Self::default();
+        let incomplete_reason = match analysis.run_solver_with_config(op, analysis_manager, config)
+        {
+            Ok(()) => None,
+            Err(err) if is_dataflow_budget_exhaustion(&err) => Some(err.to_string()),
+            Err(err) => return Err(err),
+        };
+        analysis.collect_analysis_results(op);
+        Ok(AdviceTaintAnalysisResult {
+            analysis,
+            incomplete_reason,
+        })
+    }
+}
+
+fn is_dataflow_budget_exhaustion(err: &Report) -> bool {
+    err.to_string().contains("dataflow solver exceeded worklist iteration budget")
 }
 
 impl Analysis for AdviceTaintAnalysis {
@@ -110,14 +181,7 @@ impl Analysis for AdviceTaintAnalysis {
     ) -> Result<(), Report> {
         let mut config = DataFlowConfig::new();
         config.set_interprocedural(true);
-        self.solver = DataFlowSolver::new(config);
-        self.solver.load::<AdviceTaintPropagation>();
-        self.solver.load::<AdviceTaintStoragePropagation>();
-        self.solver.initialize_and_run(op, analysis_manager)?;
-        self.findings = collect_findings(op, &self.solver);
-        self.exit_findings = collect_exit_findings(op, &self.solver);
-        self.external_call_findings = collect_external_call_findings(op, &self.solver);
-        Ok(())
+        self.analyze_with_config(op, analysis_manager, config)
     }
 
     fn invalidate(&self, _preserved_analyses: &mut PreservedAnalyses) -> bool {
@@ -149,12 +213,16 @@ fn collect_findings(op: &Operation, solver: &DataFlowSolver) -> Vec<AdviceTaintF
         let sink = operation.name();
         let sink_span = operation.span();
         for origin in operand_taint.unreported_origins() {
+            let mut contexts = collect_call_contexts(op, solver, function, origin);
+            for span in operand_taint.call_context_spans_containing_origin(origin) {
+                push_context(&mut contexts, span, AdviceTaintContextKind::CallArgument);
+            }
             let finding = AdviceTaintFinding {
                 sink: sink.clone(),
                 sink_span,
                 advice_span: origin.span,
                 origin,
-                contexts: collect_call_contexts(op, solver, function, origin),
+                contexts,
                 function,
             };
             if !findings.iter().any(|existing| same_finding(existing, &finding)) {
@@ -352,7 +420,7 @@ fn same_exit_finding(lhs: &AdviceTaintExitFinding, rhs: &AdviceTaintExitFinding)
     lhs.function == rhs.function
         && lhs.return_span == rhs.return_span
         && lhs.result_index == rhs.result_index
-        && lhs.origin == rhs.origin
+        && lhs.origin.kind == rhs.origin.kind
 }
 
 fn same_external_call_finding(

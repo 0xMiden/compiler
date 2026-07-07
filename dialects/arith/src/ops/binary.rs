@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
-    dialects::builtin::attributes::OverflowAttr,
+    dialects::builtin::attributes::{BoolAttr, OverflowAttr},
     effects::*,
     traits::*,
     *,
@@ -184,18 +184,38 @@ infer_return_ty_for_binary_op!(MulOverflowing, overflowed: Type::I1);
 #[operation(
     dialect = ArithDialect,
     traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
-    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+    implements(
+        InferTypeOpInterface,
+        MemoryEffectOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
 )]
 pub struct Exp {
     #[operand]
     lhs: IntFelt,
     #[operand]
     rhs: IntFelt,
+    #[attr]
+    #[default]
+    exponent_must_be_u32: BoolAttr,
     #[result]
     result: IntFelt,
 }
 
 infer_return_ty_for_binary_op!(Exp);
+
+impl OperandRangeRequirementOpInterface for Exp {
+    fn operand_range_requirement(&self, operand_index: usize) -> OperandRangeRequirement {
+        if operand_index == 1 && *self.get_exponent_must_be_u32() {
+            OperandRangeRequirement::Required(ValueRangeConstraint::Type(Type::U32))
+        } else {
+            default_operand_range_requirement(self.as_operation(), operand_index)
+                .map(OperandRangeRequirement::Required)
+                .unwrap_or(OperandRangeRequirement::None)
+        }
+    }
+}
 
 /// Unsigned integer division, traps on division by zero
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
