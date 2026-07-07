@@ -128,12 +128,17 @@ unsafe extern "C" {
 
 /// Returns the MAST root digest of the note script defined by the current crate.
 ///
+/// Macro plumbing behind the `get_entrypoint_root()` associated method that `#[note]` generates
+/// on the note input type — call that method instead of this function. It lives here because
+/// the underlying weak extern requires `feature(linkage)`, which user crates do not enable.
+///
 /// This is a compiler intrinsic: the call compiles to a MASM `procref` of the crate's
 /// `#[note_script]` entrypoint export, so the digest is the note script root observed by the
 /// transaction kernel when the note is executed. The digest is computed at assembly time.
 ///
 /// Compilation fails if the current project does not define a `#[note_script]` entrypoint.
-pub fn get_entrypoint_root() -> Word {
+#[doc(hidden)]
+pub fn __entrypoint_root() -> Word {
     unsafe {
         let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
         extern_note_script_root(ret_area.as_mut_ptr());
