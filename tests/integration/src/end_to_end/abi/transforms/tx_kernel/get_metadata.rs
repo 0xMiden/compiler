@@ -8,34 +8,25 @@ use crate::CompilerTestBuilder;
 fn get_metadata() -> Result<(), Report> {
     // Mock the Miden protocol `active_note::get_metadata` procedure.
     //
-    // The raw protocol signature returns 8 felts on the operand stack:
-    // `[NOTE_ATTACHMENT (4), METADATA_HEADER (4)]`.
+    // The protocol signature returns a single metadata header word (4 felts) on the operand stack.
     let masm = r#"
 pub proc get_metadata
     # Stack input: []
-    # Stack output: [NOTE_ATTACHMENT, METADATA_HEADER]
+    # Stack output: [METADATA_HEADER]
     #
-    # Return two word-sized values with distinct elements so we can validate that:
-    # - the ABI adapter consumes all 8 felts (not just 4)
-    # - the words are grouped correctly
-    # - the returned metadata words preserve the kernel order at the Rust call site
+    # Return one word-sized value with distinct elements so we can validate that:
+    # - the ABI adapter consumes exactly 4 felts
+    # - the returned metadata word preserves the kernel order at the Rust call site
     #
     # The ABI adapter writes the current top of stack to the lowest memory address first, so the
-    # values are pushed in reverse order within each returned word.
+    # values are pushed in reverse order within the returned word.
     push.24 push.23 push.22 push.21   # METADATA_HEADER
-    push.14 push.13 push.12 push.11   # NOTE_ATTACHMENT
 end
 "#
     .to_string();
 
     let main_fn = r#"() -> () {
         let meta = miden::active_note::get_metadata();
-
-        let attachment = meta.attachment;
-        assert_eq(attachment[0], felt!(11));
-        assert_eq(attachment[1], felt!(12));
-        assert_eq(attachment[2], felt!(13));
-        assert_eq(attachment[3], felt!(14));
 
         let header = meta.header;
         assert_eq(header[0], felt!(21));

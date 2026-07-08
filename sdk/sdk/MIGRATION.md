@@ -10,6 +10,27 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Add the next migration section here, above `## 0.12.0 -> 0.13.0`. -->
 
+## Unreleased
+
+### `*_note::get_metadata` returns a single-word `NoteMetadata`
+
+`get_metadata` no longer includes the note attachment word — it returns only the metadata header,
+and `NoteMetadata` is now a single-field struct `{ header: Word }`. Retrieve attachments through the
+dedicated attachment procedures instead.
+
+```rust
+// before — NoteMetadata { attachment: Word, header: Word }
+let meta = active_note::get_metadata();
+let attachment = meta.attachment;
+let header = meta.header;
+
+// after — NoteMetadata { header: Word }
+let meta = active_note::get_metadata();
+let header = meta.header;
+// attachments are now retrieved separately:
+let attachments_commitment = active_note::get_attachments_commitment();
+```
+
 ## 0.12.0 -> 0.13.0
 
 This release reworks how account components, accounts, and authentication are declared, introduces

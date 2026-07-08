@@ -141,3 +141,25 @@ fn active_note_find_attachment_binding() {
     }",
     );
 }
+
+#[test]
+fn active_note_get_storage_binding() {
+    run_active_note_binding_test(
+        "active_note_get_storage_binding",
+        "pub fn binding(&self) -> Felt {
+        let storage = active_note::get_storage();
+        Felt::new(storage.len() as u64).unwrap()
+    }",
+    );
+}
+
+#[test]
+fn active_note_get_assets_binding() {
+    run_active_note_binding_test(
+        "active_note_get_assets_binding",
+        "pub fn binding(&self) -> Felt {
+        let assets = active_note::get_assets();
+        Felt::new(assets.len() as u64).unwrap()
+    }",
+    );
+}

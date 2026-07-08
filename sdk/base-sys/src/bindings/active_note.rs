@@ -77,16 +77,8 @@ pub fn get_storage() -> Vec<Felt> {
         // Since Miden VM is field element-addressable, to get a Miden address from a Rust address,
         // we divide it by 4 to get the address in field elements.
         let ptr = (inputs.as_mut_ptr() as usize) / 4;
-        // The MASM for this function is here:
-        // https://github.com/0xMiden/miden-base/blob/3cbe8d59dcf4ccc9c380b7c8417ac6178fc6b86a/miden-lib/asm/miden/note.masm#L69-L102
-        // #! Writes the inputs of the currently execute note into memory starting at the specified
-        // address. #!
-        // #! Inputs: [dest_ptr]
-        // #! Outputs: [num_inputs, dest_ptr]
-        // #!
-        // #! - dest_ptr is the memory address to write the inputs.
-        // Compiler generated adapter code at call site will drop the returned dest_ptr
-        // and return the number of inputs
+        // The protocol `active_note::get_storage` procedure writes the note's storage into memory
+        // starting at `dest_ptr` and returns the number of storage items written.
         extern_note_get_storage(ptr as *mut Felt)
     };
     unsafe {
@@ -145,7 +137,7 @@ pub fn get_serial_number() -> Word {
     }
 }
 
-/// Returns the attachment and metadata header of the note that is currently executing.
+/// Returns the metadata header of the note that is currently executing.
 pub fn get_metadata() -> NoteMetadata {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteMetadata>::uninit());
