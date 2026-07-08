@@ -50,15 +50,15 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     note.insert(
         Symbol::from(WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, I32], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, I32], [I32]),
     );
     note.insert(
         Symbol::from(WRITE_ATTACHMENT_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, I32], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt, I32], [I32]),
     );
     note.insert(
         Symbol::from(WRITE_INDEXED_ATTACHMENT_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [Felt, I32, Felt, I32], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [Felt, I32, Felt, I32], [I32]),
     );
     note.insert(
         Symbol::from(COMPUTE_RECIPIENT),

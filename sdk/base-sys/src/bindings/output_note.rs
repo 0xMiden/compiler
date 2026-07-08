@@ -285,7 +285,7 @@ pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     }
 }
 
-/// Returns the attachment and metadata header of the output note at `note_index`.
+/// Returns the metadata header of the output note at `note_index`.
 pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteMetadata>::uninit());

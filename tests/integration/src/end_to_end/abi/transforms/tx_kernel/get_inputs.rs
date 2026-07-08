@@ -20,14 +20,15 @@ fn test_get_inputs(test_name: &str, expected_inputs: Vec<u32>) -> Result<(), Rep
 pub proc get_storage
     # Stack input: [dest_ptr]
     #
-    # Write 4 inputs to memory starting at `dest_ptr`, then return `[num_inputs, dest_ptr]`.
+    # Write 4 inputs to memory starting at `dest_ptr`, then return `[num_inputs]`.
     #
-    # This matches the Miden protocol `active_note::get_storage` convention, where `dest_ptr` is
-    # preserved on the operand stack alongside `num_inputs`.
+    # This matches the Miden protocol `active_note::get_storage` convention, where the procedure
+    # consumes `dest_ptr` and leaves only `num_inputs` on the operand stack.
     dup.0 push.{expect1} swap.1 mem_store
     dup.0 push.1 u32wrapping_add push.{expect2} swap.1 mem_store
     dup.0 push.2 u32wrapping_add push.{expect3} swap.1 mem_store
     dup.0 push.3 u32wrapping_add push.{expect4} swap.1 mem_store
+    drop
     push.4
 end
 ",

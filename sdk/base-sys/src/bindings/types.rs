@@ -108,21 +108,20 @@ pub struct Recipient {
 
 /// The note metadata returned by `*_note::get_metadata` procedures.
 ///
-/// In the Miden protocol, metadata retrieval returns both the note attachment and the metadata
-/// header as separate words.
+/// In the Miden protocol, metadata retrieval returns a single metadata header word. Note
+/// attachments are retrieved separately via the `*_note::get_attachments_commitment`,
+/// `find_attachment`, and `write_attachment_*` procedures.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct NoteMetadata {
-    /// The attachment of the note.
-    pub attachment: Word,
     /// The metadata header of the note.
     pub header: Word,
 }
 
 impl NoteMetadata {
-    /// Creates a new [`NoteMetadata`] from attachment and header.
-    pub fn new(attachment: Word, header: Word) -> Self {
-        Self { attachment, header }
+    /// Creates a new [`NoteMetadata`] from the metadata header word.
+    pub fn new(header: Word) -> Self {
+        Self { header }
     }
 }
 

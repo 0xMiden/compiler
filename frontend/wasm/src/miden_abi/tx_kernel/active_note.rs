@@ -31,8 +31,8 @@ pub const FIND_ATTACHMENT: &str = "find_attachment";
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut note: FunctionTypeMap = Default::default();
-    note.insert(Symbol::from(GET_STORAGE), FunctionType::new(CallConv::Wasm, [I32], [I32, I32]));
-    note.insert(Symbol::from(GET_ASSETS), FunctionType::new(CallConv::Wasm, [I32], [I32, I32]));
+    note.insert(Symbol::from(GET_STORAGE), FunctionType::new(CallConv::Wasm, [I32], [I32]));
+    note.insert(Symbol::from(GET_ASSETS), FunctionType::new(CallConv::Wasm, [I32], [I32]));
     note.insert(Symbol::from(GET_SENDER), FunctionType::new(CallConv::Wasm, [], [Felt, Felt]));
     note.insert(
         Symbol::from(GET_RECIPIENT),
@@ -48,14 +48,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     note.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(
-            CallConv::Wasm,
-            [],
-            [
-                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
-                Felt, Felt, Felt, Felt, // METADATA_HEADER
-            ],
-        ),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
     );
     note.insert(Symbol::from(IS_PUBLIC), FunctionType::new(CallConv::Wasm, [], [Felt]));
     note.insert(Symbol::from(IS_PRIVATE), FunctionType::new(CallConv::Wasm, [], [Felt]));
@@ -65,11 +58,11 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     note.insert(
         Symbol::from(WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [I32], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [I32], [I32]),
     );
     note.insert(
         Symbol::from(WRITE_ATTACHMENT_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [I32, Felt], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [I32, Felt], [I32]),
     );
     note.insert(
         Symbol::from(FIND_ATTACHMENT),

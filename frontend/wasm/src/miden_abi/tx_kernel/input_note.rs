@@ -37,24 +37,14 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         Symbol::from(GET_ASSETS_INFO),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt, Felt]),
     );
-    funcs.insert(
-        Symbol::from(GET_ASSETS),
-        FunctionType::new(CallConv::Wasm, [I32, Felt], [I32, I32]),
-    );
+    funcs.insert(Symbol::from(GET_ASSETS), FunctionType::new(CallConv::Wasm, [I32, Felt], [I32]));
     funcs.insert(
         Symbol::from(GET_RECIPIENT),
         FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
     );
     funcs.insert(
         Symbol::from(GET_METADATA),
-        FunctionType::new(
-            CallConv::Wasm,
-            [Felt],
-            [
-                Felt, Felt, Felt, Felt, // NOTE_ATTACHMENT
-                Felt, Felt, Felt, Felt, // METADATA_HEADER
-            ],
-        ),
+        FunctionType::new(CallConv::Wasm, [Felt], [Felt, Felt, Felt, Felt]),
     );
     funcs.insert(
         Symbol::from(GET_SENDER),
@@ -82,11 +72,11 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     );
     funcs.insert(
         Symbol::from(WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [I32, Felt], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [I32, Felt], [I32]),
     );
     funcs.insert(
         Symbol::from(WRITE_ATTACHMENT_TO_MEMORY),
-        FunctionType::new(CallConv::Wasm, [I32, Felt, Felt], [I32, I32]),
+        FunctionType::new(CallConv::Wasm, [I32, Felt, Felt], [I32]),
     );
     funcs.insert(
         Symbol::from(FIND_ATTACHMENT),

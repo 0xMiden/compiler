@@ -17,8 +17,6 @@ const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = ExecFpi::EXECUTOR_INPUT_FELTS;
 
 /// The strategy to use for transforming a function call
 enum TransformStrategy {
-    /// The Miden ABI function returns a length and a pointer and we only want the length
-    ListReturn,
     /// The Miden ABI function returns on the stack and we want to return via a pointer argument
     ReturnViaPointer,
     /// The import is the raw FPI binding, which passes the executor ABI through one pointer.
@@ -133,7 +131,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
                         | tx_kernel::note::WRITE_ATTACHMENT_TO_MEMORY
                         | tx_kernel::note::WRITE_INDEXED_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::ListReturn)
+                            Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::note::COMPUTE_STORAGE_COMMITMENT
                         | tx_kernel::note::COMPUTE_RECIPIENT
@@ -206,7 +204,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::active_note::GET_ASSETS
                         | tx_kernel::active_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
                         | tx_kernel::active_note::WRITE_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::ListReturn)
+                            Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::active_note::IS_PUBLIC | tx_kernel::active_note::IS_PRIVATE => {
                             Some(TransformStrategy::NoTransform)
@@ -228,7 +226,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::input_note::GET_ASSETS
                         | tx_kernel::input_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
                         | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::ListReturn)
+                            Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::input_note::GET_ASSETS_INFO
                         | tx_kernel::input_note::GET_RECIPIENT
@@ -257,7 +255,7 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         tx_kernel::output_note::GET_ASSETS
                         | tx_kernel::output_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
                         | tx_kernel::output_note::WRITE_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::ListReturn)
+                            Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::output_note::GET_ASSETS_INFO
                         | tx_kernel::output_note::GET_RECIPIENT
@@ -311,7 +309,6 @@ pub fn transform_miden_abi_call<B: ?Sized + Builder>(
 ) -> WasmResult<Vec<ValueRef>> {
     use TransformStrategy::*;
     match get_transform_strategy(import_path) {
-        Some(ListReturn) => list_return(import_func_ref, args, builder),
         Some(ReturnViaPointer) => return_via_pointer(import_func_ref, args, builder),
         Some(FpiIndirectReturnViaPointer) => {
             fpi_indirect_return_via_pointer(import_func_ref, args, builder)
@@ -337,31 +334,6 @@ pub fn no_transform<B: ?Sized + Builder>(
     let results: Vec<ValueRef> =
         results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
     Ok(results)
-}
-
-/// The Miden ABI function returns a length and a pointer and we only want the length
-pub fn list_return<B: ?Sized + Builder>(
-    import_func_ref: FunctionRef,
-    args: &[ValueRef],
-    builder: &mut FunctionBuilderExt<'_, B>,
-) -> WasmResult<Vec<ValueRef>> {
-    let span = import_func_ref.borrow().name().span;
-    let signature = import_func_ref.borrow().get_signature().clone();
-    let exec = builder.exec(import_func_ref, signature, args.to_vec(), span)?;
-
-    let borrow = exec.borrow();
-    let results_storage = borrow.results();
-    let results: Vec<ValueRef> =
-        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
-
-    if results.len() != 2 {
-        return Err(Report::msg(format!(
-            "list return strategy expects 2 results, length and pointer, but received {}",
-            results.len()
-        )));
-    }
-
-    Ok(results[0..1].to_vec())
 }
 
 /// The Miden ABI function returns felts on the stack and we want to return via a pointer argument
