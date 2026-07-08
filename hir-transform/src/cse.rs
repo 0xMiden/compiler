@@ -730,6 +730,105 @@ builtin.function public extern("C") @commutative(%0: i32, %1: i32) -> (i32, i32,
         );
     }
 
+    /// A [core::hash::Hasher] that records the exact byte stream written to it, so two keys can be
+    /// compared on the input they feed a hasher rather than on a lossy `finish()` value.
+    #[derive(Default)]
+    struct RecordingHasher(alloc::vec::Vec<u8>);
+
+    impl core::hash::Hasher for RecordingHasher {
+        fn finish(&self) -> u64 {
+            0
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            self.0.extend_from_slice(bytes);
+        }
+    }
+
+    fn opkey_hash_stream(key: OpKey) -> alloc::vec::Vec<u8> {
+        use core::hash::Hash;
+        let mut hasher = RecordingHasher::default();
+        key.hash(&mut hasher);
+        hasher.0
+    }
+
+    /// Directly pins the [OpKey] Hash/Eq contract that issue #1257 violated: whenever two
+    /// operations are equal under [OpKey], they must feed an identical byte stream to the hasher.
+    /// A violation makes CSE deduplication depend on hash-bucket coincidence, i.e. on allocation
+    /// addresses, which is non-deterministic. Recording the hash input (rather than comparing
+    /// `finish()` values) keeps the check exact and independent of the concrete hasher.
+    #[test]
+    fn opkey_hash_is_consistent_with_eq() {
+        let mut test = Test::new(
+            "opkey_contract",
+            &[Type::I32, Type::I32],
+            &[Type::I32, Type::I32, Type::I32, Type::I32],
+        );
+        let (ab, ba, ab_again, aa) = {
+            let mut builder = test.function_builder();
+            let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
+            let ab = builder.add(a, b, SourceSpan::UNKNOWN).unwrap();
+            let ba = builder.add(b, a, SourceSpan::UNKNOWN).unwrap();
+            let ab_again = builder.add(a, b, SourceSpan::UNKNOWN).unwrap();
+            let aa = builder.add(a, a, SourceSpan::UNKNOWN).unwrap();
+            let ops = (
+                ab.borrow().get_defining_op().unwrap(),
+                ba.borrow().get_defining_op().unwrap(),
+                ab_again.borrow().get_defining_op().unwrap(),
+                aa.borrow().get_defining_op().unwrap(),
+            );
+            builder.ret([ab, ba, ab_again, aa], SourceSpan::UNKNOWN).unwrap();
+            ops
+        };
+
+        // Commutative operands are canonicalized, so a swap is equal and must hash identically.
+        assert!(OpKey(ab) == OpKey(ba), "commutative operand swap must be equal");
+        assert_eq!(opkey_hash_stream(OpKey(ab)), opkey_hash_stream(OpKey(ba)));
+
+        // Result identity is ignored, so two distinct `add(a, b)` ops (with distinct result
+        // values) are equal and must hash identically. Guards against the hash observing more than
+        // equality does.
+        assert!(OpKey(ab) == OpKey(ab_again), "distinct result identity must be ignored");
+        assert_eq!(opkey_hash_stream(OpKey(ab)), opkey_hash_stream(OpKey(ab_again)));
+
+        // Sanity that the check is not vacuous: different operands are not equal, and the hash
+        // streams differ accordingly.
+        assert!(OpKey(ab) != OpKey(aa), "different operands must not be equal");
+        assert_ne!(opkey_hash_stream(OpKey(ab)), opkey_hash_stream(OpKey(aa)));
+    }
+
+    /// Sentinel for the exact regression that caused issue #1257: [DefaultValueHasher] must hash a
+    /// value by its thin address only. Hashing the fat pointer instead (data address plus the
+    /// vtable pointer, which can differ for the same value across codegen units) makes equal CSE
+    /// keys hash differently, which is what made deduplication non-deterministic.
+    #[test]
+    fn default_value_hasher_hashes_thin_address_only() {
+        use core::hash::Hash;
+
+        use midenc_hir::equivalence::{DefaultValueHasher, ValueHasher};
+
+        let mut test = Test::new("value_hasher", &[Type::I32], &[Type::I32]);
+        let value = {
+            let mut builder = test.function_builder();
+            let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.ret([a], SourceSpan::UNKNOWN).unwrap();
+            a
+        };
+
+        let mut via_hasher = RecordingHasher::default();
+        DefaultValueHasher.hash_value(value, &mut via_hasher);
+
+        let mut via_thin_address = RecordingHasher::default();
+        ValueRef::as_ptr(&value).addr().hash(&mut via_thin_address);
+
+        assert_eq!(
+            via_hasher.0, via_thin_address.0,
+            "DefaultValueHasher must hash only the thin value address; hashing the fat pointer \
+             reintroduces the non-determinism of issue #1257"
+        );
+    }
+
     #[test]
     fn basic() {
         let mut test = Test::new("basic", &[], &[Type::I32, Type::I32]);
