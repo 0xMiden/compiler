@@ -684,6 +684,52 @@ builtin.function public extern("C") @ssa_memory_reads(%0: ptr<u8, byte>) -> (u8,
         );
     }
 
+    /// Regression test for https://github.com/0xMiden/compiler/issues/1257
+    ///
+    /// Commutative operations are equal under [OpKey] regardless of operand order, and the key
+    /// hashes operands in the same canonical order equality compares them in, so both the
+    /// identical and the operand-swapped duplicates must always be deduplicated. Previously the
+    /// swapped pair compared equal but hashed differently, so whether CSE fired for it depended
+    /// on hash-bucket coincidences, i.e. on allocation addresses, making compilation output
+    /// non-deterministic.
+    #[test]
+    fn cse_commutative_operand_order() {
+        let mut test =
+            Test::new("commutative", &[Type::I32, Type::I32], &[Type::I32, Type::I32, Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let a = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let b = builder.entry_block().borrow().arguments()[1] as ValueRef;
+            let v0 = builder.add(a, b, SourceSpan::UNKNOWN).unwrap();
+            let v1 = builder.add(b, a, SourceSpan::UNKNOWN).unwrap();
+            let v2 = builder.add(a, b, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v0, v1, v2], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<CommonSubexpressionElimination>(true).expect("invalid ir");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
+        let output = format!("{}", printer.finish());
+        filecheck!(
+            output,
+            r#"
+builtin.function public extern("C") @commutative(%0: i32, %1: i32) -> (i32, i32, i32) {
+    // CHECK: [[SUM:%\d+]] = arith.add %0, %1
+    %2 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }> : i32;
+
+    // Both the operand-swapped and the identical duplicate are deduplicated.
+    %3 = arith.add %1, %0 <{ overflow = #builtin.overflow<checked> }> : i32;
+    %4 = arith.add %0, %1 <{ overflow = #builtin.overflow<checked> }> : i32;
+
+    // CHECK-NEXT: builtin.ret [[SUM]], [[SUM]], [[SUM]] : (i32, i32, i32);
+    builtin.ret %2, %3, %4 : (i32, i32, i32);
+};
+            "#
+        );
+    }
+
     #[test]
     fn basic() {
         let mut test = Test::new("basic", &[], &[Type::I32, Type::I32]);

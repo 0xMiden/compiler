@@ -1,4 +1,4 @@
-use core::hash::Hasher;
+use core::hash::{Hash, Hasher};
 
 use bitflags::bitflags;
 use smallvec::SmallVec;
@@ -65,7 +65,10 @@ pub struct DefaultValueHasher;
 
 impl ValueHasher for DefaultValueHasher {
     fn hash_value<H: Hasher>(&self, value: ValueRef, hasher: &mut H) {
-        core::ptr::hash(ValueRef::as_ptr(&value), hasher);
+        // Hash only the address, discarding the fat pointer metadata: equivalence checks compare
+        // values with `core::ptr::addr_eq`, and the vtable pointer of the same value can differ
+        // between codegen units, which would make equal keys hash differently.
+        ValueRef::as_ptr(&value).addr().hash(hasher);
     }
 }
 
@@ -87,8 +90,6 @@ impl Operation {
     ) where
         H: core::hash::Hasher,
     {
-        use core::hash::Hash;
-
         // Hash operations based upon their:
         //
         // - Operation name
@@ -110,10 +111,24 @@ impl Operation {
         }
 
         // Operands
+        //
+        // Commutative operations are equivalent regardless of operand order, so their operands
+        // must be hashed in the same canonical order used by `is_equivalent_with_options`, or
+        // equal keys could hash differently.
         self.operands().len().hash(hasher);
-        for operand in self.operands().iter() {
-            let operand = operand.borrow();
-            operand_hasher.hash_value(operand.as_value_ref(), hasher);
+        if self.implements::<dyn Commutative>() {
+            let operands = self.operands().all();
+            let mut operands = SmallVec::<[_; 2]>::from_slice(operands.as_slice());
+            operands.sort_by(sort_operands);
+            for operand in operands {
+                let operand = operand.borrow();
+                operand_hasher.hash_value(operand.as_value_ref(), hasher);
+            }
+        } else {
+            for operand in self.operands().iter() {
+                let operand = operand.borrow();
+                operand_hasher.hash_value(operand.as_value_ref(), hasher);
+            }
         }
 
         // Results

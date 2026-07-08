@@ -374,6 +374,53 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let _trace = exec.execute(&program, test.session.source_manager.clone());
 }
 
+/// Regression test for https://github.com/0xMiden/compiler/issues/1257
+///
+/// Compiling the same account project several times must produce byte-identical package
+/// artifacts. A non-deterministic build changes the package digest between compilations, so a
+/// dependent package (e.g. a note script) records a dependency digest that no longer matches the
+/// account package loaded into the executor's dependency resolver.
+#[test]
+fn rust_sdk_account_package_build_is_deterministic() {
+    let config = WasmTranslationConfig::default();
+    let mut baseline: Option<(miden_core::Word, Vec<u8>, String)> = None;
+    for run in 0..5 {
+        let mut test = CompilerTest::rust_source_cargo_miden(
+            "../fixtures/components/cross-ctx-account-word",
+            config.clone(),
+            [],
+        );
+        let masm_src = test.masm_src();
+        let package = test.compile_package();
+        let digest = *package.mast.digest();
+        let bytes = package.to_bytes();
+        let Some((first_digest, first_bytes, first_masm)) = baseline.as_ref() else {
+            baseline = Some((digest, bytes, masm_src));
+            continue;
+        };
+        assert!(
+            *first_masm == masm_src,
+            "MASM source of compilation #{run} differs from compilation #0"
+        );
+        assert_eq!(
+            *first_digest, digest,
+            "MAST digest of compilation #{run} differs from compilation #0 (identical MASM \
+             source, so the divergence is introduced at assembly)"
+        );
+        let first_mismatch = first_bytes
+            .iter()
+            .zip(bytes.iter())
+            .position(|(first, current)| first != current);
+        assert!(
+            first_bytes.len() == bytes.len() && first_mismatch.is_none(),
+            "package bytes of compilation #{run} differ from compilation #0: lengths {} vs {}, \
+             first mismatch at offset {first_mismatch:?}",
+            first_bytes.len(),
+            bytes.len(),
+        );
+    }
+}
+
 #[test]
 fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let config = WasmTranslationConfig::default();
