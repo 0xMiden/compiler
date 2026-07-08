@@ -1,4 +1,4 @@
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{AccountId, Asset, RawAccountId};
 
@@ -81,7 +81,7 @@ unsafe extern "C" {
 /// ```
 pub fn add_asset(asset: Asset) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_native_account_add_asset(
             asset.key[0],
             asset.key[1],
@@ -93,7 +93,7 @@ pub fn add_asset(asset: Asset) -> Word {
             asset.value[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -105,7 +105,7 @@ pub fn add_asset(asset: Asset) -> Word {
 /// - The non-fungible asset is not found in the vault.
 pub fn remove_asset(asset: Asset) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_native_account_remove_asset(
             asset.key[0],
             asset.key[1],
@@ -117,16 +117,16 @@ pub fn remove_asset(asset: Asset) -> Word {
             asset.value[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the native account ID for the current transaction.
 pub fn get_id() -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
         extern_native_account_get_id(ret_area.as_mut_ptr());
-        ret_area.assume_init().into_account_id()
+        ret_area.into_inner().assume_init().into_account_id()
     }
 }
 
@@ -140,9 +140,9 @@ pub fn incr_nonce() -> Felt {
 #[inline]
 pub fn compute_delta_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_native_account_compute_delta_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 

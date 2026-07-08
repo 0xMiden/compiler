@@ -1,7 +1,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::{AccountId, Asset, AttachmentLocation, NoteMetadata, RawAccountId, Recipient};
 
@@ -112,45 +112,45 @@ pub fn get_assets() -> Vec<Asset> {
 /// Returns the sender [`AccountId`] of the note that is currently executing.
 pub fn get_sender() -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
         extern_note_get_sender(ret_area.as_mut_ptr());
-        ret_area.assume_init().into_account_id()
+        ret_area.into_inner().assume_init().into_account_id()
     }
 }
 
 /// Returns the recipient of the note that is currently executing.
 pub fn get_recipient() -> Recipient {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
         extern_note_get_recipient(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the script root of the currently executing note.
 pub fn get_script_root() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_note_get_script_root(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the serial number of the currently executing note.
 pub fn get_serial_number() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_note_get_serial_number(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the attachment and metadata header of the note that is currently executing.
 pub fn get_metadata() -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteMetadata>::uninit());
         extern_note_get_metadata(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -169,9 +169,9 @@ pub fn is_private() -> bool {
 /// Returns the commitment over all attachments of the note currently executing.
 pub fn get_attachments_commitment() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_note_get_attachments_commitment(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -212,8 +212,9 @@ pub fn write_attachment_to_memory(attachment_idx: Felt) -> Vec<Word> {
 /// Searches the active note metadata for `attachment_scheme`.
 pub fn find_attachment(attachment_scheme: Felt) -> AttachmentLocation {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<AttachmentLocation>::uninit();
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
         extern_note_find_attachment(attachment_scheme, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }

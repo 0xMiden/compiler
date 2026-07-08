@@ -8,7 +8,7 @@ mod imp {
 
     use crate::{
         felt,
-        intrinsics::{Digest, Felt, Word, assert_eq},
+        intrinsics::{Digest, Felt, Word, WordAligned, assert_eq},
     };
 
     unsafe extern "C" {
@@ -179,8 +179,6 @@ mod imp {
     /// Hashes a 32-byte input to a 32-byte output using the BLAKE3 hash function.
     #[inline]
     pub fn blake3_hash(input: [u8; 32]) -> [u8; 32] {
-        use crate::intrinsics::WordAligned;
-
         let lanes = bytes_to_u32_le_8(input);
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
@@ -197,22 +195,20 @@ mod imp {
     pub fn blake3_merge(input: [u8; 64]) -> [u8; 32] {
         let lanes = bytes_to_u32_le_16(input);
         unsafe {
-            let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
+            let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
             extern_blake3_merge(
                 lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6], lanes[7],
                 lanes[8], lanes[9], lanes[10], lanes[11], lanes[12], lanes[13], lanes[14],
                 lanes[15], ptr,
             );
-            ret_area.assume_init()
+            ret_area.assume_init().into_inner()
         }
     }
 
     /// Hashes a 32-byte input to a 32-byte output using the SHA256 hash function.
     #[inline]
     pub fn sha256_hash(input: [u8; 32]) -> [u8; 32] {
-        use crate::intrinsics::WordAligned;
-
         let lanes = bytes_to_u32_be_8(input);
         unsafe {
             let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
@@ -231,14 +227,14 @@ mod imp {
     pub fn sha256_merge(input: [u8; 64]) -> [u8; 32] {
         let lanes = bytes_to_u32_be_16(input);
         unsafe {
-            let mut ret_area = ::core::mem::MaybeUninit::<[u8; 32]>::uninit();
+            let mut ret_area = ::core::mem::MaybeUninit::<WordAligned<[u8; 32]>>::uninit();
             let ptr = ret_area.as_mut_ptr() as *mut u8;
             extern_sha256_merge(
                 lanes[0], lanes[1], lanes[2], lanes[3], lanes[4], lanes[5], lanes[6], lanes[7],
                 lanes[8], lanes[9], lanes[10], lanes[11], lanes[12], lanes[13], lanes[14],
                 lanes[15], ptr,
             );
-            let mut output = ret_area.assume_init();
+            let mut output = ret_area.assume_init().into_inner();
             decode_be_lanes_in_place(&mut output);
             output
         }
@@ -260,7 +256,7 @@ mod imp {
         let num_elements = element_count as u32;
 
         unsafe {
-            let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
+            let mut ret_area = core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
             let miden_ptr = rust_ptr / 4;
             // Since our BumpAlloc produces word-aligned allocations the pointer should be word-aligned
@@ -274,7 +270,7 @@ mod imp {
                 extern_hash_elements(miden_ptr, num_elements, result_ptr);
             }
 
-            Digest::from_word(ret_area.assume_init())
+            Digest::from_word(ret_area.assume_init().into_inner())
         }
     }
 
@@ -294,13 +290,13 @@ mod imp {
         assert_eq(Felt::new((miden_ptr % 4) as u64).unwrap(), felt!(0));
 
         unsafe {
-            let mut ret_area = core::mem::MaybeUninit::<Word>::uninit();
+            let mut ret_area = core::mem::MaybeUninit::<WordAligned<Word>>::uninit();
             let result_ptr = ret_area.as_mut_ptr() as *mut Felt;
             let start_addr = miden_ptr;
             let end_addr = start_addr + (words.len() as u32 * 4);
             extern_hash_words(start_addr, end_addr, result_ptr);
 
-            Digest::from_word(ret_area.assume_init())
+            Digest::from_word(ret_area.assume_init().into_inner())
         }
     }
 }
