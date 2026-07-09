@@ -234,7 +234,7 @@ use miden::*;
 
 use crate::bindings::miden::two_words_struct_account::counter_contract::KeyPair;
 #[account(two_words_struct_account::CounterContract)]
-struct CounterContract;
+struct Counter;
 
 /// Note script input containing the foreign counter account id.
 #[note]
@@ -248,7 +248,7 @@ impl CounterCaller {
     /// Checks that two `Word` values in one record and a two-`Word` record cross the FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::new(self.counter_account_id);
+        let count_acc = Counter::new(self.counter_account_id);
         let first_key = Word::new([felt!(17), felt!(34), felt!(51), felt!(68)]);
         let second_key = Word::new([felt!(85), felt!(102), felt!(119), felt!(136)]);
         let expected_first = Word::new([felt!(901), felt!(802), felt!(703), felt!(604)]);

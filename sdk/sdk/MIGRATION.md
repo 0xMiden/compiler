@@ -12,6 +12,76 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### `#[account(...)]` generates one trait per component
+
+In 0.13 the `#[account(...)]` macro generated each component's methods as inherent methods on the
+wrapper struct. In 0.14 it generates **one trait per referenced interface** (named after the
+interface, with the wrapper's visibility) and implements it for the wrapper, so two components that
+export the same method name can coexist on one wrapper. Single-component accounts keep calling
+`account.method(..)` unchanged **when the generated trait is in scope** — a same-module
+`#[note]`/`#[tx_script]` entrypoint sees it automatically, but a call site in a different module
+than the wrapper needs `use` of the generated trait (e.g. `use crate::BasicWallet;`).
+
+Because the methods are now on a generated trait, a referenced interface must export at least one
+method: `#[account(...)]` now errors if a selected interface has no callable exports, where 0.13
+silently generated nothing for it.
+
+**The wrapper struct must be named differently from every generated trait.**
+`#[account(counter_contract::CounterContract)] struct CounterContract;` no longer compiles; rename
+the struct (e.g. `Counter`):
+
+```rust
+#[account(counter_contract::CounterContract)]
+struct Counter;
+
+let counter = Counter::new(counter_account_id);
+let count = counter.get_count();
+```
+
+**Shared method names are disambiguated with UFCS.** When an account derives two components that
+export the same method name — or a component method shares a name with an `ActiveAccount` built-in
+such as `get_id` — the bare call is ambiguous:
+
+```rust
+#[account(basic_wallet::BasicWallet, vault::Vault)]
+struct Wallet;
+
+// both BasicWallet and Vault export `deposit`:
+<Wallet as BasicWallet>::deposit(account, asset);
+<Wallet as Vault>::deposit(account, asset);
+```
+
+Generated component traits are same-module, so `<Wallet as Interface>::…` needs no import. The
+`ActiveAccount` built-in trait, however, is not in the `miden::*` prelude, so disambiguating a
+component method against a built-in needs an explicit import:
+
+```rust
+use miden::active_account::ActiveAccount;
+
+// a component method named `get_id` shares the `ActiveAccount::get_id` name:
+<Wallet as CounterContract>::get_id(account); // the component method
+<Wallet as ActiveAccount>::get_id(account);   // the built-in
+```
+
+For the same reason, a component method named `new` is now permitted (it was previously rejected):
+it lives on the generated trait and coexists with the inherent `Wallet::new(account_id)`
+constructor — `Wallet::new(id)` resolves to the constructor, `wallet.new()` to the component method.
+
+**Name clashes between generated traits are resolved with `as`.** When the generated trait *name*
+would clash — the struct shares the interface name, two packages export the same interface name,
+two separate `#[account]` wrappers in one module select the same interface, or the crate already
+uses the interface as a sibling `#[component(...)]` — rename the generated trait with `as` (the path
+still selects the interface):
+
+```rust
+// a component that both calls a sibling counter and reaches a remote counter through FPI:
+#[account(counter_contract::CounterContract as RemoteCounter)] // FPI trait `RemoteCounter`
+struct Remote;
+
+#[component(counter_contract::CounterContract)]                // sibling trait `CounterContract`
+trait Caller: NativeAccount + CounterContract { /* ... */ }
+```
+
 ## 0.13.0 -> 0.13.1
 
 ### `*_note::get_metadata` returns a single-word `NoteMetadata`

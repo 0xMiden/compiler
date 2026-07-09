@@ -137,13 +137,14 @@ mod wit_world;
 /// dependencies. Each dependency is referenced as `package::Interface`: the package is the
 /// Rust-style Miden package name (write the Miden package name as a Rust identifier by replacing
 /// `-` with `_`) and the interface names the dependency's exported WIT interface in
-/// UpperCamelCase.
+/// UpperCamelCase. Each interface generates a trait of that name implemented for the wrapper, so
+/// the wrapper struct must be named differently from every referenced interface.
 ///
 /// ```rust,ignore
 /// use miden::{account, component, component_storage, AccountId, Felt};
 ///
 /// #[account(counter_contract::CounterContract)]
-/// struct CounterContract;
+/// struct Counter;
 ///
 /// #[component_storage]
 /// struct CallerAccountStorage;
@@ -156,7 +157,7 @@ mod wit_world;
 /// #[component]
 /// impl CallerAccount for CallerAccountStorage {
 ///     fn read_counter(&self, counter_account_id: AccountId) -> Felt {
-///         let counter = CounterContract::new(counter_account_id);
+///         let counter = Counter::new(counter_account_id);
 ///         counter.get_count()
 ///     }
 /// }
@@ -222,10 +223,25 @@ pub fn component_storage(
 /// Generates typed active and foreign account bindings for account dependencies on an empty
 /// wrapper struct.
 ///
-/// The attribute accepts `package::Interface` references. Write the Miden package name as a Rust
-/// identifier by replacing `-` with `_`, followed by the dependency's exported WIT interface in
-/// UpperCamelCase. For example, the `counter-contract` interface of a dependency named
-/// `counter-contract` is requested with `#[account(counter_contract::CounterContract)]`.
+/// The attribute accepts `package::Interface` references, optionally with an `as Alias`. Write the
+/// Miden package name as a Rust identifier by replacing `-` with `_`, followed by the dependency's
+/// exported WIT interface in UpperCamelCase. For example, the `counter-contract` interface of a
+/// dependency named `counter-contract` is requested with `#[account(counter_contract::CounterContract)]`.
+///
+/// Each referenced interface generates one trait — named after the interface, with the wrapper's
+/// visibility — whose methods dispatch between the active account and the foreign account the
+/// wrapper is bound to, plus an `impl <Interface> for <Wrapper>` that attaches it. Emitting one
+/// trait per component lets two components that export the same method name coexist on one wrapper;
+/// when a method name is shared, the call is disambiguated with
+/// `<Wrapper as Interface>::method(account, ..)`. The generated traits live in the same module as
+/// the wrapper, so a same-module `#[note]`/`#[tx_script]` entrypoint sees them without an import; a
+/// cross-module entrypoint needs `use` of the trait.
+///
+/// The generated trait name must differ from the wrapper struct and from every other generated
+/// trait. When that is not naturally true — the wrapper shares the interface name, two packages
+/// export the same interface name, or the crate already uses the interface as a sibling
+/// `#[component(...)]` — give the trait a different name with `as`, e.g.
+/// `#[account(counter_contract::CounterContract as RemoteCounter)]`.
 #[proc_macro_attribute]
 pub fn account(
     attr: proc_macro::TokenStream,
@@ -277,7 +293,7 @@ pub fn export_type(
 /// use miden::*;
 ///
 /// #[account(counter_contract::CounterContract)]
-/// struct CounterContract;
+/// struct Counter;
 ///
 /// #[note]
 /// struct CounterCaller {
@@ -288,7 +304,7 @@ pub fn export_type(
 /// impl CounterCaller {
 ///     #[note_script]
 ///     pub fn run(self, _arg: Word) {
-///         let counter = CounterContract::new(self.counter_account_id);
+///         let counter = Counter::new(self.counter_account_id);
 ///         let count = counter.get_count();
 ///         assert_eq(count, felt!(1));
 ///     }

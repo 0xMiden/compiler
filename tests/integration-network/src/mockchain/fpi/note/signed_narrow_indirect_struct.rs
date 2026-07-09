@@ -114,7 +114,7 @@ use miden::*;
 
 use crate::bindings::miden::signed_narrow_indirect_struct_account::counter_contract::SignedNarrowRecord;
 #[account(signed_narrow_indirect_struct_account::CounterContract)]
-struct CounterContract;
+struct Counter;
 
 /// Negative byte-sized value used by the signed-narrow indirect FPI test.
 const I8_VALUE: i8 = -7;
@@ -145,7 +145,7 @@ impl CounterCaller {
     /// Checks that negative signed narrow fields cross the indirect FPI boundary.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::new(self.counter_account_id);
+        let count_acc = Counter::new(self.counter_account_id);
         let result = count_acc.echo_signed_narrow_record(SignedNarrowRecord {
             felt0: felt!(201),
             felt1: felt!(202),

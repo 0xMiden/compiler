@@ -117,7 +117,7 @@ use miden::*;
 
 use crate::bindings::miden::sixteen_flattened_params_struct_account::counter_contract::SixteenFlattenedParams;
 #[account(sixteen_flattened_params_struct_account::CounterContract)]
-struct CounterContract;
+struct Counter;
 
 /// Byte-sized value used by the sixteen-felt record FPI test.
 const U8_VALUE: u8 = 0xab;
@@ -148,7 +148,7 @@ impl CounterCaller {
     /// Checks that sixteen flattened record fields cross the FPI boundary in both directions.
     #[note_script]
     pub fn run(self, _arg: Word) {
-        let count_acc = CounterContract::new(self.counter_account_id);
+        let count_acc = Counter::new(self.counter_account_id);
         let result = count_acc.echo_sixteen_flattened_params(SixteenFlattenedParams {
             felt0: felt!(101),
             felt1: felt!(102),

@@ -6,6 +6,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### BREAKING
+- `#[account(...)]` now generates the component methods as one trait per referenced interface
+  (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
+  of inherent methods on the wrapper struct. Two components that export the same method name can
+  therefore coexist on one wrapper; a shared method name is no longer a compile error and is called
+  with `<Wallet as Interface>::method(account, ..)`. Two consequences for existing code: the
+  wrapper struct must be named differently from every generated trait (e.g.
+  `#[account(counter_contract::CounterContract)] struct CounterContract;` no longer compiles —
+  rename the struct, or use `as` (see Added) to rename the trait), and a component method that
+  shares a name with an `ActiveAccount` built-in (e.g. `get_id`) no longer shadows it —
+  disambiguate with `<Wallet as Interface>::get_id(account)`, or (with
+  `use miden::active_account::ActiveAccount;` in scope) `<Wallet as ActiveAccount>::get_id(account)`.
+  Single-component accounts whose method names do not overlap keep calling `account.method(..)`
+  unchanged when the generated trait is in scope — a same-module entrypoint sees it automatically;
+  a cross-module call site needs a `use` of the generated trait. Relatedly, a component method
+  named `new` is now permitted (previously a hard error): it lives on the generated trait and
+  coexists with the inherent `Wallet::new(account_id)` constructor #1208
+
+### Added
+- `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
+  `#[account(counter_contract::CounterContract as RemoteCounter)]`. The path still selects the
+  interface; only the generated trait is renamed. Use it when the interface name would clash with
+  the wrapper struct, with another referenced interface, or with a sibling `#[component(...)]`
+  trait of the same interface in the same crate #1208
+
 ## [0.13.1] - 2026-07-09
 
 ### Fixed
@@ -115,7 +140,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fixed `pipe_words_to_memory` binding;
-
 
 ## [0.10.0]
 

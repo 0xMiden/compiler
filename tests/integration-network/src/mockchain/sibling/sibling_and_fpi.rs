@@ -2,9 +2,11 @@
 //!
 //! The caller component depends on one counter package and reaches it two ways: through the
 //! generated sibling trait against the copy deployed on its own account, and through an
-//! `#[account(...)]` wrapper against a copy deployed on a second, foreign account. This also
-//! exercises the same WIT interface being imported by the sibling bindings (plain functions
-//! only) and the `#[account]` bindings (plain + `fpi-*` functions) in one crate.
+//! `#[account(...)]` wrapper against a copy deployed on a second, foreign account. Because both
+//! macros generate a trait named after the interface, the `#[account]` reference uses an
+//! `as RemoteCounter` alias so its FPI trait does not collide with the sibling `CounterContract`
+//! trait. This also exercises the same WIT interface being imported by the sibling bindings (plain
+//! functions only) and the `#[account]` bindings (plain + `fpi-*` functions) in one crate.
 
 use miden_client::{
     account::{
@@ -181,9 +183,16 @@ use miden::{
     AccountId, Felt, Word,
 };
 
-/// Foreign binding to another account holding the same counter component package.
-#[account(sibling_and_fpi_counter_account::CounterContract)]
-struct RemoteCounter;
+/// Foreign binding to a second account holding the same counter component package.
+///
+/// The sibling `#[component(..::CounterContract)]` below already generates a `CounterContract`
+/// trait in this crate, so the `#[account]` reference uses an `as RemoteCounter` alias: it still
+/// selects the `counter-contract` interface, but names its generated FPI trait `RemoteCounter` to
+/// avoid the clash. Keeping the wrapper at crate scope (rather than a submodule) also keeps the
+/// two `counter-contract` imports — plain for the sibling, plain + `fpi-*` for the account —
+/// mergeable at componentization.
+#[account(sibling_and_fpi_counter_account::CounterContract as RemoteCounter)]
+struct Remote;
 
 /// Storage-less component which reaches the counter dependency two ways.
 #[component_storage]
@@ -200,12 +209,12 @@ trait CallerAccount: NativeAccount + CounterContract {
 impl CallerAccount for CallerAccountStorage {
     fn bump_local_read_remote(&mut self, remote_account_id: AccountId) -> Felt {
         let key = Word::new([felt!(13), felt!(21), felt!(34), felt!(55)]);
-        // Intra-account sibling call through the generated `CounterContract` trait.
+        // Intra-account sibling call through the sibling `CounterContract` trait.
         let before = self.get_count(key);
         let after = self.increment_count(key);
         assert_eq(after, before + felt!(1));
-        // Inter-account FPI call through the `#[account]` wrapper's inherent methods.
-        let remote = RemoteCounter::new(remote_account_id);
+        // Inter-account FPI call through the aliased `RemoteCounter` trait.
+        let remote = Remote::new(remote_account_id);
         remote.get_count(key)
     }
 }

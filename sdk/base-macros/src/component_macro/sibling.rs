@@ -20,7 +20,9 @@ use quote::{format_ident, quote};
 use syn::{Error, ItemFn, ReturnType, TraitItemFn, parse_quote};
 
 use crate::{
-    dependency_ref::{DependencyRef, select_dependencies},
+    dependency_ref::{
+        DependencyRef, find_duplicate_trait_name, find_trait_named, select_dependencies,
+    },
     fpi, generate, manifest_paths,
     wit_world::{ManifestPackage, SelectedDependency, import_world_wit},
 };
@@ -38,6 +40,7 @@ pub(super) fn expand_sibling_traits(
     component_trait_ident: &Ident,
     refs: &[DependencyRef],
 ) -> syn::Result<TokenStream2> {
+    reject_aliases(refs)?;
     reject_duplicate_trait_names(refs)?;
     reject_component_trait_name_collision(component_trait_ident, refs)?;
 
@@ -158,10 +161,7 @@ fn reject_component_trait_name_collision(
     component_trait_ident: &Ident,
     refs: &[DependencyRef],
 ) -> syn::Result<()> {
-    if let Some(reference) = refs
-        .iter()
-        .find(|reference| &reference.interface_ident == component_trait_ident)
-    {
+    if let Some(reference) = find_trait_named(refs, component_trait_ident) {
         return Err(Error::new(
             reference.span,
             format!(
@@ -178,26 +178,43 @@ fn reject_component_trait_name_collision(
     Ok(())
 }
 
+/// Rejects `as` aliases on sibling references.
+///
+/// The `as Alias` override that renames a generated trait is an `#[account(...)]`-only affordance
+/// (used there to avoid name clashes); sibling component traits are always named after their
+/// interface. Rejecting it loudly avoids silently ignoring a user's alias.
+fn reject_aliases(refs: &[DependencyRef]) -> syn::Result<()> {
+    if let Some((reference, alias)) = refs
+        .iter()
+        .find_map(|reference| reference.alias.as_ref().map(|alias| (reference, alias)))
+    {
+        return Err(Error::new(
+            alias.span(),
+            format!(
+                "sibling component reference `{}::{}` cannot use an `as` alias; sibling traits \
+                 are named after their interface",
+                reference.package_ident, reference.interface_ident,
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Rejects references whose interface segments would generate identically named Rust traits.
 fn reject_duplicate_trait_names(refs: &[DependencyRef]) -> syn::Result<()> {
-    for (index, reference) in refs.iter().enumerate() {
-        if let Some(previous) = refs[..index]
-            .iter()
-            .find(|previous| previous.interface_ident == reference.interface_ident)
-        {
-            return Err(Error::new(
-                reference.span,
-                format!(
-                    "sibling references `{}::{}` and `{}::{}` would both generate a trait named \
-                     `{}`; sibling interface names must be unique within one component trait",
-                    previous.package_ident,
-                    previous.interface_ident,
-                    reference.package_ident,
-                    reference.interface_ident,
-                    reference.interface_ident,
-                ),
-            ));
-        }
+    if let Some((previous, reference)) = find_duplicate_trait_name(refs) {
+        return Err(Error::new(
+            reference.span,
+            format!(
+                "sibling references `{}::{}` and `{}::{}` would both generate a trait named `{}`; \
+                 sibling interface names must be unique within one component trait",
+                previous.package_ident,
+                previous.interface_ident,
+                reference.package_ident,
+                reference.interface_ident,
+                reference.interface_ident,
+            ),
+        ));
     }
     Ok(())
 }
@@ -209,7 +226,7 @@ fn build_sibling_trait(
     module: &fpi::Module,
     hidden_module_ident: &Ident,
 ) -> syn::Result<TokenStream2> {
-    let trait_ident = &reference.interface_ident;
+    let trait_ident = reference.trait_ident();
     let methods = module
         .functions
         .iter()
@@ -228,6 +245,12 @@ fn build_sibling_trait(
 
     Ok(quote! {
         #[doc = #trait_doc]
+        // The generated trait name is the interface segment as written; allow a
+        // non-UpperCamelCase name rather than fire `non_camel_case_types` on generated code.
+        #[allow(non_camel_case_types)]
+        // Always `pub` (unlike the `#[account]` trait's wrapper visibility): the user names this
+        // trait in their own component trait's supertrait bound (`trait Caller: … + CounterContract`),
+        // so it must be at least as visible as that trait.
         pub trait #trait_ident {
             #(#methods)*
         }
@@ -400,6 +423,30 @@ mod tests {
         // The diagnostic echoes the verbatim spelling the user wrote, not the kebab-cased
         // manifest-lookup key.
         assert!(message.contains("other_pausable::Pausable"));
+    }
+
+    #[test]
+    fn reject_aliases_rejects_an_as_alias() {
+        let args = syn::parse2::<crate::dependency_ref::DependencyRefArgs>(quote! {
+            pausable::Pausable as Renamed
+        })
+        .unwrap();
+        let err = reject_aliases(&args.refs).unwrap_err();
+        assert!(err.to_string().contains("cannot use an `as` alias"), "{err}");
+    }
+
+    #[test]
+    fn reject_aliases_rejects_a_snake_case_alias_without_a_casing_error() {
+        // Alias casing is no longer validated in the shared parser, so a sibling snake_case alias
+        // parses and reaches `reject_aliases` — the correct error, not a misdirecting casing one.
+        let args = syn::parse2::<crate::dependency_ref::DependencyRefArgs>(quote! {
+            pausable::Pausable as remote_pausable
+        })
+        .unwrap();
+        let err = reject_aliases(&args.refs).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("cannot use an `as` alias"), "{message}");
+        assert!(!message.contains("UpperCamelCase"), "{message}");
     }
 
     #[test]

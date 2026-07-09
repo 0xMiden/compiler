@@ -52,22 +52,37 @@ pub(super) fn build_fpi_test_packages(
 }
 
 /// Builds two isolated account projects and one note project for an FPI test case.
+///
+/// `first_interface` / `second_interface` are the kebab-case WIT interface names each component
+/// exports; passing the same name for both (disambiguated by `as Alias` in the caller) exercises
+/// the alias path, while distinct names exercise the plain multi-interface path. Storage slot names
+/// derive from the interface segment, so two same-interface packages still get distinct slots via
+/// their (distinct) package namespaces.
 pub(super) fn build_multi_package_fpi_test_packages(
     test_name: &str,
+    first_interface: &str,
+    second_interface: &str,
     first_account_source: &str,
     second_account_source: &str,
     caller_source: &str,
 ) -> (Arc<Package>, Arc<Package>, Arc<Package>, StorageSlotName, StorageSlotName) {
     let names = FpiMultiPackageProjectNames::new(test_name);
-    let first_storage_slot = counter_storage_slot_name_for_package(&names.first_account_package);
-    let second_storage_slot = counter_storage_slot_name_for_package(&names.second_account_package);
+    let first_storage_slot = storage_slot_name_for_package(
+        &names.first_account_package,
+        &first_interface.replace('-', "_"),
+    );
+    let second_storage_slot = storage_slot_name_for_package(
+        &names.second_account_package,
+        &second_interface.replace('-', "_"),
+    );
 
     let first_account_project = project(&names.first_account_name)
         .file(
             "miden-project.toml",
-            &account_miden_project_toml_for(
+            &account_miden_project_toml_with_interface(
                 &names.first_account_name,
                 &names.first_account_package,
+                first_interface,
             ),
         )
         .file(
@@ -81,9 +96,10 @@ pub(super) fn build_multi_package_fpi_test_packages(
     let second_account_project = project(&names.second_account_name)
         .file(
             "miden-project.toml",
-            &account_miden_project_toml_for(
+            &account_miden_project_toml_with_interface(
                 &names.second_account_name,
                 &names.second_account_package,
+                second_interface,
             ),
         )
         .file(
@@ -462,3 +478,74 @@ fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> 
         account_project_root,
     )
 }
+
+/// First counter component shared by the multi-package FPI tests.
+///
+/// Exports the `first-counter` interface with a `get_count` method returning the value stored under
+/// the counter key. Its method name deliberately matches [`SECOND_COUNTER_COMPONENT_SOURCE`] so a
+/// wrapper deriving both components must disambiguate the two generated traits with UFCS.
+pub(super) const FIRST_COUNTER_COMPONENT_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt, StorageMap, Word};
+
+/// Account component whose storage map holds the first counter value.
+#[component_storage]
+struct CounterContractStorage {
+    /// Storage map holding the counter value.
+    #[storage(description = "first counter contract storage map")]
+    count_map: StorageMap<Word, Felt>,
+}
+
+/// Account component whose storage map holds the first counter value.
+#[component]
+trait FirstCounter {
+    /// Returns the first counter value.
+    fn get_count(&self) -> Felt;
+}
+
+#[component]
+impl FirstCounter for CounterContractStorage {
+    /// Returns the first counter value.
+    fn get_count(&self) -> Felt {
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        self.count_map.get(key)
+    }
+}
+"#;
+
+/// Second counter component shared by the multi-package FPI tests.
+///
+/// Exports the `second-counter` interface; see [`FIRST_COUNTER_COMPONENT_SOURCE`] for the shared
+/// `get_count` method name that forces UFCS disambiguation on a wrapper deriving both.
+pub(super) const SECOND_COUNTER_COMPONENT_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, Felt, StorageMap, Word};
+
+/// Account component whose storage map holds the second counter value.
+#[component_storage]
+struct CounterContractStorage {
+    /// Storage map holding the counter value.
+    #[storage(description = "second counter contract storage map")]
+    count_map: StorageMap<Word, Felt>,
+}
+
+/// Account component whose storage map holds the second counter value.
+#[component]
+trait SecondCounter {
+    /// Returns the second counter value.
+    fn get_count(&self) -> Felt;
+}
+
+#[component]
+impl SecondCounter for CounterContractStorage {
+    /// Returns the second counter value.
+    fn get_count(&self) -> Felt {
+        let key = Word::new([felt!(0), felt!(0), felt!(0), felt!(1)]);
+        self.count_map.get(key)
+    }
+}
+"#;

@@ -37,7 +37,7 @@ fn basic_wallet_and_p2id() {
     );
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    expect!["14697"].assert_eq(stripped_mast_size_str(&note_package));
+    expect!["14792"].assert_eq(stripped_mast_size_str(&note_package));
 
     let mut p2ide_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/p2ide-note",
