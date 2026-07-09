@@ -37,7 +37,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.9.1"
+version = "0.10.0"
 rust-version = "1.97"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
@@ -139,26 +139,26 @@ wasmparser = { version = "^0.248", default-features = false, features = [
 ] }
 
 # Workspace crates
-midenc-codegen-masm = { version = "0.9.1", path = "codegen/masm" }
-midenc-dialect-arith = { version = "0.9.1", path = "dialects/arith" }
-midenc-dialect-hir = { version = "0.9.1", path = "dialects/hir" }
-midenc-dialect-scf = { version = "0.9.1", path = "dialects/scf" }
-midenc-dialect-cf = { version = "0.9.1", path = "dialects/cf" }
-midenc-dialect-ub = { version = "0.9.1", path = "dialects/ub" }
-midenc-dialect-wasm = { version = "0.9.1", path = "dialects/wasm" }
-midenc-hir = { version = "0.9.1", path = "hir" }
-midenc-hir-analysis = { version = "0.9.1", path = "hir-analysis" }
-midenc-hir-eval = { version = "0.9.1", path = "eval" }
-midenc-hir-macros = { version = "0.9.1", path = "hir-macros" }
-midenc-hir-symbol = { version = "0.9.1", path = "hir-symbol" }
-midenc-hir-transform = { version = "0.9.1", path = "hir-transform" }
-midenc-frontend-masm = { version = "0.9.1", path = "frontend/masm" }
-midenc-frontend-wasm = { version = "0.9.1", path = "frontend/wasm" }
+midenc-codegen-masm = { version = "0.10.0", path = "codegen/masm" }
+midenc-dialect-arith = { version = "0.10.0", path = "dialects/arith" }
+midenc-dialect-hir = { version = "0.10.0", path = "dialects/hir" }
+midenc-dialect-scf = { version = "0.10.0", path = "dialects/scf" }
+midenc-dialect-cf = { version = "0.10.0", path = "dialects/cf" }
+midenc-dialect-ub = { version = "0.10.0", path = "dialects/ub" }
+midenc-dialect-wasm = { version = "0.10.0", path = "dialects/wasm" }
+midenc-hir = { version = "0.10.0", path = "hir" }
+midenc-hir-analysis = { version = "0.10.0", path = "hir-analysis" }
+midenc-hir-eval = { version = "0.10.0", path = "eval" }
+midenc-hir-macros = { version = "0.10.0", path = "hir-macros" }
+midenc-hir-symbol = { version = "0.10.0", path = "hir-symbol" }
+midenc-hir-transform = { version = "0.10.0", path = "hir-transform" }
+midenc-frontend-masm = { version = "0.10.0", path = "frontend/masm" }
+midenc-frontend-wasm = { version = "0.10.0", path = "frontend/wasm" }
 midenc-frontend-wasm-metadata = { version = "0.13.1", path = "sdk/wasm-metadata" }
-midenc-compile = { version = "0.9.1", path = "midenc-compile" }
-midenc-driver = { version = "0.9.1", path = "midenc-driver" }
-midenc-log = { version = "0.9.1", path = "midenc-log", features = ["kv"] }
-midenc-session = { version = "0.9.1", path = "midenc-session" }
+midenc-compile = { version = "0.10.0", path = "midenc-compile" }
+midenc-driver = { version = "0.10.0", path = "midenc-driver" }
+midenc-log = { version = "0.10.0", path = "midenc-log", features = ["kv"] }
+midenc-session = { version = "0.10.0", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-field = { version = "^0.25", default-features = false }

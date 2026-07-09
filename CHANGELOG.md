@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## `midenc-hir-opt` - [0.10.0](https://github.com/0xMiden/compiler/compare/midenc-hir-opt-v0.9.1...midenc-hir-opt-v0.10.0) - 2026-07-09
+
+### Other
+- update Cargo.lock dependencies
+
+## `cargo-miden` - [0.10.0](https://github.com/0xMiden/compiler/compare/v0.9.1...v0.10.0) - 2026-07-09
+
+### Other
+- update new project template before the v0.9.2 compiler release
+
+## `midenc` - [0.10.0](https://github.com/0xMiden/compiler/compare/midenc-v0.9.1...midenc-v0.10.0) - 2026-07-09
+
+### Other
+- update Cargo.lock dependencies
+
+## `midenc-frontend-wasm` - [0.10.0](https://github.com/0xMiden/compiler/compare/midenc-frontend-wasm-v0.9.1...midenc-frontend-wasm-v0.10.0) - 2026-07-09
+
+### Fixed
+- *(sdk)* [**breaking**] align tx-kernel bindings with protocol MASM signatures
+- *(wasm)* bitcast the br_table selector instead of range-checking it
+
+## `midenc-codegen-masm` - [0.10.0](https://github.com/0xMiden/compiler/compare/midenc-codegen-masm-v0.9.1...midenc-codegen-masm-v0.10.0) - 2026-07-09
+
+### Other
+- *(codegen)* load and store element-space pointers with bare memory ops ([#1260](https://github.com/0xMiden/compiler/pull/1260))
+
+## `midenc-hir` - [0.10.0](https://github.com/0xMiden/compiler/compare/midenc-hir-v0.9.1...midenc-hir-v0.10.0) - 2026-07-09
+
+### Fixed
+- *(hir)* make Region::find_common_ancestor return the common region ([#1247](https://github.com/0xMiden/compiler/pull/1247))
+
 ## `miden-objtool` - [0.9.1](https://github.com/0xMiden/compiler/compare/miden-objtool-v0.9.0...miden-objtool-v0.9.1) - 2026-07-07
 
 ### Other
