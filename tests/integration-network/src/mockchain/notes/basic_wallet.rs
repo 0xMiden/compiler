@@ -110,7 +110,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
     expect!["3327"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["7060"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["7071"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -141,7 +141,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .unwrap()
         .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["7060"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["7071"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
