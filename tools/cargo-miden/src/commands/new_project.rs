@@ -19,7 +19,7 @@ const PROJECT_TEMPLATES_REPO_TAG: &str = "v0.31.0";
 ///
 /// Before changing it make sure the new tag exists in the rust-templates repo and points to the
 /// desired commit.
-const MIDEN_PROJECT_TEMPLATE_REPO_TAG: &str = "v0.12";
+const MIDEN_PROJECT_TEMPLATE_REPO_TAG: &str = "v0.13";
 
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
