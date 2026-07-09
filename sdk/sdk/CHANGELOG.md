@@ -6,14 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### BREAKING
+## [0.13.1] - 2026-07-09
+
+### Fixed
 - `*_note::get_metadata` now returns a single-`Word` `NoteMetadata { header: Word }` (the note
   metadata header) instead of two words; the note attachment is no longer part of the metadata.
   Retrieve attachments via `*_note::{get_attachments_commitment, find_attachment,
   write_attachment_commitments_to_memory, write_attachment_to_memory}` instead. See the
-  [migration guide](./MIGRATION.md#unreleased).
-
-### Fixed
+  [migration guide](./MIGRATION.md).
 - The stack return areas of `stdlib::crypto::hashes::{hash_elements, hash_words, blake3_merge,
   sha256_merge}`, `intrinsics::crypto::merge`, `stdlib::mem::{pipe_words_to_memory,
   pipe_double_words_to_memory}`, and of all protocol bindings returning `Word`-based values

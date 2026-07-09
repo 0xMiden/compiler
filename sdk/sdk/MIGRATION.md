@@ -12,6 +12,8 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+## 0.13.0 -> 0.13.1
+
 ### `*_note::get_metadata` returns a single-word `NoteMetadata`
 
 `get_metadata` no longer includes the note attachment word — it returns only the metadata header,
