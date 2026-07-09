@@ -12,7 +12,8 @@ pub mod crypto;
 pub mod debug;
 pub mod felt;
 
-/// A wrapper type which ensures that the wrapped value is aligned to 32 bytes.
+/// A wrapper type which ensures that the wrapped value is aligned to a VM word boundary
+/// (4 felts, with each felt stored in a `u64`, i.e. 32 bytes).
 #[repr(C, align(32))]
 pub struct WordAligned<T>(T);
 impl<T> WordAligned<T> {

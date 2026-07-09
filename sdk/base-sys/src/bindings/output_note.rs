@@ -1,7 +1,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{Asset, AttachmentLocation, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
 
@@ -243,9 +243,9 @@ pub struct OutputNoteAssetsInfo {
 /// Retrieves the assets commitment and asset count for the output note at `note_index`.
 pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(Word, Felt)>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
         extern_output_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
-        let (commitment, num_assets) = ret_area.assume_init();
+        let (commitment, num_assets) = ret_area.into_inner().assume_init();
         OutputNoteAssetsInfo {
             commitment,
             num_assets,
@@ -270,40 +270,41 @@ pub fn get_assets(note_index: NoteIdx) -> Vec<Asset> {
 /// Returns the commitment over all attachments of the output note at `note_index`.
 pub fn get_attachments_commitment(note_index: NoteIdx) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_output_note_get_attachments_commitment(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the recipient of the output note at `note_index`.
 pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
         extern_output_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
-/// Returns the attachment and metadata header of the output note at `note_index`.
+/// Returns the metadata header of the output note at `note_index`.
 pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteMetadata>::uninit());
         extern_output_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Searches the output note metadata for `attachment_scheme`.
 pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> AttachmentLocation {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<AttachmentLocation>::uninit();
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
         extern_output_note_find_attachment(
             attachment_scheme,
             note_index.inner,
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 

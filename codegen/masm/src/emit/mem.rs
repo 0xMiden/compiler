@@ -149,8 +149,6 @@ impl OpEmitter<'_> {
         let ptr = self.stack.pop().expect("operand stack is empty");
         match ptr.ty() {
             Type::Ptr(ref ptr_ty) => {
-                // Convert the pointer to a native pointer representation
-                self.convert_to_native_ptr(ptr_ty, span);
                 assert_eq!(
                     ty.size_in_bits(),
                     ptr_ty.pointee().size_in_bits(),
@@ -158,6 +156,19 @@ impl OpEmitter<'_> {
                      type of the pointee ({})",
                     ptr_ty.pointee()
                 );
+                // Element-address-space pointers (e.g. procedure locals) are element-aligned
+                // with no byte offset by construction, so element-sized scalars load directly
+                // from the address; the dynamic-offset intrinsics exist for the byte-addressable
+                // address space.
+                if !ptr_ty.is_byte_pointer()
+                    && matches!(ty, Type::Felt | Type::I32 | Type::U32 | Type::Ptr(_))
+                {
+                    self.emit(masm::Instruction::MemLoad, span);
+                    self.push(ty);
+                    return;
+                }
+                // Convert the pointer to a native pointer representation
+                self.convert_to_native_ptr(ptr_ty, span);
                 match &ty {
                     Type::I128 | Type::U128 => self.load_quad_word(None, span),
                     Type::I64 | Type::U64 => self.load_double_word_int(None, span),
@@ -646,8 +657,6 @@ impl OpEmitter<'_> {
         assert!(!value_ty.is_zst(), "cannot store a zero-sized type in memory");
         match ptr_ty {
             Type::Ptr(ref ptr_ty) => {
-                // Convert the pointer to a native pointer representation
-                self.convert_to_native_ptr(ptr_ty, span);
                 assert_eq!(
                     value_ty.size_in_bits(),
                     ptr_ty.pointee().size_in_bits(),
@@ -655,6 +664,18 @@ impl OpEmitter<'_> {
                      from the type of the pointee ({})",
                     ptr_ty.pointee()
                 );
+                // Element-address-space pointers (e.g. procedure locals) are element-aligned
+                // with no byte offset by construction, so element-sized scalars store directly
+                // to the address; the dynamic-offset intrinsics exist for the byte-addressable
+                // address space.
+                if !ptr_ty.is_byte_pointer()
+                    && matches!(value_ty, Type::Felt | Type::I32 | Type::U32 | Type::Ptr(_))
+                {
+                    self.emit(masm::Instruction::MemStore, span);
+                    return;
+                }
+                // Convert the pointer to a native pointer representation
+                self.convert_to_native_ptr(ptr_ty, span);
                 match value_ty {
                     Type::I128 | Type::U128 => self.store_quad_word(None, span),
                     Type::I64 | Type::U64 => self.store_double_word_int(None, span),

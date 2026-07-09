@@ -1,7 +1,7 @@
 extern crate alloc;
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{
     AccountId, Asset, AttachmentLocation, NoteIdx, NoteMetadata, RawAccountId, Recipient,
@@ -83,9 +83,9 @@ pub struct InputNoteStorageInfo {
 /// Returns the assets commitment and asset count for the input note at `note_index`.
 pub fn get_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(Word, Felt)>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
         extern_input_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
-        let (commitment, num_assets) = ret_area.assume_init();
+        let (commitment, num_assets) = ret_area.into_inner().assume_init();
         InputNoteAssetsInfo {
             commitment,
             num_assets,
@@ -110,36 +110,36 @@ pub fn get_assets(note_index: NoteIdx) -> Vec<Asset> {
 /// Returns the recipient of the input note at `note_index`.
 pub fn get_recipient(note_index: NoteIdx) -> Recipient {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
         extern_input_note_get_recipient(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
-/// Returns the attachment and metadata header of the input note at `note_index`.
+/// Returns the metadata header of the input note at `note_index`.
 pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<NoteMetadata>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<NoteMetadata>::uninit());
         extern_input_note_get_metadata(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the sender of the input note at `note_index`.
 pub fn get_sender(note_index: NoteIdx) -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
         extern_input_note_get_sender(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init().into_account_id()
+        ret_area.into_inner().assume_init().into_account_id()
     }
 }
 
 /// Returns the storage commitment and storage item count for the input note at `note_index`.
 pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<(Word, Felt)>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
         extern_input_note_get_storage_info(note_index.inner, ret_area.as_mut_ptr());
-        let (commitment, num_storage_items) = ret_area.assume_init();
+        let (commitment, num_storage_items) = ret_area.into_inner().assume_init();
         InputNoteStorageInfo {
             commitment,
             num_storage_items,
@@ -150,40 +150,40 @@ pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
 /// Returns the script root of the input note at `note_index`.
 pub fn get_script_root(note_index: NoteIdx) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_input_note_get_script_root(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the serial number of the input note at `note_index`.
 pub fn get_serial_number(note_index: NoteIdx) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_input_note_get_serial_number(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the commitment over all attachments of the input note at `note_index`.
 pub fn get_attachments_commitment(note_index: NoteIdx) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_input_note_get_attachments_commitment(note_index.inner, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Returns the attachment commitment using the protocol's shared active/indexed input-note path.
 pub fn get_attachments_commitment_raw(is_active_note: Felt, note_index: NoteIdx) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_input_note_get_attachments_commitment_raw(
             is_active_note,
             note_index.inner,
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -228,12 +228,13 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: Felt) -> 
 /// Searches the input note metadata for `attachment_scheme`.
 pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> AttachmentLocation {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<AttachmentLocation>::uninit();
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
         extern_input_note_find_attachment(
             attachment_scheme,
             note_index.inner,
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }

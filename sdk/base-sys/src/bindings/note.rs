@@ -2,7 +2,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::{AccountId, AttachmentLocation, NoteType, RawAccountId, Recipient, Tag};
 
@@ -151,7 +151,7 @@ pub fn compute_and_store_recipient(
     assert_eq!(miden_ptr % 4, 0, "storage pointer must be word-aligned");
 
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
         extern_note_build_recipient(
             miden_ptr as *mut Felt,
             storage.len(),
@@ -165,7 +165,7 @@ pub fn compute_and_store_recipient(
             script_root[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -195,13 +195,13 @@ pub fn compute_storage_commitment(storage: &[Felt]) -> Word {
     assert_eq!(miden_ptr % 4, 0, "storage pointer must be word-aligned");
 
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_note_compute_storage_commitment(
             miden_ptr as *const Felt,
             storage.len(),
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -299,7 +299,7 @@ pub fn compute_recipient(
     storage_commitment: Word,
 ) -> Recipient {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Recipient>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Recipient>::uninit());
         extern_note_compute_recipient(
             serial_num[0],
             serial_num[1],
@@ -315,14 +315,14 @@ pub fn compute_recipient(
             storage_commitment[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
 /// Extracts the sender account ID from a note metadata header word.
 pub fn metadata_into_sender(metadata: Word) -> AccountId {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<RawAccountId>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<RawAccountId>::uninit());
         extern_note_metadata_into_sender(
             metadata[0],
             metadata[1],
@@ -330,14 +330,14 @@ pub fn metadata_into_sender(metadata: Word) -> AccountId {
             metadata[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init().into_account_id()
+        ret_area.into_inner().assume_init().into_account_id()
     }
 }
 
 /// Extracts the four attachment schemes encoded in a note metadata header word.
 pub fn metadata_into_attachment_schemes(metadata: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_note_metadata_into_attachment_schemes(
             metadata[0],
             metadata[1],
@@ -345,7 +345,7 @@ pub fn metadata_into_attachment_schemes(metadata: Word) -> Word {
             metadata[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -376,7 +376,8 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
 /// Searches a metadata header word for `attachment_scheme`.
 pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> AttachmentLocation {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<AttachmentLocation>::uninit();
+        let mut ret_area =
+            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
         extern_note_find_attachment_idx(
             attachment_scheme,
             metadata[0],
@@ -385,6 +386,6 @@ pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> Attachmen
             metadata[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }

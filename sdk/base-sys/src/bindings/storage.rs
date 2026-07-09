@@ -1,4 +1,4 @@
-use miden_stdlib_sys::{Felt, Word};
+use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::StorageSlotId;
 
@@ -76,10 +76,10 @@ unsafe extern "C" {
 #[inline]
 pub fn get_item(slot_id: StorageSlotId) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         let (suffix, prefix) = slot_id.to_suffix_prefix();
         extern_get_storage_item(suffix, prefix, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -87,10 +87,10 @@ pub fn get_item(slot_id: StorageSlotId) -> Word {
 #[inline]
 pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         let (suffix, prefix) = slot_id.to_suffix_prefix();
         extern_get_initial_storage_item(suffix, prefix, ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -109,7 +109,7 @@ pub fn get_initial_item(slot_id: StorageSlotId) -> Word {
 #[inline]
 pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         let (suffix, prefix) = slot_id.to_suffix_prefix();
         extern_set_storage_item(
             suffix,
@@ -120,7 +120,7 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
             value[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -140,7 +140,7 @@ pub fn set_item(slot_id: StorageSlotId, value: Word) -> Word {
 #[inline]
 pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         let (suffix, prefix) = slot_id.to_suffix_prefix();
         extern_get_storage_map_item(
             suffix,
@@ -151,7 +151,7 @@ pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
             key[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -159,7 +159,7 @@ pub fn get_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 #[inline]
 pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         let (suffix, prefix) = slot_id.to_suffix_prefix();
         extern_get_initial_storage_map_item(
             suffix,
@@ -170,7 +170,7 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
             key[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -192,7 +192,7 @@ pub fn get_initial_map_item(slot_id: StorageSlotId, key: &Word) -> Word {
 #[inline]
 pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         let (suffix, prefix) = slot_id.to_suffix_prefix();
         extern_set_storage_map_item(
             suffix,
@@ -207,6 +207,6 @@ pub fn set_map_item(slot_id: StorageSlotId, key: Word, value: Word) -> Word {
             value[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }

@@ -59,7 +59,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, Felt, // slot_id_prefix, slot_id_suffix
+                Felt, Felt, // slot_id_suffix, slot_id_prefix
                 Felt, Felt, Felt, Felt, // value components
             ],
             [Felt, Felt, Felt, Felt], // old value
@@ -70,7 +70,7 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
         FunctionType::new(
             CallConv::Wasm,
             [
-                Felt, Felt, // slot_id_prefix, slot_id_suffix
+                Felt, Felt, // slot_id_suffix, slot_id_prefix
                 Felt, Felt, Felt, Felt, // key components
                 Felt, Felt, Felt, Felt, // value components
             ],

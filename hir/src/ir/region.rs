@@ -3,6 +3,8 @@ mod interfaces;
 mod invocation_bounds;
 mod kind;
 mod successor;
+#[cfg(test)]
+mod tests;
 mod transforms;
 
 use alloc::rc::Rc;
@@ -584,31 +586,28 @@ impl Region {
 
 /// Queries
 impl Region {
+    /// Returns the innermost region that contains all of the given operations, if such a region
+    /// exists.
+    ///
+    /// Returns `None` if `ops` is empty, or if no common ancestor region exists.
     pub fn find_common_ancestor(ops: &[OperationRef]) -> Option<RegionRef> {
-        use bitvec::prelude::*;
-
         match ops.len() {
             0 => None,
             1 => unsafe { ops.get_unchecked(0) }.borrow().parent_region(),
-            num_ops => {
+            _ => {
                 let (first, rest) = unsafe { ops.split_first().unwrap_unchecked() };
                 let mut region = first.borrow().parent_region();
-                let mut remaining_ops = bitvec![1; num_ops - 1];
-                while let Some(r) = region.take() {
-                    while let Some(index) = remaining_ops.first_one() {
-                        // Is this op contained in `region`?
-                        if r.borrow().find_ancestor_op(rest[index]).is_some() {
-                            unsafe {
-                                remaining_ops.set_unchecked(index, false);
-                            }
-                        }
+                while let Some(r) = region {
+                    // Borrow the candidate region once for the whole containment check, rather
+                    // than reborrowing it for every operation.
+                    let candidate = r.borrow();
+                    // Is every other op contained in `region`?
+                    if rest.iter().all(|op| candidate.find_ancestor_op(*op).is_some()) {
+                        return Some(r);
                     }
-                    if remaining_ops.not_any() {
-                        break;
-                    }
-                    region = r.borrow().parent_region();
+                    region = candidate.parent_region();
                 }
-                region
+                None
             }
         }
     }

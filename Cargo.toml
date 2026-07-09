@@ -154,7 +154,7 @@ midenc-hir-symbol = { version = "0.9.1", path = "hir-symbol" }
 midenc-hir-transform = { version = "0.9.1", path = "hir-transform" }
 midenc-frontend-masm = { version = "0.9.1", path = "frontend/masm" }
 midenc-frontend-wasm = { version = "0.9.1", path = "frontend/wasm" }
-midenc-frontend-wasm-metadata = { version = "0.13.0", path = "sdk/wasm-metadata" }
+midenc-frontend-wasm-metadata = { version = "0.13.1", path = "sdk/wasm-metadata" }
 midenc-compile = { version = "0.9.1", path = "midenc-compile" }
 midenc-driver = { version = "0.9.1", path = "midenc-driver" }
 midenc-log = { version = "0.9.1", path = "midenc-log", features = ["kv"] }
@@ -162,9 +162,9 @@ midenc-session = { version = "0.9.1", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-field = { version = "^0.25", default-features = false }
-miden-base-sys = { version = "0.13.0", path = "sdk/base-sys" }
-miden-field-repr = { version = "0.13.0", path = "sdk/field-repr/repr" }
-miden-stdlib-sys = { version = "0.13.0", path = "sdk/stdlib-sys" }
+miden-base-sys = { version = "0.13.1", path = "sdk/base-sys" }
+miden-field-repr = { version = "0.13.1", path = "sdk/field-repr/repr" }
+miden-stdlib-sys = { version = "0.13.1", path = "sdk/stdlib-sys" }
 
 [patch.crates-io]
 #miden-assembly = { git = "https://github.com/0xMiden/miden-vm", rev = "614cd7f9b52f45238b0ab59c71ebb49325051e5d" }
