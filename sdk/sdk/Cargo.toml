@@ -1,7 +1,7 @@
 [package]
 name = "miden"
 description = "Miden SDK"
-version = "0.13.0"
+version = "0.13.1"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -17,10 +17,10 @@ test = false
 doctest = false
 
 [dependencies]
-miden-sdk-alloc = { version = "0.13.0", path = "../alloc" }
+miden-sdk-alloc = { version = "0.13.1", path = "../alloc" }
 miden-stdlib-sys.workspace = true
-miden-base = { version = "0.13.0", path = "../base" }
-miden-base-macros = { version = "0.13.0", path = "../base-macros" }
+miden-base = { version = "0.13.1", path = "../base" }
+miden-base-macros = { version = "0.13.1", path = "../base-macros" }
 miden-base-sys.workspace = true
 miden-field-repr.workspace = true
 miden-field = { workspace = true, default-features = false }
