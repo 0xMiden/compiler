@@ -1,5 +1,7 @@
 //! Attribute macro for explicit active and foreign account bindings.
 
+use std::{env, fmt::Write as _};
+
 use heck::ToSnakeCase;
 use proc_macro2::{Ident, Span};
 use quote::format_ident;
@@ -11,7 +13,7 @@ use crate::{
         select_dependencies,
     },
     fpi, generate, manifest_paths,
-    wit_world::{ManifestPackage, import_world_wit},
+    wit_world::ManifestPackage,
 };
 
 const FOREIGN_ACCOUNT_WORLD: &str = "foreign-account-bindings";
@@ -52,8 +54,12 @@ fn expand_inner(
         .iter()
         .map(|dependency| dependency.import().to_owned())
         .collect::<Vec<_>>();
+    let fpi_imports = fpi::import_specs(&imports);
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
-    let inline_wit = import_world_wit(FOREIGN_ACCOUNT_WORLD, &imports);
+    let inline_wit = fpi::import_world_wit(FOREIGN_ACCOUNT_WORLD, &fpi_imports);
+    let binding_module_ident = binding_module_ident(&account_struct.ident);
+    let type_section_suffix =
+        type_section_suffix(&binding_module_ident, account_struct.ident.span());
     let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
         allow_missing_local_wit: true,
     })?;
@@ -61,16 +67,17 @@ fn expand_inner(
         &wit_config,
         &inline_wit,
         FOREIGN_ACCOUNT_WORLD,
-        &imports,
+        &fpi_imports,
         &with_entries,
+        &type_section_suffix,
     )?;
-    let binding_module_ident = binding_module_ident(&account_struct.ident);
 
     fpi::augment_foreign_account_bindings(
         bindings,
         account_struct,
         dependencies,
         &args.refs,
+        &fpi_imports,
         binding_module_ident,
     )
 }
@@ -148,6 +155,30 @@ fn validate_empty_struct(account_struct: &ItemStruct) -> syn::Result<()> {
 /// Builds a stable hidden module name for the generated FPI WIT bindings.
 fn binding_module_ident(account_ident: &Ident) -> Ident {
     format_ident!("__miden_foreign_account_{}", account_ident.to_string().to_snake_case())
+}
+
+/// Builds a per-expansion suffix for wit-bindgen's component-type custom section.
+fn type_section_suffix(binding_module: &Ident, span: Span) -> String {
+    // The Wasm linker concatenates same-named custom sections, so even identical repeated
+    // `#[account]` bindings need distinct section names. The call site also distinguishes
+    // same-named wrappers declared in separate Rust modules.
+    let span = span.unwrap();
+    let start = span.start();
+    let end = span.end();
+    let package = env::var("CARGO_PKG_NAME").unwrap_or_default();
+    let seed = format!(
+        "{package}\0{}\0{}:{}..{}:{}",
+        span.file(),
+        start.line(),
+        start.column(),
+        end.line(),
+        end.column()
+    );
+    let mut suffix = format!(":{binding_module}-x");
+    for byte in seed.bytes() {
+        write!(suffix, "{byte:02x}").expect("writing to an in-memory string cannot fail");
+    }
+    suffix
 }
 
 #[cfg(test)]

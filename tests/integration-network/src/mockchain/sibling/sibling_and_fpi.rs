@@ -5,8 +5,8 @@
 //! `#[account(...)]` wrapper against a copy deployed on a second, foreign account. Because both
 //! macros generate a trait named after the interface, the `#[account]` reference uses an
 //! `as RemoteCounter` alias so its FPI trait does not collide with the sibling `CounterContract`
-//! trait. This also exercises the same WIT interface being imported by the sibling bindings (plain
-//! functions only) and the `#[account]` bindings (plain + `fpi-*` functions) in one crate.
+//! trait. This also exercises the same canonical WIT interface being imported unchanged by both
+//! sibling and `#[account]` bindings, alongside the private synthetic interface used for FPI.
 
 use miden_client::{
     account::{
@@ -140,7 +140,15 @@ const COUNTER_CONTRACT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, component_storage, felt, Felt, StorageMap, Word};
+use miden::{component, component_storage, export_type, felt, Felt, StorageMap, Word};
+
+/// Key record owned by the shared counter dependency and used through both sibling and FPI
+/// bindings.
+#[export_type]
+pub struct CounterKey {
+    /// Storage-map key for the counter.
+    pub value: Word,
+}
 
 /// Account component whose storage map holds one counter value.
 #[component_storage]
@@ -154,20 +162,20 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value stored under the provided key.
-    fn get_count(&self, key: Word) -> Felt;
+    fn get_count(&self, key: CounterKey) -> Felt;
     /// Increments the counter value stored under the provided key, returning the new value.
-    fn increment_count(&mut self, key: Word) -> Felt;
+    fn increment_count(&mut self, key: CounterKey) -> Felt;
 }
 
 #[component]
 impl CounterContract for CounterContractStorage {
-    fn get_count(&self, key: Word) -> Felt {
-        self.count_map.get(key)
+    fn get_count(&self, key: CounterKey) -> Felt {
+        self.count_map.get(key.value)
     }
 
-    fn increment_count(&mut self, key: Word) -> Felt {
-        let new_value = self.count_map.get(key) + felt!(1);
-        self.count_map.set(key, new_value);
+    fn increment_count(&mut self, key: CounterKey) -> Felt {
+        let new_value = self.count_map.get(key.value) + felt!(1);
+        self.count_map.set(key.value, new_value);
         new_value
     }
 }
@@ -183,14 +191,16 @@ use miden::{
     AccountId, Felt, Word,
 };
 
+use crate::bindings::miden::sibling_and_fpi_counter_account::counter_contract::CounterKey;
+
 /// Foreign binding to a second account holding the same counter component package.
 ///
 /// The sibling `#[component(..::CounterContract)]` below already generates a `CounterContract`
 /// trait in this crate, so the `#[account]` reference uses an `as RemoteCounter` alias: it still
 /// selects the `counter-contract` interface, but names its generated FPI trait `RemoteCounter` to
 /// avoid the clash. Keeping the wrapper at crate scope (rather than a submodule) also keeps the
-/// two `counter-contract` imports — plain for the sibling, plain + `fpi-*` for the account —
-/// mergeable at componentization.
+/// two canonical `counter-contract` imports identical while FPI functions live under a private
+/// synthetic interface.
 #[account(sibling_and_fpi_counter_account::CounterContract as RemoteCounter)]
 struct Remote;
 
@@ -210,12 +220,12 @@ impl CallerAccount for CallerAccountStorage {
     fn bump_local_read_remote(&mut self, remote_account_id: AccountId) -> Felt {
         let key = Word::new([felt!(13), felt!(21), felt!(34), felt!(55)]);
         // Intra-account sibling call through the sibling `CounterContract` trait.
-        let before = self.get_count(key);
-        let after = self.increment_count(key);
+        let before = self.get_count(CounterKey { value: key });
+        let after = self.increment_count(CounterKey { value: key });
         assert_eq(after, before + felt!(1));
         // Inter-account FPI call through the aliased `RemoteCounter` trait.
         let remote = Remote::new(remote_account_id);
-        remote.get_count(key)
+        remote.get_count(CounterKey { value: key })
     }
 }
 "#;

@@ -20,7 +20,7 @@ use wit_bindgen_rust::{Opts, WithOption};
 use crate::{fpi, manifest_paths};
 
 /// Fully-qualified WIT interface path for Miden SDK core types.
-const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
+pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -173,16 +173,18 @@ fn generate_bindings(
         world,
         &args.with_entries,
         &[],
+        None,
     )
 }
 
-/// Generates inline WIT bindings and injects FPI imports for the selected dependency interfaces.
+/// Generates inline WIT bindings and populates private FPI imports for selected dependencies.
 pub(crate) fn generate_inline_fpi_bindings(
     config: &manifest_paths::ResolvedWit,
     inline_source: &str,
     world: &str,
-    fpi_imports: &[String],
+    fpi_imports: &[fpi::FpiImportSpec],
     with_entries: &[(String, WithOption)],
+    type_section_suffix: &str,
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
         &config.paths,
@@ -190,6 +192,7 @@ pub(crate) fn generate_inline_fpi_bindings(
         Some(world),
         with_entries,
         fpi_imports,
+        Some(type_section_suffix),
     )
 }
 
@@ -209,6 +212,7 @@ pub(crate) fn generate_inline_import_bindings(
         Some(world),
         with_entries,
         &[],
+        None,
     )
 }
 
@@ -218,7 +222,8 @@ fn generate_bindings_from_sources(
     inline_source: Option<&str>,
     world: Option<&str>,
     with_entries: &[(String, WithOption)],
-    fpi_imports: &[String],
+    fpi_imports: &[fpi::FpiImportSpec],
+    type_section_suffix: Option<&str>,
 ) -> Result<TokenStream2, Error> {
     let mut wit_sources = load_wit_sources(paths, inline_source)?;
 
@@ -232,6 +237,7 @@ fn generate_bindings_from_sources(
         generate_all: true,
         runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
         default_bindings_module: Some("bindings".to_string()),
+        type_section_suffix: type_section_suffix.map(str::to_owned),
         ..Opts::default()
     };
     push_custom_with_entries(&mut opts, with_entries);
@@ -890,5 +896,315 @@ world core-type-variant-world {
         );
 
         assert!(world_uses_miden_core_types(&resolve, world));
+    }
+
+    #[test]
+    fn synthetic_fpi_interface_preserves_source_types_and_generated_module_paths() {
+        const SOURCE_IMPORT: &str = "miden:typed-dependency/api@1.2.3";
+        const TYPE_PATH: &str = "crate::bindings::miden::typed_dependency::api::Payload";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "typed-dependency.wit",
+            r#"
+package miden:typed-dependency@1.2.3;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+
+    type scalar-alias = u32;
+
+    record payload {
+        value: scalar-alias,
+        key: word,
+    }
+
+    variant request {
+        none,
+        payload(payload),
+    }
+
+    enum mode {
+        fast,
+        thorough,
+    }
+
+    flags permissions {
+        read,
+        write,
+    }
+
+    type maybe-request = option<request>;
+    type nested-result = result<payload, mode>;
+
+    primitive-roundtrip: func(value: u64) -> u32;
+    roundtrip: func(value: payload) -> payload;
+    choose: func(value: request) -> request;
+    set-mode: func(value: mode) -> mode;
+    set-permissions: func(value: permissions) -> permissions;
+    core-roundtrip: func(value: word) -> felt;
+    nested-roundtrip: func(value: maybe-request) -> nested-result;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]);
+        let inline = fpi::import_world_wit("fpi-type-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        let source_id = resolve.worlds[world]
+            .imports
+            .values()
+            .filter_map(|item| match item {
+                WorldItem::Interface { id, .. }
+                    if interface_matches(&resolve, *id, SOURCE_IMPORT) =>
+                {
+                    Some(*id)
+                }
+                _ => None,
+            })
+            .next()
+            .expect("source interface must be imported");
+        let source_before = resolve.interfaces[source_id].clone();
+        let payload = resolve.interfaces[source_id].types["payload"];
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        assert_eq!(resolve.interfaces[source_id], source_before);
+
+        let synthetic_id = resolve.worlds[world]
+            .imports
+            .iter()
+            .find_map(|(key, item)| match (key, item) {
+                (
+                    wit_bindgen_core::wit_parser::WorldKey::Name(name),
+                    WorldItem::Interface { id, .. },
+                ) if name == specs[0].synthetic_import() => Some(*id),
+                _ => None,
+            })
+            .expect("synthetic interface must be imported");
+        for (name, source_function) in &resolve.interfaces[source_id].functions {
+            let synthetic_function = &resolve.interfaces[synthetic_id].functions
+                [&format!("{}{}", fpi::WIT_FUNCTION_PREFIX, name)];
+            assert_eq!(synthetic_function.params.len(), source_function.params.len() + 3);
+            for (source, synthetic) in
+                source_function.params.iter().zip(synthetic_function.params.iter().skip(3))
+            {
+                assert_synthetic_type_alias(&resolve, synthetic_id, source.ty, synthetic.ty);
+            }
+            match (source_function.result, synthetic_function.result) {
+                (Some(source), Some(synthetic)) => {
+                    assert_synthetic_type_alias(&resolve, synthetic_id, source, synthetic);
+                }
+                (None, None) => {}
+                result => panic!("source and synthetic results differ: {result:?}"),
+            }
+        }
+        let fpi_function = &resolve.interfaces[synthetic_id].functions["fpi-roundtrip"];
+        let WitType::Id(payload_alias) = fpi_function.params[3].ty else {
+            panic!("dependency-owned payload must be represented by a local alias");
+        };
+        assert_eq!(fpi_function.result, Some(WitType::Id(payload_alias)));
+        assert_eq!(resolve.types[payload_alias].kind, TypeDefKind::Type(WitType::Id(payload)));
+        assert_eq!(resolve.types[payload_alias].owner, TypeOwner::Interface(synthetic_id));
+        assert!(
+            resolve.interfaces[source_id]
+                .functions
+                .keys()
+                .all(|name| !name.starts_with(fpi::WIT_FUNCTION_PREFIX))
+        );
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        opts.with
+            .push((format!("{SOURCE_IMPORT}/payload"), WithOption::Path(TYPE_PATH.to_string())));
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules = fpi::collect_import_modules(&file.items, &fpi::is_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::typed_dependency::api")
+            .expect("real import must keep its canonical generated module path");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic import key must determine its generated module path");
+
+        let native_signature = native
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "roundtrip")
+            .unwrap()
+            .sig
+            .to_token_stream()
+            .to_string();
+        let foreign_signature = foreign
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "fpi_roundtrip")
+            .unwrap()
+            .sig
+            .to_token_stream()
+            .to_string();
+        let mapped_type = TYPE_PATH.replace("::", " :: ");
+        assert!(native_signature.contains(&mapped_type), "signature: {native_signature}");
+        assert!(foreign_signature.contains(&mapped_type), "signature: {foreign_signature}");
+    }
+
+    /// Asserts that a synthetic function either reuses a primitive directly or owns an alias to
+    /// the original dependency type.
+    fn assert_synthetic_type_alias(
+        resolve: &Resolve,
+        synthetic_id: InterfaceId,
+        source: WitType,
+        synthetic: WitType,
+    ) {
+        let WitType::Id(source_id) = source else {
+            assert_eq!(synthetic, source);
+            return;
+        };
+        let WitType::Id(alias_id) = synthetic else {
+            panic!("dependency type must be represented by a synthetic alias");
+        };
+        assert_eq!(resolve.types[alias_id].kind, TypeDefKind::Type(WitType::Id(source_id)));
+        assert_eq!(resolve.types[alias_id].owner, TypeOwner::Interface(synthetic_id));
+    }
+
+    #[test]
+    fn plain_repeated_distinct_and_versioned_fpi_worlds_merge_in_both_orders() {
+        const FIRST_IMPORT: &str = "miden:first-dependency/api@1.0.0";
+        const SECOND_IMPORT: &str = "miden:second-dependency/api@1.0.0";
+        const VERSION_ONE_IMPORT: &str = "miden:versioned-dependency/api@1.0.0";
+        const VERSION_TWO_IMPORT: &str = "miden:versioned-dependency/api@2.0.0";
+
+        let cases = [
+            (None, Some(vec![FIRST_IMPORT.to_string()])),
+            (Some(vec![FIRST_IMPORT.to_string()]), Some(vec![FIRST_IMPORT.to_string()])),
+            (Some(vec![FIRST_IMPORT.to_string()]), Some(vec![SECOND_IMPORT.to_string()])),
+            (
+                Some(vec![VERSION_ONE_IMPORT.to_string()]),
+                Some(vec![VERSION_TWO_IMPORT.to_string()]),
+            ),
+        ];
+
+        for (first, second) in cases {
+            for reverse in [false, true] {
+                let (mut resolve, worlds) =
+                    parse_merge_test_worlds(first.as_deref(), second.as_deref());
+                let (from, into) = if reverse {
+                    (worlds[1], worlds[0])
+                } else {
+                    (worlds[0], worlds[1])
+                };
+                let mut clone_maps = wit_bindgen_core::wit_parser::CloneMaps::default();
+                resolve.merge_worlds(from, into, &mut clone_maps).unwrap();
+                resolve.assert_valid();
+            }
+        }
+    }
+
+    /// Builds two plain-or-FPI worlds in one resolver for merge-order tests.
+    fn parse_merge_test_worlds(
+        first_imports: Option<&[String]>,
+        second_imports: Option<&[String]>,
+    ) -> (Resolve, [WorldId; 2]) {
+        const FIRST_IMPORT: &str = "miden:first-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        for (name, source) in [
+            (
+                "first-dependency.wit",
+                r#"
+package miden:first-dependency@1.0.0;
+interface api {
+    record payload { value: u32 }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+            (
+                "second-dependency.wit",
+                r#"
+package miden:second-dependency@1.0.0;
+interface api {
+    variant payload { none, value(u64) }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+            (
+                "versioned-dependency-v1.wit",
+                r#"
+package miden:versioned-dependency@1.0.0;
+interface api {
+    record payload { value: u32 }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+            (
+                "versioned-dependency-v2.wit",
+                r#"
+package miden:versioned-dependency@2.0.0;
+interface api {
+    record payload { value: u64 }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+        ] {
+            let group = UnresolvedPackageGroup::parse(name, source).unwrap();
+            resolve.push_group(group).unwrap();
+        }
+
+        let mut worlds = Vec::with_capacity(2);
+        for (world_name, imports) in
+            [("merge-first", first_imports), ("merge-second", second_imports)]
+        {
+            let (source, specs) = match imports {
+                Some(imports) => {
+                    let specs = fpi::import_specs(imports);
+                    (fpi::import_world_wit(world_name, &specs), Some(specs))
+                }
+                None => (
+                    format!(
+                        "package miden:{world_name}@1.0.0;\n\nworld {world_name} {{\n    import \
+                         {FIRST_IMPORT};\n}}\n"
+                    ),
+                    None,
+                ),
+            };
+            let group = UnresolvedPackageGroup::parse("inline", &source).unwrap();
+            let package = resolve.push_group(group).unwrap();
+            let world = resolve.select_world(&[package], None).unwrap();
+            if let Some(specs) = specs {
+                fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+            }
+            worlds.push(world);
+        }
+
+        (resolve, [worlds[0], worlds[1]])
     }
 }

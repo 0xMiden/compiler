@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `#[account(...)]` now keeps canonical dependency WIT interfaces unchanged, fixing a rare
+  component-link failure when plain note, transaction-script, or sibling imports of a dependency
+  are linked with generated FPI bindings #1276
+
 ### BREAKING
 - `#[account(...)]` now generates the component methods as one trait per referenced interface
   (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
