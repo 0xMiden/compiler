@@ -1299,27 +1299,43 @@ impl<'a> TransformationContext<'a> {
 ///
 /// This means that both operations are of the same kind, have the same amount of operands and types
 /// and the same attributes and properties. The operands themselves don't have to be equivalent.
+///
+/// Operand identity is irrelevant, but operand types are not: [Self::combine_exit] forwards the
+/// operands of every equivalent return-like operation to a single exit block whose arguments are
+/// typed from the first such operation, so keys must only match when the operand types line up.
+/// Hence the [ValueTypeEquivalence]/[ValueTypeHasher] pair below.
+///
+/// [Self::combine_exit]: TransformationContext::combine_exit
+/// [ValueTypeEquivalence]: midenc_hir::equivalence::ValueTypeEquivalence
+/// [ValueTypeHasher]: midenc_hir::equivalence::ValueTypeHasher
 #[derive(Copy, Clone)]
 struct ReturnLikeOpKey(OperationRef);
 impl Eq for ReturnLikeOpKey {}
 impl PartialEq for ReturnLikeOpKey {
     fn eq(&self, other: &Self) -> bool {
-        use midenc_hir::equivalence::{OperationEquivalenceFlags, ignore_value_equivalence};
+        use midenc_hir::equivalence::{OperationEquivalenceFlags, ValueTypeEquivalence};
         let a = self.0.borrow();
         a.is_equivalent_with_options(
             &other.0.borrow(),
             OperationEquivalenceFlags::IGNORE_LOCATIONS,
-            ignore_value_equivalence,
+            ValueTypeEquivalence,
         )
     }
 }
 impl core::hash::Hash for ReturnLikeOpKey {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        use midenc_hir::equivalence::{IgnoreValueEquivalenceOperationHasher, OperationHasher};
+        use midenc_hir::equivalence::{
+            IgnoreValueHasher, OperationEquivalenceFlags, ValueTypeHasher,
+        };
 
-        const HASHER: IgnoreValueEquivalenceOperationHasher = IgnoreValueEquivalenceOperationHasher;
-
-        HASHER.hash_operation(&self.0.borrow(), state);
+        // Operands are hashed by type, mirroring the `ValueTypeEquivalence` used by `PartialEq`;
+        // result identity is ignored, and result types are always hashed structurally.
+        self.0.borrow().hash_with_options(
+            OperationEquivalenceFlags::IGNORE_LOCATIONS,
+            ValueTypeHasher,
+            IgnoreValueHasher,
+            state,
+        );
     }
 }
 
@@ -1354,4 +1370,86 @@ where
 /// Returns true if this block is an exit block of the region.
 fn is_region_exit_block(block: &Block) -> bool {
     block.num_successors() == 0
+}
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use midenc_hir::{
+        Builder, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder, testing::Test,
+    };
+
+    use super::ReturnLikeOpKey;
+
+    /// A [core::hash::Hasher] that records the exact byte stream written to it, so two keys can
+    /// be compared on the input they feed a hasher rather than on a lossy `finish()` value.
+    #[derive(Default)]
+    struct RecordingHasher(Vec<u8>);
+
+    impl core::hash::Hasher for RecordingHasher {
+        fn finish(&self) -> u64 {
+            0
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            self.0.extend_from_slice(bytes);
+        }
+    }
+
+    fn hash_stream(key: &ReturnLikeOpKey) -> Vec<u8> {
+        use core::hash::Hash;
+        let mut hasher = RecordingHasher::default();
+        key.hash(&mut hasher);
+        hasher.0
+    }
+
+    /// [ReturnLikeOpKey] groups return-like operations by operand types, not operand identity:
+    /// `combine_exit` forwards the operands of every matching operation into one exit block
+    /// typed from the first, so keys must match across distinct operands of equal types and must
+    /// never match across different operand types. Hash must agree with equality in both
+    /// directions of the contract.
+    #[test]
+    fn return_like_op_key_matches_operand_types_not_identity() {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("return_like_op_key").in_module("test");
+
+        let define_returning_function = |test: &mut Test, name: &'static str, ty: Type| {
+            let module_body = test.module().borrow().body().entry_block_ref().unwrap();
+            test.builder_mut().set_insertion_point_to_end(module_body);
+            let signature = [ty];
+            test.with_function(name, &signature, &signature);
+            {
+                let mut builder = test.function_builder();
+                let arg = builder.entry_block().borrow().arguments()[0] as ValueRef;
+                builder.ret([arg], span).unwrap();
+            }
+            test.entry_block().borrow().terminator().unwrap()
+        };
+
+        let ret1 = define_returning_function(&mut test, "f1", Type::I32);
+        let ret2 = define_returning_function(&mut test, "f2", Type::I32);
+        let ret3 = define_returning_function(&mut test, "f3", Type::I64);
+
+        let k1 = ReturnLikeOpKey(ret1);
+        let k2 = ReturnLikeOpKey(ret2);
+        let k3 = ReturnLikeOpKey(ret3);
+
+        // Same operand types with different operand identities: equal, and the hash streams must
+        // be identical, or map lookups would depend on allocation addresses.
+        assert!(k1 == k2, "return-like ops with equal operand types must key equal");
+        assert_eq!(
+            hash_stream(&k1),
+            hash_stream(&k2),
+            "equal keys must feed identical bytes to the hasher"
+        );
+
+        // Different operand types: never equal, or combine_exit would forward operands into an
+        // exit block with mismatched argument types.
+        assert!(k1 != k3, "return-like ops with different operand types must not key equal");
+        assert_ne!(
+            hash_stream(&k1),
+            hash_stream(&k3),
+            "operand types are part of the key, so they must be hashed as well"
+        );
+    }
 }
