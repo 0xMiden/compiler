@@ -296,15 +296,12 @@ impl OpEmitter<'_> {
     /// Execution traps if the value cannot fit in the unsigned N-bit range.
     pub fn int32_to_uint(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
-        // Mask the value and ensure that the unused bits above the N-bit range are 0
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
-        // Copy the input
-        self.emit(masm::Instruction::Dup1, span);
-        // Apply the mask
+        // If the target bit width is 32, then use an empty mask.
+        let mask = if n == 32 { 0 } else { u32::MAX << n };
+        // The range check must inspect the top value, not another live value below it.
+        self.emit(masm::Instruction::Dup0, span);
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
-        // Assert the masked value is all 0s
         self.emit(
             Self::assertz_with_message_inst(
                 format!("value does not fit in unsigned {n}-bit range"),
@@ -319,15 +316,12 @@ impl OpEmitter<'_> {
     /// Places a boolean on top of the stack indicating if the conversion was successful
     pub fn try_int32_to_uint(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
-        // Mask the value and ensure that the unused bits above the N-bit range are 0
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
-        // Copy the input
-        self.emit(masm::Instruction::Dup1, span);
-        // Apply the mask
+        // If the target bit width is 32, then use an empty mask.
+        let mask = if n == 32 { 0 } else { u32::MAX << n };
+        // The range check must inspect the top value, not another live value below it.
+        self.emit(masm::Instruction::Dup0, span);
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
-        // Assert the masked value is all 0s
         self.emit(masm::Instruction::EqImm(Felt::ZERO.into()), span);
     }
 
