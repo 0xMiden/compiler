@@ -544,7 +544,7 @@ impl core::hash::Hash for OpKey {
 impl Eq for OpKey {}
 impl PartialEq for OpKey {
     fn eq(&self, other: &Self) -> bool {
-        use midenc_hir::equivalence::OperationEquivalenceFlags;
+        use midenc_hir::equivalence::{DefaultValueEquivalence, OperationEquivalenceFlags};
 
         if self.0 == other.0 {
             return true;
@@ -552,9 +552,12 @@ impl PartialEq for OpKey {
         let lhs = self.0.borrow();
         let rhs = other.0.borrow();
 
-        lhs.is_equivalent_with_options(&rhs, OperationEquivalenceFlags::IGNORE_LOCATIONS, |l, r| {
-            core::ptr::addr_eq(l, r)
-        })
+        // Operands are compared by identity, mirroring the `DefaultValueHasher` used by `Hash`.
+        lhs.is_equivalent_with_options(
+            &rhs,
+            OperationEquivalenceFlags::IGNORE_LOCATIONS,
+            DefaultValueEquivalence,
+        )
     }
 }
 

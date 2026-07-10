@@ -52,6 +52,23 @@ impl OperationHasher for IgnoreValueEquivalenceOperationHasher {
     }
 }
 
+/// A strategy for hashing an SSA value as part of operation equivalence hashing.
+///
+/// # Pairing with [ValueEquivalence]
+///
+/// Every implementation of this trait must be mirrored by a semantically equivalent
+/// [ValueEquivalence] implementation, and vice versa: whenever the paired equivalence considers
+/// two values equivalent, the hasher must write identical data for both. Using mismatched
+/// implementations in the `Hash` and `Eq` of a hash-map key breaks the `Hash`/`Eq` contract:
+/// equal keys land in different buckets, lookups miss depending on allocation addresses, and
+/// compiler output becomes non-deterministic
+/// (see https://github.com/0xMiden/compiler/issues/1257).
+///
+/// The canonical pairs are:
+///
+/// - [DefaultValueHasher] ↔ [DefaultValueEquivalence]: value identity
+/// - [ValueTypeHasher] ↔ [ValueTypeEquivalence]: value type only
+/// - [IgnoreValueHasher] ↔ [IgnoreValueEquivalence]: values ignored entirely
 pub trait ValueHasher {
     fn hash_value<H: Hasher>(&self, value: ValueRef, hasher: &mut H);
 }
@@ -59,7 +76,7 @@ pub trait ValueHasher {
 /// A [ValueHasher] impl that hashes a value based on its address in memory.
 ///
 /// This is generally used with [OperationHasher] to require operands/results between two
-/// operations to be exactly the same.
+/// operations to be exactly the same. Pairs with [DefaultValueEquivalence].
 #[derive(Default)]
 pub struct DefaultValueHasher;
 
@@ -72,12 +89,96 @@ impl ValueHasher for DefaultValueHasher {
     }
 }
 
+/// A [ValueHasher] impl that hashes a value based only on its type.
+///
+/// Pairs with [ValueTypeEquivalence].
+#[derive(Default)]
+pub struct ValueTypeHasher;
+
+impl ValueHasher for ValueTypeHasher {
+    fn hash_value<H: Hasher>(&self, value: ValueRef, hasher: &mut H) {
+        value.borrow().ty().hash(hasher);
+    }
+}
+
 /// A [ValueHasher] impl that ignores operands/results, i.e. the hash is unchanged
+///
+/// Pairs with [IgnoreValueEquivalence].
 #[derive(Default)]
 pub struct IgnoreValueHasher;
 
 impl ValueHasher for IgnoreValueHasher {
     fn hash_value<H: Hasher>(&self, _value: ValueRef, _hasher: &mut H) {}
+}
+
+/// A strategy for deciding whether two SSA values are equivalent as part of operation
+/// equivalence checks.
+///
+/// # Pairing with [ValueHasher]
+///
+/// Every implementation of this trait must be mirrored by a semantically equivalent
+/// [ValueHasher] implementation, and vice versa: whenever `is_equivalent` holds for two values,
+/// the paired hasher must write identical data for both. Using mismatched implementations in
+/// the `Hash` and `Eq` of a hash-map key breaks the `Hash`/`Eq` contract: equal keys land in
+/// different buckets, lookups miss depending on allocation addresses, and compiler output
+/// becomes non-deterministic (see https://github.com/0xMiden/compiler/issues/1257).
+///
+/// The canonical pairs are:
+///
+/// - [DefaultValueHasher] ↔ [DefaultValueEquivalence]: value identity
+/// - [ValueTypeHasher] ↔ [ValueTypeEquivalence]: value type only
+/// - [IgnoreValueHasher] ↔ [IgnoreValueEquivalence]: values ignored entirely
+pub trait ValueEquivalence {
+    fn is_equivalent(&self, lhs: &dyn Value, rhs: &dyn Value) -> bool;
+}
+
+impl<F> ValueEquivalence for F
+where
+    F: Fn(&dyn Value, &dyn Value) -> bool,
+{
+    #[inline]
+    fn is_equivalent(&self, lhs: &dyn Value, rhs: &dyn Value) -> bool {
+        self(lhs, rhs)
+    }
+}
+
+/// A [ValueEquivalence] impl that compares values by their address in memory, i.e. two values
+/// are equivalent if and only if they are the same value.
+///
+/// Pairs with [DefaultValueHasher].
+#[derive(Default)]
+pub struct DefaultValueEquivalence;
+
+impl ValueEquivalence for DefaultValueEquivalence {
+    fn is_equivalent(&self, lhs: &dyn Value, rhs: &dyn Value) -> bool {
+        core::ptr::addr_eq(lhs, rhs)
+    }
+}
+
+/// A [ValueEquivalence] impl under which values are equivalent if and only if they have the
+/// same type, regardless of their identity.
+///
+/// Pairs with [ValueTypeHasher].
+#[derive(Default)]
+pub struct ValueTypeEquivalence;
+
+impl ValueEquivalence for ValueTypeEquivalence {
+    fn is_equivalent(&self, lhs: &dyn Value, rhs: &dyn Value) -> bool {
+        lhs.ty() == rhs.ty()
+    }
+}
+
+/// A [ValueEquivalence] impl that considers all values equivalent, regardless of their identity
+/// or even their type.
+///
+/// Pairs with [IgnoreValueHasher].
+#[derive(Default)]
+pub struct IgnoreValueEquivalence;
+
+impl ValueEquivalence for IgnoreValueEquivalence {
+    fn is_equivalent(&self, _lhs: &dyn Value, _rhs: &dyn Value) -> bool {
+        true
+    }
 }
 
 impl Operation {
@@ -140,18 +241,15 @@ impl Operation {
     }
 
     pub fn is_equivalent(&self, rhs: &Operation, flags: OperationEquivalenceFlags) -> bool {
-        self.is_equivalent_with_options(rhs, flags, |l, r| core::ptr::addr_eq(l, r))
+        self.is_equivalent_with_options(rhs, flags, DefaultValueEquivalence)
     }
 
-    pub fn is_equivalent_with_options<F>(
+    pub fn is_equivalent_with_options(
         &self,
         rhs: &Operation,
         flags: OperationEquivalenceFlags,
-        check_equivalent: F,
-    ) -> bool
-    where
-        F: Fn(&dyn Value, &dyn Value) -> bool,
-    {
+        value_equivalence: impl ValueEquivalence,
+    ) -> bool {
         if core::ptr::addr_eq(self, rhs) {
             return true;
         }
@@ -180,14 +278,14 @@ impl Operation {
             lhs_operands.sort_by(sort_operands);
             let mut rhs_operands = SmallVec::<[_; 2]>::from_slice(rhs_operands.as_slice());
             rhs_operands.sort_by(sort_operands);
-            if !are_operands_equivalent(&lhs_operands, &rhs_operands, &check_equivalent) {
+            if !are_operands_equivalent(&lhs_operands, &rhs_operands, &value_equivalence) {
                 return false;
             }
         } else {
             // Check pair-wise for equivalence
             let lhs = self.operands.all();
             let rhs = rhs.operands.all();
-            if !are_operands_equivalent(lhs.as_slice(), rhs.as_slice(), &check_equivalent) {
+            if !are_operands_equivalent(lhs.as_slice(), rhs.as_slice(), &value_equivalence) {
                 return false;
             }
         }
@@ -205,7 +303,7 @@ impl Operation {
 
         // 4. Compare regions
         for (lhs_region, rhs_region) in self.regions().iter().zip(rhs.regions().iter()) {
-            if !is_region_equivalent_to(&lhs_region, &rhs_region, flags, &check_equivalent) {
+            if !is_region_equivalent_to(&lhs_region, &rhs_region, flags, &value_equivalence) {
                 return false;
             }
         }
@@ -214,26 +312,26 @@ impl Operation {
     }
 }
 
-pub fn ignore_value_equivalence(_lhs: &dyn Value, _rhs: &dyn Value) -> bool {
-    true
-}
-
-pub fn exact_value_match(lhs: &dyn Value, rhs: &dyn Value) -> bool {
-    core::ptr::addr_eq(lhs, rhs)
-}
-
-fn is_region_equivalent_to<F>(
+fn is_region_equivalent_to<VE>(
     _lhs: &Region,
     _rhs: &Region,
     _flags: OperationEquivalenceFlags,
-    _check_equivalent: F,
+    _value_equivalence: &VE,
 ) -> bool
 where
-    F: Fn(&dyn Value, &dyn Value) -> bool,
+    VE: ValueEquivalence + ?Sized,
 {
     todo!()
 }
 
+/// Orders operands canonically (by value address) for commutative operand comparison and
+/// hashing.
+///
+/// NOTE: address order is only a sound canonicalization for identity-based value equivalence
+/// ([DefaultValueEquivalence]/[DefaultValueHasher]), where equal operand sets sort identically
+/// on both sides. A commutative operation compared under an equivalence that ignores identity
+/// (e.g. [ValueTypeEquivalence]) would need a structural canonicalization instead; no such
+/// caller exists today.
 fn sort_operands(a: &OpOperand, b: &OpOperand) -> core::cmp::Ordering {
     let a = a.borrow().as_value_ref();
     let b = b.borrow().as_value_ref();
@@ -242,9 +340,9 @@ fn sort_operands(a: &OpOperand, b: &OpOperand) -> core::cmp::Ordering {
     a.cmp(&b)
 }
 
-fn are_operands_equivalent<F>(a: &[OpOperand], b: &[OpOperand], check_equivalent: F) -> bool
+fn are_operands_equivalent<VE>(a: &[OpOperand], b: &[OpOperand], value_equivalence: &VE) -> bool
 where
-    F: Fn(&dyn Value, &dyn Value) -> bool,
+    VE: ValueEquivalence + ?Sized,
 {
     // Check pair-wise for equivalence
     for (a, b) in a.iter().copied().zip(b.iter().copied()) {
@@ -255,10 +353,7 @@ where
         if core::ptr::addr_eq(&*a, &*b) {
             continue;
         }
-        if a.ty() != b.ty() {
-            return false;
-        }
-        if !check_equivalent(&*a, &*b) {
+        if !value_equivalence.is_equivalent(&*a, &*b) {
             return false;
         }
     }
