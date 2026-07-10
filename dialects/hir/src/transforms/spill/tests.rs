@@ -6,18 +6,22 @@ use midenc_dialect_cf::ControlFlowOpBuilder as Cf;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AddressSpace, BlockRef, Builder, Context, Op, OperationRef, PointerType, ProgramPoint, Report,
-    SourceSpan, Type, ValueRef,
+    AddressSpace, BlockRef, Builder, Context, Op, Operation, OperationRef, PointerType,
+    ProgramPoint, Reachability, Report, SourceSpan, Type, ValueRef,
     diagnostics::Uri,
     dialects::builtin::{BuiltinOpBuilder, FunctionRef},
     parse::{self, ParserConfig},
     testing::{Test, parse_function_fixpoint},
 };
-use midenc_hir_transform::op_reaches;
 
 use crate::{HirOpBuilder, transforms::TransformSpills};
 
 type TestResult<T> = Result<T, Report>;
+
+/// Shorthand for [Operation::reachability] in assertions.
+fn reach(from: OperationRef, to: OperationRef) -> Reachability {
+    Operation::reachability(from, to)
+}
 
 /// Returns the `index`-th block in the body of `function`.
 fn block_at(function: FunctionRef, index: usize) -> BlockRef {
@@ -710,11 +714,11 @@ fn materializes_spills_shared_local_for_rewritten_spill() -> TestResult<()> {
 ///
 /// This pins the join-covered shape that dominance-based spill pruning got wrong: a reload after
 /// the join is covered by the set of per-arm spills, none of which dominates it, so each arm must
-/// count as reaching the join. Sibling arms must stay mutually unreachable so the dead-edge-spill
-/// elimination keeps working.
+/// count as (maybe) reaching the join. Sibling arms must stay provably unreachable from each
+/// other so the dead-edge-spill elimination keeps working.
 #[test]
-fn op_reaches_in_branching_cfg() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @op_reaches_in_branching_cfg(%a: u32) -> u32 {
+fn reachability_in_branching_cfg() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @reachability_in_branching_cfg(%a: u32) -> u32 {
     %one = arith.constant 1 : u32;
     %first = arith.add %a, %one <{ overflow = #builtin.overflow<unchecked> }>;
     %cond = arith.eq %first, %one;
@@ -732,7 +736,7 @@ fn op_reaches_in_branching_cfg() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "op_reaches_in_branching_cfg.hir", source)?;
+        parse_function_fixpoint(&context, "reachability_in_branching_cfg.hir", source)?;
 
     let entry = block_at(function, 0);
     let entry_first = op_at(entry, 1);
@@ -741,25 +745,31 @@ fn op_reaches_in_branching_cfg() -> TestResult<()> {
     let right_op = op_at(block_at(function, 2), 0);
     let join_op = op_at(block_at(function, 3), 0);
 
-    assert!(op_reaches(left_op, join_op), "arm must reach the join");
-    assert!(op_reaches(right_op, join_op), "arm must reach the join");
-    assert!(!op_reaches(left_op, right_op), "sibling arms must not reach each other");
-    assert!(
-        op_reaches(entry_first, entry_second),
-        "earlier op must reach a later op in the same block"
+    assert_eq!(reach(left_op, join_op), Reachability::Maybe, "arm must reach the join");
+    assert_eq!(reach(right_op, join_op), Reachability::Maybe, "arm must reach the join");
+    assert_eq!(
+        reach(left_op, right_op),
+        Reachability::Impossible,
+        "sibling arms must not reach each other"
     );
-    assert!(
-        !op_reaches(entry_second, entry_first),
+    assert_eq!(
+        reach(entry_first, entry_second),
+        Reachability::Guaranteed,
+        "an earlier op always flows into a later op in the same block"
+    );
+    assert_eq!(
+        reach(entry_second, entry_first),
+        Reachability::Impossible,
         "later op must not reach an earlier op without a cycle"
     );
-    assert!(!op_reaches(join_op, left_op), "join must not reach an arm");
+    assert_eq!(reach(join_op, left_op), Reachability::Impossible, "join must not reach an arm");
     Ok(())
 }
 
 /// Positional reachability through a loop back-edge.
 #[test]
-fn op_reaches_through_loop_back_edge() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @op_reaches_through_loop_back_edge(%n: u32) -> u32 {
+fn reachability_through_loop_back_edge() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @reachability_through_loop_back_edge(%n: u32) -> u32 {
     cf.br ^header(%n : u32);
 ^header(%i: u32):
     %one = arith.constant 1 : u32;
@@ -776,7 +786,7 @@ fn op_reaches_through_loop_back_edge() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "op_reaches_through_loop_back_edge.hir", source)?;
+        parse_function_fixpoint(&context, "reachability_through_loop_back_edge.hir", source)?;
 
     let header = block_at(function, 1);
     let header_op = op_at(header, 1);
@@ -784,22 +794,33 @@ fn op_reaches_through_loop_back_edge() -> TestResult<()> {
     let body_op = op_at(block_at(function, 2), 0);
     let exit_op = op_at(block_at(function, 3), 0);
 
-    assert!(op_reaches(body_op, header_op), "back edge must reach the header");
-    assert!(
-        op_reaches(header_second, header_op),
+    assert_eq!(
+        reach(body_op, header_op),
+        Reachability::Maybe,
+        "back edge must reach the header"
+    );
+    assert_eq!(
+        reach(header_second, header_op),
+        Reachability::Maybe,
         "later op must reach an earlier op in the same block through the loop"
     );
-    assert!(!op_reaches(exit_op, body_op), "exit must not reach the loop body");
+    assert_eq!(
+        reach(exit_op, body_op),
+        Reachability::Impossible,
+        "exit must not reach the loop body"
+    );
     Ok(())
 }
 
 /// Positional reachability with operations nested in `scf.if` regions.
 ///
-/// Nested operations are normalized to their ancestor in the common region; operations nested
-/// under the same region-branch op conservatively reach each other (e.g. across loop iterations).
+/// Nested operations are normalized to their ancestor in the common region; positions involving
+/// a normalized side are at most [Reachability::Maybe], since entering a sub-region depends on
+/// the region op's semantics, and operations nested under the same region-branch op
+/// conservatively reach each other (e.g. across loop iterations).
 #[test]
-fn op_reaches_across_nested_regions() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @op_reaches_across_nested_regions(%a: u32) -> u32 {
+fn reachability_across_nested_regions() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @reachability_across_nested_regions(%a: u32) -> u32 {
     %one = arith.constant 1 : u32;
     %pre = arith.add %a, %one <{ overflow = #builtin.overflow<unchecked> }>;
     %cond = arith.eq %pre, %one;
@@ -816,7 +837,7 @@ fn op_reaches_across_nested_regions() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "op_reaches_across_nested_regions.hir", source)?;
+        parse_function_fixpoint(&context, "reachability_across_nested_regions.hir", source)?;
 
     let entry = block_at(function, 0);
     let pre_op = op_at(entry, 1);
@@ -825,15 +846,35 @@ fn op_reaches_across_nested_regions() -> TestResult<()> {
     let then_op = op_in_region(if_op, 0, 0);
     let else_op = op_in_region(if_op, 1, 0);
 
-    assert!(op_reaches(pre_op, then_op), "op before the region op must reach into it");
-    assert!(op_reaches(then_op, post_op), "nested op must reach past the region op");
-    assert!(
-        !op_reaches(post_op, then_op),
+    assert_eq!(
+        reach(pre_op, then_op),
+        Reachability::Maybe,
+        "op before the region op must reach into it"
+    );
+    assert_eq!(
+        reach(then_op, post_op),
+        Reachability::Maybe,
+        "nested op must reach past the region op"
+    );
+    assert_eq!(
+        reach(post_op, then_op),
+        Reachability::Impossible,
         "op after the region op must not reach back into it"
     );
-    assert!(
-        op_reaches(then_op, else_op),
+    assert_eq!(
+        reach(then_op, else_op),
+        Reachability::Maybe,
         "sibling regions of one op conservatively reach each other"
+    );
+    assert_eq!(
+        reach(if_op, then_op),
+        Reachability::Maybe,
+        "a region op may reach the operations nested within it"
+    );
+    assert_eq!(
+        reach(then_op, if_op),
+        Reachability::Maybe,
+        "a nested operation flows back through its region op"
     );
     Ok(())
 }
@@ -845,8 +886,8 @@ fn op_reaches_across_nested_regions() -> TestResult<()> {
 /// region graph of the parent op. An op positioned after another op in such a region still
 /// reaches it, through the next iteration.
 #[test]
-fn op_reaches_through_region_re_entry() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @op_reaches_through_region_re_entry(%n: u32) -> u32 {
+fn reachability_through_region_re_entry() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @reachability_through_region_re_entry(%n: u32) -> u32 {
     %zero = arith.constant 0 : u32;
     %r = scf.while %zero before {
     ^head(%i: u32):
@@ -865,7 +906,7 @@ fn op_reaches_through_region_re_entry() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "op_reaches_through_region_re_entry.hir", source)?;
+        parse_function_fixpoint(&context, "reachability_through_region_re_entry.hir", source)?;
 
     let entry = block_at(function, 0);
     let while_op = op_at(entry, 1);
@@ -873,15 +914,21 @@ fn op_reaches_through_region_re_entry() -> TestResult<()> {
     let early_op = op_in_region(while_op, 0, 1);
     let late_op = op_in_region(while_op, 0, 2);
 
-    assert!(
-        op_reaches(late_op, early_op),
+    assert_eq!(
+        reach(late_op, early_op),
+        Reachability::Maybe,
         "a later op must reach an earlier op in the same repetitive region through re-entry"
     );
-    assert!(
-        op_reaches(early_op, late_op),
-        "earlier op must reach a later op in the same block"
+    assert_eq!(
+        reach(early_op, late_op),
+        Reachability::Guaranteed,
+        "an earlier op always flows into a later op in the same block"
     );
-    assert!(!op_reaches(ret_op, late_op), "an op after the loop must not reach into it");
+    assert_eq!(
+        reach(ret_op, late_op),
+        Reachability::Impossible,
+        "an op after the loop must not reach into it"
+    );
     Ok(())
 }
 
@@ -891,8 +938,8 @@ fn op_reaches_through_region_re_entry() -> TestResult<()> {
 /// block hosting the `scf.if` lies on a CFG cycle, so every iteration re-enters the region: an
 /// op positioned after another op inside it still reaches it, through the next iteration.
 #[test]
-fn op_reaches_through_cfg_cycle_re_entry() -> TestResult<()> {
-    let source = r#"builtin.function public extern("C") @op_reaches_through_cfg_cycle_re_entry(%n: u32) -> u32 {
+fn reachability_through_cfg_cycle_re_entry() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @reachability_through_cfg_cycle_re_entry(%n: u32) -> u32 {
     %zero = arith.constant 0 : u32;
     cf.br ^head(%zero : u32);
 ^head(%i: u32):
@@ -913,7 +960,7 @@ fn op_reaches_through_cfg_cycle_re_entry() -> TestResult<()> {
 
     let context = Rc::new(Context::default());
     let (function, _) =
-        parse_function_fixpoint(&context, "op_reaches_through_cfg_cycle_re_entry.hir", source)?;
+        parse_function_fixpoint(&context, "reachability_through_cfg_cycle_re_entry.hir", source)?;
 
     let head = block_at(function, 1);
     let if_op = op_at(head, 2);
@@ -921,22 +968,26 @@ fn op_reaches_through_cfg_cycle_re_entry() -> TestResult<()> {
     let late_op = op_in_region(if_op, 0, 1);
     let ret_op = op_at(block_at(function, 2), 0);
 
-    assert!(
-        op_reaches(late_op, early_op),
+    assert_eq!(
+        reach(late_op, early_op),
+        Reachability::Maybe,
         "re-entry of a region through an outer CFG cycle must count as reachable"
     );
-    assert!(!op_reaches(ret_op, early_op), "an op after the loop must not reach into it");
+    assert_eq!(
+        reach(ret_op, early_op),
+        Reachability::Impossible,
+        "an op after the loop must not reach into it"
+    );
     Ok(())
 }
 
-/// Queries that cross an isolation boundary are not control-flow questions.
+/// Queries that leave a single function's control flow have no positional answer.
 ///
-/// Operations in two different functions have no shared control flow to walk, and for the
-/// function operations themselves the module body is a graph region where block order proves
-/// nothing. All such queries must answer with the conservative `true` in both directions, so
-/// that `false` remains a proof of unreachability.
+/// Operations in two different functions can only be related interprocedurally, and for the
+/// function operations themselves the module body is a graph-like region where operation order
+/// does not define control flow. Both classifications are direction-independent.
 #[test]
-fn op_reaches_conservative_across_isolation_boundaries() -> TestResult<()> {
+fn reachability_across_functions_and_graph_regions() -> TestResult<()> {
     let source = r#"builtin.module public @test {
     builtin.function public extern("C") @first(%a: u32) -> u32 {
         %r = arith.add %a, %a <{ overflow = #builtin.overflow<unchecked> }>;
@@ -951,7 +1002,7 @@ fn op_reaches_conservative_across_isolation_boundaries() -> TestResult<()> {
     let context = Rc::new(Context::default());
     let module_op = parse::parse_any(
         ParserConfig::new(context.clone()),
-        Uri::new("op_reaches_conservative_across_isolation_boundaries.hir"),
+        Uri::new("reachability_across_functions_and_graph_regions.hir"),
         source,
     )?;
 
@@ -960,21 +1011,35 @@ fn op_reaches_conservative_across_isolation_boundaries() -> TestResult<()> {
     let in_first = op_in_region(first_fn, 0, 0);
     let in_second = op_in_region(second_fn, 0, 0);
 
-    assert!(
-        op_reaches(in_second, in_first),
-        "ops in different functions must be conservatively reachable regardless of module order"
+    assert_eq!(
+        reach(in_second, in_first),
+        Reachability::MaybeInterprocedurally,
+        "ops in different functions relate only interprocedurally, regardless of module order"
     );
-    assert!(
-        op_reaches(in_first, in_second),
-        "ops in different functions must be conservatively reachable"
+    assert_eq!(
+        reach(in_first, in_second),
+        Reachability::MaybeInterprocedurally,
+        "ops in different functions relate only interprocedurally"
     );
-    assert!(
-        op_reaches(second_fn, first_fn),
-        "sibling isolated ops must be conservatively reachable regardless of module order"
+    assert_eq!(
+        reach(second_fn, first_fn),
+        Reachability::Indeterminate,
+        "graph-region op order does not define control flow, regardless of module order"
     );
-    assert!(
-        op_reaches(first_fn, second_fn),
-        "sibling isolated ops must be conservatively reachable"
+    assert_eq!(
+        reach(first_fn, second_fn),
+        Reachability::Indeterminate,
+        "graph-region op order does not define control flow"
+    );
+    assert_eq!(
+        reach(first_fn, in_first),
+        Reachability::Maybe,
+        "enclosure is intra-procedural even when the encloser resides in a graph region"
+    );
+    assert_eq!(
+        reach(in_first, first_fn),
+        Reachability::Maybe,
+        "enclosure is intra-procedural in both directions"
     );
     Ok(())
 }
