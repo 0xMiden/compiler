@@ -17,8 +17,8 @@ use syn::{
     parse_quote,
 };
 use wit_bindgen_core::wit_parser::{
-    Docs, Function, FunctionKind, InterfaceId, Param, Resolve, Span as WitSpan, Type as WitType,
-    WorldId, WorldItem,
+    Docs, Function, FunctionKind, InterfaceId, Param, Resolve, Span as WitSpan, Stability,
+    Type as WitType, WorldId, WorldItem, WorldKey,
 };
 
 #[cfg(test)]
@@ -80,6 +80,30 @@ pub(crate) fn inject_imports(
         inject_functions_into_interface(resolve, interface_id, core_types);
     }
 
+    // The injected prefix params reference `core-types` types across interfaces, so the world
+    // must import that interface itself: world elaboration only pulls it in when a dependency
+    // interface already uses a core type in its own signatures. The import goes first because
+    // WIT encoding registers world imports in order, and the dependency interfaces now refer to
+    // `core-types` types. An existing import is moved rather than duplicated, whatever world key
+    // it is registered under.
+    let imports = &mut resolve.worlds[world_id].imports;
+    let existing = imports.values().position(
+        |item| matches!(item, WorldItem::Interface { id, .. } if *id == core_types.interface),
+    );
+    if let Some(index) = existing {
+        imports.move_index(index, 0);
+    } else {
+        imports.shift_insert(
+            0,
+            WorldKey::Interface(core_types.interface),
+            WorldItem::Interface {
+                id: core_types.interface,
+                stability: Stability::default(),
+                span: WitSpan::default(),
+            },
+        );
+    }
+
     Ok(())
 }
 
@@ -107,6 +131,9 @@ pub(crate) fn is_plain_import_function(func: &ItemFn) -> bool {
 /// Core WIT types needed to synthesize caller-only FPI imports.
 #[derive(Clone, Copy)]
 struct CoreTypes {
+    /// Interface owning the core types; the world must import it alongside the injected
+    /// functions.
+    interface: InterfaceId,
     felt: WitType,
     word: WitType,
 }
@@ -181,7 +208,11 @@ fn resolve_core_types(resolve: &Resolve) -> syn::Result<CoreTypes> {
 
             package.interfaces.get("core-types").map(|interface_id| {
                 let interface = &resolve.interfaces[*interface_id];
-                (interface.types.get("felt").copied(), interface.types.get("word").copied())
+                (
+                    *interface_id,
+                    interface.types.get("felt").copied(),
+                    interface.types.get("word").copied(),
+                )
             })
         })
         .ok_or_else(|| {
@@ -191,7 +222,7 @@ fn resolve_core_types(resolve: &Resolve) -> syn::Result<CoreTypes> {
             )
         })?;
 
-    let (Some(felt), Some(word)) = core_types else {
+    let (interface, Some(felt), Some(word)) = core_types else {
         return Err(Error::new(
             Span::call_site(),
             "miden:base/core-types is missing felt or word type definitions",
@@ -199,6 +230,7 @@ fn resolve_core_types(resolve: &Resolve) -> syn::Result<CoreTypes> {
     };
 
     Ok(CoreTypes {
+        interface,
         felt: WitType::Id(felt),
         word: WitType::Id(word),
     })
@@ -1406,5 +1438,130 @@ mod tests {
             stability: Default::default(),
             span: WitSpan::default(),
         }
+    }
+
+    /// Builds a resolve with `core-types`, a dependency interface using no core types, and a
+    /// `bindings` world importing only the dependency interface.
+    fn resolve_with_bindings_world() -> (Resolve, WorldId) {
+        let mut resolve = Resolve::default();
+        resolve
+            .push_str(
+                "core-types.wit",
+                r#"
+package miden:base@1.0.0;
+
+interface core-types {
+    record felt { inner: f32 }
+    record word { a: felt, b: felt, c: felt, d: felt }
+}
+"#,
+            )
+            .unwrap();
+        resolve
+            .push_str(
+                "dependency.wit",
+                r#"
+package miden:dep@0.0.1;
+
+interface counter {
+    get-count: func(key: u32) -> u32;
+}
+"#,
+            )
+            .unwrap();
+        resolve
+            .push_str(
+                "world.wit",
+                r#"
+package miden:bindings@1.0.0;
+
+world bindings {
+    import miden:dep/counter@0.0.1;
+}
+"#,
+            )
+            .unwrap();
+        let world_id = resolve
+            .worlds
+            .iter()
+            .find_map(|(id, world)| (world.name == "bindings").then_some(id))
+            .expect("world fixture must resolve");
+        (resolve, world_id)
+    }
+
+    /// Returns the interface id registered under `name` in the resolve.
+    fn interface_id_by_name(resolve: &Resolve, name: &str) -> InterfaceId {
+        resolve
+            .interfaces
+            .iter()
+            .find_map(|(id, interface)| (interface.name.as_deref() == Some(name)).then_some(id))
+            .unwrap_or_else(|| panic!("interface `{name}` must resolve"))
+    }
+
+    /// Runs FPI injection on the fixture world and asserts the resulting import order.
+    ///
+    /// WIT encoding registers world imports in order, so the `core-types` interface the injected
+    /// prefix params refer to must be the first import, without duplicating an existing import.
+    fn inject_and_assert_core_types_first(resolve: &mut Resolve, world_id: WorldId) {
+        inject_imports(resolve, world_id, &["miden:dep/counter@0.0.1".to_string()])
+            .expect("injection must succeed");
+
+        // The dependency interface plus the core-types import, whether the latter was inserted,
+        // moved, or reused.
+        let world = &resolve.worlds[world_id];
+        assert_eq!(world.imports.len(), 2, "imports must not be duplicated");
+        let Some(WorldItem::Interface { id, .. }) = world.imports.values().next() else {
+            panic!("expected the first world import to be an interface");
+        };
+        assert_eq!(resolve.interfaces[*id].name.as_deref(), Some("core-types"));
+
+        let counter_id = interface_id_by_name(resolve, "counter");
+        assert!(
+            resolve.interfaces[counter_id].functions.contains_key("fpi-get-count"),
+            "dependency interface must gain the fpi- import variant"
+        );
+    }
+
+    #[test]
+    fn inject_imports_adds_core_types_world_import_before_dependency() {
+        let (mut resolve, world_id) = resolve_with_bindings_world();
+
+        inject_and_assert_core_types_first(&mut resolve, world_id);
+    }
+
+    #[test]
+    fn inject_imports_moves_existing_core_types_import_to_front() {
+        let (mut resolve, world_id) = resolve_with_bindings_world();
+        // Register `core-types` after the dependency interface, the order the encoder would
+        // reject once the injected functions reference its types.
+        let core_types_id = interface_id_by_name(&resolve, "core-types");
+        resolve.worlds[world_id].imports.insert(
+            WorldKey::Interface(core_types_id),
+            WorldItem::Interface {
+                id: core_types_id,
+                stability: Stability::default(),
+                span: WitSpan::default(),
+            },
+        );
+
+        inject_and_assert_core_types_first(&mut resolve, world_id);
+    }
+
+    #[test]
+    fn inject_imports_reuses_core_types_import_keyed_by_name() {
+        let (mut resolve, world_id) = resolve_with_bindings_world();
+        // The same interface can be imported under a named world key; injection must reuse it
+        // instead of adding a second interface import.
+        let core_types_id = interface_id_by_name(&resolve, "core-types");
+        resolve.worlds[world_id].imports.insert(
+            WorldKey::Name("core".to_string()),
+            WorldItem::Interface {
+                id: core_types_id,
+                stability: Stability::default(),
+                span: WitSpan::default(),
+            },
+        );
+
+        inject_and_assert_core_types_first(&mut resolve, world_id);
     }
 }
