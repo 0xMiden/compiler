@@ -5,6 +5,7 @@ use quote::{ToTokens, quote};
 use syn::{
     Error, FnArg, Item, ItemFn, LitStr, Pat, Token, TypePath,
     parse::{Parse, ParseStream},
+    parse_quote,
     spanned::Spanned,
     visit_mut::VisitMut,
 };
@@ -173,7 +174,7 @@ fn generate_bindings(
         world,
         &args.with_entries,
         &[],
-        None,
+        false,
     )
 }
 
@@ -184,7 +185,6 @@ pub(crate) fn generate_inline_fpi_bindings(
     world: &str,
     fpi_imports: &[fpi::FpiImportSpec],
     with_entries: &[(String, WithOption)],
-    type_section_suffix: &str,
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
         &config.paths,
@@ -192,7 +192,7 @@ pub(crate) fn generate_inline_fpi_bindings(
         Some(world),
         with_entries,
         fpi_imports,
-        Some(type_section_suffix),
+        true,
     )
 }
 
@@ -212,7 +212,7 @@ pub(crate) fn generate_inline_import_bindings(
         Some(world),
         with_entries,
         &[],
-        None,
+        false,
     )
 }
 
@@ -223,7 +223,7 @@ fn generate_bindings_from_sources(
     world: Option<&str>,
     with_entries: &[(String, WithOption)],
     fpi_imports: &[fpi::FpiImportSpec],
-    type_section_suffix: Option<&str>,
+    scope_component_type_sections: bool,
 ) -> Result<TokenStream2, Error> {
     let mut wit_sources = load_wit_sources(paths, inline_source)?;
 
@@ -237,7 +237,6 @@ fn generate_bindings_from_sources(
         generate_all: true,
         runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
         default_bindings_module: Some("bindings".to_string()),
-        type_section_suffix: type_section_suffix.map(str::to_owned),
         ..Opts::default()
     };
     push_custom_with_entries(&mut opts, with_entries);
@@ -257,9 +256,12 @@ fn generate_bindings_from_sources(
         .ok_or_else(|| Error::new(Span::call_site(), "wit-bindgen emitted no bindings"))?;
     let src = std::str::from_utf8(src_bytes)
         .map_err(|err| Error::new(Span::call_site(), format!("invalid UTF-8: {err}")))?;
-    let mut tokens: TokenStream2 = src
-        .parse()
+    let mut file = syn::parse_file(src)
         .map_err(|err| Error::new(Span::call_site(), format!("failed to parse bindings: {err}")))?;
+    if scope_component_type_sections {
+        append_module_path_to_component_type_sections(&mut file)?;
+    }
+    let mut tokens = file.into_token_stream();
 
     // Include a dummy `include_bytes!` for any files we read so rustc knows that
     // we depend on the contents of those files.
@@ -276,6 +278,73 @@ fn generate_bindings_from_sources(
     }
 
     Ok(tokens)
+}
+
+/// Appends the generated binding module path to every component-metadata section name.
+fn append_module_path_to_component_type_sections(file: &mut syn::File) -> Result<(), Error> {
+    /// Rewrites generated component-metadata attributes in place.
+    struct SectionVisitor {
+        rewritten: usize,
+        error: Option<Error>,
+    }
+
+    impl VisitMut for SectionVisitor {
+        fn visit_attribute_mut(&mut self, attribute: &mut syn::Attribute) {
+            if self.error.is_some() || !attribute.path().is_ident("unsafe") {
+                return;
+            }
+            let syn::Meta::List(unsafe_meta) = &attribute.meta else {
+                return;
+            };
+            let Ok(syn::Meta::NameValue(link_section)) =
+                syn::parse2::<syn::Meta>(unsafe_meta.tokens.clone())
+            else {
+                return;
+            };
+            if !link_section.path.is_ident("link_section") {
+                return;
+            }
+            let syn::Expr::Lit(value) = &link_section.value else {
+                self.error = Some(Error::new_spanned(
+                    &link_section.value,
+                    "wit-bindgen component metadata section name must be a string literal",
+                ));
+                return;
+            };
+            let syn::Lit::Str(section_name) = &value.lit else {
+                self.error = Some(Error::new_spanned(
+                    &value.lit,
+                    "wit-bindgen component metadata section name must be a string literal",
+                ));
+                return;
+            };
+            if !section_name.value().starts_with("component-type") {
+                return;
+            }
+
+            let section_name = section_name.clone();
+            attribute.meta = parse_quote! {
+                unsafe(link_section = concat!(#section_name, ":", module_path!()))
+            };
+            self.rewritten += 1;
+        }
+    }
+
+    let mut visitor = SectionVisitor {
+        rewritten: 0,
+        error: None,
+    };
+    visitor.visit_file_mut(file);
+    if let Some(error) = visitor.error {
+        return Err(error);
+    }
+    if visitor.rewritten == 0 {
+        return Err(Error::new(
+            Span::call_site(),
+            "wit-bindgen emitted no component metadata section to scope to the account binding",
+        ));
+    }
+    Ok(())
 }
 
 /// Result of loading and parsing WIT sources from file paths and optional inline content.
@@ -668,6 +737,36 @@ pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
 mod tests {
     use super::*;
 
+    /// Rewrites component metadata to use semantic Rust module identity.
+    #[test]
+    fn component_type_sections_use_the_stable_rust_module_path() {
+        let mut file: syn::File = syn::parse_quote! {
+            #[unsafe(link_section = "component-type:wit-bindgen:test")]
+            static COMPONENT_TYPE: [u8; 1] = [0];
+        };
+
+        append_module_path_to_component_type_sections(&mut file).unwrap();
+
+        let Item::Static(item) = &file.items[0] else {
+            panic!("fixture must remain a static item");
+        };
+        let syn::Meta::List(unsafe_meta) = &item.attrs[0].meta else {
+            panic!("link section must remain wrapped in an unsafe attribute");
+        };
+        let syn::Meta::NameValue(link_section) =
+            syn::parse2::<syn::Meta>(unsafe_meta.tokens.clone()).unwrap()
+        else {
+            panic!("unsafe attribute must contain link_section metadata");
+        };
+        let syn::Expr::Macro(section_name) = &link_section.value else {
+            panic!("link section must be assembled by concat!");
+        };
+        assert!(section_name.mac.path.is_ident("concat"));
+        let tokens = section_name.mac.tokens.to_string();
+        assert!(tokens.contains("component-type:wit-bindgen:test"));
+        assert!(tokens.contains("module_path"));
+    }
+
     #[test]
     fn test_should_generate_struct_empty_path() {
         let empty_items: Vec<Item> = vec![];
@@ -898,6 +997,7 @@ world core-type-variant-world {
         assert!(world_uses_miden_core_types(&resolve, world));
     }
 
+    /// Preserves dependency-owned types across canonical source and synthetic FPI interfaces.
     #[test]
     fn synthetic_fpi_interface_preserves_source_types_and_generated_module_paths() {
         const SOURCE_IMPORT: &str = "miden:typed-dependency/api@1.2.3";
@@ -955,7 +1055,7 @@ interface api {
         .unwrap();
         resolve.push_group(dependency).unwrap();
 
-        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]);
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
         let inline = fpi::import_world_wit("fpi-type-test", &specs);
         let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
         let package = resolve.push_group(group).unwrap();
@@ -982,12 +1082,13 @@ interface api {
 
         let synthetic_id = resolve.worlds[world]
             .imports
-            .iter()
-            .find_map(|(key, item)| match (key, item) {
-                (
-                    wit_bindgen_core::wit_parser::WorldKey::Name(name),
-                    WorldItem::Interface { id, .. },
-                ) if name == specs[0].synthetic_import() => Some(*id),
+            .values()
+            .find_map(|item| match item {
+                WorldItem::Interface { id, .. }
+                    if interface_matches(&resolve, *id, specs[0].synthetic_import()) =>
+                {
+                    Some(*id)
+                }
                 _ => None,
             })
             .expect("synthetic interface must be imported");
@@ -1047,7 +1148,7 @@ interface api {
         let foreign = foreign_modules
             .iter()
             .find(|module| module.path_string == specs[0].synthetic_module_path())
-            .expect("synthetic import key must determine its generated module path");
+            .expect("canonical synthetic import must determine its generated module path");
 
         let native_signature = native
             .functions
@@ -1089,6 +1190,7 @@ interface api {
         assert_eq!(resolve.types[alias_id].owner, TypeOwner::Interface(synthetic_id));
     }
 
+    /// Merges plain and FPI worlds independently of order, repetition, package, or version.
     #[test]
     fn plain_repeated_distinct_and_versioned_fpi_worlds_merge_in_both_orders() {
         const FIRST_IMPORT: &str = "miden:first-dependency/api@1.0.0";
@@ -1185,7 +1287,7 @@ interface api {
         {
             let (source, specs) = match imports {
                 Some(imports) => {
-                    let specs = fpi::import_specs(imports);
+                    let specs = fpi::import_specs(imports).unwrap();
                     (fpi::import_world_wit(world_name, &specs), Some(specs))
                 }
                 None => (

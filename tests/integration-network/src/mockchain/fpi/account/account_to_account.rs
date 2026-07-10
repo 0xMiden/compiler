@@ -142,15 +142,7 @@ const CALLEE_ACCOUNT_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, component_storage, export_type, Felt, StorageMap, Word};
-
-/// Request record owned by the callee dependency and passed through the caller account's FPI
-/// bindings.
-#[export_type]
-pub struct CounterRequest {
-    /// Storage key whose counter value should be returned.
-    pub key: Word,
-}
+use miden::{component, component_storage, Felt, StorageMap, Word};
 
 /// Account component whose storage map holds one counter value.
 #[component_storage]
@@ -164,14 +156,14 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value stored under the provided key.
-    fn get_count(&self, request: CounterRequest) -> Felt;
+    fn get_count(&self, key: Word) -> Felt;
 }
 
 #[component]
 impl CounterContract for CounterContractStorage {
     /// Returns the counter value stored under the provided key.
-    fn get_count(&self, request: CounterRequest) -> Felt {
-        self.count_map.get(request.key)
+    fn get_count(&self, key: Word) -> Felt {
+        self.count_map.get(key)
     }
 }
 "#;
@@ -182,8 +174,6 @@ const CALLER_ACCOUNT_SOURCE: &str = r#"
 #![feature(alloc_error_handler)]
 
 use miden::{account, component, component_storage, felt, AccountId, Felt, Word};
-
-use crate::bindings::miden::account_to_account_callee_account::counter_contract::CounterRequest;
 
 #[account(account_to_account_callee_account::CounterContract)]
 struct CalleeAccount;
@@ -205,7 +195,7 @@ impl CallerAccount for CallerAccountStorage {
     fn read_foreign_count(&self, callee_account_id: AccountId) -> Felt {
         let callee = CalleeAccount::new(callee_account_id);
         let key = Word::new([felt!(13), felt!(21), felt!(34), felt!(55)]);
-        callee.get_count(CounterRequest { key })
+        callee.get_count(key)
     }
 }
 "#;

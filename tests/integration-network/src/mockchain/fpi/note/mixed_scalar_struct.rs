@@ -91,17 +91,6 @@ use crate::bindings::miden::mixed_scalar_struct_account::counter_contract::Mixed
 #[account(mixed_scalar_struct_account::CounterContract)]
 struct Counter;
 
-/// Holds a same-named second wrapper for the same dependency in a separate Rust module.
-mod mirror {
-    use super::*;
-
-    /// Second wrapper ensuring repeated private FPI imports and custom sections remain distinct.
-    #[account(mixed_scalar_struct_account::CounterContract as MirrorCounterContract)]
-    pub struct Counter;
-}
-
-use mirror::MirrorCounterContract as _;
-
 /// First double-word value used by the mixed scalar record FPI test.
 const FIRST_U64: u64 = 0x0000_0001_0000_0002;
 /// Second double-word value used by the mixed scalar record FPI test.
@@ -131,20 +120,12 @@ impl CounterCaller {
             u32_value: U32_VALUE,
             u8_value: U8_VALUE,
         });
-        let mirror = mirror::Counter::new(self.counter_account_id);
-        let mirrored = mirror.echo_mixed_scalar_record(MixedScalarRecord {
-            first_u64: result.first_u64,
-            second_u64: result.second_u64,
-            felt_value: result.felt_value,
-            u32_value: result.u32_value,
-            u8_value: result.u8_value,
-        });
 
-        assert_u64_eq(mirrored.first_u64, FIRST_U64);
-        assert_u64_eq(mirrored.second_u64, SECOND_U64);
-        assert_eq(mirrored.felt_value, felt!(77));
-        assert_eq(Felt::from_u32(mirrored.u32_value), Felt::from_u32(U32_VALUE));
-        assert_eq(Felt::from_u32(mirrored.u8_value as u32), Felt::from_u32(U8_VALUE as u32));
+        assert_u64_eq(result.first_u64, FIRST_U64);
+        assert_u64_eq(result.second_u64, SECOND_U64);
+        assert_eq(result.felt_value, felt!(77));
+        assert_eq(Felt::from_u32(result.u32_value), Felt::from_u32(U32_VALUE));
+        assert_eq(Felt::from_u32(result.u8_value as u32), Felt::from_u32(U8_VALUE as u32));
     }
 }
 

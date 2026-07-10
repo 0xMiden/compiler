@@ -14,13 +14,15 @@ use miden_mast_package::{Package, PackageExport};
 use miden_protocol::utils::serde::Deserializable;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
+use semver::Version;
 use syn::{
     Attribute, Error, File, Item, ItemFn, ItemImpl, ItemStruct, ReturnType, TraitItemFn,
     parse_quote,
 };
 use wit_bindgen_core::wit_parser::{
-    Docs, Function, FunctionKind, InterfaceId, Param, Resolve, Span as WitSpan, Type as WitType,
-    TypeDef, TypeDefKind, TypeId, TypeOwner, WorldId, WorldItem, WorldKey,
+    Docs, Function, FunctionKind, Interface, InterfaceId, Package as WitPackage, PackageName,
+    Param, Resolve, Span as WitSpan, Type as WitType, TypeDef, TypeDefKind, TypeId, TypeOwner,
+    WorldId, WorldItem, WorldKey,
 };
 
 #[cfg(test)]
@@ -43,30 +45,38 @@ pub(crate) const RUST_FUNCTION_PREFIX: &str = "fpi_";
 /// Version of the private synthetic interface contract used for generated FPI imports.
 const FPI_ABI_VERSION: &str = "v1";
 
-/// Prefix for private synthetic FPI world-import keys.
-const FPI_IMPORT_PREFIX: &str = "miden-fpi";
+/// Prefix for private synthetic FPI package names.
+const FPI_PACKAGE_PREFIX: &str = "fpi";
 
 /// Maps one real dependency interface to its private synthetic FPI interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FpiImportSpec {
     /// Fully-qualified real dependency interface, including its version.
     source_import: String,
-    /// WIT world-import key for the private synthetic interface.
+    /// Canonical package identity which owns the private synthetic interface.
+    synthetic_package: PackageName,
+    /// Interface name retained from the source dependency.
+    synthetic_interface: String,
+    /// Fully-qualified private synthetic interface identity.
     synthetic_import: String,
 }
 
 impl FpiImportSpec {
     /// Creates a deterministic FPI import specification for `source_import`.
-    fn new(source_import: String) -> Self {
-        let mut synthetic_import = format!("{FPI_IMPORT_PREFIX}-{FPI_ABI_VERSION}-x");
-        for byte in source_import.bytes() {
-            write!(synthetic_import, "{byte:02x}")
-                .expect("writing to an in-memory string cannot fail");
-        }
-        Self {
+    fn new(source_import: String) -> syn::Result<Self> {
+        let (source_package, synthetic_interface) = parse_interface_id(&source_import)?;
+        let synthetic_package = PackageName {
+            namespace: source_package.namespace,
+            name: format!("{FPI_PACKAGE_PREFIX}-{FPI_ABI_VERSION}-{}", source_package.name),
+            version: source_package.version,
+        };
+        let synthetic_import = synthetic_package.interface_id(&synthetic_interface);
+        Ok(Self {
             source_import,
+            synthetic_package,
+            synthetic_interface,
             synthetic_import,
-        }
+        })
     }
 
     /// Returns the fully-qualified real dependency interface.
@@ -74,19 +84,49 @@ impl FpiImportSpec {
         &self.source_import
     }
 
-    /// Returns the private synthetic WIT world-import key.
+    /// Returns the canonical private synthetic interface identity.
     pub(crate) fn synthetic_import(&self) -> &str {
         &self.synthetic_import
     }
 
     /// Returns the Rust module path generated for the private synthetic interface.
     pub(crate) fn synthetic_module_path(&self) -> String {
-        self.synthetic_import.to_snake_case()
+        import_module_path(&self.synthetic_import)
     }
 }
 
+/// Parses a fully-qualified WIT interface ID into its package and interface components.
+fn parse_interface_id(import: &str) -> syn::Result<(PackageName, String)> {
+    let invalid = || {
+        Error::new(
+            Span::call_site(),
+            format!(
+                "invalid FPI dependency interface `{import}`; expected \
+                 `namespace:package/interface@version`"
+            ),
+        )
+    };
+    let (namespace, package_and_interface) = import.split_once(':').ok_or_else(invalid)?;
+    let (package, interface_and_version) =
+        package_and_interface.split_once('/').ok_or_else(invalid)?;
+    let (interface, version) = interface_and_version.rsplit_once('@').ok_or_else(invalid)?;
+    if namespace.is_empty() || package.is_empty() || interface.is_empty() || version.is_empty() {
+        return Err(invalid());
+    }
+    let version = Version::parse(version).map_err(|_| invalid())?;
+
+    Ok((
+        PackageName {
+            namespace: namespace.to_string(),
+            name: package.to_string(),
+            version: Some(version),
+        },
+        interface.to_string(),
+    ))
+}
+
 /// Builds sorted, deduplicated FPI import specifications.
-pub(crate) fn import_specs(imports: &[String]) -> Vec<FpiImportSpec> {
+pub(crate) fn import_specs(imports: &[String]) -> syn::Result<Vec<FpiImportSpec>> {
     let mut imports = imports.to_vec();
     imports.sort_unstable();
     imports.dedup();
@@ -106,8 +146,6 @@ pub(crate) fn import_world_wit(name: &str, imports: &[FpiImportSpec]) -> String 
             writeln!(wit, "    import {};", import.source_import())
                 .expect("writing to an in-memory string cannot fail");
         }
-        writeln!(wit, "    import {}: interface {{}}", import.synthetic_import())
-            .expect("writing to an in-memory string cannot fail");
     }
     wit.push_str("}\n");
     wit
@@ -126,13 +164,22 @@ pub(crate) fn inject_imports(
     let core_types = resolve_core_types(resolve)?;
     for import in imports {
         let source_id = find_source_interface(resolve, world_id, import.source_import())?;
-        let synthetic_id = find_synthetic_interface(resolve, world_id, import.synthetic_import())?;
+        let (synthetic_id, created) = ensure_synthetic_interface(resolve, import)?;
 
         validate_reserved_fpi_namespace(
             import.source_import(),
             resolve.interfaces[source_id].functions.values(),
         )?;
-        inject_functions_into_synthetic_interface(resolve, source_id, synthetic_id, core_types)?;
+        if created {
+            inject_functions_into_synthetic_interface(
+                resolve,
+                source_id,
+                synthetic_id,
+                core_types,
+            )?;
+        }
+        validate_synthetic_interface(resolve, source_id, synthetic_id, core_types)?;
+        import_synthetic_interface(resolve, world_id, synthetic_id, import.synthetic_import())?;
     }
 
     #[cfg(debug_assertions)]
@@ -163,29 +210,71 @@ fn find_source_interface(
         })
 }
 
-/// Finds a private inline interface by its explicit world-import key.
-fn find_synthetic_interface(
-    resolve: &Resolve,
+/// Finds or creates the canonical private interface for one FPI dependency.
+fn ensure_synthetic_interface(
+    resolve: &mut Resolve,
+    import: &FpiImportSpec,
+) -> syn::Result<(InterfaceId, bool)> {
+    let package_id = match resolve.package_names.get(&import.synthetic_package) {
+        Some(id) => *id,
+        None => {
+            let id = resolve.packages.alloc(WitPackage {
+                name: import.synthetic_package.clone(),
+                docs: Docs::default(),
+                interfaces: Default::default(),
+                worlds: Default::default(),
+            });
+            resolve.package_names.insert(import.synthetic_package.clone(), id);
+            id
+        }
+    };
+
+    if let Some(id) = resolve.packages[package_id]
+        .interfaces
+        .get(&import.synthetic_interface)
+        .copied()
+    {
+        return Ok((id, false));
+    }
+
+    let id = resolve.interfaces.alloc(Interface {
+        name: Some(import.synthetic_interface.clone()),
+        types: Default::default(),
+        functions: Default::default(),
+        docs: Docs::default(),
+        stability: Default::default(),
+        package: Some(package_id),
+        span: WitSpan::default(),
+        clone_of: None,
+    });
+    resolve.packages[package_id]
+        .interfaces
+        .insert(import.synthetic_interface.clone(), id);
+    Ok((id, true))
+}
+
+/// Imports one canonical synthetic interface into the generated binding world.
+fn import_synthetic_interface(
+    resolve: &mut Resolve,
     world_id: WorldId,
+    synthetic_id: InterfaceId,
     synthetic_import: &str,
-) -> syn::Result<InterfaceId> {
-    resolve.worlds[world_id]
-        .imports
-        .iter()
-        .find_map(|(key, item)| match (key, item) {
-            (WorldKey::Name(name), WorldItem::Interface { id, .. }) if name == synthetic_import => {
-                Some(*id)
-            }
-            _ => None,
-        })
-        .ok_or_else(|| {
-            Error::new(
-                Span::call_site(),
-                format!(
-                    "failed to resolve private FPI interface `{synthetic_import}` in import world"
-                ),
-            )
-        })
+) -> syn::Result<()> {
+    let previous = resolve.worlds[world_id].imports.insert(
+        WorldKey::Interface(synthetic_id),
+        WorldItem::Interface {
+            id: synthetic_id,
+            stability: Default::default(),
+            span: WitSpan::default(),
+        },
+    );
+    if previous.is_some() {
+        return Err(Error::new(
+            Span::call_site(),
+            format!("duplicate private FPI interface `{synthetic_import}` in import world"),
+        ));
+    }
+    Ok(())
 }
 
 /// Determines whether a generated free function represents an FPI WIT import.
@@ -361,6 +450,126 @@ fn inject_functions_into_synthetic_interface(
     Ok(())
 }
 
+/// Verifies that a reused canonical FPI interface matches its source dependency.
+fn validate_synthetic_interface(
+    resolve: &Resolve,
+    source_id: InterfaceId,
+    synthetic_id: InterfaceId,
+    core_types: CoreTypes,
+) -> syn::Result<()> {
+    let source_functions = resolve.interfaces[source_id]
+        .functions
+        .values()
+        .filter(|function| {
+            matches!(function.kind, FunctionKind::Freestanding)
+                && !function.name.starts_with(WIT_FUNCTION_PREFIX)
+        })
+        .collect::<Vec<_>>();
+    let synthetic = &resolve.interfaces[synthetic_id];
+    let invalid = || {
+        Error::new(
+            Span::call_site(),
+            format!(
+                "canonical private FPI interface `{}` is incompatible with source interface `{}`",
+                interface_import_path(resolve, synthetic_id)
+                    .unwrap_or_else(|| "<unknown>".to_string()),
+                interface_import_path(resolve, source_id)
+                    .unwrap_or_else(|| "<unknown>".to_string())
+            ),
+        )
+    };
+
+    if synthetic.functions.len() != source_functions.len() {
+        return Err(invalid());
+    }
+
+    let expected_prefix = [
+        ("account-id-prefix", core_types.felt),
+        ("account-id-suffix", core_types.felt),
+        ("foreign-proc-root", core_types.word),
+    ];
+    let mut aliases = HashMap::new();
+    for source in source_functions {
+        let name = format!("{WIT_FUNCTION_PREFIX}{}", source.name);
+        let Some(function) = synthetic.functions.get(&name) else {
+            return Err(invalid());
+        };
+        if !matches!(function.kind, FunctionKind::Freestanding)
+            || function.params.len() != source.params.len() + expected_prefix.len()
+        {
+            return Err(invalid());
+        }
+        for (param, (name, ty)) in function.params.iter().zip(expected_prefix).take(3) {
+            if param.name != name
+                || !synthetic_type_matches(resolve, synthetic_id, ty, param.ty, &mut aliases)
+            {
+                return Err(invalid());
+            }
+        }
+        for (source, generated) in source.params.iter().zip(function.params.iter().skip(3)) {
+            if source.name != generated.name
+                || !synthetic_type_matches(
+                    resolve,
+                    synthetic_id,
+                    source.ty,
+                    generated.ty,
+                    &mut aliases,
+                )
+            {
+                return Err(invalid());
+            }
+        }
+        match (source.result, function.result) {
+            (Some(source), Some(generated))
+                if synthetic_type_matches(
+                    resolve,
+                    synthetic_id,
+                    source,
+                    generated,
+                    &mut aliases,
+                ) => {}
+            (None, None) => {}
+            _ => return Err(invalid()),
+        }
+    }
+
+    let alias_ids = aliases.values().copied().collect::<HashSet<_>>();
+    if synthetic.types.len() != alias_ids.len()
+        || synthetic.types.values().any(|id| !alias_ids.contains(id))
+    {
+        return Err(invalid());
+    }
+
+    Ok(())
+}
+
+/// Checks that a generated type is either unchanged or aliases its dependency-owned source type.
+fn synthetic_type_matches(
+    resolve: &Resolve,
+    synthetic_id: InterfaceId,
+    source: WitType,
+    generated: WitType,
+    aliases: &mut HashMap<TypeId, TypeId>,
+) -> bool {
+    let WitType::Id(source_id) = source else {
+        return source == generated;
+    };
+    let WitType::Id(alias_id) = generated else {
+        return false;
+    };
+    if aliases.get(&source_id).is_some_and(|expected| *expected != alias_id) {
+        return false;
+    }
+    let alias = &resolve.types[alias_id];
+    if alias.owner != TypeOwner::Interface(synthetic_id)
+        || alias.kind != TypeDefKind::Type(WitType::Id(source_id))
+    {
+        return false;
+    }
+    aliases.insert(source_id, alias_id);
+    true
+}
+
 /// Replaces cross-interface function types with local aliases to their original definitions.
 fn alias_function_types(
     resolve: &mut Resolve,
@@ -457,8 +666,8 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
         params,
         result: function.result,
         docs: Docs::default(),
-        // The generated function belongs to the private inline package, so source-package feature
-        // metadata cannot be copied across package ownership boundaries.
+        // The generated function belongs to a private synthetic package, so source-package
+        // feature metadata cannot be copied across package ownership boundaries.
         stability: Default::default(),
         span: WitSpan::default(),
     }
@@ -1377,8 +1586,9 @@ fn procedure_root_from_digest(digest: &miden_protocol::Word) -> ProcedureRoot {
 mod tests {
     use super::*;
 
+    /// Builds readable canonical FPI identities without conflating packages or versions.
     #[test]
-    fn fpi_import_specs_are_sorted_injective_versioned_and_wit_legal() {
+    fn fpi_import_specs_are_sorted_readable_injective_and_versioned() {
         let imports = vec![
             "other:shared/api@1.0.0".to_string(),
             "miden:shared/api@2.0.0".to_string(),
@@ -1386,7 +1596,7 @@ mod tests {
             "miden:shared/api@1.0.0".to_string(),
         ];
 
-        let specs = import_specs(&imports);
+        let specs = import_specs(&imports).unwrap();
         let sources = specs.iter().map(FpiImportSpec::source_import).collect::<Vec<_>>();
         assert_eq!(
             sources,
@@ -1395,30 +1605,28 @@ mod tests {
 
         let synthetic = specs.iter().map(FpiImportSpec::synthetic_import).collect::<HashSet<_>>();
         assert_eq!(synthetic.len(), specs.len());
-        for spec in &specs {
-            assert!(spec.synthetic_import().starts_with("miden-fpi-v1-x"));
-            assert!(
-                spec.synthetic_import()
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-            );
-            assert_eq!(
-                spec.synthetic_import().len(),
-                "miden-fpi-v1-x".len() + spec.source_import().len() * 2
-            );
-        }
+        assert_eq!(
+            specs.iter().map(FpiImportSpec::synthetic_import).collect::<Vec<_>>(),
+            [
+                "miden:fpi-v1-shared/api@1.0.0",
+                "miden:fpi-v1-shared/api@2.0.0",
+                "other:fpi-v1-shared/api@1.0.0",
+            ]
+        );
 
-        assert_eq!(import_specs(&["miden:shared/api@1.0.0".to_string()])[0], specs[0]);
+        assert_eq!(import_specs(&["miden:shared/api@1.0.0".to_string()]).unwrap()[0], specs[0]);
         assert_ne!(specs[0].synthetic_import(), specs[1].synthetic_import());
         assert_ne!(specs[0].synthetic_import(), specs[2].synthetic_import());
     }
 
+    /// Keeps canonical source imports in WIT while synthetic packages are injected after resolve.
     #[test]
     fn fpi_import_world_keeps_real_imports_separate_from_private_interfaces() {
         let specs = import_specs(&[
             "miden:zebra/api@1.0.0".to_string(),
             "miden:alpha/api@1.0.0".to_string(),
-        ]);
+        ])
+        .unwrap();
 
         let wit = import_world_wit("foreign-account-bindings", &specs);
 
@@ -1428,8 +1636,15 @@ mod tests {
         assert!(alpha < zebra, "world imports must be deterministic: {wit}");
         for spec in &specs {
             assert!(wit.contains(&format!("import {};", spec.source_import())));
-            assert!(wit.contains(&format!("import {}: interface {{}}", spec.synthetic_import())));
+            assert!(!wit.contains(spec.synthetic_import()));
         }
+    }
+
+    /// Rejects dependency identifiers which cannot define a canonical synthetic package.
+    #[test]
+    fn fpi_import_specs_reject_noncanonical_interfaces() {
+        let error = import_specs(&["miden:wallet/api".to_string()]).unwrap_err();
+        assert!(error.to_string().contains("namespace:package/interface@version"));
     }
 
     #[test]
