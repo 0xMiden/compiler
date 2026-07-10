@@ -15,6 +15,7 @@ mod operands;
 mod operation;
 pub mod parse;
 pub mod print;
+mod reachability;
 mod region;
 mod successor;
 pub(crate) mod symbols;
@@ -64,6 +65,7 @@ pub use self::{
     },
     parse::{OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
+    reachability::Reachability,
     region::{
         InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,
         RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,

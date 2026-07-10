@@ -1,9 +1,10 @@
-use alloc::{collections::VecDeque, rc::Rc};
+use alloc::{collections::VecDeque, format, rc::Rc};
 
 use midenc_hir::{
     BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
-    ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
-    SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable, ValueRange, ValueRef,
+    ProgramPoint, Reachability, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef,
+    Report, Rewriter, SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable,
+    ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
@@ -120,7 +121,7 @@ pub trait ReloadLike {
 ///   argument/phi representing the closest definition of that value from each predecessor.
 /// * Rewrites all spill and reload instructions to their primitive memory store/load ops.
 ///   Dominance governs only the SSA use rewrite above; whether a spill is materialized or elided
-///   is decided by reachability to live reloads (see [rewrite_spill_pseudo_instructions]).
+///   is decided by reachability to live reloads (see `rewrite_spill_pseudo_instructions`).
 pub fn transform_spills(
     op: OperationRef,
     analysis: &mut SpillAnalysis,
@@ -857,9 +858,9 @@ fn rewrite_inserted_phi_uses(
 /// Reachability, not dominance, is the criterion: the spills analysis places spills per path
 /// (e.g. along each edge of a join), so a reload after the join is covered by a set of spills,
 /// none of which individually dominates it. Eliding a spill is only sound when it provably
-/// cannot reach any live reload of its value, otherwise some path would reload from a local
-/// that was never written. Locals are allocated per invocation, so function re-entry is
-/// irrelevant to coverage, matching the single-execution semantics of [op_reaches].
+/// cannot reach any live reload of its value ([Reachability::Impossible]), otherwise some path
+/// would reload from a local that was never written. A spill/reload pair related across
+/// functions, or through a graph-like region, is invalid IR and reported as an error.
 fn rewrite_spill_pseudo_instructions(
     context: Rc<Context>,
     analysis: &mut SpillAnalysis,
@@ -890,9 +891,30 @@ fn rewrite_spill_pseudo_instructions(
                     .expect("expected materialized reload op to implement ReloadLike");
                 rl.reloaded().borrow().is_used()
             };
-            if reload_used && op_reaches(operation, reload_op) {
-                is_used = true;
-                break;
+            if !reload_used {
+                continue;
+            }
+            match Operation::reachability(operation, reload_op) {
+                Reachability::Guaranteed | Reachability::Maybe => {
+                    is_used = true;
+                    break;
+                }
+                // This spill cannot cover the reload; other spills of the value may.
+                Reachability::Impossible => {}
+                Reachability::MaybeInterprocedurally => {
+                    return Err(Report::msg(format!(
+                        "internal error: a spill of {} and a reload of it are in different \
+                         functions",
+                        spill.value
+                    )));
+                }
+                Reachability::Indeterminate => {
+                    return Err(Report::msg(format!(
+                        "internal error: control flow between a spill of {} and a reload of it is \
+                         not well-defined",
+                        spill.value
+                    )));
+                }
             }
         }
 
@@ -937,159 +959,4 @@ fn rewrite_spill_pseudo_instructions(
     }
 
     Ok(())
-}
-
-/// Returns true if some control-flow path from `from` may reach `to`.
-///
-/// The result may be conservatively `true` when reachability cannot be reasoned about precisely;
-/// `false` means `to` is provably unreachable from `from`. Callers making elision decisions
-/// (e.g. spill pruning) rely on the `false` direction being a proof.
-///
-/// Reachability is evaluated within a single execution of the innermost isolated-from-above
-/// ancestor (e.g. one function invocation). Queries that cross an isolation boundary, or whose
-/// positions cannot otherwise be related (graph regions, no common ancestor region), are
-/// conservatively reachable.
-///
-/// This query is exported from the crate root chiefly so the behavioral tests in
-/// `midenc-dialect-hir` (which have the parser and control-flow dialects needed to build
-/// fixtures) can exercise it directly; the in-crate consumer is spill pruning.
-pub fn op_reaches(from: OperationRef, to: OperationRef) -> bool {
-    // Operations in different isolation scopes (e.g. two functions) share no control flow to
-    // walk, so the query cannot be answered; report the conservative `true`.
-    if isolation_scope(from) != isolation_scope(to) {
-        return true;
-    }
-
-    // Normalize both operations to the innermost region containing them both: an operation
-    // nested in a sub-region (e.g. structured control flow) is represented by its ancestor
-    // operation in the common region.
-    let Some(common_region) = Region::find_common_ancestor(&[from, to]) else {
-        // Operations without a common ancestor region cannot be reasoned about.
-        return true;
-    };
-    let common_region = common_region.borrow();
-    let (Some(from_ancestor), Some(to_ancestor)) =
-        (common_region.find_ancestor_op(from), common_region.find_ancestor_op(to))
-    else {
-        // Unreachable per find_common_ancestor's postcondition (the returned region contains
-        // every queried op); kept as a defensive fallback.
-        return true;
-    };
-
-    // Both operations normalize to the same ancestor op: either one op encloses the other (and
-    // trivially reaches it), or they sit in different sub-regions of that op, where transfer
-    // between the regions depends on the op's semantics (e.g. it can happen across loop
-    // iterations), so conservatively assume it does.
-    if from_ancestor == to_ancestor {
-        return true;
-    }
-
-    // Ancestors that are themselves isolated from above (e.g. two functions in one module) are
-    // symbol-container members, not control-flow positions; their block order proves nothing,
-    // so conservatively report reachable. This is not redundant with the isolation-scope guard
-    // above: sibling isolated ops share one scope and only this check catches them, while an
-    // isolated op nested under a non-isolated region op normalizes to that non-isolated
-    // wrapper and is caught only by the scope guard.
-    if from_ancestor.borrow().implements::<dyn IsolatedFromAbove>()
-        || to_ancestor.borrow().implements::<dyn IsolatedFromAbove>()
-    {
-        return true;
-    }
-
-    let (Some(from_block), Some(to_block)) =
-        (from_ancestor.borrow().parent(), to_ancestor.borrow().parent())
-    else {
-        return true;
-    };
-
-    if from_block == to_block {
-        // In a region without SSA dominance, block order does not imply control-flow order
-        // (mirroring how dominance treats same-block queries in such regions), so the
-        // operations are conservatively mutually reachable.
-        if !from_block.borrow().has_ssa_dominance() {
-            return true;
-        }
-        // Within one block an operation directly reaches every later operation; earlier
-        // operations are only reachable through a cycle back into the block, which the
-        // successor walk and the repetitive-region check below find.
-        if from_ancestor.borrow().is_before_in_block(&to_ancestor) {
-            return true;
-        }
-    }
-
-    if block_leads_to(from_block, to_block) {
-        return true;
-    }
-
-    // No forward path within the common region. Control can still come back around to `to` if
-    // the common region can execute more than once.
-    region_can_re_execute(common_region.as_region_ref())
-}
-
-/// Returns true if control leaving the end of `from` can reach the start of `to` by following
-/// block successors.
-///
-/// The walk is not reflexive: `from == to` returns true only when a cycle leads back into the
-/// block, which is what [region_can_re_execute] relies on for cycle detection.
-fn block_leads_to(from: BlockRef, to: BlockRef) -> bool {
-    let mut visited = SmallSet::<BlockRef, 8>::default();
-    let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(from));
-    while let Some(block) = worklist.pop() {
-        if block == to {
-            return true;
-        }
-        if !visited.insert(block) {
-            continue;
-        }
-        worklist.extend(BlockRef::children(block));
-    }
-    false
-}
-
-/// Returns true if `region` can execute more than once within a single execution of its
-/// innermost isolated-from-above ancestor.
-///
-/// That is the case when an enclosing region is repetitive (e.g. the regions of an `scf.while`,
-/// whose back edges are expressed in the region graph of the owning op rather than as block
-/// successors), or when an enclosing op itself sits on a CFG cycle in its parent region.
-fn region_can_re_execute(region: RegionRef) -> bool {
-    let mut current = Some(region);
-    while let Some(r) = current {
-        let Some(owner) = r.parent() else {
-            return false;
-        };
-        let owner_op = owner.borrow();
-        if owner_op.implements::<dyn IsolatedFromAbove>() {
-            // An isolated-from-above boundary (e.g. a function): reachability is scoped to a
-            // single execution of its body.
-            return false;
-        }
-        if !owner_op.implements::<dyn RegionBranchOpInterface>() {
-            // Unknown region semantics: conservatively treat re-entry as possible.
-            return true;
-        }
-        if r.borrow().is_repetitive_region() {
-            return true;
-        }
-        if let Some(owner_block) = owner_op.parent()
-            && block_leads_to(owner_block, owner_block)
-        {
-            return true;
-        }
-        current = owner_op.parent_region();
-    }
-    false
-}
-
-/// Returns the nearest proper ancestor of `op` that is isolated from above, i.e. the operation
-/// whose single execution scopes a reachability query involving `op`.
-fn isolation_scope(op: OperationRef) -> Option<OperationRef> {
-    let mut current = op.borrow().parent_op();
-    while let Some(ancestor) = current {
-        if ancestor.borrow().implements::<dyn IsolatedFromAbove>() {
-            return Some(ancestor);
-        }
-        current = ancestor.borrow().parent_op();
-    }
-    None
 }
