@@ -656,19 +656,32 @@ fn account_component_project_with_sibling_dep_inner(
     lib_rs: &str,
     sibling_wit: Option<&str>,
 ) -> crate::cargo_proj::Project {
-    let cargo_proj = account_component_project_with_sibling_dep_root(name, lib_rs);
+    let cargo_proj = account_component_project_with_sibling_dep_root(name, lib_rs, None);
     write_sibling_package(&cargo_proj, sibling_wit);
     cargo_proj
 }
 
 /// Builds the sibling-dependency project skeleton without a compiled dependency package.
+///
+/// `sibling_wit_key` optionally sets the dependency's manual WIT path
+/// (`package.metadata.miden.dependencies.test-sibling.wit`) in `miden-project.toml`, relative to
+/// the project root.
 fn account_component_project_with_sibling_dep_root(
     name: &str,
     lib_rs: &str,
+    sibling_wit_key: Option<&str>,
 ) -> crate::cargo_proj::Project {
     let sdk_path = sdk_crate_path();
     let namespace = base::account_component_namespace(name, "test-component");
     let component_package = format!("miden:{}", name.replace('_', "-"));
+    let sibling_wit_entry = sibling_wit_key
+        .map(|wit_path| {
+            format!(
+                "\n[package.metadata.miden.dependencies]\ntest-sibling = {{ wit = \"{wit_path}\" \
+                 }}\n"
+            )
+        })
+        .unwrap_or_default();
     let miden_project_toml = format!(
         r#"
 [package]
@@ -683,7 +696,7 @@ namespace = "{namespace}"
 miden-core = "*"
 miden-protocol = "*"
 test-sibling = {{ path = "dep" }}
-"#
+{sibling_wit_entry}"#
     );
     let cargo_toml = format!(
         r#"
@@ -965,6 +978,7 @@ impl TestComponent for TestComponentStorage {
     let cargo_proj = account_component_project_with_sibling_dep_root(
         "component_sibling_missing_dep_package",
         lib_rs,
+        None,
     );
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(
@@ -1019,6 +1033,75 @@ impl TestComponent for TestComponentStorage {
 
     assert!(stderr.contains("does not embed component WIT"), "unexpected stderr: {stderr}");
     assert!(stderr.contains("cargo miden build"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("provide the WIT manually"), "unexpected stderr: {stderr}");
+}
+
+/// The sibling-consumer source shared by the `wit`-key escape-hatch tests.
+const SIBLING_WIT_KEY_LIB_RS: &str = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, felt, native_account::NativeAccount, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn value(&mut self) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn value(&mut self) -> Felt {
+        self.get_value()
+    }
+}
+"#;
+
+#[test]
+fn component_sibling_wit_key_supplies_missing_embedded_wit() {
+    // The escape hatch end-to-end: the dependency package embeds no WIT (e.g. produced by a
+    // foreign toolchain), so the `wit` key in miden-project.toml supplies it and the build
+    // succeeds.
+    let cargo_proj = account_component_project_with_sibling_dep_root(
+        "component_sibling_wit_key_fallback",
+        SIBLING_WIT_KEY_LIB_RS,
+        Some("sibling-wit/test-sibling.wit"),
+    );
+    write_sibling_package(&cargo_proj, None);
+    let override_path = cargo_proj.root().join("sibling-wit/test-sibling.wit");
+    std::fs::create_dir_all(override_path.parent().unwrap())
+        .expect("the WIT override directory must be created");
+    std::fs::write(&override_path, TEST_SIBLING_GENERATED_WIT)
+        .expect("the WIT override fixture must be written");
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected the wit key to supply the missing embedded WIT: {stderr}"
+    );
+}
+
+#[test]
+fn component_sibling_wit_key_conflicts_with_embedded_wit() {
+    // A `wit` key set for a dependency whose package embeds WIT is a configuration conflict.
+    let cargo_proj = account_component_project_with_sibling_dep_root(
+        "component_sibling_wit_key_conflict",
+        SIBLING_WIT_KEY_LIB_RS,
+        Some("sibling-wit/test-sibling.wit"),
+    );
+    write_sibling_package(&cargo_proj, Some(TEST_SIBLING_GENERATED_WIT));
+
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected a wit key alongside embedded WIT to fail the build"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("embeds component WIT"), "unexpected stderr: {stderr}");
+    assert!(stderr.contains("remove the `wit` key"), "unexpected stderr: {stderr}");
 }
 
 #[test]

@@ -26,11 +26,17 @@ pub(crate) struct DependencyWitSource {
     /// The deserialized package, shared so later consumers (FPI procedure-root extraction) reuse
     /// the exact read the package id was verified against.
     pub(crate) package: Arc<Package>,
-    /// The component WIT source embedded in the package.
+    /// The component WIT source: embedded in the package, or supplied by the dependency's `wit`
+    /// manifest key when the package embeds none.
     pub(crate) wit: String,
 }
 
-/// Reads the embedded WIT of every Miden path dependency's compiled package.
+/// Reads the WIT of every Miden path dependency's compiled package.
+///
+/// Embedded WIT is authoritative. A dependency whose package embeds none may supply it manually
+/// through the `package.metadata.miden.dependencies.<name>.wit` key in `miden-project.toml` — the
+/// escape hatch for packages produced by toolchains that do not embed WIT. Setting the key for a
+/// package that embeds WIT is an error.
 pub(crate) fn collect_dependency_wit_sources(
     manifest_dir: &Path,
     package: &miden_project::Package,
@@ -57,7 +63,36 @@ pub(crate) fn collect_dependency_wit_sources(
                     &dependency_root,
                     version.as_ref(),
                 )?;
-                let wit = package_wit(&resolved.package, &resolved.path)?;
+                let wit_override = dependency_wit_override(package, dependency.name().as_ref())?;
+                let wit = match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
+                    (Some(_), Some(_)) => {
+                        return Err(Error::new(
+                            error_span,
+                            format!(
+                                "dependency '{}': package '{}' embeds component WIT, but \
+                                 miden-project.toml also sets \
+                                 package.metadata.miden.dependencies.{}.wit; remove the `wit` key \
+                                 — embedded WIT is authoritative",
+                                dependency.name(),
+                                resolved.path.display(),
+                                dependency.name(),
+                            ),
+                        ));
+                    }
+                    (Some(wit), None) => wit,
+                    (None, Some(wit_override)) => {
+                        read_wit_override(&wit_override, manifest_dir, dependency.name().as_ref())?
+                    }
+                    (None, None) => {
+                        return Err(Error::new(
+                            error_span,
+                            missing_embedded_wit_message(
+                                &resolved.path,
+                                dependency.name().as_ref(),
+                            ),
+                        ));
+                    }
+                };
                 sources.push(DependencyWitSource {
                     name: dependency.name().to_string(),
                     root: dependency_root,
@@ -74,6 +109,149 @@ pub(crate) fn collect_dependency_wit_sources(
     }
 
     Ok(sources)
+}
+
+/// Returns the raw WIT override path from `package.metadata.miden.dependencies.<name>.wit`.
+fn dependency_wit_override(
+    package: &miden_project::Package,
+    dependency_name: &str,
+) -> Result<Option<String>, Error> {
+    let Some(wit_value) = package
+        .metadata()
+        .get("miden")
+        .and_then(|meta| meta.get("dependencies"))
+        .and_then(|value| value.as_table())
+        .and_then(|dependencies| dependencies.get(dependency_name))
+        .and_then(|config| config.as_table())
+        .and_then(|config| config.get("wit"))
+    else {
+        return Ok(None);
+    };
+    let wit_path = wit_value.as_str().ok_or_else(|| {
+        Error::new(
+            Span::call_site(),
+            format!(
+                "invalid miden-project.toml configuration: expected \
+                 package.metadata.miden.dependencies.{dependency_name}.wit to be a string"
+            ),
+        )
+    })?;
+    Ok(Some(wit_path.to_string()))
+}
+
+/// Reads a dependency's manually provided WIT from a `.wit` file or a directory containing
+/// exactly one top-level `.wit` file.
+///
+/// The override is validated like embedded WIT: it must resolve against the bundled SDK WIT alone
+/// and export an interface, so every macro flow gets the accurate diagnostic at the source.
+fn read_wit_override(
+    wit_path: &str,
+    manifest_dir: &Path,
+    dependency_name: &str,
+) -> Result<String, Error> {
+    let error_span = Span::call_site();
+    let raw_path = Path::new(wit_path);
+    let absolute_path = if raw_path.is_absolute() {
+        raw_path.to_path_buf()
+    } else {
+        manifest_dir.join(raw_path)
+    };
+    let path = fs::canonicalize(&absolute_path).map_err(|err| {
+        Error::new(
+            error_span,
+            format!(
+                "failed to resolve the WIT override for dependency '{dependency_name}' from \
+                 package.metadata.miden.dependencies.{dependency_name}.wit = '{wit_path}': '{}': \
+                 {err}",
+                absolute_path.display()
+            ),
+        )
+    })?;
+
+    let file = if path.is_dir() {
+        let mut wit_files = fs::read_dir(&path)
+            .map_err(|err| {
+                Error::new(
+                    error_span,
+                    format!(
+                        "failed to read the WIT override directory '{}' for dependency \
+                         '{dependency_name}': {err}",
+                        path.display()
+                    ),
+                )
+            })?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|err| {
+                Error::new(
+                    error_span,
+                    format!(
+                        "failed to iterate the WIT override directory '{}' for dependency \
+                         '{dependency_name}': {err}",
+                        path.display()
+                    ),
+                )
+            })?
+            .into_iter()
+            .map(|entry| entry.path())
+            .filter(|path| {
+                path.is_file() && path.extension().is_some_and(|extension| extension == "wit")
+            })
+            .collect::<Vec<_>>();
+        wit_files.sort();
+        match wit_files.len() {
+            1 => wit_files.remove(0),
+            count => {
+                return Err(Error::new(
+                    error_span,
+                    format!(
+                        "the WIT override directory '{}' for dependency '{dependency_name}' \
+                         contains {count} `.wit` files; point \
+                         package.metadata.miden.dependencies.{dependency_name}.wit at a single \
+                         self-contained `.wit` file",
+                        path.display()
+                    ),
+                ));
+            }
+        }
+    } else {
+        path.to_path_buf()
+    };
+
+    let wit = fs::read_to_string(&file).map_err(|err| {
+        Error::new(
+            error_span,
+            format!(
+                "failed to read the WIT override '{}' for dependency '{dependency_name}': {err}",
+                file.display()
+            ),
+        )
+    })?;
+    crate::wit_world::parse_dependency_wit_source(&wit).map_err(|details| {
+        Error::new(
+            error_span,
+            format!(
+                "invalid WIT override for dependency '{dependency_name}' at '{}': {details}. The \
+                 override must be self-contained apart from the bundled SDK WIT (`miden:base`) \
+                 and export an interface.",
+                file.display()
+            ),
+        )
+    })?;
+    Ok(wit)
+}
+
+/// Formats the diagnostic for a dependency package that embeds no WIT and has no override.
+fn missing_embedded_wit_message(package_path: &Path, dependency_name: &str) -> String {
+    format!(
+        "dependency package '{}' does not embed component WIT (missing package section \
+         '{PACKAGE_WIT_SECTION_ID}'); it was likely built with an older Miden toolchain. Rebuild \
+         the dependency with the current `cargo miden build`, or provide the WIT manually via \
+         package.metadata.miden.dependencies.{dependency_name}.wit in miden-project.toml. For \
+         manually authored components (a hand-written `wit/` directory with a bare \
+         `miden::generate!()`), the WIT is embedded only when the `wit/` directory contains \
+         exactly one `.wit` file that is self-contained and exports an interface.",
+        package_path.display()
+    )
 }
 
 /// Returns the package section id carrying the embedded component WIT.
@@ -105,25 +283,17 @@ pub(crate) fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
 }
 
 /// Extracts the component WIT embedded in a compiled Miden package.
-fn package_wit(package: &Package, package_path: &Path) -> Result<String, Error> {
+///
+/// Returns `Ok(None)` when the package has no WIT section; a section that is present but not
+/// valid UTF-8 is an error (the package claims its own WIT, so nothing may substitute it).
+fn package_wit(package: &Package, package_path: &Path) -> Result<Option<String>, Error> {
     let error_span = Span::call_site();
     let wit_section_id = wit_section_id();
     let Some(section) = package.sections.iter().find(|section| section.id == wit_section_id) else {
-        return Err(Error::new(
-            error_span,
-            format!(
-                "dependency package '{}' does not embed component WIT (missing package section \
-                 '{PACKAGE_WIT_SECTION_ID}'); it was likely built with an older Miden toolchain. \
-                 Rebuild the dependency with the current `cargo miden build`. For manually \
-                 authored components (a hand-written `wit/` directory with a bare \
-                 `miden::generate!()`), the WIT is embedded only when the `wit/` directory \
-                 contains exactly one `.wit` file that is self-contained and exports an interface.",
-                package_path.display()
-            ),
-        ));
+        return Ok(None);
     };
 
-    String::from_utf8(section.data.to_vec()).map_err(|err| {
+    String::from_utf8(section.data.to_vec()).map(Some).map_err(|err| {
         Error::new(
             error_span,
             format!(
