@@ -227,9 +227,12 @@ impl InferTypeOpInterface for ExecFpi {
 /// The callee is referenced, not invoked: no arguments are consumed and control never transfers
 /// to it, so this op deliberately does not implement `CallOpInterface`. The symbol property still
 /// records a use of the callee, keeping it linked into the program.
+///
+/// The op is effect-free: it only materializes an assembly-time constant.
+#[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,
-    implements(InferTypeOpInterface, OpPrinter)
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 pub struct ProcedureRoot {
     /// The function whose MAST root digest is materialized
@@ -262,6 +265,15 @@ impl InferTypeOpInterface for ProcedureRoot {
                 self.op.results.push(value);
             }
         } else {
+            // Lowering models exactly one digest word on the operand stack, so IR declaring any
+            // other result count (e.g. parsed from source) is malformed.
+            if self.op.results.len() != Self::DIGEST_FELTS {
+                return Err(Report::msg(format!(
+                    "invalid hir.procedure_root: expected {} result(s), but got {}",
+                    Self::DIGEST_FELTS,
+                    self.op.results.len()
+                )));
+            }
             for result in self.op.results.iter_mut() {
                 result.borrow_mut().set_type(Type::Felt);
             }
@@ -835,6 +847,38 @@ builtin.module public @test {
             &printed,
         )
         .expect("printed hir.procedure_root should re-parse");
+    }
+
+    #[test]
+    fn procedure_root_rejects_malformed_result_arity() {
+        use alloc::format;
+
+        use midenc_hir::{Op, traits::InferTypeOpInterface};
+
+        let mut test =
+            Test::named("procedure_root_rejects_malformed_result_arity").in_module("test");
+        let callee = test.define_function("callee", &[], &[]);
+        test.with_function("caller", &[], &[]);
+        let context = test.context_rc();
+        let mut op = {
+            let mut builder = test.function_builder();
+            let op = builder.procedure_root(callee, SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            op
+        };
+
+        // Re-running inference retypes the existing results; an op left with the wrong result
+        // count (by a transform or a parser) must be rejected instead of silently retyped, as
+        // lowering models exactly one digest word on the operand stack.
+        let mut op_mut = op.borrow_mut();
+        let owner = op_mut.as_operation_ref();
+        op_mut.op.results.clear();
+        let lone_result = context.make_result(SourceSpan::default(), Type::Felt, owner, 0);
+        op_mut.op.results.push(lone_result);
+        let err = op_mut
+            .infer_return_types(&context)
+            .expect_err("inference must reject a result count differing from the digest width");
+        assert!(format!("{err:?}").contains("expected 4 result"), "unexpected error: {err:?}");
     }
 
     #[test]
