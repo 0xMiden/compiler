@@ -4,6 +4,10 @@ use core::ffi::c_void;
 ///
 /// `intrinsics::note::script_root` is a compiler intrinsic: the frontend synthesizes the stub
 /// body with a `procref` of the crate's `#[note_script]` entrypoint export.
+///
+/// The exported name must stay in lockstep with `SCRIPT_ROOT_STUB_NAME` in the compiler
+/// frontend (`frontend/wasm/src/intrinsics/note.rs`) and the `link_name` in
+/// `src/bindings/note.rs`.
 #[unsafe(export_name = "intrinsics::note::script_root")]
 #[optimize(none)]
 #[inline(never)]

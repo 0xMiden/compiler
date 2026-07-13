@@ -26,6 +26,20 @@ use midenc_hir::{
 
 pub use self::{attributes::*, builders::HirOpBuilder, ops::*};
 
+/// Attribute marking a lifted component export as the note script executed by the transaction
+/// kernel.
+///
+/// Set by frontend component-export lifting; consumed by MASM codegen, which converts it into a
+/// MASM procedure attribute and requires it of the callee of every [`ProcedureRoot`] op marked
+/// [`ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR`].
+pub const NOTE_SCRIPT_EXPORT_ATTR: &str = "note_script";
+
+/// Attribute marking a lifted component export as an account authentication script.
+///
+/// Set by frontend component-export lifting; consumed by MASM codegen, which converts it into a
+/// MASM procedure attribute.
+pub const AUTH_SCRIPT_EXPORT_ATTR: &str = "auth_script";
+
 #[derive(Debug, DialectRegistration)]
 pub struct HirDialect {
     info: DialectInfo,

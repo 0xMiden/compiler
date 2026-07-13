@@ -121,6 +121,8 @@ unsafe extern "C" {
         metadata_f3: Felt,
         ptr: *mut AttachmentLocation,
     );
+    // The name must stay in lockstep with the stub's `export_name` (`stubs/note.rs`) and
+    // `SCRIPT_ROOT_STUB_NAME` in the compiler frontend (`frontend/wasm/src/intrinsics/note.rs`).
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "intrinsics::note::script_root"]
     fn extern_note_script_root(ptr: *mut Word);

@@ -408,7 +408,7 @@ impl OpEmitter<'_> {
     /// This emits a `procref` instruction; the assembler computes the digest at assembly time
     /// and pushes it with `root[0]` on top.
     pub fn procedure_root(&mut self, callee: masm::InvocationTarget, span: SourceSpan) {
-        for _ in 0..4 {
+        for _ in 0..midenc_dialect_hir::ProcedureRoot::DIGEST_FELTS {
             self.push(Type::Felt);
         }
         self.emit(masm::Instruction::ProcRef(callee), span);

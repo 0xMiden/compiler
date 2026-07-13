@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 use core::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_hir::{AUTH_SCRIPT_EXPORT_ATTR, HirOpBuilder, NOTE_SCRIPT_EXPORT_ATTR};
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
     FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
@@ -432,11 +432,11 @@ fn annotate_protocol_export(
     match protocol_export_kind {
         Some(ProtocolExportKind::NoteScript) => {
             let note_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("note_script", note_attr);
+            export_func.set_attribute(NOTE_SCRIPT_EXPORT_ATTR, note_attr);
         }
         Some(ProtocolExportKind::AuthScript) => {
             let auth_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("auth_script", auth_attr);
+            export_func.set_attribute(AUTH_SCRIPT_EXPORT_ATTR, auth_attr);
         }
         None => {}
     }

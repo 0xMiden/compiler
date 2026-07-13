@@ -1015,7 +1015,11 @@ impl HirLowering for hir::ProcedureRoot {
             .as_operation()
             .get_attribute(hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR)
             .is_some()
-            && symbol.borrow().as_symbol_operation().get_attribute("note_script").is_none()
+            && symbol
+                .borrow()
+                .as_symbol_operation()
+                .get_attribute(hir::NOTE_SCRIPT_EXPORT_ATTR)
+                .is_none()
         {
             let context = self.as_operation().context();
             return Err(context
@@ -1030,8 +1034,9 @@ impl HirLowering for hir::ProcedureRoot {
                     "this operation must reference the lifted note-script export",
                 )
                 .with_help(
-                    "`get_entrypoint_root()` is only supported in projects compiled as Miden \
-                     components with a `#[note_script]` entrypoint",
+                    "the containing component must define a note-script export, and operations \
+                     marked as the note script root must be retargeted at it during component \
+                     export lifting",
                 )
                 .into_report());
         }
