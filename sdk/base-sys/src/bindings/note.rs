@@ -137,6 +137,12 @@ unsafe extern "C" {
 /// transaction kernel when the note is executed. The digest is computed at assembly time.
 ///
 /// Compilation fails if the current project does not define a `#[note_script]` entrypoint.
+///
+/// Must not be called from code reachable from the `#[note_script]` entrypoint itself: the note
+/// script's MAST root would then depend on its own digest, and assembly fails with a call-graph
+/// cycle error. Inside a running note script, use [`active_note::get_script_root`] instead.
+///
+/// [`active_note::get_script_root`]: crate::bindings::active_note::get_script_root
 #[doc(hidden)]
 pub fn __entrypoint_root() -> Word {
     unsafe {

@@ -445,6 +445,11 @@ fn render_entrypoint_root_method(note_ty: &syn::TypePath) -> TokenStream2 {
             /// the transaction kernel, resolved by the compiler at assembly time. Use it to
             /// build the note recipient (e.g. via `note::build_recipient`) in note
             /// constructors.
+            ///
+            /// Must not be called from code reachable from the `#[note_script]` entrypoint
+            /// itself: the note script's MAST root would then depend on its own digest, and
+            /// assembly fails with a call-graph cycle error. Inside a running note script, use
+            /// `active_note::get_script_root()` instead.
             #[inline(always)]
             pub fn get_entrypoint_root() -> ::miden::Word {
                 ::miden::note::__entrypoint_root()
