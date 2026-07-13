@@ -20,9 +20,9 @@ use syn::{
     parse_quote,
 };
 use wit_bindgen_core::wit_parser::{
-    Docs, Function, FunctionKind, Interface, InterfaceId, Package as WitPackage, PackageName,
-    Param, Resolve, Span as WitSpan, Type as WitType, TypeDef, TypeDefKind, TypeId, TypeOwner,
-    WorldId, WorldItem, WorldKey,
+    Docs, Function, FunctionKind, Handle, Interface, InterfaceId, Package as WitPackage,
+    PackageName, Param, Resolve, Span as WitSpan, Type as WitType, TypeDef, TypeDefKind, TypeId,
+    TypeOwner, WorldId, WorldItem, WorldKey,
 };
 
 #[cfg(test)]
@@ -542,7 +542,11 @@ fn validate_synthetic_interface(
         }
     }
 
-    let alias_ids = aliases.values().copied().collect::<HashSet<_>>();
+    let alias_ids = aliases
+        .values()
+        .copied()
+        .filter(|id| resolve.types[*id].owner == TypeOwner::Interface(synthetic_id))
+        .collect::<HashSet<_>>();
     if synthetic.types.len() != alias_ids.len()
         || synthetic.types.values().any(|id| !alias_ids.contains(id))
     {
@@ -566,17 +570,154 @@ fn synthetic_type_matches(
     let WitType::Id(alias_id) = generated else {
         return false;
     };
-    if aliases.get(&source_id).is_some_and(|expected| *expected != alias_id) {
-        return false;
+    if let Some(expected) = aliases.get(&source_id) {
+        return *expected == alias_id;
     }
-    let alias = &resolve.types[alias_id];
-    if alias.owner != TypeOwner::Interface(synthetic_id)
-        || alias.kind != TypeDefKind::Type(WitType::Id(source_id))
+
+    let source_type = &resolve.types[source_id];
+    let generated_type = &resolve.types[alias_id];
+    if source_type.name.is_none() && source_type.owner == TypeOwner::None {
+        if generated_type.name.is_some() || generated_type.owner != TypeOwner::None {
+            return false;
+        }
+        aliases.insert(source_id, alias_id);
+        return synthetic_type_def_kind_matches(
+            resolve,
+            synthetic_id,
+            &source_type.kind,
+            &generated_type.kind,
+            aliases,
+        );
+    }
+
+    if generated_type.owner != TypeOwner::Interface(synthetic_id)
+        || generated_type.kind != TypeDefKind::Type(WitType::Id(source_id))
     {
         return false;
     }
+
     aliases.insert(source_id, alias_id);
     true
+}
+
+/// Compares anonymous type constructors while following their nested synthetic aliases.
+fn synthetic_type_def_kind_matches(
+    resolve: &Resolve,
+    synthetic_id: InterfaceId,
+    source: &TypeDefKind,
+    generated: &TypeDefKind,
+    aliases: &mut HashMap<TypeId, TypeId>,
+) -> bool {
+    match (source, generated) {
+        (TypeDefKind::Record(source), TypeDefKind::Record(generated)) => {
+            source.fields.len() == generated.fields.len()
+                && source.fields.iter().zip(&generated.fields).all(|(source, generated)| {
+                    source.name == generated.name
+                        && synthetic_type_matches(
+                            resolve,
+                            synthetic_id,
+                            source.ty,
+                            generated.ty,
+                            aliases,
+                        )
+                })
+        }
+        (TypeDefKind::Resource, TypeDefKind::Resource) => true,
+        (TypeDefKind::Handle(source), TypeDefKind::Handle(generated)) => {
+            synthetic_handle_matches(resolve, synthetic_id, *source, *generated, aliases)
+        }
+        (TypeDefKind::Flags(source), TypeDefKind::Flags(generated)) => source == generated,
+        (TypeDefKind::Tuple(source), TypeDefKind::Tuple(generated)) => {
+            source.types.len() == generated.types.len()
+                && source.types.iter().zip(&generated.types).all(|(source, generated)| {
+                    synthetic_type_matches(resolve, synthetic_id, *source, *generated, aliases)
+                })
+        }
+        (TypeDefKind::Variant(source), TypeDefKind::Variant(generated)) => {
+            source.cases.len() == generated.cases.len()
+                && source.cases.iter().zip(&generated.cases).all(|(source, generated)| {
+                    source.name == generated.name
+                        && synthetic_optional_type_matches(
+                            resolve,
+                            synthetic_id,
+                            source.ty,
+                            generated.ty,
+                            aliases,
+                        )
+                })
+        }
+        (TypeDefKind::Enum(source), TypeDefKind::Enum(generated)) => source == generated,
+        (TypeDefKind::Option(source), TypeDefKind::Option(generated))
+        | (TypeDefKind::List(source), TypeDefKind::List(generated))
+        | (TypeDefKind::Type(source), TypeDefKind::Type(generated)) => {
+            synthetic_type_matches(resolve, synthetic_id, *source, *generated, aliases)
+        }
+        (TypeDefKind::Result(source), TypeDefKind::Result(generated)) => {
+            synthetic_optional_type_matches(resolve, synthetic_id, source.ok, generated.ok, aliases)
+                && synthetic_optional_type_matches(
+                    resolve,
+                    synthetic_id,
+                    source.err,
+                    generated.err,
+                    aliases,
+                )
+        }
+        (TypeDefKind::Map(source_key, source_value), TypeDefKind::Map(key, value)) => {
+            synthetic_type_matches(resolve, synthetic_id, *source_key, *key, aliases)
+                && synthetic_type_matches(resolve, synthetic_id, *source_value, *value, aliases)
+        }
+        (
+            TypeDefKind::FixedLengthList(source, source_len),
+            TypeDefKind::FixedLengthList(generated, generated_len),
+        ) => {
+            source_len == generated_len
+                && synthetic_type_matches(resolve, synthetic_id, *source, *generated, aliases)
+        }
+        (TypeDefKind::Future(source), TypeDefKind::Future(generated))
+        | (TypeDefKind::Stream(source), TypeDefKind::Stream(generated)) => {
+            synthetic_optional_type_matches(resolve, synthetic_id, *source, *generated, aliases)
+        }
+        (TypeDefKind::Unknown, TypeDefKind::Unknown) => true,
+        _ => false,
+    }
+}
+
+/// Compares optional nested types in anonymous WIT constructors.
+fn synthetic_optional_type_matches(
+    resolve: &Resolve,
+    synthetic_id: InterfaceId,
+    source: Option<WitType>,
+    generated: Option<WitType>,
+    aliases: &mut HashMap<TypeId, TypeId>,
+) -> bool {
+    match (source, generated) {
+        (Some(source), Some(generated)) => {
+            synthetic_type_matches(resolve, synthetic_id, source, generated, aliases)
+        }
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+/// Compares resource handles in anonymous WIT constructors.
+fn synthetic_handle_matches(
+    resolve: &Resolve,
+    synthetic_id: InterfaceId,
+    source: Handle,
+    generated: Handle,
+    aliases: &mut HashMap<TypeId, TypeId>,
+) -> bool {
+    match (source, generated) {
+        (Handle::Own(source), Handle::Own(generated))
+        | (Handle::Borrow(source), Handle::Borrow(generated)) => synthetic_type_matches(
+            resolve,
+            synthetic_id,
+            WitType::Id(source),
+            WitType::Id(generated),
+            aliases,
+        ),
+        _ => false,
+    }
 }
 
 /// Replaces cross-interface function types with local aliases to their original definitions.
@@ -595,7 +736,7 @@ fn alias_function_types(
     }
 }
 
-/// Replaces one resolved type ID with a synthetic-interface alias.
+/// Replaces one resolved type ID with a valid synthetic representation.
 fn alias_wit_type(
     resolve: &mut Resolve,
     synthetic_id: InterfaceId,
@@ -612,7 +753,24 @@ fn alias_wit_type(
     }
 
     let source_id_value = *source_id;
-    let name = format!("miden-fpi-type-{}", aliases.len());
+    let source_type = resolve.types[source_id_value].clone();
+    if source_type.name.is_none() && source_type.owner == TypeOwner::None {
+        let mut kind = source_type.kind;
+        alias_type_def_kind(resolve, synthetic_id, &mut kind, aliases, interface_types);
+        let clone_id = resolve.types.alloc(TypeDef {
+            name: None,
+            kind,
+            owner: TypeOwner::None,
+            docs: source_type.docs,
+            stability: source_type.stability,
+            span: source_type.span,
+        });
+        aliases.insert(source_id_value, clone_id);
+        *source_id = clone_id;
+        return;
+    }
+
+    let name = format!("miden-fpi-type-{}", interface_types.len());
     let alias_id = resolve.types.alloc(TypeDef {
         name: Some(name.clone()),
         kind: TypeDefKind::Type(WitType::Id(source_id_value)),
@@ -624,6 +782,81 @@ fn alias_wit_type(
     aliases.insert(source_id_value, alias_id);
     interface_types.push((name, alias_id));
     *source_id = alias_id;
+}
+
+/// Rewrites every nested type reference in one cloned anonymous WIT constructor.
+fn alias_type_def_kind(
+    resolve: &mut Resolve,
+    synthetic_id: InterfaceId,
+    kind: &mut TypeDefKind,
+    aliases: &mut HashMap<TypeId, TypeId>,
+    interface_types: &mut Vec<(String, TypeId)>,
+) {
+    match kind {
+        TypeDefKind::Record(record) => {
+            for field in &mut record.fields {
+                alias_wit_type(resolve, synthetic_id, &mut field.ty, aliases, interface_types);
+            }
+        }
+        TypeDefKind::Handle(handle) => {
+            alias_handle(resolve, synthetic_id, handle, aliases, interface_types);
+        }
+        TypeDefKind::Tuple(tuple) => {
+            for ty in &mut tuple.types {
+                alias_wit_type(resolve, synthetic_id, ty, aliases, interface_types);
+            }
+        }
+        TypeDefKind::Variant(variant) => {
+            for case in &mut variant.cases {
+                if let Some(ty) = &mut case.ty {
+                    alias_wit_type(resolve, synthetic_id, ty, aliases, interface_types);
+                }
+            }
+        }
+        TypeDefKind::Option(ty) | TypeDefKind::List(ty) | TypeDefKind::Type(ty) => {
+            alias_wit_type(resolve, synthetic_id, ty, aliases, interface_types);
+        }
+        TypeDefKind::Result(result) => {
+            for ty in [&mut result.ok, &mut result.err].into_iter().flatten() {
+                alias_wit_type(resolve, synthetic_id, ty, aliases, interface_types);
+            }
+        }
+        TypeDefKind::Map(key, value) => {
+            alias_wit_type(resolve, synthetic_id, key, aliases, interface_types);
+            alias_wit_type(resolve, synthetic_id, value, aliases, interface_types);
+        }
+        TypeDefKind::FixedLengthList(ty, _) => {
+            alias_wit_type(resolve, synthetic_id, ty, aliases, interface_types);
+        }
+        TypeDefKind::Future(ty) | TypeDefKind::Stream(ty) => {
+            if let Some(ty) = ty {
+                alias_wit_type(resolve, synthetic_id, ty, aliases, interface_types);
+            }
+        }
+        TypeDefKind::Resource
+        | TypeDefKind::Flags(_)
+        | TypeDefKind::Enum(_)
+        | TypeDefKind::Unknown => {}
+    }
+}
+
+/// Rewrites the resource type referenced by one cloned anonymous handle.
+fn alias_handle(
+    resolve: &mut Resolve,
+    synthetic_id: InterfaceId,
+    handle: &mut Handle,
+    aliases: &mut HashMap<TypeId, TypeId>,
+    interface_types: &mut Vec<(String, TypeId)>,
+) {
+    let id = match handle {
+        Handle::Own(id) | Handle::Borrow(id) => id,
+    };
+    let mut ty = WitType::Id(*id);
+    alias_wit_type(resolve, synthetic_id, &mut ty, aliases, interface_types);
+    let WitType::Id(alias) = ty else {
+        unreachable!("resource handles always reference a resolved type ID");
+    };
+    *id = alias;
 }
 
 /// Rejects dependency functions that use the namespace reserved for generated FPI imports.
@@ -1037,8 +1270,12 @@ fn append_module_path(mut base: TokenStream2, module_path: &[syn::Ident]) -> Tok
     base
 }
 
-/// Verifies that a private FPI binding is the native signature plus the FPI ABI prefix.
-fn validate_fpi_signature(native: &ItemFn, foreign: &ItemFn) -> syn::Result<()> {
+/// Verifies that a private FPI binding has the native function name and FPI ABI prefix.
+///
+/// Resolved WIT types are compared by [`validate_synthetic_interface`]. Rust aliases may render
+/// with different token spellings, so this layer checks only properties introduced by wit-bindgen
+/// and leaves alias compatibility to Rust's type checker.
+pub(crate) fn validate_fpi_signature(native: &ItemFn, foreign: &ItemFn) -> syn::Result<()> {
     if method_ident(foreign)? != native.sig.ident {
         return Err(Error::new(
             foreign.sig.ident.span(),
@@ -1078,30 +1315,6 @@ fn validate_fpi_signature(native: &ItemFn, foreign: &ItemFn) -> syn::Result<()> 
                 "generated FPI ABI prefix must be `felt, felt, word`",
             ));
         }
-    }
-
-    for (native_input, foreign_input) in native_inputs.iter().zip(foreign_inputs.iter().skip(3)) {
-        let (syn::FnArg::Typed(native_input), syn::FnArg::Typed(foreign_input)) =
-            (native_input, foreign_input)
-        else {
-            return Err(Error::new_spanned(
-                foreign_input,
-                "generated import functions cannot contain receivers",
-            ));
-        };
-        if !tokens_equal(&native_input.ty, &foreign_input.ty) {
-            return Err(Error::new_spanned(
-                &foreign_input.ty,
-                "generated FPI parameter type does not match its native function",
-            ));
-        }
-    }
-
-    if !tokens_equal(&native.sig.output, &foreign.sig.output) {
-        return Err(Error::new_spanned(
-            &foreign.sig.output,
-            "generated FPI result type does not match its native function",
-        ));
     }
 
     Ok(())

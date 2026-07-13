@@ -1172,6 +1172,166 @@ interface api {
         assert!(foreign_signature.contains(&mapped_type), "signature: {foreign_signature}");
     }
 
+    /// Rebuilds anonymous compound types without creating cross-owner aliases.
+    #[test]
+    fn synthetic_fpi_interface_preserves_anonymous_compound_types() {
+        const SOURCE_IMPORT: &str = "miden:anonymous-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "anonymous-dependency.wit",
+            r#"
+package miden:anonymous-dependency@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+
+    record payload {
+        value: u32,
+        key: word,
+    }
+
+    many: func(values: list<payload>) -> list<payload>;
+    find: func(key: word) -> option<payload>;
+    try-get: func(flag: bool) -> result<payload, felt>;
+    pair: func() -> tuple<felt, payload>;
+    words: func(values: list<word>) -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("fpi-anonymous-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::anonymous_dependency::api")
+            .expect("native anonymous-type bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic anonymous-type bindings");
+
+        assert_eq!(native.functions.len(), 5);
+        assert_eq!(foreign.functions.len(), native.functions.len());
+    }
+
+    /// Preserves aliases imported from a sibling WIT interface.
+    #[test]
+    fn synthetic_fpi_interface_preserves_cross_interface_use_aliases() {
+        const SOURCE_IMPORT: &str = "miden:shared-types-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "shared-types-dependency.wit",
+            r#"
+package miden:shared-types-dependency@1.0.0;
+
+interface types {
+    record payload {
+        value: u32,
+    }
+}
+
+interface api {
+    use types.{payload};
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("fpi-use-alias-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::shared_types_dependency::api")
+            .expect("native cross-interface alias bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic cross-interface alias bindings");
+        let native_function = native
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "roundtrip")
+            .expect("native roundtrip binding");
+        let foreign_function = foreign
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "fpi_roundtrip")
+            .expect("synthetic roundtrip binding");
+        let FnArg::Typed(native_input) = &native_function.sig.inputs[0] else {
+            panic!("generated WIT imports cannot contain receivers");
+        };
+        let FnArg::Typed(foreign_input) = &foreign_function.sig.inputs[3] else {
+            panic!("generated WIT imports cannot contain receivers");
+        };
+
+        assert_ne!(
+            native_input.ty.to_token_stream().to_string(),
+            foreign_input.ty.to_token_stream().to_string(),
+            "fixture must exercise semantically equal aliases with different Rust spellings"
+        );
+        fpi::validate_fpi_signature(native_function, foreign_function).unwrap();
+    }
+
     /// Asserts that a synthetic function either reuses a primitive directly or owns an alias to
     /// the original dependency type.
     fn assert_synthetic_type_alias(
