@@ -180,9 +180,11 @@ pub(crate) fn inject_imports(
     }
 
     let core_types = resolve_core_types(resolve)?;
+    let mut created_packages = HashSet::new();
     for import in imports {
         let source_id = find_source_interface(resolve, world_id, import.source_import())?;
-        let (synthetic_id, created) = ensure_synthetic_interface(resolve, import)?;
+        let (synthetic_id, created) =
+            ensure_synthetic_interface(resolve, import, &mut created_packages)?;
 
         validate_reserved_fpi_namespace(
             import.source_import(),
@@ -229,12 +231,26 @@ fn find_source_interface(
 }
 
 /// Finds or creates the canonical private interface for one FPI dependency.
+///
+/// The returned boolean is true when this call created the interface.
 fn ensure_synthetic_interface(
     resolve: &mut Resolve,
     import: &FpiImportSpec,
+    created_packages: &mut HashSet<PackageName>,
 ) -> syn::Result<(InterfaceId, bool)> {
     let package_id = match resolve.package_names.get(&import.synthetic_package) {
-        Some(id) => *id,
+        Some(id) if created_packages.contains(&import.synthetic_package) => *id,
+        Some(_) => {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "synthetic FPI package `{}` for dependency interface `{}` collides with a WIT \
+                     package already loaded by the project",
+                    import.synthetic_package,
+                    import.source_import()
+                ),
+            ));
+        }
         None => {
             let id = resolve.packages.alloc(WitPackage {
                 name: import.synthetic_package.clone(),
@@ -243,6 +259,7 @@ fn ensure_synthetic_interface(
                 worlds: Default::default(),
             });
             resolve.package_names.insert(import.synthetic_package.clone(), id);
+            created_packages.insert(import.synthetic_package.clone());
             id
         }
     };
@@ -1894,6 +1911,56 @@ mod tests {
     fn fpi_import_specs_reject_noncanonical_interfaces() {
         let error = import_specs(&["miden:wallet/api".to_string()]).unwrap_err();
         assert!(error.to_string().contains("namespace:package/interface@version"));
+    }
+
+    /// Rejects a real package which already occupies a generated synthetic identity.
+    #[test]
+    fn synthetic_fpi_package_rejects_ambient_identity_collisions() {
+        const SOURCE_IMPORT: &str = "miden:wallet/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group = wit_bindgen_core::wit_parser::UnresolvedPackageGroup::parse(
+            "miden.wit",
+            crate::manifest_paths::SDK_WIT_SOURCE,
+        )
+        .unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        for (name, source) in [
+            (
+                "wallet.wit",
+                r#"
+package miden:wallet@1.0.0;
+interface api {
+    ping: func();
+}
+"#,
+            ),
+            (
+                "collision.wit",
+                r#"
+package miden:fpi-v1-wallet@1.0.0;
+interface api {
+    pong: func();
+}
+"#,
+            ),
+        ] {
+            let group =
+                wit_bindgen_core::wit_parser::UnresolvedPackageGroup::parse(name, source).unwrap();
+            resolve.push_group(group).unwrap();
+        }
+
+        let specs = import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let world_name = import_world_name("collision-test", &specs);
+        let inline = import_world_wit(&world_name, &specs);
+        let group =
+            wit_bindgen_core::wit_parser::UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        let error = inject_imports(&mut resolve, world, &specs).unwrap_err();
+        assert!(error.to_string().contains("collides with a WIT package"));
+        assert!(error.to_string().contains("miden:fpi-v1-wallet@1.0.0"));
     }
 
     #[test]
