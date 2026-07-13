@@ -986,6 +986,78 @@ impl HirLowering for hir::Exec {
     }
 }
 
+impl HirLowering for hir::ProcedureRoot {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let callee = self.callee();
+        let mut symbol = self
+            .as_operation()
+            .nearest_symbol_table()
+            .and_then(|symbol_table| {
+                symbol_table.borrow().as_symbol_table().unwrap().resolve(callee.path())
+            })
+            .ok_or_else(|| {
+                let context = self.as_operation().context();
+                context
+                    .diagnostics()
+                    .diagnostic(Severity::Error)
+                    .with_message("invalid procedure_root operation: unable to resolve callee")
+                    .with_primary_label(
+                        self.span(),
+                        "this symbol path is not resolvable from this operation",
+                    )
+                    .into_report()
+            })?;
+
+        // An op marked as the note script root must have been repointed at the lifted
+        // note-script export by component export lifting; refusing anything else here turns a
+        // missed retarget into a compile error instead of a silently wrong digest.
+        if self
+            .as_operation()
+            .get_attribute(hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR)
+            .is_some()
+            && symbol
+                .borrow()
+                .as_symbol_operation()
+                .get_attribute(hir::NOTE_SCRIPT_EXPORT_ATTR)
+                .is_none()
+        {
+            let context = self.as_operation().context();
+            return Err(context
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message(
+                    "invalid procedure_root operation: expected the note script root, but the \
+                     callee is not the `note_script`-attributed export",
+                )
+                .with_primary_label(
+                    self.span(),
+                    "this operation must reference the lifted note-script export",
+                )
+                .with_help(
+                    "the containing component must define a note-script export, and operations \
+                     marked as the note script root must be retargeted at it during component \
+                     export lifting",
+                )
+                .into_report());
+        }
+
+        let callee_path = {
+            let mut symbol = symbol.borrow_mut();
+            // `procref` requires the callee to be linkable from outside its defining module, so
+            // promote private callees the same way function-table initialization does.
+            if symbol.visibility() == midenc_hir::Visibility::Private {
+                symbol.set_visibility(midenc_hir::Visibility::Internal);
+            }
+            symbol.path()
+        };
+
+        let target = invocation_target_from_symbol_path(&callee_path, self.span());
+        emitter.inst_emitter(self.as_operation()).procedure_root(target, self.span());
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::ExecIndirect {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let context = self.as_operation().context();

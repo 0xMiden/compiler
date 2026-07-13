@@ -2,7 +2,7 @@ use alloc::rc::Rc;
 use core::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_hir::{AUTH_SCRIPT_EXPORT_ATTR, HirOpBuilder, NOTE_SCRIPT_EXPORT_ATTR};
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
     FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
@@ -39,7 +39,6 @@ use crate::{
 struct ComponentExportMetadata<'a> {
     ty: &'a FunctionType,
     param_names: &'a [String],
-    protocol_export_kind: Option<ProtocolExportKind>,
 }
 
 /// Generates a lifted component export wrapper around a lowered core Wasm export.
@@ -83,7 +82,6 @@ pub fn generate_export_lifting_function(
     let export_metadata = ComponentExportMetadata {
         ty: &export_func_ty.ir,
         param_names: export_param_names,
-        protocol_export_kind,
     };
 
     let core_export_module_path = core_export_func_path.without_leaf();
@@ -105,7 +103,7 @@ pub fn generate_export_lifting_function(
         .set_function_visibility(core_export_func_path.name().as_str(), Visibility::Internal);
     let core_export_func_sig = core_export_func_ref.borrow().get_signature().clone();
 
-    if transformation.is_needed() {
+    let export_func_ref = if transformation.is_needed() {
         generate_lifting_with_transformation(
             component_builder,
             export_func_ident,
@@ -115,7 +113,7 @@ pub fn generate_export_lifting_function(
             core_export_func_sig,
             &core_export_func_path,
             diagnostics,
-        )?;
+        )?
     } else {
         generate_direct_lifting(
             component_builder,
@@ -124,7 +122,12 @@ pub fn generate_export_lifting_function(
             core_export_func_ref,
             core_export_func_sig,
             cross_ctx_export_sig_flat,
-        )?;
+        )?
+    };
+
+    annotate_protocol_export(export_func_ref, protocol_export_kind);
+    if matches!(protocol_export_kind, Some(ProtocolExportKind::NoteScript)) {
+        retarget_note_script_root_ops(&core_module_builder, export_func_ref);
     }
 
     Ok(())
@@ -169,7 +172,7 @@ fn generate_lifting_with_transformation(
     core_export_func_sig: Signature,
     core_export_func_path: &SymbolPath,
     diagnostics: &DiagnosticsHandler,
-) -> WasmResult<()> {
+) -> WasmResult<midenc_hir::dialects::builtin::FunctionRef> {
     assert_eq!(
         cross_ctx_export_sig_flat.results().len(),
         1,
@@ -222,7 +225,6 @@ fn generate_lifting_with_transformation(
     };
     let export_func_ref =
         component_builder.define_function(export_func_ident, Visibility::Public, new_func_sig)?;
-    annotate_protocol_export(export_func_ref, export_metadata.protocol_export_kind);
     annotate_component_export_debug_signature(
         export_func_ref,
         export_func_ident.name.as_str(),
@@ -293,7 +295,7 @@ fn generate_lifting_with_transformation(
     fb.switch_to_block(exit_block);
     fb.ret(return_values, span)?;
 
-    Ok(())
+    Ok(export_func_ref)
 }
 
 /// Generates a lifting function for component exports that don't require transformation.
@@ -331,7 +333,7 @@ fn generate_direct_lifting(
     core_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
     core_export_func_sig: Signature,
     cross_ctx_export_sig_flat: Signature,
-) -> WasmResult<()> {
+) -> WasmResult<midenc_hir::dialects::builtin::FunctionRef> {
     // The lowered core function implementing a direct export must already have the
     // flattened canonical ABI shape, since the wrapper forwards its arguments verbatim.
     check_core_wasm_signature_equivalence(&core_export_func_sig, &cross_ctx_export_sig_flat)
@@ -347,7 +349,6 @@ fn generate_direct_lifting(
         Visibility::Public,
         cross_ctx_export_sig_flat.clone(),
     )?;
-    annotate_protocol_export(export_func_ref, export_metadata.protocol_export_kind);
     annotate_component_export_debug_signature(
         export_func_ref,
         export_func_ident.name.as_str(),
@@ -396,7 +397,7 @@ fn generate_direct_lifting(
     let returning_onty_first = results.iter().copied().take(1);
     fb.ret(returning_onty_first, span).expect("failed ret");
 
-    Ok(())
+    Ok(export_func_ref)
 }
 
 /// Rejects component export signatures containing unsupported canonical ABI shapes.
@@ -431,13 +432,60 @@ fn annotate_protocol_export(
     match protocol_export_kind {
         Some(ProtocolExportKind::NoteScript) => {
             let note_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("note_script", note_attr);
+            export_func.set_attribute(NOTE_SCRIPT_EXPORT_ATTR, note_attr);
         }
         Some(ProtocolExportKind::AuthScript) => {
             let auth_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("auth_script", auth_attr);
+            export_func.set_attribute(AUTH_SCRIPT_EXPORT_ATTR, auth_attr);
         }
         None => {}
+    }
+}
+
+/// Repoints the note intrinsic's `hir.procedure_root` ops at the lifted note-script export.
+///
+/// The `script_root` intrinsic stub builds its op against a placeholder callee (the stub itself)
+/// because the lifted export does not exist during core-module translation. The lifted wrapper —
+/// not the core function — is the procedure the transaction kernel executes as the note script,
+/// so its MAST root is the note script root that `get_entrypoint_root()` must observe.
+///
+/// Only ops carrying [`midenc_dialect_hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR`] are repointed;
+/// codegen refuses to lower a marked op whose callee does not carry the `note_script` attribute,
+/// so a missed retarget surfaces as a compile error rather than a wrong digest.
+fn retarget_note_script_root_ops(
+    core_module_builder: &ModuleBuilder,
+    lifted_export_func_ref: midenc_hir::dialects::builtin::FunctionRef,
+) {
+    use midenc_dialect_hir::ProcedureRoot;
+    use midenc_hir::Usable;
+
+    // The stub is absent when nothing in the module calls `get_entrypoint_root()`
+    let Some(stub_func_ref) =
+        core_module_builder.get_function(crate::intrinsics::note::SCRIPT_ROOT_STUB_NAME)
+    else {
+        return;
+    };
+
+    // Collect first: retargeting unlinks the use from the stub's use list. The stub's other
+    // uses are the ordinary calls from the SDK binding, which must not be retargeted.
+    let users: SmallVec<[midenc_hir::OperationRef; 2]> =
+        stub_func_ref.borrow().iter_uses().map(|symbol_use| symbol_use.owner).collect();
+
+    for mut owner in users {
+        let mut op = owner.borrow_mut();
+        let Some(procedure_root) = op.downcast_mut::<ProcedureRoot>() else {
+            continue;
+        };
+        if procedure_root
+            .as_operation()
+            .get_attribute(ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR)
+            .is_none()
+        {
+            continue;
+        }
+        procedure_root
+            .set_callee(lifted_export_func_ref)
+            .expect("failed to repoint hir.procedure_root at the lifted note-script export");
     }
 }
 

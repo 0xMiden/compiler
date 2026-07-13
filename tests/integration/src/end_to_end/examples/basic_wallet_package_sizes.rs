@@ -37,7 +37,15 @@ fn basic_wallet_and_p2id() {
     );
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    expect!["14875"].assert_eq(stripped_mast_size_str(&note_package));
+    expect!["19827"].assert_eq(stripped_mast_size_str(&note_package));
+    // The note package exports both the note script and the `create` constructor; the
+    // constructor must not interfere with the `@note_script`-attributed export selection.
+    assert!(
+        note_package.manifest.exports().any(|export| export.name() == "create"),
+        "expected the p2id note package to export the `create` constructor"
+    );
+    miden_protocol::note::NoteScript::from_package(&note_package)
+        .expect("expected the p2id note package to contain exactly one note script export");
 
     let mut p2ide_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/p2ide-note",

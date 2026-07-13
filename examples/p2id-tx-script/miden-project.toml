@@ -1,0 +1,17 @@
+[package]
+name = "p2id-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+namespace = "miden:base/transaction-script@1.0.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+basic-wallet = { path = "../basic-wallet" }
+p2id = { path = "../p2id-note" }
+
+[package.metadata.miden.dependencies]
+basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
+p2id = { wit = "../p2id-note/target/generated-wit/" }

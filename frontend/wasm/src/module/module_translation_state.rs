@@ -227,6 +227,12 @@ impl<'a> ModuleTranslationState<'a> {
     ///
     /// Returns the FunctionRef if the stub was registered (so it can be removed from the module),
     /// or None if the function wasn't found or isn't a valid intrinsic stub.
+    ///
+    /// The only caller pre-filters on [`IntrinsicsConversionResult::is_operation`], so only
+    /// `MidenVmOp` intrinsics are routed here today; the `FunctionType` and `ModuleContextStub`
+    /// arms are exhaustive-match backstops. Module-context stubs in particular must keep their
+    /// defined function (hence `None`): their bodies are synthesized later by
+    /// `maybe_lower_linker_stub`, so calls to them remain ordinary calls.
     pub(crate) fn register_linker_stub(
         &mut self,
         func_index: FuncIndex,
@@ -253,44 +259,52 @@ impl<'a> ModuleTranslationState<'a> {
             return Ok(None);
         };
 
-        if let IntrinsicsConversionResult::FunctionType { ty, effects } = conv {
-            // Create import function reference for the intrinsic
-            let import_path = intrinsic.into_symbol_path();
-            let import_ft: FunctionType = ty;
-            let context = self.world_builder.context_rc();
-            let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
+        match conv {
+            IntrinsicsConversionResult::FunctionType { ty, effects } => {
+                // Create import function reference for the intrinsic
+                let import_path = intrinsic.into_symbol_path();
+                let import_ft: FunctionType = ty;
+                let context = self.world_builder.context_rc();
+                let import_sig = Signature::new(&context, import_ft.params, import_ft.results);
 
-            let import_module_ref = self
-                .world_builder
-                .declare_module_tree(&import_path.without_leaf())
-                .wrap_err("failed to create module for intrinsic imports")?;
-            let mut import_module_builder = ModuleBuilder::new(import_module_ref);
-            let mut intrinsic_func_ref = import_module_builder
-                .define_function(import_path.name().into(), Visibility::Public, import_sig)
-                .wrap_err("failed to create intrinsic function ref")?;
+                let import_module_ref = self
+                    .world_builder
+                    .declare_module_tree(&import_path.without_leaf())
+                    .wrap_err("failed to create module for intrinsic imports")?;
+                let mut import_module_builder = ModuleBuilder::new(import_module_ref);
+                let mut intrinsic_func_ref = import_module_builder
+                    .define_function(import_path.name().into(), Visibility::Public, import_sig)
+                    .wrap_err("failed to create intrinsic function ref")?;
 
-            {
-                let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
-                attach_effects_to_function(&mut intrinsic_func, effects.iter());
+                {
+                    let mut intrinsic_func = intrinsic_func_ref.borrow_mut();
+                    attach_effects_to_function(&mut intrinsic_func, effects.iter());
+                }
+
+                self.functions.insert(
+                    func_index,
+                    CallableFunction::Intrinsic {
+                        intrinsic,
+                        function_ref: intrinsic_func_ref,
+                        signature,
+                    },
+                );
             }
-
-            self.functions.insert(
-                func_index,
-                CallableFunction::Intrinsic {
-                    intrinsic,
-                    function_ref: intrinsic_func_ref,
-                    signature,
-                },
-            );
-        } else {
-            // Inline as an operation
-            self.functions.insert(
-                func_index,
-                CallableFunction::Instruction {
-                    intrinsic,
-                    signature,
-                },
-            );
+            IntrinsicsConversionResult::MidenVmOp => {
+                // Inline as an operation
+                self.functions.insert(
+                    func_index,
+                    CallableFunction::Instruction {
+                        intrinsic,
+                        signature,
+                    },
+                );
+            }
+            // Unreachable from the current caller (it pre-filters on `is_operation()`); kept for
+            // exhaustiveness. Module-context stubs keep their defined function — the body is
+            // synthesized later by `maybe_lower_linker_stub` — so calls to them remain ordinary
+            // calls.
+            IntrinsicsConversionResult::ModuleContextStub => return Ok(None),
         }
 
         Ok(Some(function_ref))

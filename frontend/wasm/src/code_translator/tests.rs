@@ -227,6 +227,63 @@ fn memory_grow() {
     )
 }
 
+/// The `script_root` note intrinsic (the SDK's `get_entrypoint_root()`) requires the frontend
+/// metadata emitted by `#[note_script]`; in its absence the linker stub must be rejected with an
+/// actionable diagnostic rather than compiled to a runtime trap or a wrong digest.
+#[test]
+fn note_script_root_intrinsic_requires_note_script_metadata() {
+    check_module_err(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"intrinsics::note::script_root" (param i32)
+                unreachable)
+            (func $probe (param i32)
+                local.get 0
+                call $"intrinsics::note::script_root")
+            (export "probe" (func $probe))
+        )"#,
+        "requires a `#[note_script]` entrypoint",
+    )
+}
+
+/// Unknown functions under `intrinsics::note` must be rejected with a diagnostic: the module as
+/// a whole is classified as module-context stubs, so this is where an unknown name surfaces.
+#[test]
+fn note_intrinsic_stubs_reject_unknown_functions() {
+    check_module_err(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"intrinsics::note::bogus" (param i32)
+                unreachable)
+            (func $probe (param i32)
+                local.get 0
+                call $"intrinsics::note::bogus")
+            (export "probe" (func $probe))
+        )"#,
+        "unknown note intrinsic",
+    )
+}
+
+/// A `script_root` stub whose signature does not take exactly the result pointer must be
+/// rejected with a diagnostic instead of an assertion failure.
+#[test]
+fn note_script_root_stub_rejects_malformed_signatures() {
+    check_module_err(
+        r#"
+        (module
+            (memory (;0;) 1)
+            (func $"intrinsics::note::script_root"
+                unreachable)
+            (func $probe
+                call $"intrinsics::note::script_root")
+            (export "probe" (func $probe))
+        )"#,
+        "expected exactly one parameter",
+    )
+}
+
 #[test]
 fn memory_size() {
     check_op(

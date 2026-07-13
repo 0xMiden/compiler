@@ -218,6 +218,96 @@ impl InferTypeOpInterface for ExecFpi {
     }
 }
 
+/// Materializes the MAST root digest of the referenced function as four felt values (one word).
+///
+/// This op is the HIR form of the MASM `procref` instruction: the digest of `callee` is computed
+/// by the assembler when the containing component is assembled, and pushed on the operand stack
+/// as one word with `root[0]` on top, i.e. result `i` holds digest element `i`.
+///
+/// The callee is referenced, not invoked: no arguments are consumed and control never transfers
+/// to it, so this op deliberately does not implement `CallOpInterface`. The symbol property still
+/// records a use of the callee, keeping it linked into the program.
+///
+/// The op is effect-free: it only materializes an assembly-time constant.
+#[derive(EffectOpInterface)]
+#[operation(
+    dialect = HirDialect,
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct ProcedureRoot {
+    /// The function whose MAST root digest is materialized
+    #[symbol(callable)]
+    callee: SymbolPath,
+    #[results]
+    digest: IntFelt,
+}
+
+impl ProcedureRoot {
+    /// Number of felts in a MAST root digest word.
+    pub const DIGEST_FELTS: usize = 4;
+    /// Marker attribute recording that this op must yield the note script root of the enclosing
+    /// component.
+    ///
+    /// The op is initially built against a placeholder callee (the note-script export wrapper
+    /// does not exist until component exports are lifted); export lifting repoints marked ops at
+    /// the lifted note-script export, and codegen refuses to lower a marked op whose callee does
+    /// not carry the `note_script` attribute.
+    pub const NOTE_SCRIPT_ROOT_ATTR: &'static str = "note_script_root";
+}
+
+impl InferTypeOpInterface for ProcedureRoot {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        if self.op.results.is_empty() {
+            let span = self.span();
+            let owner = self.as_operation_ref();
+            for i in 0..Self::DIGEST_FELTS {
+                let value = context.make_result(span, Type::Felt, owner, i as u8);
+                self.op.results.push(value);
+            }
+        } else {
+            // Lowering models exactly one digest word on the operand stack, so IR declaring any
+            // other result count (e.g. parsed from source) is malformed.
+            if self.op.results.len() != Self::DIGEST_FELTS {
+                return Err(Report::msg(format!(
+                    "invalid hir.procedure_root: expected {} result(s), but got {}",
+                    Self::DIGEST_FELTS,
+                    self.op.results.len()
+                )));
+            }
+            for result in self.op.results.iter_mut() {
+                result.borrow_mut().set_type(Type::Felt);
+            }
+        }
+        Ok(())
+    }
+}
+
+impl OpPrinter for ProcedureRoot {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        printer.print_space();
+        let callee = self.callee();
+        printer.print_symbol_path(callee.path());
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl OpParser for ProcedureRoot {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        let callee = parser.parse_symbol_ref()?;
+        state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+        Ok(())
+    }
+}
+
 /// Indirect same-context invocation through a slot of a
 /// [midenc_hir::dialects::builtin::FunctionTable]; this is the op Wasm `call_indirect` lowers
 /// to.
@@ -700,6 +790,95 @@ builtin.module public @test {
             source,
         )
         .expect("hir.exec parser should type operands from signature params");
+    }
+
+    #[test]
+    fn procedure_root_prints_and_reparses_with_intent_attribute() {
+        use alloc::{format, vec::Vec};
+
+        use midenc_hir::{Op, dialects::builtin::attributes::UnitAttr};
+
+        let mut test = Test::named("procedure_root_prints_and_reparses_with_intent_attribute")
+            .in_module("test");
+        let callee = test.define_function("callee", &[], &[]);
+        test.with_function("caller", &[], &[Type::Felt, Type::Felt, Type::Felt, Type::Felt]);
+        // Give the callee a body: declaration-only functions do not survive a print/parse
+        // round trip, and this test exercises exactly that round trip.
+        {
+            let mut callee_builder =
+                midenc_hir::dialects::builtin::FunctionBuilder::new(callee, test.builder_mut());
+            callee_builder.ret(None, SourceSpan::default()).unwrap();
+        }
+
+        let context = test.context_rc();
+        {
+            let mut builder = test.function_builder();
+            let op = builder.procedure_root(callee, SourceSpan::default()).unwrap();
+            {
+                let mut op = op;
+                let attr = context.create_attribute::<UnitAttr, _>(());
+                op.borrow_mut()
+                    .as_operation_mut()
+                    .set_attribute(crate::ops::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR, attr);
+            }
+            let results: Vec<_> = {
+                let op = op.borrow();
+                op.results().iter().map(|result| result.borrow().as_value_ref()).collect()
+            };
+            assert_eq!(results.len(), crate::ops::ProcedureRoot::DIGEST_FELTS);
+            builder.ret(results, SourceSpan::default()).unwrap();
+        }
+
+        let printed = format!("{}", test.module().borrow().as_operation());
+        assert!(
+            printed.contains("hir.procedure_root"),
+            "expected the printed module to contain the op: {printed}"
+        );
+        assert!(
+            printed.contains(crate::ops::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR),
+            "expected the printed op to carry the intent attribute: {printed}"
+        );
+
+        // Re-parse in a fresh context: the printing context already owns the `@test` symbols.
+        let reparse_context = Test::default().context_rc();
+        parse::parse_any(
+            ParserConfig::new(reparse_context),
+            Uri::new("procedure_root_prints_and_reparses_with_intent_attribute.hir"),
+            &printed,
+        )
+        .expect("printed hir.procedure_root should re-parse");
+    }
+
+    #[test]
+    fn procedure_root_rejects_malformed_result_arity() {
+        use alloc::format;
+
+        use midenc_hir::{Op, traits::InferTypeOpInterface};
+
+        let mut test =
+            Test::named("procedure_root_rejects_malformed_result_arity").in_module("test");
+        let callee = test.define_function("callee", &[], &[]);
+        test.with_function("caller", &[], &[]);
+        let context = test.context_rc();
+        let mut op = {
+            let mut builder = test.function_builder();
+            let op = builder.procedure_root(callee, SourceSpan::default()).unwrap();
+            builder.ret(None, SourceSpan::default()).unwrap();
+            op
+        };
+
+        // Re-running inference retypes the existing results; an op left with the wrong result
+        // count (by a transform or a parser) must be rejected instead of silently retyped, as
+        // lowering models exactly one digest word on the operand stack.
+        let mut op_mut = op.borrow_mut();
+        let owner = op_mut.as_operation_ref();
+        op_mut.op.results.clear();
+        let lone_result = context.make_result(SourceSpan::default(), Type::Felt, owner, 0);
+        op_mut.op.results.push(lone_result);
+        let err = op_mut
+            .infer_return_types(&context)
+            .expect_err("inference must reject a result count differing from the digest width");
+        assert!(format!("{err:?}").contains("expected 4 result"), "unexpected error: {err:?}");
     }
 
     #[test]
