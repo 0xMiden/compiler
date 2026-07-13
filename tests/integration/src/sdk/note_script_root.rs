@@ -8,7 +8,7 @@
 //! note-creation flow.
 
 use miden_core::program::Program;
-use miden_mast_package::{Package, PackageExport};
+use miden_mast_package::Package;
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
@@ -102,25 +102,11 @@ impl ProbeNote {
 /// conventions; execution must target the lifted export, recognizable by its module segment
 /// holding the full `ns:pkg/interface@version` component id (the only segment containing `/`).
 fn export_program(package: &Package, name: &str) -> Program {
-    let matches: Vec<_> = package
-        .manifest
-        .exports()
-        .filter_map(|export| match export {
-            PackageExport::Procedure(procedure) if export.name() == name => Some(procedure),
-            _ => None,
-        })
-        .collect();
-    let lifted: Vec<_> = matches
-        .iter()
-        .filter(|procedure| procedure.path.to_string().contains('/'))
-        .collect();
-    let [procedure] = lifted.as_slice() else {
-        panic!(
-            "expected exactly one lifted component export named '{name}', got {} among {:?}",
-            lifted.len(),
-            matches.iter().map(|procedure| procedure.path.to_string()).collect::<Vec<_>>()
-        );
-    };
+    let procedure = super::find_manifest_procedure(
+        package,
+        &format!("the lifted component export '{name}'"),
+        |path| path.contains('/') && path.ends_with(&format!("::{name}")),
+    );
     let entrypoint = package
         .mast
         .mast_forest()
