@@ -59,49 +59,8 @@ pub(crate) fn expand_note_script(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    if !attr.is_empty() {
-        return syn::Error::new(Span::call_site(), "this attribute does not accept arguments")
-            .into_compile_error()
-            .into();
-    }
-
-    let item_tokens: TokenStream2 = item.clone().into();
-    let mut item_fn: ImplItemFn = match syn::parse2(item_tokens.clone()) {
-        Ok(item_fn) => item_fn,
-        Err(_) => {
-            if let Ok(item_fn) = syn::parse2::<syn::ItemFn>(item_tokens.clone()) {
-                return syn::Error::new(
-                    item_fn.sig.span(),
-                    "`#[note_script]` must be applied to a method inside a `#[note]` `impl` block",
-                )
-                .into_compile_error()
-                .into();
-            }
-
-            if let Ok(item_fn) = syn::parse2::<syn::TraitItemFn>(item_tokens.clone()) {
-                return syn::Error::new(
-                    item_fn.sig.span(),
-                    "`#[note_script]` must be applied to a method inside a `#[note]` `impl` block",
-                )
-                .into_compile_error()
-                .into();
-            }
-
-            return syn::Error::new(
-                Span::call_site(),
-                "`#[note_script]` must be applied to a method inside a `#[note]` `impl` block",
-            )
-            .into_compile_error()
-            .into();
-        }
-    };
-
-    // Preserve a helper attribute for `#[note]` to consume. If the surrounding impl forgets
-    // `#[note]`, rustc rejects this unknown helper attribute instead of silently compiling a
-    // method that emits no note-script metadata.
-    let marker_attr = format_ident!("{}", NOTE_SCRIPT_MARKER_ATTR);
-    item_fn.attrs.push(syn::parse_quote!(#[#marker_attr]));
-    quote!(#item_fn).into()
+    expand_method_marker_attr(attr.into(), item.into(), NOTE_SCRIPT_ATTR, NOTE_SCRIPT_MARKER_ATTR)
+        .into()
 }
 
 /// Expands `#[note_constructor]`.
@@ -113,51 +72,52 @@ pub(crate) fn expand_note_constructor(
     attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
+    expand_method_marker_attr(
+        attr.into(),
+        item.into(),
+        NOTE_CONSTRUCTOR_ATTR,
+        NOTE_CONSTRUCTOR_MARKER_ATTR,
+    )
+    .into()
+}
+
+/// Shared expansion of the method-marker attributes (`#[note_script]`, `#[note_constructor]`).
+///
+/// Appends `marker_attr_name` as a helper attribute for the surrounding `#[note]` impl block to
+/// consume. If that impl block forgets `#[note]`, rustc rejects the unknown helper attribute
+/// instead of silently compiling a method that is never exported. Free functions parse as
+/// [`ImplItemFn`] too and are caught the same way: their marker survives to rustc unconsumed.
+fn expand_method_marker_attr(
+    attr: TokenStream2,
+    item: TokenStream2,
+    attr_name: &str,
+    marker_attr_name: &str,
+) -> TokenStream2 {
     if !attr.is_empty() {
         return syn::Error::new(Span::call_site(), "this attribute does not accept arguments")
-            .into_compile_error()
-            .into();
+            .into_compile_error();
     }
 
-    let item_tokens: TokenStream2 = item.clone().into();
-    let mut item_fn: ImplItemFn = match syn::parse2(item_tokens.clone()) {
+    let mut item_fn: ImplItemFn = match syn::parse2(item.clone()) {
         Ok(item_fn) => item_fn,
         Err(_) => {
-            if let Ok(item_fn) = syn::parse2::<syn::ItemFn>(item_tokens.clone()) {
-                return syn::Error::new(
-                    item_fn.sig.span(),
-                    "`#[note_constructor]` must be applied to a method inside a `#[note]` `impl` \
-                     block",
-                )
-                .into_compile_error()
-                .into();
-            }
-
-            if let Ok(item_fn) = syn::parse2::<syn::TraitItemFn>(item_tokens.clone()) {
-                return syn::Error::new(
-                    item_fn.sig.span(),
-                    "`#[note_constructor]` must be applied to a method inside a `#[note]` `impl` \
-                     block",
-                )
-                .into_compile_error()
-                .into();
-            }
-
+            // Reached for non-method items only; point at the signature when there is one.
+            let span = syn::parse2::<syn::TraitItemFn>(item)
+                .map(|item_fn| item_fn.sig.span())
+                .unwrap_or_else(|_| Span::call_site());
             return syn::Error::new(
-                Span::call_site(),
-                "`#[note_constructor]` must be applied to a method inside a `#[note]` `impl` block",
+                span,
+                format!(
+                    "`#[{attr_name}]` must be applied to a method inside a `#[note]` `impl` block"
+                ),
             )
-            .into_compile_error()
-            .into();
+            .into_compile_error();
         }
     };
 
-    // Preserve a helper attribute for `#[note]` to consume. If the surrounding impl forgets
-    // `#[note]`, rustc rejects this unknown helper attribute instead of silently compiling a
-    // method that is never exported.
-    let marker_attr = format_ident!("{}", NOTE_CONSTRUCTOR_MARKER_ATTR);
+    let marker_attr = format_ident!("{}", marker_attr_name);
     item_fn.attrs.push(syn::parse_quote!(#[#marker_attr]));
-    quote!(#item_fn).into()
+    quote!(#item_fn)
 }
 
 fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
@@ -1675,6 +1635,46 @@ mod tests {
             rendered.contains("__entrypoint_root"),
             "the generated method must delegate to the hidden SDK plumbing: {rendered}"
         );
+    }
+
+    #[test]
+    fn method_marker_expansion_appends_helper_and_rejects_misuse() {
+        let expanded = expand_method_marker_attr(
+            TokenStream2::new(),
+            quote!(
+                pub fn create(serial_num: Word) {}
+            ),
+            NOTE_CONSTRUCTOR_ATTR,
+            NOTE_CONSTRUCTOR_MARKER_ATTR,
+        );
+        let expanded_fn: ImplItemFn =
+            syn::parse2(expanded).expect("expansion must remain a method");
+        assert!(
+            expanded_fn.attrs.iter().any(is_note_constructor_marker_attr),
+            "the helper marker must be appended for `#[note]` to consume"
+        );
+
+        let rejected_args = expand_method_marker_attr(
+            quote!(unexpected),
+            quote!(
+                pub fn create(serial_num: Word) {}
+            ),
+            NOTE_CONSTRUCTOR_ATTR,
+            NOTE_CONSTRUCTOR_MARKER_ATTR,
+        )
+        .to_string();
+        assert!(rejected_args.contains("does not accept arguments"), "got: {rejected_args}");
+
+        let rejected_item = expand_method_marker_attr(
+            TokenStream2::new(),
+            quote!(
+                struct NotAMethod;
+            ),
+            NOTE_SCRIPT_ATTR,
+            NOTE_SCRIPT_MARKER_ATTR,
+        )
+        .to_string();
+        assert!(rejected_item.contains("must be applied to a method"), "got: {rejected_item}");
     }
 
     #[test]
