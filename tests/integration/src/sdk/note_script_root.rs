@@ -75,6 +75,13 @@ impl ProbeNote {
         Self::get_entrypoint_root()
     }
 
+    /// Exercises `Digest` as a constructor parameter and result: the generated bindings must
+    /// map the WIT `digest` record to `miden::Digest`.
+    #[note_constructor]
+    pub fn echo_digest(value: Digest) -> Digest {
+        value
+    }
+
     #[note_script]
     pub fn run(self, _arg: Word) {}
 }
