@@ -5,7 +5,8 @@ use midenc_integration_test_support::{CompilerTestBuilder, Project, project};
 
 use super::super::support::{
     account_cargo_toml_for, account_miden_project_toml_with_interface, compile_rust_package,
-    note_cargo_toml_for_dependency, note_miden_project_toml_for_dependency,
+    note_cargo_toml_for_dependencies, note_cargo_toml_for_dependency,
+    note_miden_project_toml_for_dependencies, note_miden_project_toml_for_dependency,
 };
 
 /// Cargo package name of the dependency shared by the regression fixtures.
@@ -25,13 +26,8 @@ fn plain_dependency_import_and_fpi_bindings_are_compatible() {
     const NOTE_PACKAGE: &str = "miden:template-test";
 
     let account_project = build_basic_wallet_project("plain-import-and-fpi-basic-wallet");
-    let note_project = build_note_project(
-        NOTE_NAME,
-        NOTE_NAME,
-        NOTE_PACKAGE,
-        &account_project,
-        TEMPLATE_TEST_NOTE_SOURCE,
-    );
+    let note_project =
+        build_note_project(NOTE_NAME, NOTE_PACKAGE, &account_project, TEMPLATE_TEST_NOTE_SOURCE);
     compile_debug_note(&note_project);
 }
 
@@ -47,7 +43,6 @@ fn same_named_account_wrappers_have_distinct_stable_metadata_sections() {
     let account_project = build_basic_wallet_project("repeated-bindings-basic-wallet");
     let note_project = build_note_project(
         NOTE_NAME,
-        NOTE_NAME,
         NOTE_PACKAGE,
         &account_project,
         REPEATED_BINDINGS_NOTE_SOURCE,
@@ -55,20 +50,74 @@ fn same_named_account_wrappers_have_distinct_stable_metadata_sections() {
     compile_debug_note(&note_project);
 }
 
+/// Compiles account wrappers whose binding worlds import different dependencies.
+#[test]
+fn different_account_import_sets_have_distinct_metadata_worlds() {
+    const FIRST_ACCOUNT_NAME: &str = "first-wallet";
+    const FIRST_ACCOUNT_PACKAGE: &str = "miden:first-wallet";
+    const SECOND_ACCOUNT_NAME: &str = "second-wallet";
+    const SECOND_ACCOUNT_PACKAGE: &str = "miden:second-wallet";
+    const NOTE_NAME: &str = "different-account-bindings";
+    const NOTE_PACKAGE: &str = "miden:different-account-bindings";
+
+    let first_account = build_wallet_project(
+        "different-bindings-first-wallet",
+        FIRST_ACCOUNT_NAME,
+        FIRST_ACCOUNT_PACKAGE,
+    );
+    let second_account = build_wallet_project(
+        "different-bindings-second-wallet",
+        SECOND_ACCOUNT_NAME,
+        SECOND_ACCOUNT_PACKAGE,
+    );
+    let first_root = first_account.root();
+    let second_root = second_account.root();
+    let dependencies = [
+        (FIRST_ACCOUNT_PACKAGE, first_root.as_path()),
+        (SECOND_ACCOUNT_PACKAGE, second_root.as_path()),
+    ];
+    let note_project = project(NOTE_NAME)
+        .file(
+            "miden-project.toml",
+            &use_regression_version(note_miden_project_toml_for_dependencies(
+                NOTE_NAME,
+                NOTE_PACKAGE,
+                &dependencies,
+            )),
+        )
+        .file(
+            "Cargo.toml",
+            &use_regression_version(note_cargo_toml_for_dependencies(
+                NOTE_NAME,
+                NOTE_PACKAGE,
+                &dependencies,
+            )),
+        )
+        .file("src/lib.rs", DIFFERENT_BINDINGS_NOTE_SOURCE)
+        .build();
+
+    compile_debug_note(&note_project);
+}
+
 /// Builds the basic-wallet dependency used by one regression fixture.
 fn build_basic_wallet_project(folder_name: &str) -> Project {
+    build_wallet_project(folder_name, ACCOUNT_NAME, ACCOUNT_PACKAGE)
+}
+
+/// Builds one wallet dependency used by the metadata-world regression fixtures.
+fn build_wallet_project(folder_name: &str, account_name: &str, account_package: &str) -> Project {
     let project = project(folder_name)
         .file(
             "miden-project.toml",
             &use_regression_version(account_miden_project_toml_with_interface(
-                ACCOUNT_NAME,
-                ACCOUNT_PACKAGE,
+                account_name,
+                account_package,
                 "basic-wallet",
             )),
         )
         .file(
             "Cargo.toml",
-            &use_regression_version(account_cargo_toml_for(ACCOUNT_NAME, ACCOUNT_PACKAGE)),
+            &use_regression_version(account_cargo_toml_for(account_name, account_package)),
         )
         .file("src/lib.rs", BASIC_WALLET_SOURCE)
         .build();
@@ -78,14 +127,13 @@ fn build_basic_wallet_project(folder_name: &str) -> Project {
 
 /// Builds a note project with the supplied basic-wallet dependency and source.
 fn build_note_project(
-    folder_name: &str,
     note_name: &str,
     note_package: &str,
     account_project: &Project,
     source: &str,
 ) -> Project {
     let account_root = account_project.root();
-    project(folder_name)
+    project(note_name)
         .file(
             "miden-project.toml",
             &use_regression_version(note_miden_project_toml_for_dependency(
@@ -122,7 +170,24 @@ fn compile_debug_note(note_project: &Project) {
 
 /// Updates generated fixture manifests to the package version which exposes the linker ordering.
 fn use_regression_version(manifest: String) -> String {
-    manifest.replace("0.0.1", "0.1.0")
+    const ORIGINAL_PACKAGE_VERSION: &str = "version = \"0.0.1\"";
+    const REPLACEMENT_PACKAGE_VERSION: &str = "version = \"0.1.0\"";
+    const ORIGINAL_NAMESPACE_VERSION: &str = "@0.0.1\"";
+    const REPLACEMENT_NAMESPACE_VERSION: &str = "@0.1.0\"";
+
+    assert_eq!(
+        manifest.matches(ORIGINAL_PACKAGE_VERSION).count(),
+        1,
+        "fixture manifest must contain exactly one default package version"
+    );
+    assert!(
+        manifest.matches(ORIGINAL_NAMESPACE_VERSION).count() <= 1,
+        "fixture manifest must contain at most one component namespace version"
+    );
+
+    manifest
+        .replacen(ORIGINAL_PACKAGE_VERSION, REPLACEMENT_PACKAGE_VERSION, 1)
+        .replacen(ORIGINAL_NAMESPACE_VERSION, REPLACEMENT_NAMESPACE_VERSION, 1)
 }
 
 /// Account component source used to produce the canonical basic-wallet interface.
@@ -200,6 +265,41 @@ impl RepeatedBindingsNote {
     pub fn script(self, _arg: Word) {
         let _first = first::Wallet::new(self.foreign_account_id);
         let _second = second::Wallet::new(self.foreign_account_id);
+    }
+}
+"#;
+
+/// Note source containing wrappers whose binding worlds have different canonical imports.
+const DIFFERENT_BINDINGS_NOTE_SOURCE: &str = r#"
+#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{AccountId, Word, account, note};
+
+/// Binding to the first wallet dependency.
+#[account(first_wallet::BasicWallet as FirstBasicWallet)]
+struct FirstWallet;
+
+/// Binding to the second wallet dependency.
+#[account(second_wallet::BasicWallet as SecondBasicWallet)]
+struct SecondWallet;
+
+/// Note carrying the accounts used to retain both foreign bindings.
+#[note]
+struct DifferentBindingsNote {
+    /// Account selected for the first binding.
+    first_account_id: AccountId,
+    /// Account selected for the second binding.
+    second_account_id: AccountId,
+}
+
+#[note]
+impl DifferentBindingsNote {
+    /// Constructs both wrappers so both metadata worlds reach the final Wasm module.
+    #[note_script]
+    pub fn script(self, _arg: Word) {
+        let _first = FirstWallet::new(self.first_account_id);
+        let _second = SecondWallet::new(self.second_account_id);
     }
 }
 "#;

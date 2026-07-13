@@ -54,7 +54,8 @@ fn expand_inner(
         .collect::<Vec<_>>();
     let fpi_imports = fpi::import_specs(&imports)?;
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
-    let inline_wit = fpi::import_world_wit(FOREIGN_ACCOUNT_WORLD, &fpi_imports);
+    let world_name = fpi::import_world_name(FOREIGN_ACCOUNT_WORLD, &fpi_imports);
+    let inline_wit = fpi::import_world_wit(&world_name, &fpi_imports);
     let binding_module_ident = binding_module_ident(&account_struct.ident);
     let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
         allow_missing_local_wit: true,
@@ -62,7 +63,7 @@ fn expand_inner(
     let bindings = generate::generate_inline_fpi_bindings(
         &wit_config,
         &inline_wit,
-        FOREIGN_ACCOUNT_WORLD,
+        &world_name,
         &fpi_imports,
         &with_entries,
     )?;

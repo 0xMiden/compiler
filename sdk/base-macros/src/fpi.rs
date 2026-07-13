@@ -11,7 +11,7 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_assembly_syntax::ast::{Path as MasmPath, PathComponent};
 use miden_mast_package::{Package, PackageExport};
-use miden_protocol::utils::serde::Deserializable;
+use miden_protocol::{crypto::hash::blake::Blake3_256, utils::serde::Deserializable};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use semver::Version;
@@ -33,7 +33,7 @@ use crate::{
         CORE_TYPES_INTERFACE, collect_arg_idents, format_module_path, qualify_signature_types,
         should_generate_struct,
     },
-    wit_world::SelectedDependency,
+    wit_world::{self, SelectedDependency},
 };
 
 /// WIT function prefix reserved for generated foreign procedure imports.
@@ -140,22 +140,33 @@ pub(crate) fn import_specs(imports: &[String]) -> syn::Result<Vec<FpiImportSpec>
     imports.into_iter().map(FpiImportSpec::new).collect()
 }
 
+/// Derives a stable binding-world name from its canonical imports and FPI ABI version.
+pub(crate) fn import_world_name(name: &str, imports: &[FpiImportSpec]) -> String {
+    let mut identity = format!("{FPI_ABI_VERSION}\0");
+    for import in imports {
+        write!(identity, "{}:", import.source_import().len())
+            .expect("writing to an in-memory string cannot fail");
+        identity.push_str(import.source_import());
+    }
+    let digest = Blake3_256::hash(identity.as_bytes());
+    let mut fingerprint = String::with_capacity(32);
+    for byte in &digest.as_bytes()[..16] {
+        write!(fingerprint, "{byte:02x}").expect("writing to an in-memory string cannot fail");
+    }
+    format!("{name}-{fingerprint}")
+}
+
 /// Renders the private import world used exclusively by `#[account]` bindings.
 pub(crate) fn import_world_wit(name: &str, imports: &[FpiImportSpec]) -> String {
-    let mut wit = format!("package miden:{name}@1.0.0;\n\nworld {name} {{\n");
-
     // The prefix added after WIT resolution references these types directly. Importing the owner
     // up front keeps the world's dependency closure complete without mutating or re-elaborating it.
-    writeln!(wit, "    import {CORE_TYPES_INTERFACE};")
-        .expect("writing to an in-memory string cannot fail");
+    let mut source_imports = vec![CORE_TYPES_INTERFACE.to_string()];
     for import in imports {
         if import.source_import() != CORE_TYPES_INTERFACE {
-            writeln!(wit, "    import {};", import.source_import())
-                .expect("writing to an in-memory string cannot fail");
+            source_imports.push(import.source_import().to_string());
         }
     }
-    wit.push_str("}\n");
-    wit
+    wit_world::import_world_wit(name, &source_imports)
 }
 
 /// Populates private synthetic interfaces with `fpi-` variants of real dependency functions.
@@ -1838,6 +1849,23 @@ mod tests {
         assert_eq!(import_specs(&["miden:shared/api@1.0.0".to_string()]).unwrap()[0], specs[0]);
         assert_ne!(specs[0].synthetic_import(), specs[1].synthetic_import());
         assert_ne!(specs[0].synthetic_import(), specs[2].synthetic_import());
+    }
+
+    /// Keeps binding-world identity stable for equal imports and distinct for different imports.
+    #[test]
+    fn fpi_import_world_names_follow_the_canonical_import_set() {
+        let first = import_specs(&["miden:first/api@1.0.0".to_string()]).unwrap();
+        let first_repeated = import_specs(&[
+            "miden:first/api@1.0.0".to_string(),
+            "miden:first/api@1.0.0".to_string(),
+        ])
+        .unwrap();
+        let second = import_specs(&["miden:second/api@1.0.0".to_string()]).unwrap();
+
+        let first_name = import_world_name("foreign-account-bindings", &first);
+        assert_eq!(first_name, import_world_name("foreign-account-bindings", &first_repeated));
+        assert_ne!(first_name, import_world_name("foreign-account-bindings", &second));
+        assert!(first_name.starts_with("foreign-account-bindings-"));
     }
 
     /// Keeps canonical source imports in WIT while synthetic packages are injected after resolve.

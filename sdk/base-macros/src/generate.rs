@@ -1371,13 +1371,15 @@ interface api {
 
         for (first, second) in cases {
             for reverse in [false, true] {
-                let (mut resolve, worlds) =
-                    parse_merge_test_worlds(first.as_deref(), second.as_deref());
-                let (from, into) = if reverse {
-                    (worlds[1], worlds[0])
+                let first = parse_merge_test_world(first.as_deref());
+                let second = parse_merge_test_world(second.as_deref());
+                let ((mut resolve, into), (other, from)) = if reverse {
+                    (second, first)
                 } else {
-                    (worlds[0], worlds[1])
+                    (first, second)
                 };
+                let remap = resolve.merge(other).unwrap();
+                let from = remap.map_world(from, Default::default()).unwrap();
                 let mut clone_maps = wit_bindgen_core::wit_parser::CloneMaps::default();
                 resolve.merge_worlds(from, into, &mut clone_maps).unwrap();
                 resolve.assert_valid();
@@ -1385,11 +1387,8 @@ interface api {
         }
     }
 
-    /// Builds two plain-or-FPI worlds in one resolver for merge-order tests.
-    fn parse_merge_test_worlds(
-        first_imports: Option<&[String]>,
-        second_imports: Option<&[String]>,
-    ) -> (Resolve, [WorldId; 2]) {
+    /// Builds one independently encoded plain-or-FPI world for metadata merge tests.
+    fn parse_merge_test_world(imports: Option<&[String]>) -> (Resolve, WorldId) {
         const FIRST_IMPORT: &str = "miden:first-dependency/api@1.0.0";
 
         let mut resolve = Resolve::default();
@@ -1442,32 +1441,27 @@ interface api {
             resolve.push_group(group).unwrap();
         }
 
-        let mut worlds = Vec::with_capacity(2);
-        for (world_name, imports) in
-            [("merge-first", first_imports), ("merge-second", second_imports)]
-        {
-            let (source, specs) = match imports {
-                Some(imports) => {
-                    let specs = fpi::import_specs(imports).unwrap();
-                    (fpi::import_world_wit(world_name, &specs), Some(specs))
-                }
-                None => (
-                    format!(
-                        "package miden:{world_name}@1.0.0;\n\nworld {world_name} {{\n    import \
-                         {FIRST_IMPORT};\n}}\n"
-                    ),
-                    None,
-                ),
-            };
-            let group = UnresolvedPackageGroup::parse("inline", &source).unwrap();
-            let package = resolve.push_group(group).unwrap();
-            let world = resolve.select_world(&[package], None).unwrap();
-            if let Some(specs) = specs {
-                fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        let (source, specs) = match imports {
+            Some(imports) => {
+                let specs = fpi::import_specs(imports).unwrap();
+                let world_name = fpi::import_world_name("foreign-account-bindings", &specs);
+                (fpi::import_world_wit(&world_name, &specs), Some(specs))
             }
-            worlds.push(world);
+            None => (
+                format!(
+                    "package miden:plain-merge-world@1.0.0;\n\nworld plain-merge-world {{\n    \
+                     import {FIRST_IMPORT};\n}}\n"
+                ),
+                None,
+            ),
+        };
+        let group = UnresolvedPackageGroup::parse("inline", &source).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        if let Some(specs) = specs {
+            fpi::inject_imports(&mut resolve, world, &specs).unwrap();
         }
 
-        (resolve, [worlds[0], worlds[1]])
+        (resolve, world)
     }
 }
