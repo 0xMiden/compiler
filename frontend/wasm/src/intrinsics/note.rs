@@ -50,7 +50,13 @@ pub(crate) fn convert_note_intrinsics_stub<B: ?Sized + Builder>(
 ) -> WasmResult<Vec<ValueRef>> {
     match function.as_str() {
         "script_root" => {
-            assert_eq!(args.len(), 1, "{function} takes exactly one argument (the result pointer)");
+            if args.len() != 1 {
+                return Err(Report::msg(format!(
+                    "invalid `{SCRIPT_ROOT_STUB_NAME}` stub: expected exactly one parameter (the \
+                     result pointer), but the stub declares {}",
+                    args.len()
+                )));
+            }
 
             if !matches!(metadata, Some(FrontendMetadata::NoteScript { .. })) {
                 return Err(Report::msg(
@@ -82,6 +88,10 @@ pub(crate) fn convert_note_intrinsics_stub<B: ?Sized + Builder>(
 
             Ok(Vec::new())
         }
-        unknown => panic!("unknown note intrinsic: {unknown}"),
+        // Every function under the note module routes here (the module as a whole is classified
+        // as a module-context stub), so an unknown name is malformed input, not a compiler bug.
+        unknown => {
+            Err(Report::msg(format!("unknown note intrinsic: 'intrinsics::note::{unknown}'")))
+        }
     }
 }

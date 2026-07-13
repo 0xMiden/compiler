@@ -227,6 +227,12 @@ impl<'a> ModuleTranslationState<'a> {
     ///
     /// Returns the FunctionRef if the stub was registered (so it can be removed from the module),
     /// or None if the function wasn't found or isn't a valid intrinsic stub.
+    ///
+    /// The only caller pre-filters on [`IntrinsicsConversionResult::is_operation`], so only
+    /// `MidenVmOp` intrinsics are routed here today; the `FunctionType` and `ModuleContextStub`
+    /// arms are exhaustive-match backstops. Module-context stubs in particular must keep their
+    /// defined function (hence `None`): their bodies are synthesized later by
+    /// `maybe_lower_linker_stub`, so calls to them remain ordinary calls.
     pub(crate) fn register_linker_stub(
         &mut self,
         func_index: FuncIndex,
@@ -294,8 +300,10 @@ impl<'a> ModuleTranslationState<'a> {
                     },
                 );
             }
-            // Module-context stubs keep their defined function: the body is synthesized during
-            // translation, so calls to them remain ordinary calls
+            // Unreachable from the current caller (it pre-filters on `is_operation()`); kept for
+            // exhaustiveness. Module-context stubs keep their defined function — the body is
+            // synthesized later by `maybe_lower_linker_stub` — so calls to them remain ordinary
+            // calls.
             IntrinsicsConversionResult::ModuleContextStub => return Ok(None),
         }
 
