@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a cross-module call site needs a `use` of the generated trait. Relatedly, a component method
   named `new` is now permitted (previously a hard error): it lives on the generated trait and
   coexists with the inherent `Wallet::new(account_id)` constructor #1208
+- `#[note]` structs now also implement `felt_repr::ToFeltRepr` (mirroring the generated storage
+  decoding), so note constructors can serialize the note inputs when computing the note
+  recipient. Note input struct fields must now implement `ToFeltRepr` in addition to
+  `FromFeltRepr`, and a manual `ToFeltRepr` impl on the note type now conflicts with the
+  generated one; see [MIGRATION.md](./MIGRATION.md) for the required changes. `AccountId`
+  implements `ToFeltRepr` #786
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
@@ -42,10 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   calling its constructor. Constructors must be `pub`, must not take `self`, and their
   signatures are limited to SDK core types and primitives; unannotated methods stay plain Rust
   helpers #786
-- `#[note]` structs now also implement `felt_repr::ToFeltRepr` (mirroring the generated
-  storage decoding), so note constructors can serialize the note inputs when computing the note
-  recipient; note input struct fields must now implement `ToFeltRepr` in addition to
-  `FromFeltRepr`. `AccountId` implements `ToFeltRepr` #786
 - The `#[note]` macro writes the note's WIT interface (entrypoint plus constructors) to
   `target/generated-wit/`, so dependent crates can reference it via
   `[package.metadata.component.target.dependencies]` #786
