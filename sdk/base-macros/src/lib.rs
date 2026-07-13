@@ -371,6 +371,11 @@ pub fn export_type(
 /// method on the note type. It returns the MAST root digest of the `#[note_script]` entrypoint
 /// export as executed by the transaction kernel — resolved by the compiler at assembly time —
 /// for use when building the note recipient in constructors (see the example above).
+///
+/// The method must not be called from code reachable from the `#[note_script]` entrypoint
+/// itself: the note script's MAST root would then depend on its own digest, and assembly fails
+/// with a call-graph cycle error. A note script that needs its own root at runtime (e.g. to
+/// re-emit itself) should call `active_note::get_script_root()` instead.
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
