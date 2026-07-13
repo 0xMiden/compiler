@@ -28,6 +28,7 @@ wit-bindgen = { version = "0.57", default-features = false, features = ["macros"
 
 [features]
 default = []
+internal-wit-emit = ["miden-base-macros/internal-wit-emit"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"

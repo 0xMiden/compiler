@@ -232,6 +232,10 @@ fn generate_bindings_from_sources(
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
     fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
+    #[cfg(feature = "internal-wit-emit")]
+    if inline_source.is_some() {
+        maybe_emit_inline_wit(&wit_sources.resolve, world_id, fpi_imports)?;
+    }
 
     let mut opts = Opts {
         generate_all: true,
@@ -276,8 +280,115 @@ fn generate_bindings_from_sources(
             const _: &[u8] = include_bytes!(#utf8_path);
         });
     }
+    #[cfg(feature = "internal-wit-emit")]
+    if inline_source.is_some() {
+        // Make Cargo invalidate cached macro output when inline-WIT emission is toggled.
+        tokens.extend(quote! {
+            const _: Option<&str> = option_env!("MIDENC_EMIT_WIT");
+        });
+    }
 
     Ok(tokens)
+}
+
+/// Emits a resolved inline WIT world when `MIDENC_EMIT_WIT[=<path>]` is set.
+#[cfg(feature = "internal-wit-emit")]
+fn maybe_emit_inline_wit(
+    resolve: &Resolve,
+    world_id: WorldId,
+    fpi_imports: &[fpi::FpiImportSpec],
+) -> Result<(), Error> {
+    let Some(value) = env::var_os("MIDENC_EMIT_WIT") else {
+        return Ok(());
+    };
+    let out_dir = if value.is_empty() || value == std::ffi::OsStr::new("1") {
+        env::current_dir().map_err(|err| {
+            Error::new(
+                Span::call_site(),
+                format!("failed to resolve the MIDENC_EMIT_WIT output directory: {err}"),
+            )
+        })?
+    } else {
+        PathBuf::from(value)
+    };
+    fs::create_dir_all(&out_dir).map_err(|err| {
+        Error::new(
+            Span::call_site(),
+            format!(
+                "failed to create MIDENC_EMIT_WIT output directory '{}': {err}",
+                out_dir.display()
+            ),
+        )
+    })?;
+
+    let source = render_resolved_inline_wit(resolve, world_id, fpi_imports)?;
+    let package_name = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "generated".to_string());
+    let world_name = &resolve.worlds[world_id].name;
+    let filename = format!(
+        "{}.{}.inline.wit",
+        sanitize_wit_filename_component(&package_name),
+        sanitize_wit_filename_component(world_name)
+    );
+    let out_file = out_dir.join(filename);
+    fs::write(&out_file, source).map_err(|err| {
+        Error::new(
+            Span::call_site(),
+            format!("failed to write inline WIT to '{}': {err}", out_file.display()),
+        )
+    })?;
+    eprintln!("wrote inline WIT to '{}'", out_file.display());
+    Ok(())
+}
+
+/// Renders the selected inline package and any synthetic FPI packages imported by its world.
+#[cfg(any(test, feature = "internal-wit-emit"))]
+fn render_resolved_inline_wit(
+    resolve: &Resolve,
+    world_id: WorldId,
+    fpi_imports: &[fpi::FpiImportSpec],
+) -> Result<String, Error> {
+    let package_id = resolve.worlds[world_id].package.ok_or_else(|| {
+        Error::new(Span::call_site(), "inline WIT world is not owned by a package")
+    })?;
+    let mut nested_packages = Vec::new();
+    for import in fpi_imports {
+        let synthetic_package = import.synthetic_package();
+        let nested_package =
+            resolve.package_names.get(synthetic_package).copied().ok_or_else(|| {
+                Error::new(
+                    Span::call_site(),
+                    format!(
+                        "synthetic FPI package `{synthetic_package}` is missing after injection"
+                    ),
+                )
+            })?;
+        if !nested_packages.contains(&nested_package) {
+            nested_packages.push(nested_package);
+        }
+    }
+
+    let mut printer = wit_component::WitPrinter::default();
+    printer.print(resolve, package_id, &nested_packages).map_err(|err| {
+        Error::new(Span::call_site(), format!("failed to render resolved inline WIT: {err}"))
+    })?;
+    Ok(printer.output.into())
+}
+
+/// Converts a package or world name into a portable filename component.
+#[cfg(any(test, feature = "internal-wit-emit"))]
+fn sanitize_wit_filename_component(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => out.push(ch),
+            _ => out.push('_'),
+        }
+    }
+    if out.is_empty() {
+        "generated".to_string()
+    } else {
+        out
+    }
 }
 
 /// Appends the generated binding module path to every component-metadata section name.
@@ -741,6 +852,54 @@ pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Produces portable, non-empty inline-WIT artifact names.
+    #[test]
+    fn inline_wit_filename_components_are_sanitized() {
+        assert_eq!(sanitize_wit_filename_component("template-test"), "template-test");
+        assert_eq!(
+            sanitize_wit_filename_component("miden:note/world@1.0.0"),
+            "miden_note_world_1_0_0"
+        );
+        assert_eq!(sanitize_wit_filename_component(""), "generated");
+    }
+
+    /// Includes synthetic FPI interfaces when rendering the resolved inline binding world.
+    #[test]
+    fn resolved_inline_wit_contains_injected_fpi_functions() {
+        const SOURCE_IMPORT: &str = "miden:wallet/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "wallet.wit",
+            r#"
+package miden:wallet@1.0.0;
+
+interface api {
+    ping: func(value: u32) -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("foreign-account-bindings-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+
+        let rendered = render_resolved_inline_wit(&resolve, world, &specs).unwrap();
+
+        assert!(rendered.contains("import miden:fpi-v1-wallet/api@1.0.0;"));
+        assert!(rendered.contains("package miden:fpi-v1-wallet@1.0.0 {"));
+        assert!(rendered.contains("fpi-ping: func("));
+        UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();
+    }
 
     /// Rewrites component metadata to use semantic Rust module identity.
     #[test]

@@ -96,6 +96,12 @@ impl FpiImportSpec {
         &self.synthetic_import
     }
 
+    /// Returns the package which owns the private synthetic interface.
+    #[cfg(any(test, feature = "internal-wit-emit"))]
+    pub(crate) fn synthetic_package(&self) -> &PackageName {
+        &self.synthetic_package
+    }
+
     /// Returns the Rust module path generated for the private synthetic interface.
     pub(crate) fn synthetic_module_path(&self) -> String {
         import_module_path(&self.synthetic_import)
