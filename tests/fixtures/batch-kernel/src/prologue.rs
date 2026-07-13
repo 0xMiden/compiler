@@ -77,11 +77,16 @@ fn load_note_list(key: Word) -> Vec<Felt> {
 /// no duplicate keys.
 #[inline(always)]
 fn assert_list_strictly_sorted(list: &[Felt]) {
-    for index in 1..list.len() / NOTE_ENTRY_FELT_LEN {
+    let mut entries = list.chunks_exact(NOTE_ENTRY_FELT_LEN);
+    let Some(mut previous) = entries.next() else {
+        return;
+    };
+    for current in entries {
         assert!(
-            note_tracker::word_lt(memory::note_key(list, index - 1), memory::note_key(list, index)),
+            note_tracker::word_lt(memory::word_at(previous, 0), memory::word_at(current, 0)),
             "a batch note list is not strictly sorted by its key"
         );
+        previous = current;
     }
 }
 
@@ -119,8 +124,8 @@ fn load_tx_expirations(num_transactions: usize) -> Felt {
     let (_hash, data) = pipe_words_to_memory(Felt::from(num_transactions as u32));
 
     let mut min = felt!(0xffffffff_u64);
-    for tx_index in 0..num_transactions {
-        let expiration_block_num = data[tx_index * 4];
+    for expiration in data.chunks_exact(4) {
+        let expiration_block_num = expiration[0];
         if expiration_block_num < min {
             min = expiration_block_num;
         }
@@ -203,10 +208,10 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
     // One shared buffer for both parallel flag arrays: the input-note flags
     // (`[erasure = 0, consumed = 0]` per entry) followed by the output-note flags
     // (`[will_be_erased = 0, is_created = 0, linked_input_index = 0]` per entry).
+    let output_flags_base = (input_notes.len() / NOTE_ENTRY_FELT_LEN) * INPUT_FLAGS_STRIDE;
     let note_flags = alloc::vec![
         felt!(0);
-        (input_notes.len() / NOTE_ENTRY_FELT_LEN) * INPUT_FLAGS_STRIDE
-            + (output_notes.len() / NOTE_ENTRY_FELT_LEN) * OUTPUT_FLAGS_STRIDE
+        output_flags_base + (output_notes.len() / NOTE_ENTRY_FELT_LEN) * OUTPUT_FLAGS_STRIDE
     ];
 
     // Expirations: accumulate the running minimum of the transactions' expiration block numbers.
@@ -220,6 +225,7 @@ pub fn prepare_batch(batch_id: Word) -> BatchMemory {
         input_notes,
         output_notes,
         note_flags,
+        output_flags_base,
         batch_expiration_block_num,
     }
 }

@@ -273,7 +273,7 @@ fn batch_kernel() {
     let program = package.unwrap_program();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["125977"].assert_eq(stripped_mast_size_str(&package));
+    expect!["123524"].assert_eq(stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -328,7 +328,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["40857"].assert_eq(&cycles.to_string());
+        expect!["40486"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -380,7 +380,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note.
-        expect!["36249"].assert_eq(&cycles.to_string());
+        expect!["35735"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -452,7 +452,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the consume-before-create ordering gate rejects the batch.
-        expect!["18850"].assert_eq(&cycles.to_string());
+        expect!["18725"].assert_eq(&cycles.to_string());
     }
 }
 

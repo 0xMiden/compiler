@@ -9,7 +9,10 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, felt, hash_elements};
 
-use crate::memory::{self, BatchMemory, NOTE_ENTRY_FELT_LEN, erasure_erased, erasure_expected};
+use crate::memory::{
+    BatchMemory, INPUT_FLAGS_STRIDE, NOTE_ENTRY_FELT_LEN, OUTPUT_FLAGS_STRIDE, erasure_erased,
+    erasure_expected,
+};
 
 // ASSERTIONS
 // =================================================================================================
@@ -22,9 +25,9 @@ use crate::memory::{self, BatchMemory, NOTE_ENTRY_FELT_LEN, erasure_erased, eras
 /// are folded into the single pass in [`compute_input_notes_commitment`].
 #[inline(always)]
 fn assert_all_output_notes_created(memory: &BatchMemory) {
-    for index in 0..memory.output_notes.len() / NOTE_ENTRY_FELT_LEN {
+    for flags in memory.output_note_flags().chunks_exact(OUTPUT_FLAGS_STRIDE) {
         assert!(
-            memory.output_note_created(index) != felt!(0),
+            flags[1] != felt!(0),
             "an output-note list entry was not created by any transaction"
         );
     }
@@ -51,13 +54,13 @@ fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
     let num_notes = memory.num_input_notes();
     let mut num_erased = 0;
 
-    for index in 0..num_notes {
+    for flags in memory.input_note_flags().chunks_exact(INPUT_FLAGS_STRIDE) {
         // Assert this entry was consumed exactly once and is not left expected-to-be-erased.
         assert!(
-            memory.input_note_consumed(index) != felt!(0),
+            flags[1] != felt!(0),
             "an input-note list entry was not consumed by any transaction"
         );
-        let erasure = memory.input_note_erasure(index);
+        let erasure = flags[0];
         assert!(
             erasure != erasure_expected(),
             "an erased input note was consumed before the transaction that creates it"
@@ -81,9 +84,13 @@ fn compute_input_notes_commitment(memory: BatchMemory) -> Word {
     // Some entries were erased: collect the surviving entries and hash those.
     let mut elements: Vec<Felt> =
         Vec::with_capacity((num_notes - num_erased) * NOTE_ENTRY_FELT_LEN);
-    for index in 0..num_notes {
-        if memory.input_note_erasure(index) != erasure_erased() {
-            elements.extend_from_slice(memory::note_entry(&memory.input_notes, index));
+    for (entry, flags) in memory
+        .input_notes
+        .chunks_exact(NOTE_ENTRY_FELT_LEN)
+        .zip(memory.input_note_flags().chunks_exact(INPUT_FLAGS_STRIDE))
+    {
+        if flags[0] != erasure_erased() {
+            elements.extend_from_slice(entry);
         }
     }
     Word::from(hash_elements(elements))

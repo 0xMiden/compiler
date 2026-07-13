@@ -22,10 +22,6 @@ use crate::memory::{
 /// Finds `key` in a flat sorted note list, returning the entry index if present. The Rust
 /// counterpart of the MASM kernel's `sorted_array::find_key_value` lookups.
 ///
-/// The binary search is written with [`word_lt`] instead of `Ord`-based `binary_search_by` so
-/// that no `core::cmp::Ordering` value is materialized (its `Less` discriminant is -1, which the
-/// compiler currently rejects when it round-trips through an i32-checked cast).
-///
 /// Inlined into its callers: as an outlined procedure its search state spills into
 /// memory-backed VM locals, which costs more than the lookup itself.
 #[inline(always)]
