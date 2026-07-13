@@ -1592,7 +1592,12 @@ impl MasmFunctionBuilder {
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
-        for attribute in ["account_procedure", "auth_script", "note_script", "transaction_script"] {
+        for attribute in [
+            midenc_dialect_hir::ACCOUNT_PROCEDURE_EXPORT_ATTR,
+            midenc_dialect_hir::AUTH_SCRIPT_EXPORT_ATTR,
+            midenc_dialect_hir::NOTE_SCRIPT_EXPORT_ATTR,
+            midenc_dialect_hir::TRANSACTION_SCRIPT_EXPORT_ATTR,
+        ] {
             if function.has_attribute(attribute) {
                 procedure
                     .attributes_mut()

@@ -34,6 +34,9 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 /// This is the exported symbol name of the SDK stub the `get_entrypoint_root()` binding calls;
 /// export lifting uses it to locate the stub and repoint its `hir.procedure_root` op at the
 /// lifted note-script export.
+///
+/// Must stay in lockstep with the SDK stub's `export_name` (`sdk/base-sys/stubs/note.rs`) and
+/// the binding's `link_name` (`sdk/base-sys/src/bindings/note.rs`).
 pub(crate) const SCRIPT_ROOT_STUB_NAME: &str = "intrinsics::note::script_root";
 
 /// Synthesizes the body of a note intrinsic linker stub.

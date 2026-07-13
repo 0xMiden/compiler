@@ -2,7 +2,10 @@ use alloc::rc::Rc;
 use core::cell::RefCell;
 
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_hir::{
+    ACCOUNT_PROCEDURE_EXPORT_ATTR, AUTH_SCRIPT_EXPORT_ATTR, HirOpBuilder, NOTE_SCRIPT_EXPORT_ATTR,
+    TRANSACTION_SCRIPT_EXPORT_ATTR,
+};
 use midenc_frontend_wasm_metadata::ProtocolExportKind;
 use midenc_hir::{
     FunctionType, Ident, Op, OpExt, SmallVec, Spanned, SymbolPath, Type, ValueRange, ValueRef,
@@ -432,19 +435,19 @@ fn annotate_protocol_export(
     match protocol_export_kind {
         Some(ProtocolExportKind::NoteScript) => {
             let note_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("note_script", note_attr);
+            export_func.set_attribute(NOTE_SCRIPT_EXPORT_ATTR, note_attr);
         }
         Some(ProtocolExportKind::AuthScript) => {
             let auth_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("auth_script", auth_attr);
+            export_func.set_attribute(AUTH_SCRIPT_EXPORT_ATTR, auth_attr);
         }
         Some(ProtocolExportKind::AccountProcedure) => {
             let account_proc_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("account_procedure", account_proc_attr);
+            export_func.set_attribute(ACCOUNT_PROCEDURE_EXPORT_ATTR, account_proc_attr);
         }
         Some(ProtocolExportKind::TxScript) => {
             let tx_script_attr = context.create_attribute::<UnitAttr, _>(());
-            export_func.set_attribute("transaction_script", tx_script_attr);
+            export_func.set_attribute(TRANSACTION_SCRIPT_EXPORT_ATTR, tx_script_attr);
         }
         None => {}
     }
