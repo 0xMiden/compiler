@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a cross-module call site needs a `use` of the generated trait. Relatedly, a component method
   named `new` is now permitted (previously a hard error): it lives on the generated trait and
   coexists with the inherent `Wallet::new(account_id)` constructor #1208
+- `#[account(...)]` wrapper structs are supported only at module scope so their generated component
+  metadata has a stable semantic identity. Move a wrapper declared inside a function or block to
+  its enclosing module.
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.

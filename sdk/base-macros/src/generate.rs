@@ -304,16 +304,13 @@ fn append_module_path_to_component_type_sections(file: &mut syn::File) -> Result
             if !link_section.path.is_ident("link_section") {
                 return;
             }
-            let syn::Expr::Lit(value) = &link_section.value else {
+            let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(section_name),
+                ..
+            }) = &link_section.value
+            else {
                 self.error = Some(Error::new_spanned(
                     &link_section.value,
-                    "wit-bindgen component metadata section name must be a string literal",
-                ));
-                return;
-            };
-            let syn::Lit::Str(section_name) = &value.lit else {
-                self.error = Some(Error::new_spanned(
-                    &value.lit,
                     "wit-bindgen component metadata section name must be a string literal",
                 ));
                 return;
@@ -324,7 +321,15 @@ fn append_module_path_to_component_type_sections(file: &mut syn::File) -> Result
 
             let section_name = section_name.clone();
             attribute.meta = parse_quote! {
-                unsafe(link_section = concat!(#section_name, ":", module_path!()))
+                unsafe(link_section = concat!(
+                    #section_name,
+                    ":",
+                    env!("CARGO_PKG_NAME"),
+                    "@",
+                    env!("CARGO_PKG_VERSION"),
+                    ":",
+                    module_path!(),
+                ))
             };
             self.rewritten += 1;
         }
@@ -764,6 +769,8 @@ mod tests {
         assert!(section_name.mac.path.is_ident("concat"));
         let tokens = section_name.mac.tokens.to_string();
         assert!(tokens.contains("component-type:wit-bindgen:test"));
+        assert!(tokens.contains("CARGO_PKG_NAME"));
+        assert!(tokens.contains("CARGO_PKG_VERSION"));
         assert!(tokens.contains("module_path"));
     }
 
