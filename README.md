@@ -58,6 +58,11 @@ This will run all of the unit tests in the workspace, as well as all of our `lit
   (comma-delimited), where `PATH` is treated either as folder e.g. `MIDENC_EMIT=ir=target/emit` or file `MIDENC_EMIT=hir=my_name.hir`.
 - `MIDENC_EMIT_MACRO_EXPAND[=<dir>]`: When set, integration tests dump `cargo expand`
   output for Rust fixtures to `<fixture>.expanded.rs` files in `<dir>` (or the CWD if empty/`1`).
+- `MIDENC_EMIT_WIT[=<dir>]`: When set, integration tests emit public component WIT as
+  `<fixture>.wit` and resolved macro-generated inline worlds as `<package>.<world>.inline.wit` in
+  `<dir>` (or the CWD if empty/`1`). Resolved FPI worlds include their injected synthetic packages
+  and `fpi-*` functions. Generated SDK integration fixtures enable the internal WIT-printer
+  feature in their Cargo manifests.
 
 ## Docs
 
