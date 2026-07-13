@@ -1140,7 +1140,8 @@ interface api {
         let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
         let native_modules =
             fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
-        let foreign_modules = fpi::collect_import_modules(&file.items, &fpi::is_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
         let native = native_modules
             .iter()
             .find(|module| module.path_string == "miden::typed_dependency::api")

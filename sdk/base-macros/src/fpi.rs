@@ -48,6 +48,13 @@ const FPI_ABI_VERSION: &str = "v1";
 /// Prefix for private synthetic FPI package names.
 const FPI_PACKAGE_PREFIX: &str = "fpi";
 
+/// Number of parameters prepended by the FPI calling convention.
+const FPI_ABI_PARAM_COUNT: usize = 3;
+
+/// Names of the parameters prepended by the FPI calling convention.
+const FPI_ABI_PARAM_NAMES: [&str; FPI_ABI_PARAM_COUNT] =
+    ["account-id-prefix", "account-id-suffix", "foreign-proc-root"];
+
 /// Maps one real dependency interface to its private synthetic FPI interface.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FpiImportSpec {
@@ -278,7 +285,7 @@ fn import_synthetic_interface(
 }
 
 /// Determines whether a generated free function represents an FPI WIT import.
-pub(crate) fn is_function(func: &ItemFn) -> bool {
+pub(crate) fn is_fpi_import_function(func: &ItemFn) -> bool {
     matches!(func.vis, syn::Visibility::Public(_))
         && func.sig.unsafety.is_none()
         && func.sig.ident.to_string().starts_with(RUST_FUNCTION_PREFIX)
@@ -286,12 +293,13 @@ pub(crate) fn is_function(func: &ItemFn) -> bool {
 
 /// Determines whether a generated free function represents a plain (non-FPI) WIT import.
 ///
-/// Unlike [`is_function`], which keys on the synthesized `fpi_` prefix, this is a negative filter:
-/// it accepts any safe, public free function in a generated leaf import module that is not an FPI
-/// import. That relies on wit-bindgen emitting exactly the interface's functions as plain public
-/// free functions in those modules — it does not emit auxiliary public free functions there. If a
-/// future wit-bindgen version changes that, such functions would be picked up as sibling methods
-/// and this predicate would need to narrow (e.g. by the interface's declared function set).
+/// Unlike [`is_fpi_import_function`], which keys on the synthesized `fpi_` prefix, this is a
+/// negative filter: it accepts any safe, public free function in a generated leaf import module
+/// that is not an FPI import. That relies on wit-bindgen emitting exactly the interface's functions
+/// as plain public free functions in those modules — it does not emit auxiliary public free
+/// functions there. If a future wit-bindgen version changes that, such functions would be picked
+/// up as sibling methods and this predicate would need to narrow (e.g. by the interface's declared
+/// function set).
 pub(crate) fn is_plain_import_function(func: &ItemFn) -> bool {
     matches!(func.vis, syn::Visibility::Public(_))
         && func.sig.unsafety.is_none()
@@ -398,6 +406,12 @@ fn resolve_core_types(resolve: &Resolve) -> syn::Result<CoreTypes> {
     })
 }
 
+/// Returns whether a dependency function receives a generated FPI companion.
+fn is_fpi_source_function(function: &Function) -> bool {
+    matches!(function.kind, FunctionKind::Freestanding)
+        && !function.name.starts_with(WIT_FUNCTION_PREFIX)
+}
+
 /// Copies FPI variants of source functions into an empty private synthetic interface.
 fn inject_functions_into_synthetic_interface(
     resolve: &mut Resolve,
@@ -408,10 +422,7 @@ fn inject_functions_into_synthetic_interface(
     let functions = resolve.interfaces[source_id]
         .functions
         .values()
-        .filter(|function| {
-            matches!(function.kind, FunctionKind::Freestanding)
-                && !function.name.starts_with(WIT_FUNCTION_PREFIX)
-        })
+        .filter(|function| is_fpi_source_function(function))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -450,7 +461,10 @@ fn inject_functions_into_synthetic_interface(
     Ok(())
 }
 
-/// Verifies that a reused canonical FPI interface matches its source dependency.
+/// Verifies that a canonical FPI interface structurally matches its source dependency.
+///
+/// This validates resolved WIT identity before Rust generation, including interfaces reused while
+/// processing multiple imports from one synthetic package.
 fn validate_synthetic_interface(
     resolve: &Resolve,
     source_id: InterfaceId,
@@ -460,10 +474,7 @@ fn validate_synthetic_interface(
     let source_functions = resolve.interfaces[source_id]
         .functions
         .values()
-        .filter(|function| {
-            matches!(function.kind, FunctionKind::Freestanding)
-                && !function.name.starts_with(WIT_FUNCTION_PREFIX)
-        })
+        .filter(|function| is_fpi_source_function(function))
         .collect::<Vec<_>>();
     let synthetic = &resolve.interfaces[synthetic_id];
     let invalid = || {
@@ -483,11 +494,7 @@ fn validate_synthetic_interface(
         return Err(invalid());
     }
 
-    let expected_prefix = [
-        ("account-id-prefix", core_types.felt),
-        ("account-id-suffix", core_types.felt),
-        ("foreign-proc-root", core_types.word),
-    ];
+    let expected_prefix = fpi_abi_params(core_types);
     let mut aliases = HashMap::new();
     for source in source_functions {
         let name = format!("{WIT_FUNCTION_PREFIX}{}", source.name);
@@ -499,14 +506,16 @@ fn validate_synthetic_interface(
         {
             return Err(invalid());
         }
-        for (param, (name, ty)) in function.params.iter().zip(expected_prefix).take(3) {
+        for (param, (name, ty)) in function.params.iter().zip(expected_prefix) {
             if param.name != name
                 || !synthetic_type_matches(resolve, synthetic_id, ty, param.ty, &mut aliases)
             {
                 return Err(invalid());
             }
         }
-        for (source, generated) in source.params.iter().zip(function.params.iter().skip(3)) {
+        for (source, generated) in
+            source.params.iter().zip(function.params.iter().skip(FPI_ABI_PARAM_COUNT))
+        {
             if source.name != generated.name
                 || !synthetic_type_matches(
                     resolve,
@@ -642,22 +651,12 @@ fn validate_reserved_fpi_namespace<'a>(
 
 /// Builds the caller-side WIT import that forwards through `execute_foreign_procedure`.
 fn build_import_function(function: Function, fpi_name: String, core_types: CoreTypes) -> Function {
-    let mut params = Vec::with_capacity(function.params.len() + 3);
-    params.push(Param {
-        name: "account-id-prefix".to_string(),
-        ty: core_types.felt,
+    let mut params = Vec::with_capacity(function.params.len() + FPI_ABI_PARAM_COUNT);
+    params.extend(fpi_abi_params(core_types).map(|(name, ty)| Param {
+        name: name.to_string(),
+        ty,
         span: WitSpan::default(),
-    });
-    params.push(Param {
-        name: "account-id-suffix".to_string(),
-        ty: core_types.felt,
-        span: WitSpan::default(),
-    });
-    params.push(Param {
-        name: "foreign-proc-root".to_string(),
-        ty: core_types.word,
-        span: WitSpan::default(),
-    });
+    }));
     params.extend(function.params);
 
     Function {
@@ -671,6 +670,15 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
         stability: Default::default(),
         span: WitSpan::default(),
     }
+}
+
+/// Returns the WIT parameters prepended by the FPI calling convention.
+fn fpi_abi_params(core_types: CoreTypes) -> [(&'static str, WitType); FPI_ABI_PARAM_COUNT] {
+    [
+        (FPI_ABI_PARAM_NAMES[0], core_types.felt),
+        (FPI_ABI_PARAM_NAMES[1], core_types.felt),
+        (FPI_ABI_PARAM_NAMES[2], core_types.word),
+    ]
 }
 
 /// Walks generated bindings and collects the import-module functions selected by `filter`.
@@ -755,10 +763,10 @@ pub(crate) fn augment_foreign_account_bindings(
 ) -> syn::Result<TokenStream2> {
     let file: File = syn::parse2(bindings)?;
     let native_modules = collect_import_modules(&file.items, &is_plain_import_function)?;
-    let foreign_modules = collect_import_modules(&file.items, &is_function)?;
+    let foreign_modules = collect_import_modules(&file.items, &is_fpi_import_function)?;
 
-    // Each selected reference is checked for a matching module in the per-reference loop below, so
-    // an empty `modules` surfaces there as a specific "no callable exports" error per interface.
+    // Each selected reference is checked against both module sets in the per-reference loop below,
+    // so a missing module surfaces there as a specific "no callable exports" error per interface.
     // `dependencies` was selected from `refs` in order, so zip them here rather than threading a
     // separate parallel vector — the reference is the one source of the generated trait name.
     let dependencies = dependencies
@@ -841,8 +849,6 @@ pub(crate) fn augment_foreign_account_bindings(
                         ),
                     )
                 })?;
-            validate_fpi_signature(native_func, foreign_func)?;
-
             let wit_name = function_wit_name(foreign_func)?;
             let root_key = ProcedureRootKey::new(dependency.import.as_str(), wit_name.as_str());
             let root = dependency.roots.get(&root_key).ok_or_else(|| {
@@ -1045,19 +1051,21 @@ fn validate_fpi_signature(native: &ItemFn, foreign: &ItemFn) -> syn::Result<()> 
 
     let foreign_inputs = foreign.sig.inputs.iter().collect::<Vec<_>>();
     let native_inputs = native.sig.inputs.iter().collect::<Vec<_>>();
-    if foreign_inputs.len() != native_inputs.len() + 3 {
+    if foreign_inputs.len() != native_inputs.len() + FPI_ABI_PARAM_COUNT {
         return Err(Error::new(
             foreign.sig.ident.span(),
             "generated FPI function is missing account id and procedure root parameters",
         ));
     }
 
-    let expected_prefix: [syn::Type; 3] = [
+    // These paths are the Rust representations installed for `felt` and `word` by
+    // `generate::push_default_with_entries`.
+    let expected_prefix: [syn::Type; FPI_ABI_PARAM_COUNT] = [
         parse_quote!(::miden::Felt),
         parse_quote!(::miden::Felt),
         parse_quote!(::miden::Word),
     ];
-    for (input, expected) in foreign_inputs.iter().take(3).zip(&expected_prefix) {
+    for (input, expected) in foreign_inputs.iter().take(FPI_ABI_PARAM_COUNT).zip(&expected_prefix) {
         let syn::FnArg::Typed(input) = input else {
             return Err(Error::new_spanned(
                 input,
