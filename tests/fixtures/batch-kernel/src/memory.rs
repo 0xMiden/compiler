@@ -83,13 +83,6 @@ pub fn note_value(list: &[Felt], index: usize) -> &[Felt; 4] {
     word_at(list, index * NOTE_ENTRY_FELT_LEN + 4)
 }
 
-/// Returns the 8 felts of entry `index` of a flat note list.
-#[inline(always)]
-pub fn note_entry(list: &[Felt], index: usize) -> &[Felt] {
-    let start = index * NOTE_ENTRY_FELT_LEN;
-    &list[start..start + NOTE_ENTRY_FELT_LEN]
-}
-
 /// Returns the 4-felt word at felt offset `start` of a flat felt buffer.
 #[inline(always)]
 pub fn word_at(buffer: &[Felt], start: usize) -> &[Felt; 4] {
@@ -140,6 +133,8 @@ pub struct BatchMemory {
     /// ([`INPUT_FLAGS_STRIDE`] felts per entry) followed by the output-note flags
     /// ([`OUTPUT_FLAGS_STRIDE`] felts per entry) starting at `num_input_notes * INPUT_FLAGS_STRIDE`.
     pub note_flags: Vec<Felt>,
+    /// Felt offset at which the output-note flags begin in [`Self::note_flags`].
+    pub(crate) output_flags_base: usize,
     /// The running minimum of the transactions' expiration block numbers.
     pub batch_expiration_block_num: Felt,
 }
@@ -178,7 +173,19 @@ impl BatchMemory {
     /// Returns the offset of the output-note flags within the shared flag buffer.
     #[inline(always)]
     fn output_flags_base(&self) -> usize {
-        self.num_input_notes() * INPUT_FLAGS_STRIDE
+        self.output_flags_base
+    }
+
+    /// Returns the input-note portion of the shared flag buffer.
+    #[inline(always)]
+    pub fn input_note_flags(&self) -> &[Felt] {
+        &self.note_flags[..self.output_flags_base()]
+    }
+
+    /// Returns the output-note portion of the shared flag buffer.
+    #[inline(always)]
+    pub fn output_note_flags(&self) -> &[Felt] {
+        &self.note_flags[self.output_flags_base()..]
     }
 
     /// Returns input-note entry `index`'s `erasure` flag.
