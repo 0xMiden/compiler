@@ -335,6 +335,14 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
             Ok(val) => val,
             Err(err) => return err.into_compile_error(),
         };
+    if let Err(err) = reject_type_import_name_collisions(
+        entrypoint_ident,
+        &export_name,
+        &constructors,
+        &constructor_type_imports,
+    ) {
+        return err.into_compile_error();
+    }
     let item_impl = item_impl;
     let note_ident = note_ty
         .path
@@ -593,7 +601,20 @@ fn collect_note_constructors(
             return Err(syn::Error::new(variadic.span(), "note constructors cannot be variadic"));
         }
 
+        // The generated bindings implement a trait whose method name wit-bindgen derives by
+        // snake-casing the WIT export name; a non-snake-case Rust name would make the generated
+        // impl miss the trait method (E0407/E0046 deep inside generated code).
+        let ident_string = sig.ident.to_string();
+        if ident_string != ident_string.to_snake_case() {
+            return Err(syn::Error::new(
+                sig.ident.span(),
+                "note constructor names must be snake_case: the WIT export name and the generated \
+                 bindings derive from the method name",
+            ));
+        }
+
         let mut params = Vec::new();
+        let mut wit_param_names = BTreeSet::new();
         for arg in &sig.inputs {
             let FnArg::Typed(pat_type) = arg else {
                 unreachable!("receiver arguments are rejected above");
@@ -607,8 +628,21 @@ fn collect_note_constructors(
             let type_ref = map_type_to_type_ref(&pat_type.ty, &exported_types)?;
             reject_custom_type_ref(&type_ref, pat_type.ty.span())?;
             type_ref.add_required_core_type_imports(&mut type_imports);
+            // WIT parameter names are kebab-cased, so distinct Rust identifiers can collide;
+            // catch that here instead of surfacing a WIT parse error from the generated bindings.
+            let wit_param_name = pat_ident.ident.to_string().to_kebab_case();
+            if !wit_param_names.insert(wit_param_name.clone()) {
+                return Err(syn::Error::new(
+                    pat_ident.ident.span(),
+                    format!(
+                        "note constructor parameter `{}` produces the WIT parameter name \
+                         '{wit_param_name}', which is already used by another parameter",
+                        pat_ident.ident
+                    ),
+                ));
+            }
             params.push(ConstructorParam {
-                wit_param_name: pat_ident.ident.to_string().to_kebab_case(),
+                wit_param_name,
                 ident: pat_ident.ident.clone(),
                 user_ty: (*pat_type.ty).clone(),
                 wit_type_name: type_ref.wit_name.clone(),
@@ -638,8 +672,9 @@ fn collect_note_constructors(
             .cloned()
             .collect();
 
-        // WIT function names are kebab-cased, so distinct Rust identifiers can collide; catch
-        // that here instead of surfacing a WIT parse error from the generated bindings.
+        // WIT export names must be unique across the interface: a constructor can collide with
+        // the entrypoint export or with a duplicate method definition. Catch that here instead
+        // of surfacing a WIT parse error from the generated bindings.
         let wit_name = sig.ident.to_string().to_kebab_case();
         if wit_name == entrypoint_export_name || !wit_names.insert(wit_name.clone()) {
             return Err(syn::Error::new(
@@ -662,6 +697,47 @@ fn collect_note_constructors(
     }
 
     Ok((constructors, type_imports))
+}
+
+/// Rejects exported function names that collide with the interface's imported core type names.
+///
+/// The generated interface imports core types via `use core-types.{...}`, which places the type
+/// names in the same WIT namespace as the exported functions; a collision would surface as a
+/// "name defined more than once" parse error inside the generated bindings, so catch it here
+/// with a span on the offending Rust identifier.
+fn reject_type_import_name_collisions(
+    entrypoint_ident: &syn::Ident,
+    entrypoint_export_name: &str,
+    constructors: &[NoteConstructor],
+    constructor_type_imports: &BTreeSet<String>,
+) -> syn::Result<()> {
+    // Mirrors `build_note_script_wit`: `word` is always imported for the entrypoint parameter.
+    let mut imports = constructor_type_imports.clone();
+    imports.insert("word".to_string());
+
+    if imports.contains(entrypoint_export_name) {
+        return Err(syn::Error::new(
+            entrypoint_ident.span(),
+            format!(
+                "the `#[note_script]` entrypoint `{entrypoint_ident}` produces the WIT export \
+                 name '{entrypoint_export_name}', which collides with a core type imported by the \
+                 note's interface",
+            ),
+        ));
+    }
+    for constructor in constructors {
+        if imports.contains(&constructor.wit_name) {
+            return Err(syn::Error::new(
+                constructor.fn_ident.span(),
+                format!(
+                    "note constructor `{}` produces the WIT export name '{}', which collides with \
+                     a core type imported by the note's interface",
+                    constructor.fn_ident, constructor.wit_name
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Rejects `#[export_type]` custom types in note constructor signatures.
@@ -793,6 +869,18 @@ fn parse_entrypoint_signature(
     entrypoint: &ImplItemFn,
 ) -> syn::Result<(usize, Option<AccountParam>)> {
     let sig = &entrypoint.sig;
+
+    // The generated bindings implement a trait whose method name wit-bindgen derives by
+    // snake-casing the WIT export name; a non-snake-case Rust name would make the generated
+    // impl miss the trait method (E0407/E0046 deep inside generated code).
+    let ident_string = sig.ident.to_string();
+    if ident_string != ident_string.to_snake_case() {
+        return Err(syn::Error::new(
+            sig.ident.span(),
+            "entrypoint method names must be snake_case: the WIT export name and the generated \
+             bindings derive from the method name",
+        ));
+    }
 
     if let Some(asyncness) = sig.asyncness {
         return Err(syn::Error::new(asyncness.span(), "entrypoint method must not be `async`"));
@@ -954,6 +1042,12 @@ fn has_entrypoint_marker_attr(attrs: &[Attribute]) -> bool {
 }
 
 fn is_attr_named(attr: &Attribute, name: &str) -> bool {
+    // Only the bare-path form (`#[name]`, `#[miden::name]`) is a marker. An arguments-carrying
+    // form must not be recognized here: `#[note]` would strip it before the standalone attribute
+    // macro gets the chance to reject the arguments.
+    if !matches!(attr.meta, syn::Meta::Path(_)) {
+        return false;
+    }
     attr.path()
         .segments
         .last()
@@ -1380,13 +1474,14 @@ mod tests {
 
     #[test]
     fn note_constructors_reject_duplicate_wit_names() {
-        // Kebab-casing maps distinct Rust identifiers to the same WIT export name.
+        // Duplicate method definitions are a later rustc error, but the macro sees them first
+        // and must not render a WIT interface with two same-named exports.
         let mut item_impl: ItemImpl = parse_quote! {
             impl MyNote {
                 #[note_constructor]
                 pub fn make_note(serial_num: Word) {}
                 #[note_constructor]
-                pub fn makeNote(serial_num: Word) {}
+                pub fn make_note(tag: Tag) {}
                 pub fn execute(self, _arg: Word) {}
             }
         };
@@ -1397,6 +1492,143 @@ mod tests {
             Err(err) => err,
         };
         assert!(err.to_string().contains("already used by another export"));
+    }
+
+    #[test]
+    fn note_constructors_reject_non_snake_case_names() {
+        // wit-bindgen names the generated trait method by snake-casing the WIT export name, so a
+        // camelCase constructor would not match its trait item.
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn makeNote(serial_num: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+
+        let err = match collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute") {
+            Ok(_) => panic!("non-snake-case constructor names must be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("must be snake_case"));
+    }
+
+    #[test]
+    fn entrypoint_signature_rejects_non_snake_case_names() {
+        let item_fn: ImplItemFn = parse_quote! {
+            pub fn runNote(self, _arg: Word) {}
+        };
+
+        let err = match parse_entrypoint_signature(&item_fn) {
+            Ok(_) => panic!("non-snake-case entrypoint names must be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("must be snake_case"));
+    }
+
+    #[test]
+    fn note_constructors_reject_duplicate_wit_param_names() {
+        // Kebab-casing maps distinct Rust parameter identifiers to the same WIT parameter name.
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn create(note_type: Word, noteType: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+
+        let err = match collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute") {
+            Ok(_) => panic!("duplicate WIT parameter names must be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("already used by another parameter"));
+    }
+
+    #[test]
+    fn note_exports_reject_core_type_import_name_collisions() {
+        // The constructor `tag` exports the WIT name 'tag' while its `Tag` parameter imports the
+        // core type of the same name into the interface namespace.
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn tag(value: Tag) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+        let (constructors, type_imports) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute").unwrap();
+
+        let err = match reject_type_import_name_collisions(
+            &entrypoint_ident,
+            "execute",
+            &constructors,
+            &type_imports,
+        ) {
+            Ok(_) => panic!("export names colliding with imported type names must be rejected"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("collides with a core type"));
+
+        // The entrypoint always imports `word`, so an entrypoint exporting the name 'word'
+        // collides even without constructors.
+        let word_ident = format_ident!("word");
+        let err =
+            match reject_type_import_name_collisions(&word_ident, "word", &[], &BTreeSet::new()) {
+                Ok(_) => panic!("entrypoint name colliding with the word import must be rejected"),
+                Err(err) => err,
+            };
+        assert!(err.to_string().contains("collides with a core type"));
+
+        // No collision when the type of the same name is never imported.
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn tag(value: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let (constructors, type_imports) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute").unwrap();
+        reject_type_import_name_collisions(
+            &entrypoint_ident,
+            "execute",
+            &constructors,
+            &type_imports,
+        )
+        .expect("an export name matching a non-imported core type is legal WIT");
+    }
+
+    #[test]
+    fn marker_attrs_with_arguments_are_not_recognized() {
+        // An arguments-carrying form must survive `#[note]` unrecognized so the standalone
+        // attribute macro can reject the arguments itself.
+        let constructor_attr: Attribute = parse_quote!(#[note_constructor(unexpected)]);
+        assert!(!is_note_constructor_marker_attr(&constructor_attr));
+        let script_attr: Attribute = parse_quote!(#[note_script(unexpected)]);
+        assert!(!is_entrypoint_marker_attr(&script_attr));
+
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor(unexpected)]
+                pub fn create(serial_num: Word) {}
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("execute");
+        let (constructors, _) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "execute").unwrap();
+        assert!(constructors.is_empty(), "the arguments-carrying form must not be exported");
+
+        let ImplItem::Fn(method) = item_impl.items.first().expect("method must exist") else {
+            panic!("expected function method");
+        };
+        assert!(
+            method.attrs.iter().any(|attr| attr.path().is_ident("note_constructor")),
+            "the attribute must be left in place for the standalone macro to reject"
+        );
     }
 
     #[test]
