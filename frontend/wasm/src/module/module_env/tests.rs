@@ -1,5 +1,26 @@
 use super::*;
 
+#[test]
+fn standalone_dwarf_offsets_are_code_section_relative() {
+    let info = WasmFileInfo {
+        code_section_offset: 12,
+        ..Default::default()
+    };
+
+    assert_eq!(info.dwarf_offset(20), 8);
+}
+
+#[test]
+fn component_dwarf_offsets_include_the_module_base() {
+    let info = WasmFileInfo {
+        code_section_offset: 12,
+        module_base_offset: 100,
+        ..Default::default()
+    };
+
+    assert_eq!(info.dwarf_offset(20), 120);
+}
+
 /// Ensures the frontend metadata entries emitted across a component's core modules are collected
 /// into one list — in particular the several `#[account_procedure]` entries of an account
 /// component.

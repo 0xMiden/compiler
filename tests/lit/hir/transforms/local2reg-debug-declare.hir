@@ -1,9 +1,10 @@
-// RUN: hir-opt %s --pass-pipeline 'builtin.function(local2reg)' | filecheck %s
+// RUN: hir-opt %s --pass-pipeline 'builtin.module(builtin.function(local2reg))' | filecheck %s
 
 // When local2reg promotes a local to an SSA register, a di.debug_declare describing that local
 // as a variable's storage must follow the value: the slot is no longer written, so the
 // declaration is rewritten into a di.debug_value anchored to the stored value at the erased
 // store's position (mirroring LLVM's mem2reg dbg.declare -> dbg.value conversion).
+builtin.module public @local2reg_debug_declare {
 builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
@@ -20,3 +21,48 @@ builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
 // CHECK-NOT: di.debug_declare
 // CHECK-NOT: hir.store_local
 // CHECK-NOT: hir.load_local
+
+// A transformed expression cannot be converted to a plain debug value without preserving its
+// dereference. Keep the slot live instead of erasing its only store.
+builtin.function public extern("C") @l2r_transformed_declare(%0: i32) -> i32 {
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }>;
+    %1 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    builtin.ret %1 : (i32);
+};
+
+// CHECK-LABEL: builtin.function public extern("C") @l2r_transformed_declare
+// CHECK-NEXT:     hir.store_local [[TRANSFORMED_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }>;
+// CHECK-NEXT:     [[TRANSFORMED_LOAD:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT:     builtin.ret [[TRANSFORMED_LOAD]] : (i32);
+
+// Multiple source variables may reuse one slot over disjoint ranges. Preserve the slot unless all
+// declarations can be attributed and rewritten safely.
+builtin.function public extern("C") @l2r_multiple_declares(%0: i32) -> i32 {
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 20, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 21, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+    %1 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+    builtin.ret %1 : (i32);
+};
+
+// CHECK-LABEL: builtin.function public extern("C") @l2r_multiple_declares
+// CHECK-NEXT:     hir.store_local [[MULTIPLE_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x"
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "y"
+// CHECK-NEXT:     [[MULTIPLE_LOAD:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+// CHECK-NEXT:     builtin.ret [[MULTIPLE_LOAD]] : (i32);
+
+// The same safety rule applies to stores that appear dead to runtime liveness.
+builtin.function public extern("C") @l2r_dead_store_with_transformed_declare(%0: i32) -> i32 {
+    hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }>;
+    builtin.ret %0 : (i32);
+};
+
+// CHECK-LABEL: builtin.function public extern("C") @l2r_dead_store_with_transformed_declare
+// CHECK-NEXT:     hir.store_local [[DEAD_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x"
+// CHECK-NEXT:     builtin.ret [[DEAD_ARG]] : (i32);
+};

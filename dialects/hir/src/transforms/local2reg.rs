@@ -6,7 +6,10 @@ use midenc_hir::{
     Spanned, Symbol, TraceTarget, ValueRef,
     dialects::{
         builtin::{Function, attributes::LocalVariable},
-        debuginfo::{DIBuilder, DebugDeclare, attributes::ExpressionOp},
+        debuginfo::{
+            DIBuilder, DebugDeclare,
+            attributes::{ExpressionOp, decode_frame_base_local_index},
+        },
     },
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, TracingRewriterListener},
@@ -23,32 +26,52 @@ use crate::{ExecFpi, LoadLocal, StoreLocal};
 /// uninitialized memory. Recording the stored value at each store point keeps the variable's
 /// debug info accurate, exactly like LLVM's mem2reg converts dbg.declare into dbg.value.
 ///
-/// The conversion is only applied when there is exactly one matching declaration; multiple
-/// declarations indicate the slot is reused by distinct source variables over disjoint ranges,
-/// which we cannot attribute to individual stores here, so they are conservatively left alone.
+/// Returns `false` when any declaration that refers to this local cannot be converted safely. In
+/// that case the caller must preserve the stores, since erasing them would leave the declaration
+/// pointing at an unwritten slot.
 fn convert_debug_declare_for_local<R: Rewriter>(
     rewriter: &mut R,
     function_op: OperationRef,
     local: &LocalVariable,
     stores: &[(OperationRef, ValueRef)],
-) {
+) -> bool {
     let local_index = local.as_usize() as u32;
     let mut declares = SmallVec::<[OperationRef; 2]>::new();
     function_op.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
         let operation = op.borrow();
         if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
             let expr = declare.expression();
-            if matches!(
-                expr.as_value().operations.as_slice(),
-                [ExpressionOp::WasmLocal(index)] if *index == local_index
-            ) {
+            if expr.as_value().operations.iter().any(|op| match op {
+                ExpressionOp::WasmLocal(index) => *index == local_index,
+                ExpressionOp::FrameBase { global_index, .. } => {
+                    decode_frame_base_local_index(*global_index) == Some(local_index)
+                }
+                _ => false,
+            }) {
                 declares.push(op);
             }
         }
     });
 
+    if declares.is_empty() {
+        return true;
+    }
+
     let [declare_op] = declares.as_slice() else {
-        return;
+        return false;
+    };
+    if !matches!(
+        declare_op
+            .borrow()
+            .downcast_ref::<DebugDeclare>()
+            .unwrap()
+            .expression()
+            .as_value()
+            .operations
+            .as_slice(),
+        [ExpressionOp::WasmLocal(index)] if *index == local_index
+    ) {
+        return false;
     };
 
     let variable = {
@@ -63,6 +86,7 @@ fn convert_debug_declare_for_local<R: Rewriter>(
         let _ = rewriter.debug_value(*stored_value, variable.clone(), span);
     }
     rewriter.erase_op(*declare_op);
+    true
 }
 
 #[derive(Default)]
@@ -286,12 +310,19 @@ impl Pass for Local2Reg {
                 //
                 // Any debug declaration pointing at the promoted slot must follow the value into
                 // its SSA register, since the slot will no longer be written.
-                convert_debug_declare_for_local(
+                if !convert_debug_declare_for_local(
                     &mut rewriter,
                     op,
                     &local,
                     &[(*store, *stored_value)],
-                );
+                ) {
+                    log::trace!(
+                        target: &trace_target,
+                        sym = trace_target.relevant_symbol();
+                        "ignoring {local}: debug declarations cannot all be converted safely",
+                    );
+                    continue;
+                }
                 rewriter.erase_op(*store);
                 rewriter.replace_all_op_uses_with_values(load, &[Some(*stored_value)]);
                 rewriter.erase_op(load);
@@ -302,7 +333,14 @@ impl Pass for Local2Reg {
                 //
                 // We rely on region simplification/canonicalization to remove any ops/values made
                 // dead by erasing these stores.
-                convert_debug_declare_for_local(&mut rewriter, op, &local, stores);
+                if !convert_debug_declare_for_local(&mut rewriter, op, &local, stores) {
+                    log::trace!(
+                        target: &trace_target,
+                        sym = trace_target.relevant_symbol();
+                        "preserving dead stores for {local}: debug declarations cannot all be converted safely",
+                    );
+                    continue;
+                }
                 for (store, _) in stores.iter() {
                     changed = PostPassStatus::Changed;
                     log::trace!(

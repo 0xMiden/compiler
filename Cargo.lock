@@ -569,7 +569,6 @@ dependencies = [
  "liquid",
  "liquid-core",
  "log",
- "miden-mast-package",
  "midenc-compile",
  "midenc-hir",
  "midenc-log",
@@ -3664,6 +3663,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "tempfile",
  "toml_edit",
  "wat",
 ]
