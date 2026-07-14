@@ -20,7 +20,10 @@ use midenc_hir::{
         },
         debuginfo::{
             DIBuilder,
-            attributes::{CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr},
+            attributes::{
+                CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr,
+                Variable as DebugVariable,
+            },
         },
     },
     interner::Symbol,
@@ -172,40 +175,28 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         self.refresh_function_debug_attrs();
     }
 
+    fn local_debug_metadata(
+        &self,
+        index: usize,
+        span: SourceSpan,
+    ) -> Option<(DebugVariable, Option<Expression>, bool)> {
+        let fallback = self.span_to_location(span);
+        let info = self.debug_info.as_ref()?;
+        let mut info = info.borrow_mut();
+        let local = info.locals.get_mut(index)?.as_mut()?;
+        if let Some((file, _directory, line, column)) = fallback {
+            fill_debug_attr_location(&mut local.attr, file, line, column);
+        }
+        Some((local.attr.clone(), local.expression.clone(), !local.locations.is_empty()))
+    }
+
     pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
-        let Some(info) = self.debug_info.clone() else {
-            return;
-        };
         let idx = var.index();
-        let (attr_opt, expr_opt, schedule_only) = {
-            let info = info.borrow();
-            let local_info = info.locals.get(idx).and_then(|l| l.as_ref());
-            match local_info {
-                Some(l) => {
-                    let schedule_only = !l.locations.is_empty();
-                    (Some(l.attr.clone()), l.expression.clone(), schedule_only)
-                }
-                None => (None, None, false),
-            }
-        };
-        let Some(mut attr) = attr_opt else {
+        let Some((attr, expr_opt, schedule_only)) = self.local_debug_metadata(idx, span) else {
             return;
         };
         if schedule_only {
             return;
-        }
-
-        // Only fill in the variable's declaration location when DWARF did not provide one; in
-        // particular the file must never be overwritten with the current instruction's file, or
-        // records emitted while translating inlined code would corrupt the variable's identity
-        // (e.g. a kill for `a` declared in the user's source being attributed to
-        // `core/src/iter/range.rs`).
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
-            && should_fill_debug_attr_location(attr.line, attr.column, line, column)
-        {
-            attr.file = file_symbol;
-            attr.line = line;
-            attr.column = column;
         }
 
         // If DWARF didn't provide a location expression, synthesize one from the
@@ -253,6 +244,9 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
                     info.subprogram.file = file_symbol;
                     info.subprogram.line = line;
                     info.subprogram.column = column;
+                    for local in info.locals.iter_mut().flatten() {
+                        fill_debug_attr_location(&mut local.attr, file_symbol, line, column);
+                    }
                 }
                 info.function_span.get_or_insert(span);
             }
@@ -303,29 +297,10 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         span: SourceSpan,
         wasm_stack: &[ValueRef],
     ) {
-        let Some(info) = self.debug_info.clone() else {
-            return;
-        };
         let idx = entry.var_index;
-        let attr_opt = {
-            let info = info.borrow();
-            info.local_attr(idx).cloned()
-        };
-        let Some(mut attr) = attr_opt else {
+        let Some((attr, ..)) = self.local_debug_metadata(idx, span) else {
             return;
         };
-        // Only fill in the variable's declaration location when DWARF did not provide one; in
-        // particular the file must never be overwritten with the current instruction's file, or
-        // records emitted while translating inlined code would corrupt the variable's identity
-        // (e.g. a kill for `a` declared in the user's source being attributed to
-        // `core/src/iter/range.rs`).
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
-            && should_fill_debug_attr_location(attr.line, attr.column, line, column)
-        {
-            attr.file = file_symbol;
-            attr.line = line;
-            attr.column = column;
-        }
 
         let Some(storage) = entry.storage else {
             if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
@@ -780,6 +755,19 @@ fn should_fill_debug_attr_location(
     // Rust/wasm DWARF sometimes maps prologue/epilogue-style instructions to the first byte of
     // the source file. Keep real declaration metadata rather than showing these fallback spans.
     !(span_line == 1 && span_column.is_none_or(|column| column == 1))
+}
+
+fn fill_debug_attr_location(
+    attr: &mut DebugVariable,
+    file: Symbol,
+    line: u32,
+    column: Option<u32>,
+) {
+    if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+        attr.file = file;
+        attr.line = line;
+        attr.column = column;
+    }
 }
 
 impl<'f, B: ?Sized + Builder> ArithOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {

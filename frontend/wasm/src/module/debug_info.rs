@@ -24,7 +24,7 @@ use crate::module::types::ModuleTypesBuilder;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocationDescriptor {
-    /// Inclusive start offset within the function's code, relative to the Wasm code section.
+    /// Inclusive start offset in the module's DWARF address space.
     pub start: u64,
     /// Exclusive end offset. `None` indicates the location is valid until the end of the function.
     pub end: Option<u64>,
@@ -175,15 +175,7 @@ fn build_function_debug_info(
 ) -> Option<FunctionDebugInfo> {
     let func_name = module.func_name(func_index);
 
-    // Translate the function body's file offset into the coordinate space used by the DWARF
-    // line info, mirroring the per-instruction lookups in `parse_function_body`: for standalone
-    // modules DWARF addresses are relative to the code section start, while for modules embedded
-    // in components they are offset by the module's base offset within the component.
-    let dwarf_offset = if parsed_module.wasm_file.module_base_offset > 0 {
-        parsed_module.wasm_file.module_base_offset + body.body_offset
-    } else {
-        body.body_offset.saturating_sub(parsed_module.wasm_file.code_section_offset)
-    };
+    let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
     let (file_symbol, directory_symbol) =
         determine_file_symbols(parsed_module, addr2line, dwarf_offset);
     let (line, column) = determine_location(addr2line, dwarf_offset);
@@ -419,18 +411,15 @@ fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationSch
                 storage: Some(descriptor.storage.clone()),
             });
             if let Some(end) = descriptor.end {
-                // Only schedule a kill when the lifetime actually has a gap here: when another
-                // location for this variable begins exactly at this offset, the variable is
-                // merely changing location, and the kill would only produce a spurious
-                // dead-then-redeclared flicker in the record stream.
-                let contiguous = supported.iter().any(|other| other.start == end);
-                if !contiguous {
-                    schedule.push(LocationScheduleEntry {
-                        offset: end,
-                        var_index,
-                        storage: None,
-                    });
-                }
+                // Keep the kill even when another range starts at the same offset. A supported
+                // DWARF expression is not necessarily representable by the backend (for example,
+                // an operandless WasmGlobal declaration), so the kill prevents an earlier
+                // location from remaining active when its nominal replacement emits no record.
+                schedule.push(LocationScheduleEntry {
+                    offset: end,
+                    var_index,
+                    storage: None,
+                });
             }
         }
     }
@@ -464,11 +453,10 @@ fn collect_dwarf_local_data(
     }
 
     let mut low_pc_map = FxHashMap::default();
-    let code_section_offset = parsed_module.wasm_file.code_section_offset;
     for (defined_idx, body) in parsed_module.function_body_inputs.iter() {
         let func_index = module.func_index(defined_idx);
-        let adjusted = body.body_offset.saturating_sub(code_section_offset);
-        low_pc_map.insert(adjusted, func_index);
+        let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
+        low_pc_map.insert(dwarf_offset, func_index);
     }
 
     let mut results: FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>> = FxHashMap::default();
@@ -1015,4 +1003,41 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
 
 fn func_local_index(func_index: FuncIndex, module: &Module) -> Option<usize> {
     module.defined_func_index(func_index).map(|idx| idx.index())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contiguous_location_ranges_keep_the_intervening_kill() {
+        let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
+        let locations = vec![
+            LocationDescriptor {
+                start: 4,
+                end: Some(8),
+                storage: Expression::with_ops(vec![ExpressionOp::WasmLocal(0)]),
+            },
+            LocationDescriptor {
+                start: 8,
+                end: None,
+                storage: Expression::with_ops(vec![ExpressionOp::WasmGlobal(0)]),
+            },
+        ];
+        let locals = vec![Some(LocalDebugInfo {
+            attr: variable,
+            locations,
+            expression: None,
+        })];
+
+        let schedule = build_location_schedule(&locals);
+
+        assert_eq!(schedule.len(), 3);
+        assert_eq!(schedule[0].offset, 4);
+        assert!(schedule[0].storage.is_some());
+        assert_eq!(schedule[1].offset, 8);
+        assert!(schedule[1].storage.is_none());
+        assert_eq!(schedule[2].offset, 8);
+        assert!(schedule[2].storage.is_some());
+    }
 }

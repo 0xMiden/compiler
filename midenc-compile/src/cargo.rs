@@ -294,16 +294,20 @@ pub fn write_package_atomic(
     let output_path = out_dir
         .join(&*package.name)
         .with_extension(miden_mast_package::Package::EXTENSION);
-    let tmp = tempfile::Builder::new()
-        .prefix(&format!(".{}", &*package.name))
-        .suffix(".masp.tmp")
-        .tempfile_in(out_dir)
-        .map_err(|err| {
-            Report::msg(format!(
-                "failed to create a temporary file for '{}': {err}",
-                output_path.display()
-            ))
-        })?;
+    let tmp_prefix = format!(".{}", &*package.name);
+    let mut tmp_builder = tempfile::Builder::new();
+    tmp_builder.prefix(&tmp_prefix).suffix(".masp.tmp");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tmp_builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let tmp = tmp_builder.tempfile_in(out_dir).map_err(|err| {
+        Report::msg(format!(
+            "failed to create a temporary file for '{}': {err}",
+            output_path.display()
+        ))
+    })?;
     let tmp_path = tmp.into_temp_path();
     package.write_to_file(&tmp_path).map_err(|err| {
         Report::msg(format!("failed to write package artifact '{}': {err}", output_path.display()))
@@ -314,14 +318,6 @@ pub fn write_package_atomic(
             output_path.display()
         ))
     })?;
-
-    // Temporary files are created with restrictive permissions; restore the
-    // conventional mode for a build artifact
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&output_path, std::fs::Permissions::from_mode(0o644));
-    }
 
     Ok(output_path)
 }
