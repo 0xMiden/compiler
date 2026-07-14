@@ -51,6 +51,9 @@ pub mod support {
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
+    /// The LLVM optimization level used for release guest builds.
+    const RELEASE_OPT_LEVEL: &str = "2";
+
     /// Executes a Cargo-based build with the provided compiler options and package registry
     pub fn cargo_build(
         manifest_path: &Path,
@@ -304,7 +307,7 @@ pub mod support {
             ("profile.dev.overflow-checks", "false"),
             ("profile.dev.debug", "true"),
             ("profile.dev.debug-assertions", "false"),
-            ("profile.release.opt-level", "\"s\""),
+            ("profile.release.opt-level", RELEASE_OPT_LEVEL),
             ("profile.release.lto", "true"),
             ("profile.release.codegen-units", "1"),
             ("profile.release.panic", "\"abort\""),
