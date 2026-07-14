@@ -17,9 +17,9 @@ use midenc_session::STDLIB;
 
 pub use self::{
     eval::{
-        compile_miden_component_to_package, compile_test_module, eval_miden_component,
-        eval_miden_component_with_advice_stack, eval_package, eval_package_with_advice_stack,
-        run_masm_vs_rust,
+        compile_miden_component_to_package, compile_test_module, compile_test_module_with_masm,
+        eval_miden_component, eval_miden_component_with_advice_stack, eval_package,
+        eval_package_with_advice_stack, run_masm_vs_rust,
     },
     initializer::Initializer,
 };

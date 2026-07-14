@@ -1,6 +1,11 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::{HirOpBuilder, assertions};
-use midenc_hir::{Builder, Immediate, PointerType, Report, SourceSpan, Type, ValueRef};
+use midenc_hir::{
+    AddressSpace, Builder, Immediate, PointerType, Report, SourceSpan, Type, ValueRef,
+};
+
+/// The base-2 logarithm of the byte alignment of a Miden memory element.
+const ELEMENT_ALIGNMENT_LOG2: u8 = 2;
 
 /// Represents a memory immediate in a WebAssembly memory instruction.
 ///
@@ -54,6 +59,7 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
     );
     let addr_u32 = builder.bitcast(addr_int, Type::U32, span)?;
     let mut full_addr_int = addr_u32;
+    let mut address_space = AddressSpace::Byte;
     if let Some(memarg) = memarg {
         if memarg.offset != 0 {
             let imm = builder.imm(Immediate::U32(memarg.offset as u32), span);
@@ -62,11 +68,36 @@ pub fn prepare_addr<'a, B: ?Sized + Builder>(
         // TODO(pauls): For now, asserting alignment helps us catch mistakes/bugs, but we should
         // probably make this something that can be disabled to avoid the overhead in release builds
         if memarg.align > 0 {
-            // Generate alignment assertion - aligned addresses should always produce 0 here
-            let imm = builder.imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
-            let align_offset = builder.r#mod(full_addr_int, imm, span)?;
-            builder.assertz_with_error(align_offset, assertions::ASSERT_FAILED_ALIGNMENT, span)?;
+            if memarg.align == ELEMENT_ALIGNMENT_LOG2
+                && matches!(ptr_ty, Type::Felt | Type::I32 | Type::U32)
+            {
+                // A successful divmod both proves natural alignment and converts the byte address
+                // to the element address consumed directly by Miden memory operations.
+                let element_size = builder.imm(Immediate::U32(4), span);
+                let (element_addr, byte_offset) =
+                    builder.divmod(full_addr_int, element_size, span)?;
+                builder.assertz_with_error(
+                    byte_offset,
+                    assertions::ASSERT_FAILED_ALIGNMENT,
+                    span,
+                )?;
+                full_addr_int = element_addr;
+                address_space = AddressSpace::Element;
+            } else {
+                // Generate alignment assertion - aligned addresses should always produce 0 here
+                let imm = builder.imm(Immediate::U32(2u32.pow(memarg.align as u32)), span);
+                let align_offset = builder.r#mod(full_addr_int, imm, span)?;
+                builder.assertz_with_error(
+                    align_offset,
+                    assertions::ASSERT_FAILED_ALIGNMENT,
+                    span,
+                )?;
+            }
         }
     };
-    builder.inttoptr(full_addr_int, Type::from(PointerType::new(ptr_ty.clone())), span)
+    builder.inttoptr(
+        full_addr_int,
+        Type::from(PointerType::new_with_address_space(ptr_ty.clone(), address_space)),
+        span,
+    )
 }
