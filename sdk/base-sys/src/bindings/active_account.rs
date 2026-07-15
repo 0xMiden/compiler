@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, RawAccountId};
+use super::types::{AccountId, Asset, AssetAmount, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -190,23 +190,25 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
 ///
 /// Propagates kernel errors if the referenced asset is non-fungible or the
 /// account vault invariants are violated.
-pub fn get_balance(asset_key: Word) -> Felt {
-    unsafe {
+pub fn get_balance(asset_key: Word) -> AssetAmount {
+    let balance = unsafe {
         extern_active_account_get_balance(asset_key[0], asset_key[1], asset_key[2], asset_key[3])
-    }
+    };
+    AssetAmount::try_from(balance).expect("kernel returned an invalid asset amount")
 }
 
 /// Returns the initial balance of the fungible asset identified by `asset_key`.
 #[inline]
-pub fn get_initial_balance(asset_key: Word) -> Felt {
-    unsafe {
+pub fn get_initial_balance(asset_key: Word) -> AssetAmount {
+    let balance = unsafe {
         extern_active_account_get_initial_balance(
             asset_key[0],
             asset_key[1],
             asset_key[2],
             asset_key[3],
         )
-    }
+    };
+    AssetAmount::try_from(balance).expect("kernel returned an invalid asset amount")
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
@@ -361,14 +363,14 @@ pub trait ActiveAccount {
     /// Propagates kernel errors if the referenced asset is non-fungible or the
     /// account vault invariants are violated.
     #[inline]
-    fn get_balance(&self, asset_key: Word) -> Felt {
+    fn get_balance(&self, asset_key: Word) -> AssetAmount {
         self.__assert_active_account();
         get_balance(asset_key)
     }
 
     /// Returns the initial balance of the fungible asset identified by `asset_key`.
     #[inline]
-    fn get_initial_balance(&self, asset_key: Word) -> Felt {
+    fn get_initial_balance(&self, asset_key: Word) -> AssetAmount {
         self.__assert_active_account();
         get_initial_balance(asset_key)
     }

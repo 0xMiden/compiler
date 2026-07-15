@@ -541,6 +541,7 @@ fn push_default_with_entries(opts: &mut Opts) {
     push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/felt"), "::miden::Felt");
     push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/word"), "::miden::Word");
     push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset"), "::miden::Asset");
+    push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/asset-amount"), "::miden::AssetAmount");
     push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/account-id"), "::miden::AccountId");
     push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/tag"), "::miden::Tag");
     push_path_entry(opts, &format!("{CORE_TYPES_INTERFACE}/note-type"), "::miden::NoteType");

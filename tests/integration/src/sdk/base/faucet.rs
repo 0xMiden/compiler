@@ -73,7 +73,7 @@ fn account_faucet_create_fungible_asset_binding() {
     run_faucet_binding_test(
         "account_faucet_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
-        faucet::create_fungible_asset(Felt::new(10).unwrap())
+        faucet::create_fungible_asset(AssetAmount::new(10).unwrap())
     }",
     );
 }

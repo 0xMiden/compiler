@@ -74,7 +74,23 @@ fn account_asset_create_fungible_asset_binding() {
         "account_asset_create_fungible_asset_binding",
         "pub fn binding(&self) -> Asset {
         let faucet = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(0).unwrap() };
-        asset::create_fungible_asset(faucet, Felt::new(10).unwrap(), false)
+        asset::create_fungible_asset(faucet, AssetAmount::new(10).unwrap(), false)
+    }",
+    );
+}
+
+#[test]
+fn account_asset_amount_binding() {
+    run_asset_binding_test(
+        "account_asset_amount_binding",
+        "pub fn binding(&self) -> AssetAmount {
+        let faucet = AccountId { prefix: Felt::new(1).unwrap(), suffix: Felt::new(0).unwrap() };
+        let asset = asset::create_fungible_asset(
+            faucet,
+            AssetAmount::new(10).unwrap(),
+            false,
+        );
+        asset.amount().unwrap() + AssetAmount::new(1).unwrap()
     }",
     );
 }

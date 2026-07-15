@@ -2794,6 +2794,7 @@ name = "miden-base-sys"
 version = "0.13.1"
 dependencies = [
  "miden-field-repr",
+ "miden-protocol",
  "miden-stdlib-sys",
 ]
 

@@ -12,6 +12,41 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Fungible asset amounts use `AssetAmount` instead of `Felt`
+
+The fungible-asset bindings no longer expose raw `Felt` amounts. `asset::create_fungible_asset`
+and `faucet::create_fungible_asset` take an `AssetAmount`, and `active_account::get_balance` /
+`get_initial_balance` return one:
+
+```rust
+// before
+let asset = faucet::create_fungible_asset(Felt::new(100).unwrap());
+let balance: Felt = account.get_balance(asset_key);
+
+// after
+let asset = faucet::create_fungible_asset(AssetAmount::new(100).unwrap());
+let balance: AssetAmount = account.get_balance(asset_key);
+```
+
+`AssetAmount::new` accepts a `u64` up to `AssetAmount::MAX_U64` (`2^63 - 2^31`, the protocol's
+maximum fungible amount); values that fit in a `u32` convert infallibly with
+`AssetAmount::from(100u32)`. Amounts compare like integers, and `+`/`-` are bounds-checked,
+panicking on overflow and underflow instead of wrapping at the field modulus:
+
+```rust
+let total = balance + deposit; // panics above MAX_U64 instead of wrapping
+let rest = balance - payment;  // panics on underflow
+```
+
+For anything beyond that, convert explicitly: `amount.as_u64()` for full integer functionality,
+or `amount.as_felt()` to opt back into field arithmetic. A raw fungible `Asset`'s amount is
+available as `asset.amount()` (which returns `None` for non-fungible assets) instead of reading
+`asset.value[0]` directly.
+
+Component WIT interfaces can import `asset-amount` from `miden:base/core-types@1.0.0` to use
+`AssetAmount` in exported method signatures, and typed account storage supports it directly via
+`StorageValue<AssetAmount>` and `StorageMap<K, AssetAmount>`.
+
 ### `#[account(...)]` generates one trait per component
 
 In 0.13 the `#[account(...)]` macro generated each component's methods as inherent methods on the
