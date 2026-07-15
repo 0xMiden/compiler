@@ -374,21 +374,24 @@ impl NoteMetadata {
     }
 }
 
-/// Result of searching note metadata for an attachment scheme.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+/// Raw protocol return layout for attachment lookups.
+#[derive(Copy, Clone)]
 #[repr(C)]
-pub struct AttachmentLocation {
+pub(crate) struct RawAttachmentLocation {
     /// Non-zero when the attachment scheme was found.
     pub is_found: Felt,
     /// The matching attachment index, valid only when `is_found` is non-zero.
     pub index: Felt,
 }
 
-impl AttachmentLocation {
-    /// Returns whether the attachment scheme was found.
-    #[inline]
-    pub fn found(&self) -> bool {
-        self.is_found != Felt::new(0).unwrap()
+impl RawAttachmentLocation {
+    /// Converts the protocol return layout into the found attachment index, if any.
+    pub(crate) fn into_attachment_index(self) -> Option<u32> {
+        if self.is_found == Felt::ZERO {
+            return None;
+        }
+        // The transaction kernel guarantees attachment indexes fit in a u32.
+        Some(self.index.as_canonical_u64() as u32)
     }
 }
 

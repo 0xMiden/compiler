@@ -125,7 +125,7 @@ fn active_note_write_attachment_to_memory_binding() {
     run_active_note_binding_test(
         "active_note_write_attachment_to_memory_binding",
         "pub fn binding(&self) -> Felt {
-        let attachment = active_note::write_attachment_to_memory(Felt::new(0).unwrap());
+        let attachment = active_note::write_attachment_to_memory(0);
         Felt::new(attachment.len() as u64).unwrap()
     }",
     );
@@ -135,9 +135,8 @@ fn active_note_write_attachment_to_memory_binding() {
 fn active_note_find_attachment_binding() {
     run_active_note_binding_test(
         "active_note_find_attachment_binding",
-        "pub fn binding(&self) -> Felt {
-        let location = active_note::find_attachment(Felt::new(1).unwrap());
-        location.index
+        "pub fn binding(&self) -> u32 {
+        active_note::find_attachment(Felt::new(1).unwrap()).unwrap_or(0)
     }",
     );
 }

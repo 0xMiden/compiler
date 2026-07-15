@@ -29,6 +29,22 @@ let all_consumed: u32 = tx::get_num_input_notes();
 assert_eq!(all_consumed, 2);
 ```
 
+Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
+attachment indexes are passed as `u32`:
+
+```rust
+// before
+let location = active_note::find_attachment(scheme);
+if location.found() {
+    let attachment = active_note::write_attachment_to_memory(location.index);
+}
+
+// after
+if let Some(index) = active_note::find_attachment(scheme) {
+    let attachment = active_note::write_attachment_to_memory(index);
+}
+```
+
 ### Fungible asset amounts use `AssetAmount` instead of `Felt`
 
 The fungible-asset bindings no longer expose raw `Felt` amounts. `asset::create_fungible_asset`

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
 use super::types::{
-    AccountId, Asset, AttachmentLocation, NoteIdx, NoteMetadata, RawAccountId, Recipient,
+    AccountId, Asset, NoteIdx, NoteMetadata, RawAccountId, RawAttachmentLocation, Recipient,
 };
 
 const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
@@ -64,7 +64,7 @@ unsafe extern "C" {
     fn extern_input_note_find_attachment(
         attachment_scheme: Felt,
         note_index: Felt,
-        ptr: *mut AttachmentLocation,
+        ptr: *mut RawAttachmentLocation,
     );
 }
 
@@ -207,13 +207,13 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 }
 
 /// Writes the selected input-note attachment to memory and returns it as protocol words.
-pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: Felt) -> Vec<Word> {
+pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
         let ptr = (attachment.as_mut_ptr() as usize) / 4;
         extern_input_note_write_attachment_to_memory(
             ptr as *mut Felt,
-            attachment_idx,
+            Felt::from_u32(attachment_idx),
             note_index.inner,
         )
     };
@@ -228,15 +228,15 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: Felt) -> 
 }
 
 /// Searches the input note metadata for `attachment_scheme`.
-pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> AttachmentLocation {
+pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
     unsafe {
         let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
+            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
         extern_input_note_find_attachment(
             attachment_scheme,
             note_index.inner,
             ret_area.as_mut_ptr(),
         );
-        ret_area.into_inner().assume_init()
+        ret_area.into_inner().assume_init().into_attachment_index()
     }
 }

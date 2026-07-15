@@ -227,12 +227,12 @@ fn rust_sdk_output_note_add_attachment_from_memory_binding() {
 fn rust_sdk_output_note_find_attachment_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_find_attachment_binding",
-        "pub fn binding(&self) -> Felt {
-        let location = output_note::find_attachment(
+        "pub fn binding(&self) -> u32 {
+        output_note::find_attachment(
             NoteIdx { inner: Felt::new(0).unwrap() },
             Felt::new(1).unwrap(),
-        );
-        location.index
+        )
+        .unwrap_or(0)
     }",
     );
 }
@@ -257,7 +257,7 @@ fn rust_sdk_output_note_write_attachment_to_memory_binding() {
         "pub fn binding(&self) -> Felt {
         let attachment = output_note::write_attachment_to_memory(
             NoteIdx { inner: Felt::new(0).unwrap() },
-            Felt::new(0).unwrap(),
+            0,
         );
         Felt::new(attachment.len() as u64).unwrap()
     }",
