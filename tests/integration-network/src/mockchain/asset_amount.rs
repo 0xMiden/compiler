@@ -45,7 +45,7 @@ pub struct Wallet;
 
 /// Reads the typed amount currently held in the active account's vault under `asset_key`.
 fn vault_amount(asset_key: Word) -> AssetAmount {
-    Asset::new(asset_key, active_account::get_asset(asset_key)).amount().unwrap()
+    Asset::new(asset_key, active_account::get_asset(asset_key)).amount()
 }
 
 /// A note that transfers its assets to the consuming account while verifying the typed
@@ -60,7 +60,7 @@ impl AssetAmountNote {
         let assets = active_note::get_initial_assets();
         for asset in assets {
             // Decode the typed amount from the kernel-built fungible asset encoding.
-            let amount = asset.amount().unwrap();
+            let amount = asset.amount();
             assert!(amount > AssetAmount::ZERO);
 
             let key = asset.key;
@@ -153,7 +153,7 @@ impl MeasurementNote {{
     pub fn script(self, _arg: Word, account: &mut Wallet) {{
         let assets = active_note::get_initial_assets();
         for asset in assets {{
-            let amount = asset.amount().unwrap();
+            let amount = asset.amount();
             let first = checked_add(amount, amount);
             let second = checked_add(first, amount);
             let third = checked_add(second, amount);
@@ -274,7 +274,7 @@ impl BaselineNote {
     pub fn script(self, _arg: Word, account: &mut Wallet) {
         let assets = active_note::get_initial_assets();
         for asset in assets {
-            let amount = asset.amount().unwrap();
+            let amount = asset.amount();
             assert!(amount > AssetAmount::ZERO);
             account.receive_asset(asset);
         }
@@ -392,8 +392,8 @@ fn asset_amount_add_cycles() {
         add_total / 4,
     );
 
-    expect!["6977"].assert_eq(add_cycles);
-    expect!["6200"].assert_eq(baseline_cycles);
+    expect!["6792"].assert_eq(add_cycles);
+    expect!["6009"].assert_eq(baseline_cycles);
 
     // Both wallets received their asset, so both scripts ran to completion.
     assert_account_has_fungible_asset(
