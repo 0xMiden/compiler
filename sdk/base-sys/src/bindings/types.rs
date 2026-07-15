@@ -500,6 +500,41 @@ impl TryFrom<Word> for NoteType {
     }
 }
 
+/// An account nonce: a counter the transaction kernel increments once per state-changing
+/// transaction.
+///
+/// Nonces compare as integers; they are produced by the account bindings and carry no
+/// arithmetic of their own.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct Nonce {
+    /// The raw field representation. Public only because component-model bindings construct
+    /// WIT records by field.
+    #[doc(hidden)]
+    pub inner: Felt,
+}
+
+impl Nonce {
+    /// Returns the nonce as a `u64` value.
+    #[inline]
+    pub fn as_u64(&self) -> u64 {
+        self.inner.as_canonical_u64()
+    }
+
+    /// Returns the nonce as a raw [`Felt`] for advanced use.
+    #[inline]
+    pub fn as_felt(&self) -> Felt {
+        self.inner
+    }
+}
+
+impl From<Nonce> for Felt {
+    #[inline]
+    fn from(value: Nonce) -> Self {
+        value.inner
+    }
+}
+
 /// The partial hash of a storage slot name.
 ///
 /// A slot id consists of two field elements: a `prefix` and a `suffix`.

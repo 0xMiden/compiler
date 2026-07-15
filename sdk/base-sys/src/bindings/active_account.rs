@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, AssetAmount, RawAccountId};
+use super::types::{AccountId, Asset, AssetAmount, Nonce, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -100,8 +100,10 @@ pub fn get_id() -> AccountId {
 
 /// Returns the nonce of the active account.
 #[inline]
-pub fn get_nonce() -> Felt {
-    unsafe { extern_active_account_get_nonce() }
+pub fn get_nonce() -> Nonce {
+    Nonce {
+        inner: unsafe { extern_active_account_get_nonce() },
+    }
 }
 
 /// Returns the active account commitment at the beginning of the transaction.
@@ -304,7 +306,7 @@ pub trait ActiveAccount {
 
     /// Returns the nonce of the active account.
     #[inline]
-    fn get_nonce(&self) -> Felt {
+    fn get_nonce(&self) -> Nonce {
         self.__assert_active_account();
         get_nonce()
     }
