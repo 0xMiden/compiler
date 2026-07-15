@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account interface. Authentication components keep using `#[auth_script]` (its method is the
   account interface implicitly); `#[auth_script]` and `#[account_procedure]` belong to different
   component kinds and cannot be combined in one component. See the [migration guide](./MIGRATION.md).
+- Kernel counts are now `u32` instead of `Felt`: `tx::get_num_input_notes` /
+  `tx::get_num_output_notes`, `active_account::get_num_procedures` (free function and
+  `ActiveAccount` trait method), and the `num_assets` / `num_storage_items` fields of
+  `OutputNoteAssetsInfo`, `InputNoteAssetsInfo`, and `InputNoteStorageInfo` #999
 - `#[account(...)]` now generates the component methods as one trait per referenced interface
   (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
   of inherent methods on the wrapper struct. Two components that export the same method name can

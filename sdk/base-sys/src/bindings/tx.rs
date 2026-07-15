@@ -186,13 +186,17 @@ pub fn get_block_timestamp() -> Felt {
 }
 
 /// Returns the total number of input notes consumed by the transaction.
-pub fn get_num_input_notes() -> Felt {
-    unsafe { extern_tx_get_num_input_notes() }
+pub fn get_num_input_notes() -> u32 {
+    // The transaction kernel guarantees note counts fit in a u32.
+    let count = unsafe { extern_tx_get_num_input_notes() };
+    count.as_canonical_u64() as u32
 }
 
 /// Returns the number of output notes created so far in the transaction.
-pub fn get_num_output_notes() -> Felt {
-    unsafe { extern_tx_get_num_output_notes() }
+pub fn get_num_output_notes() -> u32 {
+    // The transaction kernel guarantees note counts fit in a u32.
+    let count = unsafe { extern_tx_get_num_output_notes() };
+    count.as_canonical_u64() as u32
 }
 
 /// Returns the transaction expiration block delta.

@@ -237,7 +237,7 @@ pub fn add_asset(asset: Asset, note_idx: NoteIdx) {
 /// Contains summary information about the assets of an output note.
 pub struct OutputNoteAssetsInfo {
     pub commitment: Word,
-    pub num_assets: Felt,
+    pub num_assets: u32,
 }
 
 /// Retrieves the assets commitment and asset count for the output note at `note_index`.
@@ -248,7 +248,8 @@ pub fn get_assets_info(note_index: NoteIdx) -> OutputNoteAssetsInfo {
         let (commitment, num_assets) = ret_area.into_inner().assume_init();
         OutputNoteAssetsInfo {
             commitment,
-            num_assets,
+            // The transaction kernel guarantees asset counts fit in a u32.
+            num_assets: num_assets.as_canonical_u64() as u32,
         }
     }
 }
