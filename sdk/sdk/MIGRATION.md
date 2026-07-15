@@ -29,6 +29,20 @@ let all_consumed: u32 = tx::get_num_input_notes();
 assert_eq!(all_consumed, 2);
 ```
 
+Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
+`as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
+nonce into a `Word`):
+
+```rust
+// before
+let final_nonce: Felt = self.incr_nonce();
+let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
+
+// after
+let final_nonce: Nonce = self.incr_nonce();
+let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce.into()]);
+```
+
 Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
 attachment indexes are passed as `u32`:
 

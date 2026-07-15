@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account interface. Authentication components keep using `#[auth_script]` (its method is the
   account interface implicitly); `#[auth_script]` and `#[account_procedure]` belong to different
   component kinds and cannot be combined in one component. See the [migration guide](./MIGRATION.md).
+- Account nonces are typed: `active_account::get_nonce` and `native_account::incr_nonce` (free
+  functions and trait methods) return the new `Nonce` wrapper (the WIT `nonce` core type)
+  instead of `Felt`; convert with `Nonce::as_felt`/`as_u64` where the raw value is needed #999
 - Attachment lookups are typed: the `find_attachment` bindings (`note::find_attachment_idx`,
   `active_note`/`input_note`/`output_note::find_attachment`) return `Option<u32>` instead of the
   removed `AttachmentLocation` struct, and the `attachment_idx` parameters of the
