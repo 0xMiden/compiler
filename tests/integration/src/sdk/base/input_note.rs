@@ -75,7 +75,7 @@ trim-paths = ["diagnostics", "object"]
 fn input_note_get_assets_info_binding() {
     run_input_note_binding_test(
         "input_note_get_assets_info_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u32 {
         let info = input_note::get_assets_info(NoteIdx { inner: Felt::new(0).unwrap() });
         info.num_assets
     }",
@@ -127,7 +127,7 @@ fn input_note_get_sender_binding() {
 fn input_note_get_storage_info_binding() {
     run_input_note_binding_test(
         "input_note_get_storage_info_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u32 {
         let info = input_note::get_storage_info(NoteIdx { inner: Felt::new(0).unwrap() });
         info.num_storage_items
     }",

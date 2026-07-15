@@ -12,6 +12,23 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Kernel counters use integer types instead of `Felt`
+
+Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,
+`tx::get_num_output_notes`, `active_account::get_num_procedures`, and the
+`num_assets` / `num_storage_items` fields of the note info structs. Code that compared or
+computed with these as felts now works with plain integers:
+
+```rust
+// before
+let all_consumed: Felt = tx::get_num_input_notes();
+assert_eq!(all_consumed, felt!(2));
+
+// after
+let all_consumed: u32 = tx::get_num_input_notes();
+assert_eq!(all_consumed, 2);
+```
+
 ### Fungible asset amounts use `AssetAmount` instead of `Felt`
 
 The fungible-asset bindings no longer expose raw `Felt` amounts. `asset::create_fungible_asset`

@@ -218,7 +218,7 @@ fn account_get_vault_root_binding() {
 fn account_get_num_procedures_binding() {
     run_account_binding_test(
         "account_get_num_procedures_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u32 {
         self.get_num_procedures()
     }",
     );

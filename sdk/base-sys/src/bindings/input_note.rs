@@ -71,13 +71,13 @@ unsafe extern "C" {
 /// Contains summary information about the assets stored in an input note.
 pub struct InputNoteAssetsInfo {
     pub commitment: Word,
-    pub num_assets: Felt,
+    pub num_assets: u32,
 }
 
 /// Contains summary information about the storage stored in an input note.
 pub struct InputNoteStorageInfo {
     pub commitment: Word,
-    pub num_storage_items: Felt,
+    pub num_storage_items: u32,
 }
 
 /// Returns the assets commitment and asset count for the input note at `note_index`.
@@ -88,7 +88,8 @@ pub fn get_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
         let (commitment, num_assets) = ret_area.into_inner().assume_init();
         InputNoteAssetsInfo {
             commitment,
-            num_assets,
+            // The transaction kernel guarantees asset counts fit in a u32.
+            num_assets: num_assets.as_canonical_u64() as u32,
         }
     }
 }
@@ -142,7 +143,8 @@ pub fn get_storage_info(note_index: NoteIdx) -> InputNoteStorageInfo {
         let (commitment, num_storage_items) = ret_area.into_inner().assume_init();
         InputNoteStorageInfo {
             commitment,
-            num_storage_items,
+            // The transaction kernel guarantees storage item counts fit in a u32.
+            num_storage_items: num_storage_items.as_canonical_u64() as u32,
         }
     }
 }

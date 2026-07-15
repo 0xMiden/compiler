@@ -248,8 +248,10 @@ pub fn get_vault_root() -> Word {
 
 /// Returns the number of procedures exported by the active account.
 #[inline]
-pub fn get_num_procedures() -> Felt {
-    unsafe { extern_active_account_get_num_procedures() }
+pub fn get_num_procedures() -> u32 {
+    // The transaction kernel guarantees procedure counts fit in a u32.
+    let count = unsafe { extern_active_account_get_num_procedures() };
+    count.as_canonical_u64() as u32
 }
 
 /// Returns the procedure root for the procedure at `index`.
@@ -400,7 +402,7 @@ pub trait ActiveAccount {
 
     /// Returns the number of procedures exported by the active account.
     #[inline]
-    fn get_num_procedures(&self) -> Felt {
+    fn get_num_procedures(&self) -> u32 {
         self.__assert_active_account();
         get_num_procedures()
     }

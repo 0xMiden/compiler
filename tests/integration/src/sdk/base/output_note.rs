@@ -78,7 +78,7 @@ trim-paths = ["diagnostics", "object"]
 fn rust_sdk_output_note_get_assets_info_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_get_assets_info_binding",
-        "pub fn binding(&self) -> Felt {
+        "pub fn binding(&self) -> u32 {
         let info = output_note::get_assets_info(NoteIdx { inner: Felt::new(0).unwrap() });
         info.num_assets
     }",
