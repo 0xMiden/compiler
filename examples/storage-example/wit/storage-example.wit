@@ -3,10 +3,10 @@ package miden:storage-example@1.0.0;
 use miden:base/core-types@1.0.0;
 
 interface foo {
-    use core-types.{felt, word, asset};
+    use core-types.{asset-amount, word, asset};
 
-    set-asset-qty: func(pub-key: word, asset: asset, qty: felt);
-    get-asset-qty: func(asset: asset) -> felt;
+    set-asset-qty: func(pub-key: word, asset: asset, qty: asset-amount);
+    get-asset-qty: func(asset: asset) -> asset-amount;
 }
 
 world foo-world {

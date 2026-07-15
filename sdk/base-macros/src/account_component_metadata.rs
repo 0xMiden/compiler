@@ -52,7 +52,7 @@ fn schema_type_from_storage_type_arg(ty: &syn::Type) -> SchemaType {
 
     match last_segment.ident.to_string().as_str() {
         "Word" => SchemaType::native_word(),
-        "Felt" => SchemaType::native_felt(),
+        "Felt" | "AssetAmount" => SchemaType::native_felt(),
         "u8" => SchemaType::u8(),
         "u16" => SchemaType::u16(),
         "u32" => SchemaType::u32(),

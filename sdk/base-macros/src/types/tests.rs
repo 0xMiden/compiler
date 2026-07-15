@@ -34,6 +34,20 @@ fn allows_sdk_type_without_export_attribute() {
 }
 
 #[test]
+fn allows_asset_amount_without_export_attribute() {
+    reset_export_type_registry_for_tests();
+    let ty: Type = syn::parse_str("AssetAmount").unwrap();
+    let exported = HashMap::new();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("asset amount should resolve");
+    assert_eq!(type_ref.wit_name, "asset-amount");
+    assert!(!type_ref.is_custom);
+    assert!(type_ref.requires_core_type_import());
+    let exported_names = HashSet::new();
+    ensure_custom_type_defined(&type_ref, &exported_names, Span::call_site())
+        .expect("core types require no export");
+}
+
+#[test]
 fn allows_wit_primitive_type_without_export_attribute() {
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("u64").unwrap();

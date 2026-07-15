@@ -70,6 +70,11 @@ interface core-types {
         value: word,
     }
 
+    /// A validated fungible asset amount, at most 2^63 - 2^31.
+    record asset-amount {
+        inner: felt
+    }
+
     /// Account nonce
     record nonce {
         inner: felt
