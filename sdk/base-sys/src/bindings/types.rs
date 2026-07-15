@@ -92,31 +92,28 @@ impl Asset {
         }
     }
 
-    /// Returns this asset's amount when its key and value have a valid fungible encoding.
+    /// Returns this asset's fungible amount.
     ///
-    /// Returns `None` for non-fungible assets and malformed fungible asset encodings.
-    pub fn amount(&self) -> Option<AssetAmount> {
-        // Bit layout of the vault-key metadata byte (the low byte of the faucet-id suffix limb),
-        // mirroring `miden_protocol::asset::AssetVaultKey`: bits 0-1 encode the asset
-        // composition, bit 2 the callback flag, and bits 3-7 are reserved and must be zero.
-        const METADATA_BYTE_MASK: u64 = 0xff;
-        const COMPOSITION_MASK: u8 = 0b11;
-        const FUNGIBLE_COMPOSITION: u8 = 0b01;
-        const RESERVED_METADATA_MASK: u8 = 0b1111_1000;
-
-        let metadata = (self.key[2].as_canonical_u64() & METADATA_BYTE_MASK) as u8;
-        let is_fungible = metadata & COMPOSITION_MASK == FUNGIBLE_COMPOSITION;
-        let has_reserved_metadata = metadata & RESERVED_METADATA_MASK != 0;
-        let has_asset_id = self.key[0] != Felt::ZERO || self.key[1] != Felt::ZERO;
-        let has_value_padding = self.value[1] != Felt::ZERO
-            || self.value[2] != Felt::ZERO
-            || self.value[3] != Felt::ZERO;
-
-        if !is_fungible || has_reserved_metadata || has_asset_id || has_value_padding {
-            return None;
-        }
-
-        AssetAmount::try_from(self.value[0]).ok()
+    /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
+    /// bindings), whose encoding invariants make the composition bit sufficient to discriminate
+    /// fungibility.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the asset is not fungible or its amount exceeds [`AssetAmount::MAX_U64`].
+    #[inline(never)]
+    pub fn amount(&self) -> AssetAmount {
+        // The composition field occupies the lowest bits of the vault-key metadata byte (the
+        // low byte of the faucet-id suffix limb, mirroring
+        // `miden_protocol::asset::AssetVaultKey`), and `Fungible = 0b01` is the only odd
+        // composition, so the limb's parity discriminates fungible assets.
+        assert!(self.key[2].as_canonical_u64() & 1 == 1, "asset is not fungible");
+        let amount = self.value[0];
+        assert!(
+            amount <= AssetAmount::max_inner(),
+            "asset amount exceeds the maximum allowed amount"
+        );
+        AssetAmount { inner: amount }
     }
 }
 
@@ -788,37 +785,28 @@ mod tests {
         let callback_asset =
             Asset::new(Word::new([felt!(0), felt!(0), felt!(5), felt!(0)]), asset.value);
 
-        assert_eq!(asset.amount(), Some(AssetAmount::new(42).unwrap()));
-        assert_eq!(callback_asset.amount(), Some(AssetAmount::new(42).unwrap()));
+        assert_eq!(asset.amount(), AssetAmount::new(42).unwrap());
+        assert_eq!(callback_asset.amount(), AssetAmount::new(42).unwrap());
     }
 
-    /// Ensures non-fungible and malformed asset encodings have no amount.
+    /// Ensures the amount accessor panics for non-fungible assets (even composition bits).
     #[test]
-    fn asset_amount_rejects_invalid_asset_encodings() {
-        let amount = felt!(42);
+    #[should_panic(expected = "asset is not fungible")]
+    fn asset_amount_panics_on_non_fungible() {
         let non_fungible = Asset::new(
             Word::new([felt!(1), felt!(0), felt!(0), felt!(0)]),
-            Word::new([amount, felt!(0), felt!(0), felt!(0)]),
+            Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]),
         );
-        let non_zero_asset_id = Asset::new(
-            Word::new([felt!(1), felt!(0), felt!(1), felt!(0)]),
-            Word::new([amount, felt!(0), felt!(0), felt!(0)]),
-        );
-        // Metadata byte 0b1001: fungible composition but a reserved bit is set.
-        let reserved_metadata = Asset::new(
-            Word::new([felt!(0), felt!(0), felt!(9), felt!(0)]),
-            Word::new([amount, felt!(0), felt!(0), felt!(0)]),
-        );
-        let non_zero_value_padding = Asset::new(
-            Word::new([felt!(0), felt!(0), felt!(1), felt!(0)]),
-            Word::new([amount, felt!(1), felt!(0), felt!(0)]),
-        );
+
+        let _ = non_fungible.amount();
+    }
+
+    /// Ensures the amount accessor panics when the amount exceeds the maximum.
+    #[test]
+    #[should_panic(expected = "asset amount exceeds the maximum allowed amount")]
+    fn asset_amount_panics_on_excessive_amount() {
         let excessive_amount = fungible_asset(Felt::new(AssetAmount::MAX_U64 + 1).unwrap());
 
-        assert_eq!(non_fungible.amount(), None);
-        assert_eq!(non_zero_asset_id.amount(), None);
-        assert_eq!(reserved_metadata.amount(), None);
-        assert_eq!(non_zero_value_padding.amount(), None);
-        assert_eq!(excessive_amount.amount(), None);
+        let _ = excessive_amount.amount();
     }
 }

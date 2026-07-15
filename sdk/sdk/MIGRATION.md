@@ -40,7 +40,7 @@ let rest = balance - payment;  // panics on underflow
 
 For anything beyond that, convert explicitly: `amount.as_u64()` for full integer functionality,
 or `amount.as_felt()` to opt back into field arithmetic. A raw fungible `Asset`'s amount is
-available as `asset.amount()` (which returns `None` for non-fungible assets) instead of reading
+available as `asset.amount()` (which panics for non-fungible assets) instead of reading
 `asset.value[0]` directly.
 
 Component WIT interfaces can import `asset-amount` from `miden:base/core-types@1.0.0` to use

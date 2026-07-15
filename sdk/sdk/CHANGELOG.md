@@ -50,8 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (fallible). Also usable in exported component method signatures
   (WIT
   `asset-amount`) and in typed account storage (`StorageValue<AssetAmount>`,
-  `StorageMap<K, AssetAmount>`). `Asset::amount()` decodes the typed amount from a fungible
-  asset's key/value encoding, returning `None` for non-fungible assets #999
+  `StorageMap<K, AssetAmount>`). `Asset::amount()` returns the typed amount of a fungible
+  asset, panicking for non-fungible assets #999
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
   `#[account(counter_contract::CounterContract as RemoteCounter)]`. The path still selects the
   interface; only the generated trait is renamed. Use it when the interface name would clash with

@@ -55,7 +55,7 @@ impl AssetAmountNote {
         let assets = active_note::get_assets();
         for asset in assets {
             // Decode the typed amount from the kernel-built fungible asset encoding.
-            let amount = asset.amount().unwrap();
+            let amount = asset.amount();
             assert!(amount > AssetAmount::ZERO);
 
             let before = account.get_balance(asset.key);
@@ -147,7 +147,7 @@ impl MeasurementNote {{
     pub fn script(self, _arg: Word, account: &mut Wallet) {{
         let assets = active_note::get_assets();
         for asset in assets {{
-            let amount = asset.amount().unwrap();
+            let amount = asset.amount();
             let first = checked_add(amount, amount);
             let second = checked_add(first, amount);
             let third = checked_add(second, amount);
@@ -270,7 +270,7 @@ impl BaselineNote {
     pub fn script(self, _arg: Word, account: &mut Wallet) {
         let assets = active_note::get_assets();
         for asset in assets {
-            let amount = asset.amount().unwrap();
+            let amount = asset.amount();
             assert!(amount > AssetAmount::ZERO);
             account.receive_asset(asset);
         }
@@ -390,8 +390,8 @@ fn asset_amount_add_cycles() {
         add_total / 4,
     );
 
-    expect!["6977"].assert_eq(add_cycles);
-    expect!["6200"].assert_eq(baseline_cycles);
+    expect!["6792"].assert_eq(add_cycles);
+    expect!["6009"].assert_eq(baseline_cycles);
 
     // Both wallets received their asset, so both scripts ran to completion.
     assert_account_has_fungible_asset(

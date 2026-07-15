@@ -90,7 +90,7 @@ fn account_asset_amount_binding() {
             AssetAmount::new(10).unwrap(),
             false,
         );
-        asset.amount().unwrap() + AssetAmount::new(1).unwrap()
+        asset.amount() + AssetAmount::new(1).unwrap()
     }",
     );
 }
