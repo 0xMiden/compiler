@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::AccountId;
+use super::types::{AccountId, BlockNumber};
 
 /// Marker trait for raw FPI input array lengths supported by the protocol executor.
 #[doc(hidden)]
@@ -158,8 +158,11 @@ unsafe extern "C" {
 }
 
 /// Returns the current block number.
-pub fn get_block_number() -> Felt {
-    unsafe { extern_tx_get_block_number() }
+pub fn get_block_number() -> BlockNumber {
+    BlockNumber {
+        // The transaction kernel guarantees block numbers fit in a u32.
+        inner: unsafe { extern_tx_get_block_number() },
+    }
 }
 
 /// Returns the input notes commitment digest.
@@ -180,9 +183,11 @@ pub fn get_block_commitment() -> Word {
     }
 }
 
-/// Returns the timestamp of the reference block.
-pub fn get_block_timestamp() -> Felt {
-    unsafe { extern_tx_get_block_timestamp() }
+/// Returns the timestamp of the reference block, in seconds.
+pub fn get_block_timestamp() -> u32 {
+    // The transaction kernel guarantees block timestamps fit in a u32.
+    let timestamp = unsafe { extern_tx_get_block_timestamp() };
+    timestamp.as_canonical_u64() as u32
 }
 
 /// Returns the total number of input notes consumed by the transaction.
@@ -200,14 +205,18 @@ pub fn get_num_output_notes() -> u32 {
 }
 
 /// Returns the transaction expiration block delta.
-pub fn get_expiration_block_delta() -> Felt {
-    unsafe { extern_tx_get_expiration_block_delta() }
+pub fn get_expiration_block_delta() -> u16 {
+    // The transaction kernel bounds expiration deltas to 1..=u16::MAX.
+    let delta = unsafe { extern_tx_get_expiration_block_delta() };
+    delta.as_canonical_u64() as u16
 }
 
 /// Updates the transaction expiration block delta.
-pub fn update_expiration_block_delta(delta: Felt) {
+///
+/// The transaction kernel accepts deltas in `1..=u16::MAX`.
+pub fn update_expiration_block_delta(delta: u16) {
     unsafe {
-        extern_tx_update_expiration_block_delta(delta);
+        extern_tx_update_expiration_block_delta(Felt::from(delta));
     }
 }
 

@@ -48,8 +48,8 @@ impl P2ideNote {
         // [target_account_id_suffix, target_account_id_prefix, reclaim_height, timelock_height]
         let target_account_id_suffix = inputs[0];
         let target_account_id_prefix = inputs[1];
-        let reclaim_height = inputs[2];
-        let timelock_height = inputs[3];
+        let reclaim_height = BlockNumber::try_from(inputs[2]).unwrap();
+        let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
 
         // get block number
         let block_number = tx::get_block_number();
@@ -65,7 +65,7 @@ impl P2ideNote {
         if is_target {
             consume_assets(account);
         } else {
-            assert!(reclaim_height != felt!(0));
+            assert!(reclaim_height.as_u32() != 0);
             assert!(block_number >= reclaim_height);
             reclaim_assets(account, consuming_account_id);
         }

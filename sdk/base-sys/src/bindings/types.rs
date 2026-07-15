@@ -535,6 +535,60 @@ impl From<Nonce> for Felt {
     }
 }
 
+/// A block height in the chain.
+///
+/// Block numbers compare as integers and are bounded to `u32` by the protocol. Kernel-returned
+/// heights are trusted; raw felts (e.g. read from note storage) convert via the validated
+/// [`TryFrom<Felt>`] implementation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[repr(transparent)]
+pub struct BlockNumber {
+    /// The raw field representation. Public only because component-model bindings construct
+    /// WIT records by field.
+    #[doc(hidden)]
+    pub inner: Felt,
+}
+
+impl BlockNumber {
+    /// Returns the block number as a `u32` value.
+    #[inline]
+    pub fn as_u32(&self) -> u32 {
+        self.inner.as_canonical_u64() as u32
+    }
+
+    /// Returns the block number as a raw [`Felt`] for advanced use.
+    #[inline]
+    pub fn as_felt(&self) -> Felt {
+        self.inner
+    }
+}
+
+impl From<u32> for BlockNumber {
+    fn from(value: u32) -> Self {
+        Self {
+            inner: Felt::from_u32(value),
+        }
+    }
+}
+
+impl TryFrom<Felt> for BlockNumber {
+    type Error = &'static str;
+
+    fn try_from(value: Felt) -> Result<Self, Self::Error> {
+        if value.as_canonical_u64() > u32::MAX as u64 {
+            return Err("block number exceeds the maximum block height");
+        }
+        Ok(Self { inner: value })
+    }
+}
+
+impl From<BlockNumber> for Felt {
+    #[inline]
+    fn from(value: BlockNumber) -> Self {
+        value.inner
+    }
+}
+
 /// The partial hash of a storage slot name.
 ///
 /// A slot id consists of two field elements: a `prefix` and a `suffix`.

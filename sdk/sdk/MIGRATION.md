@@ -29,6 +29,22 @@ let all_consumed: u32 = tx::get_num_input_notes();
 assert_eq!(all_consumed, 2);
 ```
 
+Block heights are wrapped in the new `BlockNumber` type (comparable as integers; heights read
+from note storage convert with the validated `BlockNumber::try_from(felt)`), block timestamps
+are `u32` seconds, and expiration deltas are `u16`:
+
+```rust
+// before
+let timelock_height: Felt = inputs[3];
+assert!(tx::get_block_number() >= timelock_height);
+tx::update_expiration_block_delta(Felt::new(42).unwrap());
+
+// after
+let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
+assert!(tx::get_block_number() >= timelock_height);
+tx::update_expiration_block_delta(42);
+```
+
 Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
 `as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
 nonce into a `Word`):

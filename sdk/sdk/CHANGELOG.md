@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   account interface. Authentication components keep using `#[auth_script]` (its method is the
   account interface implicitly); `#[auth_script]` and `#[account_procedure]` belong to different
   component kinds and cannot be combined in one component. See the [migration guide](./MIGRATION.md).
+- Block heights and transaction expiration are typed: `tx::get_block_number` returns the new
+  `BlockNumber` wrapper (WIT `block-number` core type, comparable as an integer, convertible
+  from `u32` and fallibly from `Felt`), `tx::get_block_timestamp` returns `u32` seconds, and
+  `tx::get_expiration_block_delta` / `update_expiration_block_delta` use `u16` (the kernel
+  bounds deltas to `1..=u16::MAX`) #999
 - Account nonces are typed: `active_account::get_nonce` and `native_account::incr_nonce` (free
   functions and trait methods) return the new `Nonce` wrapper (the WIT `nonce` core type)
   instead of `Felt`; convert with `Nonce::as_felt`/`as_u64` where the raw value is needed #999

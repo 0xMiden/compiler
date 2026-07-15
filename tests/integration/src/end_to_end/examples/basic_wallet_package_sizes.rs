@@ -46,5 +46,5 @@ fn basic_wallet_and_p2id() {
     );
     let p2ide_package = p2ide_test.compile_package();
     assert!(p2ide_package.is_library(), "expected library");
-    expect!["17774"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    expect!["18604"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }
