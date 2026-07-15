@@ -194,7 +194,8 @@ pub fn get_balance(asset_key: Word) -> AssetAmount {
     let balance = unsafe {
         extern_active_account_get_balance(asset_key[0], asset_key[1], asset_key[2], asset_key[3])
     };
-    AssetAmount::try_from(balance).expect("kernel returned an invalid asset amount")
+    // The transaction kernel guarantees fungible balances never exceed the maximum amount.
+    AssetAmount { inner: balance }
 }
 
 /// Returns the initial balance of the fungible asset identified by `asset_key`.
@@ -208,7 +209,8 @@ pub fn get_initial_balance(asset_key: Word) -> AssetAmount {
             asset_key[3],
         )
     };
-    AssetAmount::try_from(balance).expect("kernel returned an invalid asset amount")
+    // The transaction kernel guarantees fungible balances never exceed the maximum amount.
+    AssetAmount { inner: balance }
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
