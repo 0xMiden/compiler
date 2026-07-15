@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{Asset, AttachmentLocation, NoteIdx, NoteMetadata, NoteType, Recipient, Tag};
+use super::types::{Asset, NoteIdx, NoteMetadata, NoteType, RawAttachmentLocation, Recipient, Tag};
 
 const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
 const MAX_ATTACHMENT_WORDS: usize = 256;
@@ -78,10 +78,10 @@ unsafe extern "C" {
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::find_attachment"]
-    pub fn extern_output_note_find_attachment(
+    pub(crate) fn extern_output_note_find_attachment(
         attachment_scheme: Felt,
         note_index: Felt,
-        ptr: *mut AttachmentLocation,
+        ptr: *mut RawAttachmentLocation,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::output_note::write_attachment_commitments_to_memory"]
@@ -296,16 +296,16 @@ pub fn get_metadata(note_index: NoteIdx) -> NoteMetadata {
 }
 
 /// Searches the output note metadata for `attachment_scheme`.
-pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> AttachmentLocation {
+pub fn find_attachment(note_index: NoteIdx, attachment_scheme: Felt) -> Option<u32> {
     unsafe {
         let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
+            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
         extern_output_note_find_attachment(
             attachment_scheme,
             note_index.inner,
             ret_area.as_mut_ptr(),
         );
-        ret_area.into_inner().assume_init()
+        ret_area.into_inner().assume_init().into_attachment_index()
     }
 }
 
@@ -330,13 +330,13 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
 }
 
 /// Writes the selected output-note attachment to memory and returns it as protocol words.
-pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: Felt) -> Vec<Word> {
+pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
         let ptr = (attachment.as_mut_ptr() as usize) / 4;
         extern_output_note_write_attachment_to_memory(
             ptr as *mut Felt,
-            attachment_idx,
+            Felt::from_u32(attachment_idx),
             note_index.inner,
         )
     };
