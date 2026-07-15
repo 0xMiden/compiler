@@ -40,7 +40,7 @@ impl AuthComponent for AuthComponentStorage {
         let input_notes_commit = tx::get_input_notes_commitment();
         let output_notes_commit = tx::get_output_notes_commitment();
 
-        let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce.into()]);
+        let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 
         let tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
         let msg: Word = hash_words(&tx_summary).into();

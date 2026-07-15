@@ -80,6 +80,11 @@ interface core-types {
         inner: felt
     }
 
+    /// A block height in the chain
+    record block-number {
+        inner: felt
+    }
+
     /// Account hash
     record account-hash {
         inner: word
