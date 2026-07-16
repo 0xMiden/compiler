@@ -8,7 +8,7 @@ use midenc_hir::{
 const ELEMENT_ALIGNMENT_LOG2: u8 = 2;
 
 /// The size of a Miden memory element in the byte-addressable address space.
-const ELEMENT_SIZE_BYTES: u32 = 1 << ELEMENT_ALIGNMENT_LOG2;
+const ELEMENT_SIZE_BYTES: u32 = 4;
 
 /// Represents a memory immediate in a WebAssembly memory instruction.
 ///
