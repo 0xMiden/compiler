@@ -2,10 +2,10 @@ builtin.function public extern("C") @test_wrapper() {
     %0 = arith.constant 1024 : i32;
     %1 = hir.bitcast %0 <{ ty = #builtin.type<u32> }>;
     %2 = arith.constant 4 : u32;
-    %3 = arith.mod %1, %2;
-    %4 = hir.assertz %3 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
-    %5 = hir.int_to_ptr %1 <{ ty = #builtin.type<ptr<i32, byte>> }>;
-    %6 = hir.load %5;
+    %3, %4 = arith.divmod %1, %2;
+    %5 = hir.assertz %3 <{ code = #builtin.u32<250>, message = #builtin.string<""> }>;
+    %6 = hir.int_to_ptr %4 <{ ty = #builtin.type<ptr<i32, element>> }>;
+    %7 = hir.load %6;
     cf.br ^block5;
 ^block5:
     builtin.ret;

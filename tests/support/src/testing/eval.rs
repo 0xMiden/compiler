@@ -174,12 +174,13 @@ where
     Ok(trace.parse_result::<T>().expect("expected output was not returned"))
 }
 
-/// Helper function to compile a test module with the given signature and build function
-pub fn compile_test_module(
+/// Builds the HIR component and entrypoint shared by [compile_test_module] and
+/// [compile_test_module_with_masm].
+fn build_test_component(
     params: impl IntoIterator<Item = Type>,
     results: impl IntoIterator<Item = Type>,
     build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
-) -> (Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
+) -> (MidenComponent, std::rc::Rc<midenc_hir::Context>) {
     let context = setup::dummy_context(&["--test-harness", "--entrypoint", "test::main"]);
     let signature = Signature::new(&context, params, results);
     let component = setup::build_empty_component_for_test(context.clone());
@@ -188,8 +189,40 @@ pub fn compile_test_module(
         &signature,
         build_fn,
     );
+    (component, context)
+}
+
+/// Helper function to compile a test module with the given signature and build function
+pub fn compile_test_module(
+    params: impl IntoIterator<Item = Type>,
+    results: impl IntoIterator<Item = Type>,
+    build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
+) -> (Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
+    let (component, context) = build_test_component(params, results, build_fn);
     let package = compile_miden_component_to_package(component).unwrap();
     (package, context)
+}
+
+/// Helper function to compile a test module and capture its MASM source before assembly.
+pub fn compile_test_module_with_masm(
+    params: impl IntoIterator<Item = Type>,
+    results: impl IntoIterator<Item = Type>,
+    build_fn: impl Fn(&mut midenc_hir::dialects::builtin::FunctionBuilder<'_, midenc_hir::OpBuilder>),
+) -> (String, Arc<miden_mast_package::Package>, std::rc::Rc<midenc_hir::Context>) {
+    use midenc_compile::{CodegenOutput, compile_link_output_to_masm_with_pre_assembly_stage};
+
+    let (component, context) = build_test_component(params, results, build_fn);
+
+    let mut masm = None;
+    let mut capture_masm = |output: CodegenOutput, _context| {
+        masm = Some(output.component.to_string());
+        Ok(output)
+    };
+    let package = compile_link_output_to_masm_with_pre_assembly_stage(component, &mut capture_masm)
+        .expect("test component should compile")
+        .unwrap_mast();
+
+    (masm.expect("codegen should produce MASM"), package, context)
 }
 
 /// Compiles a LinkOutput to a Package, suitable for execution

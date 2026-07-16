@@ -1,9 +1,13 @@
 use miden_debug::ToMidenRepr;
-use midenc_dialect_wasm::WasmOpBuilder;
+use midenc_dialect_hir::HirOpBuilder;
+use midenc_dialect_wasm::{WasmMemArg, WasmOpBuilder, prepare_addr};
 use midenc_hir::{Felt, SourceSpan, Type, ValueRef, dialects::builtin::BuiltinOpBuilder};
 
-use crate::testing::{Initializer, compile_test_module, eval_package};
+use crate::testing::{
+    Initializer, compile_test_module, compile_test_module_with_masm, eval_package,
+};
 
+mod aligned_memory;
 mod i32_extend16_s;
 mod i32_extend8_s;
 mod i32_load16_s;
