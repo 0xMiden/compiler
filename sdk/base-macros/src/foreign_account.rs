@@ -11,7 +11,7 @@ use crate::{
         select_dependencies,
     },
     fpi, generate, manifest_paths,
-    wit_world::{ManifestPackage, import_world_wit},
+    wit_world::ManifestPackage,
 };
 
 const FOREIGN_ACCOUNT_WORLD: &str = "foreign-account-bindings";
@@ -52,25 +52,28 @@ fn expand_inner(
         .iter()
         .map(|dependency| dependency.import().to_owned())
         .collect::<Vec<_>>();
+    let fpi_imports = fpi::import_specs(&imports)?;
     let with_entries = fpi::dependency_type_with_entries(&dependencies);
-    let inline_wit = import_world_wit(FOREIGN_ACCOUNT_WORLD, &imports);
+    let world_name = fpi::import_world_name(FOREIGN_ACCOUNT_WORLD, &fpi_imports);
+    let inline_wit = fpi::import_world_wit(&world_name, &fpi_imports);
+    let binding_module_ident = binding_module_ident(&account_struct.ident);
     let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
         allow_missing_local_wit: true,
     })?;
     let bindings = generate::generate_inline_fpi_bindings(
         &wit_config,
         &inline_wit,
-        FOREIGN_ACCOUNT_WORLD,
-        &imports,
+        &world_name,
+        &fpi_imports,
         &with_entries,
     )?;
-    let binding_module_ident = binding_module_ident(&account_struct.ident);
 
     fpi::augment_foreign_account_bindings(
         bindings,
         account_struct,
         dependencies,
         &args.refs,
+        &fpi_imports,
         binding_module_ident,
     )
 }

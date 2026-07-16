@@ -237,6 +237,10 @@ pub fn component_storage(
 /// the wrapper, so a same-module `#[note]`/`#[tx_script]` entrypoint sees them without an import; a
 /// cross-module entrypoint needs `use` of the trait.
 ///
+/// Declare the wrapper at module scope. Block-scoped wrappers are unsupported because Rust's
+/// `module_path!()` does not include the enclosing function, so two same-named local wrappers
+/// cannot receive distinct stable component-metadata identities without source positions.
+///
 /// The generated trait name must differ from the wrapper struct and from every other generated
 /// trait. When that is not naturally true — the wrapper shares the interface name, two packages
 /// export the same interface name, or the crate already uses the interface as a sibling

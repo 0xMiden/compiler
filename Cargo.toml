@@ -137,6 +137,7 @@ wasmparser = { version = "^0.248", default-features = false, features = [
     "validate",
     "simd",
 ] }
+wit-component = "0.247"
 
 # Workspace crates
 midenc-codegen-masm = { version = "0.9.2", path = "codegen/masm" }

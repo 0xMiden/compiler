@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `#[account(...)]` now keeps canonical dependency WIT interfaces unchanged, fixing a rare
+  component-link failure when plain note, transaction-script, or sibling imports of a dependency
+  are linked with generated FPI bindings. FPI bindings now also preserve anonymous compound types
+  and coexist when separate wrappers select different dependency sets #1276
+
 ### BREAKING
 - `#[account(...)]` now generates the component methods as one trait per referenced interface
   (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
@@ -23,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a cross-module call site needs a `use` of the generated trait. Relatedly, a component method
   named `new` is now permitted (previously a hard error): it lives on the generated trait and
   coexists with the inherent `Wallet::new(account_id)` constructor #1208
+- `#[account(...)]` wrapper structs are supported only at module scope so their generated component
+  metadata has a stable semantic identity. Move a wrapper declared inside a function or block to
+  its enclosing module.
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.

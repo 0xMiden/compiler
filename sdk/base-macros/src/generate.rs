@@ -5,6 +5,7 @@ use quote::{ToTokens, quote};
 use syn::{
     Error, FnArg, Item, ItemFn, LitStr, Pat, Token, TypePath,
     parse::{Parse, ParseStream},
+    parse_quote,
     spanned::Spanned,
     visit_mut::VisitMut,
 };
@@ -20,7 +21,7 @@ use wit_bindgen_rust::{Opts, WithOption};
 use crate::{fpi, manifest_paths};
 
 /// Fully-qualified WIT interface path for Miden SDK core types.
-const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
+pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -173,15 +174,16 @@ fn generate_bindings(
         world,
         &args.with_entries,
         &[],
+        false,
     )
 }
 
-/// Generates inline WIT bindings and injects FPI imports for the selected dependency interfaces.
+/// Generates inline WIT bindings and populates private FPI imports for selected dependencies.
 pub(crate) fn generate_inline_fpi_bindings(
     config: &manifest_paths::ResolvedWit,
     inline_source: &str,
     world: &str,
-    fpi_imports: &[String],
+    fpi_imports: &[fpi::FpiImportSpec],
     with_entries: &[(String, WithOption)],
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
@@ -190,6 +192,7 @@ pub(crate) fn generate_inline_fpi_bindings(
         Some(world),
         with_entries,
         fpi_imports,
+        true,
     )
 }
 
@@ -209,6 +212,7 @@ pub(crate) fn generate_inline_import_bindings(
         Some(world),
         with_entries,
         &[],
+        false,
     )
 }
 
@@ -218,7 +222,8 @@ fn generate_bindings_from_sources(
     inline_source: Option<&str>,
     world: Option<&str>,
     with_entries: &[(String, WithOption)],
-    fpi_imports: &[String],
+    fpi_imports: &[fpi::FpiImportSpec],
+    scope_component_type_sections: bool,
 ) -> Result<TokenStream2, Error> {
     let mut wit_sources = load_wit_sources(paths, inline_source)?;
 
@@ -227,6 +232,10 @@ fn generate_bindings_from_sources(
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
     fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
+    #[cfg(feature = "internal-wit-emit")]
+    if inline_source.is_some() {
+        maybe_emit_inline_wit(&wit_sources.resolve, world_id, fpi_imports)?;
+    }
 
     let mut opts = Opts {
         generate_all: true,
@@ -251,9 +260,12 @@ fn generate_bindings_from_sources(
         .ok_or_else(|| Error::new(Span::call_site(), "wit-bindgen emitted no bindings"))?;
     let src = std::str::from_utf8(src_bytes)
         .map_err(|err| Error::new(Span::call_site(), format!("invalid UTF-8: {err}")))?;
-    let mut tokens: TokenStream2 = src
-        .parse()
+    let mut file = syn::parse_file(src)
         .map_err(|err| Error::new(Span::call_site(), format!("failed to parse bindings: {err}")))?;
+    if scope_component_type_sections {
+        append_module_path_to_component_type_sections(&mut file)?;
+    }
+    let mut tokens = file.into_token_stream();
 
     // Include a dummy `include_bytes!` for any files we read so rustc knows that
     // we depend on the contents of those files.
@@ -268,8 +280,187 @@ fn generate_bindings_from_sources(
             const _: &[u8] = include_bytes!(#utf8_path);
         });
     }
+    #[cfg(feature = "internal-wit-emit")]
+    if inline_source.is_some() {
+        // Make Cargo invalidate cached macro output when inline-WIT emission is toggled.
+        tokens.extend(quote! {
+            const _: Option<&str> = option_env!("MIDENC_EMIT_WIT");
+        });
+    }
 
     Ok(tokens)
+}
+
+/// Emits a resolved inline WIT world when `MIDENC_EMIT_WIT[=<path>]` is set.
+#[cfg(feature = "internal-wit-emit")]
+fn maybe_emit_inline_wit(
+    resolve: &Resolve,
+    world_id: WorldId,
+    fpi_imports: &[fpi::FpiImportSpec],
+) -> Result<(), Error> {
+    let Some(value) = env::var_os("MIDENC_EMIT_WIT") else {
+        return Ok(());
+    };
+    let out_dir = if value.is_empty() || value == std::ffi::OsStr::new("1") {
+        env::current_dir().map_err(|err| {
+            Error::new(
+                Span::call_site(),
+                format!("failed to resolve the MIDENC_EMIT_WIT output directory: {err}"),
+            )
+        })?
+    } else {
+        PathBuf::from(value)
+    };
+    fs::create_dir_all(&out_dir).map_err(|err| {
+        Error::new(
+            Span::call_site(),
+            format!(
+                "failed to create MIDENC_EMIT_WIT output directory '{}': {err}",
+                out_dir.display()
+            ),
+        )
+    })?;
+
+    let source = render_resolved_inline_wit(resolve, world_id, fpi_imports)?;
+    let package_name = env::var("CARGO_PKG_NAME").unwrap_or_else(|_| "generated".to_string());
+    let world_name = &resolve.worlds[world_id].name;
+    let filename = format!(
+        "{}.{}.inline.wit",
+        sanitize_wit_filename_component(&package_name),
+        sanitize_wit_filename_component(world_name)
+    );
+    let out_file = out_dir.join(filename);
+    fs::write(&out_file, source).map_err(|err| {
+        Error::new(
+            Span::call_site(),
+            format!("failed to write inline WIT to '{}': {err}", out_file.display()),
+        )
+    })?;
+    eprintln!("wrote inline WIT to '{}'", out_file.display());
+    Ok(())
+}
+
+/// Renders the selected inline package and any synthetic FPI packages imported by its world.
+#[cfg(any(test, feature = "internal-wit-emit"))]
+fn render_resolved_inline_wit(
+    resolve: &Resolve,
+    world_id: WorldId,
+    fpi_imports: &[fpi::FpiImportSpec],
+) -> Result<String, Error> {
+    let package_id = resolve.worlds[world_id].package.ok_or_else(|| {
+        Error::new(Span::call_site(), "inline WIT world is not owned by a package")
+    })?;
+    let mut nested_packages = Vec::new();
+    for import in fpi_imports {
+        let synthetic_package = import.synthetic_package();
+        let nested_package =
+            resolve.package_names.get(synthetic_package).copied().ok_or_else(|| {
+                Error::new(
+                    Span::call_site(),
+                    format!(
+                        "synthetic FPI package `{synthetic_package}` is missing after injection"
+                    ),
+                )
+            })?;
+        if !nested_packages.contains(&nested_package) {
+            nested_packages.push(nested_package);
+        }
+    }
+
+    let mut printer = wit_component::WitPrinter::default();
+    printer.print(resolve, package_id, &nested_packages).map_err(|err| {
+        Error::new(Span::call_site(), format!("failed to render resolved inline WIT: {err}"))
+    })?;
+    Ok(printer.output.into())
+}
+
+/// Converts a package or world name into a portable filename component.
+#[cfg(any(test, feature = "internal-wit-emit"))]
+fn sanitize_wit_filename_component(name: &str) -> String {
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => out.push(ch),
+            _ => out.push('_'),
+        }
+    }
+    if out.is_empty() {
+        "generated".to_string()
+    } else {
+        out
+    }
+}
+
+/// Appends the generated binding module path to every component-metadata section name.
+fn append_module_path_to_component_type_sections(file: &mut syn::File) -> Result<(), Error> {
+    /// Rewrites generated component-metadata attributes in place.
+    struct SectionVisitor {
+        rewritten: usize,
+        error: Option<Error>,
+    }
+
+    impl VisitMut for SectionVisitor {
+        fn visit_attribute_mut(&mut self, attribute: &mut syn::Attribute) {
+            if self.error.is_some() || !attribute.path().is_ident("unsafe") {
+                return;
+            }
+            let syn::Meta::List(unsafe_meta) = &attribute.meta else {
+                return;
+            };
+            let Ok(syn::Meta::NameValue(link_section)) =
+                syn::parse2::<syn::Meta>(unsafe_meta.tokens.clone())
+            else {
+                return;
+            };
+            if !link_section.path.is_ident("link_section") {
+                return;
+            }
+            let syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(section_name),
+                ..
+            }) = &link_section.value
+            else {
+                self.error = Some(Error::new_spanned(
+                    &link_section.value,
+                    "wit-bindgen component metadata section name must be a string literal",
+                ));
+                return;
+            };
+            if !section_name.value().starts_with("component-type") {
+                return;
+            }
+
+            let section_name = section_name.clone();
+            attribute.meta = parse_quote! {
+                unsafe(link_section = concat!(
+                    #section_name,
+                    ":",
+                    env!("CARGO_PKG_NAME"),
+                    "@",
+                    env!("CARGO_PKG_VERSION"),
+                    ":",
+                    module_path!(),
+                ))
+            };
+            self.rewritten += 1;
+        }
+    }
+
+    let mut visitor = SectionVisitor {
+        rewritten: 0,
+        error: None,
+    };
+    visitor.visit_file_mut(file);
+    if let Some(error) = visitor.error {
+        return Err(error);
+    }
+    if visitor.rewritten == 0 {
+        return Err(Error::new(
+            Span::call_site(),
+            "wit-bindgen emitted no component metadata section to scope to the account binding",
+        ));
+    }
+    Ok(())
 }
 
 /// Result of loading and parsing WIT sources from file paths and optional inline content.
@@ -662,6 +853,86 @@ pub(crate) fn format_module_path(path: &[syn::Ident]) -> String {
 mod tests {
     use super::*;
 
+    /// Produces portable, non-empty inline-WIT artifact names.
+    #[test]
+    fn inline_wit_filename_components_are_sanitized() {
+        assert_eq!(sanitize_wit_filename_component("template-test"), "template-test");
+        assert_eq!(
+            sanitize_wit_filename_component("miden:note/world@1.0.0"),
+            "miden_note_world_1_0_0"
+        );
+        assert_eq!(sanitize_wit_filename_component(""), "generated");
+    }
+
+    /// Includes synthetic FPI interfaces when rendering the resolved inline binding world.
+    #[test]
+    fn resolved_inline_wit_contains_injected_fpi_functions() {
+        const SOURCE_IMPORT: &str = "miden:wallet/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "wallet.wit",
+            r#"
+package miden:wallet@1.0.0;
+
+interface api {
+    ping: func(value: u32) -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("foreign-account-bindings-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+
+        let rendered = render_resolved_inline_wit(&resolve, world, &specs).unwrap();
+
+        assert!(rendered.contains("import miden:fpi-v1-wallet/api@1.0.0;"));
+        assert!(rendered.contains("package miden:fpi-v1-wallet@1.0.0 {"));
+        assert!(rendered.contains("fpi-ping: func("));
+        UnresolvedPackageGroup::parse("emitted.wit", &rendered).unwrap();
+    }
+
+    /// Rewrites component metadata to use semantic Rust module identity.
+    #[test]
+    fn component_type_sections_use_the_stable_rust_module_path() {
+        let mut file: syn::File = syn::parse_quote! {
+            #[unsafe(link_section = "component-type:wit-bindgen:test")]
+            static COMPONENT_TYPE: [u8; 1] = [0];
+        };
+
+        append_module_path_to_component_type_sections(&mut file).unwrap();
+
+        let Item::Static(item) = &file.items[0] else {
+            panic!("fixture must remain a static item");
+        };
+        let syn::Meta::List(unsafe_meta) = &item.attrs[0].meta else {
+            panic!("link section must remain wrapped in an unsafe attribute");
+        };
+        let syn::Meta::NameValue(link_section) =
+            syn::parse2::<syn::Meta>(unsafe_meta.tokens.clone()).unwrap()
+        else {
+            panic!("unsafe attribute must contain link_section metadata");
+        };
+        let syn::Expr::Macro(section_name) = &link_section.value else {
+            panic!("link section must be assembled by concat!");
+        };
+        assert!(section_name.mac.path.is_ident("concat"));
+        let tokens = section_name.mac.tokens.to_string();
+        assert!(tokens.contains("component-type:wit-bindgen:test"));
+        assert!(tokens.contains("CARGO_PKG_NAME"));
+        assert!(tokens.contains("CARGO_PKG_VERSION"));
+        assert!(tokens.contains("module_path"));
+    }
+
     #[test]
     fn test_should_generate_struct_empty_path() {
         let empty_items: Vec<Item> = vec![];
@@ -890,5 +1161,473 @@ world core-type-variant-world {
         );
 
         assert!(world_uses_miden_core_types(&resolve, world));
+    }
+
+    /// Preserves dependency-owned types across canonical source and synthetic FPI interfaces.
+    #[test]
+    fn synthetic_fpi_interface_preserves_source_types_and_generated_module_paths() {
+        const SOURCE_IMPORT: &str = "miden:typed-dependency/api@1.2.3";
+        const TYPE_PATH: &str = "crate::bindings::miden::typed_dependency::api::Payload";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "typed-dependency.wit",
+            r#"
+package miden:typed-dependency@1.2.3;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+
+    type scalar-alias = u32;
+
+    record payload {
+        value: scalar-alias,
+        key: word,
+    }
+
+    variant request {
+        none,
+        payload(payload),
+    }
+
+    enum mode {
+        fast,
+        thorough,
+    }
+
+    flags permissions {
+        read,
+        write,
+    }
+
+    type maybe-request = option<request>;
+    type nested-result = result<payload, mode>;
+
+    primitive-roundtrip: func(value: u64) -> u32;
+    roundtrip: func(value: payload) -> payload;
+    choose: func(value: request) -> request;
+    set-mode: func(value: mode) -> mode;
+    set-permissions: func(value: permissions) -> permissions;
+    core-roundtrip: func(value: word) -> felt;
+    nested-roundtrip: func(value: maybe-request) -> nested-result;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("fpi-type-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        let source_id = resolve.worlds[world]
+            .imports
+            .values()
+            .filter_map(|item| match item {
+                WorldItem::Interface { id, .. }
+                    if interface_matches(&resolve, *id, SOURCE_IMPORT) =>
+                {
+                    Some(*id)
+                }
+                _ => None,
+            })
+            .next()
+            .expect("source interface must be imported");
+        let source_before = resolve.interfaces[source_id].clone();
+        let payload = resolve.interfaces[source_id].types["payload"];
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        assert_eq!(resolve.interfaces[source_id], source_before);
+
+        let synthetic_id = resolve.worlds[world]
+            .imports
+            .values()
+            .find_map(|item| match item {
+                WorldItem::Interface { id, .. }
+                    if interface_matches(&resolve, *id, specs[0].synthetic_import()) =>
+                {
+                    Some(*id)
+                }
+                _ => None,
+            })
+            .expect("synthetic interface must be imported");
+        for (name, source_function) in &resolve.interfaces[source_id].functions {
+            let synthetic_function = &resolve.interfaces[synthetic_id].functions
+                [&format!("{}{}", fpi::WIT_FUNCTION_PREFIX, name)];
+            assert_eq!(synthetic_function.params.len(), source_function.params.len() + 3);
+            for (source, synthetic) in
+                source_function.params.iter().zip(synthetic_function.params.iter().skip(3))
+            {
+                assert_synthetic_type_alias(&resolve, synthetic_id, source.ty, synthetic.ty);
+            }
+            match (source_function.result, synthetic_function.result) {
+                (Some(source), Some(synthetic)) => {
+                    assert_synthetic_type_alias(&resolve, synthetic_id, source, synthetic);
+                }
+                (None, None) => {}
+                result => panic!("source and synthetic results differ: {result:?}"),
+            }
+        }
+        let fpi_function = &resolve.interfaces[synthetic_id].functions["fpi-roundtrip"];
+        let WitType::Id(payload_alias) = fpi_function.params[3].ty else {
+            panic!("dependency-owned payload must be represented by a local alias");
+        };
+        assert_eq!(fpi_function.result, Some(WitType::Id(payload_alias)));
+        assert_eq!(resolve.types[payload_alias].kind, TypeDefKind::Type(WitType::Id(payload)));
+        assert_eq!(resolve.types[payload_alias].owner, TypeOwner::Interface(synthetic_id));
+        assert!(
+            resolve.interfaces[source_id]
+                .functions
+                .keys()
+                .all(|name| !name.starts_with(fpi::WIT_FUNCTION_PREFIX))
+        );
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        opts.with
+            .push((format!("{SOURCE_IMPORT}/payload"), WithOption::Path(TYPE_PATH.to_string())));
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::typed_dependency::api")
+            .expect("real import must keep its canonical generated module path");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("canonical synthetic import must determine its generated module path");
+
+        let native_signature = native
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "roundtrip")
+            .unwrap()
+            .sig
+            .to_token_stream()
+            .to_string();
+        let foreign_signature = foreign
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "fpi_roundtrip")
+            .unwrap()
+            .sig
+            .to_token_stream()
+            .to_string();
+        let mapped_type = TYPE_PATH.replace("::", " :: ");
+        assert!(native_signature.contains(&mapped_type), "signature: {native_signature}");
+        assert!(foreign_signature.contains(&mapped_type), "signature: {foreign_signature}");
+    }
+
+    /// Rebuilds anonymous compound types without creating cross-owner aliases.
+    #[test]
+    fn synthetic_fpi_interface_preserves_anonymous_compound_types() {
+        const SOURCE_IMPORT: &str = "miden:anonymous-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "anonymous-dependency.wit",
+            r#"
+package miden:anonymous-dependency@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+
+    record payload {
+        value: u32,
+        key: word,
+    }
+
+    many: func(values: list<payload>) -> list<payload>;
+    find: func(key: word) -> option<payload>;
+    try-get: func(flag: bool) -> result<payload, felt>;
+    pair: func() -> tuple<felt, payload>;
+    words: func(values: list<word>) -> u32;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("fpi-anonymous-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::anonymous_dependency::api")
+            .expect("native anonymous-type bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic anonymous-type bindings");
+
+        assert_eq!(native.functions.len(), 5);
+        assert_eq!(foreign.functions.len(), native.functions.len());
+    }
+
+    /// Preserves aliases imported from a sibling WIT interface.
+    #[test]
+    fn synthetic_fpi_interface_preserves_cross_interface_use_aliases() {
+        const SOURCE_IMPORT: &str = "miden:shared-types-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "shared-types-dependency.wit",
+            r#"
+package miden:shared-types-dependency@1.0.0;
+
+interface types {
+    record payload {
+        value: u32,
+    }
+}
+
+interface api {
+    use types.{payload};
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+
+        let specs = fpi::import_specs(&[SOURCE_IMPORT.to_string()]).unwrap();
+        let inline = fpi::import_world_wit("fpi-use-alias-test", &specs);
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        resolve.assert_valid();
+
+        let mut generated_files = wit_bindgen_core::Files::default();
+        let mut opts = Opts {
+            generate_all: true,
+            runtime_path: Some("::miden::wit_bindgen::rt".to_string()),
+            default_bindings_module: Some("bindings".to_string()),
+            ..Opts::default()
+        };
+        push_default_with_entries(&mut opts);
+        opts.build().generate(&mut resolve, world, &mut generated_files).unwrap();
+        let (_, source) = generated_files.iter().next().unwrap();
+        let file: syn::File = syn::parse_str(std::str::from_utf8(source).unwrap()).unwrap();
+        let native_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_plain_import_function).unwrap();
+        let foreign_modules =
+            fpi::collect_import_modules(&file.items, &fpi::is_fpi_import_function).unwrap();
+
+        let native = native_modules
+            .iter()
+            .find(|module| module.path_string == "miden::shared_types_dependency::api")
+            .expect("native cross-interface alias bindings");
+        let foreign = foreign_modules
+            .iter()
+            .find(|module| module.path_string == specs[0].synthetic_module_path())
+            .expect("synthetic cross-interface alias bindings");
+        let native_function = native
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "roundtrip")
+            .expect("native roundtrip binding");
+        let foreign_function = foreign
+            .functions
+            .iter()
+            .find(|function| function.sig.ident == "fpi_roundtrip")
+            .expect("synthetic roundtrip binding");
+        let FnArg::Typed(native_input) = &native_function.sig.inputs[0] else {
+            panic!("generated WIT imports cannot contain receivers");
+        };
+        let FnArg::Typed(foreign_input) = &foreign_function.sig.inputs[3] else {
+            panic!("generated WIT imports cannot contain receivers");
+        };
+
+        assert_ne!(
+            native_input.ty.to_token_stream().to_string(),
+            foreign_input.ty.to_token_stream().to_string(),
+            "fixture must exercise semantically equal aliases with different Rust spellings"
+        );
+        fpi::validate_fpi_signature(native_function, foreign_function).unwrap();
+    }
+
+    /// Asserts that a synthetic function either reuses a primitive directly or owns an alias to
+    /// the original dependency type.
+    fn assert_synthetic_type_alias(
+        resolve: &Resolve,
+        synthetic_id: InterfaceId,
+        source: WitType,
+        synthetic: WitType,
+    ) {
+        let WitType::Id(source_id) = source else {
+            assert_eq!(synthetic, source);
+            return;
+        };
+        let WitType::Id(alias_id) = synthetic else {
+            panic!("dependency type must be represented by a synthetic alias");
+        };
+        assert_eq!(resolve.types[alias_id].kind, TypeDefKind::Type(WitType::Id(source_id)));
+        assert_eq!(resolve.types[alias_id].owner, TypeOwner::Interface(synthetic_id));
+    }
+
+    /// Merges plain and FPI worlds independently of order, repetition, package, or version.
+    #[test]
+    fn plain_repeated_distinct_and_versioned_fpi_worlds_merge_in_both_orders() {
+        const FIRST_IMPORT: &str = "miden:first-dependency/api@1.0.0";
+        const SECOND_IMPORT: &str = "miden:second-dependency/api@1.0.0";
+        const VERSION_ONE_IMPORT: &str = "miden:versioned-dependency/api@1.0.0";
+        const VERSION_TWO_IMPORT: &str = "miden:versioned-dependency/api@2.0.0";
+
+        let cases = [
+            (None, Some(vec![FIRST_IMPORT.to_string()])),
+            (Some(vec![FIRST_IMPORT.to_string()]), Some(vec![FIRST_IMPORT.to_string()])),
+            (Some(vec![FIRST_IMPORT.to_string()]), Some(vec![SECOND_IMPORT.to_string()])),
+            (
+                Some(vec![VERSION_ONE_IMPORT.to_string()]),
+                Some(vec![VERSION_TWO_IMPORT.to_string()]),
+            ),
+        ];
+
+        for (first, second) in cases {
+            for reverse in [false, true] {
+                let first = parse_merge_test_world(first.as_deref());
+                let second = parse_merge_test_world(second.as_deref());
+                let ((mut resolve, into), (other, from)) = if reverse {
+                    (second, first)
+                } else {
+                    (first, second)
+                };
+                let remap = resolve.merge(other).unwrap();
+                let from = remap.map_world(from, Default::default()).unwrap();
+                let mut clone_maps = wit_bindgen_core::wit_parser::CloneMaps::default();
+                resolve.merge_worlds(from, into, &mut clone_maps).unwrap();
+                resolve.assert_valid();
+            }
+        }
+    }
+
+    /// Builds one independently encoded plain-or-FPI world for metadata merge tests.
+    fn parse_merge_test_world(imports: Option<&[String]>) -> (Resolve, WorldId) {
+        const FIRST_IMPORT: &str = "miden:first-dependency/api@1.0.0";
+
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        for (name, source) in [
+            (
+                "first-dependency.wit",
+                r#"
+package miden:first-dependency@1.0.0;
+interface api {
+    record payload { value: u32 }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+            (
+                "second-dependency.wit",
+                r#"
+package miden:second-dependency@1.0.0;
+interface api {
+    variant payload { none, value(u64) }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+            (
+                "versioned-dependency-v1.wit",
+                r#"
+package miden:versioned-dependency@1.0.0;
+interface api {
+    record payload { value: u32 }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+            (
+                "versioned-dependency-v2.wit",
+                r#"
+package miden:versioned-dependency@2.0.0;
+interface api {
+    record payload { value: u64 }
+    roundtrip: func(value: payload) -> payload;
+}
+"#,
+            ),
+        ] {
+            let group = UnresolvedPackageGroup::parse(name, source).unwrap();
+            resolve.push_group(group).unwrap();
+        }
+
+        let (source, specs) = match imports {
+            Some(imports) => {
+                let specs = fpi::import_specs(imports).unwrap();
+                let world_name = fpi::import_world_name("foreign-account-bindings", &specs);
+                (fpi::import_world_wit(&world_name, &specs), Some(specs))
+            }
+            None => (
+                format!(
+                    "package miden:plain-merge-world@1.0.0;\n\nworld plain-merge-world {{\n    \
+                     import {FIRST_IMPORT};\n}}\n"
+                ),
+                None,
+            ),
+        };
+        let group = UnresolvedPackageGroup::parse("inline", &source).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+        if let Some(specs) = specs {
+            fpi::inject_imports(&mut resolve, world, &specs).unwrap();
+        }
+
+        (resolve, world)
     }
 }

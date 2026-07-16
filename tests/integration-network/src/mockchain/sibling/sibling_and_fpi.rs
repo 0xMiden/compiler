@@ -5,8 +5,8 @@
 //! `#[account(...)]` wrapper against a copy deployed on a second, foreign account. Because both
 //! macros generate a trait named after the interface, the `#[account]` reference uses an
 //! `as RemoteCounter` alias so its FPI trait does not collide with the sibling `CounterContract`
-//! trait. This also exercises the same WIT interface being imported by the sibling bindings (plain
-//! functions only) and the `#[account]` bindings (plain + `fpi-*` functions) in one crate.
+//! trait. This also exercises the same canonical WIT interface being imported unchanged by both
+//! sibling and `#[account]` bindings, alongside the private synthetic interface used for FPI.
 
 use miden_client::{
     account::{
@@ -189,8 +189,8 @@ use miden::{
 /// trait in this crate, so the `#[account]` reference uses an `as RemoteCounter` alias: it still
 /// selects the `counter-contract` interface, but names its generated FPI trait `RemoteCounter` to
 /// avoid the clash. Keeping the wrapper at crate scope (rather than a submodule) also keeps the
-/// two `counter-contract` imports — plain for the sibling, plain + `fpi-*` for the account —
-/// mergeable at componentization.
+/// two canonical `counter-contract` imports identical while FPI functions live under a private
+/// synthetic interface.
 #[account(sibling_and_fpi_counter_account::CounterContract as RemoteCounter)]
 struct Remote;
 

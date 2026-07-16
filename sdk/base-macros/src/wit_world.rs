@@ -325,8 +325,8 @@ pub(crate) struct DependencyInterface {
 
 /// Renders a standalone inline WIT package whose single world imports the given interfaces.
 ///
-/// Shared by the `#[account]` FPI bindings and the `#[component]` sibling bindings, which both
-/// generate import-only worlds next to the user's items.
+/// Shared by generated FPI and sibling bindings so import-only world formatting remains
+/// consistent.
 pub(crate) fn import_world_wit(name: &str, imports: &[String]) -> String {
     let mut tokens = format!("package miden:{name}@1.0.0;\n\nworld {name} {{\n");
     for import in imports {

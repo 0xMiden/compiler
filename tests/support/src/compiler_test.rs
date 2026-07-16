@@ -354,9 +354,12 @@ impl CompilerTestBuilder {
                     Rc::new(Session::new(input.clone(), options, None, source_manager).unwrap());
                 let context = Rc::new(Context::new(session.clone()));
                 let mut cargo_build_stage = midenc_compile::stages::CargoBuildStage;
-                let wasm_artifact = cargo_build_stage
-                    .run(input, context.clone())
-                    .expect("cargo build should have produced a wasm output");
+                let wasm_artifact = cargo_build_stage.run(input, context.clone());
+                // Keep generated WIT available when Cargo fails after macro expansion but before
+                // producing the final Wasm artifact.
+                maybe_dump_public_generated_wit(&config);
+                let wasm_artifact =
+                    wasm_artifact.expect("cargo build should have produced a wasm output");
                 let artifact_name = wasm_artifact
                     .as_path()
                     .unwrap()
@@ -748,7 +751,7 @@ impl CompilerTestBuilder {
 
     [dependencies]
     miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
-    miden = {{ path = "{sdk_path}" }}
+    miden = {{ path = "{sdk_path}", features = ["internal-wit-emit"] }}
 
     [lib]
     crate-type = ["cdylib"]
@@ -1073,6 +1076,60 @@ fn get_workspace_dir() -> String {
     compiler_workspace_dir.to_string()
 }
 
+/// Copies public component WIT for a Cargo test fixture when `MIDENC_EMIT_WIT[=<path>]` is set.
+///
+/// An empty value or `1` writes `<test_name>.wit` to the current working directory. Any other
+/// non-empty value is treated as the output directory.
+fn maybe_dump_public_generated_wit(test: &CargoTest) {
+    let Some(out_dir) = emit_output_dir("MIDENC_EMIT_WIT") else {
+        return;
+    };
+
+    let generated_wit_dir = cargo_test_project_dir(test).join("target/generated-wit");
+    let mut wit_files = match fs::read_dir(&generated_wit_dir) {
+        Ok(entries) => entries
+            .map(|entry| {
+                entry.unwrap_or_else(|err| {
+                    panic!(
+                        "failed to inspect generated WIT directory '{}': {err}",
+                        generated_wit_dir.display()
+                    )
+                })
+            })
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("wit"))
+            .collect::<Vec<_>>(),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
+        Err(err) => {
+            panic!(
+                "failed to read generated WIT directory '{}': {err}",
+                generated_wit_dir.display()
+            )
+        }
+    };
+    wit_files.sort();
+
+    let [wit_file] = wit_files.as_slice() else {
+        if wit_files.is_empty() {
+            return;
+        }
+        panic!(
+            "expected one generated WIT file in '{}', found {}",
+            generated_wit_dir.display(),
+            wit_files.len()
+        );
+    };
+
+    let out_file = out_dir.join(format!("{}.wit", sanitize_filename_component(test.name.as_ref())));
+    let wit_source = fs::read(wit_file).unwrap_or_else(|err| {
+        panic!("failed to read generated WIT file '{}': {err}", wit_file.display())
+    });
+    fs::write(&out_file, wit_source).unwrap_or_else(|err| {
+        panic!("failed to write generated WIT to '{}': {err}", out_file.display())
+    });
+    eprintln!("wrote generated WIT to '{}'", out_file.display());
+}
+
 /// Run `cargo expand` for the given Cargo test fixture, and write the expanded Rust code to disk if
 /// `MIDENC_EMIT_MACRO_EXPAND[=<path>]` is set.
 ///
@@ -1081,27 +1138,11 @@ fn get_workspace_dir() -> String {
 /// the current working directory. When set to a non-empty value other than `1`, it is treated as
 /// the output directory.
 fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
-    let Some(value) = std::env::var_os("MIDENC_EMIT_MACRO_EXPAND") else {
+    let Some(out_dir) = emit_output_dir("MIDENC_EMIT_MACRO_EXPAND") else {
         return;
     };
 
-    let project_dir = if test.project_dir.is_absolute() {
-        test.project_dir.clone()
-    } else {
-        std::env::current_dir().unwrap().join(&test.project_dir)
-    };
-
-    let out_dir = if value.is_empty() || value == std::ffi::OsStr::new("1") {
-        std::env::current_dir().unwrap()
-    } else {
-        PathBuf::from(value)
-    };
-    fs::create_dir_all(&out_dir).unwrap_or_else(|err| {
-        panic!(
-            "failed to create MIDENC_EMIT_MACRO_EXPAND output directory '{}': {err}",
-            out_dir.display()
-        )
-    });
+    let project_dir = cargo_test_project_dir(test);
 
     let filename = format!("{}.expanded.rs", sanitize_filename_component(test.name.as_ref()));
     let out_file = out_dir.join(filename);
@@ -1142,6 +1183,29 @@ fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
         panic!("failed to write expanded Rust code to '{}': {err}", out_file.display())
     });
     eprintln!("wrote expanded Rust code to '{}'", out_file.display());
+}
+
+/// Returns an absolute path to a Cargo test fixture's project directory.
+fn cargo_test_project_dir(test: &CargoTest) -> PathBuf {
+    if test.project_dir.is_absolute() {
+        test.project_dir.clone()
+    } else {
+        std::env::current_dir().unwrap().join(&test.project_dir)
+    }
+}
+
+/// Resolves and creates the directory selected by an opt-in artifact emission variable.
+fn emit_output_dir(variable: &str) -> Option<PathBuf> {
+    let value = std::env::var_os(variable)?;
+    let out_dir = if value.is_empty() || value == std::ffi::OsStr::new("1") {
+        std::env::current_dir().unwrap()
+    } else {
+        PathBuf::from(value)
+    };
+    fs::create_dir_all(&out_dir).unwrap_or_else(|err| {
+        panic!("failed to create {variable} output directory '{}': {err}", out_dir.display())
+    });
+    Some(out_dir)
 }
 
 /// Convert an arbitrary test name into a reasonable filename component.
