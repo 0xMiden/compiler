@@ -65,11 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AssetAmount::MAX_U64` (`2^63 - 2^31`) and exposes bounds-checked `+`/`-` (panicking on
   overflow/underflow and rejecting out-of-range operands), integer comparison, `new(u64)`,
   `as_u64`/`as_felt`, and conversions from `u8`/`u16`/`u32` (infallible) and `u64`/`Felt`
-  (fallible). Also usable in exported component method signatures
-  (WIT
-  `asset-amount`) and in typed account storage (`StorageValue<AssetAmount>`,
-  `StorageMap<K, AssetAmount>`). `Asset::amount()` returns the typed amount of a fungible
-  asset, panicking for non-fungible assets #999
+  (fallible). Also usable in exported component method signatures (WIT `asset-amount`) and in
+  typed account storage (`StorageValue<AssetAmount>`, `StorageMap<K, AssetAmount>`).
+  `Asset::amount()` returns the typed amount of a fungible asset, panicking for non-fungible
+  assets, and `Asset::is_fungible()` reports fungibility so mixed-asset note scripts can branch
+  instead #999
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
   `#[account(counter_contract::CounterContract as RemoteCounter)]`. The path still selects the
   interface; only the generated trait is renamed. Use it when the interface name would clash with
