@@ -249,3 +249,26 @@ fn mem_grow() {
 fn mem_size() {
     run_case("mem_size", include_str!("cases/case_mem_size.rs"));
 }
+
+/// Labeled break/continue through two loop levels, all-state-in-locals exits
+/// (zero-result index_switch), loop-produced bool, and distinct-constant
+/// match returns — nested scf.while + chained discriminator index_switches.
+#[test]
+fn cf_shapes() {
+    run_case("cf_shapes", include_str!("cases/case_cf_shapes.rs"));
+}
+
+/// Statically-infinite loop behind an impossible guard plus two planted wasm
+/// `unreachable` sites — cfg-to-scf `create_unreachable_terminator`, mixed
+/// return-like exit kinds, and `ub.unreachable`-terminated region lowering.
+#[test]
+fn unreachable_exits() {
+    run_case("unreachable_exits", include_str!("cases/case_unreachable_exits.rs"));
+}
+
+/// br_table in a loop with break/continue/return/trap arms — nested user +
+/// discriminator index_switches and mixed in-/out-of-loop switch successors.
+#[test]
+fn switch_loop_mix() {
+    run_case("switch_loop_mix", include_str!("cases/case_switch_loop_mix.rs"));
+}
