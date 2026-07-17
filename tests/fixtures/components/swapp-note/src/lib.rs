@@ -240,13 +240,13 @@ impl SwappNote {
     fn run(self, arg: Word, account: &mut Wallet) {
         // The swap note must carry exactly one offered asset.
         let note_assets = active_note::get_assets();
-        assert_eq(Felt::from_u32(note_assets.len() as u32), felt!(1));
-        let offered_asset = note_assets[0];
+        assert!(note_assets.len() == 1);
+        let offered_asset = &note_assets[0];
 
         // Note creator is consuming their own note - receive the offered asset back.
         let executing_account_id = active_account::get_id();
         if self.creator == executing_account_id {
-            account.receive_asset(offered_asset);
+            account.receive_asset(*offered_asset);
             return;
         }
 
