@@ -8,6 +8,3 @@ namespace = "miden:cross-ctx-note-word/miden-cross-ctx-note-word@0.1.0"
 
 [dependencies]
 cross-ctx-account-word = { path = "../cross-ctx-account-word" }
-
-[package.metadata.miden.dependencies]
-cross-ctx-account-word = { wit = "../cross-ctx-account-word/wit/cross-ctx-account-word.wit" }

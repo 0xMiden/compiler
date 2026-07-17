@@ -114,16 +114,6 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
 
     match manifest_paths::resolve_wit_paths(resolve_opts) {
         Ok(config) => {
-            if config.paths.is_empty() {
-                return Error::new(
-                    Span::call_site(),
-                    "no WIT dependencies declared under \
-                     [package.metadata.component.target.dependencies]",
-                )
-                .to_compile_error()
-                .into();
-            }
-
             let inline_world = args
                 .inline
                 .as_ref()
@@ -139,6 +129,14 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                 .into();
             }
 
+            // A bare `generate!()` over a local `wit/` directory is the manual component-authoring
+            // flow, so embed the crate's WIT the same way the `#[component]` macro does — the
+            // compiled package must carry it for dependent crates' macros to read.
+            let wit_link_section = match local_wit_link_section(&args, &config) {
+                Ok(tokens) => tokens,
+                Err(err) => return err.to_compile_error().into(),
+            };
+
             match generate_bindings(&args, &config, world_value.as_deref()) {
                 Ok(raw_bindings) => quote! {
                     // Wrap the bindings in the `bindings` module since `generate!` makes a top level
@@ -149,6 +147,7 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
                     pub mod bindings {
                         #raw_bindings
                     }
+                    #wit_link_section
                 }
                 .into(),
                 Err(err) => err.to_compile_error().into(),
@@ -156,6 +155,40 @@ pub(crate) fn expand(input: proc_macro::TokenStream) -> proc_macro::TokenStream 
         }
         Err(err) => err.to_compile_error().into(),
     }
+}
+
+/// Embeds the crate's local WIT into the component WIT custom section for bare `generate!()`.
+///
+/// Inline invocations come from other SDK macros (which embed the WIT themselves when the crate
+/// is a component), and multi-file `wit/` directories cannot be embedded verbatim, so both yield
+/// no section.
+///
+/// The WIT is embedded verbatim, and consumers resolve it against the bundled SDK WIT alone — so
+/// a file that is not self-contained (it imports other packages, e.g. from `wit/deps/`) or that
+/// exports no interface is skipped as well: embedding it would produce a package whose WIT no
+/// consumer can parse, while skipping routes consumers to the accurate "does not embed component
+/// WIT" diagnostic.
+fn local_wit_link_section(
+    args: &GenerateArgs,
+    config: &manifest_paths::ResolvedWit,
+) -> Result<TokenStream2, Error> {
+    if args.inline.is_some() {
+        return Ok(TokenStream2::new());
+    }
+    let Some(local_wit_path) = &config.embeddable_local_wit else {
+        return Ok(TokenStream2::new());
+    };
+
+    let wit_source = fs::read_to_string(local_wit_path).map_err(|err| {
+        Error::new(
+            Span::call_site(),
+            format!("failed to read WIT file '{}': {err}", local_wit_path.display()),
+        )
+    })?;
+    if crate::wit_world::parse_dependency_wit_source(&wit_source).is_err() {
+        return Ok(TokenStream2::new());
+    }
+    Ok(crate::util::generate_wit_link_section(&wit_source))
 }
 
 /// Generates WIT bindings using `wit-bindgen` directly instead of the `generate!` macro.
@@ -169,7 +202,7 @@ fn generate_bindings(
     world: Option<&str>,
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
-        &config.paths,
+        config,
         args.inline.as_ref().map(|src| src.value()).as_deref(),
         world,
         &args.with_entries,
@@ -187,7 +220,7 @@ pub(crate) fn generate_inline_fpi_bindings(
     with_entries: &[(String, WithOption)],
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
-        &config.paths,
+        config,
         Some(inline_source),
         Some(world),
         with_entries,
@@ -207,7 +240,7 @@ pub(crate) fn generate_inline_import_bindings(
     with_entries: &[(String, WithOption)],
 ) -> Result<TokenStream2, Error> {
     generate_bindings_from_sources(
-        &config.paths,
+        config,
         Some(inline_source),
         Some(world),
         with_entries,
@@ -218,14 +251,14 @@ pub(crate) fn generate_inline_import_bindings(
 
 /// Generates WIT bindings from resolved source paths and optional inline source.
 fn generate_bindings_from_sources(
-    paths: &[String],
+    config: &manifest_paths::ResolvedWit,
     inline_source: Option<&str>,
     world: Option<&str>,
     with_entries: &[(String, WithOption)],
     fpi_imports: &[fpi::FpiImportSpec],
     scope_component_type_sections: bool,
 ) -> Result<TokenStream2, Error> {
-    let mut wit_sources = load_wit_sources(paths, inline_source)?;
+    let mut wit_sources = load_wit_sources(config, inline_source)?;
 
     let world_id = wit_sources
         .resolve
@@ -468,16 +501,21 @@ struct LoadedWitSources {
     /// The resolved WIT definitions containing all types, interfaces, and worlds.
     resolve: Resolve,
     /// Package IDs to use for world selection. When inline source is provided, this contains
-    /// only the inline package; otherwise it contains all packages from file paths.
+    /// only the inline package; otherwise it contains the packages of every loaded source (the
+    /// SDK prelude paths, the dependency packages' embedded WIT, and the local `wit/` directory).
     packages: Vec<PackageId>,
     /// File paths that were read during WIT parsing. Used to generate dummy `include_bytes!`
     /// calls so rustc knows to recompile when these files change.
     files_read: Vec<PathBuf>,
 }
 
-/// Loads WIT sources from file paths and optionally an inline source.
+/// Loads WIT sources from file paths, dependency packages, and optionally an inline source.
+///
+/// Sources are pushed in dependency order — SDK prelude paths, then WIT embedded in dependency
+/// packages, then the crate's local `wit/` directory — because the resolver eagerly resolves each
+/// pushed package against the ones already present, and local WIT may import dependency packages.
 fn load_wit_sources(
-    paths: &[String],
+    config: &manifest_paths::ResolvedWit,
     inline_source: Option<&str>,
 ) -> Result<LoadedWitSources, Error> {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").map_err(|err| {
@@ -489,14 +527,15 @@ fn load_wit_sources(
     let mut packages = Vec::new();
     let mut files = Vec::new();
 
-    // Load WIT definitions from file paths. These are always loaded to populate the resolver
-    // with type definitions that the inline source may depend on.
-    for path in paths {
-        let path_buf = PathBuf::from(path);
-        let absolute = if path_buf.is_absolute() {
-            path_buf
+    let push_path = |resolve: &mut Resolve,
+                     packages: &mut Vec<PackageId>,
+                     files: &mut Vec<PathBuf>,
+                     path: PathBuf|
+     -> Result<(), Error> {
+        let absolute = if path.is_absolute() {
+            path
         } else {
-            manifest_dir.join(path_buf)
+            manifest_dir.join(path)
         };
         let normalized = fs::canonicalize(&absolute).unwrap_or(absolute);
         let (pkg, sources) = resolve.push_path(normalized.clone()).map_err(|err| {
@@ -507,6 +546,35 @@ fn load_wit_sources(
         })?;
         packages.push(pkg);
         files.extend(sources.paths().map(|p| p.to_owned()));
+        Ok(())
+    };
+
+    // Load WIT definitions from file paths (the SDK prelude). These are always loaded to
+    // populate the resolver with type definitions the other sources may depend on.
+    for path in &config.paths {
+        push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(path))?;
+    }
+
+    // Load WIT definitions embedded in the compiled packages of Miden path dependencies. The
+    // `.masp` paths are recorded like read files so rustc recompiles when a dependency package
+    // changes.
+    for source in &config.dependency_sources {
+        let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
+            Error::new(
+                Span::call_site(),
+                format!(
+                    "failed to load WIT embedded in dependency package '{}': {err}",
+                    source.package_path.display()
+                ),
+            )
+        })?;
+        packages.push(pkg);
+        files.push(source.package_path.clone());
+    }
+
+    // Load the crate's own `wit/` directory last so it can reference the dependency packages.
+    if let Some(local_wit_root) = &config.local_wit_root {
+        push_path(&mut resolve, &mut packages, &mut files, local_wit_root.clone())?;
     }
 
     if let Some(src) = inline_source {
@@ -1629,5 +1697,68 @@ interface api {
         }
 
         (resolve, world)
+    }
+
+    /// Builds a `ResolvedWit` whose embeddable local WIT is a temp file with the given source.
+    fn resolved_wit_with_local_file(name: &str, wit: &str) -> manifest_paths::ResolvedWit {
+        let dir = env::temp_dir()
+            .join(format!("miden-base-macros-generate-{name}-{}", std::process::id()));
+        fs::create_dir_all(&dir).expect("local WIT fixture directory must be created");
+        let path = dir.join("component.wit");
+        fs::write(&path, wit).expect("local WIT fixture must be written");
+        manifest_paths::ResolvedWit {
+            paths: Vec::new(),
+            dependency_sources: Vec::new(),
+            local_wit_root: Some(dir),
+            world: None,
+            embeddable_local_wit: Some(path),
+        }
+    }
+
+    #[test]
+    fn local_wit_link_section_embeds_self_contained_wit() {
+        let config = resolved_wit_with_local_file(
+            "self-contained",
+            r#"package miden:self-contained@0.1.0;
+
+interface api {
+    get: func() -> u64;
+}
+
+world api-world {
+    export api;
+}
+"#,
+        );
+
+        let tokens = local_wit_link_section(&GenerateArgs::default(), &config).unwrap();
+
+        assert!(!tokens.is_empty(), "self-contained local WIT must be embedded");
+
+        fs::remove_dir_all(config.local_wit_root.expect("fixture has a local wit root"))
+            .expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn local_wit_link_section_skips_non_self_contained_wit() {
+        // Consumers resolve embedded WIT against the SDK prelude alone, so a file importing
+        // another package must not be embedded — its package would be unusable as a dependency
+        // with a misleading parse error.
+        let config = resolved_wit_with_local_file(
+            "importing",
+            r#"package miden:importing@0.1.0;
+
+world importer {
+    import miden:not-embedded/api@0.1.0;
+}
+"#,
+        );
+
+        let tokens = local_wit_link_section(&GenerateArgs::default(), &config).unwrap();
+
+        assert!(tokens.is_empty(), "non-self-contained local WIT must not be embedded");
+
+        fs::remove_dir_all(config.local_wit_root.expect("fixture has a local wit root"))
+            .expect("temporary fixture directory must be removed");
     }
 }

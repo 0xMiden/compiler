@@ -1,4 +1,4 @@
-use alloc::{boxed::Box, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, sync::Arc};
 
 use miden_assembly::ast::Module;
 use midenc_codegen_masm::{
@@ -15,8 +15,8 @@ use super::*;
 
 pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
-    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
-    pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// Out-of-band payloads destined for the compiled package's sections.
+    pub sections: midenc_frontend_wasm_metadata::PackageSections,
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -34,7 +34,7 @@ impl Stage for CodegenStage {
         let MidenComponent {
             world,
             component,
-            account_component_metadata_bytes,
+            sections,
         } = input;
 
         log::debug!("lowering miden component to masm");
@@ -72,7 +72,7 @@ impl Stage for CodegenStage {
 
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
-            account_component_metadata_bytes,
+            sections,
         })
     }
 }

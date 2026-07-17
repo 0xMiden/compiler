@@ -174,13 +174,6 @@ version = \"{}\"
         .and_then(|metadata| metadata.get("miden"))
         .and_then(|miden| miden.get("dependencies"))
         .and_then(|dependencies| dependencies.as_table_like());
-    let component_target_dependencies = cargo_manifest
-        .get("package")
-        .and_then(|package| package.get("metadata"))
-        .and_then(|metadata| metadata.get("component"))
-        .and_then(|component| component.get("target"))
-        .and_then(|target| target.get("dependencies"))
-        .and_then(|dependencies| dependencies.as_table_like());
 
     manifest.push_str("[dependencies]\n");
     manifest.push_str("miden-core = \"*\"\n");
@@ -205,42 +198,11 @@ version = \"{}\"
         .and_then(|package| package.get("metadata"))
         .and_then(|metadata| metadata.get("miden"))
         .and_then(|miden| miden.get("supported-types"));
-    let mut wit_dependencies = Vec::new();
-    if let Some(dependencies) = metadata_dependencies {
-        for (name, dependency) in dependencies.iter() {
-            if let Some(wit) = dependency.get("wit").and_then(|wit| wit.as_str()) {
-                wit_dependencies.push((miden_dependency_name(name).to_string(), wit.to_string()));
-            }
-        }
-    }
-    if let Some(dependencies) = component_target_dependencies {
-        for (name, dependency) in dependencies.iter() {
-            let wit = dependency
-                .get("wit")
-                .or_else(|| dependency.get("path"))
-                .and_then(|wit| wit.as_str());
-            if let Some(wit) = wit {
-                wit_dependencies.push((miden_dependency_name(name).to_string(), wit.to_string()));
-            }
-        }
-    }
 
-    if supported_types.is_some() || !wit_dependencies.is_empty() {
-        manifest.push('\n');
-    }
     if let Some(supported_types) = supported_types {
+        manifest.push('\n');
         manifest.push_str("[package.metadata.miden]\n");
         manifest.push_str(&format!("supported-types = {supported_types}\n"));
-    }
-    if !wit_dependencies.is_empty() {
-        manifest.push_str("\n[package.metadata.miden.dependencies]\n");
-        for (name, wit) in wit_dependencies {
-            manifest.push_str(&format!(
-                "{} = {{ wit = \"{}\" }}\n",
-                toml_key(&name),
-                toml_escape(&wit)
-            ));
-        }
     }
 
     manifest

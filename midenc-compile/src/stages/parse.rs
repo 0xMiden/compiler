@@ -29,7 +29,8 @@ use crate::{CompilerResult, Stage};
 pub struct MidenComponent {
     pub world: builtin::WorldRef,
     pub component: Option<builtin::ComponentRef>,
-    pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// Out-of-band payloads destined for the compiled package's sections.
+    pub sections: midenc_frontend_wasm_metadata::PackageSections,
 }
 
 /// Parses any input that can be converted to a [MidenComponent]

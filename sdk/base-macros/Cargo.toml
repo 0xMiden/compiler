@@ -39,6 +39,7 @@ wit-component = { workspace = true, optional = true }
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+miden-assembly = { workspace = true, features = ["std"] }
 miden-protocol = { workspace = true, features = ["std"] }
 miden-field.workspace = true
 miden-field-repr.workspace = true

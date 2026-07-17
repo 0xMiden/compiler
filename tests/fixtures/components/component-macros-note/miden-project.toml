@@ -8,6 +8,3 @@ namespace = "miden:component-macros-note/miden-component-macros-note@0.1.0"
 
 [dependencies]
 component_macros = { path = "../component-macros-account" }
-
-[package.metadata.miden.dependencies]
-component_macros = { wit = "../component-macros-account/target/generated-wit" }

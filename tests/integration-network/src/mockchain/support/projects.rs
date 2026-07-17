@@ -180,7 +180,10 @@ debug = false
     manifest
 }
 
-/// Appends path dependencies and WIT mappings to a generated Miden project manifest.
+/// Appends path dependencies to a generated Miden project manifest.
+///
+/// Dependency WIT is read from each dependency's compiled `.masp` package, so no WIT path
+/// metadata is emitted.
 pub(crate) fn append_miden_project_dependencies(
     manifest: &mut String,
     dependencies: &[(&str, &Path)],
@@ -192,23 +195,6 @@ pub(crate) fn append_miden_project_dependencies(
 "{dependency_name}" = {{ path = "{dependency_root}" }}
 "#,
             dependency_root = dependency_root.display(),
-        ));
-    }
-
-    manifest.push_str(
-        r#"
-[package.metadata.miden.dependencies]
-"#,
-    );
-
-    for (dependency_package, dependency_root) in dependencies {
-        let dependency_name = miden_dependency_name(dependency_package);
-        let dependency_wit_path = dependency_root.join("target/generated-wit");
-        manifest.push_str(&format!(
-            r#"
-"{dependency_name}" = {{ wit = "{dependency_wit_path}" }}
-"#,
-            dependency_wit_path = dependency_wit_path.display(),
         ));
     }
 }
@@ -230,22 +216,6 @@ pub(crate) fn append_cargo_dependency_metadata(
 "#,
             dependency_package = dependency_package,
             dependency_root = dependency_root.display(),
-        ));
-    }
-
-    manifest.push_str(
-        r#"
-[package.metadata.component.target.dependencies]
-"#,
-    );
-    for (dependency_package, dependency_root) in dependencies {
-        let dependency_wit_path = dependency_root.join("target/generated-wit");
-        manifest.push_str(&format!(
-            r#"
-"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
-"#,
-            dependency_package = dependency_package,
-            dependency_wit_path = dependency_wit_path.display(),
         ));
     }
 }

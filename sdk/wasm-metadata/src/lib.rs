@@ -1,4 +1,6 @@
-//! Shared encoding for frontend-only Wasm metadata emitted by SDK macros.
+//! Shared definitions for the out-of-band metadata exchanged between the Miden SDK macros and
+//! the compiler: Wasm custom-section names and encodings, and the package-section payloads
+//! carried through the compiler pipeline into the compiled Miden package (`.masp`).
 
 #![deny(warnings)]
 #![deny(missing_docs)]
@@ -14,6 +16,28 @@ use serde::{Deserialize, Serialize};
 /// Name of the Wasm custom section used to store frontend metadata bytes.
 pub const WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME: &str =
     "rodata,miden_account_component_frontend";
+
+/// Name of the Wasm custom section used to store the serialized AccountComponentMetadata.
+pub const WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME: &str = "rodata,miden_account";
+
+/// Name of the Wasm custom section used to store the component's public WIT source.
+pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
+
+/// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
+pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
+
+/// Out-of-band payloads extracted from the input binary and attached to the compiled Miden
+/// package as sections.
+///
+/// Carried through the compiler pipeline as one unit so that adding a payload does not require
+/// threading a new field through every stage.
+#[derive(Clone, Debug, Default)]
+pub struct PackageSections {
+    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.).
+    pub account_component_metadata: Option<Vec<u8>>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit: Option<Vec<u8>>,
+}
 
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

@@ -192,14 +192,14 @@ pub fn extract_miden_component_or_bail(
         Ok(MidenComponent {
             world,
             component: None,
-            account_component_metadata_bytes: None,
+            sections: Default::default(),
         })
     } else if let Ok(component) = op.try_downcast_op::<builtin::Component>() {
         let world = ensure_world_for_operation(op, context.clone())?;
         Ok(MidenComponent {
             world,
             component: Some(component),
-            account_component_metadata_bytes: None,
+            sections: Default::default(),
         })
     } else if let Ok(module) = op.try_downcast_op::<builtin::Module>() {
         if let Some(parent) = op.parent_op() {
@@ -208,13 +208,13 @@ pub fn extract_miden_component_or_bail(
                 Ok(MidenComponent {
                     world,
                     component: Some(component),
-                    account_component_metadata_bytes: None,
+                    sections: Default::default(),
                 })
             } else if let Ok(world) = parent.try_downcast_op::<builtin::World>() {
                 Ok(MidenComponent {
                     world,
                     component: None,
-                    account_component_metadata_bytes: None,
+                    sections: Default::default(),
                 })
             } else {
                 Err(Report::msg(format!(
@@ -227,7 +227,7 @@ pub fn extract_miden_component_or_bail(
             Ok(MidenComponent {
                 world,
                 component: None,
-                account_component_metadata_bytes: None,
+                sections: Default::default(),
             })
         }
     } else {

@@ -2,16 +2,14 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    env,
     fmt::Write as _,
-    fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_assembly_syntax::ast::{Path as MasmPath, PathComponent};
-use miden_mast_package::{Package, PackageExport};
-use miden_protocol::{crypto::hash::blake::Blake3_256, utils::serde::Deserializable};
+use miden_mast_package::PackageExport;
+use miden_protocol::crypto::hash::blake::Blake3_256;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use semver::Version;
@@ -25,8 +23,6 @@ use wit_bindgen_core::wit_parser::{
     TypeOwner, WorldId, WorldItem, WorldKey,
 };
 
-#[cfg(test)]
-use crate::wit_world::DependencyInterface;
 use crate::{
     dependency_ref::DependencyRef,
     generate::{
@@ -1490,26 +1486,18 @@ fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
     quote!(::miden::Word::new([#(#felts),*]))
 }
 
-/// Loads a single dependency package and extracts exported procedure roots.
+/// Extracts exported procedure roots from a selected dependency's package.
+///
+/// The package was deserialized (and identity-checked) once during dependency resolution and is
+/// reused here rather than re-read from disk.
 fn load_dependency(
     dependency: SelectedDependency,
     trait_ident: syn::Ident,
 ) -> syn::Result<Dependency> {
     let import = dependency.import().to_owned();
     let module_path = import_module_path(&import);
-    let package_path = resolve_dependency_package_path(&dependency)?;
-    let package_bytes = fs::read(&package_path).map_err(|err| {
-        Error::new(
-            Span::call_site(),
-            format!("failed to read dependency package '{}': {err}", package_path.display()),
-        )
-    })?;
-    let package = Package::read_from_bytes(&package_bytes).map_err(|err| {
-        Error::new(
-            Span::call_site(),
-            format!("failed to deserialize dependency package '{}': {err}", package_path.display()),
-        )
-    })?;
+    let package_path = dependency.package_path.clone();
+    let package = dependency.package.clone();
 
     let mut roots = HashMap::new();
     for export in package.manifest.exports() {
@@ -1569,233 +1557,6 @@ pub(crate) fn import_module_path(import: &str) -> String {
         .map(|segment| segment.to_snake_case())
         .collect::<Vec<_>>()
         .join("::")
-}
-
-/// Finds the `.masp` package artifact corresponding to a manifest dependency entry.
-fn resolve_dependency_package_path(dependency: &SelectedDependency) -> syn::Result<PathBuf> {
-    if dependency.root.is_file() {
-        return Ok(dependency.root.clone());
-    }
-
-    let preferred_profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    let mut profiles = vec![preferred_profile.clone()];
-    if preferred_profile != "release" {
-        profiles.push("release".to_string());
-    }
-    if preferred_profile != "debug" {
-        profiles.push("debug".to_string());
-    }
-
-    let package_stems = dependency_package_stems(dependency);
-    let output_dirs = dependency_output_dirs(dependency, &profiles);
-    for dir in &output_dirs {
-        if let Some(package) = find_dependency_package_in_dir(dir, &package_stems)? {
-            return Ok(package.clone());
-        }
-    }
-
-    Err(Error::new(
-        Span::call_site(),
-        missing_dependency_package_message(dependency, &package_stems, &output_dirs, &profiles),
-    ))
-}
-
-/// Formats the diagnostic emitted when FPI wrapper generation cannot load a dependency package.
-fn missing_dependency_package_message(
-    dependency: &SelectedDependency,
-    package_stems: &[String],
-    output_dirs: &[PathBuf],
-    profiles: &[String],
-) -> String {
-    let searched = output_dirs
-        .iter()
-        .map(|dir| format!("'{}'", dir.display()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let expected_files = package_stems
-        .iter()
-        .flat_map(|stem| profiles.iter().map(move |profile| format!("{stem}.masp in {profile}")))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let build_hint = dependency_build_hint(dependency);
-
-    format!(
-        "miden::generate! could not find a built `.masp` package for FPI dependency '{}' (import \
-         '{}', root '{}'). FPI wrappers need the dependency package during Rust macro expansion \
-         to read procedure roots. Expected one of: {expected_files}. Searched: {searched}. \
-         {build_hint}",
-        dependency.name,
-        dependency.import(),
-        dependency.root.display(),
-    )
-}
-
-/// Returns a command hint for building a dependency package before generating FPI wrappers.
-fn dependency_build_hint(dependency: &SelectedDependency) -> String {
-    let manifest_path = dependency.root.join("Cargo.toml");
-    if manifest_path.is_file() {
-        format!(
-            "Build the dependency first with `cargo miden build --manifest-path {} --release`, or \
-             persist the compiled package to '{}/target/miden/<profile>' before compiling this \
-             crate.",
-            manifest_path.display(),
-            dependency.root.display(),
-        )
-    } else {
-        format!(
-            "Build the dependency first with `cargo miden build`, or persist the compiled package \
-             to '{}/target/miden/<profile>' before compiling this crate.",
-            dependency.root.display(),
-        )
-    }
-}
-
-/// Returns candidate output directories where a dependency `.masp` may have been written.
-fn dependency_output_dirs(dependency: &SelectedDependency, profiles: &[String]) -> Vec<PathBuf> {
-    let mut dirs = Vec::new();
-
-    // The dependency root is the most precise location for path dependencies. Prefer it over
-    // ambient target directories so restored or previously built artifacts cannot shadow the
-    // package that belongs to the dependency being wrapped.
-    push_profile_dirs(&mut dirs, dependency.root.join("target"), profiles);
-    push_manifest_ancestor_target_profile_dirs(&mut dirs, &dependency.root, profiles);
-    push_ancestor_target_profile_dirs(&mut dirs, &dependency.root, profiles);
-
-    if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
-        push_profile_dirs(&mut dirs, PathBuf::from(target_dir), profiles);
-    }
-
-    if let Ok(out_dir) = env::var("OUT_DIR") {
-        for ancestor in Path::new(&out_dir).ancestors() {
-            push_profile_dirs(&mut dirs, ancestor.to_path_buf(), profiles);
-        }
-    }
-
-    if let Ok(current_dir) = env::current_dir() {
-        push_profile_dirs(&mut dirs, current_dir.join("target"), profiles);
-        push_manifest_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
-        push_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
-    }
-
-    dirs
-}
-
-/// Adds `target/miden/<profile>` directories while preserving insertion order.
-fn push_profile_dirs(dirs: &mut Vec<PathBuf>, target_root: PathBuf, profiles: &[String]) {
-    for profile in profiles {
-        let dir = target_root.join("miden").join(profile);
-        if !dirs.iter().any(|existing| existing == &dir) {
-            dirs.push(dir);
-        }
-    }
-}
-
-/// Adds `target/miden/<profile>` directories found in ancestors of `path`.
-fn push_ancestor_target_profile_dirs(dirs: &mut Vec<PathBuf>, path: &Path, profiles: &[String]) {
-    for ancestor in path.ancestors() {
-        if ancestor.file_name().is_some_and(|name| name == "target") {
-            push_profile_dirs(dirs, ancestor.to_path_buf(), profiles);
-        }
-    }
-}
-
-/// Adds `target/miden/<profile>` directories for Cargo manifest ancestors.
-fn push_manifest_ancestor_target_profile_dirs(
-    dirs: &mut Vec<PathBuf>,
-    path: &Path,
-    profiles: &[String],
-) {
-    for ancestor in path.ancestors() {
-        if ancestor.join("Cargo.toml").is_file() || ancestor.join("Cargo.lock").is_file() {
-            push_profile_dirs(dirs, ancestor.join("target"), profiles);
-        }
-    }
-}
-
-/// Finds a dependency package in `dir`, preferring filenames that match the package name.
-fn find_dependency_package_in_dir(
-    dir: &Path,
-    package_stems: &[String],
-) -> syn::Result<Option<PathBuf>> {
-    if !dir.is_dir() {
-        return Ok(None);
-    }
-
-    let mut packages = fs::read_dir(dir)
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to read dependency output directory '{}': {err}", dir.display()),
-            )
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to iterate dependency output directory '{}': {err}", dir.display()),
-            )
-        })?
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "masp"))
-        .collect::<Vec<_>>();
-    packages.sort();
-
-    for stem in package_stems {
-        if let Some(package) = packages.iter().find(|path| {
-            path.file_stem()
-                .and_then(|value| value.to_str())
-                .is_some_and(|file_stem| file_stem == stem)
-        }) {
-            return Ok(Some(package.clone()));
-        }
-    }
-
-    Ok((packages.len() == 1).then(|| packages[0].clone()))
-}
-
-/// Returns likely `.masp` filename stems for a dependency.
-fn dependency_package_stems(dependency: &SelectedDependency) -> Vec<String> {
-    let mut stems = Vec::new();
-
-    if let Some(package_name) = dependency_manifest_package_name(&dependency.root) {
-        push_dependency_stem(&mut stems, &package_name);
-    }
-
-    if let Some(name) = dependency.name.split([':', '/']).next_back() {
-        push_dependency_stem(&mut stems, name);
-    }
-
-    if let Some(name) = dependency.root.file_name().and_then(|name| name.to_str()) {
-        push_dependency_stem(&mut stems, name);
-    }
-
-    stems
-}
-
-/// Reads the Cargo package name for dependency directories.
-fn dependency_manifest_package_name(root: &Path) -> Option<String> {
-    let manifest_path = root.join("Cargo.toml");
-    let manifest = fs::read_to_string(manifest_path).ok()?;
-    let manifest = manifest.parse::<toml::Table>().ok()?;
-    manifest
-        .get("package")
-        .and_then(toml::Value::as_table)
-        .and_then(|package| package.get("name"))
-        .and_then(toml::Value::as_str)
-        .map(ToOwned::to_owned)
-}
-
-/// Adds Miden package stem candidates if they have not already been added.
-fn push_dependency_stem(stems: &mut Vec<String>, name: &str) {
-    if !name.is_empty() && !stems.iter().any(|existing| existing == name) {
-        stems.push(name.to_owned());
-    }
-
-    let normalized = name.replace('-', "_");
-    if !normalized.is_empty() && !stems.iter().any(|existing| existing == &normalized) {
-        stems.push(normalized);
-    }
 }
 
 /// Extracts the WIT interface/function key encoded in a package procedure export path.
@@ -1982,75 +1743,6 @@ interface api {
             key,
             ProcedureRootKey::new("miden:no-arg-account/no-arg-account@0.0.1", "get-count")
         );
-    }
-
-    #[test]
-    fn dependency_stem_preserves_package_filename_before_legacy_alias() {
-        let mut stems = Vec::new();
-
-        push_dependency_stem(&mut stems, "no-arg-account");
-
-        assert_eq!(stems, ["no-arg-account", "no_arg_account"]);
-    }
-
-    #[test]
-    fn dependency_output_dirs_include_manifest_ancestor_targets() {
-        let temp_root = env::temp_dir()
-            .join(format!("midenc-fpi-dependency-output-dirs-{}", std::process::id()));
-        let workspace_root = temp_root.join("workspace");
-        let dependency_root = workspace_root.join("tests/fixtures/dependency");
-        std::fs::create_dir_all(&dependency_root).unwrap();
-        std::fs::write(workspace_root.join("Cargo.lock"), "").unwrap();
-        std::fs::write(dependency_root.join("Cargo.toml"), "").unwrap();
-
-        let mut dirs = Vec::new();
-        push_manifest_ancestor_target_profile_dirs(
-            &mut dirs,
-            &dependency_root,
-            &[String::from("release")],
-        );
-
-        assert_eq!(dirs[0], dependency_root.join("target/miden/release"));
-        assert!(
-            dirs.contains(&workspace_root.join("target/miden/release")),
-            "expected workspace target in {dirs:?}"
-        );
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    #[test]
-    fn missing_dependency_package_message_explains_macro_time_requirement() {
-        let temp_root =
-            env::temp_dir().join(format!("midenc-fpi-missing-package-{}", std::process::id()));
-        std::fs::create_dir_all(&temp_root).unwrap();
-        std::fs::write(temp_root.join("Cargo.toml"), "[package]\nname = \"counter\"\n").unwrap();
-
-        let dependency = SelectedDependency {
-            name: "counter".to_string(),
-            root: temp_root.clone(),
-            interface: DependencyInterface {
-                name: "counter".to_string(),
-                import: "miden:counter/counter@0.0.1".to_string(),
-                types: Vec::new(),
-            },
-        };
-        let profiles = vec!["release".to_string(), "debug".to_string()];
-        let stems = vec!["counter".to_string(), "counter_component".to_string()];
-        let output_dirs =
-            vec![temp_root.join("target/miden/release"), temp_root.join("target/miden/debug")];
-
-        let message =
-            missing_dependency_package_message(&dependency, &stems, &output_dirs, &profiles);
-
-        assert!(message.contains("miden::generate! could not find a built `.masp` package"));
-        assert!(message.contains("FPI wrappers need the dependency package during Rust macro"));
-        assert!(message.contains("counter.masp in release"));
-        assert!(message.contains("counter_component.masp in debug"));
-        assert!(message.contains("cargo miden build --manifest-path"));
-        assert!(message.contains(&temp_root.display().to_string()));
-
-        std::fs::remove_dir_all(temp_root).unwrap();
     }
 
     #[test]

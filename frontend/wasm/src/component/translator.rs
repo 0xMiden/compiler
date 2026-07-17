@@ -33,7 +33,8 @@ use crate::{
         build_ir::build_ir_module,
         instance::ModuleArgument,
         module_env::{
-            ParsedModule, merge_frontend_metadata, validate_lifted_frontend_metadata_exports,
+            ParsedModule, collect_package_sections, merge_frontend_metadata,
+            validate_lifted_frontend_metadata_exports,
         },
         module_translation_state::ModuleTranslationState,
         types::{EntityIndex, FuncIndex},
@@ -172,21 +173,12 @@ impl<'a> ComponentTranslator<'a> {
             &self.lifted_export_names,
         )?;
 
-        let account_component_metadata_bytes_vec: Vec<Vec<u8>> = self
-            .nested_modules
-            .into_iter()
-            .flat_map(|t| t.1.account_component_metadata_bytes.map(|slice| slice.to_vec()))
-            .collect();
-        assert!(
-            account_component_metadata_bytes_vec.len() <= 1,
-            "unexpected multiple core Wasm module to have account component metadata section",
-        );
-        let account_component_metadata_bytes =
-            account_component_metadata_bytes_vec.first().map(ToOwned::to_owned);
+        let sections =
+            collect_package_sections(self.nested_modules.iter().map(|(_, module)| module))?;
 
         let output = FrontendOutput {
             component: self.result.component,
-            account_component_metadata_bytes,
+            sections,
         };
         Ok(output)
     }
