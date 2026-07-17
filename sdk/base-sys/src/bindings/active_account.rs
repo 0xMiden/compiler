@@ -258,13 +258,10 @@ pub fn get_num_procedures() -> u32 {
 
 /// Returns the procedure root for the procedure at `index`.
 #[inline]
-pub fn get_procedure_root(index: u8) -> Word {
+pub fn get_procedure_root(index: u32) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_procedure_root(
-            Felt::new(index as u64).unwrap(),
-            ret_area.as_mut_ptr(),
-        );
+        extern_active_account_get_procedure_root(Felt::from_u32(index), ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }
@@ -411,7 +408,7 @@ pub trait ActiveAccount {
 
     /// Returns the procedure root for the procedure at `index`.
     #[inline]
-    fn get_procedure_root(&self, index: u8) -> Word {
+    fn get_procedure_root(&self, index: u32) -> Word {
         self.__assert_active_account();
         get_procedure_root(index)
     }
