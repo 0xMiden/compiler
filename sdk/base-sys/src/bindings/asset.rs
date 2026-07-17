@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset};
+use super::types::{AccountId, Asset, AssetAmount};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -33,14 +33,18 @@ fn callback_flag(enable_callbacks: bool) -> Felt {
 }
 
 /// Creates a fungible asset for the faucet identified by `faucet_id` and the provided `amount`.
-pub fn create_fungible_asset(faucet_id: AccountId, amount: Felt, enable_callbacks: bool) -> Asset {
+pub fn create_fungible_asset(
+    faucet_id: AccountId,
+    amount: AssetAmount,
+    enable_callbacks: bool,
+) -> Asset {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Asset>::uninit());
         extern_asset_create_fungible_asset(
             callback_flag(enable_callbacks),
             faucet_id.suffix,
             faucet_id.prefix,
-            amount,
+            amount.into(),
             ret_area.as_mut_ptr(),
         );
         ret_area.into_inner().assume_init()

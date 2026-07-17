@@ -217,12 +217,13 @@ impl Note {
         let serial_number = active_note::get_serial_number();
         let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
         let balance = active_account::get_balance(asset_key);
+        let balance_u64 = balance.as_u64();
 
         assert_eq!(sender.prefix, sender.prefix);
         assert_eq!(sender.suffix, sender.suffix);
         assert_eq!(script_root, script_root);
         assert_eq!(serial_number, serial_number);
-        assert_eq!(balance, balance);
+        assert_eq!(balance_u64, balance_u64);
     }
 }
 "#;

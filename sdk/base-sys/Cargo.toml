@@ -22,6 +22,9 @@ doctest = false
 miden-stdlib-sys.workspace = true
 miden-field-repr.workspace = true
 
+[dev-dependencies]
+miden-protocol.workspace = true
+
 [features]
 default = []
 

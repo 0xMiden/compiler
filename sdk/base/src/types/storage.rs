@@ -1,5 +1,5 @@
 use miden_base_sys::bindings::{
-    StorageSlotId, felt_from_padded_word, padded_word_from_felt, storage,
+    AssetAmount, StorageSlotId, felt_from_padded_word, padded_word_from_felt, storage,
 };
 use miden_stdlib_sys::{Digest, Felt, Word};
 
@@ -32,6 +32,21 @@ impl WordValue for Felt {
 
     fn try_from_word(word: Word) -> Result<Self, &'static str> {
         felt_from_padded_word(word)
+    }
+}
+
+impl WordValue for AssetAmount {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        // Re-validate before serializing so a directly assigned out-of-range felt cannot enter
+        // account storage.
+        let amount = AssetAmount::try_from(self.as_felt())
+            .map_err(|_| "asset amount exceeds the maximum allowed amount")?;
+        Ok(padded_word_from_felt(amount.into()))
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        AssetAmount::try_from(felt_from_padded_word(word)?)
+            .map_err(|_| "asset amount exceeds the maximum allowed amount")
     }
 }
 
@@ -113,6 +128,16 @@ impl WordKey for Word {
 impl WordKey for Felt {
     fn try_into_word(self) -> Result<Word, &'static str> {
         Ok(padded_word_from_felt(self))
+    }
+}
+
+impl WordKey for AssetAmount {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        // Re-validate before serializing so a directly assigned out-of-range felt cannot be
+        // used as a storage key.
+        let amount = AssetAmount::try_from(self.as_felt())
+            .map_err(|_| "asset amount exceeds the maximum allowed amount")?;
+        Ok(padded_word_from_felt(amount.into()))
     }
 }
 

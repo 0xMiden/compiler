@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, RawAccountId};
+use super::types::{AccountId, Asset, Nonce, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -54,7 +54,8 @@ unsafe extern "C" {
 ///
 /// Panics:
 /// - If the asset is not valid.
-/// - If the total value of two fungible assets is greater than or equal to 2^63.
+/// - If the total value of two fungible assets is greater than
+///   [`AssetAmount::MAX_U64`](super::types::AssetAmount::MAX_U64).
 /// - If the vault already contains the same non-fungible asset.
 ///
 /// # Examples
@@ -132,8 +133,10 @@ pub fn get_id() -> AccountId {
 
 /// Increments the account nonce by one and returns the new nonce.
 #[inline]
-pub fn incr_nonce() -> Felt {
-    unsafe { extern_native_account_incr_nonce() }
+pub fn incr_nonce() -> Nonce {
+    Nonce {
+        inner: unsafe { extern_native_account_incr_nonce() },
+    }
 }
 
 /// Computes and returns the commitment to the native account's delta for this transaction.
@@ -170,7 +173,8 @@ pub trait NativeAccount {
     /// # Panics
     ///
     /// - If the asset is not valid.
-    /// - If the total value of two fungible assets is greater than or equal to 2^63.
+    /// - If the total value of two fungible assets is greater than
+    ///   [`AssetAmount::MAX_U64`](super::types::AssetAmount::MAX_U64).
     /// - If the vault already contains the same non-fungible asset.
     ///
     /// # Examples
@@ -214,7 +218,7 @@ pub trait NativeAccount {
 
     /// Increments the account nonce by one and returns the new nonce.
     #[inline]
-    fn incr_nonce(&mut self) -> Felt {
+    fn incr_nonce(&mut self) -> Nonce {
         incr_nonce()
     }
 

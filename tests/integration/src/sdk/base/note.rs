@@ -145,7 +145,7 @@ fn note_write_indexed_attachment_to_memory_binding() {
         "pub fn binding(&self) -> Felt {
         let commitments = [Word::from([Felt::new(0).unwrap(); 4])];
         let attachment =
-            note::write_indexed_attachment_to_memory(&commitments, Felt::new(0).unwrap());
+            note::write_indexed_attachment_to_memory(&commitments, 0);
         Felt::new(attachment.len() as u64).unwrap()
     }",
     );
@@ -209,12 +209,12 @@ fn note_metadata_into_tag_binding() {
 fn note_find_attachment_idx_binding() {
     run_note_binding_test(
         "note_find_attachment_idx_binding",
-        "pub fn binding(&self) -> Felt {
-        let location = note::find_attachment_idx(
+        "pub fn binding(&self) -> u32 {
+        note::find_attachment_idx(
             Felt::new(1).unwrap(),
             Word::from([Felt::new(0).unwrap(); 4]),
-        );
-        location.index
+        )
+        .unwrap_or(0)
     }",
     );
 }

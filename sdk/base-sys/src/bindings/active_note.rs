@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::{AccountId, Asset, AttachmentLocation, NoteMetadata, RawAccountId, Recipient};
+use super::{AccountId, Asset, NoteMetadata, RawAccountId, RawAttachmentLocation, Recipient};
 
 const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
 const MAX_ATTACHMENT_WORDS: usize = 256;
@@ -49,7 +49,7 @@ unsafe extern "C" {
     fn extern_note_write_attachment_to_memory(dest_ptr: *mut Felt, attachment_idx: Felt) -> usize;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::find_attachment"]
-    fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut AttachmentLocation);
+    fn extern_note_find_attachment(attachment_scheme: Felt, ptr: *mut RawAttachmentLocation);
 }
 
 /// Returns the storage of the currently executing note.
@@ -185,11 +185,11 @@ pub fn write_attachment_commitments_to_memory() -> Vec<Word> {
 }
 
 /// Writes the selected attachment to memory and returns it as protocol words.
-pub fn write_attachment_to_memory(attachment_idx: Felt) -> Vec<Word> {
+pub fn write_attachment_to_memory(attachment_idx: u32) -> Vec<Word> {
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
         let ptr = (attachment.as_mut_ptr() as usize) / 4;
-        extern_note_write_attachment_to_memory(ptr as *mut Felt, attachment_idx)
+        extern_note_write_attachment_to_memory(ptr as *mut Felt, Felt::from_u32(attachment_idx))
     };
     assert!(
         num_words <= MAX_ATTACHMENT_WORDS,
@@ -202,11 +202,11 @@ pub fn write_attachment_to_memory(attachment_idx: Felt) -> Vec<Word> {
 }
 
 /// Searches the active note metadata for `attachment_scheme`.
-pub fn find_attachment(attachment_scheme: Felt) -> AttachmentLocation {
+pub fn find_attachment(attachment_scheme: Felt) -> Option<u32> {
     unsafe {
         let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
+            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
         extern_note_find_attachment(attachment_scheme, ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
+        ret_area.into_inner().assume_init().into_attachment_index()
     }
 }

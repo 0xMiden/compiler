@@ -13,6 +13,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and coexist when separate wrappers select different dependency sets #1276
 
 ### BREAKING
+- Block heights and transaction expiration are typed: `tx::get_block_number` returns the new
+  `BlockNumber` wrapper (WIT `block-number` core type, comparable as an integer, convertible
+  from `u32` and fallibly from `Felt`; `as_u32` panics if the wrapped felt is out of range),
+  `tx::get_block_timestamp` returns `u32` seconds, and
+  `tx::get_expiration_block_delta` / `update_expiration_block_delta` use `u16` (the kernel
+  bounds deltas to `1..=u16::MAX`) #999
+- Account nonces are typed: `active_account::get_nonce` and `native_account::incr_nonce` (free
+  functions and trait methods) return the new `Nonce` wrapper (the WIT `nonce` core type)
+  instead of `Felt`; convert with `Nonce::as_felt`/`as_u64` where the raw value is needed #999
+- Attachment lookups are typed: the `find_attachment` bindings (`note::find_attachment_idx`,
+  `active_note`/`input_note`/`output_note::find_attachment`) return `Option<u32>` instead of the
+  removed `AttachmentLocation` struct, and the `attachment_idx` parameters of the
+  `write_attachment_to_memory` / `write_indexed_attachment_to_memory` bindings take `u32`
+  instead of `Felt` #999
+- Kernel counts are now `u32` instead of `Felt`: `tx::get_num_input_notes` /
+  `tx::get_num_output_notes`, `active_account::get_num_procedures` (free function and
+  `ActiveAccount` trait method), and the `num_assets` / `num_storage_items` fields of
+  `OutputNoteAssetsInfo`, `InputNoteAssetsInfo`, and `InputNoteStorageInfo`. Matching this,
+  `active_account::get_procedure_root` (free function and trait method) takes the procedure
+  index as `u32` instead of `u8` #999
+- Fungible asset amounts are now typed: `asset::create_fungible_asset` and
+  `faucet::create_fungible_asset` take the amount as `AssetAmount` instead of `Felt`, and
+  `active_account::get_balance` / `get_initial_balance` (free functions and the `ActiveAccount`
+  trait methods) return `AssetAmount` instead of `Felt`. `AssetAmount` offers only checked
+  integer semantics (no finite field arithmetic), so amounts can no longer accidentally wrap at
+  the field modulus or hit field division: `+`/`-` panic on overflow and underflow, and the
+  constructors and conversions report `AssetAmountError`. See the
+  [migration guide](./MIGRATION.md) #999
 - `#[account(...)]` now generates the component methods as one trait per referenced interface
   (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
   of inherent methods on the wrapper struct. Two components that export the same method name can
@@ -34,6 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its enclosing module.
 
 ### Added
+- `AssetAmount` and `AssetAmountError`: a validated fungible asset amount, the on-chain
+  counterpart of `miden_protocol::asset::AssetAmount`. It wraps a `Felt` bounded by
+  `AssetAmount::MAX_U64` (`2^63 - 2^31`) and exposes bounds-checked `+`/`-` (panicking on
+  overflow/underflow and rejecting out-of-range operands), integer comparison, `new(u64)`,
+  `as_u64`/`as_felt`, and conversions from `u8`/`u16`/`u32` (infallible) and `u64`/`Felt`
+  (fallible). Also usable in exported component method signatures (WIT `asset-amount`) and in
+  typed account storage (`StorageValue<AssetAmount>`, `StorageMap<K, AssetAmount>`).
+  `Asset::amount()` returns the typed amount of a fungible asset, panicking for non-fungible
+  assets, and `Asset::is_fungible()` reports fungibility so mixed-asset note scripts can branch
+  instead #999
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.
   `#[account(counter_contract::CounterContract as RemoteCounter)]`. The path still selects the
   interface; only the generated trait is renamed. Use it when the interface name would clash with

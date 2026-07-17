@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, RawAccountId};
+use super::types::{AccountId, Asset, AssetAmount, Nonce, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -100,8 +100,10 @@ pub fn get_id() -> AccountId {
 
 /// Returns the nonce of the active account.
 #[inline]
-pub fn get_nonce() -> Felt {
-    unsafe { extern_active_account_get_nonce() }
+pub fn get_nonce() -> Nonce {
+    Nonce {
+        inner: unsafe { extern_active_account_get_nonce() },
+    }
 }
 
 /// Returns the active account commitment at the beginning of the transaction.
@@ -190,23 +192,27 @@ pub fn get_initial_asset(asset_key: Word) -> Word {
 ///
 /// Propagates kernel errors if the referenced asset is non-fungible or the
 /// account vault invariants are violated.
-pub fn get_balance(asset_key: Word) -> Felt {
-    unsafe {
+pub fn get_balance(asset_key: Word) -> AssetAmount {
+    let balance = unsafe {
         extern_active_account_get_balance(asset_key[0], asset_key[1], asset_key[2], asset_key[3])
-    }
+    };
+    // The transaction kernel guarantees fungible balances never exceed the maximum amount.
+    AssetAmount { inner: balance }
 }
 
 /// Returns the initial balance of the fungible asset identified by `asset_key`.
 #[inline]
-pub fn get_initial_balance(asset_key: Word) -> Felt {
-    unsafe {
+pub fn get_initial_balance(asset_key: Word) -> AssetAmount {
+    let balance = unsafe {
         extern_active_account_get_initial_balance(
             asset_key[0],
             asset_key[1],
             asset_key[2],
             asset_key[3],
         )
-    }
+    };
+    // The transaction kernel guarantees fungible balances never exceed the maximum amount.
+    AssetAmount { inner: balance }
 }
 
 /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
@@ -244,19 +250,18 @@ pub fn get_vault_root() -> Word {
 
 /// Returns the number of procedures exported by the active account.
 #[inline]
-pub fn get_num_procedures() -> Felt {
-    unsafe { extern_active_account_get_num_procedures() }
+pub fn get_num_procedures() -> u32 {
+    // The transaction kernel guarantees procedure counts fit in a u32.
+    let count = unsafe { extern_active_account_get_num_procedures() };
+    count.as_canonical_u64() as u32
 }
 
 /// Returns the procedure root for the procedure at `index`.
 #[inline]
-pub fn get_procedure_root(index: u8) -> Word {
+pub fn get_procedure_root(index: u32) -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_procedure_root(
-            Felt::new(index as u64).unwrap(),
-            ret_area.as_mut_ptr(),
-        );
+        extern_active_account_get_procedure_root(Felt::from_u32(index), ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }
@@ -298,7 +303,7 @@ pub trait ActiveAccount {
 
     /// Returns the nonce of the active account.
     #[inline]
-    fn get_nonce(&self) -> Felt {
+    fn get_nonce(&self) -> Nonce {
         self.__assert_active_account();
         get_nonce()
     }
@@ -361,14 +366,14 @@ pub trait ActiveAccount {
     /// Propagates kernel errors if the referenced asset is non-fungible or the
     /// account vault invariants are violated.
     #[inline]
-    fn get_balance(&self, asset_key: Word) -> Felt {
+    fn get_balance(&self, asset_key: Word) -> AssetAmount {
         self.__assert_active_account();
         get_balance(asset_key)
     }
 
     /// Returns the initial balance of the fungible asset identified by `asset_key`.
     #[inline]
-    fn get_initial_balance(&self, asset_key: Word) -> Felt {
+    fn get_initial_balance(&self, asset_key: Word) -> AssetAmount {
         self.__assert_active_account();
         get_initial_balance(asset_key)
     }
@@ -396,14 +401,14 @@ pub trait ActiveAccount {
 
     /// Returns the number of procedures exported by the active account.
     #[inline]
-    fn get_num_procedures(&self) -> Felt {
+    fn get_num_procedures(&self) -> u32 {
         self.__assert_active_account();
         get_num_procedures()
     }
 
     /// Returns the procedure root for the procedure at `index`.
     #[inline]
-    fn get_procedure_root(&self, index: u8) -> Word {
+    fn get_procedure_root(&self, index: u32) -> Word {
         self.__assert_active_account();
         get_procedure_root(index)
     }
