@@ -1,6 +1,9 @@
 // Exercises integer width conversions and bit-counting unary intrinsics across
-// multiple types. Targets `OpEmitter::cast` and the per-width arms of
-// `clz`/`ctz`/`popcnt`/`bnot` in `codegen/masm/src/emit/unary.rs`.
+// multiple types: the per-width `clz`/`popcnt`/`bnot` arms in
+// `codegen/masm/src/emit/unary.rs`. (Rust `as` casts lower to
+// trunc/zext/bitcast — never `OpEmitter::cast` — and the `(x | 1)`
+// trailing-zeros shape is constant-folded by LLVM, so genuine `ctz` coverage
+// lives in `case_zext_wide_ctz.rs`.)
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     // u32 -> u64 zero-extend, then u64 -> u32 narrow.

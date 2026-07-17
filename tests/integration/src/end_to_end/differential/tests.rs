@@ -105,18 +105,15 @@ fn calls_selects() {
 /// sparse cf.switch ops — exercises binary-search (interval guard) and
 /// linear-search switch lowering.
 #[test]
-#[ignore = "flaky native/MASM divergence: mismatch on inputs (1669775643, 1062584501); separate \
-            run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("cases/case_switch_shapes.rs"));
 }
 
-/// Deterministic reproducer for the `switch_shapes` divergence: pins the
-/// exact `(input1, input2)` pair the fuzzer flagged, so the bug fails
-/// reliably on that input rather than only when proptest happens to draw it.
+/// Regression guard for the fixed `switch_shapes` divergence (br_table
+/// selector checked cast — VM abort "value does not fit in i32"): pins the
+/// exact `(input1, input2)` pair that used to fail, independent of the
+/// fuzzer's random draws.
 #[test]
-#[ignore = "MASM VM aborts on pinned input (1669775643, 1062584501): 'value does not fit in i32'; \
-            deterministic reproducer for the switch_shapes divergence"]
 fn switch_shapes_repro() {
     run_case_with_inputs(
         "switch_shapes_repro",
@@ -403,8 +400,8 @@ fn mulwide_fold() {
 /// `u64::div`/`u64::mod`).
 #[test]
 #[ignore = "VM abort at runtime: 'error during processing of event with ID: 14153021663962350784' \
-            at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs \
-            (3046129121, 3276697921)"]
+            at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs (3046129121, \
+            3276697921)"]
 fn u64_udiv() {
     run_case("u64_udiv", include_str!("cases/case_u64_udiv.rs"));
 }
