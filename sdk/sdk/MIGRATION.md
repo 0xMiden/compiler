@@ -16,8 +16,10 @@ directly below this paragraph, above the previous one (newest first, like the
 
 Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,
 `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the
-`num_assets` / `num_storage_items` fields of the note info structs. Code that compared or
-computed with these as felts now works with plain integers:
+`num_assets` / `num_storage_items` fields of the note info structs. Matching this,
+`active_account::get_procedure_root` takes the procedure index as `u32` (previously `u8`), so
+count-driven loops index directly. Code that compared or computed with these as felts now works
+with plain integers:
 
 ```rust
 // before
