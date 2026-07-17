@@ -54,7 +54,8 @@ unsafe extern "C" {
 ///
 /// Panics:
 /// - If the asset is not valid.
-/// - If the total value of two fungible assets is greater than or equal to 2^63.
+/// - If the total value of two fungible assets is greater than
+///   [`AssetAmount::MAX_U64`](super::types::AssetAmount::MAX_U64).
 /// - If the vault already contains the same non-fungible asset.
 ///
 /// # Examples
@@ -172,7 +173,8 @@ pub trait NativeAccount {
     /// # Panics
     ///
     /// - If the asset is not valid.
-    /// - If the total value of two fungible assets is greater than or equal to 2^63.
+    /// - If the total value of two fungible assets is greater than
+    ///   [`AssetAmount::MAX_U64`](super::types::AssetAmount::MAX_U64).
     /// - If the vault already contains the same non-fungible asset.
     ///
     /// # Examples
