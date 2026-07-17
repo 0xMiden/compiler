@@ -364,6 +364,30 @@ fn i64_checked_div() {
 }
 
 #[test]
+fn i64_checked_mod() {
+    let proc_body = r#"
+    # Stack: [b_lo, b_hi, a_lo, a_hi]
+    exec.::intrinsics::i64::checked_mod
+    # Stack: [r_lo, r_hi]
+"#;
+    test_i64_intrinsic(
+        proc_body,
+        NumericStrategy::<i64>::rem_signed_checked(),
+        binary_i64op_inputs_to_stack,
+        |(a, b): &(i64, i64)| {
+            if *b == 0 {
+                Err(TrapExpectation::DivideByZero)
+            } else if *a == i64::MIN && *b == -1 {
+                Err(TrapExpectation::FailedAssertionOverflow)
+            } else {
+                Ok(vec![a.checked_rem(*b).unwrap()])
+            }
+        },
+        |stack: &[Felt]| decode_outputs_i64_only(stack, 1),
+    );
+}
+
+#[test]
 fn i64_checked_shr() {
     let proc_body = r#"
     # Stack: [b, a_lo, a_hi]

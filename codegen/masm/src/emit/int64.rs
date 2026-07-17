@@ -713,6 +713,24 @@ impl OpEmitter<'_> {
         self.raw_exec("::intrinsics::i64::checked_div", span);
     }
 
+    /// Pops two i64 values off the stack, `b` and `a`, and performs `a % b`.
+    ///
+    /// This operation is checked, so if the operands or result are not valid i64, execution traps.
+    pub fn checked_mod_i64(&mut self, span: SourceSpan) {
+        self.raw_exec("::intrinsics::i64::checked_mod", span);
+    }
+
+    /// Pops a i64 value off the stack, `a`, and performs `a % <imm>`.
+    ///
+    /// This function will panic if the divisor is zero.
+    ///
+    /// This operation is checked, so if the operand or result are not valid i64, execution traps.
+    pub fn checked_mod_imm_i64(&mut self, imm: i64, span: SourceSpan) {
+        assert_ne!(imm, 0, "division by zero is not allowed");
+        self.push_i64(imm, span);
+        self.raw_exec("::intrinsics::i64::checked_mod", span);
+    }
+
     /// Pops two u64 values off the stack, `b` and `a`, and pushes the result of `a / b` on the
     /// stack.
     ///
