@@ -326,6 +326,83 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::Nop, span);
     }
 
+    /// Execute the procedure whose MAST root is stored in slot `index` (stack top) of a function
+    /// table with `num_slots` slots based at `base_elem_addr` (a word-aligned element address).
+    ///
+    /// Traps with an assertion failure if `index >= num_slots`. The callee is invoked in the
+    /// same memory context as the caller (`dynexec`).
+    ///
+    /// Expects `[index, args...]` on the operand stack, with the index on top. The index is
+    /// rewritten in place to the slot's element address, which `dynexec` pops before
+    /// transferring control, so the callee observes `[args...]` in normal argument order.
+    pub fn exec_indirect(
+        &mut self,
+        num_slots: u32,
+        base_elem_addr: u32,
+        signature: &Signature,
+        span: SourceSpan,
+    ) {
+        // Consume the index operand; all further effects on it are transient
+        let index = self.stack.pop().expect("operand stack is empty");
+        assert_eq!(index.ty(), Type::U32, "expected u32 table index for exec_indirect");
+
+        // Bounds check: [index, ..] -> [index < num_slots, index, ..] -> [index, ..]
+        self.emit(masm::Instruction::Dup0, span);
+        self.emit_push(num_slots, span);
+        self.emit(masm::Instruction::U32Lt, span);
+        self.emit(
+            Self::assert_with_message_inst(
+                "indirect call: function table index out of bounds",
+                span,
+            ),
+            span,
+        );
+
+        // Rewrite the index to the slot's element address: base_elem_addr + index * slot size.
+        // The felt arithmetic cannot overflow: index < num_slots, and the linker guarantees
+        // that the whole table fits in the 32-bit address space.
+        self.emit(
+            masm::Instruction::MulImm(
+                Felt::new_unchecked(crate::linker::FunctionTableLayout::SLOT_SIZE_ELEMENTS as u64)
+                    .into(),
+            ),
+            span,
+        );
+        self.emit(
+            masm::Instruction::AddImm(Felt::new_unchecked(base_elem_addr as u64).into()),
+            span,
+        );
+
+        // Consume the arguments and produce the results on the emulated stack. Signatures for
+        // indirect calls never carry argument-extension attributes, so argument types must match
+        // the parameter types exactly. NOTE: this deliberately does not reuse
+        // `process_call_signature`: its zext/sext paths emit instructions that operate on the
+        // physical stack top, which at this point holds the transient slot address.
+        for (i, param) in signature.params.iter().enumerate() {
+            assert!(
+                matches!(param.extension(), ArgumentExtension::None),
+                "invalid exec_indirect: argument extension is not supported for parameter at \
+                 index {i}"
+            );
+            let arg = self.stack.pop().expect("operand stack is empty");
+            assert_eq!(
+                arg.ty(),
+                param.ty,
+                "invalid exec_indirect: invalid argument type for parameter at index {i}"
+            );
+        }
+        for result in signature.results.iter().rev() {
+            self.push(result.ty.clone());
+        }
+
+        // `dynexec` pops the element address and reads the callee MAST root word at it
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::DynExec, span);
+        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
+        self.emit(masm::Instruction::Nop, span);
+    }
+
     /// Execute the given procedure in a new context.
     ///
     /// A function called using this operation is invoked in a new memory context.
@@ -498,6 +575,77 @@ mod tests {
         assert_eq!(emitter.stack_len(), 1);
         assert_eq!(emitter.stack()[0], Type::from(ArrayType::new(Type::Felt, 4)));
         assert_eq!(&block[0], &Op::Inst(masm::Span::new(span, masm::Instruction::Caller)));
+    }
+
+    /// Pin the exact instruction sequence and stack effect of an indirect call: the bounds
+    /// check, the in-place index-to-address rewrite, and the frame-traced `dynexec`.
+    #[test]
+    fn exec_indirect_emits_bounds_check_and_dynexec() {
+        use midenc_hir::{CallConv, Felt};
+
+        use crate::linker::FunctionTableLayout;
+
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let signature =
+            Signature::with_convention(&context, CallConv::C, [Type::I32, Type::I32], [Type::I32]);
+
+        // The scheduled operand order is [index, args...], index on top
+        emitter.push(Type::I32);
+        emitter.push(Type::I32);
+        emitter.push(Type::U32);
+
+        let span = SourceSpan::default();
+        let num_slots = 5u32;
+        let base_elem_addr = 294912u32;
+        emitter.exec_indirect(num_slots, base_elem_addr, &signature, span);
+
+        // The emulated stack holds exactly the call result
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::I32);
+
+        let insts = block
+            .iter()
+            .map(|op| match op {
+                Op::Inst(inst) => inst.clone().into_inner(),
+                op => panic!("unexpected non-instruction op: {op:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(insts.len(), 11);
+        // Bounds check: duplicate the index and assert it is in bounds
+        assert_eq!(insts[0], masm::Instruction::Dup0);
+        assert!(
+            matches!(&insts[1], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == num_slots.into()),
+            "expected push of the slot count, got {:?}",
+            &insts[1]
+        );
+        assert_eq!(insts[2], masm::Instruction::U32Lt);
+        assert!(
+            matches!(&insts[3], masm::Instruction::AssertWithError(masm::Immediate::Value(msg)) if msg.inner().contains("function table index out of bounds")),
+            "expected bounds-check assertion, got {:?}",
+            &insts[3]
+        );
+        // Rewrite the index to the slot's element address
+        assert!(
+            matches!(&insts[4], masm::Instruction::MulImm(masm::Immediate::Value(value)) if *value.inner() == Felt::new_unchecked(FunctionTableLayout::SLOT_SIZE_ELEMENTS as u64)),
+            "expected multiply by the slot size, got {:?}",
+            &insts[4]
+        );
+        assert!(
+            matches!(&insts[5], masm::Instruction::AddImm(masm::Immediate::Value(value)) if *value.inner() == Felt::new_unchecked(base_elem_addr as u64)),
+            "expected add of the table base address, got {:?}",
+            &insts[5]
+        );
+        // Frame-traced dynexec, which itself pops the slot address
+        assert!(matches!(&insts[6], masm::Instruction::Trace(_)));
+        assert_eq!(insts[7], masm::Instruction::Nop);
+        assert_eq!(insts[8], masm::Instruction::DynExec);
+        assert!(matches!(&insts[9], masm::Instruction::Trace(_)));
+        assert_eq!(insts[10], masm::Instruction::Nop);
     }
 
     #[test]

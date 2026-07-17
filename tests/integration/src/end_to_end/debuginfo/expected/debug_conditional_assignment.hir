@@ -1,5 +1,5 @@
 builtin.component private @root_ns:root@1.0.0 {
-    builtin.module private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0 {
+    builtin.module private @test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0 attributes { reserved_memory = #builtin.u64<1048576> } {
         builtin.function public extern("C") @entrypoint(%0: i32) -> i32 {
             hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
             di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+12)]> }>;

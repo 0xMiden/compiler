@@ -56,6 +56,165 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
     expected_ir.assert_eq(&w);
 }
 
+/// Check IR generated for a complete Wasm module.
+/// Unlike [check_op], prints every `builtin.module` wholesale, including module-level items such
+/// as function tables, so tests can cover more than function bodies.
+fn check_module(wat: &str, expected_ir: midenc_expect_test::ExpectFile) {
+    let context = Rc::new(midenc_hir::Context::default());
+
+    let wasm = wat::parse_str(wat).unwrap();
+    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+        .map_err(|e| {
+            if let Some(labels) = e.labels() {
+                for label in labels {
+                    eprintln!("{}", label.label().unwrap());
+                }
+            }
+            let report = midenc_session::diagnostics::PrintDiagnostic::new(e).to_string();
+            eprintln!("{report}");
+        })
+        .unwrap();
+
+    let component = output.component.borrow();
+    let mut w = String::new();
+    component
+        .as_operation()
+        .prewalk(|op: &Operation| {
+            if op.is::<builtin::Module>() {
+                match writeln!(&mut w, "{op}") {
+                    Ok(_) => WalkResult::Skip,
+                    Err(err) => WalkResult::Break(err),
+                }
+            } else {
+                WalkResult::Continue(())
+            }
+        })
+        .into_result()
+        .unwrap();
+
+    expected_ir.assert_eq(&w);
+}
+
+/// Check that translating a complete Wasm module fails with an error containing `expected_msg`.
+fn check_module_err(wat: &str, expected_msg: &str) {
+    let context = Rc::new(midenc_hir::Context::default());
+    let wasm = wat::parse_str(wat).unwrap();
+    let msg = match translate(&wasm, &WasmTranslationConfig::default(), context) {
+        Ok(_) => panic!("expected translation to fail"),
+        Err(err) => format!("{err}"),
+    };
+    assert!(
+        msg.contains(expected_msg),
+        "expected error containing '{expected_msg}', got: {msg}"
+    );
+}
+
+#[test]
+fn call_indirect() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref)
+            (elem (i32.const 1) func $add $mul)
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect.hir"],
+    )
+}
+
+/// The final table image must honor Wasm initialization order: the whole-table `(ref.func ..)`
+/// default is overwritten by later element segments, and an explicit `ref.null` entry clears a
+/// previously initialized slot (so dispatching through it traps instead of calling a stale
+/// function).
+#[test]
+fn call_indirect_ref_null_overwrites_earlier_entry() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref (ref.func $add))
+            (elem (i32.const 1) func $mul)
+            (elem (i32.const 2) funcref (ref.null func))
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_ref_null.hir"],
+    )
+}
+
+/// A table with no statically-initialized entries still lowers: every dispatch through it fails
+/// at runtime on the zero MAST root of a null slot, matching Wasm's uninitialized-element trap.
+#[test]
+fn call_indirect_all_null_table() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 2 2 funcref)
+            (memory (;0;) 16384)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_all_null.hir"],
+    )
+}
+
+#[test]
+fn call_indirect_rejects_oversized_table() {
+    check_module_err(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 2000000 2000000 funcref)
+            (elem (i32.const 0) func $add)
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        "exceeds the supported maximum",
+    )
+}
+
 #[test]
 fn memory_grow() {
     check_op(

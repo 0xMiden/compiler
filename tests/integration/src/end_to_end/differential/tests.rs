@@ -249,3 +249,16 @@ fn mem_grow() {
 fn mem_size() {
     run_case("mem_size", include_str!("cases/case_mem_size.rs"));
 }
+
+/// Exercises wasm `call_indirect` (funcref table dispatch through function pointers).
+#[test]
+fn call_indirect() {
+    run_case("call_indirect", include_str!("cases/case_call_indirect.rs"));
+}
+
+/// Exercises a large `.bss` static spanning the region where compiler-managed memory (globals,
+/// function tables, heap) would land if the layout ignored the wasm minimum memory size.
+#[test]
+fn static_bss() {
+    run_case("static_bss", include_str!("cases/case_static_bss.rs"));
+}

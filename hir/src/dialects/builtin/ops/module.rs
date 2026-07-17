@@ -34,6 +34,8 @@ pub type ModuleRef = UnsafeIntrusiveEntityRef<Module>;
 ///   whether or not the [super::Function] operation has a region (no region == declaration).
 /// * [super::GlobalVariable], either a declaration of an externally-defined global, or a
 ///   definition, same as [super::Function].
+/// * [super::FunctionTable], describing a function-reference table in the component's shared
+///   memory, along with its statically-initialized entries.
 ///
 /// Multiple modules can be grouped together into a [super::Component] or [super::World]. Doing so
 /// allows interprocedural analysis to reason across call boundaries for functions defined in
@@ -80,6 +82,15 @@ pub struct Module {
 }
 
 impl Module {
+    /// Name of the optional operation attribute (a `U64Attr`) recording the amount of linear
+    /// memory, in bytes, that this module claims for its own layout.
+    ///
+    /// The producer of the module guarantees that everything it placed in linear memory — its
+    /// stack, statics, and any other data, whether or not it is visible in the module itself —
+    /// lives below this boundary, so the linker treats it as the floor for compiler-managed
+    /// memory regions (global variables, function tables, and the dynamic heap).
+    pub const RESERVED_MEMORY_ATTR: &'static str = "reserved_memory";
+
     #[inline(always)]
     pub fn as_module_ref(&self) -> ModuleRef {
         unsafe { ModuleRef::from_raw(self) }
@@ -88,11 +99,20 @@ impl Module {
 
 impl OpPrinter for Module {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
         printer.print_space();
         printer.print_keyword(self.get_visibility().as_str());
         printer.print_space();
         printer.print_symbol_name(self.get_name().as_symbol());
         printer.print_space();
+        if self.op.has_attributes() {
+            *printer += const_text("attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+            printer.print_space();
+        }
         printer.print_region(&self.body());
     }
 }
@@ -120,6 +140,8 @@ impl OpParser for Module {
 
         let name = parser.parse_symbol_name()?;
         state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
         let region = parser.context().create_region();
         parser.parse_region(region, &[], true)?;

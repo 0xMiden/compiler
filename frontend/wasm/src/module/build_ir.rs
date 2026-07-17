@@ -7,6 +7,7 @@ use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
+        attributes::U64Attr,
     },
     version::Version,
 };
@@ -92,11 +93,20 @@ pub fn build_ir_module(
     _config: &WasmTranslationConfig,
     context: Rc<Context>,
 ) -> WasmResult<()> {
-    let _memory_size = parsed_module
-        .module
-        .memories
-        .get(MemoryIndex::from_u32(0))
-        .map(|mem| mem.minimum as u32);
+    // Record the linear memory the module claims for itself, derived from its declared minimum
+    // memory size, so the linker lays out compiler-managed memory regions past everything the
+    // Wasm producer placed — including zero-initialized statics, which occupy address space
+    // without appearing as data segments.
+    if let Some(memory) = parsed_module.module.memories.get(MemoryIndex::from_u32(0)) {
+        /// The size in bytes of a WebAssembly linear memory page
+        const WASM_PAGE_SIZE: u64 = 2u64.pow(16);
+        let attr = context.create_attribute::<U64Attr, _>(memory.minimum * WASM_PAGE_SIZE);
+        let mut module_ref = module_state.module_builder.module;
+        module_ref
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(builtin::Module::RESERVED_MEMORY_ATTR, attr);
+    }
 
     build_globals(&parsed_module.module, module_state.module_builder, context.diagnostics())?;
     build_data_segments(parsed_module, module_state.module_builder, context.diagnostics())?;
