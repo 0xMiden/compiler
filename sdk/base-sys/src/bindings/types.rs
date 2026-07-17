@@ -101,7 +101,6 @@ impl Asset {
     /// # Panics
     ///
     /// Panics if the asset is not fungible or its amount exceeds [`AssetAmount::MAX_U64`].
-    #[inline(never)]
     pub fn amount(&self) -> AssetAmount {
         assert!(self.is_fungible(), "asset is not fungible");
         let amount = self.value[0];
