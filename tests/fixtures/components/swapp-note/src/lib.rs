@@ -239,8 +239,8 @@ impl SwappNote {
         // A zero fill would recreate the order under a new note id for free (griefing), and an
         // overfill could otherwise succeed whenever the computed payout still fits the locked
         // offered asset.
-        assert!(total_input_amount.as_canonical_u64() > 0);
-        assert!(total_input_amount.as_canonical_u64() <= requested_total.as_canonical_u64());
+        assert!(total_input_amount != felt!(0));
+        assert!(total_input_amount <= requested_total);
 
         // Compute the offered output amounts proportional to the provided amounts.
         let input_offered_out =
@@ -262,7 +262,7 @@ impl SwappNote {
         self.create_p2id_note(routing_serial, input_amount, inflight_amount, account);
 
         // Create the remainder SWAPP note in case of a partial fill.
-        if total_input_amount.as_canonical_u64() < requested_total.as_canonical_u64() {
+        if total_input_amount < requested_total {
             let remainder_serial = hash_words(&[current_note_serial]).inner;
 
             let total_offered_out = input_offered_out + inflight_offered_out;
