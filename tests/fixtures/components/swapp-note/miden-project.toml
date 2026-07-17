@@ -1,0 +1,13 @@
+[package]
+name = "swapp-note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:swapp-note/miden-swapp-note@0.1.0"
+
+[dependencies]
+basic-wallet = { path = "../../../../examples/basic-wallet" }
+
+[package.metadata.miden.dependencies]
+basic-wallet = { wit = "../../../../examples/basic-wallet/target/generated-wit/" }
