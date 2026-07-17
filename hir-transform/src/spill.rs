@@ -1,9 +1,10 @@
-use alloc::{collections::VecDeque, rc::Rc};
+use alloc::{collections::VecDeque, format, rc::Rc};
 
 use midenc_hir::{
     BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
-    ProgramPoint, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef, Report, Rewriter,
-    SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable, ValueRange, ValueRef,
+    ProgramPoint, Reachability, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef,
+    Report, Rewriter, SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable,
+    ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
@@ -46,18 +47,27 @@ pub trait TransformSpillsInterface {
 
     /// Convert `spill`, a [SpillLike] operation, into a primitive memory store of the spilled
     /// value.
+    ///
+    /// `value` is the spilled value as tracked by the spills analysis; implementations must key
+    /// any per-value storage by it, while storing the operation's current operand (the live SSA
+    /// name at that point, which SSA reconstruction may have rewritten).
     fn convert_spill_to_store(
         &mut self,
         rewriter: &mut dyn Rewriter,
         spill: OperationRef,
+        value: ValueRef,
     ) -> Result<(), Report>;
 
     /// Convert `reload`, a [ReloadLike] operation, into a primitive memory load of the spilled
     /// value.
+    ///
+    /// `value` is the spilled value as tracked by the spills analysis; the lookup must use the
+    /// same key as [Self::convert_spill_to_store].
     fn convert_reload_to_load(
         &mut self,
         rewriter: &mut dyn Rewriter,
         reload: OperationRef,
+        value: ValueRef,
     ) -> Result<(), Report>;
 }
 
@@ -79,11 +89,13 @@ pub trait SpillLike {
 /// An operation trait for operations that implement reload-like behavior for purposes of the
 /// spills transformation/rewrite.
 ///
-/// A reload-like operation is expected to take a single value, for which a dominating [SpillLike]
-/// op exists, and produce a new, unique SSA value corresponding to the reloaded spill value. The
-/// spills transformation will handle rewriting any uses of the [SpillLike] and [ReloadLike] ops
-/// such that they are not present after the transformation, in conjunction with an implementation
-/// of the [TransformSpillsInterface].
+/// A reload-like operation is expected to take a single value, for which at least one [SpillLike]
+/// op of that value executes on every control-flow path reaching the reload (a reload after a
+/// join may be covered by a set of per-path spills, none of which individually dominates it), and
+/// produce a new, unique SSA value corresponding to the reloaded spill value. The spills
+/// transformation will handle rewriting any uses of the [SpillLike] and [ReloadLike] ops such
+/// that they are not present after the transformation, in conjunction with an implementation of
+/// the [TransformSpillsInterface].
 pub trait ReloadLike {
     /// Returns the operand corresponding to the spilled value
     fn spilled(&self) -> OpOperand;
@@ -107,7 +119,9 @@ pub trait ReloadLike {
 /// * Rewrites `op` such that all uses of a spilled value dominated by a reload, are rewritten to
 ///   use that reload, or in the case of crossing a dominance frontier, a materialized block
 ///   argument/phi representing the closest definition of that value from each predecessor.
-/// * Rewrites all spill and reload instructions to their primitive memory store/load ops
+/// * Rewrites all spill and reload instructions to their primitive memory store/load ops.
+///   Dominance governs only the SSA use rewrite above; whether a spill is materialized or elided
+///   is decided by reachability to live reloads (see `rewrite_spill_pseudo_instructions`).
 pub fn transform_spills(
     op: OperationRef,
     analysis: &mut SpillAnalysis,
@@ -454,7 +468,7 @@ fn rewrite_single_block_spills(
     }
 
     let context = { op.borrow().context_rc() };
-    rewrite_spill_pseudo_instructions(context, analysis, interface, None, trace_target)
+    rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
 fn rewrite_cfg_spills(
@@ -570,7 +584,7 @@ fn rewrite_cfg_spills(
         used_sets.insert(block_ref, used);
     }
 
-    rewrite_spill_pseudo_instructions(context, analysis, interface, Some(dominfo), trace_target)
+    rewrite_spill_pseudo_instructions(context, analysis, interface, trace_target)
 }
 
 /// Rewrite uses of spilled values in `op` and any nested regions of `op`.
@@ -838,64 +852,75 @@ fn rewrite_inserted_phi_uses(
 ///
 /// However, this produces dead spills on some paths through the function, which are not
 /// needed once rewrites have been performed. So we eliminate dead spills by identifying
-/// those spills which do not dominate any reloads - if a store to a spill slot can never
-/// be read, then the store can be elided.
+/// those spills which cannot reach any live reload of their value - if a store to a spill
+/// slot can never be read, then the store can be elided.
+///
+/// Reachability, not dominance, is the criterion: the spills analysis places spills per path
+/// (e.g. along each edge of a join), so a reload after the join is covered by a set of spills,
+/// none of which individually dominates it. Eliding a spill is only sound when it provably
+/// cannot reach any live reload of its value ([Reachability::Impossible]), otherwise some path
+/// would reload from a local that was never written. A spill/reload pair related across
+/// functions, or through a graph-like region, is invalid IR and reported as an error.
 fn rewrite_spill_pseudo_instructions(
     context: Rc<Context>,
     analysis: &mut SpillAnalysis,
     interface: &mut dyn TransformSpillsInterface,
-    dominfo: Option<&DominanceInfo>,
     trace_target: &TraceTarget,
 ) -> Result<(), Report> {
-    use midenc_hir::{
-        dominance::Dominates,
-        patterns::{RewriterImpl, TracingRewriterListener},
-    };
+    use midenc_hir::patterns::{RewriterImpl, TracingRewriterListener};
 
     let mut builder = RewriterImpl::<TracingRewriterListener>::new(context)
         .with_listener(TracingRewriterListener);
     for spill in analysis.spills() {
         let operation = spill.inst.expect("expected spill to have been materialized");
-        let spilled = {
-            let op = operation.borrow();
-            let spill_like = op
-                .as_trait::<dyn SpillLike>()
-                .expect("expected materialized spill operation to implement SpillLike");
-            spill_like.spilled_value()
-        };
-        // Only keep spills that feed a live reload dominated by this spill
+        // Only keep spills that can reach a live reload of their value. Spills and reloads are
+        // paired through the analysis's value bookkeeping rather than the spill op's current
+        // operand, which SSA reconstruction may rewrite (only reload operands are exempt).
         let mut is_used = false;
         for rinfo in analysis.reloads() {
-            if rinfo.value != spilled {
+            if rinfo.value != spill.value {
                 continue;
             }
             let Some(reload_op) = rinfo.inst else {
                 continue;
             };
-            let (reload_used, dom_ok) = {
+            let reload_used = {
                 let rop = reload_op.borrow();
                 let rl = rop
                     .as_trait::<dyn ReloadLike>()
                     .expect("expected materialized reload op to implement ReloadLike");
-                let used = rl.reloaded().borrow().is_used();
-                let dom_ok = match dominfo {
-                    None => true,
-                    Some(dominfo) => {
-                        let sop = operation.borrow();
-                        sop.dominates(&rop, dominfo)
-                    }
-                };
-                (used, dom_ok)
+                rl.reloaded().borrow().is_used()
             };
-            if reload_used && dom_ok {
-                is_used = true;
-                break;
+            if !reload_used {
+                continue;
+            }
+            match Operation::reachability(operation, reload_op) {
+                Reachability::Guaranteed | Reachability::Maybe => {
+                    is_used = true;
+                    break;
+                }
+                // This spill cannot cover the reload; other spills of the value may.
+                Reachability::Impossible => {}
+                Reachability::MaybeInterprocedurally => {
+                    return Err(Report::msg(format!(
+                        "internal error: a spill of {} and a reload of it are in different \
+                         functions",
+                        spill.value
+                    )));
+                }
+                Reachability::Indeterminate => {
+                    return Err(Report::msg(format!(
+                        "internal error: control flow between a spill of {} and a reload of it is \
+                         not well-defined",
+                        spill.value
+                    )));
+                }
             }
         }
 
         if is_used {
             builder.set_insertion_point_after(operation);
-            interface.convert_spill_to_store(&mut builder, operation)?;
+            interface.convert_spill_to_store(&mut builder, operation, spill.value)?;
         } else {
             builder.erase_op(operation);
         }
@@ -921,7 +946,7 @@ fn rewrite_spill_pseudo_instructions(
                 reload.place
             );
             builder.set_insertion_point_after(operation);
-            interface.convert_reload_to_load(&mut builder, operation)?;
+            interface.convert_reload_to_load(&mut builder, operation, reload.value)?;
         } else {
             log::trace!(
                 target: trace_target,
