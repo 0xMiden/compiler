@@ -10,6 +10,7 @@ use std::{
 use heck::ToKebabCase;
 use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
+use miden_project::Uri;
 use proc_macro2::Span;
 use toml::{Value, value::Table};
 use wit_bindgen_core::wit_parser::{
@@ -52,10 +53,11 @@ impl ProjectPackageMetadata {
     ) -> Result<Self, syn::Error> {
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         if !miden_project_toml_path.is_file() {
-            let target = miden_project::Target::r#virtual(
-                Default::default(),
+            let target = miden_project::Target::new(
+                miden_project::TargetType::Library,
                 "default",
                 ast::Path::new("empty"),
+                Uri::new("lib/src.rs"),
             );
             return Ok(Self {
                 manifest_dir,
@@ -110,10 +112,11 @@ impl ManifestPackage {
 
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         if !miden_project_toml_path.is_file() {
-            let target = miden_project::Target::r#virtual(
-                Default::default(),
+            let target = miden_project::Target::new(
+                miden_project::TargetType::Library,
                 "default",
                 ast::Path::new("empty"),
+                Uri::new("lib/src.rs"),
             );
             return Ok(Self {
                 manifest_dir,
@@ -667,6 +670,7 @@ mod tests {
     };
 
     use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
+    use miden_project::Uri;
     use proc_macro2::Span;
     use toml::{Value, value::Table};
 
@@ -729,10 +733,11 @@ world basic-wallet-world {
         package_path: PathBuf,
         wit_path: Option<PathBuf>,
     ) -> Box<miden_project::Package> {
-        let target = miden_project::Target::r#virtual(
-            Default::default(),
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
             "default",
             ast::Path::new("empty"),
+            Uri::new("lib/src.rs"),
         );
         let dependency = miden_project::Dependency::new(
             MidenSpan::unknown(Arc::<str>::from("basic-wallet")),
@@ -806,7 +811,7 @@ version = "0.0.1"
 
 [[bin]]
 name = "script"
-path = "<virtual>"
+path = "src/lib.rs"
 "#,
         )
         .expect("executable project manifest fixture must be written");

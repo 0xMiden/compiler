@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, rc::Rc, sync::Arc};
 
-use miden_assembly_syntax::ast::{self, Export, FunctionType, Module, SymbolResolution, TypeExpr};
+use miden_assembly::linker::SymbolResolver;
+use miden_assembly_syntax::ast::{self, FunctionType, Item, Module, SymbolResolution, TypeExpr};
 use midenc_hir::{
     ArrayType, Context, FunctionType as HirFunctionType, PointerType, Report, Span,
     StructType as HirStructType, Type, dialects::builtin::attributes::Signature,
@@ -165,7 +166,7 @@ fn resolve_type_ref(
         match module.resolve_path(path.as_deref(), source_manager.clone()) {
             Ok(SymbolResolution::Local(item)) => {
                 let item = &module[item.into_inner()];
-                let Export::Type(decl) = item else {
+                let Item::Type(decl) = item else {
                     return Err(Report::msg(format!(
                         "MASM symbol '{}' does not resolve to a type",
                         path.inner()

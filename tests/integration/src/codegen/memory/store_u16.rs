@@ -78,7 +78,7 @@ fn store_u16() {
                 Felt::new_unchecked(store_value2 as u64),
             ];
             let output = eval_package::<u32, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),
@@ -183,7 +183,7 @@ macro_rules! define_unaligned_16bit_store_tests {
 
                 let args = [($to_felt)(store_value)];
                 let output = eval_package::<u32, _, _>(
-                    &package,
+                    package.clone(),
                     initializers,
                     &args,
                     context.session(),

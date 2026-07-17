@@ -11,9 +11,8 @@ use miden_assembly::serde::Serializable;
 use miden_core::Felt;
 use miden_debug::Executor;
 use miden_mast_package::Package;
-use miden_protocol::ProtocolLib;
+use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
 use miden_standards::StandardsLib;
-use midenc_session::STDLIB;
 
 pub use self::{
     eval::{
@@ -27,24 +26,32 @@ pub use self::{
 /// Creates an executor with standard library and base library loaded.
 ///
 /// If a package is provided, its dependencies will also be added to the executor.
-pub fn executor_with_std(args: Vec<Felt>, package: Option<&Package>) -> Executor {
+pub fn executor_with_std(args: Vec<Felt>) -> Executor {
     let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut()
-        .insert(*std_library.digest(), std_library.clone());
-    exec.with_library(std_library);
-    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*protocol_library.digest(), protocol_library.clone());
-    exec.with_library(protocol_library);
-    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*standards_library.digest(), standards_library.clone());
-    exec.with_library(standards_library);
-    if let Some(pkg) = package {
-        exec.with_dependencies(pkg.manifest.dependencies())
-            .expect("Failed to set up dependencies");
+
+    // Register the standard library so dependencies can be resolved at runtime.
+    let core_library = miden_core_lib::CoreLibrary::default();
+    exec.with_package(core_library.package())
+        .expect("failed to register core package");
+    // The debug executor path does not automatically install core-library event handlers, but
+    // integration tests execute core helpers such as `u64::div` through the VM.
+    for (event, handler) in core_library.handlers() {
+        if matches!(
+            miden_debug::Event::from(event.clone()),
+            miden_debug::Event::UserDefined(_) | miden_debug::Event::Unknown(_)
+        ) {
+            exec.register_event_handler(event, handler)
+                .expect("failed to register core library event handler");
+        }
     }
+
+    let tx_kernel = TransactionKernel::package();
+    let protocol_lib = ProtocolLib::default().package();
+    exec.with_package(tx_kernel).expect("failed to register tx-kernel package");
+    exec.with_package(protocol_lib).expect("failed to register protocol package");
+    exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
+        .expect("failed to register standards package");
+
     exec
 }
 
@@ -70,9 +77,6 @@ pub fn format_report(report: miden_assembly::diagnostics::Report) -> String {
 }
 
 /// Returns the serialized byte size of the MastForest with stripped debug info
-pub fn stripped_mast_size_str(package: &Package) -> &str {
-    let mut note_mast = package.mast.mast_forest().as_ref().clone();
-    note_mast.clear_debug_info();
-    let compacted_size = note_mast.to_bytes().len();
-    Box::leak(compacted_size.to_string().into_boxed_str())
+pub fn stripped_mast_size_str(package: &Package) -> String {
+    package.mast_forest().to_bytes().len().to_string()
 }

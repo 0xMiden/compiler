@@ -1,14 +1,11 @@
 use core::panic;
-use std::sync::Arc;
 
 use miden_core::field::PrimeField64;
-use miden_debug::{DebugQuery, Executor, Felt as TestFelt};
+use miden_debug::{DebugQuery, Felt as TestFelt};
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::ProtocolLib;
-use miden_standards::StandardsLib;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
-use midenc_session::STDLIB;
+use midenc_integration_test_support::testing::executor_with_std;
 
 use crate::CompilerTest;
 
@@ -73,19 +70,9 @@ fn adv_load_preimage() {
         commitment[3],
     ];
 
-    let mut exec = Executor::new(args.to_vec());
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
-    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*protocol_library.digest(), protocol_library);
-    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*standards_library.digest(), standards_library);
-    exec.with_dependencies(package.manifest.dependencies())
-        .expect("Failed to register dependencies");
+    let mut exec = executor_with_std(args.to_vec());
     exec.with_advice_inputs(AdviceInputs::default().with_map(advice_map));
-    let trace = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    let trace = exec.execute(package, test.session.source_manager.clone());
 
     let result_ptr = out_addr;
     // Read the Vec metadata from memory (capacity, ptr, len, padding)

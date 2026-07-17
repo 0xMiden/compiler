@@ -21,6 +21,7 @@ doctest = false
 default = ["std"]
 std = [
     "miden-assembly/std",
+    "miden-assembly-syntax/std",
     "miden-package-registry/std",
     "midenc-codegen-masm/std",
     "midenc-frontend-wasm/std",
@@ -39,6 +40,7 @@ clap = { workspace = true, optional = true }
 log.workspace = true
 midenc-codegen-masm.workspace = true
 miden-assembly.workspace = true
+miden-assembly-syntax.workspace = true
 miden-mast-package.workspace = true
 miden-package-registry.workspace = true
 midenc-frontend-wasm.workspace = true

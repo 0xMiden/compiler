@@ -1,19 +1,13 @@
 use std::{rc::Rc, sync::Arc};
 
-use miden_assembly::Assembler;
-use miden_assembly_syntax::{
-    Parse, ParseOptions,
-    ast::ModuleKind,
-    debuginfo::{SourceLanguage, Uri},
-};
+use miden_assembly::{Assembler, ast::Module};
+use miden_assembly_syntax::{ast::ModuleKind, debuginfo::Uri};
 use miden_core_lib::CoreLibrary;
+use miden_mast_package::Package;
 use miden_processor::{
-    DefaultHost, ExecutionOptions, Felt, Program, StackInputs, advice::AdviceInputs, execute_sync,
+    DefaultHost, ExecutionOptions, Felt, StackInputs, advice::AdviceInputs, execute_sync,
 };
-use midenc_codegen_masm::{
-    ToMasmComponent,
-    intrinsics::{self, MEM_INTRINSICS_MODULE_NAME},
-};
+use midenc_codegen_masm::{ToMasmComponent, intrinsics};
 use midenc_frontend_masm::{DisassemblerConfig, disassemble_source};
 use midenc_hir::{Context, pass::AnalysisManager};
 use midenc_session::{Options, Session, diagnostics::DefaultSourceManager};
@@ -218,26 +212,25 @@ fn e2e_context() -> Rc<Context> {
     Rc::new(Context::new(session))
 }
 
-fn assemble_original_program(source: &str, context: &Context) -> Program {
-    let source_manager = context.session().source_manager.clone();
-    let core_library = CoreLibrary::default();
-    let source_file = source_manager.load(
-        SourceLanguage::Masm,
-        Uri::from("test.masm".to_owned()),
-        source.to_owned(),
-    );
-    let module = source_file
-        .parse_with_options(source_manager.clone(), ParseOptions::new(ModuleKind::Library, "test"))
+fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
+    use miden_assembly::Path as MasmPath;
+
+    let source_manager = context.source_manager();
+    let module = miden_assembly::ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(MasmPath::new("test")), source, source_manager.clone())
         .expect("original MASM library should parse");
     let library = Assembler::new(source_manager.clone())
-        .assemble_library([module])
+        .assemble_library("test", module, None::<Box<Module>>)
+        .map(Arc::from)
         .expect("original MASM library should assemble");
+    let core_library = CoreLibrary::default();
     Assembler::new(source_manager)
-        .with_static_library(library)
+        .with_package(core_library.package(), miden_project::Linkage::Dynamic)
+        .expect("failed to link core library")
+        .with_package(library, miden_project::Linkage::Static)
         .expect("original MASM library should link")
-        .with_static_library(core_library.library())
-        .expect("Miden core library should link")
         .assemble_program(
+            "program",
             r#"
 use miden::core::sys
 
@@ -247,10 +240,13 @@ begin
 end
 "#,
         )
+        .map(Arc::from)
         .expect("original MASM program should assemble")
 }
 
-fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program {
+fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Package> {
+    use miden_assembly::Path as MasmPath;
+
     let disassembled =
         disassemble_source(source, "test", &DisassemblerConfig::default(), context.clone())
             .expect("MASM should disassemble to HIR");
@@ -263,16 +259,17 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
     let source_manager = context.session().source_manager.clone();
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    let mem_intrinsics = intrinsics::load(MEM_INTRINSICS_MODULE_NAME, source_manager.clone())
-        .expect("memory intrinsics should load");
     assembler
-        .compile_and_statically_link(mem_intrinsics)
-        .expect("memory intrinsics should statically link");
-    for module in masm_component.modules.iter() {
-        std::dbg!(module.path());
-    }
+        .link_package(core_library.package(), miden_project::Linkage::Dynamic)
+        .expect("core library should link");
+    assembler
+        .link_package(intrinsics::load(), miden_project::Linkage::Static)
+        .expect("intrinsics should link");
+    let target = miden_project::Target::library(MasmPath::new("test"), Uri::new("test.masm"));
+    let inputs = masm_component.source_inputs(&target, context.session()).unwrap();
     let library = assembler
-        .assemble_library(masm_component.modules.iter().cloned())
+        .assemble_library("test", inputs.root, inputs.support)
+        .map(Arc::from)
         .unwrap_or_else(|err| {
             panic!(
                 "round-tripped MASM should assemble:\nerror: {err}\n\n# Emitted \
@@ -280,11 +277,12 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Program 
             )
         });
     Assembler::new(source_manager)
-        .with_static_library(library)
-        .expect("round-tripped MASM library should link")
-        .with_static_library(core_library.library())
+        .with_package(core_library.package(), miden_project::Linkage::Dynamic)
         .expect("Miden core library should link")
+        .with_package(library, miden_project::Linkage::Static)
+        .expect("round-tripped MASM library should link")
         .assemble_program(
+            "program",
             r#"
 use miden::core::sys
 
@@ -294,11 +292,12 @@ begin
 end
 "#,
         )
+        .map(Arc::from)
         .expect("round-tripped MASM program should assemble")
 }
 
 fn execute_program(
-    program: &Program,
+    program: &Package,
     inputs: &[Felt],
     advice: &[u64],
     num_outputs: usize,
@@ -308,8 +307,9 @@ fn execute_program(
         .with_stack_values(advice.iter().copied())
         .expect("test advice inputs should fit on VM advice stack");
     let mut host = DefaultHost::default();
+    let program = program.unwrap_program();
     let trace =
-        execute_sync(program, stack_inputs, advice_inputs, &mut host, ExecutionOptions::default())
+        execute_sync(&program, stack_inputs, advice_inputs, &mut host, ExecutionOptions::default())
             .expect("program should execute");
     trace.stack.get_num_elements(num_outputs).to_vec()
 }

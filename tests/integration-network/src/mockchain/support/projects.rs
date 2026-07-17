@@ -25,6 +25,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
@@ -108,6 +109,7 @@ version = "0.0.1"
 [lib]
 kind = "note"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

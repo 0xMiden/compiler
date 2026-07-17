@@ -29,7 +29,7 @@ fn load_u8() {
 
             let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u8, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),

@@ -25,7 +25,7 @@ fn vec_alloc_vec() {
 
     let args = [Felt::from(2u32)];
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _>(package, [], &args, &test.session, |trace| {
         let res: u32 = trace.parse_result().unwrap();
         assert_eq!(res, 3, "unexpected result (regression test for https://github.com/0xMiden/compiler/issues/595)");
         Ok(())

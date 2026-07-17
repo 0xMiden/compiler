@@ -1,10 +1,6 @@
-use std::sync::Arc;
-
-use miden_debug::Executor;
-use miden_protocol::ProtocolLib;
-use miden_standards::StandardsLib;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_session::{STDLIB, diagnostics::Report};
+use midenc_integration_test_support::testing::executor_with_std;
+use midenc_session::diagnostics::Report;
 
 use crate::CompilerTestBuilder;
 
@@ -64,17 +60,8 @@ end
 
     let package = test.compile_package();
 
-    let mut exec = Executor::new(vec![]);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
-    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*protocol_library.digest(), protocol_library);
-    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*standards_library.digest(), standards_library);
-    exec.with_dependencies(package.manifest.dependencies())?;
+    let exec = executor_with_std(vec![]);
 
-    let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    let _ = exec.execute(package, test.session.source_manager.clone());
     Ok(())
 }

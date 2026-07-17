@@ -7,12 +7,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use miden_assembly::Assembler;
-use miden_assembly_syntax::{
-    Parse,
-    ast::{self, Instruction},
+use miden_assembly::{
+    Assembler,
+    ast::ItemIndex,
+    linker::{Linker, SymbolItem},
 };
-use miden_core::serde::Serializable;
+use miden_assembly_syntax::ast::{self, Instruction};
 use miden_package_registry::{
     NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
 };
@@ -33,7 +33,7 @@ use midenc_hir::{
     diagnostics::{Report, Severity},
     dialects::builtin::{
         self, Function, UnrealizedConversionCast,
-        attributes::{AdviceEffectDescriptor, AdviceResourceKind},
+        attributes::{AdviceEffectDescriptor, AdviceResourceKind, Signature},
     },
     effects::AdviceEffect,
     pass::AnalysisManager,
@@ -1389,20 +1389,31 @@ end
 "#;
     let context = Rc::new(Context::default());
     let module = parse_test_module(source, &context)?;
-    let target = module
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == "target")
-        .expect("target procedure");
+    let mut linker = Linker::new(context.source_manager());
+    let roots = linker.link([module], []).unwrap();
+    let root = roots[0];
+    let target_id = linker[root].symbols().position(|sym| matches!(sym.item(), SymbolItem::Procedure(p) if p.borrow().name().as_str() == "target")).unwrap();
+    let target_id = root + ItemIndex::new(target_id);
+    let capture_id = linker[root].symbols().position(|sym| matches!(sym.item(), SymbolItem::Procedure(p) if p.borrow().name().as_str() == "capture")).unwrap();
+    let capture_id = root + ItemIndex::new(capture_id);
+
+    let target_signature = linker.resolve_signature(target_id).unwrap().unwrap();
     let mut signatures = rustc_hash::FxHashMap::default();
     signatures.insert(
-        std::sync::Arc::from(module.path().join(target.name()).to_absolute().into_owned()),
-        signatures::convert_signature(&context, &module, target.signature().unwrap())?,
+        target_id,
+        Signature::with_convention(
+            &context,
+            target_signature.abi,
+            target_signature.params.iter().cloned(),
+            target_signature.results.iter().cloned(),
+        ),
     );
-    let capture = module
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == "capture")
-        .expect("capture procedure");
-    let signature = infer::infer_signature(&context, &module, capture, &signatures)?;
+
+    let SymbolItem::Procedure(capture) = linker[capture_id].item() else {
+        unreachable!()
+    };
+    let capture = capture.borrow();
+    let signature = infer::infer_signature(capture_id, &capture, &context, &linker, &signatures)?;
 
     assert_eq!(signature.params().len(), 0);
     assert_eq!(signature.results().len(), 1);
@@ -4891,10 +4902,11 @@ fn parse_test_module(
     source: &str,
     context: &Rc<Context>,
 ) -> Result<Box<miden_assembly_syntax::ast::Module>> {
-    let source_manager = context.session().source_manager.clone();
-    let uri = Uri::from("test".to_owned().into_boxed_str());
-    let source_file = source_manager.load(SourceLanguage::Masm, uri, source.to_owned());
-    source_file.parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, "test"))
+    miden_assembly::ModuleParser::new(Some(ast::ModuleKind::Library)).parse_str(
+        Some(ast::Path::new("test")),
+        source,
+        context.source_manager(),
+    )
 }
 
 fn felt_types(count: usize) -> Vec<&'static str> {
@@ -5595,8 +5607,9 @@ fn write_preassembled_dependency_project(prefix: &str) -> (std::path::PathBuf, s
     fs::create_dir_all(&app_dir).unwrap();
     fs::create_dir_all(&dep_src_dir).unwrap();
 
+    let api_root = dep_src_dir.join("api.masm");
     fs::write(
-        dep_src_dir.join("api.masm"),
+        &api_root,
         r#"
 pub proc callee(a: felt) -> felt
     add.1
@@ -5608,15 +5621,10 @@ end
 "#,
     )
     .unwrap();
-    let library = Assembler::default().assemble_library_from_dir(&dep_src_dir, "dep").unwrap();
-    let package = miden_mast_package::Package::from_library(
-        miden_mast_package::PackageId::from("dep"),
-        "1.0.0".parse::<miden_mast_package::Version>().unwrap(),
-        miden_mast_package::TargetType::Library,
-        library,
-        std::iter::empty(),
-    );
-    fs::write(root.join("dep.masp"), package.to_bytes()).unwrap();
+    let package = Assembler::default()
+        .assemble_library_from_root(&api_root, Some(ast::Path::new("dep")))
+        .unwrap();
+    package.write_masp_file(&root).unwrap();
 
     fs::write(
         app_dir.join("miden-project.toml"),

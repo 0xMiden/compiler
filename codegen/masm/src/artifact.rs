@@ -1,18 +1,17 @@
 use alloc::sync::Arc;
 use core::fmt;
 
-use miden_assembly::{Path, ast::InvocationTarget};
+use miden_assembly::{Path, ProjectSourceInputs, ast::InvocationTarget};
 use miden_core::Word;
-use miden_mast_package::Package;
 use midenc_hir::{constants::ConstantData, dialects::builtin, interner::Symbol};
 use midenc_session::{
     Emit, OutputMode, OutputType, Session, Writer,
     diagnostics::{IntoDiagnostic, Report, SourceSpan, Span, WrapErr},
 };
 
-use crate::{TraceEvent, lower::NativePtr, masm};
+use crate::{Event, lower::NativePtr, masm};
 
-mod project_support;
+//mod project_support;
 
 pub struct MasmComponent {
     pub id: Option<builtin::ComponentId>,
@@ -29,8 +28,6 @@ pub struct MasmComponent {
     ///
     /// If unset, it indicates that the component is a library, even if it could be made executable.
     pub entrypoint: Option<masm::InvocationTarget>,
-    /// The kernel library to link against
-    pub kernel: Option<masm::KernelLibrary>,
     /// The rodata segments of this component keyed by the offset of the segment
     pub rodata: Vec<Rodata>,
     /// The address of the start of the global heap
@@ -150,55 +147,43 @@ inventory::submit! {
 
 impl fmt::Display for MasmComponent {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        use crate::intrinsics::INTRINSICS_MODULE_NAMES;
-
         for module in self.modules.iter() {
-            // Skip printing the standard library modules and intrinsics modules to focus on the
-            // user-defined modules and avoid the
-            // stack overflow error when printing large programs
-            // https://github.com/0xMiden/miden-formatting/issues/4
-            let module_name = module.path().as_str();
-            let module_name_trimmed = module_name.trim_start_matches("::");
-            if INTRINSICS_MODULE_NAMES.contains(&module_name) {
-                continue;
-            }
-            if module.is_in_namespace(Path::new("std"))
-                || module_name_trimmed.starts_with("miden::core")
-                || module_name_trimmed.starts_with("miden::protocol")
-            {
-                continue;
-            } else {
-                writeln!(f, "# mod {}\n", &module_name)?;
-                writeln!(f, "{module}")?;
-            }
+            writeln!(f, "# mod {}\n", module.path())?;
+            writeln!(f, "{module}")?;
         }
         Ok(())
     }
 }
 
 impl MasmComponent {
-    /// Assemble this component into a Miden package.
-    pub fn assemble(
+    pub fn source_inputs(
         &self,
-        account_component_metadata_bytes: Option<&[u8]>,
+        target: &midenc_session::miden_project::Target,
         session: &Session,
-    ) -> Result<Arc<Package>, Report> {
-        project_support::assemble(self, account_component_metadata_bytes, session)
-    }
+    ) -> Result<ProjectSourceInputs, Report> {
+        let is_executable_target = target.is_executable();
+        let emit_test_harness = session.get_flag("test_harness");
+        let mut support = Vec::with_capacity(self.modules.len());
+        let mut root = None;
+        for module in self.modules.iter() {
+            if module.path() == self.root.as_ref() {
+                root = Some(Box::new(Arc::unwrap_or_clone(module.clone())));
+                continue;
+            }
 
-    /// Assemble this component into a Miden package using a pre-populated package registry.
-    pub fn assemble_with_registry(
-        &self,
-        account_component_metadata_bytes: Option<&[u8]>,
-        session: &Session,
-        registry: &mut midenc_session::registry::HybridPackageRegistry,
-    ) -> Result<Arc<Package>, Report> {
-        project_support::assemble_with_registry(
-            self,
-            account_component_metadata_bytes,
-            session,
-            registry,
-        )
+            support.push(Box::new(Arc::unwrap_or_clone(module.clone())));
+        }
+
+        if is_executable_target && let Some(entrypoint) = self.entrypoint.as_ref() {
+            // Our generated main module takes precedence here, so move the root module into support
+            support.extend(root);
+            let root =
+                self.generate_main(entrypoint, emit_test_harness, session.source_manager.clone())?;
+            return Ok(ProjectSourceInputs { root, support });
+        }
+
+        let root = root.expect("components must always have a root module");
+        Ok(ProjectSourceInputs { root, support })
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
@@ -208,7 +193,7 @@ impl MasmComponent {
         &self,
         entrypoint: &InvocationTarget,
         emit_test_harness: bool,
-        source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
+        source_manager: Arc<dyn midenc_session::SourceManager>,
     ) -> Result<Box<masm::Module>, Report> {
         use masm::{Instruction as Inst, Op};
 
@@ -231,12 +216,14 @@ impl MasmComponent {
             // Invoke the program entrypoint
             block.push(Op::Inst(Span::new(
                 span,
-                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
+                Inst::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
             )));
             invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
             block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
-            block
-                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+            block.push(Op::Inst(Span::new(
+                span,
+                Inst::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()),
+            )));
 
             // Truncate the stack to 16 elements on exit
             let truncate_stack = {
@@ -302,11 +289,15 @@ impl MasmComponent {
         loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
         loop_body.push(Op::Inst(Span::new(span, Inst::AdvPush)));
         // => [C, B, A, dest_ptr, inits'] on operand stack
-        loop_body
-            .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameStart.as_u32().into()))));
+        loop_body.push(Op::Inst(Span::new(
+            span,
+            Inst::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+        )));
         loop_body.push(Op::Inst(Span::new(span, Inst::Exec(pipe_words_to_memory))));
-        loop_body
-            .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+        loop_body.push(Op::Inst(Span::new(
+            span,
+            Inst::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()),
+        )));
         // Drop C, B, A
         loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));
         loop_body.push(Op::Inst(Span::new(span, Inst::DropW)));

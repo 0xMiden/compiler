@@ -1598,6 +1598,7 @@ const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
 fn apply_debug_var_metadata(
     debug_var: &mut miden_core::operations::DebugVarInfo,
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
+    session: &midenc_session::Session,
 ) {
     // Set arg_index if this is a parameter
     if let Some(arg_index) = var.arg_index {
@@ -1606,14 +1607,17 @@ fn apply_debug_var_metadata(
 
     // Set source location
     if let Some(line) = core::num::NonZeroU32::new(var.line) {
-        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
+        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Location, Uri};
         let uri = Uri::new(var.file.as_str());
         let file_line_col = FileLineCol::new(
-            uri,
+            uri.clone(),
             LineNumber::new(line.get()).unwrap_or_default(),
             var.column.and_then(ColumnNumber::new).unwrap_or_default(),
         );
-        debug_var.set_location(file_line_col);
+        if let Some(span) = session.source_manager.file_line_col_to_span(file_line_col) {
+            let loc = Location::new(uri, span.start(), span.end());
+            debug_var.set_location(loc);
+        }
     }
 }
 
@@ -1667,11 +1671,14 @@ impl HirLowering for debuginfo::DebugValue {
         };
 
         let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
-        apply_debug_var_metadata(&mut debug_var, var.as_value());
+        let session = self.as_operation().context().session();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
 
-        // Emit the instruction
+        // Emit the instruction followed by a `nop` so that the debug var instruction is never the
+        // last instruction in a MASM block
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Nop)));
 
         Ok(())
     }
@@ -1699,7 +1706,8 @@ impl HirLowering for debuginfo::DebugDeclare {
         };
 
         let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
-        apply_debug_var_metadata(&mut debug_var, var.as_value());
+        let session = self.as_operation().context().session();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
 
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
@@ -1729,7 +1737,8 @@ impl HirLowering for debuginfo::DebugKill {
             var.name.to_string(),
             DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec()),
         );
-        apply_debug_var_metadata(&mut debug_var, var.as_value());
+        let session = self.as_operation().context().session();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
 
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));

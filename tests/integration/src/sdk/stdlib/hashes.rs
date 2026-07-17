@@ -44,7 +44,7 @@ where
 
         // The generated `entrypoint` uses the `(out_ptr, in_ptr)` convention.
         let args = [Felt::new_unchecked(out_addr as u64), Felt::new_unchecked(in_addr as u64)];
-        eval_package::<Felt, _, _>(&package, initializers, &args, &session, |trace| {
+        eval_package::<Felt, _, _>(package.clone(), initializers, &args, &session, |trace| {
             let vm_in: [u8; 32] = trace
                 .read_from_rust_memory(in_addr)
                 .expect("expected memory to have been written");
@@ -95,7 +95,7 @@ where
         }];
 
         let args = [Felt::new_unchecked(out_addr as u64), Felt::new_unchecked(in_addr as u64)];
-        eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
+        eval_package::<Felt, _, _>(package.clone(), initializers, &args, &test.session, |trace| {
             let vm_in: [u8; 64] = trace
                 .read_from_rust_memory(in_addr)
                 .expect("expected memory to have been written");

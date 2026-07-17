@@ -5,7 +5,7 @@ use std::sync::Arc;
 use miden_client::{
     Word,
     account::{
-        AccountComponent,
+        AccountComponent, StorageMapKey,
         component::{BasicWallet, InitStorageData},
     },
     note::NoteTag,
@@ -186,6 +186,7 @@ fn assert_counter_storage_word_entries(
     expected_entries: [(Word, Word); 3],
 ) {
     for (storage_key, expected_word) in expected_entries {
+        let storage_key = StorageMapKey::from_raw(storage_key);
         let word = counter_account_storage
             .get_map_item(storage_slot, storage_key)
             .expect("Failed to get counter value from storage slot");

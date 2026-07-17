@@ -4,11 +4,11 @@ use miden_core::Felt;
 use miden_core_lib::CoreLibrary;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::ProtocolLib;
+use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
 use miden_standards::StandardsLib;
 use midenc_compile::MidenComponent;
 use midenc_hir::{Type, dialects::builtin::attributes::Signature};
-use midenc_session::{STDLIB, Session};
+use midenc_session::{PackageId, Session};
 use proptest::{prop_assert_eq, test_runner::TestCaseError};
 
 use super::*;
@@ -17,7 +17,7 @@ use super::*;
 /// to the output produced from an equivalent Rust program
 pub fn run_masm_vs_rust<T>(
     rust_out: T,
-    package: &miden_mast_package::Package,
+    package: Arc<miden_mast_package::Package>,
     args: &[Felt],
     session: &Session,
 ) -> Result<(), TestCaseError>
@@ -38,7 +38,7 @@ where
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
 ///   things about the trace, such as the state of memory at program exit.
 pub fn eval_package<'a, T, I, F>(
-    package: &miden_mast_package::Package,
+    package: Arc<miden_mast_package::Package>,
     initializers: I,
     args: &[Felt],
     session: &Session,
@@ -71,7 +71,7 @@ where
 /// * `verify_trace` is a callback which gets the [ExecutionTrace], and can be used to assert
 ///   things about the trace, such as the state of memory at program exit.
 pub fn eval_package_with_advice_stack<'a, T, I, A, F>(
-    package: &miden_mast_package::Package,
+    package: Arc<miden_mast_package::Package>,
     initializers: I,
     advice_stack: A,
     args: &[Felt],
@@ -145,31 +145,52 @@ where
     advice_stack.insert(0, Felt::new_unchecked(num_initializers));
     advice_stack.extend(user_advice_stack);
 
-    let mut exec = Executor::new(args.to_vec());
+    let registry = miden_debug::HybridPackageRegistry::new(
+        session.options.sysroot.as_deref(),
+        session.options.search_paths.as_slice(),
+        &session
+            .options
+            .link_libraries
+            .iter()
+            .filter(|ll| !ll.is_core() && !ll.is_protocol())
+            .map(|ll| miden_debug::LinkLibrary {
+                name: PackageId::from(ll.name.as_ref()),
+                path: ll.path.clone(),
+                linkage: ll.linkage,
+            })
+            .collect::<Vec<_>>(),
+    )
+    .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    let mut exec = Executor::new(args.to_vec()).with_registry(registry);
+
+    // Register the standard library so dependencies can be resolved at runtime.
     let core_library = CoreLibrary::default();
+    exec.with_package(core_library.package())
+        .map_err(|err| TestCaseError::fail(err.to_string()))?;
     // The debug executor path does not automatically install core-library event handlers, but
     // integration tests execute core helpers such as `u64::div` through the VM.
     for (event, handler) in core_library.handlers() {
-        exec.register_event_handler(event, handler)
-            .expect("failed to register core library event handler");
+        if matches!(
+            miden_debug::Event::from(event.clone()),
+            miden_debug::Event::UserDefined(_) | miden_debug::Event::Unknown(_)
+        ) {
+            exec.register_event_handler(event, handler)
+                .expect("failed to register core library event handler");
+        }
     }
 
-    // Register the standard library so dependencies can be resolved at runtime.
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
-    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*protocol_library.digest(), protocol_library);
-    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*standards_library.digest(), standards_library);
-
-    exec.with_dependencies(package.manifest.dependencies())
-        .map_err(|err| TestCaseError::fail(format_report(err)))?;
+    let tx_kernel = TransactionKernel::package();
+    let protocol_lib = ProtocolLib::default().package();
+    exec.with_package(tx_kernel)
+        .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    exec.with_package(protocol_lib)
+        .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
+        .map_err(|err| TestCaseError::fail(err.to_string()))?;
 
     exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack));
 
-    let trace = exec.execute(&package.unwrap_program(), session.source_manager.clone());
+    let trace = exec.execute(package, session.source_manager.clone());
     verify_trace(&trace)?;
     Ok(trace.parse_result::<T>().expect("expected output was not returned"))
 }
@@ -269,12 +290,5 @@ where
     F: Fn(&ExecutionTrace) -> Result<(), TestCaseError>,
 {
     let package = compile_miden_component_to_package(component)?;
-    eval_package_with_advice_stack(
-        &package,
-        initializers,
-        advice_stack,
-        args,
-        session,
-        verify_trace,
-    )
+    eval_package_with_advice_stack(package, initializers, advice_stack, args, session, verify_trace)
 }

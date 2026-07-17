@@ -2,19 +2,15 @@
 //!
 //! Similar to llvm-dwarfdump, this tool parses the `.debug_info` section from compiled MASP
 //! packages and displays the debug metadata in a human-readable format.
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use clap::Args;
-use miden_core::{
-    mast::MastForest,
-    operations::{DebugVarInfo, DebugVarLocation},
-    serde::{Deserializable, SliceReader},
-};
+use miden_core::operations::DebugVarLocation;
 use miden_mast_package::{
-    Package, SectionId,
+    MastForest, Package,
     debug_info::{
-        DebugFileInfo, DebugFunctionInfo, DebugFunctionsSection, DebugPrimitiveType,
-        DebugSourcesSection, DebugTypeIdx, DebugTypeInfo, DebugTypesSection, DebugVariableInfo,
+        DebugFileInfo, DebugFunctionInfo, DebugPrimitiveType, DebugSourceNodeId, DebugSourceVar,
+        DebugTypeIdx, DebugTypeInfo, PackageDebugInfo,
     },
 };
 
@@ -49,84 +45,56 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
     let bytes = std::fs::read(&config.input)?;
 
     // Parse the package
-    let package: Package = Package::read_from(&mut SliceReader::new(&bytes))
-        .map_err(|e| DumpError::Parse(e.to_string()))?;
+    let package: Package =
+        Package::read_from_bytes_trusted(&bytes).map_err(|e| DumpError::Parse(e.to_string()))?;
 
     // Get the MAST forest for location decorators
-    let mast_forest = package.mast.mast_forest();
-
-    // Find the three debug sections
-    let types_section = extract_section::<DebugTypesSection>(&package, SectionId::DEBUG_TYPES)?;
-    let sources_section =
-        extract_section::<DebugSourcesSection>(&package, SectionId::DEBUG_SOURCES)?;
-    let functions_section =
-        extract_section::<DebugFunctionsSection>(&package, SectionId::DEBUG_FUNCTIONS)?;
-
-    // We need at least one section to proceed
-    if types_section.is_none() && sources_section.is_none() && functions_section.is_none() {
+    let Some(debug_info) = package.debug_info()? else {
         return Err(DumpError::NoDebugInfo);
-    }
-
-    // Parse each section (use empty defaults if missing)
-    let debug_sections = DebugSections {
-        types: types_section.unwrap_or_default(),
-        sources: sources_section.unwrap_or_default(),
-        functions: functions_section.unwrap_or_default(),
     };
 
     // Print header
     println!("{}", "=".repeat(80));
     println!("Package Info:");
-    println!("  | Name:    {}", &package.name);
-    println!("  | Version: {}", &package.version);
-    println!("  | Kind:    {}", &package.kind);
-    println!("Section Versioning:");
-    println!("  | Types:     {}", debug_sections.types.version);
-    println!("  | Sources:   {}", debug_sections.sources.version);
-    println!("  | Functions: {}", debug_sections.functions.version);
+    println!("  | Name:               {}", &package.name);
+    println!("  | Version:            {}", &package.version);
+    println!("  | Kind:               {}", &package.kind);
+    println!("  | Debug Info Version: {}", &debug_info.version());
     println!("{}", "=".repeat(80));
     println!();
 
     if config.summary {
-        print_summary(&debug_sections, mast_forest);
+        print_summary(&debug_info);
         return Ok(());
     }
 
     match config.section {
-        Some(Section::Strings) => print_strings(&debug_sections),
-        Some(Section::Types) => print_types(&debug_sections, config.raw),
-        Some(Section::Files) => print_files(&debug_sections, config.raw),
-        Some(Section::Functions) => print_functions(&debug_sections, config.raw, config.verbose),
-        Some(Section::Variables) => print_variables(&debug_sections, config.raw),
-        Some(Section::Locations) => print_locations(mast_forest, &debug_sections, config.verbose),
+        Some(Section::Strings) => print_strings(&debug_info),
+        Some(Section::Types) => print_types(&debug_info, config.raw),
+        Some(Section::Files) => print_files(&debug_info, config.raw),
+        Some(Section::Functions) => {
+            print_functions(&debug_info, package.mast_forest(), config.raw, config.verbose)
+        }
+        Some(Section::Variables) => print_variables(&debug_info, package.mast_forest(), config.raw),
+        Some(Section::Locations) => print_locations(&debug_info),
         None => {
             // Print everything
-            print_summary(&debug_sections, mast_forest);
+            let mast_forest = package.mast_forest();
+            print_summary(&debug_info);
             println!();
-            print_strings(&debug_sections);
+            print_strings(&debug_info);
             println!();
-            print_types(&debug_sections, config.raw);
+            print_types(&debug_info, config.raw);
             println!();
-            print_files(&debug_sections, config.raw);
+            print_files(&debug_info, config.raw);
             println!();
-            print_functions(&debug_sections, config.raw, config.verbose);
+            print_functions(&debug_info, mast_forest, config.raw, config.verbose);
             println!();
-            print_locations(mast_forest, &debug_sections, config.verbose);
+            print_locations(&debug_info);
         }
     }
 
     Ok(())
-}
-
-fn extract_section<T>(package: &Package, id: SectionId) -> Result<Option<T>, DumpError>
-where
-    T: Deserializable,
-{
-    let Some(section) = package.sections.iter().find(|s| s.id == id) else {
-        return Ok(None);
-    };
-
-    T::read_from_bytes(&section.data).map(Some).map_err(DumpError::from)
 }
 
 const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
@@ -163,116 +131,92 @@ fn is_debug_var_kill_location(location: &DebugVarLocation) -> bool {
     )
 }
 
-/// Holds the three debug info sections with helper accessors.
-struct DebugSections {
-    types: DebugTypesSection,
-    sources: DebugSourcesSection,
-    functions: DebugFunctionsSection,
-}
-
-impl DebugSections {
-    /// Look up a string in the types section's string table.
-    fn get_type_string(&self, idx: u32) -> Option<String> {
-        self.types.get_string(idx).map(|s| s.to_string())
-    }
-
-    /// Look up a string in the sources section's string table.
-    fn get_source_string(&self, idx: u32) -> Option<String> {
-        self.sources.get_string(idx).map(|s| s.to_string())
-    }
-
-    /// Look up a string in the functions section's string table.
-    fn get_func_string(&self, idx: u32) -> Option<String> {
-        self.functions.get_string(idx).map(|s| s.to_string())
-    }
-
-    /// Look up a type by index.
-    fn get_type(&self, idx: DebugTypeIdx) -> Option<&DebugTypeInfo> {
-        self.types.get_type(idx)
-    }
-
-    /// Look up a file by index.
-    fn get_file(&self, idx: u32) -> Option<&DebugFileInfo> {
-        self.sources.get_file(idx)
-    }
-}
-
-fn print_summary(debug_sections: &DebugSections, mast_forest: &MastForest) {
+fn print_summary(debug_info: &PackageDebugInfo) {
     println!("Summary:");
     println!();
 
+    println!("Strings:");
+    println!("  | records: {}", &debug_info.strings().len());
+    println!();
+
     println!("Types:");
-    println!("  | records: {}", &debug_sections.types.types.len());
-    println!("  | strings: {}", &debug_sections.types.strings.len());
+    println!("  | records: {}", &debug_info.types().len());
     println!();
 
-    println!("Sources:");
-    println!("  | records: {}", &debug_sections.sources.files.len());
-    println!("  | strings: {}", &debug_sections.sources.strings.len());
-    println!();
-
-    let total_vars: usize =
-        debug_sections.functions.functions.iter().map(|f| f.variables.len()).sum();
-    let total_inlined: usize =
-        debug_sections.functions.functions.iter().map(|f| f.inlined_calls.len()).sum();
     println!("Functions:");
-    println!("  | records:   {}", &debug_sections.functions.functions.len());
-    println!("  | strings:   {}", &debug_sections.functions.strings.len());
-    println!("  | variables: {total_vars} (total across all functions)");
-    println!("  | inlined:   {total_inlined} call sites");
+    println!("  | records:          {}", &debug_info.functions().len());
+    println!(
+        "  | with source info: {}",
+        &debug_info.functions().iter().filter(|f| f.source_node.is_some()).count()
+    );
+    println!(
+        "  | w/o source info:  {}",
+        &debug_info.functions().iter().filter(|f| f.source_node.is_none()).count()
+    );
+    println!();
+
+    println!("Source Files:");
+    println!("  | records: {}", &debug_info.files().len());
+    println!();
+
+    println!("Locations:");
+    println!("  | records: {}", &debug_info.locations().len());
+    println!();
+
+    let (total_vars, total_inlined) =
+        debug_info
+            .nodes()
+            .iter()
+            .fold((0usize, 0usize), |(acc_vars, acc_inlined), node| {
+                (acc_vars + node.debug_vars.len(), acc_inlined + node.inline_calls.len())
+            });
+
+    println!("Source Nodes:");
+    println!("  | records: {}", &debug_info.nodes().len());
+    println!("  | roots:   {}", &debug_info.roots().len());
+    println!("  | debug variables (total): {total_vars}");
+    println!("  | inline calls (total):    {total_inlined}");
     println!();
 
     // Count debug vars in MAST
-    let debug_var_count = mast_forest.debug_info().debug_vars().len();
-    println!("Found {debug_var_count} debug variable records");
+    println!("Found {total_vars} debug variable records");
 }
 
-fn print_strings(debug_sections: &DebugSections) {
+fn print_strings(debug_info: &PackageDebugInfo) {
     println!(".debug_str contents:");
     println!("{:-<80}", "");
 
-    println!("  [types string table]");
-    for (idx, s) in debug_sections.types.strings.iter().enumerate() {
-        println!("  [{:4}] \"{}\"", idx, s);
-    }
-    println!();
-    println!("  [sources string table]");
-    for (idx, s) in debug_sections.sources.strings.iter().enumerate() {
-        println!("  [{:4}] \"{}\"", idx, s);
-    }
-    println!();
-    println!("  [functions string table]");
-    for (idx, s) in debug_sections.functions.strings.iter().enumerate() {
+    for (idx, s) in debug_info.strings().iter().enumerate() {
         println!("  [{:4}] \"{}\"", idx, s);
     }
 }
 
-fn print_types(debug_sections: &DebugSections, raw: bool) {
+fn print_types(debug_info: &PackageDebugInfo, raw: bool) {
     println!(".debug_types contents:");
     println!("{:-<80}", "");
-    for (idx, ty) in debug_sections.types.types.iter().enumerate() {
+    for (idx, ty) in debug_info.types().iter().enumerate() {
         print!("  [{:4}] ", idx);
-        print_type(ty, debug_sections, raw, 0);
+        print_type(ty, debug_info, raw, 0);
         println!();
     }
 }
 
-fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, indent: usize) {
+fn print_type(ty: &DebugTypeInfo, debug_info: &PackageDebugInfo, raw: bool, indent: usize) {
     let pad = "  ".repeat(indent);
     match ty {
         DebugTypeInfo::Primitive(prim) => {
             print!("{}PRIMITIVE: {}", pad, primitive_name(*prim));
-            print!(" (size: {} bytes, {} felts)", prim.size_in_bytes(), prim.size_in_felts());
+            //print!(" (size: {} bytes, {} felts)", prim.size_in_bytes(), prim.size_in_felts());
         }
         DebugTypeInfo::Pointer { pointee_type_idx } => {
             if raw {
-                print!("{}POINTER -> type[{}]", pad, pointee_type_idx.as_u32());
+                print!("{}POINTER -> type[{pointee_type_idx}]", pad);
             } else {
                 print!("{}POINTER -> ", pad);
-                if let Some(pointee) = debug_sections.get_type(*pointee_type_idx) {
-                    print_type_brief(pointee, debug_sections);
+                if let Some(pointee) = debug_info.get_type(*pointee_type_idx) {
+                    print_type_brief(pointee, debug_info);
                 } else {
-                    print!("<invalid type idx {}>", pointee_type_idx.as_u32());
+                    print!("<invalid type idx {pointee_type_idx}>");
                 }
             }
         }
@@ -281,11 +225,11 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
             count,
         } => {
             if raw {
-                print!("{}ARRAY [{}; {:?}]", pad, element_type_idx.as_u32(), count);
+                print!("{}ARRAY [{element_type_idx}; {:?}]", pad, count);
             } else {
                 print!("{}ARRAY [", pad);
-                if let Some(elem) = debug_sections.get_type(*element_type_idx) {
-                    print_type_brief(elem, debug_sections);
+                if let Some(elem) = debug_info.get_type(*element_type_idx) {
+                    print_type_brief(elem, debug_info);
                 } else {
                     print!("<invalid>");
                 }
@@ -301,29 +245,65 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
             fields,
         } => {
             let name = if raw {
-                format!("str[{}]", name_idx)
+                format!("str[{}]", name_idx).into_boxed_str().into()
             } else {
-                debug_sections.get_type_string(*name_idx).unwrap_or_else(|| "<unknown>".into())
+                debug_info.get_string(*name_idx).unwrap_or_else(|| "<unknown>".into())
             };
             print!("{}STRUCT {} (size: {} bytes)", pad, name, size);
             if !fields.is_empty() {
                 println!();
                 for field in fields {
                     let field_name = if raw {
-                        format!("str[{}]", field.name_idx)
+                        format!("str[{}]", field.name_idx).into_boxed_str().into()
                     } else {
-                        debug_sections
-                            .get_type_string(field.name_idx)
-                            .unwrap_or_else(|| "<unknown>".into())
+                        debug_info.get_string(field.name_idx).unwrap_or_else(|| "<unknown>".into())
                     };
                     print!("{}    +{:4}: {} : ", pad, field.offset, field_name);
-                    if let Some(fty) = debug_sections.get_type(field.type_idx) {
-                        print_type_brief(fty, debug_sections);
+                    if let Some(fty) = debug_info.get_type(field.type_idx) {
+                        print_type_brief(fty, debug_info);
                     } else {
                         print!("<invalid type>");
                     }
                     println!();
                 }
+            }
+        }
+        DebugTypeInfo::Enum {
+            name_idx,
+            size,
+            discriminant_type_idx,
+            variants,
+        } => {
+            let name = if raw {
+                format!("str[{name_idx}]").into_boxed_str().into()
+            } else {
+                debug_info.get_string(*name_idx).unwrap_or_else(|| "<unknown>".into())
+            };
+            print!("{}ENUM {} (discriminant: ", pad, name);
+            match debug_info.get_type(*discriminant_type_idx) {
+                Some(discrim_ty) => print_type_brief(discrim_ty, debug_info),
+                None => print!("unknown"),
+            };
+            print!(", size: {} bytes)", size);
+            if !variants.is_empty() {
+                println!();
+            }
+            for variant in variants.iter() {
+                let name = if raw {
+                    format!("str[{}]", variant.name_idx).into_boxed_str().into()
+                } else {
+                    debug_info.get_string(variant.name_idx).unwrap_or_else(|| "<unknown>".into())
+                };
+                print!("{}    +{:4}: {}", pad, variant.payload_offset.unwrap_or(0), name);
+                if let Some(vty) = variant.type_idx {
+                    print!(" : ");
+                    if let Some(vty) = debug_info.get_type(vty) {
+                        print_type_brief(vty, debug_info);
+                    } else {
+                        print!("<invalid type>");
+                    }
+                }
+                println!(" = {}", &variant.discriminant);
             }
         }
         DebugTypeInfo::Function {
@@ -336,9 +316,9 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
                     print!(", ");
                 }
                 if raw {
-                    print!("type[{}]", param_idx.as_u32());
-                } else if let Some(pty) = debug_sections.get_type(*param_idx) {
-                    print_type_brief(pty, debug_sections);
+                    print!("type[{param_idx}]");
+                } else if let Some(pty) = debug_info.get_type(*param_idx) {
+                    print_type_brief(pty, debug_info);
                 } else {
                     print!("<invalid>");
                 }
@@ -347,9 +327,9 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
             match return_type_idx {
                 Some(idx) => {
                     if raw {
-                        print!("type[{}]", idx.as_u32());
-                    } else if let Some(rty) = debug_sections.get_type(*idx) {
-                        print_type_brief(rty, debug_sections);
+                        print!("type[{idx}]");
+                    } else if let Some(rty) = debug_info.get_type(*idx) {
+                        print_type_brief(rty, debug_info);
                     } else {
                         print!("<invalid>");
                     }
@@ -363,13 +343,13 @@ fn print_type(ty: &DebugTypeInfo, debug_sections: &DebugSections, raw: bool, ind
     }
 }
 
-fn print_type_brief(ty: &DebugTypeInfo, debug_sections: &DebugSections) {
+fn print_type_brief(ty: &DebugTypeInfo, debug_info: &PackageDebugInfo) {
     match ty {
         DebugTypeInfo::Primitive(prim) => print!("{}", primitive_name(*prim)),
         DebugTypeInfo::Pointer { pointee_type_idx } => {
             print!("*");
-            if let Some(p) = debug_sections.get_type(*pointee_type_idx) {
-                print_type_brief(p, debug_sections);
+            if let Some(p) = debug_info.get_type(*pointee_type_idx) {
+                print_type_brief(p, debug_info);
             }
         }
         DebugTypeInfo::Array {
@@ -377,8 +357,8 @@ fn print_type_brief(ty: &DebugTypeInfo, debug_sections: &DebugSections) {
             count,
         } => {
             print!("[");
-            if let Some(e) = debug_sections.get_type(*element_type_idx) {
-                print_type_brief(e, debug_sections);
+            if let Some(e) = debug_info.get_type(*element_type_idx) {
+                print_type_brief(e, debug_info);
             }
             match count {
                 Some(n) => print!("; {}]", n),
@@ -386,10 +366,10 @@ fn print_type_brief(ty: &DebugTypeInfo, debug_sections: &DebugSections) {
             }
         }
         DebugTypeInfo::Struct { name_idx, .. } => {
-            print!(
-                "struct {}",
-                debug_sections.get_type_string(*name_idx).unwrap_or_else(|| "?".into())
-            );
+            print!("struct {}", debug_info.get_string(*name_idx).unwrap_or_else(|| "?".into()));
+        }
+        DebugTypeInfo::Enum { name_idx, .. } => {
+            print!("enum {}", debug_info.get_string(*name_idx).unwrap_or_else(|| "?".into()));
         }
         DebugTypeInfo::Function { .. } => print!("fn(...)"),
         DebugTypeInfo::Unknown => print!("?"),
@@ -410,6 +390,7 @@ fn primitive_name(prim: DebugPrimitiveType) -> &'static str {
         DebugPrimitiveType::U64 => "u64",
         DebugPrimitiveType::I128 => "i128",
         DebugPrimitiveType::U128 => "u128",
+        DebugPrimitiveType::U256 => "u256",
         DebugPrimitiveType::F32 => "f32",
         DebugPrimitiveType::F64 => "f64",
         DebugPrimitiveType::Felt => "felt",
@@ -417,26 +398,24 @@ fn primitive_name(prim: DebugPrimitiveType) -> &'static str {
     }
 }
 
-fn print_files(debug_sections: &DebugSections, raw: bool) {
+fn print_files(debug_info: &PackageDebugInfo, raw: bool) {
     println!(".debug_files contents:");
     println!("{:-<80}", "");
-    for (idx, file) in debug_sections.sources.files.iter().enumerate() {
-        print_file(idx, file, debug_sections, raw);
+    for (idx, file) in debug_info.files().iter().enumerate() {
+        print_file(idx, file, debug_info, raw);
     }
 }
 
-fn print_file(idx: usize, file: &DebugFileInfo, debug_sections: &DebugSections, raw: bool) {
+fn print_file(idx: usize, file: &DebugFileInfo, debug_info: &PackageDebugInfo, raw: bool) {
     let path = if raw {
-        format!("str[{}]", file.path_idx)
+        format!("str[{}]", file.path_idx).into_boxed_str().into()
     } else {
-        debug_sections
-            .get_source_string(file.path_idx)
-            .unwrap_or_else(|| "<unknown>".into())
+        debug_info.get_string(file.path_idx).unwrap_or_else(|| "<unknown>".into())
     };
 
-    print!("  [{:4}] {}", idx, path);
+    print!("  [{idx:4}] {path}");
 
-    if let Some(checksum) = &file.checksum {
+    if let Some(checksum) = file.checksum() {
         print!(" [checksum: ");
         for byte in &checksum[..4] {
             print!("{:02x}", byte);
@@ -447,11 +426,16 @@ fn print_file(idx: usize, file: &DebugFileInfo, debug_sections: &DebugSections, 
     println!();
 }
 
-fn print_functions(debug_sections: &DebugSections, raw: bool, verbose: bool) {
+fn print_functions(
+    debug_info: &PackageDebugInfo,
+    mast_forest: &MastForest,
+    raw: bool,
+    verbose: bool,
+) {
     println!(".debug_functions contents:");
     println!("{:-<80}", "");
-    for (idx, func) in debug_sections.functions.functions.iter().enumerate() {
-        print_function(idx, func, debug_sections, raw, verbose);
+    for (idx, func) in debug_info.functions().iter().enumerate() {
+        print_function(idx, func, debug_info, mast_forest, raw, verbose);
         println!();
     }
 }
@@ -459,50 +443,47 @@ fn print_functions(debug_sections: &DebugSections, raw: bool, verbose: bool) {
 fn print_function(
     idx: usize,
     func: &DebugFunctionInfo,
-    debug_sections: &DebugSections,
+    debug_info: &PackageDebugInfo,
+    mast_forest: &MastForest,
     raw: bool,
     verbose: bool,
 ) {
     let name = if raw {
-        format!("str[{}]", func.name_idx)
+        format!("str[{}]", func.name_idx).into_boxed_str().into()
     } else {
-        debug_sections
-            .get_func_string(func.name_idx)
-            .unwrap_or_else(|| "<unknown>".into())
+        debug_info.get_string(func.name_idx).unwrap_or_else(|| "<unknown>".into())
     };
 
-    println!("  [{:4}] FUNCTION: {}", idx, name);
+    println!("  [{idx:4}] FUNCTION: {name}");
 
     // Linkage name
     if let Some(linkage_idx) = func.linkage_name_idx {
         let linkage = if raw {
-            format!("str[{}]", linkage_idx)
+            format!("str[{}]", linkage_idx).into_boxed_str().into()
         } else {
-            debug_sections
-                .get_func_string(linkage_idx)
-                .unwrap_or_else(|| "<unknown>".into())
+            debug_info.get_string(linkage_idx).unwrap_or_else(|| "<unknown>".into())
         };
-        println!("         Linkage name: {}", linkage);
+        println!("         Linkage name: {linkage}");
     }
 
     // Location
     let file_path = if raw {
-        format!("file[{}]", func.file_idx)
+        format!("file[{}]", func.file_idx).into_boxed_str().into()
     } else {
-        debug_sections
+        debug_info
             .get_file(func.file_idx)
-            .and_then(|f| debug_sections.get_source_string(f.path_idx))
+            .and_then(|f| debug_info.get_string(f.path_idx))
             .unwrap_or_else(|| "<unknown>".into())
     };
-    println!("         Location: {}:{}:{}", file_path, func.line, func.column);
+    println!("         Location: {file_path}:{}:{}", func.line, func.column);
 
     // Type
     if let Some(type_idx) = func.type_idx {
         print!("         Type: ");
         if raw {
-            println!("type[{}]", type_idx.as_u32());
-        } else if let Some(ty) = debug_sections.get_type(type_idx) {
-            print_type_brief(ty, debug_sections);
+            println!("type[{type_idx}]");
+        } else if let Some(ty) = debug_info.get_type(type_idx) {
+            print_type_brief(ty, debug_info);
             println!();
         } else {
             println!("<invalid>");
@@ -510,107 +491,114 @@ fn print_function(
     }
 
     // MAST root
-    if let Some(root) = &func.mast_root {
-        print!("         MAST root: 0x");
-        for byte in &root.as_bytes() {
-            print!("{:02x}", byte);
-        }
-        println!();
+    print!("         MAST root: 0x");
+    for byte in func.mast_root.as_bytes() {
+        print!("{byte:02x}");
     }
+    println!();
 
     // Variables
-    if !func.variables.is_empty() {
-        println!("         Variables ({}):", func.variables.len());
-        for var in &func.variables {
-            print_variable(var, debug_sections, raw, verbose);
+    let source_node_id = func.source_node.or_else(|| {
+        mast_forest.find_procedure_root(func.mast_root).and_then(|exec_node| {
+            debug_info.unique_source_root_for_exec_node(exec_node).ok().flatten()
+        })
+    });
+    if let Some(source_node_id) = source_node_id {
+        let source_node = &debug_info[source_node_id];
+        if !source_node.debug_vars.is_empty() {
+            println!("         Variables ({}):", source_node.debug_vars.len());
+            for var in source_node.debug_vars.iter() {
+                print_variable(var, debug_info, raw, verbose);
+            }
         }
-    }
-
-    // Inlined calls
-    if !func.inlined_calls.is_empty() && verbose {
-        println!("         Inlined calls ({}):", func.inlined_calls.len());
-        for call in &func.inlined_calls {
-            let callee = if raw {
-                format!("func[{}]", call.callee_idx)
-            } else {
-                debug_sections
-                    .functions
-                    .functions
-                    .get(call.callee_idx as usize)
-                    .and_then(|f| debug_sections.get_func_string(f.name_idx))
-                    .unwrap_or_else(|| "<unknown>".into())
-            };
-            let call_file = if raw {
-                format!("file[{}]", call.file_idx)
-            } else {
-                debug_sections
-                    .get_file(call.file_idx)
-                    .and_then(|f| debug_sections.get_source_string(f.path_idx))
-                    .unwrap_or_else(|| "<unknown>".into())
-            };
-            println!(
-                "           - {} inlined at {}:{}:{}",
-                callee, call_file, call.line, call.column
-            );
+        // Inlined calls
+        if !source_node.inline_calls.is_empty() && verbose {
+            println!("         Inlined calls ({}):", source_node.inline_calls.len());
+            for call in source_node.inline_calls.iter() {
+                let callee = if raw {
+                    format!("func[{}]", call.callee_idx).into_boxed_str().into()
+                } else {
+                    debug_info
+                        .get_function(call.callee_idx)
+                        .and_then(|f| debug_info.get_string(f.name_idx))
+                        .unwrap_or_else(|| "<unknown>".into())
+                };
+                let loc = debug_info.get_location(call.loc_idx);
+                let call_file = if raw {
+                    format!("loc[{}]", call.loc_idx).into_boxed_str().into()
+                } else {
+                    loc.clone()
+                        .map(|loc| Arc::<str>::from(loc.uri))
+                        .unwrap_or_else(|| "<unknown>".into())
+                };
+                if let Some(loc) = loc {
+                    println!(
+                        "           - {callee} inlined at {call_file}:{}..{}",
+                        loc.start, loc.end
+                    );
+                } else {
+                    println!("           - {callee} inlined at {call_file}:?..?",);
+                }
+            }
         }
     }
 }
 
-fn print_variable(
-    var: &DebugVariableInfo,
-    debug_sections: &DebugSections,
-    raw: bool,
-    _verbose: bool,
-) {
-    let name = if raw {
-        format!("str[{}]", var.name_idx)
-    } else {
-        debug_sections
-            .get_func_string(var.name_idx)
-            .unwrap_or_else(|| "<unknown>".into())
-    };
-
-    let kind = if var.is_parameter() {
-        format!("param #{}", var.arg_index)
+fn print_variable(var: &DebugSourceVar, debug_info: &PackageDebugInfo, raw: bool, _verbose: bool) {
+    let kind = if let Some(index) = var.arg_idx {
+        format!("param #{index}")
     } else {
         "local".to_string()
     };
 
-    print!("           - {} ({}): ", name, kind);
+    print!("           - {} ({}): ", debug_info[var.name_idx].as_ref(), kind);
 
-    if raw {
-        print!("type[{}]", var.type_idx.as_u32());
-    } else if let Some(ty) = debug_sections.get_type(var.type_idx) {
-        print_type_brief(ty, debug_sections);
+    if let Some(type_id) = var.type_id {
+        if raw {
+            print!("type[{type_id}]");
+        } else if let Some(ty) = debug_info.get_type(DebugTypeIdx::from(type_id)) {
+            print_type_brief(ty, debug_info);
+        } else {
+            print!("<invalid type>");
+        }
     } else {
         print!("<invalid type>");
     }
 
-    print!(" @ {}:{}", var.line, var.column);
+    if let Some(loc) = var.location_idx.and_then(|loc| debug_info.get_location(loc)) {
+        print!(" at {}:{}..{}", loc.uri(), loc.start, loc.end);
+    }
 
+    // TODO(pauls): Restore once scope info is available again
+    /*
     if var.scope_depth > 0 {
         print!(" [scope depth: {}]", var.scope_depth);
     }
+    */
 
     println!();
 }
 
-fn print_variables(debug_sections: &DebugSections, raw: bool) {
+fn print_variables(debug_info: &PackageDebugInfo, mast_forest: &MastForest, raw: bool) {
     println!(".debug_variables contents (all functions):");
     println!("{:-<80}", "");
-
-    for func in &debug_sections.functions.functions {
-        if func.variables.is_empty() {
+    for function in debug_info.functions() {
+        let Some(source_node_id) = function.source_node.or_else(|| {
+            mast_forest.find_procedure_root(function.mast_root).and_then(|exec_node| {
+                debug_info.unique_source_root_for_exec_node(exec_node).ok().flatten()
+            })
+        }) else {
+            continue;
+        };
+        let vars = debug_info.debug_vars_for_source_node(source_node_id).collect::<Vec<_>>();
+        if vars.is_empty() {
             continue;
         }
-
-        let func_name = debug_sections
-            .get_func_string(func.name_idx)
-            .unwrap_or_else(|| "<unknown>".into());
-        println!("  Function: {}", func_name);
-
-        for var in &func.variables {
-            print_variable(var, debug_sections, raw, false);
+        let func_name =
+            debug_info.get_string(function.name_idx).unwrap_or_else(|| "<unknown>".into());
+        println!("  Function: {func_name}");
+        for var in vars {
+            print_variable(var, debug_info, raw, /*verbose=*/ false);
         }
         println!();
     }
@@ -620,71 +608,77 @@ fn print_variables(debug_sections: &DebugSections, raw: bool) {
 ///
 /// This is analogous to DWARF's .debug_loc section which contains location
 /// lists describing where a variable's value can be found at runtime.
-fn print_locations(mast_forest: &MastForest, debug_sections: &DebugSections, verbose: bool) {
-    println!(".debug_loc contents (DebugVar entries from MAST):");
+fn print_locations(debug_info: &PackageDebugInfo) {
+    println!(".debug_loc contents (DebugLoc entries from MAST):");
     println!("{:-<80}", "");
 
     // Collect all debug vars from the MastForest
-    let debug_vars = mast_forest.debug_info().debug_vars();
-
-    if debug_vars.is_empty() {
-        println!("  (no DebugVar entries found)");
-        return;
-    }
 
     // Group by variable name for a cleaner view
-    let mut by_name: BTreeMap<&str, Vec<(usize, &DebugVarInfo)>> = BTreeMap::new();
-    for (idx, info) in debug_vars.iter().enumerate() {
-        by_name.entry(info.name()).or_default().push((idx, info));
+    let mut by_name: BTreeMap<Arc<str>, BTreeMap<DebugSourceNodeId, Vec<&DebugSourceVar>>> =
+        BTreeMap::new();
+    let mut total_count = 0usize;
+    for (node_id, node) in debug_info.nodes().iter().enumerate() {
+        if node.debug_vars.is_empty() {
+            continue;
+        }
+        let node_id = DebugSourceNodeId::from(node_id as u32);
+
+        total_count += node.debug_vars.len();
+        for var in node.debug_vars.iter() {
+            by_name
+                .entry(debug_info[var.name_idx].clone())
+                .or_default()
+                .entry(node_id)
+                .or_default()
+                .push(var);
+        }
     }
 
-    println!("  Total DebugVar entries: {}", debug_vars.len());
+    println!("  Total DebugVar entries: {total_count}");
     println!("  Unique variable names: {}", by_name.len());
     println!();
 
-    for (name, entries) in &by_name {
+    for (name, entries_by_node) in &by_name {
         println!("  Variable: \"{}\"", name);
-        println!("  {} location entries:", entries.len());
+        println!(
+            "  {} location entries:",
+            entries_by_node.values().map(|entries| entries.len()).sum::<usize>()
+        );
 
-        for (var_idx, info) in entries {
-            print!("    [var#{}] ", var_idx);
+        for (node_id, info) in entries_by_node
+            .iter()
+            .flat_map(|(nid, entries)| entries.iter().map(|e| (*nid, e)))
+        {
+            print!("    [node#{node_id}] ");
 
             // Print value location
-            print!("{}", format_debug_var_location(info.value_location()));
+            print!("{}", format_debug_var_location(&info.value_location));
 
             // Print argument info if present
-            if let Some(arg_idx) = info.arg_index() {
+            if let Some(arg_idx) = info.arg_idx {
                 print!(" (param #{})", arg_idx);
             }
 
             // Print type info if present and we can resolve it
-            if let Some(type_id) = info.type_id() {
+            if let Some(type_id) = info.type_id {
                 let type_idx = DebugTypeIdx::from(type_id);
-                if let Some(ty) = debug_sections.get_type(type_idx) {
+                if let Some(ty) = debug_info.get_type(type_idx) {
                     print!(" : ");
-                    print_type_brief(ty, debug_sections);
+                    print_type_brief(ty, debug_info);
                 } else {
-                    print!(" : type[{}]", type_id);
+                    print!(" : type[{type_idx}]");
                 }
             }
 
             // Print source location if present
-            if let Some(loc) = info.location() {
-                print!(" @ {}:{}:{}", loc.uri, loc.line, loc.column);
+            if let Some(loc) = info.location_idx.and_then(|idx| debug_info.get_location(idx)) {
+                print!(" @ {}:{}..{}", loc.uri, loc.start, loc.end);
             }
 
             println!();
         }
         println!();
-    }
-
-    // In verbose mode, also show raw list
-    if verbose {
-        println!("  Raw debug var list (in order):");
-        println!("  {:-<76}", "");
-        for (idx, info) in debug_vars.iter().enumerate() {
-            println!("    [{:4}] {}", idx, info);
-        }
     }
 }
 

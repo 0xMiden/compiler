@@ -1,30 +1,32 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    rc::Rc,
-    sync::Arc,
-};
+use std::{collections::BTreeMap, rc::Rc, sync::Arc};
 
+use miden_assembly::{
+    GlobalItemIndex, ModuleIndex, ProjectSourceInputs,
+    linker::{LinkLibrary, Linker, SymbolItem, SymbolResolutionContext},
+    module::ItemInfo,
+};
 use miden_assembly_syntax::{
     Felt,
     ast::{
-        self, Block, Export, Immediate, Instruction, InvocationTarget, Module, Op, Procedure,
+        self, Block, Immediate, Instruction, InvocationTarget, Module, Op, Procedure,
         SymbolResolution,
     },
-    debuginfo::{SourceSpan, Span, Spanned},
+    debuginfo::{SourceSpan, Spanned},
     parser::{IntValue, PushValue},
 };
-use miden_core_lib::CoreLibrary;
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder;
 use midenc_hir::{
-    AddressSpace, BlockRef, Builder, BuilderExt, CompactString, Context, Ident, Op as HirOp,
-    OpBuilder, OperationRef, PointerType, Report, SymbolPath, Type, ValueRef, Visibility,
+    AddressSpace, BlockRef, Builder, BuilderExt, CompactString, Context, FxHashSet, Ident,
+    Op as HirOp, OpBuilder, OperationRef, PointerType, Report, SymbolPath, Type, ValueRef,
+    Visibility,
     dialects::builtin::{
         BuiltinOpBuilder, FunctionBuilder, FunctionRef, ModuleBuilder, WorldBuilder,
         attributes::{LocalVariable, Signature},
     },
+    formatter::DisplayValues,
 };
 use rustc_hash::FxHashMap;
 
@@ -33,68 +35,84 @@ use crate::{
     events::{system_event_id, system_event_read_count},
     infer, project,
     semantics::{self, InstructionSemantics},
-    signatures, stack as masm_stack,
+    stack as masm_stack,
 };
-
-/// Lift a standalone MASM module to HIR, allowing only local references and referenced
-/// `miden::core` declarations.
-pub(crate) fn lift_single_module(
-    module: &Module,
-    config: &DisassemblerConfig,
-    context: Rc<Context>,
-) -> Result<DisassembledWorld> {
-    let (external_signatures, external_types) =
-        collect_referenced_core_metadata([module], &context)?;
-    lift_module(module, config, &external_signatures, &external_types, context)
-}
-
-/// Lift the Miden Assembly `module` to HIR, using the provided configuration and explicit external
-/// metadata. This remains as a compatibility path for tests/embedders which already have external
-/// contracts; project disassembly should use [`lift_project_target`].
-pub(crate) fn lift_module(
-    module: &Module,
-    config: &DisassemblerConfig,
-    external_signatures: &ExternalSignatureMap,
-    external_types: &ExternalTypeMap,
-    context: Rc<Context>,
-) -> Result<DisassembledWorld> {
-    lift_modules(module, [module], config, external_signatures, external_types, context)
-}
 
 pub(crate) fn lift_project_target(
     target: project::ProjectTargetInput,
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let mut modules =
-        Vec::with_capacity(1 + target.sources.support.len() + target.dependency_modules.len());
-    modules.push(target.sources.root.as_ref());
-    modules.extend(target.sources.support.iter().map(Box::as_ref));
-    modules.extend(target.dependency_modules.iter().map(Box::as_ref));
+    let project::ProjectTargetInput {
+        sources,
+        dependency_modules,
+        external_signatures,
+        external_types,
+    } = target;
+    let ProjectSourceInputs { root, support } = sources;
     lift_modules(
-        target.sources.root.as_ref(),
-        modules,
+        root,
+        support,
+        dependency_modules,
         config,
-        &target.external_signatures,
-        &target.external_types,
+        &external_signatures,
+        &external_types,
         context,
     )
 }
 
-fn lift_modules<'a>(
-    root_module: &'a Module,
-    modules: impl IntoIterator<Item = &'a Module>,
+#[allow(clippy::vec_box)]
+fn lift_modules(
+    root: Box<Module>,
+    support: Vec<Box<Module>>,
+    extra_modules: Vec<Box<Module>>,
     config: &DisassemblerConfig,
-    external_signatures: &ExternalSignatureMap,
-    external_types: &ExternalTypeMap,
+    _external_signatures: &ExternalSignatureMap,
+    _external_types: &ExternalTypeMap,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let modules = modules.into_iter().collect::<Vec<_>>();
-    let mut registry = ModuleRegistry::new(context.clone());
-    registry.register_source_modules(&modules)?;
-    registry.collect_types(&modules, external_types)?;
-    registry.collect_declared_signatures(&modules, external_signatures)?;
-    registry.infer_missing_signatures(&modules, config)?;
+    let mut linker = Box::new(Linker::new(context.source_manager()));
+    let session = context.session_rc();
+    if !extra_modules.is_empty() {
+        linker.link_modules(extra_modules)?;
+    }
+    for (path, content) in session.options.link_modules.iter() {
+        let source = session.source_manager.load(
+            midenc_hir::diagnostics::SourceLanguage::Masm,
+            path.as_str().into(),
+            content.clone(),
+        );
+        let mut module = miden_assembly_syntax::ModuleParser::new(Some(
+            miden_assembly::ast::ModuleKind::Library,
+        ))
+        .parse(Some(path.as_path()), source, context.source_manager())?;
+        linker.link_module(&mut module)?;
+    }
+    for link_lib in session.options.link_libraries.iter() {
+        let package = link_lib.load(&session.options)?;
+        match package.kind {
+            miden_project::TargetType::Kernel => {
+                linker.link_with_kernel(package)?;
+            }
+            miden_project::TargetType::Executable => {
+                return Err(Report::msg(format!(
+                    "cannot link against executable package '{}'",
+                    &link_lib.name
+                )));
+            }
+            _ => {
+                linker.link_library(
+                    LinkLibrary::from_package(package)
+                        .with_linkage(miden_project::Linkage::Dynamic),
+                )?;
+            }
+        }
+    }
+    let module_indices = linker.link([root], support)?;
+    let root_index = module_indices[0];
+
+    let mut registry = ModuleRegistry::new(linker, root_index, module_indices, context.clone());
+    registry.infer_missing_signatures(config)?;
 
     let mut builder = OpBuilder::new(context.clone());
     let mut world = {
@@ -105,12 +123,9 @@ fn lift_modules<'a>(
     ensure_op_region(&context, &mut *world.borrow_mut());
 
     registry.declare_modules(world)?;
-    registry.create_external_declarations()?;
-    registry.create_source_functions(&modules)?;
-    registry.lift_bodies(&modules)?;
+    registry.lift_bodies()?;
 
-    let root_path = module_key(root_module);
-    let module = registry.module_ref(&root_path)?;
+    let module = registry.modules[&root_index];
     Ok(DisassembledWorld {
         context,
         world,
@@ -120,493 +135,221 @@ fn lift_modules<'a>(
 
 struct ModuleRegistry {
     context: Rc<Context>,
+    linker: Box<Linker>,
+    root_index: ModuleIndex,
+    top_level_modules: Vec<ModuleIndex>,
     world: Option<midenc_hir::dialects::builtin::WorldRef>,
-    modules: FxHashMap<Arc<ast::Path>, midenc_hir::dialects::builtin::ModuleRef>,
-    signatures: FxHashMap<Arc<ast::Path>, Signature>,
-    functions: FxHashMap<Arc<ast::Path>, FunctionRef>,
-    source_functions: FxHashMap<Arc<ast::Path>, FxHashMap<ast::Ident, Arc<ast::Path>>>,
+    modules: FxHashMap<ModuleIndex, midenc_hir::dialects::builtin::ModuleRef>,
+    signatures: FxHashMap<GlobalItemIndex, Signature>,
+    functions: FxHashMap<GlobalItemIndex, FunctionRef>,
+    #[allow(unused)]
     external_types: ExternalTypeMap,
+    #[allow(unused)]
     external_signatures: FxHashMap<Arc<ast::Path>, Signature>,
+    #[allow(unused)]
     referenced_external_signatures: FxHashMap<Arc<ast::Path>, Signature>,
 }
 
 impl ModuleRegistry {
-    fn new(context: Rc<Context>) -> Self {
+    fn new(
+        linker: Box<Linker>,
+        root_index: ModuleIndex,
+        top_level_modules: Vec<ModuleIndex>,
+        context: Rc<Context>,
+    ) -> Self {
         Self {
             context,
+            linker,
+            root_index,
+            top_level_modules,
             world: None,
             modules: FxHashMap::default(),
             signatures: FxHashMap::default(),
             functions: FxHashMap::default(),
-            source_functions: FxHashMap::default(),
             external_types: ExternalTypeMap::new(),
             external_signatures: FxHashMap::default(),
             referenced_external_signatures: FxHashMap::default(),
         }
     }
 
-    fn register_source_modules(&mut self, modules: &[&Module]) -> Result<()> {
-        let mut seen = BTreeSet::new();
-        for module in modules {
-            let module_path = module_key(module);
-            if !seen.insert(module_path.clone()) {
-                return Err(Report::msg(format!("duplicate MASM module '{}'", module.path())));
-            }
-
-            let mut locals = FxHashMap::default();
-            for procedure in module.procedures() {
-                let path = procedure_key(module, procedure);
-                if locals.insert(procedure.name().as_ident(), path.clone()).is_some() {
-                    return Err(Report::msg(format!(
-                        "duplicate MASM procedure '{}::{}'",
-                        module.path(),
-                        procedure.name()
-                    )));
-                }
-            }
-            self.source_functions.insert(module_path, locals);
-        }
-        Ok(())
-    }
-
-    fn collect_types(
-        &mut self,
-        modules: &[&Module],
-        external_types: &ExternalTypeMap,
-    ) -> Result<()> {
-        self.external_types.extend(
-            external_types
-                .iter()
-                .map(|(path, ty)| (normalize_external_path(path.clone()), ty.clone())),
-        );
-
-        let mut pending = Vec::new();
-        for (module_index, module) in modules.iter().enumerate() {
-            for (index, path) in module.exported() {
-                if matches!(&module[index], Export::Type(_)) {
-                    pending.push((
-                        module_index,
-                        index,
-                        Arc::from(path.as_path().to_absolute().into_owned()),
-                    ));
-                }
-            }
-        }
-
-        while !pending.is_empty() {
-            let mut progress = false;
-            let mut next = Vec::new();
-            let mut last_unresolved = None;
-
-            for (module_index, index, path) in pending {
-                let module = modules[module_index];
-                let Export::Type(decl) = &module[index] else {
+    fn infer_missing_signatures(&mut self, config: &DisassemblerConfig) -> Result<()> {
+        let mut visited = FxHashSet::default();
+        for root in self.top_level_modules.iter().copied() {
+            let root_path = self.linker[root].path().clone();
+            for (index, item) in self.linker[root].symbols().enumerate() {
+                let gid = self.root_index + ast::ItemIndex::new(index);
+                if !item.is_procedure() {
                     continue;
-                };
-                match signatures::convert_type_expr_with_external_types(
-                    &self.context,
-                    module,
-                    &decl.ty(),
-                    &self.external_types,
-                ) {
-                    Ok(ty) => {
-                        insert_external_type(&mut self.external_types, path, ty)?;
-                        progress = true;
-                    }
-                    Err(err) if is_unresolved_external_type_metadata(&err) => {
-                        last_unresolved = Some(err);
-                        next.push((module_index, index, path));
-                    }
-                    Err(err) => return Err(err),
                 }
-            }
+                let path = root_path.join(self.linker[gid].name());
+                let toposort = self.linker.topological_sort_from_root(gid).map_err(|cycle| {
+                    let iter = cycle.into_node_ids();
+                    let mut nodes = Vec::with_capacity(iter.len());
+                    for node in iter {
+                        let module = self.linker[node.module].path();
+                        let proc = self.linker[node].name();
+                        nodes.push(format!("{}", module.join(proc)));
+                    }
+                    Report::msg(format!(
+                        "found cycle in call graph rooted at '{path}' involving: {}",
+                        DisplayValues::new(nodes.iter())
+                    ))
+                })?;
+                for gid in toposort.iter().rev().copied() {
+                    if !visited.insert(gid) {
+                        continue;
+                    }
 
-            if !progress {
-                return Err(last_unresolved.unwrap_or_else(|| {
-                    Report::msg("failed to resolve MASM source type metadata")
-                }));
-            }
-            pending = next;
-        }
-
-        Ok(())
-    }
-
-    fn collect_declared_signatures(
-        &mut self,
-        modules: &[&Module],
-        external_signatures: &ExternalSignatureMap,
-    ) -> Result<()> {
-        self.external_signatures = convert_external_signatures(&self.context, external_signatures)?;
-        for path in self.referenced_external_paths(modules)? {
-            let Some(signature) = self.external_signatures.get(&path).cloned() else {
-                continue;
-            };
-            insert_signature(&mut self.signatures, path.clone(), signature.clone())?;
-            insert_signature(&mut self.referenced_external_signatures, path, signature)?;
-        }
-
-        for module in modules {
-            for procedure in module.procedures() {
-                let Some(signature) = procedure.signature() else {
-                    continue;
-                };
-                let signature = signatures::convert_signature_with_external_types(
-                    &self.context,
-                    module,
-                    signature,
-                    &self.external_types,
-                )?;
-                insert_signature(
-                    &mut self.signatures,
-                    procedure_key(module, procedure),
-                    signature,
-                )?;
-            }
-        }
-        Ok(())
-    }
-
-    fn referenced_external_paths(&self, modules: &[&Module]) -> Result<BTreeSet<Arc<ast::Path>>> {
-        let mut referenced = BTreeSet::new();
-        let source_manager = self.context.session().source_manager.clone();
-        for module in modules {
-            for procedure in module.procedures() {
-                for target in procedure.invoked() {
-                    let path =
-                        resolve_invocation_path(module, &target.target, source_manager.clone())?;
-                    if !self.is_source_function_path(&path) {
-                        referenced.insert(path);
+                    let item = self.linker[gid].item();
+                    match item {
+                        SymbolItem::Procedure(p) => {
+                            let p = p.borrow();
+                            let signature = self.linker.resolve_signature(gid)?;
+                            match signature {
+                                Some(sig) => {
+                                    self.signatures.insert(
+                                        gid,
+                                        Signature::with_convention(
+                                            &self.context,
+                                            sig.abi,
+                                            sig.params.iter().cloned(),
+                                            sig.results.iter().cloned(),
+                                        ),
+                                    );
+                                }
+                                None if !config.infer_missing_signatures => {
+                                    let path = self.linker[gid.module].path();
+                                    return Err(Report::msg(format!(
+                                        "procedure '{}' is missing a signature",
+                                        path.join(p.name().as_str())
+                                    )));
+                                }
+                                None => {
+                                    let signature = infer::infer_signature(
+                                        gid,
+                                        &p,
+                                        &self.context,
+                                        &self.linker,
+                                        &self.signatures,
+                                    )?;
+                                    self.signatures.insert(gid, signature);
+                                }
+                            }
+                        }
+                        SymbolItem::Compiled(ItemInfo::Procedure(p)) => {
+                            match p.signature.as_deref() {
+                                Some(sig) => {
+                                    self.signatures.insert(
+                                        gid,
+                                        Signature::with_convention(
+                                            &self.context,
+                                            sig.abi,
+                                            sig.params.iter().cloned(),
+                                            sig.results.iter().cloned(),
+                                        ),
+                                    );
+                                }
+                                None => {
+                                    let path = self.linker[gid.module].path();
+                                    return Err(Report::msg(format!(
+                                        "compiled procedure '{}' is missing a signature",
+                                        path.join(p.name.as_str())
+                                    )));
+                                }
+                            }
+                        }
+                        SymbolItem::Constant(_) | SymbolItem::Type(_) | SymbolItem::Compiled(_) => {
+                        }
                     }
                 }
             }
         }
-        Ok(referenced)
-    }
-
-    fn infer_missing_signatures(
-        &mut self,
-        modules: &[&Module],
-        config: &DisassemblerConfig,
-    ) -> Result<()> {
-        let mut pending = Vec::new();
-        for module in modules {
-            for procedure in module.procedures() {
-                let path = procedure_key(module, procedure);
-                if self.signatures.contains_key(&path) {
-                    continue;
-                }
-                if !config.infer_missing_signatures {
-                    return Err(Report::msg(format!(
-                        "procedure '{}' is missing a signature",
-                        procedure.name()
-                    )));
-                }
-                pending.push((*module, procedure));
-            }
-        }
-
-        while !pending.is_empty() {
-            let mut progress = false;
-            let mut next = Vec::new();
-            for (module, procedure) in pending {
-                if !self.procedure_dependencies_ready(module, procedure)? {
-                    next.push((module, procedure));
-                    continue;
-                }
-                let signature =
-                    infer::infer_signature(&self.context, module, procedure, &self.signatures)?;
-                insert_signature(
-                    &mut self.signatures,
-                    procedure_key(module, procedure),
-                    signature,
-                )?;
-                progress = true;
-            }
-
-            if !progress {
-                let names = next
-                    .iter()
-                    .map(|(module, procedure)| format!("{}::{}", module.path(), procedure.name()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(Report::msg(format!(
-                    "signature inference cannot infer recursive or mutually dependent procedures: \
-                     {names}"
-                )));
-            }
-            pending = next;
-        }
 
         Ok(())
-    }
-
-    fn procedure_dependencies_ready(&self, module: &Module, procedure: &Procedure) -> Result<bool> {
-        let source_manager = self.context.session().source_manager.clone();
-        for target in procedure.invoked() {
-            let path = resolve_invocation_path(module, &target.target, source_manager.clone())?;
-            if self.signatures.contains_key(&path) {
-                continue;
-            }
-            if self.functions.contains_key(&path) || self.is_source_function_path(&path) {
-                return Ok(false);
-            }
-            return Err(Report::msg(format!(
-                "signature inference could not resolve external callee '{}' at {:?}; external \
-                 signature metadata is missing{}",
-                path,
-                target.span(),
-                external_signature_metadata_hint(&self.external_signatures)
-            )));
-        }
-        Ok(true)
-    }
-
-    fn is_source_function_path(&self, path: &Arc<ast::Path>) -> bool {
-        self.source_functions
-            .values()
-            .any(|locals| locals.values().any(|local| local == path))
     }
 
     fn declare_modules(&mut self, world: midenc_hir::dialects::builtin::WorldRef) -> Result<()> {
         self.world = Some(world);
         let mut world_builder = WorldBuilder::new(world);
 
-        let mut module_paths = BTreeSet::new();
-        for module_path in self.source_functions.keys() {
-            module_paths.insert(module_path.clone());
-        }
-        for path in self.referenced_external_signatures.keys() {
-            let module_path = path
-                .parent()
-                .ok_or_else(|| Report::msg(format!("external procedure '{path}' has no module")))?;
-            module_paths.insert(Arc::from(module_path.to_absolute().into_owned()));
-        }
-
-        for module_path in module_paths {
-            let symbol_path = masm_module_symbol_path(&module_path);
-            let module = world_builder.declare_module_tree(&symbol_path)?;
-            self.modules.insert(module_path, module);
-        }
-        Ok(())
-    }
-
-    fn create_external_declarations(&mut self) -> Result<()> {
-        for (path, signature) in &self.referenced_external_signatures {
-            let module_path = path
-                .parent()
-                .ok_or_else(|| Report::msg(format!("external procedure '{path}' has no module")))?;
-            let module_path = Arc::from(module_path.to_absolute().into_owned());
-            let module_ref = self.module_ref(&module_path)?;
+        for (gid, signature) in self.signatures.iter() {
+            let gid = *gid;
+            let module_ref = if let Some(module_ref) = self.modules.get(&gid.module).copied() {
+                module_ref
+            } else {
+                let module = &self.linker[gid.module];
+                let path = module.path();
+                let symbol_path = masm_module_symbol_path(path);
+                let module_ref = world_builder.declare_module_tree(&symbol_path)?;
+                self.modules.insert(gid.module, module_ref);
+                module_ref
+            };
             let mut module_builder = ModuleBuilder::new(module_ref);
-            let name = path
-                .last()
-                .ok_or_else(|| Report::msg(format!("external procedure '{path}' has no name")))?;
-            let function = module_builder.define_function(
-                Ident::with_empty_span(midenc_hir::interner::Symbol::intern(name)),
-                Visibility::Public,
-                signature.clone(),
-            )?;
-            insert_function(&mut self.functions, path.clone(), function)?;
-        }
-        Ok(())
-    }
-
-    fn create_source_functions(&mut self, modules: &[&Module]) -> Result<()> {
-        for module in modules {
-            let module_path = module_key(module);
-            let module_ref = self.module_ref(&module_path)?;
-            let mut module_builder = ModuleBuilder::new(module_ref);
-            for procedure in module.procedures() {
-                let path = procedure_key(module, procedure);
-                let signature = self.signatures.get(&path).cloned().ok_or_else(|| {
-                    Report::msg(format!("procedure '{}' is missing a signature", procedure.name()))
-                })?;
-                let visibility = if procedure.visibility().is_public() {
-                    Visibility::Public
-                } else {
-                    Visibility::Private
-                };
-                let mut function = module_builder.define_function(
-                    Ident::with_empty_span(midenc_hir::interner::Symbol::intern(
-                        procedure.name().as_str(),
-                    )),
-                    visibility,
-                    signature,
-                )?;
-                ensure_op_region(&self.context, &mut *function.borrow_mut());
-                insert_function(&mut self.functions, path, function)?;
+            match self.linker[gid].item() {
+                SymbolItem::Procedure(p) => {
+                    let p = p.borrow();
+                    let mut function = module_builder.define_function(
+                        Ident::with_empty_span(midenc_hir::interner::Symbol::intern(
+                            p.name().as_str(),
+                        )),
+                        match p.visibility() {
+                            ast::Visibility::Public => Visibility::Public,
+                            ast::Visibility::Private => Visibility::Private,
+                        },
+                        signature.clone(),
+                    )?;
+                    ensure_op_region(&self.context, &mut *function.borrow_mut());
+                    self.functions.insert(gid, function);
+                }
+                SymbolItem::Compiled(ItemInfo::Procedure(p)) => {
+                    let function = module_builder.define_function(
+                        Ident::with_empty_span(midenc_hir::interner::Symbol::intern(
+                            p.name.as_str(),
+                        )),
+                        Visibility::Public,
+                        signature.clone(),
+                    )?;
+                    self.functions.insert(gid, function);
+                }
+                _ => (),
             }
         }
         Ok(())
     }
 
-    fn lift_bodies(&self, modules: &[&Module]) -> Result<()> {
+    fn lift_bodies(&self) -> Result<()> {
         let mut builder = OpBuilder::new(self.context.clone());
-        for module in modules {
-            for procedure in module.procedures() {
-                let path = procedure_key(module, procedure);
-                let function = *self.functions.get(&path).ok_or_else(|| {
-                    Report::msg(format!(
-                        "unresolved function '{}::{}'",
-                        module.path(),
-                        procedure.name()
-                    ))
-                })?;
-                let signature = self.signatures.get(&path).unwrap().clone();
+        for gid in self.signatures.keys().copied() {
+            if let SymbolItem::Procedure(p) = self.linker[gid].item() {
+                let p = p.borrow();
+                let function = self.functions[&gid];
                 let mut function_builder = FunctionBuilder::new(function, &mut builder);
-                let mut lifter = ProcedureLifter::new(module, procedure, signature, self);
+                let mut lifter = ProcedureLifter::new(gid, &p, self);
                 lifter.lift(&mut function_builder)?;
             }
         }
         Ok(())
     }
 
-    fn module_ref(
+    fn resolve_function(
         &self,
-        module_path: &Arc<ast::Path>,
-    ) -> Result<midenc_hir::dialects::builtin::ModuleRef> {
-        self.modules.get(module_path).copied().ok_or_else(|| {
-            Report::msg(format!("HIR module for MASM module '{module_path}' was not declared"))
-        })
-    }
-
-    fn resolve_function(&self, module: &Module, target: &InvocationTarget) -> Result<FunctionRef> {
-        let source_manager = self.context.session().source_manager.clone();
-        let path = resolve_invocation_path(module, target, source_manager)?;
-        self.functions.get(&path).copied().ok_or_else(|| {
-            Report::msg(format!(
-                "unresolved external callee '{}'; external signature metadata is missing{}",
-                path,
-                external_signature_metadata_hint(&self.external_signatures)
-            ))
-        })
-    }
-}
-
-fn convert_external_signatures(
-    context: &Rc<Context>,
-    external_signatures: &ExternalSignatureMap,
-) -> Result<FxHashMap<Arc<ast::Path>, Signature>> {
-    external_signatures
-        .iter()
-        .map(|(path, signature)| {
-            let path = normalize_external_path(path.clone());
-            let signature = signatures::convert_hir_function_type(context, signature);
-            Ok((path, signature))
-        })
-        .collect()
-}
-
-fn normalize_external_path(path: Arc<ast::Path>) -> Arc<ast::Path> {
-    if !path.is_absolute() {
-        path.to_absolute().into()
-    } else {
-        path
-    }
-}
-
-fn insert_external_type(types: &mut ExternalTypeMap, path: Arc<ast::Path>, ty: Type) -> Result<()> {
-    if let Some(existing) = types.insert(path.clone(), ty.clone())
-        && existing != ty
-    {
-        return Err(Report::msg(format!("conflicting MASM type metadata for '{path}'")));
-    }
-    Ok(())
-}
-
-fn is_unresolved_external_type_metadata(err: &miden_assembly_syntax::diagnostics::Report) -> bool {
-    err.to_string().contains("external type metadata")
-}
-
-fn insert_signature(
-    signatures: &mut FxHashMap<Arc<ast::Path>, Signature>,
-    path: Arc<ast::Path>,
-    signature: Signature,
-) -> Result<()> {
-    if let Some(existing) = signatures.insert(path.clone(), signature.clone())
-        && existing != signature
-    {
-        return Err(Report::msg(format!("conflicting MASM procedure signatures for '{path}'")));
-    }
-    Ok(())
-}
-
-fn insert_function(
-    functions: &mut FxHashMap<Arc<ast::Path>, FunctionRef>,
-    path: Arc<ast::Path>,
-    function: FunctionRef,
-) -> Result<()> {
-    if functions.insert(path.clone(), function).is_some() {
-        return Err(Report::msg(format!("duplicate HIR function for MASM procedure '{path}'")));
-    }
-    Ok(())
-}
-
-fn module_key(module: &Module) -> Arc<ast::Path> {
-    Arc::from(module.path().to_absolute().into_owned())
-}
-
-fn procedure_key(module: &Module, procedure: &Procedure) -> Arc<ast::Path> {
-    Arc::from(module.path().join(procedure.name()).to_absolute().into_owned())
-}
-
-fn resolve_invocation_path(
-    module: &Module,
-    target: &InvocationTarget,
-    source_manager: Arc<dyn miden_assembly_syntax::debuginfo::SourceManager>,
-) -> Result<Arc<ast::Path>> {
-    match target {
-        InvocationTarget::Symbol(name) => {
-            match module.resolve(Span::new(name.span(), name.as_str()), source_manager) {
-                Ok(SymbolResolution::Local(index)) => {
-                    let item = &module[index.into_inner()];
-                    Ok(Arc::from(module.path().join(item.name()).to_absolute().into_owned()))
-                }
-                Ok(SymbolResolution::External(path)) => {
-                    Ok(normalize_external_path(path.inner().clone()))
-                }
-                Ok(SymbolResolution::Exact { path, .. }) => {
-                    Ok(normalize_external_path(path.inner().clone()))
-                }
-                Ok(SymbolResolution::Module { .. }) => Err(Report::msg(format!(
-                    "invocation target '{name}' resolves to a module, not a procedure"
-                ))),
-                Ok(SymbolResolution::MastRoot(_)) => {
-                    Err(Report::msg("MAST root invocation targets are not supported"))
-                }
-                Err(err) => Err(Report::msg(format!(
-                    "failed to resolve MASM invocation target '{name}': {err}"
-                ))),
+        caller: GlobalItemIndex,
+        target: &InvocationTarget,
+        span: SourceSpan,
+        kind: Option<ast::InvokeKind>,
+    ) -> Result<FunctionRef> {
+        let context = SymbolResolutionContext {
+            span,
+            module: caller.module,
+            kind,
+        };
+        match self.linker.resolve_invoke_target(&context, target)? {
+            SymbolResolution::Exact { gid, .. } => Ok(self.functions[&gid]),
+            _ => {
+                let path = self.linker[caller.module].path().clone();
+                let path = path.join(self.linker[caller].name());
+                Err(Report::msg(format!("unresolved callee '{target}' from '{path}'")))
             }
-        }
-        InvocationTarget::Path(path) => {
-            match module.resolve_path(path.as_deref(), source_manager) {
-                Ok(SymbolResolution::Local(index)) => {
-                    let item = &module[index.into_inner()];
-                    Ok(Arc::from(module.path().join(item.name()).to_absolute().into_owned()))
-                }
-                Ok(SymbolResolution::External(path)) => {
-                    Ok(normalize_external_path(path.inner().clone()))
-                }
-                Ok(SymbolResolution::Exact { path, .. }) => {
-                    Ok(normalize_external_path(path.inner().clone()))
-                }
-                Ok(SymbolResolution::Module { .. }) => Err(Report::msg(format!(
-                    "invocation target '{}' resolves to a module, not a procedure",
-                    path.inner()
-                ))),
-                Ok(SymbolResolution::MastRoot(_)) => {
-                    Err(Report::msg("MAST root invocation targets are not supported"))
-                }
-                Err(err) => Err(Report::msg(format!(
-                    "failed to resolve MASM invocation target '{}': {err}",
-                    path.inner()
-                ))),
-            }
-        }
-        InvocationTarget::MastRoot(_) => {
-            Err(Report::msg("MAST root invocation targets are not supported"))
         }
     }
 }
@@ -614,108 +357,6 @@ fn resolve_invocation_path(
 fn masm_module_symbol_path(path: &ast::Path) -> SymbolPath {
     let path = path.as_str().strip_prefix("::").unwrap_or(path.as_str());
     SymbolPath::from_masm_module_id(path)
-}
-
-fn collect_referenced_core_metadata<'a>(
-    modules: impl IntoIterator<Item = &'a Module>,
-    context: &Rc<Context>,
-) -> Result<(ExternalSignatureMap, ExternalTypeMap)> {
-    let source_manager = context.session().source_manager.clone();
-    let mut referenced = BTreeSet::<Arc<ast::Path>>::new();
-    for module in modules {
-        for procedure in module.procedures() {
-            for invocation in procedure.invoked() {
-                let path =
-                    resolve_invocation_path(module, &invocation.target, source_manager.clone())?;
-                if is_miden_core_path(&path) {
-                    referenced.insert(path);
-                    continue;
-                }
-                if module_contains_procedure(module, &path) {
-                    continue;
-                }
-                return Err(Report::msg(format!(
-                    "single-module MASM disassembly does not support non-core import '{}'; use \
-                     project target disassembly for multi-module MASM",
-                    path
-                )));
-            }
-        }
-    }
-
-    if referenced.is_empty() {
-        return Ok((ExternalSignatureMap::new(), ExternalTypeMap::new()));
-    }
-
-    let core = CoreLibrary::default();
-    let mut signatures = ExternalSignatureMap::new();
-    let mut types = ExternalTypeMap::new();
-    for module in core.library().module_infos() {
-        for (_, ty) in module.types() {
-            let path = Arc::from(module.path().join(&ty.name).to_absolute().into_owned());
-            types.insert(path, ty.ty.clone());
-        }
-        for (_, procedure) in module.procedures() {
-            let path =
-                Arc::from(module.path().join(procedure.name.as_str()).to_absolute().into_owned());
-            if !referenced.contains(&path) {
-                continue;
-            }
-            let Some(signature) = &procedure.signature else {
-                return Err(Report::msg(format!(
-                    "referenced core procedure '{path}' has no signature metadata"
-                )));
-            };
-            signatures.insert(path, signature.as_ref().clone());
-        }
-    }
-
-    for path in referenced {
-        if !signatures.contains_key(&path) {
-            return Err(Report::msg(format!(
-                "referenced core procedure '{path}' was not found in CoreLibrary metadata"
-            )));
-        }
-    }
-
-    Ok((signatures, types))
-}
-
-fn is_miden_core_path(path: &ast::Path) -> bool {
-    let path = path.as_str().strip_prefix("::").unwrap_or(path.as_str());
-    path == "miden::core" || path.starts_with("miden::core::")
-}
-
-fn module_contains_procedure(module: &Module, path: &Arc<ast::Path>) -> bool {
-    let module_path = module_key(module);
-    let Some(parent) = path.parent() else {
-        return false;
-    };
-    if parent != module_path.as_ref() {
-        return false;
-    }
-    let Some(name) = path.last() else {
-        return false;
-    };
-    module.procedures().any(|procedure| procedure.name().as_str() == name)
-}
-
-fn external_signature_metadata_hint(
-    external_signatures: &FxHashMap<Arc<ast::Path>, Signature>,
-) -> String {
-    if external_signatures.is_empty() {
-        return "; no external signature metadata is available".to_string();
-    }
-
-    let mut paths = external_signatures.keys().map(|path| path.as_str()).collect::<Vec<_>>();
-    paths.sort();
-    let omitted = paths.len().saturating_sub(8);
-    paths.truncate(8);
-    let mut hint = format!("; available external signatures: {}", paths.join(", "));
-    if omitted > 0 {
-        hint.push_str(&format!(" (+{omitted} more)"));
-    }
-    hint
 }
 
 fn ensure_op_region(context: &Rc<Context>, op: &mut dyn HirOp) {
@@ -746,25 +387,18 @@ enum WordEndian {
 }
 
 struct ProcedureLifter<'a> {
-    module: &'a Module,
+    item: GlobalItemIndex,
     procedure: &'a Procedure,
-    signature: Signature,
     registry: &'a ModuleRegistry,
     locals: BTreeMap<u16, LocalVariable>,
     stack: Vec<StackValue>,
 }
 
 impl<'a> ProcedureLifter<'a> {
-    fn new(
-        module: &'a Module,
-        procedure: &'a Procedure,
-        signature: Signature,
-        registry: &'a ModuleRegistry,
-    ) -> Self {
+    fn new(item: GlobalItemIndex, procedure: &'a Procedure, registry: &'a ModuleRegistry) -> Self {
         Self {
-            module,
+            item,
             procedure,
-            signature,
             registry,
             locals: BTreeMap::new(),
             stack: Vec::new(),
@@ -830,6 +464,11 @@ impl<'a> ProcedureLifter<'a> {
                     else_blk,
                 } => self.lift_if(then_blk, else_blk, *span, builder)?,
                 Op::While { span, body } => self.lift_while(body, *span, builder)?,
+                Op::DoWhile {
+                    span,
+                    body,
+                    condition,
+                } => self.lift_do_while(body, condition, *span, builder)?,
                 Op::Repeat { count, body, .. } => {
                     let count = immediate_u32(count)?;
                     for _ in 0..count {
@@ -1380,9 +1019,9 @@ impl<'a> ProcedureLifter<'a> {
             HornerExt => self.horner_ext(span, builder),
             EvalCircuit => self.eval_circuit(span, builder),
             LogPrecompile => self.log_precompile(span, builder),
-            Exec(target) => self.invoke(builder, target, span, InvokeKind::Exec),
-            Call(target) => self.invoke(builder, target, span, InvokeKind::Call),
-            SysCall(target) => self.invoke(builder, target, span, InvokeKind::Syscall),
+            Exec(target) => self.invoke(builder, target, span, ast::InvokeKind::Exec),
+            Call(target) => self.invoke(builder, target, span, ast::InvokeKind::Call),
+            SysCall(target) => self.invoke(builder, target, span, ast::InvokeKind::SysCall),
             Add => self.binary_with_type(builder, Type::Felt, span, |builder, lhs, rhs, span| {
                 builder.add_wrapping(lhs, rhs, span)
             }),
@@ -1500,7 +1139,7 @@ impl<'a> ProcedureLifter<'a> {
             IsOdd => self.unary_with_type(builder, Type::Felt, span, |builder, value, span| {
                 builder.is_odd(value, span)
             }),
-            Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
+            DebugVar(_) => Ok(()),
             _ => unsupported_instruction(inst, span),
         }
     }
@@ -1556,6 +1195,16 @@ impl<'a> ProcedureLifter<'a> {
         builder.builder_mut().set_insertion_point_after(if_ref);
         self.stack = op_results_as_stack(if_ref, span);
         Ok(())
+    }
+
+    fn lift_do_while(
+        &mut self,
+        _body: &Block,
+        _condition: &Block,
+        _span: SourceSpan,
+        _builder: &mut FunctionBuilder<'_, OpBuilder>,
+    ) -> Result<()> {
+        todo!()
     }
 
     fn lift_while(
@@ -1672,9 +1321,9 @@ impl<'a> ProcedureLifter<'a> {
         builder: &mut FunctionBuilder<'_, OpBuilder>,
         target: &InvocationTarget,
         span: SourceSpan,
-        kind: InvokeKind,
+        kind: ast::InvokeKind,
     ) -> Result<()> {
-        let function = self.registry.resolve_function(self.module, target)?;
+        let function = self.registry.resolve_function(self.item, target, span, Some(kind))?;
         let signature = function.borrow().get_signature().clone();
         let mut args = Vec::with_capacity(signature.arity());
         for param in signature.params().iter() {
@@ -1683,7 +1332,7 @@ impl<'a> ProcedureLifter<'a> {
         }
 
         let results: Vec<_> = match kind {
-            InvokeKind::Exec => {
+            ast::InvokeKind::Exec => {
                 let op = builder.exec(function, signature, args, span)?;
                 op.borrow()
                     .results()
@@ -1691,7 +1340,7 @@ impl<'a> ProcedureLifter<'a> {
                     .map(|result| result.borrow().as_value_ref())
                     .collect()
             }
-            InvokeKind::Call => {
+            ast::InvokeKind::Call => {
                 let op = builder.call(function, signature, args, span)?;
                 op.borrow()
                     .results()
@@ -1699,13 +1348,16 @@ impl<'a> ProcedureLifter<'a> {
                     .map(|result| result.borrow().as_value_ref())
                     .collect()
             }
-            InvokeKind::Syscall => {
+            ast::InvokeKind::SysCall => {
                 let op = builder.syscall(function, signature, args, span)?;
                 op.borrow()
                     .results()
                     .iter()
                     .map(|result| result.borrow().as_value_ref())
                     .collect()
+            }
+            ast::InvokeKind::ProcRef => {
+                panic!("unexpected use of InvokeKind::ProcRef in ProcedureLifter::invoke")
             }
         };
         for result in results.into_iter().rev() {
@@ -1719,8 +1371,9 @@ impl<'a> ProcedureLifter<'a> {
         builder: &mut FunctionBuilder<'_, OpBuilder>,
         span: SourceSpan,
     ) -> Result<Vec<ValueRef>> {
+        let signature = &self.registry.signatures[&self.item];
         let result_types: Vec<_> =
-            self.signature.results().iter().map(|result| result.ty.clone()).collect();
+            signature.results().iter().map(|result| result.ty.clone()).collect();
         let mut results = Vec::with_capacity(result_types.len());
         for result_ty in result_types {
             let value = self.pop(span)?;
@@ -3024,12 +2677,6 @@ fn simulate_sanitizer_stack_op(inst: &Instruction, stack: &mut Vec<SanitizerStac
         MovDn15 => masm_stack::movdn(stack, 15).is_some(),
         _ => false,
     }
-}
-
-enum InvokeKind {
-    Exec,
-    Call,
-    Syscall,
 }
 
 fn unsupported_instruction(inst: &Instruction, span: SourceSpan) -> Result<()> {

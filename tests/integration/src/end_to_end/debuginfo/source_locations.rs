@@ -19,14 +19,13 @@ fn rust_assert_macro_source_location_with_debug_executor() {
     );
 
     let package = test.compile_package();
-    let program = package.unwrap_program();
 
     // First, test that the function works when assertion passes (x > 100)
     {
         let args = vec![Felt::new_unchecked(200)];
-        let exec = executor_with_std(args, Some(&package));
+        let exec = executor_with_std(args);
 
-        let trace = exec.execute(&program, test.session.source_manager.clone());
+        let trace = exec.execute(package.clone(), test.session.source_manager.clone());
         let result: u32 = trace.parse_result().expect("Failed to parse result");
         assert_eq!(result, 200, "When x > 100, function should return x");
     }
@@ -34,14 +33,12 @@ fn rust_assert_macro_source_location_with_debug_executor() {
     // Now test that when assertion fails (x <= 100), we get a panic with source location
     {
         let args = vec![Felt::new_unchecked(50)];
-        let exec = executor_with_std(args, Some(&package));
+        let exec = executor_with_std(args);
 
-        let program_clone = program.clone();
         let source_manager = test.session.source_manager.clone();
 
-        let result = panic::catch_unwind(AssertUnwindSafe(move || {
-            exec.execute(&program_clone, source_manager)
-        }));
+        let result =
+            panic::catch_unwind(AssertUnwindSafe(move || exec.execute(package, source_manager)));
 
         let panic_message = match result {
             Ok(_) => panic!("Expected execution to fail due to assertion (x=50 <= 100)"),

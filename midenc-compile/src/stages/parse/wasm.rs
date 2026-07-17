@@ -43,9 +43,10 @@ impl Stage for ParseWasmStage {
         };
 
         #[cfg(feature = "std")]
-        {
-            self.emit_wat_for_wasm_input(&input, context.session())?;
-        }
+        let source_provenance = self.source_provenance_from_wasm_input(&input)?;
+
+        #[cfg(feature = "std")]
+        self.emit_wat_for_wasm_input(&input, context.session())?;
 
         // Parse and translate the component WebAssembly using the constructed World
         let world = {
@@ -94,6 +95,8 @@ impl Stage for ParseWasmStage {
             world,
             component: Some(component),
             account_component_metadata_bytes,
+            #[cfg(feature = "std")]
+            source_provenance,
         })
     }
 }
@@ -125,6 +128,43 @@ impl ParseWasmStage {
             .into_diagnostic()
             .wrap_err("failed to emit wat output")?;
         Ok(())
+    }
+
+    #[cfg(feature = "std")]
+    fn source_provenance_from_wasm_input(
+        &self,
+        input: &InputType,
+    ) -> CompilerResult<miden_assembly::ProjectSourceProvenanceInputs> {
+        use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
+
+        let wasm_bytes: Cow<'_, [u8]> = match input {
+            InputType::Real(path) => {
+                Cow::Owned(std::fs::read(path).into_diagnostic().wrap_err_with(|| {
+                    format!("failed to read wasm input from '{}'", path.display())
+                })?)
+            }
+            InputType::Stdin { input, .. } => Cow::Borrowed(input),
+        };
+
+        let content = wasm_to_wat(wasm_bytes.as_ref())
+            .into_diagnostic()
+            .wrap_err("failed to convert wasm to wat")?
+            .into_boxed_str();
+
+        let root = match input {
+            InputType::Real(path) => SourceFileProvenance {
+                path: path.clone().into_boxed_path(),
+                content,
+            },
+            InputType::Stdin { name, .. } => SourceFileProvenance {
+                path: name.as_path().to_path_buf().into_boxed_path(),
+                content,
+            },
+        };
+        Ok(ProjectSourceProvenanceInputs {
+            root,
+            support: Default::default(),
+        })
     }
 
     #[cfg(feature = "std")]

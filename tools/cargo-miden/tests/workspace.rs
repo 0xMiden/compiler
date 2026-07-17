@@ -1,7 +1,6 @@
-use std::{env, fs, path::Path};
+use std::{assert_matches, env, fs, path::Path};
 
 use cargo_miden::run;
-use midenc_session::diagnostics::assert_matches;
 
 use crate::utils::{current_dir_lock, project_template_arg, workspace_root};
 

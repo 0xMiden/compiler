@@ -37,7 +37,7 @@ fn store_u32_unaligned() {
         }];
 
         let output = eval_package::<u32, _, _>(
-            &package,
+            package.clone(),
             initializers,
             &[Felt::new_unchecked(offs as u64)],
             context.session(),
