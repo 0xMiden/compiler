@@ -424,6 +424,77 @@ fn u64_udiv_repro() {
     );
 }
 
+/// Signed i32 comparisons (`< <= > >=`) over both-sign operands feeding
+/// branches and selects — the `Type::I32` arms of the `binary.rs` compare
+/// dispatchers (`::intrinsics::i32::is_lt/is_lte/is_gt/is_gte`).
+#[test]
+fn i32_scmp() {
+    run_case("i32_scmp", include_str!("cases/case_i32_scmp.rs"));
+}
+
+/// Signed i64 comparisons (`< <= > >=`) over both-sign operands feeding
+/// branches and selects — the `Type::I64` arms of the `binary.rs` compare
+/// dispatchers and the `lt_i64`/`lte_i64`/`gt_i64`/`gte_i64` emitters
+/// (`::intrinsics::i64::{lt,lte,gt,gte}`).
+#[test]
+fn i64_scmp() {
+    run_case("i64_scmp", include_str!("cases/case_i64_scmp.rs"));
+}
+
+/// Signed i32 division/remainder in all four sign combinations with
+/// by-construction-safe dynamic divisors — `checked_div`'s I32 arm ->
+/// `checked_div_i32` and `wasm.I32RemS` -> `wrapping_mod` ->
+/// `wrapping_mod_i32` (truncate-toward-zero remainder signs).
+#[test]
+fn i32_sdiv() {
+    run_case("i32_sdiv", include_str!("cases/case_i32_sdiv.rs"));
+}
+
+/// Non-strict signed compares (`<=`/`>=`, both widths) materialized as
+/// boolean VALUES — branches/selects always canonicalize to strict compares,
+/// so this value form is the only producer of `i32.le_s/ge_s`/`i64.le_s/ge_s`
+/// and the `lte`/`gte` I32 arms + `lte_i64`/`gte_i64` emitters.
+#[test]
+fn scmp_bool() {
+    run_case("scmp_bool", include_str!("cases/case_scmp_bool.rs"));
+}
+
+/// Arithmetic shift right (i32/i64) with dynamic masked counts and constant
+/// counts — the `Type::I32`/`Type::I64` arms of the `shr` dispatcher ->
+/// `shr_i32`/`shr_i64` (`::intrinsics::{i32,i64}::checked_shr`); the
+/// `shr_imm_*` variants have no non-test callers.
+#[test]
+fn i_ashr() {
+    run_case("i_ashr", include_str!("cases/case_i_ashr.rs"));
+}
+
+/// Signed i64 division with by-construction-safe dynamic divisors (positive
+/// and negative) — `checked_div`'s I64 arm -> `checked_div_i64`
+/// (`::intrinsics::i64::checked_div`, which execs miden-core-lib `u64::div`).
+#[test]
+#[ignore = "VM abort at runtime: signed i64 division routes through the same miden-core-lib \
+            u64::div as u64_udiv — 'error during processing of event with ID: \
+            14153021663962350784' at u64.masm:372 emit.U64_DIV_EVENT; first failing inputs \
+            (832795485, 3791448445)"]
+fn i64_sdiv() {
+    run_case("i64_sdiv", include_str!("cases/case_i64_sdiv.rs"));
+}
+
+/// Deterministic reproducer for the `i64_sdiv` VM abort: pins the exact
+/// `(input1, input2)` pair the fuzzer flagged, so the abort fails reliably on
+/// that input rather than only when proptest happens to draw it.
+#[test]
+#[ignore = "VM aborts on pinned input (832795485, 3791448445): 'error during processing of event \
+            with ID: 14153021663962350784' (U64_DIV_EVENT via ::intrinsics::i64::checked_div); \
+            deterministic reproducer for the i64_sdiv abort"]
+fn i64_sdiv_repro() {
+    run_case_with_inputs(
+        "i64_sdiv_repro",
+        include_str!("cases/case_i64_sdiv.rs"),
+        &[(832795485, 3791448445)],
+    );
+}
+
 /// Reproducer for a compile-time spill-transform panic: each arm calls a
 /// non-inlinable helper, spills the call result under wide-tree pressure,
 /// then yields it, so the spilled value crosses the control-flow edge as the
@@ -433,4 +504,14 @@ fn u64_udiv_repro() {
             (dialects/hir/src/transforms/spill.rs:157); gates the edge-split spill cluster"]
 fn spill_edge() {
     run_case("spill_edge", include_str!("cases/case_spill_edge.rs"));
+}
+
+/// Reproducer for a compile-time gap: signed 64-bit `%` with a dynamic
+/// divisor — `arith.Mod` on I64 reaches `checked_mod`, whose dispatch has no
+/// I64 arm (and no wasm.I64RemS op or i64 mod intrinsic exists to back one).
+#[test]
+#[ignore = "compile-time compiler panic: 'not implemented: checked_mod for i64 is not supported' \
+            (codegen/masm/src/emit/binary.rs:665); i64 % with a dynamic divisor cannot compile"]
+fn i64_srem() {
+    run_case("i64_srem", include_str!("cases/case_i64_srem.rs"));
 }
