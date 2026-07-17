@@ -415,7 +415,7 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .unwrap()
         .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, reclaim_tx_context_builder);
-    expect!["7082"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["7120"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();

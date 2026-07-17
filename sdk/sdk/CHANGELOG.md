@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### BREAKING
 - Block heights and transaction expiration are typed: `tx::get_block_number` returns the new
   `BlockNumber` wrapper (WIT `block-number` core type, comparable as an integer, convertible
-  from `u32` and fallibly from `Felt`), `tx::get_block_timestamp` returns `u32` seconds, and
+  from `u32` and fallibly from `Felt`; `as_u32` panics if the wrapped felt is out of range),
+  `tx::get_block_timestamp` returns `u32` seconds, and
   `tx::get_expiration_block_delta` / `update_expiration_block_delta` use `u16` (the kernel
   bounds deltas to `1..=u16::MAX`) #999
 - Account nonces are typed: `active_account::get_nonce` and `native_account::incr_nonce` (free
