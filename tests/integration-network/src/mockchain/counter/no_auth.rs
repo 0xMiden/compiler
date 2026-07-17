@@ -101,7 +101,7 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, tx_context_builder);
     expect!["1726"].assert_eq(auth_procedure_cycles(&tx_measurements));
-    expect!["8430"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["8052"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed
     assert_counter_storage(

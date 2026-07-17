@@ -45,7 +45,7 @@ pub mod support {
         diagnostics::{IntoDiagnostic, SourceManagerExt},
     };
     use midenc_session::{
-        InputFile, RemapPathPrefix, miden_project, registry::HybridPackageRegistry,
+        InputFile, OptLevel, RemapPathPrefix, miden_project, registry::HybridPackageRegistry,
     };
     use tempfile::TempDir;
 
@@ -236,7 +236,7 @@ pub mod support {
         )?;
 
         let rustup_toolchain = crate::rust::rustup_toolchain();
-        let cargo_build_args = build_cargo_args(cargo_opts);
+        let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
 
         // Enable memcopy and 128-bit arithmetic ops
         let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
@@ -281,8 +281,19 @@ pub mod support {
         Ok(InputFile::from_path(wasm_output).unwrap())
     }
 
+    /// Returns the Cargo profile value for a compiler optimization level.
+    fn cargo_profile_opt_level(opt_level: OptLevel) -> &'static str {
+        match opt_level {
+            OptLevel::None | OptLevel::Balanced => "2",
+            OptLevel::Basic => "1",
+            OptLevel::Max => "3",
+            OptLevel::Size => "\"s\"",
+            OptLevel::SizeMin => "\"z\"",
+        }
+    }
+
     /// Builds the argument vector for the underlying `cargo build` invocation.
-    fn build_cargo_args(cargo_opts: &CargoOptions) -> Vec<String> {
+    fn build_cargo_args(cargo_opts: &CargoOptions, opt_level: OptLevel) -> Vec<String> {
         let mut args = vec!["build".to_string()];
 
         // Add build-std flags required for Miden compilation
@@ -304,7 +315,7 @@ pub mod support {
             ("profile.dev.overflow-checks", "false"),
             ("profile.dev.debug", "true"),
             ("profile.dev.debug-assertions", "false"),
-            ("profile.release.opt-level", "\"s\""),
+            ("profile.release.opt-level", cargo_profile_opt_level(opt_level)),
             ("profile.release.lto", "true"),
             ("profile.release.codegen-units", "1"),
             ("profile.release.panic", "\"abort\""),
