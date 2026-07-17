@@ -103,17 +103,27 @@ impl Asset {
     /// Panics if the asset is not fungible or its amount exceeds [`AssetAmount::MAX_U64`].
     #[inline(never)]
     pub fn amount(&self) -> AssetAmount {
-        // The composition field occupies the lowest bits of the vault-key metadata byte (the
-        // low byte of the faucet-id suffix limb, mirroring
-        // `miden_protocol::asset::AssetVaultKey`), and `Fungible = 0b01` is the only odd
-        // composition, so the limb's parity discriminates fungible assets.
-        assert!(self.key[2].as_canonical_u64() & 1 == 1, "asset is not fungible");
+        assert!(self.is_fungible(), "asset is not fungible");
         let amount = self.value[0];
         assert!(
             amount <= AssetAmount::max_inner(),
             "asset amount exceeds the maximum allowed amount"
         );
         AssetAmount { inner: amount }
+    }
+
+    /// Returns `true` if this asset is fungible.
+    ///
+    /// Intended for kernel-encoded assets (e.g. the ones returned by the `get_assets`
+    /// bindings), whose encoding invariants make the composition bit sufficient to discriminate
+    /// fungibility.
+    #[inline]
+    pub fn is_fungible(&self) -> bool {
+        // The composition field occupies the lowest bits of the vault-key metadata byte (the
+        // low byte of the faucet-id suffix limb, mirroring
+        // `miden_protocol::asset::AssetVaultKey`), and `Fungible = 0b01` is the only odd
+        // composition, so the limb's parity discriminates fungible assets.
+        self.key[2].as_canonical_u64() & 1 == 1
     }
 }
 
@@ -879,6 +889,18 @@ mod tests {
             Word::new([felt!(0), felt!(0), felt!(1), felt!(0)]),
             Word::new([amount, felt!(0), felt!(0), felt!(0)]),
         )
+    }
+
+    /// Ensures the fungibility check discriminates by the composition parity.
+    #[test]
+    fn asset_is_fungible() {
+        let non_fungible = Asset::new(
+            Word::new([felt!(0), felt!(0), felt!(2), felt!(0)]),
+            Word::new([felt!(42), felt!(0), felt!(0), felt!(0)]),
+        );
+
+        assert!(fungible_asset(felt!(42)).is_fungible());
+        assert!(!non_fungible.is_fungible());
     }
 
     /// Ensures fungible asset amounts are decoded from valid key/value encodings.
