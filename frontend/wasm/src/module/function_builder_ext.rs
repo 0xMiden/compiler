@@ -1,4 +1,4 @@
-use alloc::{collections::BTreeMap, rc::Rc, vec::Vec};
+use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
 use std::path::Path;
 
@@ -20,7 +20,10 @@ use midenc_hir::{
         },
         debuginfo::{
             DIBuilder,
-            attributes::{CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr},
+            attributes::{
+                CompileUnitAttr, Expression, ExpressionOp, SubprogramAttr,
+                Variable as DebugVariable,
+            },
         },
     },
     interner::Symbol,
@@ -143,7 +146,6 @@ pub struct FunctionBuilderExt<'c, B: ?Sized + Builder> {
     debug_info: Option<Rc<RefCell<FunctionDebugInfo>>>,
     param_values: Vec<(Variable, ValueRef)>,
     param_dbg_emitted: bool,
-    active_wasm_local_debug_vars: BTreeMap<u32, Vec<usize>>,
 }
 
 impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
@@ -159,7 +161,6 @@ impl<'c> FunctionBuilderExt<'c, OpBuilder<SSABuilderListener>> {
             debug_info: None,
             param_values: Vec::new(),
             param_dbg_emitted: false,
-            active_wasm_local_debug_vars: BTreeMap::new(),
         }
     }
 }
@@ -174,35 +175,28 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         self.refresh_function_debug_attrs();
     }
 
+    fn local_debug_metadata(
+        &self,
+        index: usize,
+        span: SourceSpan,
+    ) -> Option<(DebugVariable, Option<Expression>, bool)> {
+        let fallback = self.span_to_location(span);
+        let info = self.debug_info.as_ref()?;
+        let mut info = info.borrow_mut();
+        let local = info.locals.get_mut(index)?.as_mut()?;
+        if let Some((file, _directory, line, column)) = fallback {
+            fill_debug_attr_location(&mut local.attr, file, line, column);
+        }
+        Some((local.attr.clone(), local.expression.clone(), !local.locations.is_empty()))
+    }
+
     pub fn emit_dbg_value_for_var(&mut self, var: Variable, value: ValueRef, span: SourceSpan) {
-        let Some(info) = self.debug_info.clone() else {
-            return;
-        };
         let idx = var.index();
-        let (attr_opt, expr_opt, schedule_only) = {
-            let info = info.borrow();
-            let local_info = info.locals.get(idx).and_then(|l| l.as_ref());
-            match local_info {
-                Some(l) => {
-                    let schedule_only = !l.locations.is_empty();
-                    (Some(l.attr.clone()), l.expression.clone(), schedule_only)
-                }
-                None => (None, None, false),
-            }
-        };
-        let Some(mut attr) = attr_opt else {
+        let Some((attr, expr_opt, schedule_only)) = self.local_debug_metadata(idx, span) else {
             return;
         };
         if schedule_only {
             return;
-        }
-
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
-            attr.file = file_symbol;
-            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                attr.line = line;
-                attr.column = column;
-            }
         }
 
         // If DWARF didn't provide a location expression, synthesize one from the
@@ -239,11 +233,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         if let Some((file_symbol, directory_symbol, line, column)) = self.span_to_location(span) {
             {
                 let mut info = info_rc.borrow_mut();
-                info.compile_unit.file = file_symbol;
-                info.compile_unit.directory = directory_symbol;
-                info.subprogram.file = file_symbol;
-                info.subprogram.line = line;
-                info.subprogram.column = column;
+                // Fill in the subprogram/compile-unit location at most once, from the first
+                // instruction with a resolvable span. A location resolved from DWARF when the
+                // debug info was collected takes precedence; and later instructions must never
+                // reassign it, otherwise the subprogram "declaration" drifts to whatever source
+                // line happened to be translated last.
+                if info.subprogram.line == 0 {
+                    info.compile_unit.file = file_symbol;
+                    info.compile_unit.directory = directory_symbol;
+                    info.subprogram.file = file_symbol;
+                    info.subprogram.line = line;
+                    info.subprogram.column = column;
+                    for local in info.locals.iter_mut().flatten() {
+                        fill_debug_attr_location(&mut local.attr, file_symbol, line, column);
+                    }
+                }
                 info.function_span.get_or_insert(span);
             }
             let current_span = self.inner.func.borrow().span();
@@ -293,27 +297,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         span: SourceSpan,
         wasm_stack: &[ValueRef],
     ) {
-        let Some(info) = self.debug_info.clone() else {
-            return;
-        };
         let idx = entry.var_index;
-        let attr_opt = {
-            let info = info.borrow();
-            info.local_attr(idx).cloned()
-        };
-        let Some(mut attr) = attr_opt else {
+        let Some((attr, ..)) = self.local_debug_metadata(idx, span) else {
             return;
         };
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
-            attr.file = file_symbol;
-            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                attr.line = line;
-                attr.column = column;
-            }
-        }
 
         let Some(storage) = entry.storage else {
-            self.remove_active_wasm_local_debug_var(idx);
             if let Err(err) = DIBuilder::builder_mut(self).debug_kill(attr, span) {
                 warn!("failed to emit scheduled dbg.kill for local {idx}: {err:?}");
             }
@@ -332,62 +321,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         }
 
-        if let Some(local_index) = wasm_local_index_from_expression(&storage) {
-            self.set_active_wasm_local_debug_var(local_index, idx);
-            self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
-            return;
-        }
-
         self.emit_scheduled_dbg_declare_with_attr(idx, attr, storage, span);
-    }
-
-    pub fn emit_debug_values_for_wasm_local(
-        &mut self,
-        local_index: u32,
-        value: ValueRef,
-        span: SourceSpan,
-    ) {
-        let Some(info) = self.debug_info.clone() else {
-            return;
-        };
-        let Some(var_indices) = self.active_wasm_local_debug_vars.get(&local_index).cloned() else {
-            return;
-        };
-
-        for idx in var_indices {
-            let attr_opt = {
-                let info = info.borrow();
-                info.local_attr(idx).cloned()
-            };
-            let Some(mut attr) = attr_opt else {
-                continue;
-            };
-            if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
-                attr.file = file_symbol;
-                if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                    attr.line = line;
-                    attr.column = column;
-                }
-            }
-            if let Err(err) = DIBuilder::builder_mut(self).debug_value(value, attr, span) {
-                warn!("failed to emit local-backed dbg.value for local {local_index}: {err:?}");
-            }
-        }
-    }
-
-    fn set_active_wasm_local_debug_var(&mut self, local_index: u32, var_index: usize) {
-        self.remove_active_wasm_local_debug_var(var_index);
-        let active = self.active_wasm_local_debug_vars.entry(local_index).or_default();
-        if !active.contains(&var_index) {
-            active.push(var_index);
-        }
-    }
-
-    fn remove_active_wasm_local_debug_var(&mut self, var_index: usize) {
-        self.active_wasm_local_debug_vars.retain(|_, active| {
-            active.retain(|idx| *idx != var_index);
-            !active.is_empty()
-        });
     }
 
     fn emit_scheduled_dbg_declare_with_attr(
@@ -821,6 +755,19 @@ fn should_fill_debug_attr_location(
     // Rust/wasm DWARF sometimes maps prologue/epilogue-style instructions to the first byte of
     // the source file. Keep real declaration metadata rather than showing these fallback spans.
     !(span_line == 1 && span_column.is_none_or(|column| column == 1))
+}
+
+fn fill_debug_attr_location(
+    attr: &mut DebugVariable,
+    file: Symbol,
+    line: u32,
+    column: Option<u32>,
+) {
+    if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
+        attr.file = file;
+        attr.line = line;
+        attr.column = column;
+    }
 }
 
 impl<'f, B: ?Sized + Builder> ArithOpBuilder<'f, B> for FunctionBuilderExt<'f, B> {

@@ -691,3 +691,31 @@ impl core::fmt::Debug for UnresolvedOperand {
 
 /// A type alias for a vector of [NamedAttribute]
 pub type ParsedAttrs = SmallVec<[NamedAttribute; 1]>;
+
+/// Parse an attribute of type `A` from `source`, for use in unit tests.
+///
+/// This drives the same parser machinery as full IR parsing, positioned directly at the
+/// attribute body, so attribute print/parse round-trips can be tested in isolation — attributes
+/// like `di.subprogram` are only ever attached to op attribute dictionaries that the custom op
+/// printers do not print, and are therefore unreachable from full-IR round-trip tests.
+#[cfg(test)]
+pub(crate) fn parse_attribute_for_test<A>(
+    context: Rc<Context>,
+    source: impl Into<String>,
+) -> Result<AttributeRef, Report>
+where
+    A: crate::attributes::AttrParser,
+{
+    use midenc_session::diagnostics::SourceLanguage;
+
+    let source_file = {
+        let source_manager = &context.session().source_manager;
+        source_manager.load(SourceLanguage::Other("hir"), Uri::new("test.hir"), source.into())
+    };
+    let scanner = Scanner::new(source_file.as_str());
+    let token_stream = TokenStream::new(source_file.id(), scanner);
+    let config = ParserConfig::new(context);
+    let mut parser = DefaultParser::new(ParserState::new(config, token_stream));
+    parser.state_mut().asm_state = Some(Default::default());
+    A::parse(&mut parser).map_err(|err| Report::from(err).with_source_code(source_file.clone()))
+}

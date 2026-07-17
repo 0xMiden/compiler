@@ -18,13 +18,13 @@
 //!
 //! This dialect defines debug operations as real IR operations with SSA operands:
 //!
-//! - **`di.value`** — Records the current value of a source variable. Uses an SSA value operand,
+//! - **`di.debug_value`** — Records the current value of a source variable. Uses an SSA value operand,
 //!   so deleting the value without updating debug uses is a hard error.
 //!
 //! - **`di.debug_declare`** — Records the storage location of a source variable using a debug
 //!   expression.
 //!
-//! - **`di.kill`** — Marks a variable as dead, giving the debugger precise lifetime boundaries
+//! - **`di.debug_kill`** — Marks a variable as dead, giving the debugger precise lifetime boundaries
 //!   instead of scope-based heuristics.
 //!
 //! ## Transform Hooks
@@ -35,14 +35,14 @@
 //! - **Simple replacements** are handled automatically via `replace_all_uses_with`
 //! - **Complex transforms** use [`salvage_debug_info`](transform::salvage_debug_info) where the
 //!   transform author only describes the *inverse* of their transformation
-//! - **Value deletion** without a replacement emits `di.kill` automatically
+//! - **Value deletion** without a replacement emits `di.debug_kill` automatically
 //!
 //! ## Design Pillars (as inherited from Mojo)
 //!
 //! 1. **SSA use-def chains** — debug values participate in standard use-def tracking
 //! 2. **Expression trees** — `DIExpressionAttr` describes how to recover source values from
 //!    transformed IR values (encode the inverse transformation)
-//! 3. **Explicit lifetimes** — `debuginfo.kill` for precise variable death points
+//! 3. **Explicit lifetimes** — `di.debug_kill` for precise variable death points
 //!
 //! For historical context, you may be interested in the slides from Mojo's debugging talk, where
 //! they discuss its debug info dialect. [You can find that here](https://llvm.org/devmtg/2024-04/slides/TechnicalTalks/MojoDebugging.pdf).

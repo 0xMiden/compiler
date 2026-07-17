@@ -7,7 +7,7 @@
 //! # Design Philosophy
 //!
 //! The `di` dialect uses SSA use-def chains for debug values, which means transforms *cannot*
-//! silently drop debug info. When a transform replaces or deletes a value, any `di.value`
+//! silently drop debug info. When a transform replaces or deletes a value, any `di.debug_value`
 //! operations using that value must be updated. The standard `replace_all_uses_with` already
 //! handles this correctly for simple value replacements.
 //!
@@ -22,9 +22,9 @@
 //! When CSE replaces `%1 = add %a, %b` with an existing `%0 = add %a, %b`:
 //!
 //! ```text,ignore
-//! // Before: di.value %1 #[variable = x]
+//! // Before: di.debug_value %1 #[variable = x]
 //! rewriter.replace_all_uses_with(%1, %0)
-//! // After:  di.value %0 #[variable = x]  -- automatic!
+//! // After:  di.debug_value %0 #[variable = x]  -- automatic!
 //! ```
 //!
 //! ## Value promoted to memory (using `salvage_debug_info`)
@@ -32,17 +32,17 @@
 //! When a transform promotes a value to a stack allocation:
 //!
 //! ```text
-//! // Before: di.value %val #[variable = x]
+//! // Before: di.debug_value %val #[variable = x]
 //! // Transform creates: %ptr = alloca T
 //! //                    store %val, %ptr
 //! // Call: salvage_debug_info(%val, SalvageAction::Deref { new_value: %ptr })
-//! // After:  di.value %ptr #[variable = x, expression = di.expression(DW_OP_deref)]
+//! // After:  di.debug_value %ptr #[variable = x, expression = di.expression(DW_OP_deref)]
 //! ```
 use alloc::vec::Vec;
 
 use midenc_hir::{
-    Builder, DialectRegistration, Operation, OperationRef, SmallVec, Spanned, ValueRef,
-    dialects::debuginfo::attributes::ExpressionOp,
+    Builder, DialectRegistration, OpBuilder, Operation, OperationRef, ProgramPoint, SmallVec,
+    Spanned, ValueRef, dialects::debuginfo::attributes::ExpressionOp,
 };
 
 use super::{DIBuilder, ops::DebugValue};
@@ -54,7 +54,7 @@ use super::{DIBuilder, ops::DebugValue};
 /// the debugger can still find the variable's value.
 ///
 /// Transform authors only need to pick the right variant — the framework handles updating all
-/// affected `di.value` operations.
+/// affected `di.debug_value` operations.
 #[derive(Clone, Debug)]
 pub enum SalvageAction {
     /// The value is now behind a pointer; dereference to recover the original.
@@ -80,8 +80,9 @@ pub enum SalvageAction {
     /// The value was replaced by a new value with an arbitrary expression.
     ///
     /// Use this for complex transformations where the simple patterns don't apply. The caller
-    /// provides the full expression describing how to recover the source-level value from the new
-    /// IR value.
+    /// provides expression operations describing how to recover the *old* IR value from the new
+    /// one; they are prepended to any existing expression, which continues to describe how the
+    /// source-level value is recovered from the old value.
     WithExpression {
         /// The new value replacing the original.
         new_value: ValueRef,
@@ -99,12 +100,12 @@ pub enum SalvageAction {
 
     /// The value was completely removed with no recovery possible.
     ///
-    /// Use this as a last resort when the value cannot be recovered. This will emit a `di.kill` for
+    /// Use this as a last resort when the value cannot be recovered. This will emit a `di.debug_kill` for
     /// the affected variable.
     Undef,
 }
 
-/// Salvage debug info for all `di.value` operations that use `old_value`.
+/// Salvage debug info for all `di.debug_value` operations that use `old_value`.
 ///
 /// When a transform is about to delete or replace a value, call this function to update all debug
 /// uses. The `action` describes how the debugger can recover the original source-level value from
@@ -130,30 +131,55 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
     action: &SalvageAction,
     builder: &mut B,
 ) {
-    // Collect all debug value ops that use the old value
+    // Collect all debug value ops that use the old value.
+    //
+    // Each replacement op is created at the position of the debug op it replaces — a
+    // `di.debug_value` records the variable's value *at a program point*, so salvaging must not
+    // move that point. The caller's insertion point is restored afterwards.
+    let ip = *builder.insertion_point();
     for mut debug_op in debug_value_users(old_value) {
         apply_salvage_action(&mut debug_op, action, builder);
     }
+    builder.restore_insertion_point(ip);
 }
 
-/// Erase all `di.value` operations that use `old_value`.
+/// Erase all `di.debug_value` operations that use `old_value`, marking each affected variable as
+/// dead at that point.
 ///
 /// Use this when a transform removes `old_value` and cannot preserve a meaningful source-level
-/// location for it. If the transform can recover the source value from another live SSA value, use
-/// [`salvage_debug_info`] instead.
+/// location for it. A `di.debug_kill` is emitted in place of each erased operation, so that
+/// debuggers report the variable as optimized out from that point on, rather than resurrecting a
+/// stale earlier location. If the transform can recover the source value from another live SSA
+/// value, use [`salvage_debug_info`] instead.
 pub fn erase_debug_info(old_value: &ValueRef) {
     for mut debug_op in debug_value_users(old_value) {
+        let (context, variable, span) = {
+            let op = debug_op.borrow();
+            let dv = op.downcast_ref::<DebugValue>().unwrap();
+            (op.context_rc(), dv.variable().as_value().clone(), op.span())
+        };
+        let mut builder = OpBuilder::new(context);
+        builder.set_insertion_point(ProgramPoint::before(debug_op));
+        let _ = builder.debug_kill(variable, span);
         debug_op.borrow_mut().erase();
     }
 }
 
 /// Apply a salvage action to a single debug value operation.
+///
+/// The replacement operation is created immediately before `debug_op`, which is then erased.
+///
+/// Inverse expression operations are always *prepended* to the existing expression: the existing
+/// expression describes how to recover the source-level value from the old IR value, and the
+/// salvage ops describe how to recover the old IR value from its replacement, so the salvage ops
+/// must run first (`source = old_expr(salvage_ops(new_value))`).
 fn apply_salvage_action<B: ?Sized + Builder>(
     debug_op: &mut OperationRef,
     action: &SalvageAction,
     builder: &mut B,
 ) {
     let span = debug_op.borrow().span();
+    builder.set_insertion_point_before(*debug_op);
 
     match action {
         SalvageAction::Deref { new_value } => {
@@ -165,9 +191,9 @@ fn apply_salvage_action<B: ?Sized + Builder>(
             };
             expr.operations.insert(0, ExpressionOp::Deref);
 
-            // Erase old op and create new one with updated value and expression
-            debug_op.borrow_mut().erase();
+            // Create the replacement with updated value and expression, then erase the old op
             let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
+            debug_op.borrow_mut().erase();
         }
 
         SalvageAction::OffsetBy { new_value, offset } => {
@@ -176,12 +202,13 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
                 (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
-            // To recover: subtract the offset that was added
-            expr.operations.push(ExpressionOp::ConstU64(*offset));
-            expr.operations.push(ExpressionOp::Minus);
+            // To recover the old value: subtract the offset that was added, before any
+            // pre-existing expression is applied
+            expr.operations
+                .splice(0..0, [ExpressionOp::ConstU64(*offset), ExpressionOp::Minus]);
 
-            debug_op.borrow_mut().erase();
             let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
+            debug_op.borrow_mut().erase();
         }
 
         SalvageAction::WithExpression { new_value, ops } => {
@@ -190,10 +217,10 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 let dv = op.downcast_ref::<DebugValue>().unwrap();
                 (dv.variable().as_value().clone(), dv.expression().as_value().clone())
             };
-            expr.operations.extend(ops.iter().cloned());
+            expr.operations.splice(0..0, ops.iter().cloned());
 
-            debug_op.borrow_mut().erase();
             let _ = builder.debug_value_with_expr(*new_value, variable, Some(expr), span);
+            debug_op.borrow_mut().erase();
         }
 
         SalvageAction::Constant { value } => {
@@ -203,11 +230,11 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 dv.variable().as_value().clone()
             };
 
-            debug_op.borrow_mut().erase();
-            // Emit a kill since we can't create a di.value without a live SSA operand for constants
+            // Emit a kill since we can't create a di.debug_value without a live SSA operand for constants
             // — the constant value is encoded in the expression
             let _ = builder.debug_kill(variable, span);
-            // TODO: in the future, could emit a di.value with a materialized constant and a
+            debug_op.borrow_mut().erase();
+            // TODO: in the future, could emit a di.debug_value with a materialized constant and a
             // ConstU64/StackValue expression pair
             let _ = value;
         }
@@ -219,8 +246,8 @@ fn apply_salvage_action<B: ?Sized + Builder>(
                 dv.variable().as_value().clone()
             };
 
-            debug_op.borrow_mut().erase();
             let _ = builder.debug_kill(variable, span);
+            debug_op.borrow_mut().erase();
         }
     }
 }
@@ -233,7 +260,7 @@ pub fn is_debug_info_op(op: &Operation) -> bool {
     op.dialect().name() == super::DebugInfoDialect::NAMESPACE
 }
 
-/// Collect all `di.value` operations that reference the given value.
+/// Collect all `di.debug_value` operations that reference the given value.
 ///
 /// Useful for transforms that need to inspect or update debug info for a specific value.
 pub fn debug_value_users(value: &ValueRef) -> SmallVec<[OperationRef; 2]> {

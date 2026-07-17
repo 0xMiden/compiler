@@ -1,10 +1,16 @@
 use alloc::rc::Rc;
 
 use midenc_hir::{
-    Backward, CallOpInterface, EntityMut, FxHashMap, FxHashSet, Op, OperationName, OperationRef,
-    ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec, Symbol,
-    TraceTarget, ValueRef,
-    dialects::builtin::{Function, attributes::LocalVariable},
+    Backward, CallOpInterface, EntityMut, Forward, FxHashMap, FxHashSet, Op, OperationName,
+    OperationRef, ProgramPoint, RawWalk, RegionBranchOpInterface, Report, Rewriter, SmallVec,
+    Spanned, Symbol, TraceTarget, ValueRef,
+    dialects::{
+        builtin::{Function, attributes::LocalVariable},
+        debuginfo::{
+            DIBuilder, DebugDeclare,
+            attributes::{ExpressionOp, decode_frame_base_local_index},
+        },
+    },
     pass::{Pass, PassExecutionState, PostPassStatus},
     patterns::{RewriterImpl, TracingRewriterListener},
     traits::BranchOpInterface,
@@ -12,8 +18,84 @@ use midenc_hir::{
 
 use crate::{ExecFpi, LoadLocal, StoreLocal};
 
+/// Rewrite the `di.debug_declare` describing `local` as a variable's storage into `di.debug_value`
+/// ops anchored to the value each erased store wrote.
+///
+/// When a local is promoted to an SSA value (or its dead stores are erased), the memory slot the
+/// declaration points at is no longer written, so a debugger following it would read stale or
+/// uninitialized memory. Recording the stored value at each store point keeps the variable's
+/// debug info accurate, exactly like LLVM's mem2reg converts dbg.declare into dbg.value.
+///
+/// Returns `false` when any declaration that refers to this local cannot be converted safely. In
+/// that case the caller must preserve the stores, since erasing them would leave the declaration
+/// pointing at an unwritten slot.
+fn convert_debug_declare_for_local<R: Rewriter>(
+    rewriter: &mut R,
+    function_op: OperationRef,
+    local: &LocalVariable,
+    stores: &[(OperationRef, ValueRef)],
+) -> bool {
+    let local_index = local.as_usize() as u32;
+    let mut declares = SmallVec::<[OperationRef; 2]>::new();
+    function_op.raw_prewalk_all::<Forward, _>(|op: OperationRef| {
+        let operation = op.borrow();
+        if let Some(declare) = operation.downcast_ref::<DebugDeclare>() {
+            let expr = declare.expression();
+            if expr.as_value().operations.iter().any(|op| match op {
+                ExpressionOp::WasmLocal(index) => *index == local_index,
+                ExpressionOp::FrameBase { global_index, .. } => {
+                    decode_frame_base_local_index(*global_index) == Some(local_index)
+                }
+                _ => false,
+            }) {
+                declares.push(op);
+            }
+        }
+    });
+
+    if declares.is_empty() {
+        return true;
+    }
+
+    let [declare_op] = declares.as_slice() else {
+        return false;
+    };
+    if !matches!(
+        declare_op
+            .borrow()
+            .downcast_ref::<DebugDeclare>()
+            .unwrap()
+            .expression()
+            .as_value()
+            .operations
+            .as_slice(),
+        [ExpressionOp::WasmLocal(index)] if *index == local_index
+    ) {
+        return false;
+    };
+
+    let variable = {
+        let op = declare_op.borrow();
+        let declare = op.downcast_ref::<DebugDeclare>().unwrap();
+        declare.variable().as_value().clone()
+    };
+    // Record the variable's value at each store that is about to be erased
+    for (store, stored_value) in stores {
+        let span = store.borrow().span();
+        rewriter.set_insertion_point_before(*store);
+        let _ = rewriter.debug_value(*stored_value, variable.clone(), span);
+    }
+    rewriter.erase_op(*declare_op);
+    true
+}
+
 #[derive(Default)]
 pub struct Local2Reg;
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<Local2Reg>(
+    "local2reg",
+    "promote single-use locals to SSA registers"
+));
 
 impl Pass for Local2Reg {
     type Target = Function;
@@ -65,18 +147,6 @@ impl Pass for Local2Reg {
             return Ok(());
         }
 
-        if function.num_locals() == 0 {
-            log::debug!(
-                target: &trace_target,
-                sym = trace_target.relevant_symbol();
-                "function has no locals, nothing to do",
-            );
-            state.preserved_analyses_mut().preserve_all();
-            state.set_post_pass_status(PostPassStatus::Unchanged);
-            return Ok(());
-        }
-
-        let locals = SmallVec::<[_; 4]>::from_iter(function.iter_locals());
         let op = function.as_operation_ref();
         let context = function.as_operation().context_rc();
         drop(function);
@@ -116,6 +186,25 @@ impl Pass for Local2Reg {
                 stored.entry(local).or_default().push((op, stored_value));
             }
         });
+
+        // The candidate set is derived from the load/store ops themselves rather than the
+        // function's locals table: locals reconstructed from parsed HIR are not registered with
+        // the function, and locals that are neither loaded nor stored have nothing to rewrite
+        // anyway. Sort by index so rewrites are applied in a deterministic order.
+        let mut locals = SmallVec::<[_; 4]>::from_iter(loaded.keys().chain(stored.keys()).copied());
+        locals.sort_by_key(|local| local.as_usize());
+        locals.dedup_by_key(|local| local.as_usize());
+
+        if locals.is_empty() {
+            log::debug!(
+                target: &trace_target,
+                sym = trace_target.relevant_symbol();
+                "function has no locals in use, nothing to do",
+            );
+            state.preserved_analyses_mut().preserve_all();
+            state.set_post_pass_status(PostPassStatus::Unchanged);
+            return Ok(());
+        }
 
         let mut changed = PostPassStatus::Unchanged;
         'next_local: for local in locals {
@@ -218,6 +307,22 @@ impl Pass for Local2Reg {
                 );
                 // If we reach here, then there is no control flow between the load and store, so
                 // remove the store, and replace the load with the stored value.
+                //
+                // Any debug declaration pointing at the promoted slot must follow the value into
+                // its SSA register, since the slot will no longer be written.
+                if !convert_debug_declare_for_local(
+                    &mut rewriter,
+                    op,
+                    &local,
+                    &[(*store, *stored_value)],
+                ) {
+                    log::trace!(
+                        target: &trace_target,
+                        sym = trace_target.relevant_symbol();
+                        "ignoring {local}: debug declarations cannot all be converted safely",
+                    );
+                    continue;
+                }
                 rewriter.erase_op(*store);
                 rewriter.replace_all_op_uses_with_values(load, &[Some(*stored_value)]);
                 rewriter.erase_op(load);
@@ -228,6 +333,14 @@ impl Pass for Local2Reg {
                 //
                 // We rely on region simplification/canonicalization to remove any ops/values made
                 // dead by erasing these stores.
+                if !convert_debug_declare_for_local(&mut rewriter, op, &local, stores) {
+                    log::trace!(
+                        target: &trace_target,
+                        sym = trace_target.relevant_symbol();
+                        "preserving dead stores for {local}: debug declarations cannot all be converted safely",
+                    );
+                    continue;
+                }
                 for (store, _) in stores.iter() {
                     changed = PostPassStatus::Changed;
                     log::trace!(
@@ -306,6 +419,57 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
     // CHECK-NEXT: builtin.ret [[V4]] : (i32);
     builtin.ret %4 : (i32);
 };
+            "#
+        );
+    }
+
+    #[test]
+    fn converts_debug_declares_for_promoted_locals() {
+        use midenc_hir::{
+            dialects::{
+                builtin::BuiltinOpBuilder,
+                debuginfo::{
+                    DIBuilder, DebugInfoDialect,
+                    attributes::{Expression, ExpressionOp, Variable},
+                },
+            },
+            interner::Symbol,
+        };
+
+        let mut test = Test::new("promotes_with_declare", &[Type::I32], &[Type::I32]);
+        test.context().get_or_register_dialect::<DebugInfoDialect>();
+
+        {
+            let mut builder = test.function_builder();
+            let local0 = builder.alloc_local(Type::I32);
+            let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
+            let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
+            let expr = Expression::with_ops(alloc::vec![ExpressionOp::WasmLocal(0)]);
+            BuiltinOpBuilder::builder_mut(&mut builder)
+                .debug_declare(variable, expr, SourceSpan::UNKNOWN)
+                .unwrap();
+            let v2 = builder.load_local(local0, SourceSpan::UNKNOWN).unwrap();
+            let v3 = builder.add(v2, v2, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([v3], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.apply_pass::<Local2Reg>(true).expect("invalid ir");
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(test.context_rc(), &flags);
+        printer.print_operation(test.function().borrow());
+        let output = format!("{}", printer.finish());
+        std::println!("{output}");
+        filecheck!(
+            output,
+            r#"
+// CHECK-LABEL: builtin.function public extern("C") @promotes_with_declare
+// CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i32);
+// CHECK-NEXT: [[V3:%\d+]] = arith.add %0, %0 <{ overflow = #builtin.overflow<checked> }>;
+// CHECK-NEXT: builtin.ret [[V3]] : (i32);
+// CHECK-NOT: di.debug_declare
+// CHECK-NOT: hir.store_local
             "#
         );
     }

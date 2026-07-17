@@ -188,6 +188,27 @@ builtin.function public extern(\"C\") @retconst() -> u8 {
     Ok(())
 }
 
+#[test]
+fn parse_rejects_untaggable_frame_base_indices() -> TestResult {
+    use crate::dialects::debuginfo::DebugInfoDialect;
+
+    for modifier in ["local", "global"] {
+        let mut test = ParserTest::default();
+        test.context().get_or_register_dialect::<DebugInfoDialect>();
+        let source = format!(
+            r#"builtin.function public extern("C") @bad(%0: i32) -> i32 {{
+    di.debug_declare <{{ variable = #di.variable<{{ name = "x", file = "test.rs", line = 1 }}>, expression = #di.expression<[DW_OP_fbreg({modifier}, 2147483648+0)]> }}>;
+    builtin.ret %0 : (i32);
+}};"#
+        );
+
+        let result = test.parse::<Function>("frame_base_index_out_of_range.hir", &source);
+        assert!(result.is_err(), "expected an untaggable {modifier} index to be rejected");
+    }
+
+    Ok(())
+}
+
 #[derive(Default)]
 struct ParserTest {
     test: Test,

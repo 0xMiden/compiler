@@ -243,19 +243,8 @@ fn parse_function_body<B: ?Sized + Builder>(
         let (op, offset) = reader.read_with_offset().into_diagnostic()?;
         func_validator.op(pos, &op).into_diagnostic()?;
 
-        let code_offset = (offset as u64)
-            .checked_sub(module.wasm_file.code_section_offset)
-            .expect("offset occurs before start of code section");
-
-        // For DWARF lookup, we need different offset calculations depending on context:
-        // - For standalone modules: DWARF addresses are relative to the code section start
-        // - For modules in components: DWARF addresses are absolute (component file offsets)
-        let dwarf_lookup_offset = if module.wasm_file.module_base_offset > 0 {
-            module.wasm_file.module_base_offset + offset as u64
-        } else {
-            code_offset
-        };
-        let span = resolve_instruction_span(addr2line, dwarf_lookup_offset, session, config)?;
+        let dwarf_offset = module.wasm_file.dwarf_offset(offset as u64);
+        let span = resolve_instruction_span(addr2line, dwarf_offset, session, config)?;
         if !span.is_unknown() {
             last_valid_span = span;
         } else {
@@ -279,7 +268,7 @@ fn parse_function_body<B: ?Sized + Builder>(
         builder.record_debug_span(effective_span);
 
         if state.reachable && !builder.is_unreachable() {
-            builder.apply_location_schedule(code_offset, effective_span, &state.stack);
+            builder.apply_location_schedule(dwarf_offset, effective_span, &state.stack);
         }
 
         // Track the span of every END we observe, so we have a span to assign to the return we
@@ -376,8 +365,15 @@ fn resolve_source_location(
         absolute_path.display()
     );
 
+    // A line number of 0 in DWARF line programs means "this instruction has no source line";
+    // treat such rows as unresolved instead of defaulting to line 1, so that an outer inline
+    // frame (the call site) or the last valid span provides the location, rather than a bogus
+    // `file:1:1` span polluting the line table.
+    let Some(line) = loc.line.and_then(LineNumber::new) else {
+        return Ok(None);
+    };
+
     let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-    let line = loc.line.and_then(LineNumber::new).unwrap_or_default();
     let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
     let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
 

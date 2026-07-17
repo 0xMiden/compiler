@@ -122,7 +122,7 @@ impl AttrParser for VariableAttr {
                 }
                 "arg" if var.arg_index.is_none() => {
                     parser.parse_equal()?;
-                    var.column = Some(parser.parse_decimal_integer::<u32>()?.into_inner());
+                    var.arg_index = Some(parser.parse_decimal_integer::<u32>()?.into_inner());
                 }
                 "ty" if var.ty.is_none() => {
                     parser.parse_equal()?;

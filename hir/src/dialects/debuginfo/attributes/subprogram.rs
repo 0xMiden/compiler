@@ -105,7 +105,7 @@ impl AttrPrinter for SubprogramAttr {
             let names = self
                 .param_names
                 .iter()
-                .map(|name| const_text(name.as_str()))
+                .map(|name| text(format!("\"{}\"", name.as_str().escape_default())))
                 .intersperse(const_text(", "))
                 .fold(Document::Empty, |acc, item| acc + item);
             let names = const_text("[") + names + const_text("]");
@@ -188,8 +188,8 @@ impl AttrParser for SubprogramAttr {
                     subprogram.is_definition = parser
                         .token_stream_mut()
                         .expect_map("boolean", |tok| match tok {
-                            Token::BareIdent("true") => Some(true),
-                            Token::BareIdent("false") => Some(false),
+                            Token::True => Some(true),
+                            Token::False => Some(false),
                             _ => None,
                         })?
                         .into_inner();
@@ -199,8 +199,8 @@ impl AttrParser for SubprogramAttr {
                     subprogram.is_local = parser
                         .token_stream_mut()
                         .expect_map("boolean", |tok| match tok {
-                            Token::BareIdent("true") => Some(true),
-                            Token::BareIdent("false") => Some(false),
+                            Token::True => Some(true),
+                            Token::False => Some(false),
                             _ => None,
                         })?
                         .into_inner();
@@ -208,7 +208,7 @@ impl AttrParser for SubprogramAttr {
                 prop => {
                     return Err(crate::parse::ParserError::InvalidAttributeValue {
                         span,
-                        reason: format!("duplicate DILocalVariableAttr property '{prop}'"),
+                        reason: format!("duplicate SubprogramAttr property '{prop}'"),
                     });
                 }
             }
@@ -219,5 +219,48 @@ impl AttrParser for SubprogramAttr {
         let attr = parser.context_rc().create_attribute::<SubprogramAttr, _>(subprogram);
 
         Ok(attr.as_attribute_ref())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use super::{Subprogram, SubprogramAttr};
+    use crate::{
+        AttrPrinter, dialects::debuginfo::DebugInfoDialect, interner::Symbol, print::AsmPrinter,
+        testing::Test,
+    };
+
+    /// Subprogram attrs only appear in function attribute dictionaries, which the custom
+    /// function printer does not print, so this round-trip cannot be covered by full-IR lit
+    /// tests. Exercise the printer and parser directly instead. This covers the boolean
+    /// properties (which must lex as dedicated true/false tokens) and the quoted parameter
+    /// name list.
+    #[test]
+    fn subprogram_attr_print_parse_roundtrip() {
+        let test = Test::new("subprogram_attr_print_parse_roundtrip", &[], &[]);
+        let context = test.context_rc();
+        context.get_or_register_dialect::<DebugInfoDialect>();
+
+        let mut subprogram =
+            Subprogram::new(Symbol::intern("fib"), Symbol::intern("test.rs"), 3, Some(5));
+        subprogram.linkage_name = Some(Symbol::intern("_ZN3fib"));
+        subprogram.is_local = true;
+        subprogram = subprogram.with_param_names([Symbol::intern("a"), Symbol::intern("b")]);
+
+        let attr = context.create_attribute::<SubprogramAttr, _>(subprogram.clone());
+
+        let flags = Default::default();
+        let mut printer = AsmPrinter::new(context.clone(), &flags);
+        attr.borrow().print(&mut printer);
+        let printed = printer.finish().to_string();
+
+        let parsed = crate::parse::parse_attribute_for_test::<SubprogramAttr>(context, &printed)
+            .unwrap_or_else(|err| {
+                panic!("failed to re-parse printed subprogram attr {printed:?}: {err}")
+            });
+        let parsed = parsed.try_downcast_attr::<SubprogramAttr>().expect("wrong attr type");
+        assert_eq!(parsed.borrow().as_value(), &subprogram, "printed form: {printed}");
     }
 }

@@ -1741,12 +1741,14 @@ fn find_dependency_package_in_dir(
         .collect::<Vec<_>>();
     packages.sort();
 
+    // The stems are ordered by identity: the canonical miden-project package name comes first,
+    // followed by legacy aliases. Select by that order rather than modification time, which can
+    // cause a stale alias artifact to shadow the canonical package.
     for stem in package_stems {
-        if let Some(package) = packages.iter().find(|path| {
-            path.file_stem()
-                .and_then(|value| value.to_str())
-                .is_some_and(|file_stem| file_stem == stem)
-        }) {
+        if let Some(package) = packages
+            .iter()
+            .find(|path| path.file_stem().and_then(|value| value.to_str()) == Some(stem.as_str()))
+        {
             return Ok(Some(package.clone()));
         }
     }
@@ -1758,7 +1760,11 @@ fn find_dependency_package_in_dir(
 fn dependency_package_stems(dependency: &SelectedDependency) -> Vec<String> {
     let mut stems = Vec::new();
 
-    if let Some(package_name) = dependency_manifest_package_name(&dependency.root) {
+    if let Some(package_name) = dependency_miden_project_package_name(&dependency.root) {
+        push_dependency_stem(&mut stems, &package_name);
+    }
+
+    if let Some(package_name) = dependency_cargo_package_name(&dependency.root) {
         push_dependency_stem(&mut stems, &package_name);
     }
 
@@ -1773,9 +1779,17 @@ fn dependency_package_stems(dependency: &SelectedDependency) -> Vec<String> {
     stems
 }
 
-/// Reads the Cargo package name for dependency directories.
-fn dependency_manifest_package_name(root: &Path) -> Option<String> {
-    let manifest_path = root.join("Cargo.toml");
+/// Reads the canonical artifact name from `miden-project.toml`.
+fn dependency_miden_project_package_name(root: &Path) -> Option<String> {
+    dependency_package_name_from_manifest(&root.join("miden-project.toml"))
+}
+
+/// Reads the Cargo package name as a legacy artifact alias.
+fn dependency_cargo_package_name(root: &Path) -> Option<String> {
+    dependency_package_name_from_manifest(&root.join("Cargo.toml"))
+}
+
+fn dependency_package_name_from_manifest(manifest_path: &Path) -> Option<String> {
     let manifest = fs::read_to_string(manifest_path).ok()?;
     let manifest = manifest.parse::<toml::Table>().ok()?;
     manifest
@@ -1991,6 +2005,41 @@ interface api {
         push_dependency_stem(&mut stems, "no-arg-account");
 
         assert_eq!(stems, ["no-arg-account", "no_arg_account"]);
+    }
+
+    #[test]
+    fn canonical_miden_package_artifact_wins_over_dependency_alias() {
+        let temp_root =
+            env::temp_dir().join(format!("midenc-fpi-canonical-package-{}", std::process::id()));
+        let output_dir = temp_root.join("target/miden/debug");
+        std::fs::create_dir_all(&output_dir).unwrap();
+        std::fs::write(
+            temp_root.join("miden-project.toml"),
+            "[package]\nname = \"component_macros_account\"\n",
+        )
+        .unwrap();
+        std::fs::write(temp_root.join("Cargo.toml"), "[package]\nname = \"cargo_alias\"\n")
+            .unwrap();
+        let canonical = output_dir.join("component_macros_account.masp");
+        let stale_alias = output_dir.join("component_macros.masp");
+        std::fs::write(&canonical, []).unwrap();
+        std::fs::write(&stale_alias, []).unwrap();
+
+        let dependency = SelectedDependency {
+            name: "component_macros".to_string(),
+            root: temp_root.clone(),
+            interface: DependencyInterface {
+                name: "account".to_string(),
+                import: "miden:component-macros-account/account@0.1.0".to_string(),
+                types: Vec::new(),
+            },
+        };
+        let stems = dependency_package_stems(&dependency);
+
+        assert_eq!(stems.first().map(String::as_str), Some("component_macros_account"));
+        assert_eq!(find_dependency_package_in_dir(&output_dir, &stems).unwrap(), Some(canonical));
+
+        std::fs::remove_dir_all(temp_root).unwrap();
     }
 
     #[test]
