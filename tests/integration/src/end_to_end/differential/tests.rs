@@ -272,3 +272,34 @@ fn unreachable_exits() {
 fn switch_loop_mix() {
     run_case("switch_loop_mix", include_str!("cases/case_switch_loop_mix.rs"));
 }
+
+/// Signed widening shapes (the corpus otherwise never creates `arith.sext`):
+/// extend_i32_s, extend8/16/32_s, and `i64.mul_wide_s` whose constant
+/// multiplicand folds via `Sext::fold`'s I128 arm.
+#[test]
+#[ignore = "native/masm divergence: inputs (3022925119, 3340151117) -> native 3550407903, masm \
+            3550391763; signed i128 widening-multiply/sign-extension shapes"]
+fn sext_shapes() {
+    run_case("sext_shapes", include_str!("cases/case_sext_shapes.rs"));
+}
+
+/// Deterministic reproducer for the `sext_shapes` divergence: pins the exact
+/// `(input1, input2)` pair the fuzzer flagged, so the mismatch fails reliably
+/// on that input rather than only when proptest happens to draw it.
+#[test]
+#[ignore = "native/masm divergence on pinned input (3022925119, 3340151117): native 3550407903 vs \
+            masm 3550391763; deterministic reproducer for the sext_shapes divergence"]
+fn sext_shapes_repro() {
+    run_case_with_inputs(
+        "sext_shapes_repro",
+        include_str!("cases/case_sext_shapes.rs"),
+        &[(3022925119, 3340151117)],
+    );
+}
+
+/// `i64.mul_wide_u` with a constant multiplicand (reaches `Zext::fold`'s
+/// U128 success arm) plus first genuine `i32.ctz`/`i64.ctz` uses.
+#[test]
+fn zext_wide_ctz() {
+    run_case("zext_wide_ctz", include_str!("cases/case_zext_wide_ctz.rs"));
+}
