@@ -39,6 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   interface; only the generated trait is renamed. Use it when the interface name would clash with
   the wrapper struct, with another referenced interface, or with a sibling `#[component(...)]`
   trait of the same interface in the same crate #1208
+- `FromFeltRepr`/`ToFeltRepr` are now implemented for `Word` (encoded as its 4 felt elements in
+  order), so `Word` can be used directly in `#[note]` storage structs and other felt-repr derives
+  #886
 
 ## [0.13.1] - 2026-07-09
 

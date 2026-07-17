@@ -10,7 +10,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-pub use miden_field::Felt;
+pub use miden_field::{Felt, Word};
 /// Re-export `DeriveFromFeltRepr` as `FromFeltRepr` for `#[derive(FromFeltRepr)]` ergonomics.
 pub use miden_field_repr_derive::DeriveFromFeltRepr as FromFeltRepr;
 /// Re-export `DeriveToFeltRepr` as `ToFeltRepr` for `#[derive(ToFeltRepr)]` ergonomics.
@@ -270,6 +270,18 @@ impl FromFeltRepr for Felt {
     }
 }
 
+/// Encodes a `Word` as its 4 felt elements in order.
+impl FromFeltRepr for Word {
+    #[inline(always)]
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
+        let a = reader.read()?;
+        let b = reader.read()?;
+        let c = reader.read()?;
+        let d = reader.read()?;
+        Ok(Word::new([a, b, c, d]))
+    }
+}
+
 impl FromFeltRepr for u64 {
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
@@ -362,6 +374,16 @@ impl ToFeltRepr for Felt {
     #[inline(always)]
     fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
         writer.write(*self);
+    }
+}
+
+/// Encodes a `Word` as its 4 felt elements in order.
+impl ToFeltRepr for Word {
+    #[inline(always)]
+    fn write_felt_repr(&self, writer: &mut FeltWriter<'_>) {
+        for felt in self.as_elements() {
+            writer.write(*felt);
+        }
     }
 }
 
