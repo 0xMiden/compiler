@@ -12,7 +12,7 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
-### Kernel counters use integer types instead of `Felt`
+### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
 Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,
 `tx::get_num_output_notes`, `active_account::get_num_procedures`, and the
@@ -49,7 +49,8 @@ tx::update_expiration_block_delta(42);
 
 Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
 `as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
-nonce into a `Word`):
+nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from `tx::get_block_number()` and
+converts the same way):
 
 ```rust
 // before
@@ -58,7 +59,7 @@ let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
 
 // after
 let final_nonce: Nonce = self.incr_nonce();
-let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce.into()]);
+let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 ```
 
 Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
