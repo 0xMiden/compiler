@@ -109,13 +109,10 @@ fn switch_shapes() {
     run_case("switch_shapes", include_str!("cases/case_switch_shapes.rs"));
 }
 
-/// Deterministic reproducer for issue #1235: pins the exact `(input1, input2)`
-/// pair the fuzzer flagged. The pair drives the hashed value to `h = 2`, so the
-/// `br_table` selector LLVM normalizes to `h - 7` wraps above `2^31` and must
-/// take the default arm; the frontend used to re-type the selector with a
-/// checked I32 -> U32 cast, trapping with "value does not fit in i32" instead.
-/// Fixed by bitcasting the selector (issue #1243, PR #1245); this pin guards
-/// against reintroducing a value check on that path.
+/// Regression guard for the fixed `switch_shapes` divergence (br_table
+/// selector checked cast — VM abort "value does not fit in i32"): pins the
+/// exact `(input1, input2)` pair that used to fail, independent of the
+/// fuzzer's random draws.
 #[test]
 fn switch_shapes_repro() {
     run_case_with_inputs(
@@ -403,8 +400,8 @@ fn mulwide_fold() {
 /// `u64::div`/`u64::mod`).
 #[test]
 #[ignore = "VM abort at runtime: 'error during processing of event with ID: 14153021663962350784' \
-            at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs \
-            (3046129121, 3276697921)"]
+            at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs (3046129121, \
+            3276697921)"]
 fn u64_udiv() {
     run_case("u64_udiv", include_str!("cases/case_u64_udiv.rs"));
 }
