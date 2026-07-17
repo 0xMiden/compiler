@@ -54,8 +54,11 @@ impl HybridPackageRegistry {
 
         // Load link libraries
         let core = crate::LinkLibrary::core();
+        let tx_kernel = crate::LinkLibrary::tx_kernel();
         let protocol = crate::LinkLibrary::protocol();
-        let implied_libraries = vec![&core, &protocol];
+        let implied_libraries = vec![&core, &tx_kernel, &protocol]
+            .into_iter()
+            .filter(|ll| !options.link_libraries.iter().any(|oll| oll.name == ll.name));
         let link_libraries = options.link_libraries.iter().chain(implied_libraries);
         for lib in link_libraries {
             let package = lib.load(options)?;

@@ -585,7 +585,7 @@ impl CompilerTestBuilder {
 
                 [[bin]]
                 name = "{name}"
-                path = "<virtual>"
+                path = "src/lib.rs"
 
                 [dependencies]
                 miden-core = "*"
@@ -729,7 +729,7 @@ impl CompilerTestBuilder {
 
                 [[bin]]
                 name = "{name}"
-                path = "<virtual>"
+                path = "src/lib.rs"
 
                 [dependencies]
                 {project_dependencies}
@@ -1046,33 +1046,33 @@ impl CompilerTest {
     }
 }
 
+const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
 fn stdlib_sys_crate_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = Path::new(CARGO_MANIFEST_DIR);
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("stdlib-sys")
 }
 
 /// Get the path to the `miden-sdk-alloc` crate
 pub fn sdk_alloc_crate_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = Path::new(CARGO_MANIFEST_DIR);
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("alloc")
 }
 
 /// Get the path to the `miden-sdk` crate
 pub fn sdk_crate_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = Path::new(CARGO_MANIFEST_DIR);
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("sdk")
 }
 
 /// Get the directory for the top-level workspace
 fn get_workspace_dir() -> String {
     // Get the directory for the integration test suite project
-    let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or(std::env::current_dir().unwrap().to_str().unwrap().to_string());
-    let cargo_manifest_dir_path = Path::new(&cargo_manifest_dir);
+    let cargo_manifest_dir = Path::new(CARGO_MANIFEST_DIR);
     // "Exit" the integration test suite project directory to the compiler workspace directory
     // i.e. out of the `tests/integration` directory
     let compiler_workspace_dir =
-        cargo_manifest_dir_path.parent().unwrap().parent().unwrap().to_str().unwrap();
+        cargo_manifest_dir.parent().unwrap().parent().unwrap().to_str().unwrap();
     compiler_workspace_dir.to_string()
 }
 

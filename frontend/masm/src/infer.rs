@@ -1,11 +1,12 @@
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 
+use miden_assembly::{
+    GlobalItemIndex,
+    linker::{Linker, SymbolResolutionContext},
+};
 use miden_assembly_syntax::{
-    ast::{
-        self, Block, Immediate, Instruction, InvocationTarget, Module, Op, Procedure,
-        SymbolResolution,
-    },
-    debuginfo::{SourceManager, SourceSpan, Span, Spanned},
+    ast::{Block, Immediate, Instruction, InvocationTarget, Op, Procedure, SymbolResolution},
+    debuginfo::{SourceManager, SourceSpan},
     parser::{IntValue, PushValue, WordValue},
 };
 use midenc_hir::{
@@ -24,12 +25,13 @@ use crate::{
 /// Infer a [Signature] for `procedure`, using `signatures` for inferring the stack effects of
 /// procedure invocations in its body. Signatures are keyed by absolute MASM procedure path.
 pub(crate) fn infer_signature(
-    context: &Rc<Context>,
-    module: &Module,
+    gid: GlobalItemIndex,
     procedure: &Procedure,
-    signatures: &FxHashMap<Arc<ast::Path>, Signature>,
+    context: &Rc<Context>,
+    linker: &Linker,
+    signatures: &FxHashMap<GlobalItemIndex, Signature>,
 ) -> Result<Signature> {
-    let mut state = InferState::new(context, module, signatures);
+    let mut state = InferState::new(gid, context, linker, signatures);
     state.infer_block(procedure.body())?;
 
     let params = state.inputs.iter().map(AbstractValue::ty_or_felt);
@@ -136,22 +138,25 @@ struct InferState<'a> {
     stack: Vec<AbstractValue>,
     inputs: Vec<AbstractValue>,
     current_span: SourceSpan,
-    module: &'a Module,
+    item: GlobalItemIndex,
+    linker: &'a Linker,
     source_manager: Arc<dyn SourceManager>,
-    signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
+    signatures: &'a FxHashMap<GlobalItemIndex, Signature>,
 }
 
 impl<'a> InferState<'a> {
     fn new(
+        item: GlobalItemIndex,
         context: &Rc<Context>,
-        module: &'a Module,
-        signatures: &'a FxHashMap<Arc<ast::Path>, Signature>,
+        linker: &'a Linker,
+        signatures: &'a FxHashMap<GlobalItemIndex, Signature>,
     ) -> Self {
         Self {
             stack: Vec::new(),
             inputs: Vec::new(),
             current_span: SourceSpan::UNKNOWN,
-            module,
+            item,
+            linker,
             source_manager: context.session().source_manager.clone(),
             signatures,
         }
@@ -162,7 +167,8 @@ impl<'a> InferState<'a> {
             stack: self.stack.clone(),
             inputs: Vec::new(),
             current_span: self.current_span,
-            module: self.module,
+            item: self.item,
+            linker: self.linker,
             source_manager: self.source_manager.clone(),
             signatures: self.signatures,
         }
@@ -177,6 +183,11 @@ impl<'a> InferState<'a> {
                     then_blk,
                     else_blk,
                 } => self.infer_if(then_blk, else_blk, *span)?,
+                Op::DoWhile {
+                    span,
+                    body,
+                    condition,
+                } => self.infer_do_while(body, condition, *span)?,
                 Op::While { span, body } => self.infer_while(body, *span)?,
                 Op::Repeat { count, body, .. } => {
                     let count = immediate_u32(count)?;
@@ -602,7 +613,7 @@ impl<'a> InferState<'a> {
             EvalCircuit => self.constrain_top_n(3, Type::Felt, span),
             LogPrecompile => self.constrain_top_n(12, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
-            Debug(_) | DebugVar(_) | Trace(_) => Ok(()),
+            DebugVar(_) => Ok(()),
             _ => unsupported_instruction(inst, span),
         };
         self.current_span = previous_span;
@@ -636,6 +647,15 @@ impl<'a> InferState<'a> {
 
         self.stack = merge_stacks(then_state.stack, else_state.stack, span);
         Ok(())
+    }
+
+    fn infer_do_while(
+        &mut self,
+        _body: &Block,
+        _condition: &Block,
+        _span: SourceSpan,
+    ) -> Result<()> {
+        todo!()
     }
 
     fn infer_while(&mut self, body: &Block, span: SourceSpan) -> Result<()> {
@@ -797,14 +817,22 @@ impl<'a> InferState<'a> {
     }
 
     fn invoke(&mut self, target: &InvocationTarget, span: SourceSpan) -> Result<()> {
-        let key = resolve_invocation_path(self.module, target, self.source_manager.clone())?;
-        let signature = self.signatures.get(&key).ok_or_else(|| {
-            Report::msg(format!(
-                "signature inference could not resolve external callee '{key}' at {span:?}; \
-                 signature metadata is missing{}",
-                signature_metadata_hint(self.signatures)
-            ))
-        })?;
+        let context = SymbolResolutionContext {
+            span,
+            module: self.item.module,
+            kind: None,
+        };
+        let signature = match self.linker.resolve_invoke_target(&context, target)? {
+            SymbolResolution::Exact { gid, path } => {
+                self.signatures.get(&gid).ok_or_else(|| {
+                    Report::msg(format!(
+                        "signature inference could not resolve external callee '{path}' at \
+                         {span:?}; signature metadata is missing",
+                    ))
+                })?
+            }
+            _ => return Err(Report::msg(format!("could not resolve callee '{target}'"))),
+        };
 
         for param in signature.params() {
             self.pop_with_type(param.ty.clone(), span)?;
@@ -1050,86 +1078,6 @@ fn masm_scalar_rank(ty: &Type) -> Option<u8> {
         Type::Felt => Some(7),
         _ => None,
     }
-}
-
-fn resolve_invocation_path(
-    module: &Module,
-    target: &InvocationTarget,
-    source_manager: Arc<dyn SourceManager>,
-) -> Result<Arc<ast::Path>> {
-    match target {
-        InvocationTarget::Symbol(name) => {
-            match module.resolve(Span::new(name.span(), name.as_str()), source_manager) {
-                Ok(SymbolResolution::Local(index)) => {
-                    let item = &module[index.into_inner()];
-                    Ok(Arc::from(module.path().join(item.name()).to_absolute().into_owned()))
-                }
-                Ok(SymbolResolution::External(path)) => Ok(normalize_path(path.inner().clone())),
-                Ok(SymbolResolution::Exact { path, .. }) => {
-                    Ok(normalize_path(path.inner().clone()))
-                }
-                Ok(SymbolResolution::Module { .. }) => Err(Report::msg(format!(
-                    "signature inference target '{name}' resolves to a module"
-                ))),
-                Ok(SymbolResolution::MastRoot(_)) => Err(Report::msg(
-                    "signature inference does not support MAST root invoke targets",
-                )),
-                Err(err) => Err(Report::msg(format!(
-                    "signature inference could not resolve target '{name}': {err}"
-                ))),
-            }
-        }
-        InvocationTarget::Path(path) => {
-            match module.resolve_path(path.as_deref(), source_manager) {
-                Ok(SymbolResolution::Local(index)) => {
-                    let item = &module[index.into_inner()];
-                    Ok(Arc::from(module.path().join(item.name()).to_absolute().into_owned()))
-                }
-                Ok(SymbolResolution::External(path)) => Ok(normalize_path(path.inner().clone())),
-                Ok(SymbolResolution::Exact { path, .. }) => {
-                    Ok(normalize_path(path.inner().clone()))
-                }
-                Ok(SymbolResolution::Module { .. }) => Err(Report::msg(format!(
-                    "signature inference target '{}' resolves to a module",
-                    path.inner()
-                ))),
-                Ok(SymbolResolution::MastRoot(_)) => Err(Report::msg(
-                    "signature inference does not support MAST root invoke targets",
-                )),
-                Err(err) => Err(Report::msg(format!(
-                    "signature inference could not resolve target '{}': {err}",
-                    path.inner()
-                ))),
-            }
-        }
-        InvocationTarget::MastRoot(_) => {
-            Err(Report::msg("signature inference does not support MAST root invoke targets"))
-        }
-    }
-}
-
-fn normalize_path(path: Arc<ast::Path>) -> Arc<ast::Path> {
-    if path.is_absolute() {
-        path
-    } else {
-        path.to_absolute().into()
-    }
-}
-
-fn signature_metadata_hint(signatures: &FxHashMap<Arc<ast::Path>, Signature>) -> String {
-    if signatures.is_empty() {
-        return "; no signature metadata is available".to_string();
-    }
-
-    let mut paths = signatures.keys().map(|path| path.as_str()).collect::<Vec<_>>();
-    paths.sort();
-    let omitted = paths.len().saturating_sub(8);
-    paths.truncate(8);
-    let mut hint = format!("; available signatures: {}", paths.join(", "));
-    if omitted > 0 {
-        hint.push_str(&format!(" (+{omitted} more)"));
-    }
-    hint
 }
 
 fn merge_branch_inputs(

@@ -1,8 +1,10 @@
 use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
-use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
-use miden_core::operations::DebugVarLocation;
+use miden_assembly_syntax::{
+    ast::{Attribute, DebugVarLocation},
+    parser::WordValue,
+};
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
@@ -20,7 +22,7 @@ use midenc_session::diagnostics::{Report, Spanned, WrapErr};
 use smallvec::SmallVec;
 
 use crate::{
-    OperandStack, TraceEvent,
+    Event, OperandStack,
     artifact::MasmComponent,
     emitter::BlockEmitter,
     linker::{LinkInfo, Linker},
@@ -71,9 +73,29 @@ impl ToMasmComponent for builtin::World {
         // If we have global variables or data segments, we will require a component initializer
         // function, as well as a module to hold component-level functions such as init
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
+        let toplevel_namespaces = self
+            .body()
+            .entry()
+            .body()
+            .iter()
+            .filter_map(|op| {
+                if op.is::<builtin::Module>() || op.is::<builtin::Component>() {
+                    Some(op.as_operation_ref())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
-            let qualified = masm::QualifiedProcedureName::new("::init", name);
+            let qualified = match toplevel_namespaces.len() {
+                1 => {
+                    let namespace =
+                        toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
+                    masm::QualifiedProcedureName::new(format!("::{namespace}").as_str(), name)
+                }
+                _ => masm::QualifiedProcedureName::new("::init", name),
+            };
             Some(masm::InvocationTarget::Path(Span::new(
                 SourceSpan::default(),
                 qualified.into_inner(),
@@ -85,18 +107,21 @@ impl ToMasmComponent for builtin::World {
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let root =
-            Arc::<miden_assembly_syntax::Path>::from(miden_assembly_syntax::Path::new("::init"));
+        let root = match toplevel_namespaces.len() {
+            1 => {
+                let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
+                Arc::from(
+                    masm::PathBuf::new(&format!("::{namespace}"))
+                        .expect("invalid namespace")
+                        .into_boxed_path(),
+                )
+            }
+            _ => Arc::<masm::Path>::from(masm::Path::new("::init")),
+        };
         let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
         let modules = vec![init_module];
 
         let rodata = data_segments_to_rodata(&link_info)?;
-
-        let kernel = if context.session().options.target_requires_protocol() {
-            Some(miden_protocol::transaction::TransactionKernel::kernel())
-        } else {
-            None
-        };
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
         // if no globals) to use as the start of the dynamic heap when the program is executed
@@ -112,7 +137,6 @@ impl ToMasmComponent for builtin::World {
             root,
             init,
             entrypoint,
-            kernel,
             rodata,
             heap_base,
             stack_pointer,
@@ -149,7 +173,13 @@ impl ToMasmComponent for builtin::Component {
             .map_err(Report::msg)?;
 
         // Get the library path of the component
-        let component_path = id.to_library_path();
+        let component_path = id
+            .to_library_path()
+            .to_absolute()
+            .map_err(|err| {
+                Report::msg(format!("unable to canonicalize '{}': {err}", &id.to_library_path()))
+            })?
+            .into_owned();
 
         // Get the entrypoint, if specified
         let entrypoint = match context.session().options.entrypoint.as_deref() {
@@ -171,9 +201,7 @@ impl ToMasmComponent for builtin::Component {
                 // 'cargo miden build' to detect the target env, and we default it to 'rollup'
                 let is_wrapper = id.is_synthetic_wrapper();
                 let path = if is_wrapper {
-                    let mut path = component_path.clone();
-                    path.push(entry_id.module.as_str());
-                    path
+                    component_path.join(entry_id.module.as_str())
                 } else {
                     // We're compiling a Wasm component and the component id is included
                     // in the entrypoint.
@@ -193,8 +221,7 @@ impl ToMasmComponent for builtin::Component {
         let requires_init = link_info.has_globals() || link_info.has_data_segments();
         let init = if requires_init {
             let name = masm::ProcedureName::new("init").unwrap();
-            let qualified =
-                masm::QualifiedProcedureName::new(component_path.as_path().to_absolute(), name);
+            let qualified = masm::QualifiedProcedureName::new(&component_path, name);
             Some(masm::InvocationTarget::Path(Span::new(
                 SourceSpan::default(),
                 qualified.into_inner(),
@@ -206,17 +233,11 @@ impl ToMasmComponent for builtin::Component {
         // Define the initial component modules set
         //
         // The top-level component module is always defined, but may be empty
-        let root: Arc<miden_assembly_syntax::Path> =
-            id.to_library_path().to_absolute().into_owned().into();
-        let modules = vec![Arc::new(masm::Module::new(masm::ModuleKind::Library, &root))];
+        let root: Arc<miden_assembly_syntax::Path> = component_path.into_boxed_path().into();
+        let root_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
+        let modules = vec![root_module];
 
         let rodata = data_segments_to_rodata(&link_info)?;
-
-        let kernel = if context.session().options.target_requires_protocol() {
-            Some(miden_protocol::transaction::TransactionKernel::kernel())
-        } else {
-            None
-        };
 
         // Compute the first page boundary after the end of the globals table (or reserved memory
         // if no globals) to use as the start of the dynamic heap when the program is executed
@@ -232,7 +253,6 @@ impl ToMasmComponent for builtin::Component {
             root,
             init,
             entrypoint,
-            kernel,
             rodata,
             heap_base,
             stack_pointer,
@@ -290,7 +310,7 @@ struct MasmComponentBuilder<'a> {
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
-    source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
+    source_manager: Arc<dyn midenc_session::SourceManager>,
     init_body: Vec<masm::Op>,
     invoked_from_init: BTreeSet<masm::Invoke>,
 }
@@ -319,11 +339,13 @@ impl MasmComponentBuilder<'_> {
             };
             self.init_body.push(Op::Inst(Span::new(
                 span,
-                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
+                Inst::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
             )));
             self.init_body.push(Op::Inst(Span::new(span, Inst::Exec(heap_init))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()),
+            )));
 
             // Data segment initialization
             self.emit_data_segment_initialization();
@@ -409,16 +431,29 @@ impl MasmComponentBuilder<'_> {
     }
 
     fn define_module(&mut self, module: &builtin::Module) -> Result<(), Report> {
-        let module_path = if let Some(id) = self.component.id.as_ref() {
-            let mut path = id.to_library_path();
-            path.push(module.name().as_str());
-            path
-        } else {
-            module.path().to_library_path()
+        let module_path = module.path().to_library_path();
+        let module_path = module_path.to_absolute().unwrap();
+        let trace_target = TraceTarget::category("codegen");
+        log::debug!(target: &trace_target, "defining module '{module_path}'");
+        /*
+        let visibility = match *module.get_visibility() {
+            midenc_hir::Visibility::Public => masm::Visibility::Public,
+            midenc_hir::Visibility::Internal | midenc_hir::Visibility::Private => {
+                masm::Visibility::Private
+            }
         };
-        let mut masm_module = Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
+         */
+        let visibility = masm::Visibility::Public;
+        let module_index = if let Some(rest) = module_path.strip_prefix(&self.component.root) {
+            self.define_module_tree(rest, Some(0), visibility)?
+        } else {
+            self.define_module_tree(&module_path, None, visibility)?
+        };
+
+        let masm_module = Arc::get_mut(&mut self.component.modules[module_index])
+            .expect("expected unique reference");
         let builder = MasmModuleBuilder {
-            module: &mut masm_module,
+            module: masm_module,
             analysis_manager: self.analysis_manager.nest(module.as_operation_ref()),
             link_info: self.link_info,
             source_manager: self.source_manager.clone(),
@@ -427,9 +462,72 @@ impl MasmComponentBuilder<'_> {
         };
         builder.build(module)?;
 
-        self.component.modules.push(Arc::from(masm_module));
-
         Ok(())
+    }
+
+    fn define_module_tree(
+        &mut self,
+        module_path: &masm::Path,
+        mut parent: Option<usize>,
+        visibility: masm::Visibility,
+    ) -> Result<usize, Report> {
+        let trace_target = TraceTarget::category("codegen");
+        let mut path = masm::PathBuf::with_capacity(256);
+        if let Some(parent) = parent {
+            path = self.component.modules[parent].path().to_path_buf();
+        }
+        let mut components = module_path.components().peekable();
+        while let Some(component) = components.next() {
+            let name = component.unwrap().as_str();
+            // Ignore the root component
+            if name == "::" {
+                continue;
+            }
+            path.push_component(name);
+            if !path.is_absolute() {
+                path = path.to_absolute().unwrap().into_owned();
+            }
+            // Use the input visibility for the last module we crate, for parent modules, we must
+            // specify public visibility so that references to this module are valid.
+            let visibility = if components.peek().is_none() {
+                visibility
+            } else {
+                masm::Visibility::Public
+            };
+            let module_path = &path;
+            if let Some(parent_index) = parent {
+                let parent_module = Arc::get_mut(&mut self.component.modules[parent_index])
+                    .expect("expected unique reference");
+                if parent_module.submodules().iter().any(|sm| sm.name.as_str() == name) {
+                    // Already defined, look up the submodule as the new `parent`
+                    parent = Some(
+                        self.component
+                            .modules
+                            .iter()
+                            .position(|m| m.path() == module_path.as_path())
+                            .expect(
+                                "submodule was already defined, but not registered with component",
+                            ),
+                    );
+                } else {
+                    // Create the submodule
+                    let submodule =
+                        Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
+                    let name = masm::Ident::new(submodule.name()).unwrap();
+                    log::debug!(target: &trace_target, "declaring submodule '{name}' of '{}'", parent_module.path());
+                    parent_module.declare_submodule(name, visibility)?;
+                    parent = Some(self.component.modules.len());
+                    self.component.modules.push(Arc::from(submodule));
+                }
+            } else {
+                log::debug!(target: &trace_target, "declaring module '{module_path}'");
+                let module = Box::new(masm::Module::new(masm::ModuleKind::Library, module_path));
+                parent = Some(self.component.modules.len());
+                self.component.modules.push(Arc::from(module));
+            }
+        }
+
+        Ok(parent.unwrap())
     }
 
     fn define_function(&mut self, function: &builtin::Function) -> Result<(), Report> {
@@ -506,12 +604,14 @@ impl MasmComponentBuilder<'_> {
             // [num_words, write_ptr, COM, ..] -> [write_ptr']
             self.init_body.push(Op::Inst(Span::new(
                 span,
-                Inst::Trace(TraceEvent::FrameStart.as_u32().into()),
+                Inst::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
             )));
             self.init_body
                 .push(Op::Inst(Span::new(span, Inst::Exec(pipe_preimage_to_memory.clone()))));
-            self.init_body
-                .push(Op::Inst(Span::new(span, Inst::Trace(TraceEvent::FrameEnd.as_u32().into()))));
+            self.init_body.push(Op::Inst(Span::new(
+                span,
+                Inst::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()),
+            )));
             // drop write_ptr'
             self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
         }
@@ -522,7 +622,7 @@ struct MasmModuleBuilder<'a> {
     module: &'a mut masm::Module,
     analysis_manager: AnalysisManager,
     link_info: &'a LinkInfo,
-    source_manager: Arc<dyn midenc_session::SourceManager + Send + Sync>,
+    source_manager: Arc<dyn midenc_session::SourceManager>,
     init_body: &'a mut Vec<masm::Op>,
     invoked_from_init: &'a mut BTreeSet<masm::Invoke>,
 }
@@ -835,61 +935,9 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
         return None;
     };
 
-    let args = ty.params().iter().map(component_abi_type_expr_from_hir).collect();
-    let results = ty.results().iter().map(component_abi_type_expr_from_hir).collect();
+    let args = ty.params().iter().cloned().map(masm::TypeExpr::from).collect();
+    let results = ty.results().iter().cloned().map(masm::TypeExpr::from).collect();
     Some(masm::FunctionType::new(ty.calling_convention(), args, results))
-}
-
-/// Convert HIR types from a Component Model/WIT signature into MASM syntax types.
-///
-/// This intentionally differs from `From<Type> for TypeExpr`, which describes the lowered MASM
-/// representation and expands wide integer primitives like `u64`/`u128` into 32-bit limb arrays.
-/// Component export metadata should preserve the Component ABI shape instead, including nominal
-/// struct and field names used by debuggers and typed clients.
-///
-/// TODO(pauls): Remove once miden-vm#XXXX is merged and ships in the next stable release,
-/// expected to be v0.24.
-fn component_abi_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
-    match ty {
-        Type::Array(array) => masm::TypeExpr::Array(masm::ArrayType::new(
-            component_abi_type_expr_from_hir(array.element_type()),
-            array.len(),
-        )),
-        Type::Struct(struct_ty) => {
-            let name = struct_ty.name().and_then(|name| masm::Ident::new(name.as_ref()).ok());
-            let fields = struct_ty.fields().iter().enumerate().map(|(index, field)| {
-                let name = field
-                    .name
-                    .as_deref()
-                    .map(masm::Ident::new)
-                    .and_then(Result::ok)
-                    .unwrap_or_else(|| masm::Ident::new(format!("field{index}")).unwrap());
-                masm::StructField {
-                    span: SourceSpan::UNKNOWN,
-                    name,
-                    ty: component_abi_type_expr_from_hir(&field.ty),
-                }
-            });
-            masm::TypeExpr::Struct(
-                masm::StructType::new(name, fields)
-                    .with_repr(Span::unknown(struct_ty.repr()))
-                    .with_span(SourceSpan::UNKNOWN),
-            )
-        }
-        Type::Ptr(ptr) => masm::TypeExpr::Ptr(
-            masm::PointerType::new(component_abi_type_expr_from_hir(ptr.pointee()))
-                .with_address_space(ptr.addrspace()),
-        ),
-        Type::Function(_) => masm::TypeExpr::Ptr(masm::PointerType::new(
-            masm::TypeExpr::Primitive(Span::unknown(Type::Felt)),
-        )),
-        Type::List(element_ty) => masm::TypeExpr::Ptr(
-            masm::PointerType::new(component_abi_type_expr_from_hir(element_ty))
-                .with_address_space(masm::types::AddressSpace::Byte),
-        ),
-        Type::Unknown | Type::Never | Type::F64 => panic!("unrepresentable type value: {ty}"),
-        ty => masm::TypeExpr::Primitive(Span::unknown(ty.clone())),
-    }
 }
 
 /// Returns true if the block contains at least one real (non-decorator) instruction.
@@ -898,16 +946,14 @@ fn component_abi_type_expr_from_hir(ty: &Type) -> masm::TypeExpr {
 /// body contains only DebugVar ops, the assembler will reject it.
 fn block_has_real_instructions(block: &masm::Block) -> bool {
     block.iter().any(|op| match op {
-        masm::Op::Inst(inst) => !matches!(
-            inst.inner(),
-            masm::Instruction::Debug(_)
-                | masm::Instruction::DebugVar(_)
-                | masm::Instruction::Trace(_)
-        ),
+        masm::Op::Inst(inst) => !matches!(inst.inner(), masm::Instruction::DebugVar(_)),
         masm::Op::If {
             then_blk, else_blk, ..
         } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
         masm::Op::While { body, .. } => block_has_real_instructions(body),
+        masm::Op::DoWhile {
+            body, condition, ..
+        } => block_has_real_instructions(body) || block_has_real_instructions(condition),
         masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
     })
 }
@@ -972,6 +1018,12 @@ fn patch_debug_var_locals_in_block(
             } => {
                 patch_debug_var_locals_in_block(while_body, aligned_num_locals, stack_pointer_addr);
             }
+            masm::Op::DoWhile {
+                body, condition, ..
+            } => {
+                patch_debug_var_locals_in_block(body, aligned_num_locals, stack_pointer_addr);
+                patch_debug_var_locals_in_block(condition, aligned_num_locals, stack_pointer_addr);
+            }
             masm::Op::Repeat {
                 body: repeat_body, ..
             } => {
@@ -987,9 +1039,7 @@ fn patch_debug_var_locals_in_block(
 
 #[cfg(test)]
 mod tests {
-    use alloc::sync::Arc;
-
-    use midenc_hir::{PointerType, StructType, TypeRepr};
+    use midenc_hir::PointerType;
 
     use super::*;
 
@@ -998,61 +1048,10 @@ mod tests {
         for addrspace in [masm::types::AddressSpace::Byte, masm::types::AddressSpace::Element] {
             let ty = Type::from(PointerType::new_with_address_space(Type::U32, addrspace));
 
-            let masm::TypeExpr::Ptr(ptr) = component_abi_type_expr_from_hir(&ty) else {
-                panic!("expected pointer type expression");
-            };
-            assert_eq!(ptr.address_space(), addrspace);
-
             let masm::TypeExpr::Ptr(ptr) = masm::TypeExpr::from(ty) else {
                 panic!("expected pointer type expression");
             };
             assert_eq!(ptr.address_space(), addrspace);
         }
-    }
-
-    #[test]
-    fn component_abi_type_conversion_preserves_wide_primitives() {
-        let masm::TypeExpr::Primitive(ty) = component_abi_type_expr_from_hir(&Type::U64) else {
-            panic!("expected primitive component ABI type");
-        };
-        assert_eq!(ty.inner(), &Type::U64);
-
-        let masm::TypeExpr::Array(ty) = masm::TypeExpr::from(Type::U64) else {
-            panic!("expected lowered MASM type");
-        };
-        assert_eq!(ty.arity, 2);
-        let masm::TypeExpr::Primitive(element_ty) = ty.elem.as_ref() else {
-            panic!("expected primitive array element type");
-        };
-        assert_eq!(element_ty.inner(), &Type::U32);
-    }
-
-    #[test]
-    fn component_abi_type_conversion_preserves_nominal_struct_metadata() {
-        let ty = Type::Struct(Arc::new(StructType::from_parts(
-            Some(Arc::from("miden:base/core-types@1.0.0/account-id")),
-            TypeRepr::Default,
-            [
-                (Arc::<str>::from("prefix"), Type::Felt),
-                (Arc::<str>::from("suffix"), Type::Felt),
-            ],
-        )));
-
-        let masm::TypeExpr::Struct(struct_ty) = component_abi_type_expr_from_hir(&ty) else {
-            panic!("expected struct component ABI type");
-        };
-        assert_eq!(
-            struct_ty.name.as_ref().map(|name| name.as_str()),
-            Some("miden:base/core-types@1.0.0/account-id"),
-        );
-        assert_eq!(struct_ty.fields[0].name.as_str(), "prefix");
-        assert_eq!(struct_ty.fields[1].name.as_str(), "suffix");
-
-        let masm::TypeExpr::Struct(struct_ty) = masm::TypeExpr::from(ty) else {
-            panic!("expected lowered struct type");
-        };
-        assert!(struct_ty.name.is_none());
-        assert_eq!(struct_ty.fields[0].name.as_str(), "field0");
-        assert_eq!(struct_ty.fields[1].name.as_str(), "field1");
     }
 }

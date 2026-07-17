@@ -24,6 +24,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]

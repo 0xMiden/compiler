@@ -11,7 +11,7 @@ use std::{
 use heck::{ToKebabCase, ToSnakeCase};
 use miden_assembly_syntax::ast::{Path as MasmPath, PathComponent};
 use miden_mast_package::{Package, PackageExport};
-use miden_protocol::{crypto::hash::blake::Blake3_256, utils::serde::Deserializable};
+use miden_protocol::crypto::hash::blake::Blake3_256;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{ToTokens, quote};
 use semver::Version;
@@ -1504,7 +1504,7 @@ fn load_dependency(
             format!("failed to read dependency package '{}': {err}", package_path.display()),
         )
     })?;
-    let package = Package::read_from_bytes(&package_bytes).map_err(|err| {
+    let package = Package::read_from_bytes_trusted(&package_bytes).map_err(|err| {
         Error::new(
             Span::call_site(),
             format!("failed to deserialize dependency package '{}': {err}", package_path.display()),

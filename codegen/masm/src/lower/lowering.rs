@@ -1549,8 +1549,9 @@ fn debug_var_location_from_expression(
     expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
     value: Option<ValueRef>,
     emitter: &BlockEmitter<'_>,
-) -> Option<miden_core::operations::DebugVarLocation> {
-    use miden_core::{Felt, operations::DebugVarLocation, serde::Serializable};
+) -> Option<masm::DebugVarLocation> {
+    use masm::DebugVarLocation;
+    use miden_core::{Felt, serde::Serializable};
     use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
 
     match expr.operations.as_slice() {
@@ -1596,24 +1597,32 @@ fn debug_var_location_from_expression(
 const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
 
 fn apply_debug_var_metadata(
-    debug_var: &mut miden_core::operations::DebugVarInfo,
+    debug_var: &mut masm::DebugVarInfo,
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
+    session: &midenc_session::Session,
 ) {
     // Set arg_index if this is a parameter
     if let Some(arg_index) = var.arg_index {
         debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
     }
 
+    if let Some(ty) = var.ty.clone() {
+        debug_var.set_ty(ty, None);
+    }
+
     // Set source location
     if let Some(line) = core::num::NonZeroU32::new(var.line) {
-        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
+        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Location, Uri};
         let uri = Uri::new(var.file.as_str());
         let file_line_col = FileLineCol::new(
-            uri,
+            uri.clone(),
             LineNumber::new(line.get()).unwrap_or_default(),
             var.column.and_then(ColumnNumber::new).unwrap_or_default(),
         );
-        debug_var.set_location(file_line_col);
+        if let Some(span) = session.source_manager.file_line_col_to_span(file_line_col) {
+            let loc = Location::new(uri, span.start(), span.end());
+            debug_var.set_location(loc);
+        }
     }
 }
 
@@ -1631,7 +1640,6 @@ impl HirLowering for debuginfo::DebugValue {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::operations::DebugVarInfo;
         use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
 
         // Get the variable info
@@ -1666,12 +1674,15 @@ impl HirLowering for debuginfo::DebugValue {
             return Ok(());
         };
 
-        let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
-        apply_debug_var_metadata(&mut debug_var, var.as_value());
+        let mut debug_var = masm::DebugVarInfo::new(var.name.to_string(), value_location);
+        let session = self.as_operation().context().session();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
 
-        // Emit the instruction
+        // Emit the instruction followed by a `nop` so that the debug var instruction is never the
+        // last instruction in a MASM block
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Nop)));
 
         Ok(())
     }
@@ -1687,8 +1698,6 @@ impl HirLowering for debuginfo::DebugDeclare {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::operations::DebugVarInfo;
-
         let var = self.variable();
         let expr = self.expression();
 
@@ -1698,11 +1707,15 @@ impl HirLowering for debuginfo::DebugDeclare {
             return Ok(());
         };
 
-        let mut debug_var = DebugVarInfo::new(var.name.to_string(), value_location);
-        apply_debug_var_metadata(&mut debug_var, var.as_value());
+        let mut debug_var = masm::DebugVarInfo::new(var.name.to_string(), value_location);
+        let session = self.as_operation().context().session();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
 
+        // Emit the instruction followed by a `nop` so that the debug var instruction is never the
+        // last instruction in a MASM block
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Nop)));
 
         Ok(())
     }
@@ -1722,17 +1735,19 @@ impl HirLowering for debuginfo::DebugKill {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use miden_core::operations::{DebugVarInfo, DebugVarLocation};
-
         let var = self.variable();
-        let mut debug_var = DebugVarInfo::new(
+        let mut debug_var = masm::DebugVarInfo::new(
             var.name.to_string(),
-            DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec()),
+            masm::DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec()),
         );
-        apply_debug_var_metadata(&mut debug_var, var.as_value());
+        let session = self.as_operation().context().session();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
 
+        // Emit the instruction followed by a `nop` so that the debug var instruction is never the
+        // last instruction in a MASM block
         let inst = masm::Instruction::DebugVar(debug_var);
         emitter.emit_op(masm::Op::Inst(Span::new(self.span(), inst)));
+        emitter.emit_op(masm::Op::Inst(Span::new(self.span(), masm::Instruction::Nop)));
 
         Ok(())
     }

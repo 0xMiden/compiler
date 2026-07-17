@@ -47,7 +47,6 @@ pub mod support {
     use midenc_session::{
         InputFile, OptLevel, RemapPathPrefix, miden_project, registry::HybridPackageRegistry,
     };
-    use tempfile::TempDir;
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
@@ -201,19 +200,19 @@ pub mod support {
     }
 
     fn build_project(
-        project: miden_project::Project,
+        _project: miden_project::Project,
         compiler_opts: &midenc_session::Options,
         cargo_opts: &CargoOptions,
-        registry: Option<&mut HybridPackageRegistry>,
-        source_manager: Arc<dyn SourceManager + Send + Sync>,
+        _registry: Option<&mut HybridPackageRegistry>,
+        _source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> CompilerResult<InputFile> {
-        let package = project.package();
-
-        let tmp = TempDir::new()
+        /*
+        let tmp = tempfile::TempDir::new()
             .map_err(|err| Report::msg(format!("could not create temporary directory: {err}")))?;
         let mut default_registry =
             midenc_session::registry::HybridPackageRegistry::new(compiler_opts)?;
         let registry = registry.unwrap_or(&mut default_registry);
+        let package = project.package();
         let dependency_graph = miden_project::ProjectDependencyGraphBuilder::new(&*registry)
             .with_source_manager(source_manager.clone())
             .with_git_cache_root(
@@ -224,8 +223,8 @@ pub mod support {
                     .join("git")
                     .join("checkouts"),
             );
-        let dependency_graph = dependency_graph.build(package.clone())?;
 
+        let dependency_graph = dependency_graph.build(package.clone())?;
         crate::cargo::load_cargo_based_source_dependencies(
             &package,
             &dependency_graph,
@@ -234,6 +233,7 @@ pub mod support {
             cargo_opts,
             source_manager,
         )?;
+         */
 
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);

@@ -5,21 +5,23 @@ mod infer;
 mod lift;
 pub mod project;
 mod semantics;
-mod signatures;
+//mod signatures;
 mod stack;
 #[cfg(test)]
 mod tests;
 
 use std::{collections::BTreeMap, path::Path, rc::Rc, sync::Arc};
 
-use miden_assembly::ProjectSourceInputs;
+use miden_assembly::{ProjectSourceInputs, ast::ModuleKind};
 use miden_assembly_syntax::{
-    Parse, ParseOptions,
-    ast::{self, Module, ModuleKind},
-    debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
+    ast::{self, Module},
+    debuginfo::{SourceLanguage, SourceManager, Uri},
+    parser::read_modules_from_root,
 };
 use miden_project::Project;
 use midenc_hir::{Context, FunctionType, Report, Type, dialects::builtin};
+
+use self::project::ExternalMetadata;
 
 /// Result type used by the MASM disassembler.
 pub type Result<T> = core::result::Result<T, Report>;
@@ -67,9 +69,14 @@ pub fn disassemble_file(
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let path = path.as_ref();
-    let module_path = masm_module_path_from_file(path)?;
-    let module = parse_file_with_module_path(path, &module_path, context.clone())?;
-    lift::lift_single_module(&module, config, context)
+    let source_manager = context.source_manager();
+    let warnings_as_errors = context.session().options.diagnostics.warnings.warnings_as_errors();
+    let (root, support) =
+        read_modules_from_root(path, None, None, source_manager, warnings_as_errors)?;
+
+    let target =
+        project::ProjectTargetInput::new(ProjectSourceInputs { root, support }, Default::default());
+    lift::lift_project_target(target, config, context)
 }
 
 /// Disassemble a MASM file into an HIR world, using externally-provided procedure signatures for
@@ -81,28 +88,18 @@ pub fn disassemble_file_with_external_signatures(
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let path = path.as_ref();
-    let module_path = masm_module_path_from_file(path)?;
-    disassemble_file_with_module_path_and_external_signatures(
-        path,
-        module_path,
-        config,
-        external_signatures,
-        &ExternalTypeMap::new(),
-        context,
-    )
-}
-
-fn disassemble_file_with_module_path_and_external_signatures(
-    path: impl AsRef<Path>,
-    module_path: impl AsRef<miden_assembly_syntax::Path>,
-    config: &DisassemblerConfig,
-    external_signatures: &ExternalSignatureMap,
-    external_types: &ExternalTypeMap,
-    context: Rc<Context>,
-) -> Result<DisassembledWorld> {
-    let path = path.as_ref();
-    let module = parse_file_with_module_path(path, module_path, context.clone())?;
-    lift::lift_module(&module, config, external_signatures, external_types, context)
+    let source_manager = context.source_manager();
+    let warnings_as_errors = context.session().options.diagnostics.warnings.warnings_as_errors();
+    let (root, support) =
+        read_modules_from_root(path, None, None, source_manager, warnings_as_errors)?;
+    let target = project::ProjectTargetInput::new(
+        ProjectSourceInputs { root, support },
+        ExternalMetadata {
+            signatures: external_signatures.clone(),
+            ..Default::default()
+        },
+    );
+    lift::lift_project_target(target, config, context)
 }
 
 /// Disassemble a MASM source string into an HIR world.
@@ -112,8 +109,15 @@ pub fn disassemble_source(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let module = parse_source_with_module_path(source, module_path, context.clone())?;
-    lift::lift_single_module(&module, config, context)
+    let root = parse_source_with_module_path(source, module_path, context.clone())?;
+    let target = project::ProjectTargetInput::new(
+        ProjectSourceInputs {
+            root,
+            support: Default::default(),
+        },
+        ExternalMetadata::default(),
+    );
+    lift::lift_project_target(target, config, context)
 }
 
 /// Disassemble a MASM source string into an HIR world, using externally-provided procedure
@@ -125,8 +129,73 @@ pub fn disassemble_source_with_external_signatures(
     external_signatures: &ExternalSignatureMap,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let module = parse_source_with_module_path(source, module_path, context.clone())?;
-    lift::lift_module(&module, config, external_signatures, &ExternalTypeMap::new(), context)
+    let root = parse_source_with_module_path(source, module_path, context.clone())?;
+    let external_signatures: ExternalSignatureMap = external_signatures
+        .iter()
+        .map(|(path, ty)| (path.to_absolute().unwrap().into(), ty.clone()))
+        .collect();
+    let mut target = project::ProjectTargetInput::new(
+        ProjectSourceInputs {
+            root,
+            support: Default::default(),
+        },
+        ExternalMetadata {
+            signatures: external_signatures.clone(),
+            ..Default::default()
+        },
+    );
+    let mut modules = BTreeMap::<Arc<ast::Path>, Box<Module>>::default();
+    for (path, sig) in external_signatures {
+        let name = path.procedure_name().unwrap().expect("invalid procedure path");
+        let (_, module_path) = path.split_last().unwrap();
+        let module_path: Arc<ast::Path> = module_path.to_path_buf().into_boxed_path().into();
+        let kind = if module_path.is_in_kernel() {
+            ModuleKind::Kernel
+        } else {
+            ModuleKind::Library
+        };
+        let module = modules
+            .entry(module_path.clone())
+            .or_insert_with(|| Box::new(Module::new(kind, module_path.clone())));
+        let procedure = if module_path.is_kernel_path() {
+            ast::Procedure::new_syscall(
+                miden_assembly_syntax::debuginfo::SourceSpan::UNKNOWN,
+                name,
+                0,
+                ast::Block::new(miden_assembly_syntax::debuginfo::SourceSpan::UNKNOWN, vec![]),
+            )
+        } else {
+            ast::Procedure::new(
+                miden_assembly_syntax::debuginfo::SourceSpan::UNKNOWN,
+                ast::Visibility::Public,
+                name,
+                0,
+                ast::Block::new(miden_assembly_syntax::debuginfo::SourceSpan::UNKNOWN, vec![]),
+            )
+        };
+        let sig = ast::FunctionType::new(
+            sig.abi,
+            sig.params().iter().cloned().map(ast::TypeExpr::from).collect(),
+            sig.results().iter().cloned().map(ast::TypeExpr::from).collect(),
+        );
+        module.define_procedure(procedure.with_signature(sig), context.source_manager())?;
+    }
+    let kernel = match modules.remove(ast::Path::KERNEL) {
+        None => None,
+        Some(root) => {
+            let support = modules
+                .extract_if(.., |_, m| m.is_in_kernel())
+                .map(|(_, m)| m)
+                .collect::<Vec<_>>();
+            let kernel = miden_assembly::Assembler::new(context.source_manager())
+                .assemble_kernel("kernel", root, support)
+                .map(Arc::from)?;
+            Some(kernel)
+        }
+    };
+    target.kernel = kernel;
+    target.dependency_modules.extend(modules.into_values());
+    lift::lift_project_target(target, config, context)
 }
 
 /// Disassemble a target from a `miden-project.toml` package manifest.
@@ -181,24 +250,18 @@ pub fn disassemble_project_target_with_dependency_graph(
 
 /// Disassemble a parsed MASM AST module into HIR.
 pub fn disassemble_module(
-    module: &Module,
+    root: Box<Module>,
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    lift::lift_single_module(module, config, context)
-}
-
-fn parse_file_with_module_path(
-    path: &Path,
-    module_path: impl AsRef<miden_assembly_syntax::Path>,
-    context: Rc<Context>,
-) -> Result<Box<Module>> {
-    let source_manager = context.session().source_manager.clone();
-    let source_file = source_manager.load_file(path).map_err(|err| {
-        Report::msg(format!("failed to load MASM source '{}': {err}", path.display()))
-    })?;
-    source_file
-        .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))
+    let target = project::ProjectTargetInput::new(
+        ProjectSourceInputs {
+            root,
+            support: Default::default(),
+        },
+        ExternalMetadata::default(),
+    );
+    lift::lift_project_target(target, config, context)
 }
 
 fn parse_source_with_module_path(
@@ -209,14 +272,9 @@ fn parse_source_with_module_path(
     let source_manager = context.session().source_manager.clone();
     let uri = Uri::from(module_path.as_ref().as_str().to_string().into_boxed_str());
     let source_file = source_manager.load(SourceLanguage::Masm, uri, source.into());
-    source_file
-        .parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, module_path))
-}
-
-fn masm_module_path_from_file(path: &Path) -> Result<miden_assembly_syntax::PathBuf> {
-    let stem = path.file_stem().and_then(|stem| stem.to_str()).ok_or_else(|| {
-        Report::msg(format!("failed to derive MASM module name from '{}'", path.display()))
-    })?;
-    stem.parse::<miden_assembly_syntax::PathBuf>()
-        .map_err(|err| Report::msg(format!("invalid MASM module path '{}': {err}", stem)))
+    miden_assembly_syntax::ModuleParser::new(None).parse(
+        Some(module_path.as_ref()),
+        source_file,
+        source_manager,
+    )
 }

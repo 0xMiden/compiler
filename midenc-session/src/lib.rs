@@ -40,20 +40,21 @@ pub const MIDENC_BUILD_VERSION: &str = env!("MIDENC_BUILD_VERSION");
 /// The git revision associated with the current compiler toolchain
 pub const MIDENC_BUILD_REV: &str = env!("MIDENC_BUILD_REV");
 
-use heck::ToKebabCase;
 pub use miden_assembly_syntax;
 pub use miden_mast_package::PackageId;
 pub use miden_package_registry;
 pub use miden_project;
+use miden_project::Uri;
 use midenc_hir_symbol::Symbol;
 
+use self::diagnostics::IntoDiagnostic;
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, Report, SourceManager},
     emit::{Emit, Writer},
     flags::{ArgMatches, CompileFlag, CompileFlags, FlagAction},
     inputs::{FileName, FileType, InputFile, InputType, InvalidInputError},
-    libs::{LibraryPath, LibraryPathComponent, LinkLibrary, STDLIB, add_target_link_libraries},
+    libs::{LibraryPath, LibraryPathComponent, LinkLibrary, add_target_link_libraries},
     options::*,
     outputs::{OutputFile, OutputFiles, OutputMode, OutputType, OutputTypeSpec, OutputTypes},
     path::{Path, PathBuf},
@@ -70,7 +71,7 @@ pub struct Session {
     /// Configuration for the current compiler session
     pub options: Box<Options>,
     /// The current source manager
-    pub source_manager: Arc<dyn SourceManager + Send + Sync>,
+    pub source_manager: Arc<dyn SourceManager>,
     /// The current diagnostics handler
     pub diagnostics: Arc<DiagnosticsHandler>,
     /// The inputs being compiled
@@ -131,30 +132,23 @@ impl Session {
                         };
                         options.target_type = Some(target_type);
                     }
-                    let is_executable_target =
-                        options.target_type.is_some_and(|ty| ty.is_executable());
-                    let project = {
-                        let package = project.package();
-                        let has_virtual_executable_target =
-                            package.executable_targets().iter().any(|target| {
-                                target
-                                    .path
-                                    .as_deref()
-                                    .is_some_and(|path| path.as_str() == "<virtual>")
-                            });
-
-                        if has_virtual_executable_target
-                            || (is_cargo_project && is_executable_target)
-                        {
-                            // HACK(pauls): Workaround bug with virtual bin targets until
-                            // 0.24.x. See https://github.com/0xMiden/miden-vm/pull/3156
-                            miden_project::Project::Package(fixup_targets(
-                                package,
-                                is_cargo_project && is_executable_target,
-                            ))
-                        } else {
-                            project
+                    let project = if is_cargo_project
+                        && options.target_type.is_some_and(|ty| ty.is_executable())
+                    {
+                        match project {
+                            miden_project::Project::Package(pkg) => {
+                                miden_project::Project::Package(fixup_cargo_target(pkg))
+                            }
+                            miden_project::Project::WorkspacePackage {
+                                package: pkg,
+                                workspace,
+                            } => miden_project::Project::WorkspacePackage {
+                                package: fixup_cargo_target(pkg),
+                                workspace,
+                            },
                         }
+                    } else {
+                        project
                     };
                     let pkgid = match &project {
                         miden_project::Project::Package(pkg)
@@ -239,14 +233,20 @@ impl Session {
                 });
             log::debug!(target: "driver", "artifact name set to '{name}'");
 
-            let mut default_target = miden_project::Target::r#virtual(
+            let namespace = miden_assembly_syntax::Path::new(name.as_str())
+                .to_absolute()
+                .into_diagnostic()?
+                .into_owned();
+            let default_target = miden_project::Target::new(
                 options.target_type.unwrap_or_default(),
                 name.clone(),
-                miden_assembly_syntax::Path::new(name.as_str()).to_absolute().into_owned(),
+                namespace,
+                match &input.file {
+                    InputType::Real(path) => Uri::from(path.as_path()),
+                    InputType::Stdin { name, .. } => Uri::new(name.as_str()),
+                },
             );
             if let InputType::Real(path) = &input.file {
-                default_target.path = Some(Span::unknown(miden_project::Uri::from(path.as_path())));
-
                 #[cfg(feature = "std")]
                 {
                     let tmp = std::env::temp_dir().canonicalize().unwrap();
@@ -294,7 +294,7 @@ impl Session {
         project: miden_project::Project,
         mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
-        source_manager: Arc<dyn SourceManager + Send + Sync>,
+        source_manager: Arc<dyn SourceManager>,
     ) -> Self {
         log::debug!(target: "driver", "creating session {name}");
         if log::log_enabled!(target: "driver", log::Level::Debug) {
@@ -554,6 +554,57 @@ impl Session {
     }
 }
 
+pub fn fixup_cargo_target(package: Arc<miden_project::Package>) -> Arc<miden_project::Package> {
+    let mut prev_targets = package.executable_targets().iter();
+    let mut default_target = match package.library_target().cloned() {
+        Some(target) => target.into_inner(),
+        None => prev_targets.next().unwrap().inner().clone(),
+    };
+    rewrite_component_target_namespace(&mut default_target, &package);
+    let new_package = miden_project::Package::new(package.name().into_inner(), default_target)
+        .with_version(package.version().into_inner().clone())
+        .with_dependencies(package.dependencies().iter().cloned())
+        .with_lints(package.lints().clone())
+        .with_metadata(package.metadata().clone())
+        .with_targets(prev_targets.map(|t| {
+            let mut t = t.inner().clone();
+            rewrite_component_target_namespace(&mut t, &package);
+            t
+        }));
+    let new_package = package
+        .profiles()
+        .iter()
+        .cloned()
+        .fold(new_package, |pkg, profile| pkg.with_profile(profile));
+    new_package.into()
+}
+
+fn rewrite_component_target_namespace(
+    target: &mut miden_project::Target,
+    package: &miden_project::Package,
+) {
+    use heck::ToKebabCase;
+    use miden_assembly_syntax::ast;
+    use miden_debug_types::Span;
+
+    let namespace_id = target.namespace.to_relative().as_ident().map(|id| id.into_inner());
+    if target.ty.is_executable()
+        || namespace_id.as_deref().is_none_or(|id| package.name().inner() != id)
+    {
+        return;
+    }
+
+    // If the namespace is the same as the package name, then the default
+    // namespace is being used, and we should rewrite it to use the correct
+    // namespace, derived from the component id
+    let component_namespace = package.name().to_kebab_case();
+    let component_id = format!(
+        "::miden:{component_namespace}/miden-{component_namespace}@{}",
+        package.version()
+    );
+    target.namespace = Span::unknown(ast::Path::new(&component_id).into());
+}
+
 fn is_cargo_project_input(input: &InputFile) -> bool {
     matches!(
         &input.file,
@@ -596,80 +647,6 @@ fn infer_cargo_project_entrypoint(
     }
 
     Ok(())
-}
-
-pub fn fixup_targets(
-    package: Arc<miden_project::Package>,
-    is_cargo_project: bool,
-) -> Arc<miden_project::Package> {
-    // Find executable targets whose `path` is `<virtual>`, and strip the path out - this
-    // is required due to a bug in the project manifest parser that requires executable
-    // targets to have a `path`, but virtual targets don't have paths
-    let requires_virtual_rewrite = package
-        .executable_targets()
-        .iter()
-        .any(|t| t.path.as_deref().is_some_and(|path| path.as_str() == "<virtual>"));
-    if requires_virtual_rewrite || is_cargo_project {
-        // We have to rewrite this package without the path
-        let mut prev_targets = package.executable_targets().iter();
-        let mut default_target = match package.library_target().cloned() {
-            Some(target) => target.inner().clone(),
-            None => prev_targets.next().unwrap().inner().clone(),
-        };
-        if is_cargo_project {
-            rewrite_component_target_namespace(&mut default_target, &package);
-        }
-        if default_target.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
-            default_target.path = None;
-        }
-        let new_package = miden_project::Package::new(package.name().into_inner(), default_target)
-            .with_version(package.version().into_inner().clone())
-            .with_dependencies(package.dependencies().iter().cloned())
-            .with_lints(package.lints().clone())
-            .with_metadata(package.metadata().clone())
-            .with_targets(prev_targets.map(|t| {
-                let mut t = t.inner().clone();
-                if t.path.as_deref().is_some_and(|p| p.as_str() == "<virtual>") {
-                    t.path = None;
-                } else if is_cargo_project {
-                    rewrite_component_target_namespace(&mut t, &package);
-                }
-                t
-            }));
-        let new_package = package
-            .profiles()
-            .iter()
-            .cloned()
-            .fold(new_package, |pkg, profile| pkg.with_profile(profile));
-        new_package.into()
-    } else {
-        package
-    }
-}
-
-fn rewrite_component_target_namespace(
-    target: &mut miden_project::Target,
-    package: &miden_project::Package,
-) {
-    use miden_assembly_syntax::ast;
-    use miden_debug_types::Span;
-
-    let namespace_id = target.namespace.to_relative().as_ident().map(|id| id.into_inner());
-    if target.ty.is_executable()
-        || namespace_id.as_deref().is_none_or(|id| package.name().inner() != id)
-    {
-        return;
-    }
-
-    // If the namespace is the same as the package name, then the default
-    // namespace is being used, and we should rewrite it to use the correct
-    // namespace, derived from the component id
-    let component_namespace = package.name().to_kebab_case();
-    let component_id = format!(
-        "::miden:{component_namespace}/miden-{component_namespace}@{}",
-        package.version()
-    );
-    target.namespace = Span::unknown(ast::Path::new(&component_id).into());
 }
 
 #[cfg(feature = "std")]

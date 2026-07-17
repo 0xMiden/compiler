@@ -1,5 +1,8 @@
 //! This module provides core utilities for setting up the necessary artifacts and state for tests.
-use std::{path::PathBuf, rc::Rc};
+use std::{
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use midenc_compile::MidenComponent;
 pub use midenc_hir::testing::enable_compiler_instrumentation;
@@ -76,6 +79,13 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
         world,
         component: Some(component),
         account_component_metadata_bytes: None,
+        source_provenance: miden_assembly::ProjectSourceProvenanceInputs {
+            root: miden_assembly::SourceFileProvenance {
+                path: Path::new("mod.rs").to_path_buf().into_boxed_path(),
+                content: String::new().into_boxed_str(),
+            },
+            support: Default::default(),
+        },
     }
 }
 

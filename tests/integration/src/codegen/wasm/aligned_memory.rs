@@ -36,7 +36,7 @@ fn aligned_i32_memory_uses_element_addresses() {
 
     let value = 0x1234_5678;
     let result = eval_package::<u32, _, _>(
-        &package,
+        package.clone(),
         None,
         &[Felt::from(MEMORY_ADDR), Felt::from(value)],
         context.session(),
@@ -56,7 +56,7 @@ fn aligned_i32_memory_uses_element_addresses() {
 
     let misaligned = catch_unwind(AssertUnwindSafe(|| {
         let _ = eval_package::<u32, _, _>(
-            &package,
+            package.clone(),
             None,
             &[Felt::from(MEMORY_ADDR + 1), Felt::from(value)],
             context.session(),
@@ -101,7 +101,7 @@ fn aligned_u32_load_reads_expected_element() {
     }];
 
     let result = eval_package::<u32, _, _>(
-        &package,
+        package,
         initializers,
         &[Felt::from(MEMORY_ADDR)],
         context.session(),
@@ -139,7 +139,7 @@ fn aligned_felt_memory_uses_element_addresses() {
     // A value wider than 32 bits proves the access moves whole field elements.
     let value = Felt::new_unchecked(0x1234_5678_9abc);
     let result = eval_package::<Felt, _, _>(
-        &package,
+        package,
         None,
         &[Felt::from(MEMORY_ADDR), value],
         context.session(),
@@ -182,7 +182,7 @@ fn underaligned_i32_memory_keeps_byte_path_and_checks_alignment() {
     // The effective address MEMORY_ADDR + 2 honors the promised 2-byte alignment.
     let value = 0x0bad_f00d;
     let result = eval_package::<u32, _, _>(
-        &package,
+        package.clone(),
         None,
         &[Felt::from(MEMORY_ADDR), Felt::from(value)],
         context.session(),
@@ -194,7 +194,7 @@ fn underaligned_i32_memory_keeps_byte_path_and_checks_alignment() {
     // An odd base address violates the promised 2-byte alignment and must trap.
     let misaligned = catch_unwind(AssertUnwindSafe(|| {
         let _ = eval_package::<u32, _, _>(
-            &package,
+            package.clone(),
             None,
             &[Felt::from(MEMORY_ADDR + 1), Felt::from(value)],
             context.session(),
@@ -229,7 +229,7 @@ fn unaligned_i32_memory_retains_byte_pointer_path() {
 
     let value = 0x89ab_cdef;
     let result = eval_package::<u32, _, _>(
-        &package,
+        package,
         None,
         &[Felt::from(MEMORY_ADDR), Felt::from(value)],
         context.session(),

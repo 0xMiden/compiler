@@ -1,13 +1,6 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
-use miden_assembly::ast::Module;
-use midenc_codegen_masm::{
-    self as masm, LegalizeForMasm, MasmComponent, ToMasmComponent,
-    intrinsics::{
-        ADVICE_INTRINSICS_MODULE_NAME, I32_INTRINSICS_MODULE_NAME, I64_INTRINSICS_MODULE_NAME,
-        MEM_INTRINSICS_MODULE_NAME,
-    },
-};
+use midenc_codegen_masm::{LegalizeForMasm, MasmComponent, ToMasmComponent};
 use midenc_hir::pass::{AnalysisManager, IRPrintingConfig, Nesting, OpPassManager, PassManager};
 use midenc_session::OutputType;
 
@@ -17,6 +10,40 @@ pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<Vec<u8>>,
+    #[cfg(feature = "std")]
+    pub source_provenance: miden_assembly::ProjectSourceProvenanceInputs,
+}
+
+impl Clone for CodegenOutput {
+    fn clone(&self) -> Self {
+        Self {
+            component: self.component.clone(),
+            account_component_metadata_bytes: self.account_component_metadata_bytes.clone(),
+            source_provenance: self.source_provenance(),
+        }
+    }
+}
+
+impl CodegenOutput {
+    #[cfg(feature = "std")]
+    pub fn source_provenance(&self) -> miden_assembly::ProjectSourceProvenanceInputs {
+        use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
+
+        let ProjectSourceProvenanceInputs { root, support } = &self.source_provenance;
+        ProjectSourceProvenanceInputs {
+            root: SourceFileProvenance {
+                path: root.path.clone(),
+                content: root.content.clone(),
+            },
+            support: support
+                .iter()
+                .map(|sfp| SourceFileProvenance {
+                    path: sfp.path.clone(),
+                    content: sfp.content.clone(),
+                })
+                .collect(),
+        }
+    }
 }
 
 /// Perform code generation on the possibly-linked output of previous stages
@@ -35,6 +62,8 @@ impl Stage for CodegenStage {
             world,
             component,
             account_component_metadata_bytes,
+            #[cfg(feature = "std")]
+            source_provenance,
         } = input;
 
         log::debug!("lowering miden component to masm");
@@ -43,7 +72,7 @@ impl Stage for CodegenStage {
         legalize_for_masm(anchor, context.clone())?;
 
         let analysis_manager = AnalysisManager::new(anchor, None);
-        let mut masm_component = match component {
+        let masm_component = match component {
             Some(component) => {
                 component.borrow().to_masm_component(analysis_manager).map(Box::new)?
             }
@@ -51,15 +80,6 @@ impl Stage for CodegenStage {
         };
 
         let session = context.session();
-
-        // Ensure intrinsics modules are linked
-        for intrinsics_module in required_intrinsics_modules(session) {
-            log::debug!(
-                "adding required intrinsic module '{}' to masm program",
-                intrinsics_module.path()
-            );
-            masm_component.modules.push(intrinsics_module);
-        }
 
         if session.should_emit(OutputType::Masm) {
             session.emit(OutputMode::Text, masm_component.as_ref()).into_diagnostic()?;
@@ -73,6 +93,8 @@ impl Stage for CodegenStage {
         Ok(CodegenOutput {
             component: Arc::from(masm_component),
             account_component_metadata_bytes,
+            #[cfg(feature = "std")]
+            source_provenance,
         })
     }
 }
@@ -85,21 +107,4 @@ fn legalize_for_masm(anchor: midenc_hir::OperationRef, context: Rc<Context>) -> 
     pm.run(anchor)?;
 
     Ok(())
-}
-
-fn required_intrinsics_modules(session: &Session) -> impl IntoIterator<Item = Arc<Module>> {
-    [
-        masm::intrinsics::load(MEM_INTRINSICS_MODULE_NAME, session.source_manager.clone())
-            .map(Arc::from)
-            .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I32_INTRINSICS_MODULE_NAME, session.source_manager.clone())
-            .map(Arc::from)
-            .expect("undefined intrinsics module"),
-        masm::intrinsics::load(I64_INTRINSICS_MODULE_NAME, session.source_manager.clone())
-            .map(Arc::from)
-            .expect("undefined intrinsics module"),
-        masm::intrinsics::load(ADVICE_INTRINSICS_MODULE_NAME, session.source_manager.clone())
-            .map(Arc::from)
-            .expect("undefined intrinsics module"),
-    ]
 }

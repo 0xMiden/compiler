@@ -1,31 +1,31 @@
 //! Common helper functions for mock-chain integration tests.
 
-use std::{future::Future, path::Path, sync::Arc};
+use std::{collections::BTreeMap, future::Future, path::Path, sync::Arc};
 
 use miden_client::{
     Word,
-    account::component::{BasicWallet, InitStorageData},
-    asset::FungibleAsset,
+    account::{
+        StorageMapKey,
+        component::{BasicWallet, InitStorageData, StorageValueName, WordValue},
+    },
+    asset::{FungibleAsset, StorageSlotContent},
     auth::AuthSecretKey,
     crypto::FeltRng,
     note::{Note, NoteType},
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
-use miden_mast_package::{Package, PackageExport, TargetType};
+use miden_mast_package::{Package, TargetType};
 use miden_protocol::{
     account::{
-        Account, AccountBuilder, AccountComponent, AccountComponentMetadata, AccountId,
-        AccountStorage, AccountType, StorageSlot, StorageSlotName,
+        Account, AccountBuilder, AccountComponent, AccountId, AccountStorage, AccountType,
+        StorageSlot, StorageSlotName,
     },
     asset::{Asset, AssetAmount},
     note::{NoteScript, PartialNote},
     transaction::{TransactionMeasurements, TransactionScript},
 };
-use miden_standards::{
-    account::interface::{AccountInterface, AccountInterfaceExt},
-    testing::note::NoteBuilder,
-};
+use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
 use miden_testing::{MockChain, TransactionContextBuilder};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::CompilerTestBuilder;
@@ -43,6 +43,7 @@ pub(crate) fn assert_counter_storage_at_key(
     storage_key: Word,
     expected: u64,
 ) {
+    let storage_key = StorageMapKey::from_raw(storage_key);
     let word = account_storage
         .get_map_item(storage_slot, storage_key)
         .expect("failed to get counter value from storage slot");
@@ -103,30 +104,7 @@ fn transaction_script_from_package(package: &Package) -> TransactionScript {
         "expected a transaction-script package"
     );
 
-    let mut first_procedure = None;
-    let mut selected_procedure = None;
-    let mut num_procedures = 0usize;
-    for export in package.manifest.exports() {
-        let PackageExport::Procedure(procedure) = export else {
-            continue;
-        };
-        num_procedures += 1;
-        first_procedure.get_or_insert(procedure);
-        if matches!(export.name(), "main" | "run") {
-            selected_procedure = Some(procedure);
-        }
-    }
-
-    let procedure = selected_procedure
-        .or_else(|| (num_procedures == 1).then(|| first_procedure.unwrap()))
-        .expect("transaction-script package should export exactly one entry procedure");
-    let entrypoint = package
-        .mast
-        .mast_forest()
-        .find_procedure_root(procedure.digest)
-        .expect("transaction-script main export should have a MAST node");
-
-    TransactionScript::from_parts(package.mast.mast_forest().clone(), entrypoint)
+    TransactionScript::from_package(package).expect("invalid transaction-script package")
 }
 
 // ================================================================================================
@@ -165,12 +143,13 @@ pub(crate) fn assert_account_has_fungible_asset(
 
 /// Builds a `send_notes` transaction script for accounts that support a standard note creation
 /// interface (e.g. basic wallets and basic fungible faucets).
-pub(crate) fn build_send_notes_script(account: &Account, notes: &[Note]) -> TransactionScript {
+pub(crate) fn build_send_notes_script(
+    account: &Account,
+    notes: &[Note],
+) -> SendNotesTransactionScript {
     let partial_notes = notes.iter().cloned().map(PartialNote::from).collect::<Vec<_>>();
 
-    AccountInterface::from_account(account)
-        .build_send_notes_script(&partial_notes, None)
-        .expect("failed to build send_notes transaction script")
+    SendNotesTransactionScript::new(&account.code_interface(), &partial_notes).unwrap()
 }
 
 /// Executes a transaction context against the chain and commits it in the next block.
@@ -282,8 +261,9 @@ pub(crate) fn assert_counter_storage(
     storage_slot: &StorageSlotName,
     expected: u64,
 ) {
+    let key = StorageMapKey::from_raw(COUNTER_CONTRACT_STORAGE_KEY);
     let word = counter_account_storage
-        .get_map_item(storage_slot, COUNTER_CONTRACT_STORAGE_KEY)
+        .get_map_item(storage_slot, key)
         .expect("Failed to get counter value from storage slot");
 
     // `AccountStorage` exposes scalar felt values as `[felt, 0, 0, 0]`.
@@ -305,13 +285,29 @@ pub(crate) fn build_existing_counter_account_builder_with_auth_package(
     auth_storage_slots: Vec<StorageSlot>,
     seed: [u8; 32],
 ) -> AccountBuilder {
-    let metadata = AccountComponentMetadata::new("auth");
-    let auth_component = AccountComponent::new(
-        auth_component_package.mast.as_ref().clone(),
-        auth_storage_slots,
-        metadata,
-    )
-    .unwrap();
+    let mut values = BTreeMap::default();
+    let mut map_entries = BTreeMap::<_, Vec<(WordValue, WordValue)>>::default();
+    for slot in auth_storage_slots {
+        let (name, content) = slot.into_parts();
+        match content {
+            StorageSlotContent::Value(value) => {
+                values.insert(StorageValueName::from_slot_name(&name), value.into());
+            }
+            StorageSlotContent::Map(map) => {
+                let entries = map.into_entries();
+                map_entries.entry(name).or_default().extend(
+                    entries
+                        .into_iter()
+                        .map(|(k, v)| (k.as_word().into(), v.into()))
+                        .collect::<Vec<_>>(),
+                );
+            }
+        }
+    }
+    let init_storage_data =
+        InitStorageData::new(values, map_entries).expect("invalid init storage data");
+    let auth_component =
+        AccountComponent::from_package(&auth_component_package, &init_storage_data).unwrap();
 
     AccountBuilder::new(seed)
         .account_type(AccountType::Public)

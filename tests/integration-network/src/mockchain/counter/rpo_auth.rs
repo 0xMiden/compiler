@@ -64,7 +64,7 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     let tx_context_builder = chain
         .build_tx_context(counter_account.clone(), &[], &[])
         .unwrap()
-        .tx_script(tx_script)
+        .tx_script(tx_script.into())
         .extend_expected_output_notes(vec![RawOutputNote::Full(own_note.clone())])
         .authenticator(Some(authenticator));
     let tx_context = tx_context_builder.build().unwrap();
@@ -90,7 +90,7 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     let tx_context_builder = chain
         .build_tx_context(counter_account, &[], &[])
         .unwrap()
-        .tx_script(tx_script)
+        .tx_script(tx_script.into())
         .extend_expected_output_notes(vec![RawOutputNote::Full(forged_note)])
         .authenticator(None);
     let tx_context = tx_context_builder.build().unwrap();

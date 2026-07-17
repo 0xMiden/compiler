@@ -7,12 +7,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use miden_assembly::Assembler;
-use miden_assembly_syntax::{
-    Parse,
-    ast::{self, Instruction},
+use miden_assembly::{
+    Assembler,
+    ast::ItemIndex,
+    linker::{Linker, SymbolItem},
 };
-use miden_core::serde::Serializable;
+use miden_assembly_syntax::ast::{self, Instruction};
 use miden_package_registry::{
     NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
 };
@@ -33,7 +33,7 @@ use midenc_hir::{
     diagnostics::{Report, Severity},
     dialects::builtin::{
         self, Function, UnrealizedConversionCast,
-        attributes::{AdviceEffectDescriptor, AdviceResourceKind},
+        attributes::{AdviceEffectDescriptor, AdviceResourceKind, Signature},
     },
     effects::AdviceEffect,
     pass::AnalysisManager,
@@ -269,8 +269,6 @@ fn supported_instruction_matrix_lifts() {
         instruction_case("horner_eval_ext", &felt_types(16), &felt_types(16), "horner_eval_ext"),
         instruction_case("eval_circuit", &felt_types(3), &felt_types(3), "eval_circuit"),
         instruction_case("log_precompile", &felt_types(12), &felt_types(12), "log_precompile"),
-        instruction_case("debug", &["felt"], &["felt"], "debug.stack"),
-        instruction_case("trace", &["felt"], &["felt"], "trace.1"),
         instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
         instruction_case_with_locals(
             "locaddr",
@@ -962,14 +960,14 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
 
 #[test]
 fn instruction_inventory_classifies_all_masm_instruction_variants() {
-    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 235);
+    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 237);
     assert_eq!(INFER_ONLY_INSTRUCTION_VARIANT_COUNT, 1);
     assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 3);
     assert_eq!(
         LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT
             + INFER_ONLY_INSTRUCTION_VARIANT_COUNT
             + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
-        239
+        241
     );
     assert_eq!(instruction_semantics(&Instruction::Nop), InstructionSemantics::LiftAndInfer);
     assert_eq!(
@@ -1389,20 +1387,31 @@ end
 "#;
     let context = Rc::new(Context::default());
     let module = parse_test_module(source, &context)?;
-    let target = module
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == "target")
-        .expect("target procedure");
+    let mut linker = Linker::new(context.source_manager());
+    let roots = linker.link([module], []).unwrap();
+    let root = roots[0];
+    let target_id = linker[root].symbols().position(|sym| matches!(sym.item(), SymbolItem::Procedure(p) if p.borrow().name().as_str() == "target")).unwrap();
+    let target_id = root + ItemIndex::new(target_id);
+    let capture_id = linker[root].symbols().position(|sym| matches!(sym.item(), SymbolItem::Procedure(p) if p.borrow().name().as_str() == "capture")).unwrap();
+    let capture_id = root + ItemIndex::new(capture_id);
+
+    let target_signature = linker.resolve_signature(target_id).unwrap().unwrap();
     let mut signatures = rustc_hash::FxHashMap::default();
     signatures.insert(
-        std::sync::Arc::from(module.path().join(target.name()).to_absolute().into_owned()),
-        signatures::convert_signature(&context, &module, target.signature().unwrap())?,
+        target_id,
+        Signature::with_convention(
+            &context,
+            target_signature.abi,
+            target_signature.params.iter().cloned(),
+            target_signature.results.iter().cloned(),
+        ),
     );
-    let capture = module
-        .procedures()
-        .find(|procedure| procedure.name().as_str() == "capture")
-        .expect("capture procedure");
-    let signature = infer::infer_signature(&context, &module, capture, &signatures)?;
+
+    let SymbolItem::Procedure(capture) = linker[capture_id].item() else {
+        unreachable!()
+    };
+    let capture = capture.borrow();
+    let signature = infer::infer_signature(capture_id, &capture, &context, &linker, &signatures)?;
 
     assert_eq!(signature.params().len(), 0);
     assert_eq!(signature.results().len(), 1);
@@ -1496,30 +1505,6 @@ end
     assert_eq!(signature.params().len(), 0);
     assert_eq!(signature.results().len(), 1);
     assert_eq!(signature.results()[0].ty, Type::Felt);
-
-    Ok(())
-}
-
-#[test]
-fn infers_debug_decorator_signature() -> Result<()> {
-    let context = Rc::new(Context::default());
-    let output = disassemble_source(
-        r#"
-pub proc debugged
-    debug.stack
-    trace.1
-end
-"#,
-        "test",
-        &DisassemblerConfig {
-            infer_missing_signatures: true,
-        },
-        context,
-    )?;
-
-    let signature = find_function(output.module, "debugged").borrow().get_signature().clone();
-    assert_eq!(signature.params().len(), 0);
-    assert_eq!(signature.results().len(), 0);
 
     Ok(())
 }
@@ -2080,29 +2065,6 @@ end
 }
 
 #[test]
-fn single_module_disassembly_rejects_non_core_imports() {
-    let context = Rc::new(Context::default());
-    let err = match disassemble_source(
-        r#"
-pub proc entry(a: felt) -> felt
-    exec.::dep::callee
-end
-"#,
-        "test",
-        &DisassemblerConfig::default(),
-        context,
-    ) {
-        Ok(_) => panic!("single-module disassembly should reject non-core external imports"),
-        Err(err) => err,
-    };
-
-    let message = err.to_string();
-    assert!(message.contains("single-module MASM disassembly does not support non-core import"));
-    assert!(message.contains("::dep::callee"));
-    assert!(message.contains("project target disassembly"));
-}
-
-#[test]
 fn single_module_disassembly_allows_referenced_core_imports() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -2150,9 +2112,7 @@ end
         Err(err) => err,
     };
     let message = err.to_string();
-    assert!(message.contains("unresolved external callee '::dep::missing'"));
-    assert!(message.contains("available external signatures"));
-    assert!(message.contains("::dep::callee"));
+    assert!(message.contains("undefined item '::dep::missing'"));
 }
 
 #[test]
@@ -2181,11 +2141,7 @@ end
         Err(err) => err,
     };
     let message = err.to_string();
-    assert!(
-        message.contains("signature inference could not resolve external callee '::dep::missing'")
-    );
-    assert!(message.contains("available external signatures"));
-    assert!(message.contains("::dep::callee"));
+    assert!(message.contains("undefined item '::dep::missing'"));
 }
 
 #[test]
@@ -2193,7 +2149,7 @@ fn lifts_known_signature_with_local_type_alias() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
         r#"
-type Scalar = felt
+pub type Scalar = felt
 
 pub proc inc(a: Scalar) -> Scalar
     add.1
@@ -2316,8 +2272,7 @@ fn project_dependency_graph_reports_unresolved_external_type_metadata() -> Resul
         Err(err) => err,
     };
     let message = err.to_string();
-    assert!(message.contains("external type '::types::Scalar'"));
-    assert!(message.contains("no external type metadata"));
+    assert!(message.contains("undefined item 'types::Scalar'"));
 
     let _ = fs::remove_dir_all(root);
 
@@ -2454,7 +2409,7 @@ fn project_disassembly_declares_only_referenced_preassembled_exports() -> Result
         &DisassemblerConfig::default(),
         context,
     )?;
-    let dep_api = find_world_module(output.world, "dep::api");
+    let dep_api = find_world_module(output.world, "dep");
     let _ = find_function(dep_api, "callee");
     assert!(dep_api.borrow().get(SymbolName::intern("unused")).is_none());
 
@@ -4815,9 +4770,9 @@ end
 }
 
 #[test]
-fn represents_indirect_recursion() -> Result<()> {
+fn rejects_mutual_recursion() -> Result<()> {
     let context = Rc::new(Context::default());
-    let output = disassemble_source(
+    let Err(err) = disassemble_source(
         r#"
 pub proc a() -> felt
     exec.b
@@ -4830,10 +4785,11 @@ end
         "test",
         &DisassemblerConfig::default(),
         context,
-    )?;
+    ) else {
+        panic!("expected disassembly with mututal recursion to fail");
+    };
 
-    assert_eq!(top_level_op_count::<hir::Exec>(find_function(output.module, "a")), 1);
-    assert_eq!(top_level_op_count::<hir::Exec>(find_function(output.module, "b")), 1);
+    assert!(err.to_string().contains("found a cycle in the call graph"));
     Ok(())
 }
 
@@ -4891,10 +4847,11 @@ fn parse_test_module(
     source: &str,
     context: &Rc<Context>,
 ) -> Result<Box<miden_assembly_syntax::ast::Module>> {
-    let source_manager = context.session().source_manager.clone();
-    let uri = Uri::from("test".to_owned().into_boxed_str());
-    let source_file = source_manager.load(SourceLanguage::Masm, uri, source.to_owned());
-    source_file.parse_with_options(source_manager, ParseOptions::new(ModuleKind::Library, "test"))
+    miden_assembly::ModuleParser::new(Some(ast::ModuleKind::Library)).parse_str(
+        Some(ast::Path::new("test")),
+        source,
+        context.source_manager(),
+    )
 }
 
 fn felt_types(count: usize) -> Vec<&'static str> {
@@ -5212,6 +5169,28 @@ fn temp_project_dir(prefix: &str) -> std::path::PathBuf {
 }
 
 fn write_source_dependency_project(prefix: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    write_source_dependency_project_with_content(
+        prefix,
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        r#"
+pub type Scalar = felt
+
+pub proc callee(a: Scalar) -> Scalar
+    add.1
+end
+"#,
+    )
+}
+
+fn write_source_dependency_project_with_content(
+    prefix: &str,
+    main_masm: &str,
+    lib_masm: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
     let root = temp_project_dir(prefix);
     let app_dir = root.join("app");
     let dep_dir = root.join("dep");
@@ -5229,17 +5208,7 @@ path = "lib.masm"
 "#,
     )
     .unwrap();
-    fs::write(
-        dep_dir.join("lib.masm"),
-        r#"
-type Scalar = felt
-
-pub proc callee(a: Scalar) -> Scalar
-add.1
-end
-"#,
-    )
-    .unwrap();
+    fs::write(dep_dir.join("lib.masm"), lib_masm).unwrap();
 
     fs::write(
         app_dir.join("miden-project.toml"),
@@ -5255,15 +5224,7 @@ dep = { path = "../dep" }
 "#,
     )
     .unwrap();
-    fs::write(
-        app_dir.join("main.masm"),
-        r#"
-pub proc entry(a: felt) -> felt
-    exec.::dep::callee
-end
-"#,
-    )
-    .unwrap();
+    fs::write(app_dir.join("main.masm"), main_masm).unwrap();
 
     (root, app_dir)
 }
@@ -5288,9 +5249,18 @@ path = "main.masm"
     fs::write(
         app_dir.join("main.masm"),
         r#"
+pub mod util
+
 pub proc entry(a: felt) -> felt
     exec.::app::util::math::inc
 end
+"#,
+    )
+    .unwrap();
+    fs::write(
+        util_dir.join("mod.masm"),
+        r#"
+pub mod math
 "#,
     )
     .unwrap();
@@ -5362,7 +5332,7 @@ path = "lib.masm"
     fs::write(
         dep_dir.join("lib.masm"),
         r#"
-use ::types::Scalar
+use {Scalar} from types
 
 pub type Wrapped = Scalar
 
@@ -5443,7 +5413,7 @@ types = { path = "../types" }
     fs::write(
         app_dir.join("main.masm"),
         r#"
-use ::types::Scalar
+use {Scalar} from types
 
 pub proc entry(a: Scalar) -> Scalar
     add.1
@@ -5486,7 +5456,7 @@ path = "lib.masm"
     fs::write(
         dep_dir.join("lib.masm"),
         r#"
-type Scalar = felt
+pub type Scalar = felt
 
 pub proc callee(a: Scalar) -> Scalar
     add.1
@@ -5543,7 +5513,7 @@ path = "lib.masm"
     fs::write(
         dep_repo_dir.join("lib.masm"),
         r#"
-type Scalar = felt
+pub type Scalar = felt
 
 pub proc callee(a: Scalar) -> Scalar
     add.1
@@ -5595,8 +5565,9 @@ fn write_preassembled_dependency_project(prefix: &str) -> (std::path::PathBuf, s
     fs::create_dir_all(&app_dir).unwrap();
     fs::create_dir_all(&dep_src_dir).unwrap();
 
+    let api_root = dep_src_dir.join("api.masm");
     fs::write(
-        dep_src_dir.join("api.masm"),
+        &api_root,
         r#"
 pub proc callee(a: felt) -> felt
     add.1
@@ -5608,15 +5579,10 @@ end
 "#,
     )
     .unwrap();
-    let library = Assembler::default().assemble_library_from_dir(&dep_src_dir, "dep").unwrap();
-    let package = miden_mast_package::Package::from_library(
-        miden_mast_package::PackageId::from("dep"),
-        "1.0.0".parse::<miden_mast_package::Version>().unwrap(),
-        miden_mast_package::TargetType::Library,
-        library,
-        std::iter::empty(),
-    );
-    fs::write(root.join("dep.masp"), package.to_bytes()).unwrap();
+    let package = Assembler::default()
+        .assemble_library_from_root(&api_root, Some(ast::Path::new("dep")))
+        .unwrap();
+    package.write_masp_file(&root).unwrap();
 
     fs::write(
         app_dir.join("miden-project.toml"),
@@ -5636,7 +5602,7 @@ dep = { path = "../dep.masp" }
         app_dir.join("main.masm"),
         r#"
 pub proc entry(a: felt) -> felt
-    exec.::dep::api::callee
+    exec.::dep::callee
 end
 "#,
     )

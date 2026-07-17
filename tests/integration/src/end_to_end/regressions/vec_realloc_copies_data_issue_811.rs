@@ -61,7 +61,7 @@ fn vec_realloc_copies_data_issue_811() {
     let package = test.compile_package();
     let args: [Felt; 0] = [];
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _>(package.clone(), [], &args, &test.session, |trace| {
         let result: u64 = trace.parse_result::<Felt>().unwrap().as_canonical_u64();
         assert_eq!(result, 166_665, "Vec reallocation failed to copy existing elements");
         Ok(())

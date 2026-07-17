@@ -26,9 +26,9 @@ fn fibonacci() {
     TestRunner::default()
         .run(&(1u32..30), move |a| {
             let rust_out = expected_fib(a);
-            let exec = executor_with_std(vec![Felt::new_unchecked(a as u64)], Some(&package));
+            let exec = executor_with_std(vec![Felt::new_unchecked(a as u64)]);
             let output: u32 =
-                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
+                exec.execute_into(package.clone(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out, output);
             Ok(())

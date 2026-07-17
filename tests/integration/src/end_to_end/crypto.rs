@@ -55,7 +55,7 @@ fn hmerge() {
                 raw_felts_in2[2],
                 raw_felts_in2[3],
             ];
-            eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+            eval_package::<Felt, _, _>(package.clone(), [], &args, &test.session, |trace| {
                 let res: miden_core::Felt = trace.parse_result().unwrap();
                 prop_assert_eq!(res, digest_out[0]);
                 Ok(())

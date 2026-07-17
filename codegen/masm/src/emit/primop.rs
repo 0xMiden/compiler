@@ -6,7 +6,7 @@ use midenc_hir::{
 };
 
 use super::{OpEmitter, int64, masm};
-use crate::TraceEvent;
+use crate::Event;
 
 impl OpEmitter<'_> {
     /// Push the caller procedure hash as a word.
@@ -301,8 +301,7 @@ impl OpEmitter<'_> {
         );
         assert_eq!(len.ty(), Type::U32, "expected println length operand to be a u32");
 
-        self.emit(masm::Instruction::Trace(TraceEvent::PrintLn.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::EmitImm(Event::PrintLn.as_event_id().as_felt().into()), span);
 
         // Clean up the stack after the debug executor handled printing.
         self.dropn(2, span);
@@ -319,11 +318,12 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
         self.emit(masm::Instruction::Exec(callee), span);
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
     /// Execute the given procedure in a new context.
@@ -337,11 +337,12 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
         self.emit(masm::Instruction::Call(callee), span);
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
     /// Execute the given kernel procedure as a syscall.
@@ -353,11 +354,12 @@ impl OpEmitter<'_> {
     ) {
         self.process_call_signature(&callee, signature, span);
 
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
         self.emit(masm::Instruction::SysCall(callee), span);
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
     fn process_call_signature(

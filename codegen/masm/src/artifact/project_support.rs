@@ -1,10 +1,10 @@
 //! Project-assembler support for compiler-generated MASM components.
+#![allow(unused)]
 
 use alloc::{collections::BTreeMap, string::ToString, sync::Arc, vec::Vec};
 
 use miden_assembly::{
-    Assembler, Library, Path, ProjectSourceInputs, ProjectTargetSelector,
-    library::{LibraryExport, ProcedureExport},
+    Assembler, Path, ProjectSourceInputs, ProjectSourceProvider, ProjectTargetSelector,
 };
 use miden_mast_package::{PackageManifest, Section, SectionId};
 use midenc_session::{
@@ -13,23 +13,25 @@ use midenc_session::{
 };
 
 use super::{MasmComponent, Package, Rodata};
-use crate::{intrinsics::INTRINSICS_MODULE_NAMES, masm};
+use crate::masm;
 
 /// Assemble a MASM component through the VM project assembler.
+#[cfg(false)]
 pub(super) fn assemble(
     component: &MasmComponent,
-    account_component_metadata_bytes: Option<&[u8]>,
     session: &Session,
+    source_providers: Vec<Box<dyn ProjectSourceProvider>>,
 ) -> Result<Arc<Package>, Report> {
     let mut registry = session.package_registry()?;
-    assemble_with_registry(component, account_component_metadata_bytes, session, &mut registry)
+    assemble_with_registry(component, session, &mut registry, source_providers)
 }
 
+#[cfg(false)]
 pub(super) fn assemble_with_registry(
     component: &MasmComponent,
-    account_component_metadata_bytes: Option<&[u8]>,
     session: &Session,
     registry: &mut midenc_session::registry::HybridPackageRegistry,
+    source_providers: Vec<Box<dyn ProjectSourceProvider>>,
 ) -> Result<Arc<Package>, Report> {
     let mut assembler = Assembler::new(session.source_manager.clone())
         .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors());
@@ -42,9 +44,10 @@ pub(super) fn assemble_with_registry(
             path.as_str().into(),
             content.clone(),
         );
-        let module =
-            miden_assembly_syntax::ModuleParser::new(miden_assembly::ast::ModuleKind::Library)
-                .parse(path, source, session.source_manager.clone())?;
+        let module = miden_assembly_syntax::ModuleParser::new(Some(
+            miden_assembly::ast::ModuleKind::Library,
+        ))
+        .parse(Some(path.as_path()), source, session.source_manager.clone())?;
         link_modules.push(module);
     }
     assembler.compile_and_statically_link_all(link_modules)?;
@@ -75,6 +78,9 @@ pub(super) fn assemble_with_registry(
         is_executable_target,
     )?;
     let mut project_assembler = assembler.for_project(project_package.clone(), registry)?;
+    for source_provider in source_providers {
+        project_assembler.with_source_provider(PassthroughSourceProvider::from(source_provider));
+    }
 
     let selector = if is_executable_target {
         ProjectTargetSelector::Executable(selected_executable_target_name(
@@ -112,7 +118,7 @@ fn selected_executable_target_name<'a>(
 }
 
 /// Prepare the synthetic project target and source inputs used to assemble compiler-generated MASM.
-fn prepare_sources(
+pub(crate) fn prepare_sources(
     component: &MasmComponent,
     assembler: &mut Assembler,
     emit_test_harness: bool,
@@ -158,6 +164,7 @@ fn prepare_sources(
 }
 
 /// Attach serialized account component metadata to the assembled package.
+#[cfg(false)]
 fn attach_account_component_metadata(
     package: &mut Package,
     account_component_metadata_bytes: Option<&[u8]>,
@@ -170,6 +177,7 @@ fn attach_account_component_metadata(
 }
 
 /// Rewrite library exports to preserve Wasm component-model interface names.
+#[cfg(false)]
 fn normalize_library_exports(package: &mut Package) -> Result<(), Report> {
     if !package.kind.is_library() {
         return Ok(());
@@ -185,6 +193,7 @@ fn normalize_library_exports(package: &mut Package) -> Result<(), Report> {
 }
 
 /// Extend the package advice map with the component's rodata segments.
+#[cfg(false)]
 fn extend_rodata_advice_map(package: &mut Package, rodata: &[Rodata]) {
     if rodata.is_empty() {
         return;
@@ -204,6 +213,7 @@ fn extend_rodata_advice_map(package: &mut Package, rodata: &[Rodata]) {
 ///
 /// 2. Assembler using the current module name to generate exports.
 ///
+#[cfg(false)]
 fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExport> {
     let mut exports = BTreeMap::new();
     for export in lib.exports() {
@@ -263,6 +273,6 @@ fn recover_wasm_cm_interfaces(lib: &Library) -> BTreeMap<Arc<Path>, LibraryExpor
 }
 
 /// Return true when the module belongs to the compiler's intrinsics namespace.
-fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
+pub(crate) fn is_intrinsics_module(module: &miden_assembly::ast::Module) -> bool {
     module.path().as_str().trim_start_matches("::").starts_with("intrinsics")
 }

@@ -67,9 +67,9 @@ fn is_prime() {
             prop_assert_eq!(rust_out as i32, result);
 
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(args, Some(&package));
+            let exec = executor_with_std(args);
             let output: u32 =
-                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
+                exec.execute_into(package.clone(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out as u32, output);
             Ok(())

@@ -1,35 +1,28 @@
 //! This module contains the set of compiler-emitted event codes, and their explanations
-use core::num::NonZeroU32;
+use miden_core::events::{EventId, EventName};
 
-/// This event is emitted via `trace`, and indicates that a procedure call frame is entered
-///
-/// The mnemonic here is F = frame, 0 = open
-pub const TRACE_FRAME_START: u32 = 0xf0;
+/// This event indicates that a procedure call frame is entered
+pub const FRAME_START_EVENT: EventName = EventName::new("readonly::miden_debug::frame_start");
 
-/// This event is emitted via `trace`, and indicates that a procedure call frame is exited
-///
-/// The mnemonic here is F = frame, C = close
-pub const TRACE_FRAME_END: u32 = 0xfc;
+/// This event indicates that a procedure call frame is exited
+pub const FRAME_END_EVENT: EventName = EventName::new("readonly::miden_debug::frame_end");
 
-/// This event is emitted via `trace`, and indicates that a line should be printed.
+/// This event indicates that a line should be printed.
 ///
 /// The bytes representing the string are expected in memory. The executor reads the start address
 /// and length from the operand stack.
-///
-/// The mnemonic here is ASCII `PRNT`.
-pub const TRACE_PRINT_LN: u32 = 0x50_52_4e_54;
+pub const PRINT_LN_EVENT: EventName = EventName::new("readonly::miden_debug::println");
 
-/// A typed wrapper around the raw trace events known to the compiler
+/// A typed wrapper around the raw events known to the compiler
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
-pub enum TraceEvent {
+pub enum Event {
     FrameStart,
     FrameEnd,
     PrintLn,
-    AssertionFailed(Option<NonZeroU32>),
-    Unknown(u32),
+    Unknown(EventId),
 }
-impl TraceEvent {
+impl Event {
     #[inline(always)]
     pub fn is_frame_start(&self) -> bool {
         matches!(self, Self::FrameStart)
@@ -40,36 +33,18 @@ impl TraceEvent {
         matches!(self, Self::FrameEnd)
     }
 
-    pub fn as_u32(self) -> u32 {
+    pub fn as_event_id(self) -> EventId {
         match self {
-            Self::FrameStart => TRACE_FRAME_START,
-            Self::FrameEnd => TRACE_FRAME_END,
-            Self::PrintLn => TRACE_PRINT_LN,
-            Self::AssertionFailed(None) => 0,
-            Self::AssertionFailed(Some(code)) => code.get(),
+            Self::FrameStart => FRAME_START_EVENT.to_event_id(),
+            Self::FrameEnd => FRAME_END_EVENT.to_event_id(),
+            Self::PrintLn => PRINT_LN_EVENT.to_event_id(),
             Self::Unknown(event) => event,
         }
     }
 }
-impl From<u32> for TraceEvent {
-    fn from(raw: u32) -> Self {
-        match raw {
-            TRACE_FRAME_START => Self::FrameStart,
-            TRACE_FRAME_END => Self::FrameEnd,
-            TRACE_PRINT_LN => Self::PrintLn,
-            _ => Self::Unknown(raw),
-        }
-    }
-}
-impl From<TraceEvent> for u32 {
-    fn from(event: TraceEvent) -> Self {
-        match event {
-            TraceEvent::FrameStart => TRACE_FRAME_START,
-            TraceEvent::FrameEnd => TRACE_FRAME_END,
-            TraceEvent::PrintLn => TRACE_PRINT_LN,
-            TraceEvent::AssertionFailed(None) => 0,
-            TraceEvent::AssertionFailed(Some(code)) => code.get(),
-            TraceEvent::Unknown(code) => code,
-        }
+
+impl From<Event> for EventId {
+    fn from(event: Event) -> Self {
+        event.as_event_id()
     }
 }
