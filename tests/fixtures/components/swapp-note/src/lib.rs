@@ -32,13 +32,19 @@ fn add_word(a: Word, b: Word) -> Word {
     Word::new([a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3]])
 }
 
-/// Computes the output amount of the offered asset proportional to the provided input amount
-/// of the requested asset, preserving the offered/requested price ratio.
+/// Computes the output amounts of the offered asset proportional to the provided input and
+/// inflight amounts of the requested asset, preserving the offered/requested price ratio.
+///
+/// The price ratio depends only on the totals, so it is computed once and applied to both
+/// fill parts; the rounding is applied to each part separately. Callers must guarantee a
+/// non-zero `requested_total` (the fill guards in [`SwappNote::run`] enforce
+/// `0 < fill <= requested_total`).
 ///
 /// # Arguments
 /// * `offered_total` - Total offered asset amount
 /// * `requested_total` - Total requested asset amount
-/// * `input_amount` - Input asset amount provided
+/// * `input_amount` - Input asset amount provided from the consumer's vault
+/// * `inflight_amount` - Input asset amount provided from the transaction's asset pool
 ///
 /// # Limitations (inherited from the original SWAPP contract)
 /// * A non-divisible full fill fails asset conservation: e.g. 10 offered for 3 requested,
@@ -51,30 +57,45 @@ fn add_word(a: Word, b: Word) -> Word {
 ///   requested, a single fill of 3 pays 4, while fills of 1 and 2 pay 1 + 2 = 3.
 /// * A positive fill can round to a zero payout (dust fill): 1 offered for 2 requested,
 ///   filled with 1, pays the creator and returns nothing.
-fn calculate_output_amount(offered_total: Felt, requested_total: Felt, input_amount: Felt) -> Felt {
-    assert!(requested_total.as_canonical_u64() > 0);
+fn calculate_output_amounts(
+    offered_total: Felt,
+    requested_total: Felt,
+    input_amount: Felt,
+    inflight_amount: Felt,
+) -> (Felt, Felt) {
+    /// Fixed-point scale of the price ratio.
+    const PRECISION_FACTOR: u64 = 100_000;
 
-    let precision_factor = Felt::from_u32(100000);
+    let offered = offered_total.as_canonical_u64();
+    let requested = requested_total.as_canonical_u64();
 
     // For the better precision, we use the two different paths for the calculation
     if offered_total > requested_total {
         // Case 1: offered_total > requested_total
         // Calculate ratio = (offered_total * factor) / requested_total
         // Then output = (input_amount * ratio) / factor
-        let ratio = (offered_total.as_canonical_u64() * precision_factor.as_canonical_u64())
-            / requested_total.as_canonical_u64();
-        let output =
-            (input_amount.as_canonical_u64() * ratio) / precision_factor.as_canonical_u64();
-        Felt::new(output).unwrap()
+        let ratio = offered * PRECISION_FACTOR / requested;
+        let output = |amount: Felt| {
+            if amount == felt!(0) {
+                felt!(0)
+            } else {
+                Felt::new(amount.as_canonical_u64() * ratio / PRECISION_FACTOR).unwrap()
+            }
+        };
+        (output(input_amount), output(inflight_amount))
     } else {
         // Case 2: offered_total <= requested_total
         // Calculate ratio = (requested_total * factor) / offered_total
         // Then output = (input_amount * factor) / ratio
-        let ratio = (requested_total.as_canonical_u64() * precision_factor.as_canonical_u64())
-            / offered_total.as_canonical_u64();
-        let output =
-            (input_amount.as_canonical_u64() * precision_factor.as_canonical_u64()) / ratio;
-        Felt::new(output).unwrap()
+        let ratio = requested * PRECISION_FACTOR / offered;
+        let output = |amount: Felt| {
+            if amount == felt!(0) {
+                felt!(0)
+            } else {
+                Felt::new(amount.as_canonical_u64() * PRECISION_FACTOR / ratio).unwrap()
+            }
+        };
+        (output(input_amount), output(inflight_amount))
     }
 }
 
@@ -243,10 +264,8 @@ impl SwappNote {
         assert!(total_input_amount <= requested_total);
 
         // Compute the offered output amounts proportional to the provided amounts.
-        let input_offered_out =
-            calculate_output_amount(offered_total, requested_total, input_amount);
-        let inflight_offered_out =
-            calculate_output_amount(offered_total, requested_total, inflight_amount);
+        let (input_offered_out, inflight_offered_out) =
+            calculate_output_amounts(offered_total, requested_total, input_amount, inflight_amount);
 
         // The consumer receives the offered share corresponding to the vault-provided input.
         if input_offered_out != felt!(0) {
