@@ -204,9 +204,9 @@ pub fn get_num_output_notes() -> u32 {
     count.as_canonical_u64() as u32
 }
 
-/// Returns the transaction expiration block delta.
+/// Returns the transaction expiration block delta, or `0` if no expiration delta has been set.
 pub fn get_expiration_block_delta() -> u16 {
-    // The transaction kernel bounds expiration deltas to 1..=u16::MAX.
+    // Set deltas are kernel-bounded to 1..=u16::MAX; the kernel returns 0 for an unset delta.
     let delta = unsafe { extern_tx_get_expiration_block_delta() };
     delta.as_canonical_u64() as u16
 }
