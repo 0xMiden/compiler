@@ -460,3 +460,22 @@ fn test_u64_roundtrip_uses_u32_limbs() {
         assert_eq!(roundtripped, value);
     }
 }
+
+#[test]
+fn test_word_roundtrip_encodes_elements_in_order() {
+    use miden_field::Word;
+
+    let original = Word::new([
+        Felt::new(1).unwrap(),
+        Felt::new(2).unwrap(),
+        Felt::new(3).unwrap(),
+        Felt::new(4).unwrap(),
+    ]);
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts, original.as_elements().to_vec());
+
+    let mut reader = FeltReader::new(&felts);
+    let roundtripped = Word::from_felt_repr(&mut reader).unwrap();
+    assert_eq!(roundtripped, original);
+}
