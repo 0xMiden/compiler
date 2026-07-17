@@ -16,7 +16,7 @@ use miden_assembly::ProjectSourceInputs;
 use miden_assembly_syntax::{
     Parse, ParseOptions,
     ast::{self, Module, ModuleKind},
-    debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, Uri},
+    debuginfo::{SourceLanguage, SourceManager, SourceManagerExt, SourceSpan, Uri},
 };
 use miden_project::Project;
 use midenc_hir::{Context, FunctionType, Report, Type, dialects::builtin};
@@ -58,6 +58,16 @@ pub struct DisassembledWorld {
     /// This is retained as a convenience for single-module callers and existing analyses which
     /// operate on a module root. Multi-module callers should prefer walking `world`.
     pub module: builtin::ModuleRef,
+    /// Procedures omitted from the HIR world in lint mode.
+    pub skipped_procedures: Vec<SkippedProcedure>,
+}
+
+/// A MASM procedure skipped while building a lintable HIR world.
+#[derive(Debug, Clone)]
+pub struct SkippedProcedure {
+    pub path: Arc<ast::Path>,
+    pub span: SourceSpan,
+    pub reason: String,
 }
 
 /// Disassemble a MASM file into an HIR world.
@@ -69,7 +79,19 @@ pub fn disassemble_file(
     let path = path.as_ref();
     let module_path = masm_module_path_from_file(path)?;
     let module = parse_file_with_module_path(path, &module_path, context.clone())?;
-    lift::lift_single_module(&module, config, context)
+    lift::lift_single_module(&module, &lift::LiftConfig::strict(config), context)
+}
+
+/// Disassemble a MASM file for linting, skipping procedures that cannot be lifted.
+pub fn disassemble_file_for_lint(
+    path: impl AsRef<Path>,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    let path = path.as_ref();
+    let module_path = masm_module_path_from_file(path)?;
+    let module = parse_file_with_module_path(path, &module_path, context.clone())?;
+    lift::lift_single_module(&module, &lift::LiftConfig::lint(config), context)
 }
 
 /// Disassemble a MASM file into an HIR world, using externally-provided procedure signatures for
@@ -102,7 +124,13 @@ fn disassemble_file_with_module_path_and_external_signatures(
 ) -> Result<DisassembledWorld> {
     let path = path.as_ref();
     let module = parse_file_with_module_path(path, module_path, context.clone())?;
-    lift::lift_module(&module, config, external_signatures, external_types, context)
+    lift::lift_module(
+        &module,
+        &lift::LiftConfig::strict(config),
+        external_signatures,
+        external_types,
+        context,
+    )
 }
 
 /// Disassemble a MASM source string into an HIR world.
@@ -113,7 +141,18 @@ pub fn disassemble_source(
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let module = parse_source_with_module_path(source, module_path, context.clone())?;
-    lift::lift_single_module(&module, config, context)
+    lift::lift_single_module(&module, &lift::LiftConfig::strict(config), context)
+}
+
+/// Disassemble a MASM source string for linting, skipping procedures that cannot be lifted.
+pub fn disassemble_source_for_lint(
+    source: impl Into<String>,
+    module_path: impl AsRef<miden_assembly_syntax::Path>,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    let module = parse_source_with_module_path(source, module_path, context.clone())?;
+    lift::lift_single_module(&module, &lift::LiftConfig::lint(config), context)
 }
 
 /// Disassemble a MASM source string into an HIR world, using externally-provided procedure
@@ -126,7 +165,13 @@ pub fn disassemble_source_with_external_signatures(
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
     let module = parse_source_with_module_path(source, module_path, context.clone())?;
-    lift::lift_module(&module, config, external_signatures, &ExternalTypeMap::new(), context)
+    lift::lift_module(
+        &module,
+        &lift::LiftConfig::strict(config),
+        external_signatures,
+        &ExternalTypeMap::new(),
+        context,
+    )
 }
 
 /// Disassemble a target from a `miden-project.toml` package manifest.
@@ -139,11 +184,38 @@ pub fn disassemble_project_target(
 ) -> Result<DisassembledWorld> {
     let inputs = if let Some(sources) = sources {
         let external_metadata = project::collect_dependency_metadata(project, &context)?;
-        project::ProjectTargetInput::new(sources, external_metadata)
+        project::ProjectTargetInput::from_source_inputs(sources, external_metadata)
     } else {
         project::resolve_project_target(project, target, &context)?
     };
-    lift::lift_project_target(inputs, config, context)
+    lift::lift_project_target(inputs, &lift::LiftConfig::strict(config), context)
+}
+
+/// Disassemble a project target for linting, skipping procedures that cannot be lifted.
+pub fn disassemble_project_target_for_lint(
+    project: &Project,
+    target: Option<&str>,
+    sources: Option<ProjectSourceInputs>,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    let inputs = if let Some(sources) = sources {
+        let external_metadata = project::collect_dependency_metadata(project, &context)?;
+        project::ProjectTargetInput::from_source_inputs(sources, external_metadata)
+    } else {
+        project::resolve_project_target(project, target, &context)?
+    };
+    lift::lift_project_target(inputs, &lift::LiftConfig::lint(config), context)
+}
+
+/// Disassemble pre-resolved project target inputs for linting, skipping procedures that cannot be
+/// lifted.
+pub fn disassemble_project_target_input_for_lint(
+    inputs: project::ProjectTargetInput,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    lift::lift_project_target(inputs, &lift::LiftConfig::lint(config), context)
 }
 
 /// Disassemble a target from a `miden-project.toml` package manifest.
@@ -158,7 +230,22 @@ pub fn disassemble_project_target_from_path(
         target,
         &context,
     )?;
-    lift::lift_project_target(target, config, context)
+    lift::lift_project_target(target, &lift::LiftConfig::strict(config), context)
+}
+
+/// Disassemble a target from a `miden-project.toml` package manifest for linting.
+pub fn disassemble_project_target_from_path_for_lint(
+    manifest_path: impl AsRef<Path>,
+    target: Option<&str>,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    let target = project::resolve_project_target_from_manifest_path(
+        manifest_path.as_ref(),
+        target,
+        &context,
+    )?;
+    lift::lift_project_target(target, &lift::LiftConfig::lint(config), context)
 }
 
 /// Disassemble a target from a `miden-project.toml` package manifest, using a precomputed
@@ -176,7 +263,7 @@ pub fn disassemble_project_target_with_dependency_graph(
         dependency_graph,
         &context,
     )?;
-    lift::lift_project_target(target, config, context)
+    lift::lift_project_target(target, &lift::LiftConfig::strict(config), context)
 }
 
 /// Disassemble a parsed MASM AST module into HIR.
@@ -185,7 +272,16 @@ pub fn disassemble_module(
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    lift::lift_single_module(module, config, context)
+    lift::lift_single_module(module, &lift::LiftConfig::strict(config), context)
+}
+
+/// Disassemble a parsed MASM AST module for linting, skipping procedures that cannot be lifted.
+pub fn disassemble_module_for_lint(
+    module: &Module,
+    config: &DisassemblerConfig,
+    context: Rc<Context>,
+) -> Result<DisassembledWorld> {
+    lift::lift_single_module(module, &lift::LiftConfig::lint(config), context)
 }
 
 fn parse_file_with_module_path(

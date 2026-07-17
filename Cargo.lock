@@ -3686,6 +3686,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-dialect-scf",
  "midenc-hir",
+ "midenc-hir-analysis",
  "midenc-session",
  "rustc-hash",
 ]
