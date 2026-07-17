@@ -355,6 +355,75 @@ fn spill_twin() {
     run_case("spill_twin", include_str!("cases/case_spill_twin.rs"));
 }
 
+/// Unsigned u64 comparisons (branches + select), dynamic-count rotates, and
+/// u64 leading_zeros — exercises the `lt/lte/gt/gte_u64`, `rotr_u64`, and u64
+/// `clz` emitter arms.
+#[test]
+fn u64_ucmp() {
+    run_case("u64_ucmp", include_str!("cases/case_u64_ucmp.rs"));
+}
+
+/// Sign-extension width conversions (extend8/16/32_s, extend_i32_s) —
+/// `wasm.SignExtend` lowers to `trunc(src)` + `sext(dst)`, covering
+/// `trunc_int32`/`trunc_int64` small-width arms, `sext_smallint`
+/// (8/16 -> 32/64), and `sext_int32(64)`; no i128 shapes.
+#[test]
+fn sext_widths() {
+    run_case("sext_widths", include_str!("cases/case_sext_widths.rs"));
+}
+
+/// Sub-word loads widened straight to 64 bits (i64.load8/16/32_u and _s) at
+/// runtime indexes — U8/U16/U32-typed loads + `arith.zext`/`sext` to 64-bit,
+/// covering the 64-bit arms of `zext_smallint`/`zext_int32` and the
+/// memory-flavored sign-extension entries.
+#[test]
+fn loadwiden() {
+    run_case("loadwiden", include_str!("cases/case_loadwiden.rs"));
+}
+
+/// Dynamic-by-dynamic `i64.mul_wide_s` — both operands sign-extended to i128
+/// (`sext_int64(128)`, its only Rust-reachable producer) plus the signed
+/// wide-multiply hi/lo recombination, without the constant-fold shape of the
+/// ignored sext_shapes case.
+#[test]
+fn mulwide_dyn() {
+    run_case("mulwide_dyn", include_str!("cases/case_mulwide_dyn.rs"));
+}
+
+/// `i64.mul_wide_s` with a positive constant multiplicand — `Sext::fold`
+/// materializes an I128 immediate that the scheduler pushes via `push_i128`,
+/// its only Rust-reachable producer.
+#[test]
+fn mulwide_fold() {
+    run_case("mulwide_fold", include_str!("cases/case_mulwide_fold.rs"));
+}
+
+/// Unsigned u64 division/remainder with dynamic non-zero divisors —
+/// `checked_div_u64`/`checked_mod_u64` emitter arms (miden-core-lib
+/// `u64::div`/`u64::mod`).
+#[test]
+#[ignore = "VM abort at runtime: 'error during processing of event with ID: 14153021663962350784' \
+            at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs \
+            (3046129121, 3276697921)"]
+fn u64_udiv() {
+    run_case("u64_udiv", include_str!("cases/case_u64_udiv.rs"));
+}
+
+/// Deterministic reproducer for the `u64_udiv` VM abort: pins the exact
+/// `(input1, input2)` pair the fuzzer flagged, so the abort fails reliably on
+/// that input rather than only when proptest happens to draw it.
+#[test]
+#[ignore = "VM aborts on pinned input (3046129121, 3276697921): 'error during processing of event \
+            with ID: 14153021663962350784' (U64_DIV_EVENT); deterministic reproducer for the \
+            u64_udiv abort"]
+fn u64_udiv_repro() {
+    run_case_with_inputs(
+        "u64_udiv_repro",
+        include_str!("cases/case_u64_udiv.rs"),
+        &[(3046129121, 3276697921)],
+    );
+}
+
 /// Reproducer for a compile-time spill-transform panic: each arm calls a
 /// non-inlinable helper, spills the call result under wide-tree pressure,
 /// then yields it, so the spilled value crosses the control-flow edge as the
