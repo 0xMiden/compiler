@@ -105,18 +105,18 @@ fn calls_selects() {
 /// sparse cf.switch ops — exercises binary-search (interval guard) and
 /// linear-search switch lowering.
 #[test]
-#[ignore = "flaky native/MASM divergence: mismatch on inputs (1669775643, 1062584501); separate \
-            run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("cases/case_switch_shapes.rs"));
 }
 
-/// Deterministic reproducer for the `switch_shapes` divergence: pins the
-/// exact `(input1, input2)` pair the fuzzer flagged, so the bug fails
-/// reliably on that input rather than only when proptest happens to draw it.
+/// Deterministic reproducer for issue #1235: pins the exact `(input1, input2)`
+/// pair the fuzzer flagged. The pair drives the hashed value to `h = 2`, so the
+/// `br_table` selector LLVM normalizes to `h - 7` wraps above `2^31` and must
+/// take the default arm; the frontend used to re-type the selector with a
+/// checked I32 -> U32 cast, trapping with "value does not fit in i32" instead.
+/// Fixed by bitcasting the selector (issue #1243, PR #1245); this pin guards
+/// against reintroducing a value check on that path.
 #[test]
-#[ignore = "MASM VM aborts on pinned input (1669775643, 1062584501): 'value does not fit in i32'; \
-            deterministic reproducer for the switch_shapes divergence"]
 fn switch_shapes_repro() {
     run_case_with_inputs(
         "switch_shapes_repro",
