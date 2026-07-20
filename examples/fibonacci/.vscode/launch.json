@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "miden",
+      "request": "launch",
+      "name": "Debug Fibonacci with miden-debug",
+      "runtime": "debugger",
+      "programPath": "${workspaceFolder}/target/miden/debug/fibonacci.masp",
+      "inputsPath": "${workspaceFolder}/inputs.toml",
+      "linkLibraries": [
+        "${workspaceFolder}/../../target/debug/build/miden-core-lib-06b2e87178feb654/out/assets/miden-core.masp"
+      ],
+      "midenDebugPath": "${workspaceFolder}/../../../miden-debug/target/debug/miden-debug",
+      "cwd": "${workspaceFolder}",
+      "host": "127.0.0.1",
+      "port": 4711
+    }
+  ]
+}

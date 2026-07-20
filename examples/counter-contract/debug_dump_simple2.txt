@@ -1,0 +1,1236 @@
+================================================================================
+Package Info:
+  | Name:    counter-contract
+  | Version: 0.1.0
+  | Kind:    account-component
+Section Versioning:
+  | Types:     1
+  | Sources:   1
+  | Functions: 1
+================================================================================
+
+Summary:
+
+Types:
+  | records: 256
+  | strings: 16
+
+Sources:
+  | records: 2
+  | strings: 2
+
+Functions:
+  | records:   39
+  | strings:   39
+  | variables: 0 (total across all functions)
+  | inlined:   0 call sites
+
+Found 342 debug variable records
+
+.debug_str contents:
+--------------------------------------------------------------------------------
+  [types string table]
+  [   0] "inner"
+  [   1] "miden:base/core-types@1.0.0/felt"
+  [   2] "prefix"
+  [   3] "suffix"
+  [   4] "miden:base/core-types@1.0.0/account-id"
+  [   5] "a"
+  [   6] "b"
+  [   7] "c"
+  [   8] "d"
+  [   9] "miden:base/core-types@1.0.0/word"
+  [  10] "key"
+  [  11] "value"
+  [  12] "miden:base/core-types@1.0.0/asset"
+  [  13] "x"
+  [  14] "y"
+  [  15] "point"
+
+  [sources string table]
+  [   0] "<workspace>/codegen/masm/intrinsics/mem.masm"
+  [   1] "<workspace>/examples/counter-contract/src/lib.rs"
+
+  [functions string table]
+  [   0] "::intrinsics::mem::offset_dw"
+  [   1] "::intrinsics::mem::realign_dw"
+  [   2] "::intrinsics::mem::store_sw"
+  [   3] "::intrinsics::mem::load_sw"
+  [   4] "::intrinsics::mem::store_felt"
+  [   5] "::intrinsics::mem::store_dw"
+  [   6] "::intrinsics::mem::load_dw"
+  [   7] "::intrinsics::mem::load_felt"
+  [   8] "::intrinsics::mem::heap_init"
+  [   9] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs5_Cs9xV9WL5m5Rc_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest9get_count"
+  [  10] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#get-count""
+  [  11] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"get-count""
+  [  12] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs5_Cs9xV9WL5m5Rc_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest15increment_count"
+  [  13] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#increment-count""
+  [  14] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"increment-count""
+  [  15] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#take-account-id""
+  [  16] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"take-account-id""
+  [  17] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#take-asset""
+  [  18] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"take-asset""
+  [  19] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#take-word""
+  [  20] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"take-word""
+  [  21] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#mixed""
+  [  22] "::"miden:counter-contract/miden-counter-contract@0.1.0"::mixed"
+  [  23] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#id-prefix-sum""
+  [  24] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"id-prefix-sum""
+  [  25] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs5_Cs9xV9WL5m5Rc_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest8ids_diff"
+  [  26] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#ids-diff""
+  [  27] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"ids-diff""
+  [  28] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#pick-first""
+  [  29] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"pick-first""
+  [  30] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#pick-second""
+  [  31] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"pick-second""
+  [  32] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RINvNtNtNtNtNtCs9xV9WL5m5Rc_16counter_contract8bindings7exports5miden16counter_contract22miden_counter_contract23__export_add_points_cabiNtBc_15CounterContractEBc_"
+  [  33] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#add-points""
+  [  34] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"add-points""
+  [  35] "::intrinsics::mem::verify_heap_magic"
+  [  36] "::intrinsics::mem::heap_base"
+  [  37] "::intrinsics::mem::memory_size"
+  [  38] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::cabi_realloc"
+
+.debug_types contents:
+--------------------------------------------------------------------------------
+  [   0] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   1] FUNCTION () -> felt
+  [   2] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   3] FUNCTION () -> felt
+  [   4] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   5] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [   6] FUNCTION () -> struct miden:base/core-types@1.0.0/felt
+  [   7] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   8] FUNCTION () -> felt
+  [   9] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  10] FUNCTION () -> felt
+  [  11] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  12] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  13] FUNCTION () -> struct miden:base/core-types@1.0.0/felt
+  [  14] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  15] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  16] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  17] FUNCTION (felt, felt) -> i32
+  [  18] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  19] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  20] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  21] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  22] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [  23] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  24] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  25] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  26] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  27] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [  28] FUNCTION (struct miden:base/core-types@1.0.0/account-id) -> struct miden:base/core-types@1.0.0/account-id
+  [  29] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  30] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  31] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  32] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  33] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  34] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  35] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  36] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  37] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  38] FUNCTION (felt, felt, felt, felt, felt, felt, felt, felt) -> i32
+  [  39] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  40] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  41] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  42] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  43] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  44] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  45] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  46] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  47] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [  48] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  49] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  50] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  51] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  52] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  53] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  54] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  55] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  56] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [  57] STRUCT miden:base/core-types@1.0.0/asset (size: 32 bytes)
+    +   0: key : struct miden:base/core-types@1.0.0/word
+    +  16: value : struct miden:base/core-types@1.0.0/word
+
+  [  58] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  59] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  60] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  61] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  62] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  63] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  64] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  65] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  66] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [  67] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  68] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  69] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  70] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  71] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  72] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  73] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  74] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  75] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [  76] STRUCT miden:base/core-types@1.0.0/asset (size: 32 bytes)
+    +   0: key : struct miden:base/core-types@1.0.0/word
+    +  16: value : struct miden:base/core-types@1.0.0/word
+
+  [  77] FUNCTION (struct miden:base/core-types@1.0.0/asset) -> struct miden:base/core-types@1.0.0/asset
+  [  78] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  79] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  80] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  81] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  82] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  83] FUNCTION (felt, felt, felt, felt) -> i32
+  [  84] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  85] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  86] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  87] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  88] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  89] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  90] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  91] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  92] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [  93] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  94] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  95] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  96] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  97] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  98] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [  99] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 100] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 101] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [ 102] FUNCTION (struct miden:base/core-types@1.0.0/word) -> struct miden:base/core-types@1.0.0/word
+  [ 103] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 104] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 105] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 106] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 107] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 108] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 109] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 110] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 111] FUNCTION (felt, felt, felt, felt, felt, felt, felt) -> i32
+  [ 112] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 113] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 114] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 115] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 116] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 117] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 118] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 119] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 120] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 121] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 122] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 123] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 124] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 125] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 126] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 127] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 128] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 129] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 130] STRUCT miden:base/core-types@1.0.0/word (size: 16 bytes)
+    +   0: a : struct miden:base/core-types@1.0.0/felt
+    +   4: b : struct miden:base/core-types@1.0.0/felt
+    +   8: c : struct miden:base/core-types@1.0.0/felt
+    +  12: d : struct miden:base/core-types@1.0.0/felt
+
+  [ 131] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 132] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 133] FUNCTION (struct miden:base/core-types@1.0.0/account-id, struct miden:base/core-types@1.0.0/word, struct miden:base/core-types@1.0.0/felt) -> struct miden:base/core-types@1.0.0/account-id
+  [ 134] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 135] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 136] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 137] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 138] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 139] FUNCTION (felt, felt, felt, felt) -> felt
+  [ 140] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 141] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 142] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 143] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 144] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 145] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 146] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 147] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 148] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 149] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 150] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 151] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 152] FUNCTION (struct miden:base/core-types@1.0.0/account-id, struct miden:base/core-types@1.0.0/account-id) -> struct miden:base/core-types@1.0.0/felt
+  [ 153] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 154] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 155] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 156] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 157] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 158] FUNCTION (felt, felt, felt, felt) -> felt
+  [ 159] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 160] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 161] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 162] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 163] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 164] FUNCTION (felt, felt, felt, felt) -> felt
+  [ 165] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 166] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 167] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 168] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 169] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 170] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 171] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 172] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 173] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 174] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 175] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 176] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 177] FUNCTION (struct miden:base/core-types@1.0.0/account-id, struct miden:base/core-types@1.0.0/account-id) -> struct miden:base/core-types@1.0.0/felt
+  [ 178] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 179] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 180] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 181] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 182] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 183] FUNCTION (felt, felt, felt, felt) -> i32
+  [ 184] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 185] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 186] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 187] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 188] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 189] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 190] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 191] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 192] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 193] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 194] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 195] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 196] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 197] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 198] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 199] FUNCTION (struct miden:base/core-types@1.0.0/account-id, struct miden:base/core-types@1.0.0/account-id) -> struct miden:base/core-types@1.0.0/account-id
+  [ 200] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 201] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 202] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 203] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 204] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 205] FUNCTION (felt, felt, felt, felt) -> i32
+  [ 206] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 207] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 208] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 209] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 210] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 211] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 212] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 213] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 214] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 215] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 216] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 217] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 218] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 219] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 220] STRUCT miden:base/core-types@1.0.0/account-id (size: 8 bytes)
+    +   0: prefix : struct miden:base/core-types@1.0.0/felt
+    +   4: suffix : struct miden:base/core-types@1.0.0/felt
+
+  [ 221] FUNCTION (struct miden:base/core-types@1.0.0/account-id, struct miden:base/core-types@1.0.0/account-id) -> struct miden:base/core-types@1.0.0/account-id
+  [ 222] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 223] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 224] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 225] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 226] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 227] FUNCTION (felt, felt, felt, felt) -> i32
+  [ 228] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 229] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 230] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 231] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 232] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 233] FUNCTION (felt, felt, felt, felt) -> i32
+  [ 234] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 235] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 236] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 237] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 238] STRUCT point (size: 8 bytes)
+    +   0: x : struct miden:base/core-types@1.0.0/felt
+    +   4: y : struct miden:base/core-types@1.0.0/felt
+
+  [ 239] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 240] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 241] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 242] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 243] STRUCT point (size: 8 bytes)
+    +   0: x : struct miden:base/core-types@1.0.0/felt
+    +   4: y : struct miden:base/core-types@1.0.0/felt
+
+  [ 244] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 245] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 246] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [ 247] STRUCT miden:base/core-types@1.0.0/felt (size: 4 bytes)
+    +   0: inner : felt
+
+  [ 248] STRUCT point (size: 8 bytes)
+    +   0: x : struct miden:base/core-types@1.0.0/felt
+    +   4: y : struct miden:base/core-types@1.0.0/felt
+
+  [ 249] FUNCTION (struct point, struct point) -> struct point
+  [ 250] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 251] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 252] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 253] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 254] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [ 255] FUNCTION (i32, i32, i32, i32) -> i32
+
+.debug_files contents:
+--------------------------------------------------------------------------------
+  [   0] <workspace>/codegen/masm/intrinsics/mem.masm
+  [   1] <workspace>/examples/counter-contract/src/lib.rs
+
+.debug_functions contents:
+--------------------------------------------------------------------------------
+  [   0] FUNCTION: ::intrinsics::mem::offset_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:349:1
+         MAST root: 0x7918f80a0a89415b237f0c280532317e202515d410948eb29a86d19fd3fe6a6f
+
+  [   1] FUNCTION: ::intrinsics::mem::realign_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:257:1
+         MAST root: 0xa2f3eddd1c3f39730ac9f256dec4b484ba14727780226ed017ddf0e9093c13fe
+
+  [   2] FUNCTION: ::intrinsics::mem::store_sw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:467:1
+         MAST root: 0xb691f6d1e1edde5f53e1445863f1be9e592f961852a0998c3b78c9d12d4ec055
+
+  [   3] FUNCTION: ::intrinsics::mem::load_sw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:158:1
+         MAST root: 0x71baeacb4d294e31ce3e652371958a5d0e653b29359b23e2780caa7997d2d782
+
+  [   4] FUNCTION: ::intrinsics::mem::store_felt
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:458:1
+         MAST root: 0x60d8191f267597e6649b200fd9d653ea3bfaafacad7887c9b8f913db7743ecc6
+
+  [   5] FUNCTION: ::intrinsics::mem::store_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:548:1
+         MAST root: 0x46b0a0a6e28170ead54ae836a7ff13ebd9e1e28342ca38e379704405afa03dc9
+
+  [   6] FUNCTION: ::intrinsics::mem::load_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:367:1
+         MAST root: 0x2bd361000714a0ad22531f33dea9d9cfdc5684da9cedad04b8eb5bc59ae1b00d
+
+  [   7] FUNCTION: ::intrinsics::mem::load_felt
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:149:1
+         MAST root: 0x5aac903cd78b5054c004cf1a202fec6e5f76a04bea4a748d44bd3f5405b9d031
+
+  [   8] FUNCTION: ::intrinsics::mem::heap_init
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:48:1
+         MAST root: 0xc9d5fa1b8d6e44eb85de39b15273969a9d18a4dac1789dd6ab77b1cb1467b2ba
+
+  [   9] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs5_Cs9xV9WL5m5Rc_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest9get_count
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xefc8efc161493bb694d379f4a1e910b7a41e17bf0024b063dd5d8baa11a859d2
+
+  [  10] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#get-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x1d07dca42ba06bb916f0dde427546e5aef85e033236fa5873cc9aeece51ebc15
+
+  [  11] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"get-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x9202821691c6cda30f3f0b6eed51d4da56d3c2e930a064c053011caf261671a3
+
+  [  12] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs5_Cs9xV9WL5m5Rc_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest15increment_count
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xe805700f1250e335929622e0d5db5a96f0b56c8255e6b7a41df25d55a19f0b48
+
+  [  13] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#increment-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xa0374b280a6d216ce3283a401a47e7b2c4ece653f4114d6959ed6c72a39fa51e
+
+  [  14] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"increment-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x4d3e75e64c42b6850f5040c52f04922919f5cf93e1d9e6e9103abfd33cde49ba
+
+  [  15] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#take-account-id"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x155ce83d9e275fc15ffc2b3a47c247516125ba39046a9c2864d0cbf5410983ed
+
+  [  16] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"take-account-id"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xce142fa2409345d80f71a58d797d8e7865cd2883b95cafef3b8867f147526db4
+
+  [  17] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#take-asset"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x8b142b0e190f75169412842bac8159aa9bd2b75ffbf98f4279fe6c52f1cefebe
+
+  [  18] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"take-asset"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x67dab342bd7a6a83a8b04bd3ebb0af328868cddee4061b9070f240a6bf9242be
+
+  [  19] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#take-word"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x0870c1d05c9778581e082ac9f95f5e4969c7026d31f8446c8fb11bdf961e2802
+
+  [  20] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"take-word"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x0c47f24413e6b1717eb2dcf728c4d32fe3f265ea3e5970e90e87425c2c348a73
+
+  [  21] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#mixed"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x28745ceaac628dc500396a263c9882b96797a4b7f3385b00a4b2f986523601fd
+
+  [  22] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::mixed
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x3e7f95073c58c282b92fa84dda966edd51094b2948821a88a51ce112a96b0444
+
+  [  23] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#id-prefix-sum"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xdc6809aa6a91d1e30facfa20c21957653b154736e5a6354e09e0adc6db631e86
+
+  [  24] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"id-prefix-sum"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x3d41b207dacb47a08b1c37e276f94b049bef688a36ca53ae457e9af8b63f726f
+
+  [  25] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs5_Cs9xV9WL5m5Rc_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest8ids_diff
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x20be24083cdd2e4c3d806e760c069f7324663d6698d6dc768445aaced55d6459
+
+  [  26] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#ids-diff"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x7d9b2464b62180e25c84f333e587e92c9749cbba5357cf3e8f90be5d0221970e
+
+  [  27] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"ids-diff"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x06f969c2238f985b186b9ff428bb70c7d2a5b34706ede2a0f12923b5e3399cbf
+
+  [  28] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#pick-first"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xba0a23ac7f5a44999d827b6cd2a4d093e8ed2cdcdffc33cb89aec712bad84a75
+
+  [  29] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"pick-first"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x55ea609c2908d571ba571abf4246776e138fa92d187953f73b614a8e2263f98c
+
+  [  30] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#pick-second"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xc0ebe358ae3083cd32c2bf50790e3830610b9642f2b1cfae6d39291daf438370
+
+  [  31] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"pick-second"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xc1c239b7fa3675882e366e6a4d50349a21eb79b45c1e1a654e9a4c1102d9a3b0
+
+  [  32] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RINvNtNtNtNtNtCs9xV9WL5m5Rc_16counter_contract8bindings7exports5miden16counter_contract22miden_counter_contract23__export_add_points_cabiNtBc_15CounterContractEBc_
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xf6288ab517ff6b06253d091ac6d33a84be651182f5366f922e43308c4911f1bc
+
+  [  33] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#add-points"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0xa194dcf4a71c6f76281f86746d4f3ea84164f23255ff6f660e74c6db1a997015
+
+  [  34] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"add-points"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:27:1
+         Type: fn(...)
+         MAST root: 0x42d630192708ada82c7e474798a6ca9d48de790cef744093918d5108e8f6453e
+
+  [  35] FUNCTION: ::intrinsics::mem::verify_heap_magic
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:39:1
+         MAST root: 0x273f0b1e49d55eac5b34a1b70e3fd5b5ea5e98102d58b047fc74fbb535a256b5
+
+  [  36] FUNCTION: ::intrinsics::mem::heap_base
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:58:1
+         MAST root: 0x3ad62be22a86eacb80b8bae941fae1507531da1e69f36e8499e922ae998170d4
+
+  [  37] FUNCTION: ::intrinsics::mem::memory_size
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:75:1
+         MAST root: 0x061b5cf60ff71870101df3d635785dabebe1dc3ae83f1ec86f9b4b2ed326e671
+
+  [  38] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::cabi_realloc
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0xb66c0ef9551334e8922c0dcc297ea411e569a9c75f4e4509d005c55912a49fa1
+
+
+.debug_loc contents (DebugVar entries from MAST):
+--------------------------------------------------------------------------------
+  Total DebugVar entries: 342
+  Unique variable names: 40
+
+  Variable: "?"
+  78 location entries:
+    [var#10] stack[2]
+    [var#11] di.debug_kill
+    [var#34] frame_base(FMP-8)+16 @ src/lib.rs:20:1
+    [var#35] frame_base(FMP-8)+32 @ src/lib.rs:20:1
+    [var#36] stack[0] @ src/lib.rs:20:1
+    [var#37] stack[1] @ src/lib.rs:20:1
+    [var#38] di.debug_kill @ src/lib.rs:20:1
+    [var#39] di.debug_kill @ src/lib.rs:20:1
+    [var#57] frame_base(FMP-8)+32 @ src/lib.rs:20:1
+    [var#58] frame_base(FMP-8)+64 @ src/lib.rs:20:1
+    [var#59] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#60] frame_base(FMP-8)+64 @ src/lib.rs:20:1
+    [var#62] stack[0] @ src/lib.rs:20:1
+    [var#63] stack[1] @ src/lib.rs:20:1
+    [var#64] di.debug_kill @ src/lib.rs:20:1
+    [var#65] di.debug_kill @ src/lib.rs:20:1
+    [var#66] FMP-5 @ src/lib.rs:20:1
+    [var#68] stack[0] @ src/lib.rs:20:1
+    [var#69] stack[0] @ src/lib.rs:20:1
+    [var#71] di.debug_kill @ src/lib.rs:20:1
+    [var#73] stack[0] @ src/lib.rs:20:1
+    [var#74] stack[1] @ src/lib.rs:20:1
+    [var#75] di.debug_kill @ src/lib.rs:20:1
+    [var#76] di.debug_kill @ src/lib.rs:20:1
+    [var#82] stack[0] @ src/lib.rs:307:1
+    [var#83] di.debug_kill @ src/lib.rs:307:1
+    [var#84] FMP-4 @ src/lib.rs:307:1
+    [var#86] stack[0] @ src/lib.rs:307:1
+    [var#89] stack[0] @ src/lib.rs:307:1
+    [var#90] di.debug_kill @ src/lib.rs:307:1
+    [var#103] stack[0] @ src/lib.rs:17:1
+    [var#104] di.debug_kill @ src/lib.rs:17:1
+    [var#105] FMP-2 @ src/lib.rs:17:1
+    [var#107] stack[0] @ src/lib.rs:17:1
+    [var#109] stack[0] @ src/lib.rs:17:1
+    [var#111] stack[0] @ src/lib.rs:17:1
+    [var#113] stack[0] @ src/lib.rs:17:1
+    [var#115] stack[0] @ src/lib.rs:17:1
+    [var#118] stack[0] @ src/lib.rs:17:1
+    [var#121] stack[0] @ src/lib.rs:17:1
+    [var#124] stack[0] @ src/lib.rs:17:1
+    [var#125] di.debug_kill @ src/lib.rs:17:1
+    [var#134] stack[0] @ src/lib.rs:9:1
+    [var#135] di.debug_kill @ src/lib.rs:9:1
+    [var#136] FMP-2 @ src/lib.rs:9:1
+    [var#138] stack[0] @ src/lib.rs:9:1
+    [var#141] stack[0] @ src/lib.rs:9:1
+    [var#144] stack[0] @ src/lib.rs:9:1
+    [var#147] stack[0] @ src/lib.rs:9:1
+    [var#148] di.debug_kill @ src/lib.rs:9:1
+    [var#153] stack[0] @ src/lib.rs:20:1
+    [var#154] di.debug_kill @ src/lib.rs:20:1
+    [var#155] FMP-3 @ src/lib.rs:20:1
+    [var#157] stack[0] @ src/lib.rs:20:1
+    [var#160] stack[0] @ src/lib.rs:20:1
+    [var#161] di.debug_kill @ src/lib.rs:20:1
+    [var#191] stack[0] @ src/lib.rs:79:1
+    [var#192] di.debug_kill @ src/lib.rs:79:1
+    [var#193] FMP-2 @ src/lib.rs:79:1
+    [var#195] stack[0] @ src/lib.rs:79:1
+    [var#198] stack[0] @ src/lib.rs:79:1
+    [var#199] di.debug_kill @ src/lib.rs:79:1
+    [var#204] stack[0] @ src/lib.rs:109:1
+    [var#205] di.debug_kill @ src/lib.rs:109:1
+    [var#206] FMP-2 @ src/lib.rs:109:1
+    [var#208] stack[0] @ src/lib.rs:109:1
+    [var#211] stack[0] @ src/lib.rs:109:1
+    [var#212] di.debug_kill @ src/lib.rs:109:1
+    [var#271] stack[0]
+    [var#272] stack[1]
+    [var#293] stack[2]
+    [var#294] di.debug_kill
+    [var#318] stack[0] @ src/lib.rs:20:1
+    [var#319] di.debug_kill @ src/lib.rs:20:1
+    [var#320] FMP-4 @ src/lib.rs:20:1
+    [var#327] stack[0] @ src/lib.rs:20:1
+    [var#332] stack[0] @ src/lib.rs:20:1
+    [var#334] di.debug_kill @ src/lib.rs:20:1
+
+  Variable: "a"
+  3 location entries:
+    [var#253] FMP-4 (param #1) @ alignment.rs:254:1
+    [var#255] stack[0] (param #1) @ alignment.rs:254:1
+    [var#257] stack[0] (param #1) @ alignment.rs:254:1
+
+  Variable: "align"
+  5 location entries:
+    [var#309] FMP-6 (param #3) @ src/lib.rs:20:1
+    [var#314] stack[0] (param #3) @ src/lib.rs:20:1
+    [var#330] stack[0] (param #3) @ src/lib.rs:20:1
+    [var#337] stack[0] (param #3) @ src/lib.rs:20:1
+    [var#341] stack[0] (param #3) @ src/lib.rs:20:1
+
+  Variable: "alignment"
+  3 location entries:
+    [var#249] FMP-3 (param #2) @ layout.rs:74:1
+    [var#250] FMP-3 (param #2) @ layout.rs:74:1
+    [var#252] stack[1] (param #2) @ layout.rs:74:1
+
+  Variable: "arg0"
+  19 location entries:
+    [var#78] FMP-8 (param #1) @ src/lib.rs:27:28
+    [var#87] stack[0] (param #1) @ src/lib.rs:27:28
+    [var#91] FMP-12 (param #1) @ src/lib.rs:27:13
+    [var#122] stack[0] (param #1) @ src/lib.rs:27:13
+    [var#126] FMP-8 (param #1) @ src/lib.rs:27:2
+    [var#145] stack[0] (param #1) @ src/lib.rs:27:2
+    [var#149] FMP-12 (param #1) @ src/lib.rs:27:1
+    [var#158] stack[0] (param #1) @ src/lib.rs:27:1
+    [var#162] FMP-8 (param #1) @ src/lib.rs:27:1
+    [var#166] stack[0] (param #1) @ src/lib.rs:27:1
+    [var#171] FMP-8 (param #1) @ src/lib.rs:20:1
+    [var#179] FMP-4 (param #1) @ src/lib.rs:27:1
+    [var#183] stack[0] (param #1) @ src/lib.rs:27:1
+    [var#187] FMP-8 (param #1) @ src/lib.rs:27:1
+    [var#196] stack[0] (param #1) @ src/lib.rs:27:1
+    [var#213] FMP-8 (param #1) @ src/lib.rs:27:1
+    [var#218] stack[0] (param #1) @ src/lib.rs:27:1
+    [var#240] FMP-4 (param #1) @ src/lib.rs:27:1
+    [var#244] stack[0] (param #1) @ src/lib.rs:27:1
+
+  Variable: "arg1"
+  38 location entries:
+    [var#5] FMP-3 (param #2)
+    [var#6] FMP-3 (param #2)
+    [var#7] stack[0] (param #2)
+    [var#8] stack[0] (param #2)
+    [var#9] stack[0] (param #2)
+    [var#42] frame_base(FMP-6)+0 (param #2)
+    [var#79] FMP-7 (param #2) @ src/lib.rs:27:28
+    [var#80] FMP-7 (param #2) @ src/lib.rs:27:28
+    [var#85] stack[0] (param #2) @ src/lib.rs:27:28
+    [var#92] FMP-11 (param #2) @ src/lib.rs:27:13
+    [var#119] stack[0] (param #2) @ src/lib.rs:27:13
+    [var#127] FMP-7 (param #2) @ src/lib.rs:27:2
+    [var#142] stack[0] (param #2) @ src/lib.rs:27:2
+    [var#150] FMP-11 (param #2) @ src/lib.rs:27:1
+    [var#151] FMP-11 (param #2) @ src/lib.rs:27:1
+    [var#156] stack[0] (param #2) @ src/lib.rs:27:1
+    [var#172] FMP-7 (param #2) @ src/lib.rs:20:1
+    [var#180] FMP-3 (param #2) @ src/lib.rs:27:1
+    [var#184] stack[0] (param #2) @ src/lib.rs:27:1
+    [var#188] FMP-7 (param #2) @ src/lib.rs:27:1
+    [var#189] FMP-7 (param #2) @ src/lib.rs:27:1
+    [var#194] stack[0] (param #2) @ src/lib.rs:27:1
+    [var#214] FMP-7 (param #2) @ src/lib.rs:27:1
+    [var#226] stack[0] (param #2) @ src/lib.rs:27:1
+    [var#241] FMP-3 (param #2) @ src/lib.rs:27:1
+    [var#245] stack[1] (param #2) @ src/lib.rs:27:1
+    [var#260] FMP-7 (param #2)
+    [var#261] FMP-7 (param #2)
+    [var#262] FMP-7 (param #2)
+    [var#275] stack[0] (param #2)
+    [var#276] stack[0] (param #2)
+    [var#279] stack[0] (param #2)
+    [var#281] stack[0] (param #2)
+    [var#283] stack[1] (param #2)
+    [var#286] stack[0] (param #2)
+    [var#288] stack[0] (param #2)
+    [var#289] stack[0] (param #2)
+    [var#304] stack[0] (param #2)
+
+  Variable: "arg2"
+  20 location entries:
+    [var#93] FMP-10 (param #3) @ src/lib.rs:27:13
+    [var#116] stack[0] (param #3) @ src/lib.rs:27:13
+    [var#128] FMP-6 (param #3) @ src/lib.rs:27:2
+    [var#139] stack[0] (param #3) @ src/lib.rs:27:2
+    [var#163] FMP-6 (param #3) @ src/lib.rs:27:1
+    [var#164] FMP-6 (param #3) @ src/lib.rs:27:1
+    [var#168] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#169] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#170] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#173] frame_base(FMP-4)+16 (param #3) @ src/lib.rs:20:1
+    [var#181] FMP-2 (param #3) @ src/lib.rs:27:1
+    [var#185] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#200] FMP-6 (param #3) @ src/lib.rs:27:9
+    [var#209] stack[0] (param #3) @ src/lib.rs:27:9
+    [var#215] FMP-6 (param #3) @ src/lib.rs:27:1
+    [var#219] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#220] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#232] stack[0] (param #3) @ src/lib.rs:27:1
+    [var#242] FMP-2 (param #3) @ src/lib.rs:27:1
+    [var#246] stack[2] (param #3) @ src/lib.rs:27:1
+
+  Variable: "arg3"
+  15 location entries:
+    [var#94] FMP-9 (param #4) @ src/lib.rs:27:13
+    [var#114] stack[0] (param #4) @ src/lib.rs:27:13
+    [var#129] FMP-5 (param #4) @ src/lib.rs:27:2
+    [var#130] FMP-5 (param #4) @ src/lib.rs:27:2
+    [var#137] stack[0] (param #4) @ src/lib.rs:27:2
+    [var#174] frame_base(FMP-4)+16 (param #4) @ src/lib.rs:20:1
+    [var#182] FMP-1 (param #4) @ src/lib.rs:27:1
+    [var#186] stack[0] (param #4) @ src/lib.rs:27:1
+    [var#201] FMP-5 (param #4) @ src/lib.rs:27:9
+    [var#202] FMP-5 (param #4) @ src/lib.rs:27:9
+    [var#207] stack[0] (param #4) @ src/lib.rs:27:9
+    [var#216] FMP-5 (param #4) @ src/lib.rs:27:1
+    [var#227] stack[0] (param #4) @ src/lib.rs:27:1
+    [var#243] FMP-1 (param #4) @ src/lib.rs:27:1
+    [var#247] stack[3] (param #4) @ src/lib.rs:27:1
+
+  Variable: "arg4"
+  2 location entries:
+    [var#95] FMP-8 (param #5) @ src/lib.rs:27:13
+    [var#112] stack[0] (param #5) @ src/lib.rs:27:13
+
+  Variable: "arg5"
+  2 location entries:
+    [var#96] FMP-7 (param #6) @ src/lib.rs:27:13
+    [var#110] stack[0] (param #6) @ src/lib.rs:27:13
+
+  Variable: "arg6"
+  2 location entries:
+    [var#97] FMP-6 (param #7) @ src/lib.rs:27:13
+    [var#108] stack[0] (param #7) @ src/lib.rs:27:13
+
+  Variable: "arg7"
+  3 location entries:
+    [var#98] FMP-5 (param #8) @ src/lib.rs:27:13
+    [var#99] FMP-5 (param #8) @ src/lib.rs:27:13
+    [var#106] stack[0] (param #8) @ src/lib.rs:27:13
+
+  Variable: "available"
+  2 location entries:
+    [var#298] stack[1] @ lib.rs:99:1
+    [var#299] di.debug_kill @ lib.rs:99:1
+
+  Variable: "b"
+  3 location entries:
+    [var#254] FMP-3 (param #2) @ alignment.rs:254:1
+    [var#256] stack[1] (param #2) @ alignment.rs:254:1
+    [var#258] stack[1] (param #2) @ alignment.rs:254:1
+
+  Variable: "index"
+  3 location entries:
+    [var#1] FMP-3 (param #2) @ mod.rs:292:1
+    [var#2] stack[0] (param #2) @ mod.rs:292:1
+    [var#4] stack[0] (param #2) @ mod.rs:292:1
+
+  Variable: "inner3"
+  3 location entries:
+    [var#222] FMP-6 @ src/lib.rs:27:1
+    [var#234] stack[0] @ src/lib.rs:27:1
+    [var#239] di.debug_kill @ src/lib.rs:27:1
+
+  Variable: "inner4"
+  2 location entries:
+    [var#229] stack[2] @ src/lib.rs:27:1
+    [var#230] di.debug_kill @ src/lib.rs:27:1
+
+  Variable: "local0"
+  3 location entries:
+    [var#27] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#40] FMP-4
+    [var#48] frame_base(FMP-8)+80 @ src/lib.rs:20:1
+
+  Variable: "local1"
+  2 location entries:
+    [var#28] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#49] frame_base(FMP-8)+80 @ src/lib.rs:20:1
+
+  Variable: "local10"
+  2 location entries:
+    [var#102] FMP-10 @ src/lib.rs:17:13
+    [var#117] stack[0] @ src/lib.rs:17:13
+
+  Variable: "local2"
+  6 location entries:
+    [var#14] frame_base(FMP-2)+0
+    [var#29] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#43] frame_base(FMP-6)+0
+    [var#50] frame_base(FMP-8)+80 @ src/lib.rs:20:1
+    [var#81] FMP-8 @ src/lib.rs:307:28
+    [var#88] stack[0] @ src/lib.rs:307:28
+
+  Variable: "local3"
+  11 location entries:
+    [var#15] frame_base(FMP-2)+0
+    [var#30] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#44] frame_base(FMP-6)+0
+    [var#51] frame_base(FMP-8)+80 @ src/lib.rs:20:1
+    [var#52] FMP-5 @ src/lib.rs:20:1
+    [var#53] FMP-5 @ src/lib.rs:20:1
+    [var#61] stack[0] @ src/lib.rs:20:1
+    [var#67] stack[0] @ src/lib.rs:20:1
+    [var#70] stack[0] @ src/lib.rs:20:1
+    [var#72] stack[0] @ src/lib.rs:20:1
+    [var#77] stack[0] @ src/lib.rs:20:1
+
+  Variable: "local4"
+  23 location entries:
+    [var#31] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#54] frame_base(FMP-8)+80 @ src/lib.rs:20:1
+    [var#131] FMP-8 @ src/lib.rs:9:2
+    [var#146] stack[0] @ src/lib.rs:9:2
+    [var#165] FMP-8 @ src/lib.rs:20:1
+    [var#167] stack[0] @ src/lib.rs:20:1
+    [var#175] di.debug_kill @ src/lib.rs:20:1
+    [var#178] stack[0] @ src/lib.rs:20:1
+    [var#190] FMP-8 @ src/lib.rs:79:1
+    [var#197] stack[0] @ src/lib.rs:79:1
+    [var#203] FMP-6 @ src/lib.rs:109:9
+    [var#210] stack[0] @ src/lib.rs:109:9
+    [var#268] FMP-4
+    [var#269] FMP-4
+    [var#270] FMP-4
+    [var#273] stack[0]
+    [var#277] stack[0]
+    [var#278] stack[0]
+    [var#280] stack[0]
+    [var#305] stack[0]
+    [var#306] stack[0]
+    [var#316] stack[0] @ src/lib.rs:20:1
+    [var#317] di.debug_kill @ src/lib.rs:20:1
+
+  Variable: "local5"
+  6 location entries:
+    [var#32] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#55] frame_base(FMP-8)+80 @ src/lib.rs:20:1
+    [var#132] FMP-7 @ src/lib.rs:9:2
+    [var#143] stack[0] @ src/lib.rs:9:2
+    [var#176] di.debug_kill @ src/lib.rs:20:1
+    [var#177] stack[0] @ src/lib.rs:20:1
+
+  Variable: "local6"
+  5 location entries:
+    [var#33] frame_base(FMP-8)+16 @ src/lib.rs:20:1
+    [var#56] frame_base(FMP-8)+48 @ src/lib.rs:20:1
+    [var#133] FMP-6 @ src/lib.rs:9:2
+    [var#140] stack[0] @ src/lib.rs:9:2
+    [var#217] frame_base(FMP-4)+16 @ src/lib.rs:27:1
+
+  Variable: "local7"
+  2 location entries:
+    [var#152] FMP-12 @ src/lib.rs:20:1
+    [var#159] stack[0] @ src/lib.rs:20:1
+
+  Variable: "local8"
+  2 location entries:
+    [var#100] FMP-12 @ src/lib.rs:17:13
+    [var#123] stack[0] @ src/lib.rs:17:13
+
+  Variable: "local9"
+  2 location entries:
+    [var#101] FMP-11 @ src/lib.rs:17:13
+    [var#120] stack[0] @ src/lib.rs:17:13
+
+  Variable: "new_len"
+  11 location entries:
+    [var#310] FMP-5 (param #4) @ src/lib.rs:20:1
+    [var#311] FMP-5 (param #4) @ src/lib.rs:20:1
+    [var#315] stack[0] (param #4) @ src/lib.rs:20:1
+    [var#321] stack[0] (param #4) @ src/lib.rs:20:1
+    [var#323] stack[1] (param #4) @ src/lib.rs:20:1
+    [var#325] stack[0] (param #4) @ src/lib.rs:20:1
+    [var#326] di.debug_kill (param #4) @ src/lib.rs:20:1
+    [var#333] stack[0] (param #4) @ src/lib.rs:20:1
+    [var#335] FMP-5 (param #4) @ src/lib.rs:20:1
+    [var#338] stack[0] (param #4) @ src/lib.rs:20:1
+    [var#340] di.debug_kill (param #4) @ src/lib.rs:20:1
+
+  Variable: "old_len"
+  8 location entries:
+    [var#308] FMP-7 (param #2) @ src/lib.rs:20:1
+    [var#312] stack[0] (param #2) @ src/lib.rs:20:1
+    [var#313] stack[0] (param #2) @ src/lib.rs:20:1
+    [var#322] stack[0] (param #2) @ src/lib.rs:20:1
+    [var#324] stack[0] (param #2) @ src/lib.rs:20:1
+    [var#331] stack[0] (param #2) @ src/lib.rs:20:1
+    [var#336] stack[0] (param #2) @ src/lib.rs:20:1
+    [var#339] di.debug_kill (param #2) @ src/lib.rs:20:1
+
+  Variable: "old_ptr"
+  3 location entries:
+    [var#307] FMP-8 (param #1) @ src/lib.rs:20:1
+    [var#328] stack[0] (param #1) @ src/lib.rs:20:1
+    [var#329] stack[0] (param #1) @ src/lib.rs:20:1
+
+  Variable: "prefix"
+  2 location entries:
+    [var#22] FMP-2 (param #3) @ types.rs:269:1
+    [var#23] stack[2] (param #3) @ types.rs:269:1
+
+  Variable: "ptr1"
+  6 location entries:
+    [var#223] stack[0] @ src/lib.rs:27:1
+    [var#224] di.debug_kill @ src/lib.rs:27:1
+    [var#225] FMP-2 @ src/lib.rs:27:1
+    [var#231] stack[0] @ src/lib.rs:27:1
+    [var#235] stack[0] @ src/lib.rs:27:1
+    [var#236] di.debug_kill @ src/lib.rs:27:1
+
+  Variable: "self"
+  11 location entries:
+    [var#0] FMP-4 (param #1) @ mod.rs:292:1
+    [var#3] stack[0] (param #1) @ mod.rs:292:1
+    [var#25] FMP-3 (param #2) @ types.rs:286:1
+    [var#26] stack[1] (param #2) @ types.rs:286:1
+    [var#46] FMP-3 (param #2) @ storage.rs:29:1
+    [var#47] stack[1] (param #2) @ storage.rs:29:1
+    [var#259] FMP-8 (param #1) @ lib.rs:79:1
+    [var#291] stack[0] (param #1) @ lib.rs:79:1
+    [var#292] stack[0] (param #1) @ lib.rs:79:1
+    [var#296] stack[0] (param #1) @ lib.rs:79:1
+    [var#300] stack[0] (param #1) @ lib.rs:79:1
+
+  Variable: "size"
+  9 location entries:
+    [var#248] FMP-4 (param #1) @ layout.rs:74:1
+    [var#251] stack[0] (param #1) @ layout.rs:74:1
+    [var#267] FMP-5 @ lib.rs:93:1
+    [var#274] stack[0] @ lib.rs:93:1
+    [var#284] stack[0] @ lib.rs:93:1
+    [var#285] stack[0] @ lib.rs:93:1
+    [var#290] stack[0] @ lib.rs:93:1
+    [var#295] stack[0] @ lib.rs:93:1
+    [var#302] stack[0] @ lib.rs:93:1
+
+  Variable: "suffix"
+  2 location entries:
+    [var#21] FMP-3 (param #1) @ types.rs:269:1
+    [var#24] stack[1] (param #1) @ types.rs:269:1
+
+  Variable: "top"
+  9 location entries:
+    [var#263] FMP-6 (param #3) @ lib.rs:98:1
+    [var#264] FMP-6 (param #3) @ lib.rs:98:1
+    [var#265] FMP-6 (param #3) @ lib.rs:98:1
+    [var#266] FMP-6 (param #3) @ lib.rs:98:1
+    [var#282] stack[0] (param #3) @ lib.rs:98:1
+    [var#287] stack[0] (param #3) @ lib.rs:98:1
+    [var#297] stack[0] (param #3) @ lib.rs:98:1
+    [var#301] stack[0] (param #3) @ lib.rs:98:1
+    [var#303] stack[0] (param #3) @ lib.rs:98:1
+
+  Variable: "value"
+  9 location entries:
+    [var#12] FMP-3 (param #2) @ types.rs:12:1
+    [var#13] frame_base(FMP-2)+0 (param #2) @ types.rs:12:1
+    [var#16] stack[0] (param #2) @ types.rs:12:1
+    [var#17] stack[0] (param #2) @ types.rs:12:1
+    [var#18] stack[0] (param #2) @ types.rs:12:1
+    [var#19] stack[0] (param #2) @ types.rs:12:1
+    [var#20] stack[0] (param #2) @ types.rs:12:1
+    [var#41] FMP-7 (param #1) @ types.rs:7:1
+    [var#45] stack[0] (param #1) @ types.rs:7:1
+
+  Variable: "x2"
+  3 location entries:
+    [var#221] FMP-6 @ src/lib.rs:27:1
+    [var#233] stack[0] @ src/lib.rs:27:1
+    [var#237] di.debug_kill @ src/lib.rs:27:1
+
+  Variable: "y2"
+  2 location entries:
+    [var#228] stack[2] @ src/lib.rs:27:1
+    [var#238] di.debug_kill @ src/lib.rs:27:1
