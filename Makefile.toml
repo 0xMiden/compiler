@@ -649,3 +649,43 @@ WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
 cargo llvm-cov clean --workspace
 rm -rf "${WORKSPACE}/target/fuzza-coverage"
 ''']
+
+[tasks.fuzza-probe]
+category = "Test"
+description = "Cheap fuzza reachability probe: run one differential test outside llvm-cov with MIDENC_EMIT set, then list the freshly-written IR dumps. Usage: cargo make fuzza-probe <test-filter> [emit-kinds, default hir]"
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+FILTER="${1:?usage: cargo make fuzza-probe <test-filter> [emit-kinds, default hir]}"
+EMIT="${2:-hir}"
+CASE="${FILTER##*::}"
+OUT="${WORKSPACE}/target/fuzza-probe/${CASE}"
+# Fresh output dir per probe so stale dumps can't be mistaken for this run's.
+rm -rf "${OUT}"
+mkdir -p "${OUT}"
+
+# midenc runs in-process on every test invocation (cargo caching only affects
+# the Rust->wasm step), but emit paths must be ABSOLUTE: bare kinds dump into
+# the test process CWD (littering the source tree) and relative dirs vanish
+# into the ephemeral cargo-build workspace. Rewrite each kind to kind=${OUT}.
+SPEC=""
+IFS=',' read -ra KINDS <<< "${EMIT}"
+for k in "${KINDS[@]}"; do SPEC="${SPEC:+${SPEC},}${k}=${OUT}"; done
+
+# Runs OUTSIDE cargo-llvm-cov on purpose: probes must not pollute the merged
+# coverage profile with IR-printer regions, and the plain build stays warm
+# across probes. --include-ignored lets a case wired with a temporary
+# #[ignore] (the recommended probe setup) run without un-ignoring it.
+status=0
+MIDENC_EMIT="${SPEC}" CARGO_TARGET_DIR="${WORKSPACE}/target" \
+    cargo test --package midenc-integration-tests "${FILTER}" -- \
+    --include-ignored --test-threads=1 --nocapture || status=$?
+
+# A probe of a divergent or compile-panicking case fails the test run; the
+# emitted artifacts are still what the probe is for, so list them either way.
+echo ""
+echo "Emitted artifacts in ${OUT}:"
+ls -l "${OUT}" 2>/dev/null || true
+exit "${status}"
+''']
