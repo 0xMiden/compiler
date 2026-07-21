@@ -406,34 +406,9 @@ fn mulwide_fold() {
 /// Unsigned u64 division/remainder with dynamic non-zero divisors —
 /// `checked_div_u64`/`checked_mod_u64` emitter arms (miden-core-lib
 /// `u64::div`/`u64::mod`).
-///
-/// Any u64/i64 division that actually *executes* aborts on the miden-core-lib
-/// `U64_DIV_EVENT` advice event — most likely the differential executor
-/// (`executor_with_std`) does not install the u64-division event handler, so
-/// 64-bit division is compile-covered but runtime-untested here. Once the
-/// event is handled, un-ignore all four tests together: `u64_udiv`,
-/// `u64_udiv_repro`, `i64_sdiv`, `i64_sdiv_repro`.
 #[test]
-#[ignore = "VM abort at runtime: 'error during processing of event with ID: 14153021663962350784' \
-            at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs (3046129121, \
-            3276697921)"]
 fn u64_udiv() {
     run_case("u64_udiv", include_str!("cases/case_u64_udiv.rs"));
-}
-
-/// Deterministic reproducer for the `u64_udiv` VM abort: pins the exact
-/// `(input1, input2)` pair the fuzzer flagged, so the abort fails reliably on
-/// that input rather than only when proptest happens to draw it.
-#[test]
-#[ignore = "VM aborts on pinned input (3046129121, 3276697921): 'error during processing of event \
-            with ID: 14153021663962350784' (U64_DIV_EVENT); deterministic reproducer for the \
-            u64_udiv abort"]
-fn u64_udiv_repro() {
-    run_case_with_inputs(
-        "u64_udiv_repro",
-        include_str!("cases/case_u64_udiv.rs"),
-        &[(3046129121, 3276697921)],
-    );
 }
 
 /// Signed i32 comparisons (`< <= > >=`) over both-sign operands feeding
@@ -484,27 +459,8 @@ fn i_ashr() {
 /// and negative) — `checked_div`'s I64 arm -> `checked_div_i64`
 /// (`::intrinsics::i64::checked_div`, which execs miden-core-lib `u64::div`).
 #[test]
-#[ignore = "VM abort at runtime: signed i64 division routes through the same miden-core-lib \
-            u64::div as u64_udiv — 'error during processing of event with ID: \
-            14153021663962350784' at u64.masm:372 emit.U64_DIV_EVENT; first failing inputs \
-            (832795485, 3791448445)"]
 fn i64_sdiv() {
     run_case("i64_sdiv", include_str!("cases/case_i64_sdiv.rs"));
-}
-
-/// Deterministic reproducer for the `i64_sdiv` VM abort: pins the exact
-/// `(input1, input2)` pair the fuzzer flagged, so the abort fails reliably on
-/// that input rather than only when proptest happens to draw it.
-#[test]
-#[ignore = "VM aborts on pinned input (832795485, 3791448445): 'error during processing of event \
-            with ID: 14153021663962350784' (U64_DIV_EVENT via ::intrinsics::i64::checked_div); \
-            deterministic reproducer for the i64_sdiv abort"]
-fn i64_sdiv_repro() {
-    run_case_with_inputs(
-        "i64_sdiv_repro",
-        include_str!("cases/case_i64_sdiv.rs"),
-        &[(832795485, 3791448445)],
-    );
 }
 
 /// Reproducer for a compile-time spill-transform panic: each arm calls a
