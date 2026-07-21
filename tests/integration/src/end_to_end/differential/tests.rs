@@ -273,6 +273,11 @@ fn switch_loop_mix() {
 /// Signed widening shapes (the corpus otherwise never creates `arith.sext`):
 /// extend_i32_s, extend8/16/32_s, and `i64.mul_wide_s` whose constant
 /// multiplicand folds via `Sext::fold`'s I128 arm.
+///
+/// Passing siblings bound the divergence: `sext_widths` (pure extend chains),
+/// `mulwide_dyn` (dynamic-by-dynamic `mul_wide_s`), and `mulwide_fold`
+/// (positive-constant fold) all pass — suspicion falls on the
+/// negative-constant multiplicand path or a shape interaction.
 #[test]
 #[ignore = "native/masm divergence: inputs (3022925119, 3340151117) -> native 3550407903, masm \
             3550391763; signed i128 widening-multiply/sign-extension shapes"]
@@ -398,6 +403,13 @@ fn mulwide_fold() {
 /// Unsigned u64 division/remainder with dynamic non-zero divisors —
 /// `checked_div_u64`/`checked_mod_u64` emitter arms (miden-core-lib
 /// `u64::div`/`u64::mod`).
+///
+/// Any u64/i64 division that actually *executes* aborts on the miden-core-lib
+/// `U64_DIV_EVENT` advice event — most likely the differential executor
+/// (`executor_with_std`) does not install the u64-division event handler, so
+/// 64-bit division is compile-covered but runtime-untested here. Once the
+/// event is handled, un-ignore all four tests together: `u64_udiv`,
+/// `u64_udiv_repro`, `i64_sdiv`, `i64_sdiv_repro`.
 #[test]
 #[ignore = "VM abort at runtime: 'error during processing of event with ID: 14153021663962350784' \
             at miden-core-lib u64.masm:372 emit.U64_DIV_EVENT; first failing inputs (3046129121, \
@@ -410,9 +422,9 @@ fn u64_udiv() {
 /// `(input1, input2)` pair the fuzzer flagged, so the abort fails reliably on
 /// that input rather than only when proptest happens to draw it.
 #[test]
-#[ignore = "VM aborts on pinned input (3046129121, 3276697921): 'error during processing of event \
-            with ID: 14153021663962350784' (U64_DIV_EVENT); deterministic reproducer for the \
-            u64_udiv abort"]
+// #[ignore = "VM aborts on pinned input (3046129121, 3276697921): 'error during processing of event \
+//             with ID: 14153021663962350784' (U64_DIV_EVENT); deterministic reproducer for the \
+//             u64_udiv abort"]
 fn u64_udiv_repro() {
     run_case_with_inputs(
         "u64_udiv_repro",

@@ -1,6 +1,21 @@
 **Target area:** `[area]` — a free-form description of what to cover, e.g.
 `memory read/write`, `control flow`, `u64 arithmetic`.
 
+## Read first
+
+Before touching anything, read (in this order):
+
+1. [`README.md`](README.md) — how the harness and the coverage loop work.
+2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: compiler
+   reachability facts, LLVM pre-cleaning traps, case-writing tricks, and
+   operational gotchas. Do **not** re-derive anything recorded there.
+3. `tests/integration/src/end_to_end/differential/tests.rs` and the case files
+   it references — do not duplicate constructs existing cases already cover.
+   Pay special attention to the `#[ignore]`d tests: they are the single source
+   of truth for known bugs (failure, exact inputs, what has been bounded, and
+   the un-ignore conditions). Some otherwise-reasonable shapes are currently
+   blocked by bugs documented there; never re-report one as a new finding.
+
 ## Resolve the area to paths
 
 The target area is worded for humans; your first job is to translate it into
@@ -20,6 +35,11 @@ the concrete compiler source paths it refers to, then export those as
    export FUZZA_AREA='codegen/masm/src/emit/mem.rs,dialects/wasm/src/mem.rs,codegen/masm/src/data_segments.rs'
    ```
 
+   `export` only helps in a shell that persists. If you are an agent whose
+   Bash tool starts a fresh shell per command, the export is lost — prefix
+   every coverage command instead:
+   `FUZZA_AREA='...' cargo make fuzza-cov-step`.
+
    With `FUZZA_AREA` set, `report.md` gains a **"Target area"** section with an
    area-only headline, an area-only delta, and the full list of cold functions
    in the area — read that section instead of hand-summing the global numbers.
@@ -38,8 +58,10 @@ fuzza harness. **Stop when any of these holds:**
 - **you can argue the remaining cold regions in the area are unreachable** from
   a `(u32, u32) -> u32` `#![no_std]` entrypoint (this is the *preferred* exit —
   reading the remaining cold functions and explaining why each is out of reach
-  beats grinding five ritual zero-delta cases). Record the argument in the
-  scratch log.
+  beats grinding five ritual zero-delta cases). Record the full argument in the
+  scratch log, and distill the durable parts — new reachability facts, verified
+  dead ends — into [`KNOWLEDGE.md`](KNOWLEDGE.md): scratch logs are gitignored
+  and machine-local; `KNOWLEDGE.md` is what future runs actually see.
 
 ## Case constraints
 
@@ -54,13 +76,18 @@ Each new case is a single `.rs` file at
 - Be deterministic: same `(input1, input2)` must always produce the same
   output. No `unsafe` outside the `no_mangle` attribute.
 - Avoid operations that panic on valid `u32` inputs (guard division/modulo by
-  zero, use `wrapping_*` for arithmetic). The harness fuzzes with random
-  `u32` pairs; a native-side panic is a case failure.
+  zero **and signed division against `MIN / -1`**, use `wrapping_*` for
+  arithmetic). The harness fuzzes with random `u32` pairs; a native-side panic
+  is a case failure.
 - Be careful with mutable `static`s. The native `cdylib` is loaded **once** and
   reused across all 16 proptest inputs, so a static (e.g. an `AtomicU32`) that
   you mutate carries state from one invocation to the next — which breaks
   determinism unless you restore it before returning. (Statics are still a
   useful tool: non-zero initializers are how you reach the data-segment code.)
+- Stay away from known compile-breakers unless they are your target: flat
+  signatures over 16 stack felts, function pointers, and recursion (see
+  `KNOWLEDGE.md`), plus the shapes behind the `#[ignore]`d compiler-panic
+  reproducers in `tests.rs`.
 
 Wire the new case in `tests/integration/src/end_to_end/differential/tests.rs`:
 
@@ -102,9 +129,29 @@ fn <name>() {
      (`builder.add`, `builder.eq`, …) regardless of whether an operand is
      a literal; getting to an `_imm` arm usually requires HIR-level
      canonicalization (e.g. arith constant folding), not raw user code.
+
+   `KNOWLEDGE.md`'s routing-facts section records many verified chains and
+   dead ends — check it before spending a probe.
 3. **Write** `case_<name>.rs` designed to exercise that construct through the
    `(u32, u32) -> u32` entrypoint. Keep it minimal — the less incidental code,
    the easier to interpret failures.
+
+   **Probe before paying a coverage step.** Wire the case's `#[test]` with a
+   temporary `#[ignore]`, then run just that test *outside* llvm-cov with an
+   IR dump to check that the shape actually reaches your target:
+
+   ```bash
+   cargo make fuzza-probe <test-name> hir   # or wat / masm
+   ```
+
+   This takes well under a minute warm (vs. a full coverage step), keeps the
+   IR printers out of the coverage data, and writes the dumps to
+   `target/fuzza-probe/<case>/`. Un-ignore the test only when the dumped IR
+   contains the construct you're aiming at; otherwise rework or delete the
+   case — most wasted steps come from shapes LLVM pre-cleaned away. (If you
+   ever set `MIDENC_EMIT` by hand, use an absolute `kind=DIR` spec — bare
+   kinds dump into the process CWD and litter the source tree, and relative
+   dirs vanish into the ephemeral build workspace.)
 4. **Run** `cargo make fuzza-cov-step`. Read the new `report.md`:
    - The **"Target area"** section's `Area delta since previous run:
      +ΔR regions` line is your productivity signal for the area — this is the
@@ -116,37 +163,70 @@ fn <name>() {
    Note: coverage **accumulates** across `fuzza-cov-step` runs (the profile data
    is merged, not reset). So the area headline is cumulative, the delta is
    per-step, and deleting a case's `#[test]` does **not** drop its regions from
-   the report until the next `fuzza-cov-clean`.
+   the report until the next `cargo make fuzza-cov-clean`.
+
+   Two report gotchas: when duplicate monomorphized `(file, name)` rows exist,
+   the `Area delta` line inflates by a constant — judge productivity by the
+   difference of the area *headline* between steps; and a `fuzza-cov-step`
+   launched right after a backgrounded `fuzza-cov` can produce an empty report
+   (0 tests, 0 regions) — just rerun the step. You can also re-render
+   `report.md` with corrected `--area` scoping without rerunning any tests:
+
+   ```bash
+   python3 tools/fuzza-agent/cov.py target/fuzza-coverage/report.json . \
+       --prev target/fuzza-coverage/report.prev.json --area '<paths>' \
+       > target/fuzza-coverage/report.md
+   ```
 5. **Record the outcome** in a scratch log at
    `tools/fuzza-agent/scratch/<area>-log.md` (create the dir if missing) so you
    don't repeat dead-end ideas. This path lives outside `target/`, so it
-   survives `fuzza-cov-clean`; it is gitignored, so it won't be committed.
+   survives `fuzza-cov-clean`; it is gitignored, so it won't be committed —
+   promote anything durable into `KNOWLEDGE.md`.
    - If `ΔR > 0` in the target area: keep the case, continue.
    - If `ΔR == 0`: keep the case only if it hits new regions elsewhere worth
      having; otherwise delete it and its `#[test]` entry.
    - If the test failed (native/MASM divergence): mark the `#[test]` with
-     `#[ignore = "<short reason + minimal failing input>"]` so the suite stays
-     green; note it as a potential compiler bug finding. The compile-side
-     coverage the case triggered before the divergence is still captured in
-     the report — a failing case is not wasted work and the delta still
-     counts. (The noted input is the *first* random failure, not a minimized
-     one — proptest shrinking is disabled.) To understand the divergence,
-     re-emit the intermediate artifacts with `MIDENC_EMIT` (WAT/HIR/MASM) and
-     trace MASM execution with `MIDENC_TRACE=executor=trace` — see the `emit`
-     and `trace` skills.
-   - If the test panicked during compile (cargo-miden error): the case
-     probably hit unsupported Rust constructs — delete it, try something
-     simpler.
+     `#[ignore = "<short reason + the exact failing inputs>"]` so the suite
+     stays green, and **add a pinned twin** — a second `#[ignore]`d test named
+     `<name>_repro` that calls `run_case_with_inputs` with the exact failing
+     pair, so the bug reproduces deterministically instead of only when
+     proptest happens to draw it (see `switch_shapes_repro` and
+     `sext_shapes_repro` in `tests.rs`). If the case mixes several constructs,
+     split it so each divergence gets its own minimal reproducer — the passing
+     siblings *bound* the bug for free. The test's doc comment and ignore
+     reason are the bug's **only** documentation (nothing goes in README or
+     `KNOWLEDGE.md`), so make them self-sufficient: the failure, the exact
+     inputs, what sibling cases bound, and what would allow un-ignoring. The
+     compile-side coverage the case triggered before the divergence is still
+     captured in the report — a failing case is not wasted work and the delta
+     still counts. (The noted input is the *first* random failure, not a
+     minimized one — proptest shrinking is disabled.) To understand the
+     divergence, re-emit the intermediate artifacts with `MIDENC_EMIT`
+     (WAT/HIR/MASM) and trace MASM execution with
+     `MIDENC_TRACE=executor=trace` — see the `emit` and `trace` skills —
+     unless your campaign policy defers root-causing.
+   - If the build failed at compile time, distinguish two situations. A clean
+     diagnostic for a known-unsupported construct (function pointers /
+     `call_indirect`, a recursive call graph, …) means the case is out of
+     scope — delete it and note the dead end in the scratch log. A compiler
+     *panic* on safe, supported-looking Rust is a **finding**, not a dead end:
+     minimize the case and keep it as an `#[ignore = "<panic message +
+     location>"]`d test (see `spill_edge` and `i64_srem` in `tests.rs`) — here
+     too the test is the bug's only documentation, so make its comment
+     self-sufficient. Check the existing `#[ignore]`d tests first: several
+     panics are already known and must not be re-reported as new.
 6. **Stop** per the objective above. When you stop by the unreachability
-   argument, write the per-function reasoning into the scratch log so the next
-   run doesn't re-explore the same dead ends.
+   argument, write the per-function reasoning into the scratch log and the
+   durable reachability facts into `KNOWLEDGE.md` so the next run doesn't
+   re-explore the same dead ends.
 
 ## Reference commands
 
 ```bash
 # Scope every report below to the target area. Set this to the source paths you
-# resolved the free-worded area to above (see "Resolve the area to paths"), and
-# keep it exported for the whole session:
+# resolved the free-worded area to above (see "Resolve the area to paths").
+# In a persistent shell, export once; in a fresh-shell-per-command agent,
+# prefix each invocation instead: FUZZA_AREA='...' cargo make fuzza-cov-step
 export FUZZA_AREA='codegen/masm/src/emit/mem.rs,dialects/wasm/src/mem.rs,codegen/masm/src/data_segments.rs'
 
 # First run (clean-slate baseline; takes several minutes for instrumented build):
@@ -154,6 +234,10 @@ cargo make fuzza-cov
 
 # Each iteration (reuses the instrumented build; ~20-60s warm):
 cargo make fuzza-cov-step
+
+# Cheap reachability probe: run ONE test outside llvm-cov with an IR dump
+# (MIDENC_EMIT) and list the freshly-written artifacts:
+cargo make fuzza-probe <test-name> hir     # kinds: hir / wat / masm, or a,b list
 
 # Nuke all coverage state and start over (also wipes target/fuzza-coverage, but
 # NOT your scratch log under tools/fuzza-agent/scratch/):
