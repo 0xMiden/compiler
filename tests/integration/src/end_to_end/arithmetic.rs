@@ -15,12 +15,23 @@ use crate::{
     testing::{eval_package, run_masm_vs_rust},
 };
 
+macro_rules! push_wasm_test_arg {
+    // `bool` already uses its Wasm ABI representation and is not a `PrimInt`.
+    ($value:expr, bool, $stack:expr) => {
+        $value.push_to_operand_stack($stack)
+    };
+
+    ($value:expr, $ty:tt, $stack:expr) => {
+        push_wasm_ty_to_operand_stack($value, $stack)
+    };
+}
+
 macro_rules! test_bin_op {
-    ($name:ident, $op:tt, $op_ty:ty, $res_ty:ty, $a_range:expr, $b_range:expr) => {
+    ($name:ident, $op:tt, $op_ty:tt, $res_ty:tt, $a_range:expr, $b_range:expr) => {
         test_bin_op!($name, $op, $op_ty, $op_ty, $res_ty, $a_range, $b_range);
     };
 
-    ($name:ident, $op:tt, $a_ty:ty, $b_ty:ty, $res_ty:tt, $a_range:expr, $b_range:expr) => {
+    ($name:ident, $op:tt, $a_ty:tt, $b_ty:tt, $res_ty:tt, $a_range:expr, $b_range:expr) => {
         concat_idents::concat_idents!(test_name = $name, _, $a_ty {
             #[test]
             fn test_name() {
@@ -37,8 +48,8 @@ macro_rules! test_bin_op {
                     .run(&($a_range, $b_range), move |(a, b)| {
                         let rs_out = a $op b;
                         let mut args = Vec::<midenc_hir::Felt>::default();
-                        a.push_to_operand_stack(&mut args);
-                        b.push_to_operand_stack(&mut args);
+                        push_wasm_test_arg!(a, $a_ty, &mut args);
+                        push_wasm_test_arg!(b, $b_ty, &mut args);
                         run_masm_vs_rust(rs_out, &package, &args, &test.session)
                     });
                 match res {
@@ -186,11 +197,11 @@ macro_rules! test_bool_op_total {
 }
 
 macro_rules! test_int_op {
-    ($name:ident, $op:tt, $op_ty:ty, $a_range:expr, $b_range:expr) => {
+    ($name:ident, $op:tt, $op_ty:tt, $a_range:expr, $b_range:expr) => {
         test_bin_op!($name, $op, $op_ty, $op_ty, $a_range, $b_range);
     };
 
-    ($name:ident, $op:tt, $a_ty:ty, $b_ty:ty, $a_range:expr, $b_range:expr) => {
+    ($name:ident, $op:tt, $a_ty:tt, $b_ty:tt, $a_range:expr, $b_range:expr) => {
         test_bin_op!($name, $op, $a_ty, $b_ty, $a_ty, $a_range, $b_range);
     };
 }
@@ -253,8 +264,8 @@ test_int_op!(mul, *, u32, 0u32..=16656, 0u32..=16656);
 test_int_op!(mul, *, u16, 0u16..=255, 0u16..=255);
 test_int_op!(mul, *, u8, 0u8..=16, 0u8..=15);
 test_int_op!(mul, *, i32, -16656i32..=16656, -16656i32..=16656);
-//test_int_op!(mul, *, i16);
-//test_int_op!(mul, *, i8);
+test_int_op!(mul, *, i16, -181i16..=181, -181i16..=181);
+test_int_op!(mul, *, i8, -11i8..=11, -11i8..=11);
 
 const MAX_U128_64: u128 = u64::MAX as u128;
 const MAX_I128_64: i128 = i64::MAX as i128;
@@ -263,15 +274,28 @@ const MIN_I128_64: i128 = i64::MIN as i128;
 test_wide_bin_op!(mul, *, u128, u128, 0..=MAX_U128_64, 0..=MAX_U128_64);
 test_wide_bin_op!(mul, *, i128, i128, MIN_I128_64..MAX_I128_64, MIN_I128_64..=MAX_I128_64);
 
-// TODO: build with cargo to avoid core::panicking
-// TODO: separate macro for div and rem tests to filter out division by zero
-// test_int_op!(div, /, u32);
-// ...
-// add tests for div, rem,
-//test_int_op!(div, /, u64, 0..=u64::MAX, 1..=u64::MAX);
-//test_int_op!(div, /, i64, i64::MIN..=i64::MAX, 1..=i64::MAX);
-//test_int_op!(rem, %, u64, 0..=u64::MAX, 1..=u64::MAX);
-//test_int_op!(rem, %, i64, i64::MIN..=i64::MAX, 1..=i64::MAX);
+test_int_op!(div, /, u64, 0..=u64::MAX, 1..=u64::MAX);
+test_int_op!(div, /, i64, i64::MIN..=i64::MAX, 1..=i64::MAX);
+test_int_op!(div, /, u32, 0..=u32::MAX, 1..=u32::MAX);
+test_int_op!(div, /, i32, i32::MIN..=i32::MAX, 1..=i32::MAX);
+test_int_op!(div, /, u16, 0..=u16::MAX, 1..=u16::MAX);
+test_int_op!(div, /, i16, i16::MIN..=i16::MAX, 1..=i16::MAX);
+test_int_op!(div, /, u8, 0..=u8::MAX, 1..=u8::MAX);
+test_int_op!(div, /, i8, i8::MIN..=i8::MAX, 1..=i8::MAX);
+test_wide_bin_op!(div, /, u128, u128, 0..=u128::MAX, 1..=u128::MAX);
+test_wide_bin_op!(div, /, i128, i128, i128::MIN..=i128::MAX, 1..=i128::MAX);
+
+test_int_op!(rem, %, u64, 0..=u64::MAX, 1..=u64::MAX);
+// https://github.com/0xMiden/compiler/issues/1285
+// test_int_op!(rem, %, i64, i64::MIN..=i64::MAX, 1..=i64::MAX);
+test_int_op!(rem, %, u32, 0..=u32::MAX, 1..=u32::MAX);
+test_int_op!(rem, %, i32, i32::MIN..=i32::MAX, 1..=i32::MAX);
+test_int_op!(rem, %, u16, 0..=u16::MAX, 1..=u16::MAX);
+test_int_op!(rem, %, i16, i16::MIN..=i16::MAX, 1..=i16::MAX);
+test_int_op!(rem, %, u8, 0..=u8::MAX, 1..=u8::MAX);
+test_int_op!(rem, %, i8, i8::MIN..=i8::MAX, 1..=i8::MAX);
+test_wide_bin_op!(rem, %, u128, u128, 0..=u128::MAX, 1..=u128::MAX);
+test_wide_bin_op!(rem, %, i128, i128, i128::MIN..=i128::MAX, 1..=i128::MAX);
 
 test_unary_op!(neg, -, i64, (i64::MIN + 1)..=i64::MAX);
 
