@@ -3,7 +3,17 @@
 Coverage-guided case-generation harness for the Miden compiler's differential
 fuzzing tests. The differential test harness itself lives in
 `tests/integration/src/end_to_end/differential/`; this directory only holds
-the agent-facing tooling that grows the case set.
+the agent-facing tooling that grows the case set:
+
+- [`AGENT-PROMPT.md`](AGENT-PROMPT.md) — the inner-loop prompt: one agent
+  grows coverage in one area.
+- [`OUTER-LOOP.md`](OUTER-LOOP.md) — the director playbook for running many
+  areas as a campaign.
+- [`KNOWLEDGE.md`](KNOWLEDGE.md) — the committed fact base every run must read
+  first: verified reachability facts, case-writing tricks, and operational
+  gotchas.
+- `cov.py` — renders the llvm-cov JSON into the agent-readable `report.md`.
+- `scratch/` — per-run agent notes (gitignored, machine-local).
 
 ## How the differential tests work
 
@@ -45,10 +55,24 @@ cargo test -p midenc-integration-tests differential
 cargo nextest run -p midenc-integration-tests -E 'test(/differential::/)'
 ```
 
-Cases known to surface compiler divergences are marked `#[ignore = "..."]` in
-`tests/integration/src/end_to_end/differential/tests.rs` with the failing
-inputs noted. Run them explicitly with `--ignored` (or `--run-ignored all`
-under nextest) to investigate.
+Cases known to surface compiler bugs are marked `#[ignore = "..."]` in
+`tests/integration/src/end_to_end/differential/tests.rs` with the reason and
+the exact failing inputs in the attribute. Run them explicitly with
+`--ignored` (or `--run-ignored all` under nextest) to investigate. Ignored
+cases come in three flavors:
+
+- **Runtime divergences** — each has a deterministic `<case>_repro` twin that
+  pins the exact failing input pair via `run_case_with_inputs`, so the bug
+  fails reliably rather than only when proptest happens to draw the input.
+- **Compile-time compiler panics** — the case *is* the reproducer; the panic
+  message and source location are in the ignore reason.
+- **Out-of-scope artifacts** — kept for coverage/documentation (e.g.
+  `mem_grow`); the ignore reason explains why they will not be "fixed".
+
+The specifics of each bug — the failure, the exact inputs, what passing
+sibling cases have *bounded*, and what would allow un-ignoring — live only
+with the tests themselves (doc comments and ignore reasons in `tests.rs`), so
+fixing a bug means cleaning up at the test site alone.
 
 ## Adding a case manually
 
@@ -83,7 +107,8 @@ use the report to pick new cases.
 # Optional: scope the report to a target area. FUZZA_AREA is a comma-separated
 # list of workspace-relative path prefixes; an agent driven by AGENT-PROMPT.md
 # derives these from a free-worded area (e.g. "memory read/write") as its first
-# step. Keep it exported for the whole session.
+# step. Export it in a persistent shell — or, in a fresh-shell-per-command
+# agent, prefix each invocation (FUZZA_AREA='...' cargo make fuzza-cov-step).
 export FUZZA_AREA='codegen/masm/src/emit/mem.rs,dialects/wasm/src/mem.rs'
 
 # First run (clean-slate baseline; takes several minutes for the
@@ -92,6 +117,12 @@ cargo make fuzza-cov
 
 # Each iteration (reuses the instrumented build; ~20-60s warm).
 cargo make fuzza-cov-step
+
+# Cheap reachability probe: run ONE test outside llvm-cov with an IR dump
+# (MIDENC_EMIT) and list the freshly-written artifacts. Wire the candidate
+# case with a temporary #[ignore] first — the probe runs with
+# --include-ignored.
+cargo make fuzza-probe <test-name> hir
 
 # Nuke all coverage state and start over.
 cargo make fuzza-cov-clean
@@ -102,6 +133,15 @@ area-only `Regions covered` headline, an `Area delta since previous run` line,
 and the full list of untouched / partially-covered functions in the area. This
 is the section an area-focused agent should drive from — it removes the need to
 hand-filter the global tables by `File:line`.
+
+`report.md` can also be re-rendered with different `--area` scoping without
+rerunning any tests:
+
+```bash
+python3 tools/fuzza-agent/cov.py target/fuzza-coverage/report.json . \
+    --prev target/fuzza-coverage/report.prev.json --area '<paths>' \
+    > target/fuzza-coverage/report.md
+```
 
 Outputs live under `target/fuzza-coverage/`:
 
@@ -118,7 +158,11 @@ is one where those matter (parsing, attribute handling), edit that regex.
 
 Agents writing scratch notes should put them under `tools/fuzza-agent/scratch/`
 (see [`AGENT-PROMPT.md`](AGENT-PROMPT.md)). That directory lives outside
-`target/`, so it survives `fuzza-cov-clean`, and its contents are gitignored.
+`target/`, so it survives `fuzza-cov-clean`, and its contents are gitignored —
+which also means they are machine-local and invisible to future clones.
+Durable discoveries (reachability facts, verified dead ends, bugs found, an
+area's closure argument) belong in [`KNOWLEDGE.md`](KNOWLEDGE.md), which is
+committed and is required reading for every future run.
 
 ### Using AGENT-PROMPT.md
 
@@ -140,3 +184,8 @@ specific compiler area. To use it:
 4. The agent iterates via `cargo make fuzza-cov-step`, reading the "Target
    area" delta in each new `report.md` to decide whether each case was
    productive and when to stop.
+
+To run several areas as a campaign — a director session that picks areas,
+launches one `AGENT-PROMPT.md` agent per area, verifies and commits each
+iteration's cases, and accumulates knowledge across iterations — see
+[`OUTER-LOOP.md`](OUTER-LOOP.md).

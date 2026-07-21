@@ -2,7 +2,8 @@
 // (cross-modulus contradiction). The switch then has successor regions with
 // mixed return-like terminators (yield/ret vs unreachable), exercising
 // cfg-to-scf structuring of branch regions that cannot share an exit block
-// (`create_unreachable_terminator`) and index_switch regions ending in traps.
+// and index_switch regions ending in traps. (The no-exit-edges
+// `create_unreachable_terminator` path is covered by `case_unreachable_exits`.)
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let h = input1 ^ input2.rotate_left(11);

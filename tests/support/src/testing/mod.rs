@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use miden_assembly::serde::Serializable;
 use miden_core::Felt;
+use miden_core_lib::CoreLibrary;
 use miden_debug::Executor;
 use miden_mast_package::Package;
 use miden_protocol::ProtocolLib;
@@ -29,6 +30,13 @@ pub use self::{
 /// If a package is provided, its dependencies will also be added to the executor.
 pub fn executor_with_std(args: Vec<Felt>, package: Option<&Package>) -> Executor {
     let mut exec = Executor::new(args);
+    let core_library = CoreLibrary::default();
+    // The debug executor path does not automatically install core-library event handlers, but
+    // integration tests execute core helpers such as `u64::div` through the VM.
+    for (event, handler) in core_library.handlers() {
+        exec.register_event_handler(event, handler)
+            .expect("failed to register core library event handler");
+    }
     let std_library = (*STDLIB).clone();
     exec.dependency_resolver_mut()
         .insert(*std_library.digest(), std_library.clone());
