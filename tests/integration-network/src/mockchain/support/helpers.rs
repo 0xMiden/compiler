@@ -104,7 +104,7 @@ fn transaction_script_from_package(package: &Package) -> TransactionScript {
         "expected a transaction-script package"
     );
 
-    TransactionScript::from_package(package).expect("invalid transaction-script package")
+    TransactionScript::from_library(package).expect("invalid transaction-script package")
 }
 
 // ================================================================================================

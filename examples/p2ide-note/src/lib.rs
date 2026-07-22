@@ -16,7 +16,7 @@ use miden::*;
 pub struct Wallet;
 
 fn consume_assets(account: &mut Wallet) {
-    let assets = active_note::get_assets();
+    let assets = active_note::get_initial_assets();
     for asset in assets {
         account.receive_asset(asset);
     }

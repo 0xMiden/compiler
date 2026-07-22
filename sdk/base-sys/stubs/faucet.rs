@@ -1,25 +1,3 @@
-use core::ffi::c_void;
-
-#[unsafe(export_name = "miden::protocol::faucet::create_fungible_asset")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn faucet_create_fungible_asset_plain(_amount: f32, _out: *mut c_void) {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::faucet::create_non_fungible_asset")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn faucet_create_non_fungible_asset_plain(
-    _h0: f32,
-    _h1: f32,
-    _h2: f32,
-    _h3: f32,
-    _out: *mut c_void,
-) {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
 #[unsafe(export_name = "miden::protocol::faucet::mint")]
 #[optimize(none)]
 #[inline(never)]
@@ -49,12 +27,5 @@ pub extern "C" fn faucet_burn_plain(
     _v2: f32,
     _v3: f32,
 ) {
-    unsafe { core::hint::unreachable_unchecked() }
-}
-
-#[unsafe(export_name = "miden::protocol::faucet::has_callbacks")]
-#[optimize(none)]
-#[inline(never)]
-pub extern "C" fn faucet_has_callbacks_plain() -> f32 {
     unsafe { core::hint::unreachable_unchecked() }
 }

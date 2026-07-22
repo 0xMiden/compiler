@@ -18,7 +18,7 @@ use proptest::{
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 
 const INTRINSICS_ROOT: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "../../codegen/masm/intrinsics/mod.masm");
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../codegen/masm/intrinsics/mod.masm");
 
 /// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
 /// as entry point.

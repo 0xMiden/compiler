@@ -8,7 +8,6 @@
 //! the calls appropriately. They are not part of the crate sources.
 
 mod active_account;
-mod asset;
 mod active_note;
 mod faucet;
 mod input_note;

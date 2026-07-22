@@ -122,6 +122,10 @@ pub(crate) fn validate_lifted_frontend_metadata_exports(
             method_path,
             export_name,
         } => validate_lifted_export(method_path, export_name, "`#[note_script]`", lifted_exports)?,
+        FrontendMetadata::TxScript {
+            method_path,
+            export_name,
+        } => validate_lifted_export(method_path, export_name, "`#[tx_script]`", lifted_exports)?,
     }
 
     Ok(())
@@ -154,16 +158,32 @@ fn merge_single_frontend_metadata(
                     module_metadata.method_path()
                 ))))
             }
-            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::NoteScript { .. })
-            | (FrontendMetadata::NoteScript { .. }, FrontendMetadata::AuthScript { .. }) => {
+            (FrontendMetadata::TxScript { .. }, FrontendMetadata::TxScript { .. }) => {
                 Err(Report::from(WasmError::Unsupported(format!(
-                    "both `#[auth_script]` and `#[note_script]` procedures were found: `{}` and \
-                     `{}`; only one kind is allowed per project",
+                    "multiple `#[tx_script]` entrypoints were found: `{}` and `{}`; only one is \
+                     allowed per project",
                     existing_metadata.method_path(),
                     module_metadata.method_path()
                 ))))
             }
+            (existing, module) => Err(Report::from(WasmError::Unsupported(format!(
+                "both {} and {} procedures were found: `{}` and `{}`; only one kind is allowed \
+                 per project",
+                frontend_metadata_attribute_name(existing),
+                frontend_metadata_attribute_name(module),
+                existing_metadata.method_path(),
+                module_metadata.method_path()
+            )))),
         },
+    }
+}
+
+/// Returns the user-facing attribute name that produced a frontend metadata entry.
+fn frontend_metadata_attribute_name(metadata: &FrontendMetadata) -> &'static str {
+    match metadata {
+        FrontendMetadata::AuthScript { .. } => "`#[auth_script]`",
+        FrontendMetadata::NoteScript { .. } => "`#[note_script]`",
+        FrontendMetadata::TxScript { .. } => "`#[tx_script]`",
     }
 }
 

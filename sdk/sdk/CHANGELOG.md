@@ -23,6 +23,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a cross-module call site needs a `use` of the generated trait. Relatedly, a component method
   named `new` is now permitted (previously a hard error): it lives on the generated trait and
   coexists with the inherent `Wallet::new(account_id)` constructor #1208
+- SDK bindings updated for VM v0.25 / protocol v0.16.0-beta.1. Several tx-kernel bindings were
+  renamed, moved, or removed to match the protocol. See the [migration guide](./MIGRATION.md).
+  - Renamed `active_note::get_assets` -> `get_initial_assets`, `input_note::get_assets` ->
+    `get_initial_assets`, and `input_note::get_assets_info` -> `get_initial_assets_info`; these
+    return the note's creation-time assets, unaffected by in-transaction removal.
+  - `active_account::has_non_fungible_asset(asset: Asset)` (and the `ActiveAccount` trait method)
+    became `has_asset(asset_id: Word)`, testing any-asset membership by asset id.
+  - Moved `get_initial_commitment`, `get_initial_storage_commitment`, `get_initial_vault_root`,
+    and `get_initial_asset` from `active_account` (and the `ActiveAccount` trait) to
+    `native_account` free functions. `storage::{get_initial_item, get_initial_map_item}` keep
+    their API but now read the native account's initial state.
+  - Removed `active_account::{get_balance, get_initial_balance}`,
+    `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}`, and the whole
+    `asset` module. The kernel no longer exposes in-transaction asset construction;
+    `faucet::{mint, burn}` take a pre-built `Asset`.
+  - `output_note::create` can now only be called from account-component context (runtime-enforced);
+    tx/note scripts create notes through an account component wrapper method.
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.

@@ -82,6 +82,61 @@ struct Remote;
 trait Caller: NativeAccount + CounterContract { /* ... */ }
 ```
 
+### Tx-kernel bindings: protocol 0.16.0-beta.1
+
+The SDK bindings were aligned with VM v0.25 / protocol 0.16.0-beta.1. Several tx-kernel bindings
+were renamed, moved, or removed to match the protocol procedures.
+
+**The "initial asset" getters are renamed.** They read the note's assets at creation time,
+unaffected by any in-transaction removal, so the names now say so:
+
+```rust
+// before                              // after
+active_note::get_assets();             active_note::get_initial_assets();
+input_note::get_assets(idx);           input_note::get_initial_assets(idx);
+input_note::get_assets_info(idx);      input_note::get_initial_assets_info(idx);
+```
+
+**`active_account::has_non_fungible_asset` became `has_asset`** and now takes an asset id `Word`
+instead of an `Asset`, testing membership of any asset (fungible or non-fungible) by id:
+
+```rust
+// before
+if account.has_non_fungible_asset(asset) { /* ... */ }
+// after
+if account.has_asset(asset.key) { /* ... */ }
+```
+
+**The initial-state getters moved from `active_account` to `native_account`.**
+`get_initial_commitment`, `get_initial_storage_commitment`, `get_initial_vault_root`, and
+`get_initial_asset` are now free functions on `native_account` (they are no longer `ActiveAccount`
+trait methods). `storage::{get_initial_item, get_initial_map_item}` keep their API but now read the
+native account's initial state.
+
+```rust
+// before (ActiveAccount trait method)
+let init = self.get_initial_commitment();
+let asset = self.get_initial_asset(asset_key);
+// after (native_account free function)
+let init = miden::native_account::get_initial_commitment();
+let asset = miden::native_account::get_initial_asset(asset_key);
+```
+
+**In-transaction asset construction and balance getters were removed.**
+
+- `active_account::{get_balance, get_initial_balance}` are gone. Read the asset value word with
+  `active_account::get_asset` (or `native_account::get_initial_asset`) and extract the fungible
+  amount from the returned `AssetValue` word (see the protocol `fungible_value_into_amount`
+  helper).
+- `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}` and the whole
+  `asset` module (`asset::{create_fungible_asset, create_non_fungible_asset}`) are gone. The kernel
+  no longer exposes in-transaction asset construction; `faucet::{mint, burn}` take a pre-built
+  `Asset`.
+
+**`output_note::create` is account-context only.** It can now only be called from account-component
+context (runtime-enforced). Tx/note scripts must create notes through an account component wrapper
+method (see the `basic-wallet` example's `create_note`).
+
 ## 0.13.0 -> 0.13.1
 
 ### `*_note::get_metadata` returns a single-word `NoteMetadata`

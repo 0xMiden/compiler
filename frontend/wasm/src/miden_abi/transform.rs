@@ -113,7 +113,13 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         | tx_kernel::native_account::GET_ID
                         | tx_kernel::native_account::COMPUTE_DELTA_COMMITMENT
                         | tx_kernel::native_account::SET_STORAGE_ITEM
-                        | tx_kernel::native_account::SET_STORAGE_MAP_ITEM => {
+                        | tx_kernel::native_account::SET_STORAGE_MAP_ITEM
+                        | tx_kernel::native_account::GET_INITIAL_COMMITMENT
+                        | tx_kernel::native_account::GET_INITIAL_STORAGE_COMMITMENT
+                        | tx_kernel::native_account::GET_INITIAL_VAULT_ROOT
+                        | tx_kernel::native_account::GET_INITIAL_ASSET
+                        | tx_kernel::native_account::GET_INITIAL_STORAGE_ITEM
+                        | tx_kernel::native_account::GET_INITIAL_STORAGE_MAP_ITEM => {
                             Some(TransformStrategy::ReturnViaPointer)
                         }
                         tx_kernel::native_account::INCR_NONCE
@@ -150,26 +156,18 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 symbols::ActiveAccount => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::active_account::GET_NONCE
-                        | tx_kernel::active_account::GET_BALANCE
-                        | tx_kernel::active_account::GET_INITIAL_BALANCE
                         | tx_kernel::active_account::GET_NUM_PROCEDURES
-                        | tx_kernel::active_account::HAS_NON_FUNGIBLE_ASSET
+                        | tx_kernel::active_account::HAS_ASSET
                         | tx_kernel::active_account::HAS_PROCEDURE => {
                             Some(TransformStrategy::NoTransform)
                         }
                         tx_kernel::active_account::GET_ID
-                        | tx_kernel::active_account::GET_INITIAL_COMMITMENT
                         | tx_kernel::active_account::GET_CODE_COMMITMENT
                         | tx_kernel::active_account::COMPUTE_COMMITMENT
-                        | tx_kernel::active_account::GET_INITIAL_STORAGE_COMMITMENT
                         | tx_kernel::active_account::COMPUTE_STORAGE_COMMITMENT
                         | tx_kernel::active_account::GET_STORAGE_ITEM
-                        | tx_kernel::active_account::GET_INITIAL_STORAGE_ITEM
                         | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
-                        | tx_kernel::active_account::GET_INITIAL_STORAGE_MAP_ITEM
                         | tx_kernel::active_account::GET_ASSET
-                        | tx_kernel::active_account::GET_INITIAL_ASSET
-                        | tx_kernel::active_account::GET_INITIAL_VAULT_ROOT
                         | tx_kernel::active_account::GET_VAULT_ROOT
                         | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
                             Some(TransformStrategy::ReturnViaPointer)
@@ -177,31 +175,18 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                         _ => None,
                     }
                 }
-                symbols::Asset => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::asset::CREATE_FUNGIBLE_ASSET
-                        | tx_kernel::asset::CREATE_NON_FUNGIBLE_ASSET => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        _ => None,
-                    }
-                }
                 symbols::Faucet => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::faucet::CREATE_FUNGIBLE_ASSET
-                        | tx_kernel::faucet::CREATE_NON_FUNGIBLE_ASSET => {
-                            Some(TransformStrategy::ReturnViaPointer)
+                        tx_kernel::faucet::MINT | tx_kernel::faucet::BURN => {
+                            Some(TransformStrategy::NoTransform)
                         }
-                        tx_kernel::faucet::MINT
-                        | tx_kernel::faucet::BURN
-                        | tx_kernel::faucet::HAS_CALLBACKS => Some(TransformStrategy::NoTransform),
                         _ => None,
                     }
                 }
                 symbols::ActiveNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
                         tx_kernel::active_note::GET_STORAGE
-                        | tx_kernel::active_note::GET_ASSETS
+                        | tx_kernel::active_note::GET_INITIAL_ASSETS
                         | tx_kernel::active_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
                         | tx_kernel::active_note::WRITE_ATTACHMENT_TO_MEMORY => {
                             Some(TransformStrategy::NoTransform)
@@ -223,12 +208,12 @@ fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
                 }
                 symbols::InputNote => {
                     match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::input_note::GET_ASSETS
+                        tx_kernel::input_note::GET_INITIAL_ASSETS
                         | tx_kernel::input_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
                         | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY => {
                             Some(TransformStrategy::NoTransform)
                         }
-                        tx_kernel::input_note::GET_ASSETS_INFO
+                        tx_kernel::input_note::GET_INITIAL_ASSETS_INFO
                         | tx_kernel::input_note::GET_RECIPIENT
                         | tx_kernel::input_note::GET_METADATA
                         | tx_kernel::input_note::GET_SENDER

@@ -437,7 +437,18 @@ fn annotate_protocol_export(
             let auth_attr = context.create_attribute::<UnitAttr, _>(());
             export_func.set_attribute("auth_script", auth_attr);
         }
-        None => {}
+        Some(ProtocolExportKind::TxScript) => {
+            let tx_script_attr = context.create_attribute::<UnitAttr, _>(());
+            export_func.set_attribute("transaction_script", tx_script_attr);
+        }
+        None => {
+            // Every other lifted export is part of the component's account interface. The
+            // protocol only recognizes exports tagged `@account_procedure` (or `@auth_script`)
+            // as account procedures, so untagged exports would be invisible to account-code
+            // construction and foreign procedure invocation.
+            let account_proc_attr = context.create_attribute::<UnitAttr, _>(());
+            export_func.set_attribute("account_procedure", account_proc_attr);
+        }
     }
 }
 

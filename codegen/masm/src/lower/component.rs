@@ -869,7 +869,7 @@ impl MasmFunctionBuilder {
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
-        for attribute in ["auth_script", "note_script"] {
+        for attribute in ["account_procedure", "auth_script", "note_script", "transaction_script"] {
             if function.has_attribute(attribute) {
                 procedure
                     .attributes_mut()

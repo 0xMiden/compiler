@@ -21,7 +21,7 @@ impl P2idNote {
         let current_account = account.get_id();
         assert_eq!(current_account, self.target_account_id);
 
-        let assets = active_note::get_assets();
+        let assets = active_note::get_initial_assets();
         for asset in assets {
             account.receive_asset(asset);
         }
