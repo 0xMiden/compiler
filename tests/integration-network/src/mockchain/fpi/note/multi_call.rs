@@ -232,6 +232,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the sum of the first felt in the three words stored under the provided keys.
+    #[account_procedure]
     fn sum_first_elements_by_keys(
         &self,
         first_key: Word,
@@ -240,6 +241,7 @@ trait CounterContract {
     ) -> Felt;
 
     /// Returns the counter words stored under `keys`.
+    #[account_procedure]
     fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair;
 }
 

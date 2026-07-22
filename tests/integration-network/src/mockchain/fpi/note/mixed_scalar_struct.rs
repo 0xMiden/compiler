@@ -67,6 +67,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the mixed scalar record received from the caller.
+    #[account_procedure]
     fn echo_mixed_scalar_record(&self, input: MixedScalarRecord) -> MixedScalarRecord;
 }
 

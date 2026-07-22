@@ -263,6 +263,21 @@ pub fn auth_script(
     component_macro::expand_auth_script(attr, item)
 }
 
+/// Marks a component method as part of the account interface (`#[account_procedure]`).
+///
+/// The method must be declared within a `trait` annotated with `#[component]`.
+/// Any number of methods may be annotated with `#[account_procedure]`. Only annotated methods
+/// (and the `#[auth_script]` method, implicitly) become account procedures callable from
+/// transaction scripts, notes, foreign procedure invocation, and sibling components; unmarked
+/// methods stay exported but are not part of the account interface.
+#[proc_macro_attribute]
+pub fn account_procedure(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    component_macro::expand_account_procedure(attr, item)
+}
+
 /// Generates an equvalent type in the WIT interface.
 /// Required for every type mentioned in the public methods of an account component.
 ///

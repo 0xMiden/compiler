@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### BREAKING
+- Component methods must now be explicitly marked `#[account_procedure]` to be part of the account
+  interface (callable as account procedures from transaction scripts, notes, foreign procedure
+  invocation, and sibling components). Previously every lifted non-auth/note/tx component export was
+  implicitly an account procedure. Unmarked methods remain exported but are no longer part of the
+  account interface. Authentication components keep using `#[auth_script]` (its method is the
+  account interface implicitly); `#[auth_script]` and `#[account_procedure]` belong to different
+  component kinds and cannot be combined in one component. See the [migration guide](./MIGRATION.md).
 - `#[account(...)]` now generates the component methods as one trait per referenced interface
   (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
   of inherent methods on the wrapper struct. Two components that export the same method name can

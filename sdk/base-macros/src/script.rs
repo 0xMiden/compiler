@@ -141,10 +141,10 @@ pub(crate) fn expand(
     // Mark the generated entrypoint export so downstream consumers can identify the
     // transaction-script procedure by its `@transaction_script` attribute (e.g.
     // `TransactionScript::from_library` in `miden-protocol`).
-    let frontend_link_section = generate_frontend_link_section(&FrontendMetadata::TxScript {
+    let frontend_link_section = generate_frontend_link_section(&[FrontendMetadata::TxScript {
         method_path: fn_ident.to_string(),
         export_name: fn_ident.to_string(),
-    });
+    }]);
 
     let expanded = match expand_guest_wrapper(
         Span::call_site(),

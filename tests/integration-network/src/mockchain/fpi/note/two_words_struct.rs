@@ -211,6 +211,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter words stored under `keys`.
+    #[account_procedure]
     fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair;
 }
 

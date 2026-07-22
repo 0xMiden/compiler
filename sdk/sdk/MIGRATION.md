@@ -12,6 +12,45 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Mark account interface procedures with `#[account_procedure]`
+
+A component's methods are no longer implicitly part of the account interface. Mark every method that
+must be callable as an account procedure — from transaction scripts, notes, foreign procedure
+invocation (FPI), or sibling components — with `#[account_procedure]` on the `#[component]` **trait**
+declaration (not the `impl`). Any number of methods may be marked. Unmarked methods still compile
+and are still exported, but are not account procedures.
+
+`#[auth_script]` and `#[account_procedure]` belong to different component kinds — an authentication
+component versus a regular account component — and cannot be combined in one component. An
+authentication component keeps using `#[auth_script]` alone (its method is the account interface
+implicitly).
+
+The `#[account_procedure]` marker is recognized by the surrounding `#[component]` macro, so it needs
+no import (just like `#[auth_script]`).
+
+Before:
+
+```rust
+use miden::{Asset, component, component_storage};
+
+#[component]
+trait BasicWallet {
+    fn receive_asset(&mut self, asset: Asset);
+}
+```
+
+After:
+
+```rust
+use miden::{Asset, component, component_storage};
+
+#[component]
+trait BasicWallet {
+    #[account_procedure]
+    fn receive_asset(&mut self, asset: Asset);
+}
+```
+
 ### `#[account(...)]` generates one trait per component
 
 In 0.13 the `#[account(...)]` macro generated each component's methods as inherent methods on the

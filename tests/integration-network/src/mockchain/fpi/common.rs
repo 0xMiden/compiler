@@ -503,6 +503,7 @@ struct CounterContractStorage {
 #[component]
 trait FirstCounter {
     /// Returns the first counter value.
+    #[account_procedure]
     fn get_count(&self) -> Felt;
 }
 
@@ -538,6 +539,7 @@ struct CounterContractStorage {
 #[component]
 trait SecondCounter {
     /// Returns the second counter value.
+    #[account_procedure]
     fn get_count(&self) -> Felt;
 }
 

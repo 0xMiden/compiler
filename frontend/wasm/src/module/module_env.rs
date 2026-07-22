@@ -3,7 +3,9 @@ use core::ops::Range;
 use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
-use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
+use midenc_frontend_wasm_metadata::{
+    FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME, decode_section,
+};
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
 use wasmparser::{
@@ -84,107 +86,69 @@ pub struct ParsedModule<'data> {
 
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
-    /// Frontend-only component metadata emitted by SDK macros.
-    pub component_frontend_metadata: Option<FrontendMetadata>,
+    /// Frontend-only component metadata entries emitted by SDK macros (empty when none present).
+    pub component_frontend_metadata: Vec<FrontendMetadata>,
 }
 
-/// Aggregates frontend metadata from all core modules that participate in one component.
+/// Collects the frontend metadata entries emitted by all core modules of one component.
+///
+/// A component's metadata is single-kind by construction: the SDK macros emit either one
+/// `#[auth_script]` entry, any number of `#[account_procedure]` entries, one `#[note_script]`
+/// entry, or one `#[tx_script]` entry — those kinds belong to distinct component/project kinds and
+/// cannot be combined — and the linker's frontend-metadata uniqueness guard rejects a crate that
+/// emits more than one metadata section. Merging is therefore a plain concatenation.
 pub(crate) fn merge_frontend_metadata<'data>(
     modules: impl Iterator<Item = &'data ParsedModule<'data>>,
-) -> WasmResult<Option<FrontendMetadata>> {
-    let mut metadata = None;
-    for module in modules {
-        let Some(module_metadata) = module.component_frontend_metadata.as_ref() else {
-            continue;
-        };
-
-        merge_single_frontend_metadata(&mut metadata, module_metadata)?;
-    }
-
-    Ok(metadata)
+) -> Vec<FrontendMetadata> {
+    modules
+        .flat_map(|module| module.component_frontend_metadata.iter().cloned())
+        .collect()
 }
 
 /// Verifies that metadata-selected exports were emitted as lifted component exports.
 pub(crate) fn validate_lifted_frontend_metadata_exports(
-    metadata: Option<&FrontendMetadata>,
+    metadata: &[FrontendMetadata],
     lifted_exports: &FxHashSet<String>,
 ) -> WasmResult<()> {
-    let Some(metadata) = metadata else {
-        return Ok(());
-    };
-
-    match metadata {
-        FrontendMetadata::AuthScript {
-            method_path,
-            export_name,
-        } => validate_lifted_export(method_path, export_name, "`#[auth_script]`", lifted_exports)?,
-        FrontendMetadata::NoteScript {
-            method_path,
-            export_name,
-        } => validate_lifted_export(method_path, export_name, "`#[note_script]`", lifted_exports)?,
-        FrontendMetadata::TxScript {
-            method_path,
-            export_name,
-        } => validate_lifted_export(method_path, export_name, "`#[tx_script]`", lifted_exports)?,
+    for entry in metadata {
+        match entry {
+            FrontendMetadata::AuthScript {
+                method_path,
+                export_name,
+            } => validate_lifted_export(
+                method_path,
+                export_name,
+                "`#[auth_script]`",
+                lifted_exports,
+            )?,
+            FrontendMetadata::AccountProcedure {
+                method_path,
+                export_name,
+            } => validate_lifted_export(
+                method_path,
+                export_name,
+                "`#[account_procedure]`",
+                lifted_exports,
+            )?,
+            FrontendMetadata::NoteScript {
+                method_path,
+                export_name,
+            } => validate_lifted_export(
+                method_path,
+                export_name,
+                "`#[note_script]`",
+                lifted_exports,
+            )?,
+            FrontendMetadata::TxScript {
+                method_path,
+                export_name,
+            } => {
+                validate_lifted_export(method_path, export_name, "`#[tx_script]`", lifted_exports)?
+            }
+        }
     }
 
     Ok(())
-}
-
-/// Merges a single module's frontend metadata into the component-wide metadata view.
-fn merge_single_frontend_metadata(
-    metadata: &mut Option<FrontendMetadata>,
-    module_metadata: &FrontendMetadata,
-) -> WasmResult<()> {
-    match metadata {
-        None => {
-            *metadata = Some(module_metadata.clone());
-            Ok(())
-        }
-        Some(existing_metadata) => match (&*existing_metadata, module_metadata) {
-            (FrontendMetadata::AuthScript { .. }, FrontendMetadata::AuthScript { .. }) => {
-                Err(Report::from(WasmError::Unsupported(format!(
-                    "multiple `#[auth_script]` procedures were found: `{}` and `{}`; only one is \
-                     allowed per project",
-                    existing_metadata.method_path(),
-                    module_metadata.method_path()
-                ))))
-            }
-            (FrontendMetadata::NoteScript { .. }, FrontendMetadata::NoteScript { .. }) => {
-                Err(Report::from(WasmError::Unsupported(format!(
-                    "multiple `#[note_script]` procedures were found: `{}` and `{}`; only one is \
-                     allowed per project",
-                    existing_metadata.method_path(),
-                    module_metadata.method_path()
-                ))))
-            }
-            (FrontendMetadata::TxScript { .. }, FrontendMetadata::TxScript { .. }) => {
-                Err(Report::from(WasmError::Unsupported(format!(
-                    "multiple `#[tx_script]` entrypoints were found: `{}` and `{}`; only one is \
-                     allowed per project",
-                    existing_metadata.method_path(),
-                    module_metadata.method_path()
-                ))))
-            }
-            (existing, module) => Err(Report::from(WasmError::Unsupported(format!(
-                "both {} and {} procedures were found: `{}` and `{}`; only one kind is allowed \
-                 per project",
-                frontend_metadata_attribute_name(existing),
-                frontend_metadata_attribute_name(module),
-                existing_metadata.method_path(),
-                module_metadata.method_path()
-            )))),
-        },
-    }
-}
-
-/// Returns the user-facing attribute name that produced a frontend metadata entry.
-fn frontend_metadata_attribute_name(metadata: &FrontendMetadata) -> &'static str {
-    match metadata {
-        FrontendMetadata::AuthScript { .. } => "`#[auth_script]`",
-        FrontendMetadata::NoteScript { .. } => "`#[note_script]`",
-        FrontendMetadata::TxScript { .. } => "`#[tx_script]`",
-    }
 }
 
 /// Validates that a metadata-selected export name was seen among the lifted component exports.
@@ -350,7 +314,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 self.result.account_component_metadata_bytes = Some(s.data());
             }
             Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
-                let metadata = FrontendMetadata::from_bytes(s.data()).map_err(|err| {
+                let metadata = decode_section(s.data()).map_err(|err| {
                     diagnostics
                         .diagnostic(Severity::Error)
                         .with_message(format!(
@@ -359,7 +323,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         .into_report()
                 })?;
 
-                if self.result.component_frontend_metadata.replace(metadata).is_some() {
+                if !self.result.component_frontend_metadata.is_empty() {
                     return Err(diagnostics
                         .diagnostic(Severity::Error)
                         .with_message(
@@ -368,6 +332,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         )
                         .into_report());
                 }
+                self.result.component_frontend_metadata = metadata;
             }
             Payload::CustomSection { .. } => {
                 // ignore any other custom sections

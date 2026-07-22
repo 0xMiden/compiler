@@ -198,6 +198,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the sum of the counter values stored under `keys`.
+    #[account_procedure]
     fn get_count_sum_by_keys(&self, keys: KeyTriple) -> Felt;
 }
 

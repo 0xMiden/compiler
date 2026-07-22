@@ -110,8 +110,10 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value stored under the provided key.
+    #[account_procedure]
     fn get_count(&self, key: Word) -> Felt;
     /// Increments the counter value stored under the provided key, returning the new value.
+    #[account_procedure]
     fn increment_count(&mut self, key: Word) -> Felt;
 }
 
@@ -144,6 +146,7 @@ struct CallerAccountStorage;
 #[component(single_sibling_counter_account::CounterContract)]
 trait CallerAccount: NativeAccount + CounterContract {
     /// Increments the sibling counter and returns the new value.
+    #[account_procedure]
     fn bump_sibling_count(&mut self) -> Felt;
 }
 

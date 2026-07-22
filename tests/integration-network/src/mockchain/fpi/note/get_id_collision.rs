@@ -109,6 +109,7 @@ struct CounterContractStorage;
 #[component]
 trait CounterContract {
     /// Returns a marker value distinct from the account id.
+    #[account_procedure]
     fn get_id(&self) -> Felt;
 }
 
