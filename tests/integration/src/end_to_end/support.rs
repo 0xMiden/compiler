@@ -73,9 +73,9 @@ end
 /// The core library registers the event handlers required to execute core helpers that rely on
 /// the advice provider.
 pub(super) fn default_host_with_core_lib() -> DefaultHost {
-    let core_library = CoreLibrary::default().package();
+    let core_library = CoreLibrary::default();
     let mut host = DefaultHost::default();
-    host.load_library(core_library).expect("failed to load core library into host");
+    host.load_library(&core_library).expect("failed to load core library into host");
     host
 }
 
@@ -168,6 +168,8 @@ pub(super) fn miden_project_toml(name: &str) -> String {
                 version = "0.0.1"
 
                 [lib]
+                # Core Wasm modules use the frontend's synthetic wrapper component identity.
+                namespace = "root_ns:root@1.0.0"
                 path = "src/lib.rs"
 
                 [dependencies]
