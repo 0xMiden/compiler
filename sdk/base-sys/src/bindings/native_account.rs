@@ -47,6 +47,24 @@ unsafe extern "C" {
         proc_root_2: Felt,
         proc_root_3: Felt,
     ) -> Felt;
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::get_initial_commitment"]
+    fn extern_native_account_get_initial_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::get_initial_storage_commitment"]
+    fn extern_native_account_get_initial_storage_commitment(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::get_initial_vault_root"]
+    fn extern_native_account_get_initial_vault_root(ptr: *mut Word);
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "miden::protocol::native_account::get_initial_asset"]
+    fn extern_native_account_get_initial_asset(
+        asset_key_0: Felt,
+        asset_key_1: Felt,
+        asset_key_2: Felt,
+        asset_key_3: Felt,
+        ptr: *mut Word,
+    );
 }
 
 /// Adds the specified asset to the vault and returns the resulting asset value word stored under
@@ -156,6 +174,51 @@ pub fn was_procedure_called(proc_root: Word) -> bool {
             proc_root[2],
             proc_root[3],
         ) != Felt::new(0).unwrap()
+    }
+}
+
+/// Returns the native account's commitment at the beginning of the transaction.
+#[inline]
+pub fn get_initial_commitment() -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_native_account_get_initial_commitment(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the native account's storage commitment at the beginning of the transaction.
+#[inline]
+pub fn get_initial_storage_commitment() -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_native_account_get_initial_storage_commitment(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the native account's vault root at the beginning of the transaction.
+#[inline]
+pub fn get_initial_vault_root() -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_native_account_get_initial_vault_root(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
+}
+
+/// Returns the native account's initial value stored under the specified `asset_key` in the vault.
+pub fn get_initial_asset(asset_key: Word) -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_native_account_get_initial_asset(
+            asset_key[0],
+            asset_key[1],
+            asset_key[2],
+            asset_key[3],
+            ret_area.as_mut_ptr(),
+        );
+        ret_area.into_inner().assume_init()
     }
 }
 

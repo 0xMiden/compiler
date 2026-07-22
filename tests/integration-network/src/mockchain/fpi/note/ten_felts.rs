@@ -49,6 +49,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value plus all six extra felt arguments.
+    #[account_procedure]
     fn get_count_by_ten_felts(
         &self,
         key0: Felt,

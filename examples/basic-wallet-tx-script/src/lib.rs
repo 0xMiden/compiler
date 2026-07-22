@@ -35,7 +35,7 @@ fn run(arg: Word, account: &mut Wallet) {
     let tag = input[TAG_INDEX];
     let note_type = input[NOTE_TYPE_INDEX];
     let recipient: [Felt; 4] = input[RECIPIENT_START..RECIPIENT_END].try_into().unwrap();
-    let note_idx = output_note::create(tag.into(), note_type.into(), recipient.into());
+    let note_idx = account.create_note(tag.into(), note_type.into(), recipient.into());
     let asset: [Felt; 8] = input[ASSET_START..ASSET_END].try_into().unwrap();
     let asset_key: [Felt; 4] = asset[..4].try_into().unwrap();
     let asset_value: [Felt; 4] = asset[4..].try_into().unwrap();

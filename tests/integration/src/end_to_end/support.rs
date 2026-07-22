@@ -18,7 +18,7 @@ use proptest::{
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 
 const INTRINSICS_ROOT: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "../../codegen/masm/intrinsics/mod.masm");
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../codegen/masm/intrinsics/mod.masm");
 
 /// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
 /// as entry point.
@@ -73,9 +73,12 @@ end
 /// The core library registers the event handlers required to execute core helpers that rely on
 /// the advice provider.
 pub(super) fn default_host_with_core_lib() -> DefaultHost {
-    let core_library = CoreLibrary::default().package();
+    use miden_processor::HostLibrary;
+    let core_library = CoreLibrary::default();
+    let mut lib = HostLibrary::from(core_library.package());
+    lib.handlers.extend(core_library.handlers());
     let mut host = DefaultHost::default();
-    host.load_library(core_library).expect("failed to load core library into host");
+    host.load_library(lib).expect("failed to load core library into host");
     host
 }
 
@@ -168,6 +171,8 @@ pub(super) fn miden_project_toml(name: &str) -> String {
                 version = "0.0.1"
 
                 [lib]
+                # Core Wasm modules use the frontend's synthetic wrapper component identity.
+                namespace = "root_ns:root@1.0.0"
                 path = "src/lib.rs"
 
                 [dependencies]

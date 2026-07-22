@@ -87,11 +87,7 @@ fn different_account_import_sets_have_distinct_metadata_worlds() {
         )
         .file(
             "Cargo.toml",
-            &use_regression_version(note_cargo_toml_for_dependencies(
-                NOTE_NAME,
-                NOTE_PACKAGE,
-                &dependencies,
-            )),
+            &use_regression_version(note_cargo_toml_for_dependencies(NOTE_NAME, &dependencies)),
         )
         .file("src/lib.rs", DIFFERENT_BINDINGS_NOTE_SOURCE)
         .build();
@@ -147,7 +143,6 @@ fn build_note_project(
             "Cargo.toml",
             &use_regression_version(note_cargo_toml_for_dependency(
                 note_name,
-                note_package,
                 ACCOUNT_PACKAGE,
                 &account_root,
             )),

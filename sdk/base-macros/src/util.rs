@@ -1,6 +1,8 @@
 use std::{env, fs, path::PathBuf};
 
-use midenc_frontend_wasm_metadata::{FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME};
+use midenc_frontend_wasm_metadata::{
+    FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME, encode_section,
+};
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::Error;
@@ -53,16 +55,19 @@ pub fn generated_wit_folder() -> Result<PathBuf, Error> {
 }
 
 /// Emits frontend-only metadata into the shared component frontend custom section.
-pub(crate) fn generate_frontend_link_section(metadata: &FrontendMetadata) -> TokenStream2 {
-    let metadata_bytes = metadata.to_bytes().unwrap_or_else(|err| panic!("{err}"));
+///
+/// A component may need several entries (an optional `#[auth_script]` entry plus one entry per
+/// `#[account_procedure]` method), so the whole set is encoded as a single section payload.
+pub(crate) fn generate_frontend_link_section(entries: &[FrontendMetadata]) -> TokenStream2 {
+    let metadata_bytes = encode_section(entries).unwrap_or_else(|err| panic!("{err}"));
     let metadata_len = metadata_bytes.len();
     let encoded_bytes = Literal::byte_string(&metadata_bytes);
     let metadata_static_ident = format_ident!("{}", FRONTEND_METADATA_BYTES_STATIC_IDENT);
 
     quote! {
         const _: () = {
-            // A crate may contain exactly one frontend-marked method. Reusing a fixed symbol name
-            // lets the linker reject duplicates across modules or impl blocks.
+            // A crate may contain exactly one frontend metadata section. Reusing a fixed symbol
+            // name lets the linker reject duplicates across modules or impl blocks.
             #[doc(hidden)]
             #[used]
             #[unsafe(export_name = #FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL)]

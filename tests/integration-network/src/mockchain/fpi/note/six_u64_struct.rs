@@ -51,6 +51,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the six-`u64` record received from the caller.
+    #[account_procedure]
     fn echo_six_u64_record(&self, input: SixU64Record) -> SixU64Record;
 }
 

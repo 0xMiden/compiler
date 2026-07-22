@@ -21,6 +21,12 @@ pub const SET_STORAGE_ITEM: &str = "set_item";
 pub const SET_STORAGE_MAP_ITEM: &str = "set_map_item";
 pub const INCR_NONCE: &str = "incr_nonce";
 pub const WAS_PROCEDURE_CALLED: &str = "was_procedure_called";
+pub const GET_INITIAL_COMMITMENT: &str = "get_initial_commitment";
+pub const GET_INITIAL_STORAGE_COMMITMENT: &str = "get_initial_storage_commitment";
+pub const GET_INITIAL_VAULT_ROOT: &str = "get_initial_vault_root";
+pub const GET_INITIAL_ASSET: &str = "get_initial_asset";
+pub const GET_INITIAL_STORAGE_ITEM: &str = "get_initial_item";
+pub const GET_INITIAL_STORAGE_MAP_ITEM: &str = "get_initial_map_item";
 
 pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
@@ -81,6 +87,34 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     native_account.insert(
         Symbol::from(WAS_PROCEDURE_CALLED),
         FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt]),
+    );
+    native_account.insert(
+        Symbol::from(GET_INITIAL_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
+    native_account.insert(
+        Symbol::from(GET_INITIAL_STORAGE_COMMITMENT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
+    native_account.insert(
+        Symbol::from(GET_INITIAL_VAULT_ROOT),
+        FunctionType::new(CallConv::Wasm, [], [Felt, Felt, Felt, Felt]),
+    );
+    native_account.insert(
+        Symbol::from(GET_INITIAL_ASSET),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt, Felt, Felt], [Felt, Felt, Felt, Felt]),
+    );
+    native_account.insert(
+        Symbol::from(GET_INITIAL_STORAGE_ITEM),
+        FunctionType::new(CallConv::Wasm, [Felt, Felt], [Felt, Felt, Felt, Felt]),
+    );
+    native_account.insert(
+        Symbol::from(GET_INITIAL_STORAGE_MAP_ITEM),
+        FunctionType::new(
+            CallConv::Wasm,
+            [Felt, Felt, Felt, Felt, Felt, Felt],
+            [Felt, Felt, Felt, Felt],
+        ),
     );
     m.insert(SymbolPath::from_iter(MODULE_PREFIX.iter().copied()), native_account);
 

@@ -15,8 +15,8 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::active_note::get_storage"]
     fn extern_note_get_storage(ptr: *mut Felt) -> usize;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_note::get_assets"]
-    fn extern_note_get_assets(ptr: *mut Felt) -> usize;
+    #[link_name = "miden::protocol::active_note::get_initial_assets"]
+    fn extern_note_get_initial_assets(ptr: *mut Felt) -> usize;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_note::get_sender"]
     fn extern_note_get_sender(ptr: *mut RawAccountId);
@@ -87,13 +87,15 @@ pub fn get_storage() -> Vec<Felt> {
     inputs
 }
 
-/// Get the assets of the currently executing note.
-pub fn get_assets() -> Vec<Asset> {
+/// Get the initial assets of the currently executing note.
+///
+/// These are the note's assets at creation time, unaffected by in-transaction removal.
+pub fn get_initial_assets() -> Vec<Asset> {
     const MAX_INPUTS: usize = 256;
     let mut inputs: Vec<Asset> = Vec::with_capacity(MAX_INPUTS);
     let num_inputs = unsafe {
         let ptr = (inputs.as_mut_ptr() as usize) / 4;
-        extern_note_get_assets(ptr as *mut Felt)
+        extern_note_get_initial_assets(ptr as *mut Felt)
     };
     unsafe {
         inputs.set_len(num_inputs);

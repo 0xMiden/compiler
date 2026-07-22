@@ -125,10 +125,7 @@ pub(super) fn build_multi_package_fpi_test_packages(
                 &dependencies,
             ),
         )
-        .file(
-            "Cargo.toml",
-            &note_cargo_toml_for_dependencies(&names.note_name, &names.note_package, &dependencies),
-        )
+        .file("Cargo.toml", &note_cargo_toml_for_dependencies(&names.note_name, &dependencies))
         .file("src/lib.rs", caller_source)
         .build();
     let caller_note_package = compile_rust_package(note_project.root(), true);
@@ -206,7 +203,6 @@ pub(super) fn build_account_to_account_fpi_test_packages(
             "Cargo.toml",
             &note_cargo_toml_for_dependency(
                 &names.note_name,
-                &names.note_package,
                 &names.caller_account_package,
                 caller_project.root().as_path(),
             ),
@@ -472,12 +468,7 @@ fn note_miden_project_toml(names: &FpiTestProjectNames, account_project_root: &P
 
 /// Returns the generated caller note manifest used by an FPI test.
 fn note_cargo_toml(names: &FpiTestProjectNames, account_project_root: &Path) -> String {
-    note_cargo_toml_for_dependency(
-        &names.note_name,
-        &names.note_package,
-        &names.account_package,
-        account_project_root,
-    )
+    note_cargo_toml_for_dependency(&names.note_name, &names.account_package, account_project_root)
 }
 
 /// First counter component shared by the multi-package FPI tests.
@@ -503,6 +494,7 @@ struct CounterContractStorage {
 #[component]
 trait FirstCounter {
     /// Returns the first counter value.
+    #[account_procedure]
     fn get_count(&self) -> Felt;
 }
 
@@ -538,6 +530,7 @@ struct CounterContractStorage {
 #[component]
 trait SecondCounter {
     /// Returns the second counter value.
+    #[account_procedure]
     fn get_count(&self) -> Felt;
 }
 

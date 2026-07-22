@@ -21,8 +21,10 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the current counter value stored in the contract's storage map.
+    #[account_procedure]
     fn get_count(&self) -> Felt;
     /// Increments the counter value stored in the contract's storage map by one.
+    #[account_procedure]
     fn increment_count(&mut self) -> Felt;
 }
 
