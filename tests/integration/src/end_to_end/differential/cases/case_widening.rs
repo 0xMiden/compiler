@@ -1,9 +1,10 @@
 // Exercises integer width conversions and bit-counting unary intrinsics across
-// multiple types: the per-width `clz`/`popcnt`/`bnot` arms in
+// multiple types: the per-width `clz`/`popcnt` arms in
 // `codegen/masm/src/emit/unary.rs`. (Rust `as` casts lower to
-// trunc/zext/bitcast — never `OpEmitter::cast` — and the `(x | 1)`
+// trunc/zext/bitcast — never `OpEmitter::cast`; the `(x | 1)`
 // trailing-zeros shape is constant-folded by LLVM, so genuine `ctz` coverage
-// lives in `case_zext_wide_ctz.rs`.)
+// lives in `case_zext_wide_ctz.rs`; and Rust `!x` lowers to `bxor x, -1`,
+// never `arith.Bnot`, so the sub-word NOTs below exercise xor paths.)
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     // u32 -> u64 zero-extend, then u64 -> u32 narrow.
@@ -20,7 +21,7 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let tz16: u32 = (lo16 | 1).trailing_zeros();
     let pop8: u32 = lo8.count_ones() as u32;
 
-    // Bitwise NOT on u8/u16 to exercise `bnot` smallint paths.
+    // Bitwise NOT on u8/u16 (lowers to xor with -1 on the sub-word masks).
     let not8: u32 = (!lo8) as u32;
     let not16: u32 = (!lo16) as u32;
 

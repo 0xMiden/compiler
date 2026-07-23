@@ -7,9 +7,9 @@
 // `i64.div_s`. i64 `%` is deliberately absent: `arith.Mod` on I64 has no
 // emitter arm (compile-time `unimplemented!`).
 //
-// KNOWN FAILURE (expected): `::intrinsics::i64::checked_div` execs the same
-// miden-core-lib `::miden::core::math::u64::div` whose `emit.U64_DIV_EVENT`
-// aborts the differential executor (see u64_udiv).
+// `::intrinsics::i64::checked_div` execs the miden-core-lib
+// `::miden::core::math::u64::div`, whose `emit.U64_DIV_EVENT` advice event
+// the differential executor handles (see u64_udiv).
 #[unsafe(no_mangle)]
 pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
     let n = (((input1 as u64) << 32) | input2 as u64) as i64;
