@@ -142,6 +142,76 @@ Maintenance rules:
 - `CanonicalizeI64RotateBy32ToSwap` never fires on wasm-derived IR: the
   translator wraps every dynamic shift/rotate count in `arith.band`
   (`mask_movement_count`), which hides constant counts from the pattern.
+- Dead-code translation (`translate_unreachable_operator`) only ever sees
+  structural `end`s: LLVM deletes unreachable MBBs before CFGStackify, so no
+  `block`/`loop`/`if`/`else` operator and no plain operator is ever emitted in
+  dead state (those arms + the catch-all are unproducible; the End-of-Loop arm
+  IS warm — loops whose only exits are mid-loop returns/traps keep an
+  unconditional latch `br`, wat-verified). LLVM's end-of-function fixup gives
+  such dead-fallthrough loops/blocks a `(result ..)` type, but those frames
+  are never branch targets and `br` never carries values (locals argument) —
+  so a dead `end` never resumes at a following block WITH arguments (the
+  next_block_args closure is unproducible).
+
+## Rewrite-pass scope closures (CSE / SCCP / DCE / folder / scf patterns)
+
+Verified 2026-07-23 (region-level coverage + source audit of the pass
+pipeline in midenc-compile/src/stages/rewrite.rs):
+
+- The rewrite pipeline is Canonicalizer → CSE → SCCP → SinkOperandDefs →
+  Local2Reg → TransformSpills → LiftControlFlowToSCF → Canonicalizer →
+  SinkOperandDefs → TransformSpills, all on a FUNCTION pass manager. CSE and
+  SCCP therefore run only on pre-lift cf-form function bodies — which contain
+  **zero region-bearing ops** — and never on the module body (a graph region).
+- CSE consequences: the entire non-SSA-dominance universe
+  (`replace_uses_and_delete`'s visited-set arm, `has_visited_owner_or_
+  ancestor`, the `ScopedCseCandidates` linear fallbacks) and BOTH
+  nested-region branches of `simplify_block` are unreachable. Extra "CSE
+  food" (e.g. duplicate unsigned-op bitcasts) only re-runs the already-warm
+  SSA merge arm. The span-propagation tail is dead too: the only unknown-span
+  ops are folder-materialized constants, already unique per (value, ty) when
+  CSE runs; and CSE never sees trivially-dead ops (the canonicalizer's driver
+  erases them immediately beforehand).
+- SCCP cannot out-prove LLVM + the canonicalizer on wasm-derived IR: its only
+  extra powers need dead CFG edges (constant branch conditions — already
+  folded) or an all-preds-same-constant block arg (an identical-incoming phi,
+  which LLVM InstSimplify folds to the value itself). Its warm
+  `replace_with_constant` activity is just re-uniquing each function's
+  existing `arith.constant`s — one per (value, ty), because the
+  canonicalizer's folder dedups constants function-wide first. Hence
+  `OperationFolder::try_get_or_create_constant`'s cache-hit and cross-dialect
+  arms are unreachable (`arith.constant` is the only ConstantLike in cf-form
+  wasm-derived HIR; `ub.poison` exists only post-lift, after SCCP).
+- `OperationFolder::try_fold` / `process_fold_results` / `clear` have NO
+  callers workspace-wide (dead API): the greedy driver folds internally and
+  calls only `insert_known_constant`; SCCP calls only
+  `get_or_create_constant`. `insert_known_constant`'s folder-owned-rehoist
+  arms are dead (fresh folder per driver iteration, each op visited once),
+  and `notify_removal`'s main body is dead (nothing erases a folder-owned
+  constant while its folder lives).
+- `DeadCodeAnalysis` has exactly two pipeline loaders — SCCP's solver
+  (pre-lift) and `LivenessAnalysis` inside TransformSpills (pre- AND
+  post-lift; the latter is what warms the scf region-branch/terminator arms)
+  — both FUNCTION-scoped. Hence: `walk_symbol_tables` finds no symbol tables
+  under a `builtin.function` (the `initialize_callable_symbols` closure never
+  runs), every resolved callee is "external" (outside the analysis scope), and
+  known-callsite/callable-terminator resolution (incl. the
+  `join_with_inputs::<ValueRange>` monomorphization and
+  `mark_entry_blocks_live`) never executes. Module-scoped SCCP/liveness would
+  be required, and the pipeline never schedules it.
+- `WhileRemoveDuplicatedResults`' interior is unreachable from wasm-derived
+  IR: it keys on duplicated **scf.condition forwarded operands** (the
+  before-region terminator) — not on yields and not on results directly. But
+  cfg-to-scf conditions forward either nothing (locals-only loops, the common
+  case) or the results of its own exit-dispatch `index_switch` chain —
+  distinct SSA values by construction. The repeated-operand lists cfg-to-scf
+  synthesizes (`scf.yield %v, %v, %v, %v, %d`, placeholder reuse) live only
+  in switch/yield ARM terminators, which the pattern ignores; no
+  canonicalization dedups switch RESULT columns (only unused-result and
+  constant-selector switch patterns exist), so the duplication never
+  propagates up to a condition; and a direct duplicate would need one
+  stack-resident value used twice on one exit edge — killed by the locals
+  argument.
 
 ## Block-emitter operand-drop facts (codegen/masm emitter.rs / emit/mod.rs / stack.rs)
 
@@ -250,6 +320,11 @@ at the test site.
 - Ignored cases contribute no coverage on a clean rebaseline (they don't run),
   so an area's headline can *drop* after `fuzza-cov-clean` relative to the
   session that created the ignored case. Expected.
+- The report's per-function cold-line lists merge regions into line ranges: a
+  warm match ARM whose `match` line hosts a small cold sub-region can look
+  cold (that is how translate_unreachable_operator's warm End-of-Loop arm
+  read as a target). Before betting a case on a specific arm, verify at
+  region level — `report.json` carries exact `line:col` spans per region.
 - `MIDENC_EMIT` paths must be ABSOLUTE `kind=DIR` specs: bare kinds dump into
   the test process CWD (that is how stray `.masm`/`.hir` files end up in the
   source tree), and *relative* dirs silently vanish into the ephemeral

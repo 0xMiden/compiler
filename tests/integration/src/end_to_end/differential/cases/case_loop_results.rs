@@ -1,8 +1,10 @@
-// Loop whose carried values exercise the scf.while canonicalization
-// patterns: two variables converging to the same yielded value
-// (`while_remove_duplicated_results`), carried values dead after the loop
-// (`while_unused_result`), and a loop-invariant value used in the body
-// (`remove_loop_invariant_args_from_before_block`).
+// Loop with two variables converging to the same value, carried values dead
+// after the loop, and a loop-invariant multiplier. NOTE: all of these travel
+// through wasm locals (the locals argument, see KNOWLEDGE.md), so the lifted
+// scf.while forwards no values and the while canonicalization interiors
+// (`while_remove_duplicated_results`, `while_unused_result`,
+// `remove_loop_invariant_args_from_before_block`) bail early by design —
+// this case covers the invoke-and-bail paths, not the pattern interiors.
 //
 // NB: the trip count is `input2 % 97` — a bound LLVM will not fully
 // unroll/peel (masking with a small power-of-two gets the loop peeled away

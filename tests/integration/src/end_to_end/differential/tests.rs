@@ -72,8 +72,10 @@ fn bitops() {
     run_case("bitops", include_str!("cases/case_bitops.rs"));
 }
 
-/// Exercises scf.while canonicalization: duplicated yielded results, results
-/// unused after the loop, and loop-invariant carried values.
+/// Bounded loop whose Rust-level duplicated/dead/loop-invariant carried values
+/// all travel through wasm locals, so the lifted scf.while forwards no values
+/// and the while arg/result canonicalization patterns are invoked but bail
+/// early (the locals argument, see KNOWLEDGE.md) — covers those bail paths.
 #[test]
 fn loop_results() {
     run_case("loop_results", include_str!("cases/case_loop_results.rs"));
