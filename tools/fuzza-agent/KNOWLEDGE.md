@@ -92,6 +92,17 @@ Maintenance rules:
   nothing (dynamic-pointer load/store delegates wholesale to intrinsics —
   alignment branching is imm-pointer-only); wasm `memory.copy` is always
   u8-typed (typed memcpy arms dead).
+- Wasm has no 128-bit memory ops: `[u128; N]` array (runtime-indexed,
+  loads AND stores) and u128-static traffic all legalize to `i64.load`/
+  `i64.store` PAIRS (wat+masm probe-verified 2026-07-23, deleted `u128_arr`
+  probe — the masm shows only `load_dw`/`store_dw` execs). I128-typed HIR
+  loads/stores arise only from compiler-internal spill/sret slots, always
+  with dynamic pointers (the warm `load/store_quad_word` None arms →
+  `load_qw`/`store_qw` execs). The imm quad-word arms are therefore closed:
+  their only callers are `load_imm` (unit tests) and `store_imm`
+  (GlobalVariable initializers; sole global = I32 `__stack_pointer`), so
+  `load_quad_word_imm`/`store_quad_word_imm` are unreachable and
+  `realign_double_word`/`realign_quad_word` are zero-caller dead API.
 - Unsigned translators bitcast U32/U64 operands to I32/I64 around every op, so
   U-typed arithmetic emitter arms (`add_u64`, `mul_u64`, smallint
   add/sub/mul/div/mod, …) are dead; U8/U16/U32-*typed* HIR values arise only
@@ -108,6 +119,12 @@ Maintenance rules:
   and `process_call_signature`'s sret-assert and extension-marker arms are
   built only by SDK/component paths — no producer exists in a plain no_std
   core module.
+- Two config/consumer-gated global cold clusters (2026-07-23, source-audited
+  — not case-producible): the advice-taint analysis monomorphs
+  (hir-analysis sparse/dense over `AdviceTaint*`) run only under
+  `session.options.lint`, which the harness never sets; and postdominance
+  (`SemiNCA<true>`, incl. `find_roots`) has no computing consumer in the
+  wasm pipeline (CSE only marks `PostDominanceInfo` preserved).
 - `i64.mul_wide_s`/`mul_wide_u` sign/zero-extend **both** operands to 128-bit
   at translation; a constant multiplicand is the **only** Rust-reachable
   constant-operand `sext`/`zext` (feeding `Sext::fold`/`Zext::fold`'s 128-bit
@@ -380,6 +397,16 @@ All asserted by pinned-grid differential cases (`case_shift_counts`,
   an identical position is safe end-to-end (`case_memnoop_same.rs` executes
   exactly that against the always-taken element fast path). The nonzero-length
   overlap abort (`mem_overlap`) is a separate, still-open bug.
+- u128 boundary relations agree with Rust end-to-end (2026-07-23 mop-up
+  grids, all passing): `__udivti3`/`__umodti3` at divisor exactly 1,
+  divisor == dividend, smallest divisor > dividend, dividend 0, and
+  both-limbs-max (u128::MAX) operands (`case_u128_bounds.rs` + `_edges`,
+  with `/` and `%` on limb-swapped pairs to defeat div/rem fusion; the
+  `u128_udiv`/`u128_umod` derivations cannot reach the ==/MAX relations —
+  their `_edges` grids pin the reachable ones); `__ashlti3`/`__lshrti3`/
+  `__ashrti3` at counts 0/1/63/64/65/127 in both directions and both signs,
+  including the count >= 64 sign-fill (`u128_shifts_edges`,
+  `i128_ashr_edges`).
 
 ## Known bugs live with the tests
 
