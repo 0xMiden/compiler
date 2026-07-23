@@ -118,7 +118,23 @@ Maintenance rules:
   pair (`case_sext_widths.rs`).
 - LLVM legalizes u128 compares/bitwise/popcounts to i64 limb ops — the i128
   emitter arms for those are unreachable; only add128/sub128/mul_wide reach
-  int128.rs (`case_u128_mix.rs`).
+  int128.rs (`case_u128_mix.rs`). Runtime-confirmed (2026-07-23): compares are
+  two-limb strict `lt_u/gt_u + eq + select` chains (an inline `i64.le_u` pair
+  survives in *select* position; branch position is strict-only, and the
+  bool-value form still needs the `#[inline(never)]` helper trick,
+  `case_u128_cmp.rs`); clz/ctz are limb selects, popcount a limb sum
+  (`case_u128_bits.rs`).
+- u128/i128 `/` and `%` compile to compiler-builtins functions
+  (`__udivti3`/`__umodti3`/`__divti3`/`__modti3`, all delegating to
+  `specialized_div_rem::u128_div_rem`) compiled into the guest wasm as
+  ordinary functions — no new emitter arms, but deep u64 clz/shift/subtract
+  loops that execute differentially and PASS on the VM
+  (`case_u128_udiv/u128_umod/i128_sdiv/i128_srem.rs`, wat-verified 2026-07-23).
+- **Dynamic**-count 128-bit shifts become compiler-builtins libcalls
+  (`__ashlti3`/`__lshrti3`/`__ashrti3`), not inline select chains — constant
+  counts (e.g. the `<< 64` limb-construction idiom) fold away at compile time
+  instead. Both count legs (< 64 / >= 64) and the `i64.shr_s` sign-fill
+  execute and pass (`case_u128_shifts.rs`, `case_i128_ashr.rs`).
 - `memory.size` gets CSE'd even across stores; the rewrite pipeline order is
   Canonicalizer → CSE → SCCP (same `op.fold`) — SCCP cannot out-fold the
   canonicalizer, and the `Foldable::fold_with` family is dead API
@@ -197,6 +213,10 @@ corroborate each closure below):
   never-run wasm-op translation chains (`case_loadwiden.rs`).
 - Probe before paying a coverage step (`cargo make fuzza-probe`, see
   AGENT-PROMPT.md) — most wasted steps are shapes LLVM pre-cleaned away.
+- To make a "limb is zero" leg of a legalization select (u128 clz/ctz, etc.)
+  *dynamically* taken without LLVM folding it, zero the limb with a parity
+  multiply — `limb.wrapping_mul((input & 1) as u64)` — which is opaque to
+  known-bits, unlike `& mask` shapes (`case_u128_bits.rs`).
 
 ## Known bugs live with the tests
 

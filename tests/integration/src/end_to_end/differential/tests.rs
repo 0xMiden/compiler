@@ -483,3 +483,66 @@ fn spill_edge() {
 fn i64_srem() {
     run_case("i64_srem", include_str!("cases/case_i64_srem.rs"));
 }
+
+/// u128 `/` with dynamic small (u64-range) and full-width non-zero divisors —
+/// executes compiler-builtins `__udivti3`/`u128_div_rem` (u64 clz/shift/
+/// subtract long-division loops compiled into the guest) on the VM.
+#[test]
+fn u128_udiv() {
+    run_case("u128_udiv", include_str!("cases/case_u128_udiv.rs"));
+}
+
+/// u128 `%` with dynamic small and full-width non-zero divisors — executes
+/// compiler-builtins `__umodti3` remainder paths on the VM.
+#[test]
+fn u128_umod() {
+    run_case("u128_umod", include_str!("cases/case_u128_umod.rs"));
+}
+
+/// i128 `/` with an odd (never-MIN) both-sign numerator and dynamic positive/
+/// negative divisors — executes `__divti3`'s sign-fixup around the unsigned
+/// division core on the VM.
+#[test]
+fn i128_sdiv() {
+    run_case("i128_sdiv", include_str!("cases/case_i128_sdiv.rs"));
+}
+
+/// i128 `%` with an odd (never-MIN) both-sign numerator and dynamic positive/
+/// negative divisors — executes `__modti3` (truncate-toward-zero remainder
+/// signs) on the VM.
+#[test]
+fn i128_srem() {
+    run_case("i128_srem", include_str!("cases/case_i128_srem.rs"));
+}
+
+/// Dynamic u128 `<<`/`>>` with counts in [0, 128) — executes the
+/// compiler-builtins `__ashlti3`/`__lshrti3` two-limb funnel shifts (both
+/// count < 64 and >= 64 legs) on the VM.
+#[test]
+fn u128_shifts() {
+    run_case("u128_shifts", include_str!("cases/case_u128_shifts.rs"));
+}
+
+/// Dynamic i128 arithmetic `>>` on both-sign values — executes `__ashrti3`
+/// including the sign-propagating count >= 64 leg (`i64.shr_s` fills the high
+/// limb) on the VM.
+#[test]
+fn i128_ashr() {
+    run_case("i128_ashr", include_str!("cases/case_i128_ashr.rs"));
+}
+
+/// u128 `count_ones`/`leading_zeros`/`trailing_zeros` on dynamic values —
+/// executes the i64 popcnt limb sum and the clz/ctz limb selects (both legs,
+/// via parity-zeroed limbs) on the VM.
+#[test]
+fn u128_bits() {
+    run_case("u128_bits", include_str!("cases/case_u128_bits.rs"));
+}
+
+/// u128 comparisons: branch/select position (strict two-limb lt/gt chains)
+/// plus `#[inline(never)]` bool-value `<=`/`==` — executes the 128-bit
+/// carry/borrow compare legalization on the VM.
+#[test]
+fn u128_cmp() {
+    run_case("u128_cmp", include_str!("cases/case_u128_cmp.rs"));
+}
