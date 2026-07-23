@@ -962,16 +962,20 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
 
 #[test]
 fn instruction_inventory_classifies_all_masm_instruction_variants() {
-    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 238);
+    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 240);
     assert_eq!(INFER_ONLY_INSTRUCTION_VARIANT_COUNT, 1);
     assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 2);
     assert_eq!(
         LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT
             + INFER_ONLY_INSTRUCTION_VARIANT_COUNT
             + UNSUPPORTED_INSTRUCTION_VARIANT_COUNT,
-        241
+        243
     );
     assert_eq!(instruction_semantics(&Instruction::Nop), InstructionSemantics::LiftAndInfer);
+    assert_eq!(
+        instruction_semantics(&Instruction::DebugInlineCallClear),
+        InstructionSemantics::LiftAndInfer
+    );
     assert_eq!(
         instruction_semantics(&Instruction::ProcRef(
             miden_assembly_syntax::ast::InvocationTarget::Symbol("foo".parse().unwrap())
