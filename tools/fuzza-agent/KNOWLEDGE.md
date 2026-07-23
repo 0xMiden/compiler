@@ -260,6 +260,64 @@ corroborate each closure below):
   %v, %d` observed), but yields are no-op lowerings — the "same-SSA-value
   operand pairs unreachable" fact still holds for solver-scheduled ops.
 
+## Operand-scheduler solver & scale facts (2026-07-23 scale iteration)
+
+Region-verified during the scale-stress iteration (codegen/masm/src/opt/,
+linker.rs, cfg_to_scf); the corpus's scale cases are `case_chain300` (~400-op
+single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
+`case_seg24`.
+
+- **The solver has no fallback scheduler and no reachable failure arm.**
+  Production fuel is always the default 40, charged once per tactic tried
+  (cost 1 for the four pattern tactics, `max(num_copies,1)` for
+  CopyAll/Linear/LinearStackWindow; chains are ≤5 tactics). Exhausted fuel
+  only stops the search for a *better* solution — with no solution yet, the
+  remaining tactics run regardless (regression-test-pinned). Reaching the
+  exhaustion break needs ≥14 Copy-constrained operands in one problem;
+  all-tactics-fail (`NoSolution` → compile panic) needs >16 felts of live
+  operands below the problem. Both are forbidden by the locals argument +
+  SpillAnalysis (K=16) + block-entry dead-operand drops → closed from
+  wasm-derived IR (the solver's own unit tests cover them with fuel 0/10).
+- **No size-gated compiler path exists at single-block scale**: a ~400-op
+  non-reassociable chain (139 spill locals, 267 stack-motion ops in MASM)
+  compiles in about a second and passes differentially — no cliff, no
+  fuel/scale arm. Scale DID warm `TwoArgs::move_copy`'s commutative
+  sub-arms (non-strict scheduling of commutative binops under reload
+  interleavings) — the only tactic interior that responded to scale.
+- **MoveDownAndSwap's evict arms and MoveUpAndSwap's final NotApplicable
+  arm remain unproducible**: they need a live non-operand value on top of
+  the stack at an arity≥3 no-copy problem, but RegStackify moves every
+  single-use def to its use and SinkOperandDefs sinks the whole operand
+  cluster together, so operands stay adjacent to their op; the 400-op storm
+  never produced the shape. CopyAll's success loop and SwapAndMoveUp's real
+  arms likewise have no plain-Rust producer in this corpus (campaign-2
+  verdict: no deterministic lever) — the four tactics' *precondition* arms
+  are structurally dead (each tactic is only pushed when its precondition
+  already holds).
+- **Switch lowering is width-insensitive past 8 arms**: a 64-arm dense
+  `match` survives as one 65-target `br_table` (structurally-varied arm
+  bodies defeat LLVM's lookup-table and arm-merging transforms), and adds
+  zero new compile-side regions over the 8-arm case. Likewise cfg-to-scf is
+  depth-insensitive (12-level nesting = +0) and the codegen linker is
+  count-insensitive (24 statics = +0; wasm-ld merges statics into few
+  segments regardless).
+- **cfg-to-scf reduce-loop interiors are closed**: every value escaping a
+  loop is a latch-multiplexer block argument *by construction* (all exit
+  traffic is multiplexed through the single latch, so `check_value`'s
+  defined-outside-latch guard never passes → the escape undef-threading and
+  its dominance cache are unproducible). In-loop value joins never carry
+  block args — even a div-heavy two-arm `let t = if c {..} else {..}` join
+  travels through a wasm local (wat-verified; the only br-with-value LLVM
+  emits is the function-result tail merge). Loop-header-args arms need an
+  irreducible CFG (wasm is reducible by construction). The latch's
+  successor 0 is always the loop header (create_single_exiting_latch
+  construction invariant), so the reduce-time successor-swap arm is dead.
+- **codegen/masm/src/linker.rs is data-layout only** (segments + globals —
+  call-graph/MAST ordering lives in the assembler, not here) and closed:
+  its cold surface is error paths, disabled log bodies, the multi-module
+  `__stack_pointer` dedup (the harness always links exactly one HIR
+  module), the page_size=0 arm, and dead accessors.
+
 ## Case-writing tricks that work
 
 - Runtime-indexed local arrays defeat SROA → real loads/stores; `[0u32; N]`
