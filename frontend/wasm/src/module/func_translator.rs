@@ -16,7 +16,10 @@ use cranelift_entity::EntityRef;
 use midenc_hir::{
     BlockRef, Builder, Context, Op, Type,
     diagnostics::{ColumnNumber, LineNumber},
-    dialects::builtin::{BuiltinOpBuilder, FunctionRef},
+    dialects::{
+        builtin::{BuiltinOpBuilder, FunctionRef},
+        debuginfo::attributes::InlineCallFrame,
+    },
 };
 use midenc_session::{
     Session,
@@ -244,7 +247,10 @@ fn parse_function_body<B: ?Sized + Builder>(
         func_validator.op(pos, &op).into_diagnostic()?;
 
         let dwarf_offset = module.wasm_file.dwarf_offset(offset as u64);
-        let span = resolve_instruction_span(addr2line, dwarf_offset, session, config)?;
+        let resolved =
+            resolve_instruction_debug_context(addr2line, dwarf_offset, session, config)?;
+        let span = resolved.span;
+        builder.set_inline_calls(resolved.inline_calls);
         if !span.is_unknown() {
             last_valid_span = span;
         } else {
@@ -295,6 +301,7 @@ fn parse_function_body<B: ?Sized + Builder>(
     // If the exit block is unreachable, it may not have the correct arguments, so we would
     // generate a return instruction that doesn't match the signature.
     if state.reachable && !builder.is_unreachable() {
+        builder.set_inline_calls(Vec::new());
         builder.ret(state.stack.first().cloned(), end_span)?;
     }
 
@@ -308,16 +315,30 @@ fn parse_function_body<B: ?Sized + Builder>(
 struct ResolvedSourceLocation {
     path: PathBuf,
     span: SourceSpan,
+    line: u32,
+    column: u32,
 }
 
-fn resolve_instruction_span(
+struct ResolvedInstructionDebugContext {
+    span: SourceSpan,
+    inline_calls: Vec<InlineCallFrame>,
+}
+
+struct ResolvedFrame {
+    name: String,
+    linkage_name: Option<String>,
+    location: ResolvedSourceLocation,
+}
+
+fn resolve_instruction_debug_context(
     addr2line: &addr2line::Context<DwarfReader<'_>>,
     offset: u64,
     session: &Session,
     config: &crate::WasmTranslationConfig,
-) -> WasmResult<SourceSpan> {
+) -> WasmResult<ResolvedInstructionDebugContext> {
     let mut frames = addr2line.find_frames(offset).skip_all_loads().into_diagnostic()?;
-    let mut fallback = SourceSpan::UNKNOWN;
+    let mut resolved_frames = Vec::new();
+    let mut span = SourceSpan::UNKNOWN;
 
     while let Some(frame) = frames.next().into_diagnostic()? {
         let Some(location) = frame.location else {
@@ -326,17 +347,49 @@ fn resolve_instruction_span(
         let Some(resolved) = resolve_source_location(&location, session, config)? else {
             continue;
         };
-
-        if fallback.is_unknown() {
-            fallback = resolved.span;
+        if span.is_unknown() {
+            span = resolved.span;
         }
-
-        if !is_internal_source_path(&resolved.path) {
-            return Ok(resolved.span);
-        }
+        let Some(function) = frame.function else {
+            continue;
+        };
+        let linkage_name = function.raw_name().ok().map(|name| name.into_owned());
+        let name = function
+            .demangle()
+            .ok()
+            .map(|name| name.into_owned())
+            .or_else(|| linkage_name.clone())
+            .unwrap_or_else(|| "<unknown>".to_string());
+        resolved_frames.push(ResolvedFrame {
+            name,
+            linkage_name,
+            location: resolved,
+        });
     }
 
-    Ok(fallback)
+    let inline_calls = inline_call_chain(&resolved_frames);
+
+    Ok(ResolvedInstructionDebugContext { span, inline_calls })
+}
+
+fn inline_call_chain(resolved_frames: &[ResolvedFrame]) -> Vec<InlineCallFrame> {
+    resolved_frames
+        .windows(2)
+        .map(|frames| {
+            let callee = &frames[0];
+            let caller = &frames[1];
+            InlineCallFrame {
+                name: callee.name.clone().into(),
+                linkage_name: callee.linkage_name.clone().map(Into::into),
+                file: callee.location.path.to_string_lossy().into_owned().into(),
+                line: callee.location.line,
+                column: callee.location.column,
+                call_file: caller.location.path.to_string_lossy().into_owned().into(),
+                call_line: caller.location.line,
+                call_column: caller.location.column,
+            }
+        })
+        .collect()
 }
 
 fn resolve_source_location(
@@ -395,7 +448,12 @@ fn resolve_source_location(
         path.to_path_buf()
     };
 
-    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation { path, span }))
+    Ok((!span.is_unknown()).then_some(ResolvedSourceLocation {
+        path,
+        span,
+        line: raw_line,
+        column: raw_column,
+    }))
 }
 
 fn resolve_source_path(
@@ -430,10 +488,40 @@ fn resolve_source_path(
     }
 }
 
-fn is_internal_source_path(path: &Path) -> bool {
-    let path = path.to_string_lossy();
-    path.contains("/rust/library/")
-        || path.contains("/.cargo/registry/")
-        || path.contains("/registry/src/")
-        || path.contains("/compiler/sdk/")
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn frame(name: &str, path: &str, line: u32, column: u32) -> ResolvedFrame {
+        ResolvedFrame {
+            name: name.to_string(),
+            linkage_name: Some(format!("_{name}")),
+            location: ResolvedSourceLocation {
+                path: PathBuf::from(path),
+                span: SourceSpan::UNKNOWN,
+                line,
+                column,
+            },
+        }
+    }
+
+    #[test]
+    fn inline_call_chain_uses_caller_locations_as_call_sites() {
+        let frames = [
+            frame("inner", "src/inner.rs", 30, 7),
+            frame("outer", "src/outer.rs", 20, 5),
+            frame("physical", "src/lib.rs", 10, 3),
+        ];
+
+        let chain = inline_call_chain(&frames);
+
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].name.as_str(), "inner");
+        assert_eq!(chain[0].file.as_str(), "src/inner.rs");
+        assert_eq!(chain[0].call_file.as_str(), "src/outer.rs");
+        assert_eq!((chain[0].call_line, chain[0].call_column), (20, 5));
+        assert_eq!(chain[1].name.as_str(), "outer");
+        assert_eq!(chain[1].call_file.as_str(), "src/lib.rs");
+        assert_eq!((chain[1].call_line, chain[1].call_column), (10, 3));
+    }
 }

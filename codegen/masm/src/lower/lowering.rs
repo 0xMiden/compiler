@@ -1969,17 +1969,12 @@ mod tests {
 fn apply_debug_var_metadata(
     debug_var: &mut masm::DebugVarInfo,
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
-    session: &midenc_session::Session,
 ) {
     use miden_assembly_syntax::debuginfo::SourceManagerExt;
 
     // Set arg_index if this is a parameter
     if let Some(arg_index) = var.arg_index {
         debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
-    }
-
-    if let Some(ty) = var.ty.clone() {
-        debug_var.set_ty(ty, None);
     }
 
     // Set source location
@@ -2036,8 +2031,7 @@ impl HirLowering for debuginfo::DebugValue {
         };
 
         let mut debug_var = masm::DebugVarInfo::new(var.name.to_string(), value_location);
-        let session = self.as_operation().context().session();
-        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
+        apply_debug_var_metadata(&mut debug_var, var.as_value());
 
         // Emit the instruction followed by a `nop` so that the debug var instruction is never the
         // last instruction in a MASM block
@@ -2069,8 +2063,7 @@ impl HirLowering for debuginfo::DebugDeclare {
         };
 
         let mut debug_var = masm::DebugVarInfo::new(var.name.to_string(), value_location);
-        let session = self.as_operation().context().session();
-        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
+        apply_debug_var_metadata(&mut debug_var, var.as_value());
 
         // Emit the instruction followed by a `nop` so that the debug var instruction is never the
         // last instruction in a MASM block
