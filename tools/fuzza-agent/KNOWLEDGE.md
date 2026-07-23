@@ -127,6 +127,53 @@ Maintenance rules:
   translator wraps every dynamic shift/rotate count in `arith.band`
   (`mask_movement_count`), which hides constant counts from the pattern.
 
+## Block-emitter operand-drop facts (codegen/masm emitter.rs / emit/mod.rs / stack.rs)
+
+Verified 2026-07-23 (three probed cases — fresh-valued multi-exit loops,
+nested labeled blocks, three-level nested-loop exits — all +0 area; HIR dumps
+corroborate each closure below):
+
+- **The post-op drop never fires.** `drop_unused_operands_at`'s per-op call
+  site (emit_inline closure#1) can never find a dead operand: between
+  consecutive ops, stack-value liveness only changes by consumption or by a
+  last use inside the op's regions — and region bodies only use their own
+  load_locals plus cfg-to-scf columns, with the scf lowerings reconciling the
+  parent stack themselves. Everything dead is dropped at block entry
+  (closure#0); the post-op scan interior is unreachable.
+- **Block-entry drops always see uniform liveness.** Inherited stacks at
+  emit_inline entries hold at most one cfg-to-scf payload column (+ the
+  selector, which emit_switch_region/emit_linear_search drop out-of-band via
+  `drop_operand_at_position` at index 0). Dispatch arms forward ALL their
+  level's columns or NONE — the levels chain, they never stack — so entries
+  are all-live (no drop) or all-dead (whole-stack batch, warm). The
+  solver path and the used/unused interleave arms of the pathological branch
+  are unreachable from wasm-derived IR.
+- **scf.while `after` regions are always trivial latches**: `^block(args…):
+  scf.yield` with every arg dead and dropped at index 0 — the swap/movup arms
+  of `drop_operand_at_position` have no producer (dead scf results are
+  canonicalized away, selectors sit on top, argc>=2 rets are impossible).
+- **`truncate_stack` only ever takes its `num_to_drop == 0` fast path**: Ret
+  argc <= 1 (no multivalue) and the pre-terminator/dead-result drops leave
+  exactly the ret operands on the stack; a leftover duplicate would need a
+  multi-use stack-resident value that is also a ret operand (multi-use Rust
+  values are locals).
+- **Dead parameter space in `copy/move_operand_to_position`**: the only
+  callers (solver `solve_and_apply`) pass `m=0, is_commutative=false`; every
+  `m>0` and commutative arm is dead API.
+- **No sub-word/felt immediates**: `push_immediate`'s I8/I16/U16/Felt arms
+  (and `emit_push::<u16>/<Felt>`) are unreachable — wasm consts are i32/i64
+  and U8/U16-typed values only arise from non-constant widening loads.
+- **`arith.Bnot` has no wasm-frontend producer** (built only by the MASM
+  lifter and the builder API; Rust `!x` stays `bxor x, -1`), so
+  `OpEmitter::bnot` and its `emit_repeat`/`emit_template` 64/128-bit arms are
+  unreachable; `emit_all::<[_;13]>/<[_;14]>` likewise (callers are the
+  checked/overflowing `mul_u64` arms the frontend never builds).
+- **`OperandStack::get` is SDK-only** (emit/events.rs, emit/merkle.rs);
+  `IndexMut` remains closed with the same-value-operand-pair fact. Refinement:
+  cfg-to-scf DOES synthesize repeated-operand lists (`scf.yield %v, %v, %v,
+  %v, %d` observed), but yields are no-op lowerings — the "same-SSA-value
+  operand pairs unreachable" fact still holds for solver-scheduled ops.
+
 ## Case-writing tricks that work
 
 - Runtime-indexed local arrays defeat SROA → real loads/stores; `[0u32; N]`
