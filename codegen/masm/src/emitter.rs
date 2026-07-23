@@ -1,7 +1,10 @@
 use alloc::collections::BTreeSet;
 
 use miden_assembly::diagnostics::WrapErr;
-use midenc_hir::{Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef};
+use midenc_hir::{
+    Block, Operation, ProgramPoint, TraceTarget, ValueRange, ValueRef,
+    dialects::debuginfo::attributes::{INLINE_CALL_CHAIN_ATTR_NAME, InlineCallChainAttr},
+};
 use midenc_hir_analysis::analyses::LivenessAnalysis;
 use midenc_session::diagnostics::{SourceSpan, Spanned};
 use smallvec::SmallVec;
@@ -111,6 +114,8 @@ impl BlockEmitter<'_> {
     fn emit_inst(&mut self, op: &Operation) {
         use crate::HirLowering;
 
+        self.emit_inline_call_chain(op);
+
         // If any values on the operand stack are no longer live, drop them now to avoid wasting
         // operand stack space on operands that will never be used.
         //self.drop_unused_operands_at(op);
@@ -130,6 +135,45 @@ impl BlockEmitter<'_> {
             .emit(self)
             .wrap_err("failed while emitting instruction lowering")
             .unwrap_or_else(|err| panic!("{err}"));
+    }
+
+    fn emit_inline_call_chain(&mut self, op: &Operation) {
+        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
+        use miden_core::operations::DebugInlineCallInfo;
+
+        self.target.push(masm::Op::Inst(midenc_hir::Span::new(
+            op.span(),
+            masm::Instruction::DebugInlineCallClear,
+        )));
+
+        let Some(attr) = op
+            .get_attribute(INLINE_CALL_CHAIN_ATTR_NAME)
+            .and_then(|attr| attr.try_downcast_attr::<InlineCallChainAttr>().ok())
+        else {
+            return;
+        };
+        let attr = attr.borrow();
+        for frame in &attr.frames {
+            let declaration = FileLineCol::new(
+                Uri::new(frame.file.as_str()),
+                LineNumber::new(frame.line).unwrap_or_default(),
+                ColumnNumber::new(frame.column).unwrap_or_default(),
+            );
+            let call_site = FileLineCol::new(
+                Uri::new(frame.call_file.as_str()),
+                LineNumber::new(frame.call_line).unwrap_or_default(),
+                ColumnNumber::new(frame.call_column).unwrap_or_default(),
+            );
+            let inline_call = DebugInlineCallInfo::new(frame.name.as_str(), declaration, call_site);
+            let inline_call = match frame.linkage_name {
+                Some(linkage_name) => inline_call.with_linkage_name(linkage_name.as_str()),
+                None => inline_call,
+            };
+            self.target.push(masm::Op::Inst(midenc_hir::Span::new(
+                op.span(),
+                masm::Instruction::DebugInlineCall(inline_call),
+            )));
+        }
     }
 
     /// Drop the operands on the stack which are no longer live upon entry into

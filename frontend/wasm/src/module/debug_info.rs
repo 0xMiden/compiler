@@ -661,6 +661,9 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
 ) -> gimli::Result<()> {
     let entry = node.entry();
     let tag = entry.tag();
+    if tag == gimli::DW_TAG_inlined_subroutine {
+        return Ok(());
+    }
     match tag {
         gimli::DW_TAG_formal_parameter | gimli::DW_TAG_variable => {
             // For formal parameters, the WASM local index equals the parameter

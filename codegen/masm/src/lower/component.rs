@@ -1638,7 +1638,12 @@ fn semantic_debug_signature(function: &builtin::Function) -> Option<masm::Functi
 /// body contains only DebugVar ops, the assembler will reject it.
 fn block_has_real_instructions(block: &masm::Block) -> bool {
     block.iter().any(|op| match op {
-        masm::Op::Inst(inst) => !matches!(inst.inner(), masm::Instruction::DebugVar(_)),
+        masm::Op::Inst(inst) => !matches!(
+            inst.inner(),
+            masm::Instruction::DebugVar(_)
+                | masm::Instruction::DebugInlineCall(_)
+                | masm::Instruction::DebugInlineCallClear
+        ),
         masm::Op::If {
             then_blk, else_blk, ..
         } => block_has_real_instructions(then_blk) || block_has_real_instructions(else_blk),
