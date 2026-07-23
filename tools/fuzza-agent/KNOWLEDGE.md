@@ -287,6 +287,41 @@ corroborate each closure below):
   *dynamically* taken without LLVM folding it, zero the limb with a parity
   multiply — `limb.wrapping_mul((input & 1) as u64)` — which is opaque to
   known-bits, unlike `& mask` shapes (`case_u128_bits.rs`).
+- **Pinned edge grids** (`run_case_with_inputs` `<case>_edges` companions) are
+  how boundary *semantics* get differentially asserted: proptest's 16 random
+  pairs essentially never draw 0/1/MIN/MAX/width-boundary values, and grid
+  pairs are immune to LLVM folding because inputs are runtime values
+  (`case_shift_counts.rs` … `case_subword_sign.rs`, 2026-07-23).
+- **div/rem pair fusion**: `x / d` together with `x % d` on the *same* operand
+  pair → LLVM strength-reduces the rem to mul-sub and the VM-side mod ops
+  (`u32mod`, `u64::mod`, `i32::wrapping_mod`) never execute. Give remainders a
+  mirrored/rotated operand pair with no matching div (masm-verified both ways,
+  `case_udiv_bounds.rs`, `case_sdiv_bounds.rs`).
+- An **opaquely-zero value** (impossible cross-modulus guard `as usize`, times
+  an input-derived factor) keeps a copy alive that LLVM would elide when it
+  can prove `len == 0` or `src == dst` — how a len-0 same-position
+  `memory.copy` reaches the VM at all (`case_memnoop_same.rs`).
+
+## Runtime edge-semantics facts (2026-07-23 edge-value sweep)
+
+All asserted by pinned-grid differential cases (`case_shift_counts`,
+`case_ashr_neg`, `case_udiv_bounds`, `case_sdiv_bounds`, `case_wrap_minmax`,
+`case_bitcnt_zero`, `case_memlen_zero`, `case_memnoop_same`,
+`case_trip_loops`, `case_subword_sign`), all passing:
+
+- VM lowerings agree with Rust at every probed boundary: shift/rotate counts
+  mask `% width` (including counts ≥ 2×width) on u32/u64; `checked_shr` at
+  count 0 / width−1 on MIN and −1; unsigned div/mod at divisor 1, divisor ==
+  dividend, divisor > dividend, dividend 0, and high-bit-set u64 divisors;
+  signed div at MIN/1, MIN % 1, (MIN|1)/−1; wrapping_neg/abs(MIN) == MIN;
+  clz/ctz of exactly 0 saturate at 32/64/128; len-0 `memory.copy`/
+  `memory.fill` write nothing; 0-trip/1-trip loops; i8/i16 sign boundaries
+  through both sext loads and extend8/16_s chains.
+- miden-core-lib `memcopy_elements`' overlap assert (`wp >= rp + n OR
+  rp >= wp + n`) **accepts n == 0 even at rp == wp** — a zero-length copy at
+  an identical position is safe end-to-end (`case_memnoop_same.rs` executes
+  exactly that against the always-taken element fast path). The nonzero-length
+  overlap abort (`mem_overlap`) is a separate, still-open bug.
 
 ## Known bugs live with the tests
 
