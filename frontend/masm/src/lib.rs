@@ -5,7 +5,6 @@ mod infer;
 mod lift;
 pub mod project;
 mod semantics;
-//mod signatures;
 mod stack;
 #[cfg(test)]
 mod tests;

@@ -170,30 +170,30 @@ miden-field-repr = { version = "0.13.1", path = "sdk/field-repr/repr" }
 miden-stdlib-sys = { version = "0.13.1", path = "sdk/stdlib-sys" }
 
 [patch.crates-io]
-midenc-hir-type = { path = "../miden-vm/crates/midenc-hir-type"}
-miden-assembly = { path = "../miden-vm/crates/assembly" }
-miden-assembly-syntax = { path = "../miden-vm/crates/assembly-syntax" }
-miden-core = { path = "../miden-vm/core" }
-miden-core-lib = { path = "../miden-vm/crates/lib/core" }
-miden-debug = { path = "../miden-debug" }
-miden-debug-types = { path = "../miden-vm/crates/debug-types" }
-miden-processor = { path = "../miden-vm/processor" }
-miden-mast-package = { path = "../miden-vm/crates/mast-package" }
-miden-package-registry = { path = "../miden-vm/crates/package-registry" }
-miden-project = { path = "../miden-vm/crates/project" }
-miden-utils-sync = { path = "../miden-vm/crates/utils-sync" }
-#midenc-hir-type = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-assembly = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-assembly-syntax = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-core = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-core-lib = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-debug = {git = "https://github.com/0xMiden/miden-debug", branch = "bitwalker/v0.25-migration"}
-#miden-debug-types = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-processor = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-mast-package = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-package-registry = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-project = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
-#miden-utils-sync = { git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation" }
+#midenc-hir-type = { path = "../miden-vm/crates/midenc-hir-type"}
+#miden-assembly = { path = "../miden-vm/crates/assembly" }
+#miden-assembly-syntax = { path = "../miden-vm/crates/assembly-syntax" }
+#miden-core = { path = "../miden-vm/core" }
+#miden-core-lib = { path = "../miden-vm/crates/lib/core" }
+#miden-debug = { path = "../miden-debug" }
+#miden-debug-types = { path = "../miden-vm/crates/debug-types" }
+#miden-processor = { path = "../miden-vm/processor" }
+#miden-mast-package = { path = "../miden-vm/crates/mast-package" }
+#miden-package-registry = { path = "../miden-vm/crates/package-registry" }
+#miden-project = { path = "../miden-vm/crates/project" }
+#miden-utils-sync = { path = "../miden-vm/crates/utils-sync" }
+midenc-hir-type = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-assembly = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-assembly-syntax = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-core = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-core-lib = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-debug = {git = "https://github.com/0xMiden/miden-debug", branch = "bitwalker/v0.25-migration"}
+miden-debug-types = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-processor = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-mast-package = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-package-registry = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-project = {git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation"}
+miden-utils-sync = { git = "https://github.com/0xMiden/miden-vm", branch = "bitwalker/package-debug-info-consolidation" }
 #miden-protocol = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 #miden-standards = { git = "https://github.com/0xMiden/protocol", rev = "a53bbe2209f506df87876c8b9c9a1730214f456b" }
 #miden-tx = { tag = "v0.14.0-beta.4", git = "https://github.com/0xMiden/miden-base" }

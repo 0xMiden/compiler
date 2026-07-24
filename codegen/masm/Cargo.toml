@@ -33,7 +33,6 @@ miden-assembly-syntax.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
-miden-protocol.workspace = true
 miden-utils-sync.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true

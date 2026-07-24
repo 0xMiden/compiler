@@ -11,8 +11,6 @@ use midenc_session::{
 
 use crate::{Event, lower::NativePtr, masm};
 
-//mod project_support;
-
 pub struct MasmComponent {
     pub id: Option<builtin::ComponentId>,
     /// The path of the root module for this component

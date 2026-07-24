@@ -29,7 +29,6 @@ std = [
     "midenc-session/std",
     "dep:cargo_metadata",
     "dep:clap",
-    "dep:tempfile",
     "dep:toml_edit",
     "dep:wat",
 ]
@@ -50,7 +49,6 @@ midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session.workspace = true
-tempfile = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true, features = ["parse", "display"] }
 thiserror.workspace = true
 wat = { workspace = true, optional = true }
