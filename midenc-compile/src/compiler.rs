@@ -772,15 +772,19 @@ impl Compiler {
         emitter: Option<Arc<dyn Emitter>>,
     ) -> Session {
         // Raise an error if no inputs were provided
-        let Some(input) = input else {
-            let cmd = <Compiler as clap::CommandFactory>::command();
-            let mut err =
-                clap::Error::new(clap::error::ErrorKind::MissingRequiredArgument).with_cmd(&cmd);
-            err.insert(
-                clap::error::ContextKind::InvalidArg,
-                clap::error::ContextValue::String("INPUT".to_string()),
-            );
-            err.exit();
+        let input = match input {
+            Some(input) => input,
+            None => InputFile::from_path(options.current_dir.join("miden-project.toml"))
+                .unwrap_or_else(|err| {
+                    let cmd = <Compiler as clap::CommandFactory>::command();
+                    let mut err = clap::Error::raw(clap::error::ErrorKind::ValueValidation, err)
+                        .with_cmd(&cmd);
+                    err.insert(
+                        clap::error::ContextKind::InvalidArg,
+                        clap::error::ContextValue::String("INPUT".to_string()),
+                    );
+                    err.exit();
+                }),
         };
 
         log::trace!(target: "driver", "current working directory = {}", options.current_dir.display());
