@@ -360,6 +360,7 @@ impl Session {
         );
 
         create_target_dir(options.target_dir.as_path());
+        create_target_dir(&options.target_dir.as_path().join(&options.profile));
 
         // Linka against implicitly required libraries
         let requires_protocol = options.target_requires_protocol();
@@ -657,8 +658,11 @@ fn infer_cargo_project_entrypoint(
 
 #[cfg(feature = "std")]
 fn create_target_dir(path: &Path) {
-    std::fs::create_dir_all(path)
-        .unwrap_or_else(|err| panic!("unable to create --target-dir '{}': {err}", path.display()));
+    if !path.exists() {
+        std::fs::create_dir_all(path).unwrap_or_else(|err| {
+            panic!("unable to create --target-dir '{}': {err}", path.display())
+        });
+    }
 }
 
 #[cfg(not(feature = "std"))]

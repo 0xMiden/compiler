@@ -1,10 +1,9 @@
 use std::{path::PathBuf, rc::Rc};
 
-use anyhow::{Context as _, Result, anyhow, bail};
+use anyhow::{Context as _, Result, anyhow};
 use clap::Args;
 use midenc_compile::{Compiler, stages::Artifact};
 use midenc_session::{InputFile, diagnostics::PrintDiagnostic};
-use toml_edit::DocumentMut;
 
 /// Command-line arguments accepted by `cargo miden build`.
 ///
@@ -30,15 +29,11 @@ impl BuildCommand {
             Compiler::try_parse_from(cwd.clone(), &self.args).unwrap_or_else(|err| err.exit());
 
         let metadata_out_dir = compiler_opts.target_dir.join(&compiler_opts.profile);
-        if !metadata_out_dir.exists() {
-            std::fs::create_dir_all(&metadata_out_dir)?;
-        }
 
         let manifest_path = match compiler_opts.manifest_path.as_deref() {
             Some(manifest_path) => manifest_path.to_path_buf(),
             None => cwd.join("Cargo.toml"),
         };
-        reject_unselected_workspace_root(&manifest_path)?;
         let input = InputFile::from_path(&manifest_path).unwrap();
         let session = Rc::new(
             compiler_opts
@@ -66,24 +61,4 @@ impl BuildCommand {
             _ => unreachable!(),
         }
     }
-}
-
-fn reject_unselected_workspace_root(manifest_path: &std::path::Path) -> Result<()> {
-    if !manifest_path.file_name().is_some_and(|name| name == "Cargo.toml") {
-        return Ok(());
-    }
-
-    let manifest = std::fs::read_to_string(manifest_path)
-        .with_context(|| format!("failed to read Cargo manifest '{}'", manifest_path.display()))?;
-    let manifest = manifest
-        .parse::<DocumentMut>()
-        .with_context(|| format!("failed to parse Cargo manifest '{}'", manifest_path.display()))?;
-    if manifest.get("workspace").is_some() && manifest.get("package").is_none() {
-        bail!(
-            "unable to determine package from workspace root; run `cargo miden build` from a \
-             workspace member or select a member package explicitly"
-        );
-    }
-
-    Ok(())
 }

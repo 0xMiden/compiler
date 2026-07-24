@@ -1,5 +1,6 @@
 use alloc::{boxed::Box, rc::Rc};
 use core::cell::RefCell;
+use std::path::Path;
 
 use miden_assembly::{ProjectSourceProvider, ProjectTargetSelector};
 use miden_assembly_syntax::DisplayHex;
@@ -27,7 +28,9 @@ impl Stage for ProjectAssemblyStage {
         let file_name = input.file_name();
         let manifest_path = match file_name.file_name() {
             Some(name) if name.eq_ignore_ascii_case("Cargo.toml") => {
-                let manifest_dir = file_name.as_path().parent().unwrap();
+                let cargo_manifest_path = file_name.as_path();
+                reject_unselected_workspace_root(cargo_manifest_path)?;
+                let manifest_dir = cargo_manifest_path.parent().unwrap();
                 manifest_dir.join("miden-project.toml")
             }
             Some(name) if name.eq_ignore_ascii_case("miden-project.toml") => {
@@ -67,5 +70,28 @@ impl Stage for ProjectAssemblyStage {
         );
 
         Ok(Artifact::Assembled(package))
+    }
+}
+
+fn reject_unselected_workspace_root(manifest_path: &Path) -> CompilerResult<()> {
+    use toml_edit::DocumentMut;
+
+    if !manifest_path.file_name().is_some_and(|name| name == "Cargo.toml") {
+        return Ok(());
+    }
+
+    let manifest = std::fs::read_to_string(manifest_path).map_err(|err| {
+        Report::msg(format!("failed to read Cargo manifest '{}': {err}", manifest_path.display()))
+    })?;
+    let manifest = manifest.parse::<DocumentMut>().map_err(|err| {
+        Report::msg(format!("failed to parse Cargo manifest '{}': {err}", manifest_path.display()))
+    })?;
+    if manifest.get("workspace").is_some() && manifest.get("package").is_none() {
+        Err(Report::msg(
+            "unable to determine package from Cargo workspace root; run `miden build` from a \
+             workspace member or select a member package explicitly with --manifest-path",
+        ))
+    } else {
+        Ok(())
     }
 }
