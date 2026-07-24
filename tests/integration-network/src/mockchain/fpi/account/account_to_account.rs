@@ -156,6 +156,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value stored under the provided key.
+    #[account_procedure]
     fn get_count(&self, key: Word) -> Felt;
 }
 
@@ -186,6 +187,7 @@ struct CallerAccountStorage;
 #[component]
 trait CallerAccount {
     /// Reads a counter value from the provided foreign account.
+    #[account_procedure]
     fn read_foreign_count(&self, callee_account_id: AccountId) -> Felt;
 }
 

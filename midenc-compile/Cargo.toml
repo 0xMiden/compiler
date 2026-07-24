@@ -21,6 +21,7 @@ doctest = false
 default = ["std"]
 std = [
     "miden-assembly/std",
+    "miden-assembly-syntax/std",
     "miden-package-registry/std",
     "midenc-codegen-masm/std",
     "midenc-frontend-wasm/std",
@@ -28,7 +29,6 @@ std = [
     "midenc-session/std",
     "dep:cargo_metadata",
     "dep:clap",
-    "dep:tempfile",
     "dep:toml_edit",
     "dep:wat",
 ]
@@ -39,6 +39,7 @@ clap = { workspace = true, optional = true }
 log.workspace = true
 midenc-codegen-masm.workspace = true
 miden-assembly.workspace = true
+miden-assembly-syntax.workspace = true
 miden-mast-package.workspace = true
 miden-package-registry.workspace = true
 midenc-frontend-wasm.workspace = true
@@ -48,7 +49,6 @@ midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session.workspace = true
-tempfile = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true, features = ["parse", "display"] }
 thiserror.workspace = true
 wat = { workspace = true, optional = true }

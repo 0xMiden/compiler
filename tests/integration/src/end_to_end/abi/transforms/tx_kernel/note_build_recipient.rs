@@ -13,16 +13,21 @@ use crate::{
 #[test]
 fn note_build_recipient_matches_note_recipient_digest() -> Result<(), Report> {
     let note_script_program = Assembler::default()
-        .assemble_program(
+        .assemble_library(
+            "test",
             r#"
-begin
+namespace test
+
+@note_script
+pub proc main
     push.1
     drop
 end
 "#,
+            None::<Box<miden_assembly::ast::Module>>,
         )
         .expect("failed to assemble note script program");
-    let note_script = NoteScript::new(note_script_program);
+    let note_script = NoteScript::from_package(&note_script_program).unwrap();
 
     let serial_num = miden_core::Word::new([
         Felt::new_unchecked(1),
@@ -94,7 +99,7 @@ end
         felts: (&init_felts).into(),
     }];
 
-    let _ = eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
+    let _ = eval_package::<Felt, _, _>(package, initializers, &args, &test.session, |trace| {
         let actual: [TestFelt; 4] =
             trace.read_from_rust_memory(out_addr).expect("expected output to be written");
         let expected: [Felt; 4] = expected_digest.into();

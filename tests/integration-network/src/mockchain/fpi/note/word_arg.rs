@@ -49,6 +49,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value stored under `key`.
+    #[account_procedure]
     fn get_count_by_key(&self, key: Word) -> Felt;
 }
 

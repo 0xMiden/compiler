@@ -24,6 +24,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [package.metadata.miden]
 supported-types = ["FungibleFaucet", "NonFungibleFaucet"]
@@ -69,27 +70,6 @@ debug = false
 }
 
 #[test]
-fn account_faucet_create_fungible_asset_binding() {
-    run_faucet_binding_test(
-        "account_faucet_create_fungible_asset_binding",
-        "pub fn binding(&self) -> Asset {
-        faucet::create_fungible_asset(Felt::new(10).unwrap())
-    }",
-    );
-}
-
-#[test]
-fn account_faucet_create_non_fungible_asset_binding() {
-    run_faucet_binding_test(
-        "account_faucet_create_non_fungible_asset_binding",
-        "pub fn binding(&self) -> Asset {
-        let hash = Word::from([Felt::new(0).unwrap(); 4]);
-        faucet::create_non_fungible_asset(hash)
-    }",
-    );
-}
-
-#[test]
 fn account_faucet_mint_binding() {
     run_faucet_binding_test(
         "account_faucet_mint_binding",
@@ -111,20 +91,6 @@ fn account_faucet_burn_binding() {
          Word::from([Felt::new(0).unwrap(); 4]));
         faucet::burn(asset);
         Felt::new(0).unwrap()
-    }",
-    );
-}
-
-#[test]
-fn account_faucet_has_callbacks_binding() {
-    run_faucet_binding_test(
-        "account_faucet_has_callbacks_binding",
-        "pub fn binding(&self) -> Felt {
-        if faucet::has_callbacks() {
-            Felt::new(1).unwrap()
-        } else {
-            Felt::new(0).unwrap()
-        }
     }",
     );
 }

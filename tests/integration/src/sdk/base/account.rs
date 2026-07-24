@@ -24,6 +24,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
@@ -89,7 +90,7 @@ fn account_get_initial_storage_commitment_binding() {
     run_account_binding_test(
         "account_get_initial_storage_commitment_binding",
         "pub fn binding(&self) -> Word {
-        self.get_initial_storage_commitment()
+        native_account::get_initial_storage_commitment()
     }",
     );
 }
@@ -135,17 +136,6 @@ fn account_native_account_get_id_binding() {
 }
 
 #[test]
-fn account_get_initial_balance_binding() {
-    run_account_binding_test(
-        "account_get_initial_balance_binding",
-        "pub fn binding(&self) -> Felt {
-        let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
-        self.get_initial_balance(asset_key)
-    }",
-    );
-}
-
-#[test]
 fn account_get_asset_binding() {
     run_account_binding_test(
         "account_get_asset_binding",
@@ -162,19 +152,18 @@ fn account_get_initial_asset_binding() {
         "account_get_initial_asset_binding",
         "pub fn binding(&self) -> Word {
         let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
-        self.get_initial_asset(asset_key)
+        native_account::get_initial_asset(asset_key)
     }",
     );
 }
 
 #[test]
-fn account_has_non_fungible_asset_binding() {
+fn account_has_asset_binding() {
     run_account_binding_test(
-        "account_has_non_fungible_asset_binding",
+        "account_has_asset_binding",
         "pub fn binding(&self) -> Felt {
-        let asset = Asset::new(Word::from([Felt::new(0).unwrap(); 4]), \
-         Word::from([Felt::new(0).unwrap(); 4]));
-        if self.has_non_fungible_asset(asset) {
+        let asset_id = Word::from([Felt::new(0).unwrap(); 4]);
+        if self.has_asset(asset_id) {
             Felt::new(1).unwrap()
         } else {
             Felt::new(0).unwrap()
@@ -188,7 +177,7 @@ fn account_get_initial_vault_root_binding() {
     run_account_binding_test(
         "account_get_initial_vault_root_binding",
         "pub fn binding(&self) -> Word {
-        self.get_initial_vault_root()
+        native_account::get_initial_vault_root()
     }",
     );
 }

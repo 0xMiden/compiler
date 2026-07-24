@@ -1,17 +1,20 @@
 use core::ffi::c_void;
 
 /// Input note interface stubs
-#[unsafe(export_name = "miden::protocol::input_note::get_assets_info")]
+#[unsafe(export_name = "miden::protocol::input_note::get_initial_assets_info")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn input_note_get_assets_info_plain(_note_index: f32, _out: *mut c_void) {
+pub extern "C" fn input_note_get_initial_assets_info_plain(_note_index: f32, _out: *mut c_void) {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::protocol::input_note::get_assets")]
+#[unsafe(export_name = "miden::protocol::input_note::get_initial_assets")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn input_note_get_assets_plain(_dest_ptr: *mut c_void, _note_index: f32) -> usize {
+pub extern "C" fn input_note_get_initial_assets_plain(
+    _dest_ptr: *mut c_void,
+    _note_index: f32,
+) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }
 

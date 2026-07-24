@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 namespace = "miden:cross-ctx-note-word-arg/miden-cross-ctx-note-word-arg@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 cross-ctx-account-word-arg = { path = "../cross-ctx-account-word-arg" }

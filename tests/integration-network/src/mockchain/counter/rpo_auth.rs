@@ -64,13 +64,13 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     let tx_context_builder = chain
         .build_tx_context(counter_account.clone(), &[], &[])
         .unwrap()
-        .tx_script(tx_script)
+        .tx_script(tx_script.into())
         .extend_expected_output_notes(vec![RawOutputNote::Full(own_note.clone())])
         .authenticator(Some(authenticator));
     let tx_context = tx_context_builder.build().unwrap();
     let executed_tx =
         block_on(tx_context.execute()).expect("authorized client should be able to create a note");
-    expect!["73624"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
+    expect!["74077"].assert_eq(auth_procedure_cycles(executed_tx.measurements()));
     assert_eq!(executed_tx.output_notes().num_notes(), 1);
     assert_eq!(executed_tx.output_notes().get_note(0).id(), own_note.id());
 
@@ -90,7 +90,7 @@ pub fn counter_rpo_auth_rejects_unauthenticated_note_creation() {
     let tx_context_builder = chain
         .build_tx_context(counter_account, &[], &[])
         .unwrap()
-        .tx_script(tx_script)
+        .tx_script(tx_script.into())
         .extend_expected_output_notes(vec![RawOutputNote::Full(forged_note)])
         .authenticator(None);
     let tx_context = tx_context_builder.build().unwrap();

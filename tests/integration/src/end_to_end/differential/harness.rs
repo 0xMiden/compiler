@@ -87,12 +87,9 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
     // Run the case for one input pair and return `(native_out, masm_out)`.
     let eval = |a: u32, b: u32| -> (u32, u32) {
         let native_out = unsafe { entry(a, b) };
-        let exec = executor_with_std(
-            vec![Felt::new_unchecked(a as u64), Felt::new_unchecked(b as u64)],
-            Some(&package),
-        );
-        let masm_out: u32 =
-            exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
+        let exec =
+            executor_with_std(vec![Felt::new_unchecked(a as u64), Felt::new_unchecked(b as u64)]);
+        let masm_out: u32 = exec.execute_into(package.clone(), test.session.source_manager.clone());
         (native_out, masm_out)
     };
 

@@ -1,11 +1,8 @@
-use std::{collections::BTreeSet, path::Path};
+use std::{path::Path, sync::Arc};
 
 use miden_assembly::ast::types::{FunctionType, Type};
-use miden_core::{
-    program::Program,
-    serde::{Deserializable, Serializable},
-};
-use miden_mast_package::{PackageExport, ProcedureExport};
+use miden_core::serde::Serializable;
+use miden_mast_package::{PackageExport, ProcedureExport, QualifiedProcedureName};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
@@ -22,29 +19,17 @@ mod macros;
 mod stdlib;
 
 /// Rebuilds an executable program from a compiled note-script package for direct execution tests.
-fn note_script_program(package: &miden_mast_package::Package) -> Program {
+pub(crate) fn note_script_program(
+    package: Arc<miden_mast_package::Package>,
+) -> Arc<miden_mast_package::Package> {
     let note_script =
-        NoteScript::from_package(package).expect("compiled package should contain a note script");
-    Program::new(note_script.mast(), note_script.entrypoint())
-}
-
-/// Assert that package metadata exposes the same exported paths as the underlying library.
-fn assert_manifest_exports_match_library(package: &miden_mast_package::Package) {
-    let library_exports = package
-        .mast
-        .exports()
-        .map(|export| export.path().as_ref().as_str().to_string())
-        .collect::<BTreeSet<_>>();
-    let manifest_exports = package
-        .manifest
-        .exports()
-        .map(|export| export.path().as_ref().as_str().to_string())
-        .collect::<BTreeSet<_>>();
-
-    assert_eq!(
-        manifest_exports, library_exports,
-        "package manifest exports diverged from library exports"
-    );
+        NoteScript::from_package(&package).expect("compiled package should contain a note script");
+    let entrypoint_id = note_script.entrypoint();
+    let entrypoint = package.manifest.exports().find(|export| matches!(export.as_procedure(), Some(p) if p.node.is_some_and(|node| node == entrypoint_id))).unwrap();
+    package
+        .make_executable(&QualifiedProcedureName::from(entrypoint.path()))
+        .map(Arc::new)
+        .unwrap()
 }
 
 /// Writes a compiled package where `miden::generate!` expects Cargo Miden dependency artifacts.
@@ -65,10 +50,7 @@ fn find_manifest_procedure<'a>(
     let matches = package
         .manifest
         .exports()
-        .filter_map(|export| match export {
-            PackageExport::Procedure(export) => Some(export),
-            PackageExport::Constant(_) | PackageExport::Type(_) => None,
-        })
+        .filter_map(|export| export.as_procedure())
         .filter(|export| predicate(export.path.as_ref().as_str()))
         .collect::<Vec<_>>();
     assert_eq!(
@@ -173,6 +155,7 @@ fn rust_sdk_swapp_note_bindings() {
         [lib]
         kind = "note"
         namespace = "{namespace}"
+        path = "src/lib.rs"
         "#
     );
     let cargo_toml = format!(
@@ -216,13 +199,13 @@ impl Note {
         let script_root = active_note::get_script_root();
         let serial_number = active_note::get_serial_number();
         let asset_key = Word::from([Felt::new(0).unwrap(); 4]);
-        let balance = active_account::get_balance(asset_key);
+        let asset_value = active_account::get_asset(asset_key);
 
         assert_eq!(sender.prefix, sender.prefix);
         assert_eq!(sender.suffix, sender.suffix);
         assert_eq!(script_root, script_root);
         assert_eq!(serial_number, serial_number);
-        assert_eq!(balance, balance);
+        assert_eq!(asset_value, asset_value);
     }
 }
 "#;
@@ -277,16 +260,18 @@ fn rust_sdk_cross_ctx_account_and_note() {
         account_package.as_ref(),
     );
     assert!(account_package.is_library());
-    assert_manifest_exports_match_library(account_package.as_ref());
-    let lib = account_package.mast.clone();
-    let exports = lib
+    let exports = account_package
+        .manifest
         .exports()
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
         .map(|e| e.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
     assert!(
-        !lib.exports()
-            .any(|export| export.path().as_ref().as_str().starts_with("intrinsics")),
+        !account_package.manifest.exports().any(|export| export
+            .path()
+            .as_ref()
+            .as_str()
+            .starts_with("intrinsics")),
         "expected no intrinsics in the exports"
     );
     let expected_module_prefix = "::\"miden:cross-ctx-account/";
@@ -299,8 +284,8 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
-    let loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
-    assert_manifest_exports_match_library(&loaded_package);
+    let loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
+    assert_eq!(&account_package.manifest, &loaded_package.manifest);
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
@@ -312,13 +297,10 @@ fn rust_sdk_cross_ctx_account_and_note() {
     let mut test = builder.build();
     let package = test.compile_package();
     assert!(package.is_library());
-    let program = note_script_program(package.as_ref());
-    let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut()
-        .insert(*account_package.mast.digest(), account_package.mast.clone());
-    exec.with_dependencies(package.manifest.dependencies())
-        .expect("failed to add package dependencies");
-    let _trace = exec.execute(&program, test.session.source_manager.clone());
+    let program = note_script_program(package);
+    let mut exec = executor_with_std(vec![]);
+    exec.with_package(account_package).expect("failed to add account package");
+    let _trace = exec.execute(program, test.session.source_manager.clone());
 }
 
 #[test]
@@ -335,11 +317,11 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         account_package.as_ref(),
     );
     assert!(account_package.is_library());
-    let lib = account_package.mast.clone();
     assert_component_export_signatures_match_wit(account_package.as_ref());
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
     let expected_function_suffix = "\"process-word\"";
-    let exports = lib
+    let exports = account_package
+        .manifest
         .exports()
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
         .map(|e| e.path().as_ref().as_str().to_string())
@@ -353,7 +335,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
-    let _loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+    let _loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(
@@ -365,13 +347,10 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     let mut test = builder.build();
     let package = test.compile_package();
     assert!(package.is_library());
-    let program = note_script_program(package.as_ref());
-    let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut()
-        .insert(*account_package.mast.digest(), account_package.mast.clone());
-    exec.with_dependencies(package.manifest.dependencies())
-        .expect("failed to add package dependencies");
-    let _trace = exec.execute(&program, test.session.source_manager.clone());
+    let program = note_script_program(package.clone());
+    let mut exec = executor_with_std(vec![]);
+    exec.with_package(account_package).expect("failed to add account package");
+    let _trace = exec.execute(program, test.session.source_manager.clone());
 }
 
 /// Regression test for https://github.com/0xMiden/compiler/issues/1257
@@ -392,7 +371,7 @@ fn rust_sdk_account_package_build_is_deterministic() {
         );
         let masm_src = test.masm_src();
         let package = test.compile_package();
-        let digest = *package.mast.digest();
+        let digest = package.digest();
         let bytes = package.to_bytes();
         let Some((first_digest, first_bytes, first_masm)) = baseline.as_ref() else {
             baseline = Some((digest, bytes, masm_src));
@@ -436,10 +415,10 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     );
 
     assert!(account_package.is_library());
-    let lib = account_package.mast.clone();
     let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
     let expected_function_suffix = "\"process-word\"";
-    let exports = lib
+    let exports = account_package
+        .manifest
         .exports()
         .filter(|e| !e.path().as_ref().as_str().starts_with("intrinsics"))
         .map(|e| e.path().as_ref().as_str().to_string())
@@ -460,11 +439,8 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
     let mut test = builder.build();
     let package = test.compile_package();
     assert!(package.is_library());
-    let program = note_script_program(package.as_ref());
-    let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut()
-        .insert(*account_package.mast.digest(), account_package.mast.clone());
-    exec.with_dependencies(package.manifest.dependencies())
-        .expect("failed to add package dependencies");
-    let _trace = exec.execute(&program, test.session.source_manager.clone());
+    let program = note_script_program(package.clone());
+    let mut exec = executor_with_std(vec![]);
+    exec.with_package(account_package).expect("failed to add account package");
+    let _trace = exec.execute(program, test.session.source_manager.clone());
 }

@@ -1,13 +1,11 @@
-use miden_assembly::ProjectSourceInputs;
-
 use super::*;
 
 /// Perform analysis of HIR before lowering to Miden Assembly
 pub struct MasmAnalysisStage;
 
 impl Stage for MasmAnalysisStage {
-    type Input = Option<ProjectSourceInputs>;
-    type Output = Option<ProjectSourceInputs>;
+    type Input = Option<MasmSources>;
+    type Output = Option<MasmSources>;
 
     fn run(&mut self, input: Self::Input, context: Rc<Context>) -> CompilerResult<Self::Output> {
         let session = context.session();
@@ -28,12 +26,17 @@ impl Stage for MasmAnalysisStage {
                 let world = midenc_frontend_masm::disassemble_project_target(
                     &session.project,
                     target,
-                    input.as_ref().map(|ProjectSourceInputs { root, support }| {
-                        ProjectSourceInputs {
-                            root: root.clone(),
-                            support: support.clone(),
-                        }
-                    }),
+                    input.as_ref().map(
+                        |MasmSources {
+                             inputs: ProjectSourceInputs { root, support },
+                             ..
+                         }| {
+                            ProjectSourceInputs {
+                                root: root.clone(),
+                                support: support.clone(),
+                            }
+                        },
+                    ),
                     &config,
                     context.clone(),
                 )?;

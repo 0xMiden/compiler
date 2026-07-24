@@ -122,7 +122,7 @@ version = "0.0.1"
 
 [[bin]]
 name = "{name}"
-path = "<virtual>"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use miden_client::{
     Word,
     account::{
-        AccountComponent,
+        AccountComponent, StorageMapKey,
         component::{BasicWallet, InitStorageData},
     },
     note::NoteTag,
@@ -186,6 +186,7 @@ fn assert_counter_storage_word_entries(
     expected_entries: [(Word, Word); 3],
 ) {
     for (storage_key, expected_word) in expected_entries {
+        let storage_key = StorageMapKey::from_raw(storage_key);
         let word = counter_account_storage
             .get_map_item(storage_slot, storage_key)
             .expect("Failed to get counter value from storage slot");
@@ -231,6 +232,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the sum of the first felt in the three words stored under the provided keys.
+    #[account_procedure]
     fn sum_first_elements_by_keys(
         &self,
         first_key: Word,
@@ -239,6 +241,7 @@ trait CounterContract {
     ) -> Felt;
 
     /// Returns the counter words stored under `keys`.
+    #[account_procedure]
     fn get_count_pair_by_keys(&self, keys: KeyPair) -> WordPair;
 }
 

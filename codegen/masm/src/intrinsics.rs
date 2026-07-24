@@ -1,74 +1,18 @@
 use alloc::sync::Arc;
 
-use miden_assembly::{
-    PathBuf as LibraryPath,
-    ast::{Module, ModuleKind},
-};
-use midenc_session::diagnostics::{PrintDiagnostic, SourceLanguage, SourceManager, Uri};
+use miden_mast_package::Package;
+use miden_utils_sync::LazyLock;
 
-pub const I32_INTRINSICS_MODULE_NAME: &str = "::intrinsics::i32";
-pub const I64_INTRINSICS_MODULE_NAME: &str = "::intrinsics::i64";
-pub const I128_INTRINSICS_MODULE_NAME: &str = "::intrinsics::i128";
-pub const MEM_INTRINSICS_MODULE_NAME: &str = "::intrinsics::mem";
-pub const CRYPTO_INTRINSICS_MODULE_NAME: &str = "::intrinsics::crypto";
-pub const ADVICE_INTRINSICS_MODULE_NAME: &str = "::intrinsics::advice";
+const INTRINSICS_PACKAGE_BYTES: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/compiler-intrinsics.masp"));
 
-pub const INTRINSICS_MODULE_NAMES: [&str; 6] = [
-    I32_INTRINSICS_MODULE_NAME,
-    I64_INTRINSICS_MODULE_NAME,
-    I128_INTRINSICS_MODULE_NAME,
-    MEM_INTRINSICS_MODULE_NAME,
-    CRYPTO_INTRINSICS_MODULE_NAME,
-    ADVICE_INTRINSICS_MODULE_NAME,
-];
+static INTRINSICS: LazyLock<Arc<Package>> = LazyLock::new(|| {
+    Package::read_from_bytes_unchecked(INTRINSICS_PACKAGE_BYTES)
+        .map(Arc::new)
+        .expect("failed to read compiler-intrinsics!")
+});
 
-const I32_INTRINSICS: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i32.masm"));
-const I64_INTRINSICS: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"));
-const MEM_INTRINSICS: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"));
-const ADVICE_INTRINSICS: &str =
-    include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/advice.masm"));
-
-/// This is a mapping of intrinsics module name to the raw MASM source for that module
-const INTRINSICS: [(&str, &str, &str); 4] = [
-    (
-        I32_INTRINSICS_MODULE_NAME,
-        I32_INTRINSICS,
-        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i32.masm"),
-    ),
-    (
-        I64_INTRINSICS_MODULE_NAME,
-        I64_INTRINSICS,
-        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/i64.masm"),
-    ),
-    (
-        MEM_INTRINSICS_MODULE_NAME,
-        MEM_INTRINSICS,
-        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/mem.masm"),
-    ),
-    (
-        ADVICE_INTRINSICS_MODULE_NAME,
-        ADVICE_INTRINSICS,
-        concat!(env!("CARGO_MANIFEST_DIR"), "/intrinsics/advice.masm"),
-    ),
-];
-
-/// This helper loads the named module from the set of intrinsics modules defined in this crate.
-///
-/// Expects the fully-qualified name to be given, e.g. `::intrinsics::mem`
-pub fn load<N: AsRef<str>>(name: N, source_manager: Arc<dyn SourceManager>) -> Option<Box<Module>> {
-    let name = name.as_ref();
-    let (name, source, filename) = INTRINSICS.iter().copied().find(|(n, ..)| *n == name)?;
-    let filename = Uri::new(filename);
-    let source_file = source_manager.load(SourceLanguage::Masm, filename, source.to_string());
-    let path = LibraryPath::new(name).expect("invalid module name");
-    match Module::parse(path, ModuleKind::Library, source_file.clone(), source_manager) {
-        Ok(module) => Some(module),
-        Err(err) => {
-            let err = PrintDiagnostic::new(err);
-            panic!("failed to parse intrinsic module: {err}");
-        }
-    }
+/// Load the compiler-intrinsics package for use in assembly
+pub fn load() -> Arc<Package> {
+    INTRINSICS.clone()
 }

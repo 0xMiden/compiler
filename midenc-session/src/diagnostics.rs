@@ -39,7 +39,7 @@ impl DiagnosticsConfig {
 
 pub struct DiagnosticsHandler {
     emitter: Arc<dyn Emitter>,
-    source_manager: Arc<dyn SourceManager + Send + Sync>,
+    source_manager: Arc<dyn SourceManager>,
     err_count: AtomicUsize,
     verbosity: Verbosity,
     warnings: Warnings,
@@ -49,8 +49,7 @@ pub struct DiagnosticsHandler {
 impl Default for DiagnosticsHandler {
     fn default() -> Self {
         let emitter = Arc::new(DefaultEmitter::new(ColorChoice::Auto));
-        let source_manager =
-            Arc::new(DefaultSourceManager::default()) as Arc<dyn SourceManager + Send + Sync>;
+        let source_manager = Arc::new(DefaultSourceManager::default()) as Arc<dyn SourceManager>;
         Self::new(Default::default(), source_manager, emitter)
     }
 }
@@ -65,7 +64,7 @@ impl DiagnosticsHandler {
     /// [Emitter] implementation.
     pub fn new(
         config: DiagnosticsConfig,
-        source_manager: Arc<dyn SourceManager + Send + Sync>,
+        source_manager: Arc<dyn SourceManager>,
         emitter: Arc<dyn Emitter>,
     ) -> Self {
         let warnings = match config.warnings {
@@ -84,7 +83,7 @@ impl DiagnosticsHandler {
     }
 
     #[inline]
-    pub fn source_manager(&self) -> Arc<dyn SourceManager + Send + Sync> {
+    pub fn source_manager(&self) -> Arc<dyn SourceManager> {
         self.source_manager.clone()
     }
 

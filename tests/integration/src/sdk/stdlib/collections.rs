@@ -1,15 +1,10 @@
-use std::sync::Arc;
-
 use miden_core::{
     Felt, Word,
     crypto::merkle::{MerkleStore, Smt},
 };
-use miden_debug::Executor;
 use miden_processor::advice::AdviceInputs;
-use miden_protocol::ProtocolLib;
-use miden_standards::StandardsLib;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_session::STDLIB;
+use midenc_integration_test_support::testing;
 
 use crate::CompilerTest;
 
@@ -54,19 +49,6 @@ fn push_word_args(args: &mut Vec<Felt>, word: Word) {
     args.push(b);
     args.push(c);
     args.push(d);
-}
-
-fn executor_with_std(args: Vec<Felt>) -> Executor {
-    let mut exec = Executor::new(args);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
-    let protocol_library = Arc::new(ProtocolLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*protocol_library.digest(), protocol_library);
-    let standards_library = Arc::new(StandardsLib::default().as_ref().clone());
-    exec.dependency_resolver_mut()
-        .insert(*standards_library.digest(), standards_library);
-    exec
 }
 
 #[test]
@@ -131,12 +113,10 @@ fn smt_get_binding() {
     push_word_args(&mut args, key);
     push_word_args(&mut args, root);
 
-    let mut exec = executor_with_std(args.clone());
-    exec.with_dependencies(package.manifest.dependencies())
-        .expect("failed to add package dependencies");
+    let mut exec = testing::executor_with_std(args.clone());
     exec.with_advice_inputs(advice_inputs);
 
-    exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    exec.execute(package, test.session.source_manager.clone());
 }
 
 #[test]
@@ -220,10 +200,8 @@ fn smt_set_binding() {
     push_word_args(&mut args, key);
     push_word_args(&mut args, root);
 
-    let mut exec = executor_with_std(args.clone());
-    exec.with_dependencies(package.manifest.dependencies())
-        .expect("failed to add package dependencies");
+    let mut exec = testing::executor_with_std(args.clone());
     exec.with_advice_inputs(advice_inputs);
 
-    exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    exec.execute(package, test.session.source_manager.clone());
 }

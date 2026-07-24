@@ -51,7 +51,7 @@ impl InvalidStackOffsetMovupNote {
             Word::from([inputs[12], inputs[13], inputs[14], inputs[15]]),
         );
 
-        let note_assets = active_note::get_assets();
+        let note_assets = active_note::get_initial_assets();
         let num_assets = note_assets.len();
         assert_eq(Felt::new(num_assets as u64).unwrap(), felt!(1));
 

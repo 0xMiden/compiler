@@ -1,0 +1,13 @@
+[package]
+name = "compiler-intrinsics"
+version = "0.9.0"
+
+[lib]
+namespace = "intrinsics"
+path = "mod.masm"
+
+[dependencies]
+miden-core = "*"
+
+[profile.release]
+debug = true

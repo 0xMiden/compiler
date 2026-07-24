@@ -1,5 +1,6 @@
-use std::rc::Rc;
+use std::{path::Path, rc::Rc};
 
+use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
 use midenc_compile::{MidenComponent, Stage, stages::CodegenStage};
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
@@ -72,5 +73,12 @@ fn build_test_component(
         world,
         component: Some(component),
         account_component_metadata_bytes: None,
+        source_provenance: ProjectSourceProvenanceInputs {
+            root: SourceFileProvenance {
+                path: Path::new(file!()).to_path_buf().into_boxed_path(),
+                content: String::new().into_boxed_str(),
+            },
+            support: Default::default(),
+        },
     }
 }

@@ -29,7 +29,7 @@ fn load_sw() {
 
             let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u32, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),

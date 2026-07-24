@@ -1,6 +1,6 @@
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{AccountId, Asset, RawAccountId};
+use super::types::{AccountId, RawAccountId};
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -11,17 +11,11 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::active_account::get_nonce"]
     fn extern_active_account_get_nonce() -> Felt;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_commitment"]
-    fn extern_active_account_get_initial_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::compute_commitment"]
     fn extern_active_account_compute_commitment(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_code_commitment"]
     fn extern_active_account_get_code_commitment(ptr: *mut Word);
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_storage_commitment"]
-    fn extern_active_account_get_initial_storage_commitment(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::compute_storage_commitment"]
     fn extern_active_account_compute_storage_commitment(ptr: *mut Word);
@@ -35,41 +29,13 @@ unsafe extern "C" {
         ptr: *mut Word,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_asset"]
-    fn extern_active_account_get_initial_asset(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
-        ptr: *mut Word,
-    );
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_balance"]
-    fn extern_active_account_get_balance(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
+    #[link_name = "miden::protocol::active_account::has_asset"]
+    fn extern_active_account_has_asset(
+        asset_id_0: Felt,
+        asset_id_1: Felt,
+        asset_id_2: Felt,
+        asset_id_3: Felt,
     ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_balance"]
-    fn extern_active_account_get_initial_balance(
-        asset_key_0: Felt,
-        asset_key_1: Felt,
-        asset_key_2: Felt,
-        asset_key_3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::has_non_fungible_asset"]
-    fn extern_active_account_has_non_fungible_asset(
-        asset_0: Felt,
-        asset_1: Felt,
-        asset_2: Felt,
-        asset_3: Felt,
-    ) -> Felt;
-    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_vault_root"]
-    fn extern_active_account_get_initial_vault_root(ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::active_account::get_vault_root"]
     fn extern_active_account_get_vault_root(ptr: *mut Word);
@@ -104,16 +70,6 @@ pub fn get_nonce() -> Felt {
     unsafe { extern_active_account_get_nonce() }
 }
 
-/// Returns the active account commitment at the beginning of the transaction.
-#[inline]
-pub fn get_initial_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_initial_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
-}
-
 /// Computes and returns the commitment of the current account data.
 #[inline]
 pub fn compute_commitment() -> Word {
@@ -130,16 +86,6 @@ pub fn get_code_commitment() -> Word {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_active_account_get_code_commitment(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
-    }
-}
-
-/// Returns the initial storage commitment of the active account.
-#[inline]
-pub fn get_initial_storage_commitment() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_initial_storage_commitment(ret_area.as_mut_ptr());
         ret_area.into_inner().assume_init()
     }
 }
@@ -169,66 +115,13 @@ pub fn get_asset(asset_key: Word) -> Word {
     }
 }
 
-/// Returns the initial value stored under the specified `asset_key` in the active account vault.
-pub fn get_initial_asset(asset_key: Word) -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_initial_asset(
-            asset_key[0],
-            asset_key[1],
-            asset_key[2],
-            asset_key[3],
-            ret_area.as_mut_ptr(),
-        );
-        ret_area.into_inner().assume_init()
-    }
-}
-
-/// Returns the balance of the fungible asset identified by `asset_key`.
-///
-/// # Panics
-///
-/// Propagates kernel errors if the referenced asset is non-fungible or the
-/// account vault invariants are violated.
-pub fn get_balance(asset_key: Word) -> Felt {
-    unsafe {
-        extern_active_account_get_balance(asset_key[0], asset_key[1], asset_key[2], asset_key[3])
-    }
-}
-
-/// Returns the initial balance of the fungible asset identified by `asset_key`.
+/// Returns `true` if the active account vault currently contains an asset with the specified asset
+/// id.
 #[inline]
-pub fn get_initial_balance(asset_key: Word) -> Felt {
+pub fn has_asset(asset_id: Word) -> bool {
     unsafe {
-        extern_active_account_get_initial_balance(
-            asset_key[0],
-            asset_key[1],
-            asset_key[2],
-            asset_key[3],
-        )
-    }
-}
-
-/// Returns `true` if the active account vault currently contains the specified non-fungible asset.
-#[inline]
-pub fn has_non_fungible_asset(asset: Asset) -> bool {
-    unsafe {
-        extern_active_account_has_non_fungible_asset(
-            asset.key[0],
-            asset.key[1],
-            asset.key[2],
-            asset.key[3],
-        ) != Felt::new(0).unwrap()
-    }
-}
-
-/// Returns the vault root of the active account at the beginning of the transaction.
-#[inline]
-pub fn get_initial_vault_root() -> Word {
-    unsafe {
-        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
-        extern_active_account_get_initial_vault_root(ret_area.as_mut_ptr());
-        ret_area.into_inner().assume_init()
+        extern_active_account_has_asset(asset_id[0], asset_id[1], asset_id[2], asset_id[3])
+            != Felt::new(0).unwrap()
     }
 }
 
@@ -303,13 +196,6 @@ pub trait ActiveAccount {
         get_nonce()
     }
 
-    /// Returns the active account commitment at the beginning of the transaction.
-    #[inline]
-    fn get_initial_commitment(&self) -> Word {
-        self.__assert_active_account();
-        get_initial_commitment()
-    }
-
     /// Computes and returns the commitment of the current account data.
     #[inline]
     fn compute_commitment(&self) -> Word {
@@ -322,13 +208,6 @@ pub trait ActiveAccount {
     fn get_code_commitment(&self) -> Word {
         self.__assert_active_account();
         get_code_commitment()
-    }
-
-    /// Returns the initial storage commitment of the active account.
-    #[inline]
-    fn get_initial_storage_commitment(&self) -> Word {
-        self.__assert_active_account();
-        get_initial_storage_commitment()
     }
 
     /// Computes the latest storage commitment of the active account.
@@ -346,45 +225,12 @@ pub trait ActiveAccount {
         get_asset(asset_key)
     }
 
-    /// Returns the initial value stored under the specified `asset_key` in the active account
-    /// vault.
+    /// Returns `true` if the active account vault currently contains an asset with the specified
+    /// asset id.
     #[inline]
-    fn get_initial_asset(&self, asset_key: Word) -> Word {
+    fn has_asset(&self, asset_id: Word) -> bool {
         self.__assert_active_account();
-        get_initial_asset(asset_key)
-    }
-
-    /// Returns the balance of the fungible asset identified by `asset_key`.
-    ///
-    /// # Panics
-    ///
-    /// Propagates kernel errors if the referenced asset is non-fungible or the
-    /// account vault invariants are violated.
-    #[inline]
-    fn get_balance(&self, asset_key: Word) -> Felt {
-        self.__assert_active_account();
-        get_balance(asset_key)
-    }
-
-    /// Returns the initial balance of the fungible asset identified by `asset_key`.
-    #[inline]
-    fn get_initial_balance(&self, asset_key: Word) -> Felt {
-        self.__assert_active_account();
-        get_initial_balance(asset_key)
-    }
-
-    /// Returns `true` if the active account vault currently contains the specified non-fungible asset.
-    #[inline]
-    fn has_non_fungible_asset(&self, asset: Asset) -> bool {
-        self.__assert_active_account();
-        has_non_fungible_asset(asset)
-    }
-
-    /// Returns the vault root of the active account at the beginning of the transaction.
-    #[inline]
-    fn get_initial_vault_root(&self) -> Word {
-        self.__assert_active_account();
-        get_initial_vault_root()
+        has_asset(asset_id)
     }
 
     /// Returns the current vault root of the active account.

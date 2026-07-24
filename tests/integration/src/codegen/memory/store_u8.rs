@@ -136,7 +136,7 @@ fn store_u8() {
                 Felt::new_unchecked(store_value3 as u64),
             ];
             let output = eval_package::<u32, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),

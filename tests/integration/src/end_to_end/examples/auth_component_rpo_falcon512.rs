@@ -1,4 +1,4 @@
-use miden_core::serde::{Deserializable, Serializable};
+use miden_core::serde::Serializable;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
 use crate::{CompilerTest, assert_helpers::assert_unique_protocol_export};
@@ -17,5 +17,5 @@ fn auth_component_rpo_falcon512() {
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();
-    let _loaded_package = miden_mast_package::Package::read_from_bytes(&bytes).unwrap();
+    let _loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
 }

@@ -15,21 +15,6 @@ crate-type = ["cdylib"]
 # and transaction kernel API for the Miden rollup
 miden = { path = "../../sdk/sdk" }
 
-[package.metadata.miden]
-project-kind = "note-script"
-
-# TODO: switch to miden table
-[package.metadata.component]
-package = "miden:counter-note"
-
-# Miden dependencies for cargo-miden build/linking
-[package.metadata.miden.dependencies]
-"miden:counter-contract" = { path = "../counter-contract" }
-
-[package.metadata.component.target.dependencies]
-"miden:counter-account" = { path = "../counter-contract/target/generated-wit/" }
-
-
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 

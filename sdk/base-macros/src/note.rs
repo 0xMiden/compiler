@@ -286,7 +286,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
     let runtime_boilerplate = runtime_boilerplate();
     let frontend_metadata = note_script_frontend_metadata(&note_ty, entrypoint_ident, &export_name);
-    let frontend_link_section = generate_frontend_link_section(&frontend_metadata);
+    let frontend_link_section = generate_frontend_link_section(&[frontend_metadata]);
 
     quote! {
         #runtime_boilerplate
@@ -790,7 +790,7 @@ mod tests {
         let note_ty: syn::TypePath = parse_quote!(crate::notes::PaymentNote);
         let entrypoint_ident = format_ident!("execute");
         let metadata = note_script_frontend_metadata(&note_ty, &entrypoint_ident, "execute");
-        let tokens = generate_frontend_link_section(&metadata).to_string();
+        let tokens = generate_frontend_link_section(&[metadata]).to_string();
 
         assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
         assert!(tokens.contains("execute"));

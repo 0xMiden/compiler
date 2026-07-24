@@ -5,7 +5,17 @@ use midenc_session::InputType;
 use super::*;
 
 /// Runs `cargo build` to produce a Wasm artifact
-pub struct CargoBuildStage;
+pub struct CargoBuildStage {
+    filesystem_cache_dir: Option<std::path::PathBuf>,
+}
+
+impl CargoBuildStage {
+    pub fn new(filesystem_cache_dir: Option<&std::path::Path>) -> Self {
+        Self {
+            filesystem_cache_dir: filesystem_cache_dir.map(std::path::Path::to_path_buf),
+        }
+    }
+}
 
 impl Stage for CargoBuildStage {
     type Input = InputFile;
@@ -18,7 +28,8 @@ impl Stage for CargoBuildStage {
             #[cfg(feature = "std")]
             InputType::Real(path) => {
                 let options = context.session().options.clone();
-                let mut outputs = support::cargo_build(&path, options, None)?;
+                let mut outputs =
+                    support::cargo_build(&path, self.filesystem_cache_dir.as_deref(), options)?;
                 Ok(outputs.pop().unwrap())
             }
             InputType::Stdin { .. } => {
@@ -44,18 +55,15 @@ pub mod support {
         Report,
         diagnostics::{IntoDiagnostic, SourceManagerExt},
     };
-    use midenc_session::{
-        InputFile, OptLevel, RemapPathPrefix, miden_project, registry::HybridPackageRegistry,
-    };
-    use tempfile::TempDir;
+    use midenc_session::{InputFile, OptLevel, RemapPathPrefix, miden_project};
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
     /// Executes a Cargo-based build with the provided compiler options and package registry
     pub fn cargo_build(
         manifest_path: &Path,
+        filesystem_cache_dir: Option<&Path>,
         mut compiler_opts: Box<midenc_session::Options>,
-        registry: Option<&mut HybridPackageRegistry>,
     ) -> CompilerResult<Vec<InputFile>> {
         // Extract cargo-specific options from parsed Compiler struct
         compiler_opts.manifest_path = Some(manifest_path.to_path_buf());
@@ -107,7 +115,7 @@ pub mod support {
                 project_dir,
                 compiler_opts,
                 &cargo_opts,
-                None,
+                filesystem_cache_dir,
                 source_manager,
             )?
         } else {
@@ -143,7 +151,7 @@ pub mod support {
                         project,
                         &compiler_opts,
                         &cargo_opts,
-                        None,
+                        filesystem_cache_dir,
                         Arc::clone(&source_manager),
                     )?;
                     outputs.push(output);
@@ -168,8 +176,13 @@ pub mod support {
                     )));
                 }
                 modify_midenc_options_for_target(&project, &mut compiler_opts)?;
-                let output =
-                    build_project(project, &compiler_opts, &cargo_opts, registry, source_manager)?;
+                let output = build_project(
+                    project,
+                    &compiler_opts,
+                    &cargo_opts,
+                    filesystem_cache_dir,
+                    source_manager,
+                )?;
                 vec![output]
             }
         };
@@ -182,7 +195,7 @@ pub mod support {
         _cwd: PathBuf,
         _compiler_opts: Box<midenc_session::Options>,
         _cargo_opts: &CargoOptions,
-        _registry: Option<&mut HybridPackageRegistry>,
+        _filesystem_cache_dir: Option<&std::path::Path>,
         _source_manager: Arc<dyn SourceManager>,
     ) -> CompilerResult<Vec<InputFile>> {
         //let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
@@ -201,19 +214,19 @@ pub mod support {
     }
 
     fn build_project(
-        project: miden_project::Project,
+        _project: miden_project::Project,
         compiler_opts: &midenc_session::Options,
         cargo_opts: &CargoOptions,
-        registry: Option<&mut HybridPackageRegistry>,
-        source_manager: Arc<dyn SourceManager + Send + Sync>,
+        filesystem_cache_dir: Option<&std::path::Path>,
+        _source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> CompilerResult<InputFile> {
-        let package = project.package();
-
-        let tmp = TempDir::new()
+        /*
+        let tmp = tempfile::TempDir::new()
             .map_err(|err| Report::msg(format!("could not create temporary directory: {err}")))?;
         let mut default_registry =
             midenc_session::registry::HybridPackageRegistry::new(compiler_opts)?;
         let registry = registry.unwrap_or(&mut default_registry);
+        let package = project.package();
         let dependency_graph = miden_project::ProjectDependencyGraphBuilder::new(&*registry)
             .with_source_manager(source_manager.clone())
             .with_git_cache_root(
@@ -224,8 +237,8 @@ pub mod support {
                     .join("git")
                     .join("checkouts"),
             );
-        let dependency_graph = dependency_graph.build(package.clone())?;
 
+        let dependency_graph = dependency_graph.build(package.clone())?;
         crate::cargo::load_cargo_based_source_dependencies(
             &package,
             &dependency_graph,
@@ -234,6 +247,7 @@ pub mod support {
             cargo_opts,
             source_manager,
         )?;
+         */
 
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
@@ -268,12 +282,16 @@ pub mod support {
             "wasip1"
         };
 
-        let mut wasm_outputs = run_cargo(
-            wasi,
-            rustup_toolchain.as_deref(),
-            &cargo_build_args,
-            [("RUSTFLAGS", extra_rust_flags)],
-        )?;
+        let env = if let Some(filesystem_cache_dir) = filesystem_cache_dir {
+            vec![
+                ("RUSTFLAGS", extra_rust_flags),
+                ("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()),
+            ]
+        } else {
+            vec![("RUSTFLAGS", extra_rust_flags)]
+        };
+        let mut wasm_outputs =
+            run_cargo(wasi, rustup_toolchain.as_deref(), &cargo_build_args, env)?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.pop().expect("expected at least one Wasm artifact");

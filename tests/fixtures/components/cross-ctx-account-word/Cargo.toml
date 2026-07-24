@@ -15,13 +15,8 @@ crate-type = ["cdylib"]
 # and transaction kernel API for the Miden rollup
 miden = { path = "../../../../sdk/sdk" }
 
-
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
 trim-paths = ["diagnostics", "object"]
-
-[package.metadata.miden]
-project-kind = "account"
-supported-types = ["RegularAccountUpdatableCode"]

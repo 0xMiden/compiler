@@ -87,11 +87,7 @@ fn different_account_import_sets_have_distinct_metadata_worlds() {
         )
         .file(
             "Cargo.toml",
-            &use_regression_version(note_cargo_toml_for_dependencies(
-                NOTE_NAME,
-                NOTE_PACKAGE,
-                &dependencies,
-            )),
+            &use_regression_version(note_cargo_toml_for_dependencies(NOTE_NAME, &dependencies)),
         )
         .file("src/lib.rs", DIFFERENT_BINDINGS_NOTE_SOURCE)
         .build();
@@ -147,7 +143,6 @@ fn build_note_project(
             "Cargo.toml",
             &use_regression_version(note_cargo_toml_for_dependency(
                 note_name,
-                note_package,
                 ACCOUNT_PACKAGE,
                 &account_root,
             )),
@@ -218,7 +213,7 @@ impl BlindImportNote {
     pub fn script(self, _arg: Word, account: &mut Wallet) {
         assert_eq!(account.get_id(), self.target_account_id);
 
-        let assets = active_note::get_assets();
+        let assets = active_note::get_initial_assets();
         for asset in assets {
             account.receive_asset(asset);
         }
