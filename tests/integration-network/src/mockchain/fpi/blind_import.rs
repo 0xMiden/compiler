@@ -213,7 +213,7 @@ impl BlindImportNote {
     pub fn script(self, _arg: Word, account: &mut Wallet) {
         assert_eq!(account.get_id(), self.target_account_id);
 
-        let assets = active_note::get_assets();
+        let assets = active_note::get_initial_assets();
         for asset in assets {
             account.receive_asset(asset);
         }

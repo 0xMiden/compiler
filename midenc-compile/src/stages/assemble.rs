@@ -2,8 +2,8 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::cell::RefCell;
 
 use miden_assembly::{
-    DefaultSourceManager, ProjectSourceInputs, ProjectSourceProvider, ProjectTargetSelector,
-    ResolvedPackage, utils::DisplayHex,
+    ProjectSourceInputs, ProjectSourceProvider, ProjectTargetSelector, ResolvedPackage,
+    utils::DisplayHex,
 };
 use miden_mast_package::{Package, TargetType, Version};
 use midenc_codegen_masm::{MasmComponent, intrinsics};
@@ -205,7 +205,7 @@ impl ProjectSourceProvider for RustSourceProvider {
             .and_then(|p| p.parent())
             .map(|p| p.join("target").join("miden").join("packages"));
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
-        let source_manager = Arc::new(DefaultSourceManager::default());
+        let source_manager = self.session.source_manager.clone();
         let compiled = crate::cargo::cargo_build(
             context.package.clone(),
             context.target,
@@ -244,7 +244,7 @@ impl ProjectSourceProvider for RustSourceProvider {
             .and_then(|p| p.parent())
             .map(|p| p.join("target").join("miden").join("packages"));
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
-        let source_manager = Arc::new(DefaultSourceManager::default());
+        let source_manager = self.session.source_manager.clone();
         let compiled = crate::cargo::cargo_build(
             context.package.clone(),
             context.target,
