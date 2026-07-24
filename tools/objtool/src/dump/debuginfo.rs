@@ -46,7 +46,7 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
 
     // Parse the package
     let package: Package =
-        Package::read_from_bytes_trusted(&bytes).map_err(|e| DumpError::Parse(e.to_string()))?;
+        Package::read_from_bytes_unchecked(&bytes).map_err(|e| DumpError::Parse(e.to_string()))?;
 
     // Get the MAST forest for location decorators
     let Some(debug_info) = package.debug_info()? else {

@@ -284,7 +284,7 @@ fn rust_sdk_cross_ctx_account_and_note() {
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
-    let loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
+    let loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
     assert_eq!(&account_package.manifest, &loaded_package.manifest);
 
     // Build counter note
@@ -335,7 +335,7 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
     );
     // Test that the package loads
     let bytes = account_package.to_bytes();
-    let _loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
+    let _loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
 
     // Build counter note
     let builder = CompilerTestBuilder::rust_source_cargo_miden(

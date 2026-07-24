@@ -4,7 +4,7 @@ version = "0.1.0"
 
 [[bin]]
 name = "fibonacci"
-path = "<virtual>"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

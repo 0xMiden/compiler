@@ -12,4 +12,5 @@ miden-core = "*"
 miden-protocol = "*"
 
 [package.metadata.miden]
+project-kind = "authentication-component"
 supported-types = ["RegularAccountUpdatableCode"]

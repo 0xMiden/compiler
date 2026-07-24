@@ -68,7 +68,6 @@ fn auth_components_require_an_auth_script_method() {
     let name = "auth_components_require_an_auth_script_method";
     let sdk_path = sdk_crate_path();
     let namespace = base::account_component_namespace(name, "auth-component");
-    let component_package = format!("miden:{}", name.replace('_', "-"));
     let miden_project_toml = format!(
         r#"
 [package]
@@ -83,6 +82,9 @@ path = "src/lib.rs"
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"
+
+[package.metadata.miden]
+project-kind = "authentication-component"
 "#
     );
     let cargo_toml = format!(
@@ -98,16 +100,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = {{ path = "{sdk_path}" }}
-
-[package.metadata.component]
-package = "{component_package}"
-
-[package.metadata.miden]
-project-kind = "authentication-component"
 "#,
         name = name,
         sdk_path = sdk_path.display(),
-        component_package = component_package,
     );
 
     let lib_rs = r#"#![no_std]

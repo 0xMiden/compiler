@@ -7,7 +7,7 @@ const INTRINSICS_PACKAGE_BYTES: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/compiler-intrinsics.masp"));
 
 static INTRINSICS: LazyLock<Arc<Package>> = LazyLock::new(|| {
-    Package::read_from_bytes_trusted(INTRINSICS_PACKAGE_BYTES)
+    Package::read_from_bytes_unchecked(INTRINSICS_PACKAGE_BYTES)
         .map(Arc::new)
         .expect("failed to read compiler-intrinsics!")
 });

@@ -168,7 +168,7 @@ impl LinkLibrary {
 #[cfg(feature = "std")]
 pub(crate) fn load_package_from_path(path: &Path) -> Result<Arc<Package>, Report> {
     let bytes = std::fs::read(path).into_diagnostic()?;
-    miden_mast_package::Package::read_from_bytes_trusted(&bytes)
+    miden_mast_package::Package::read_from_bytes_unchecked(&bytes)
         .map_err(|e| {
             Report::msg(format!("failed to load Miden package from {}: {e}", path.display()))
         })

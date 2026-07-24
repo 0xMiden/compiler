@@ -416,7 +416,13 @@ impl Session {
 
     /// Get a new package registry instance for this session
     pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
-        registry::HybridPackageRegistry::new(&self.options).map(Box::new)
+        let manifest_path = self
+            .project
+            .manifest_path()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("target").join("miden").join("packages"));
+        registry::HybridPackageRegistry::new_with_filesystem_cache(&self.options, manifest_path)
+            .map(Box::new)
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to

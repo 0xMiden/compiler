@@ -15,6 +15,7 @@ mod assemble;
 mod cargo;
 mod codegen;
 mod parse;
+mod project;
 mod rewrite;
 
 pub use self::{
@@ -26,6 +27,7 @@ pub use self::{
         MasmSources, MidenComponent, ParseComponentStage, ParseHirStage, ParseMasmStage,
         ParseRustStage, ParseWasmStage,
     },
+    project::ProjectAssemblyStage,
     rewrite::ApplyRewritesStage,
 };
 
@@ -44,21 +46,20 @@ pub fn run_default_pipeline(
         FileType::Masm => masm_source_pipeline(input, context),
         FileType::Masp => Err(Report::msg("unsupported input file type '.masp'")),
         FileType::Rust => rust_pipeline(input, context),
-        FileType::Toml => match input.file_name().file_name() {
-            Some(name) if name.eq_ignore_ascii_case("Cargo.toml") => {
-                cargo_project_pipeline(input, context)
-            }
-            Some(name) if name.eq_ignore_ascii_case("miden-project.toml") => {
-                masm_project_pipeline(Some(input), context)
-            }
-            _ => Err(Report::msg(
-                "unsupported toml input: expected either `miden-project.toml` or `Cargo.toml`",
-            )),
-        },
+        FileType::Toml => project_assembly_pipeline(input, context),
         FileType::Wasm | FileType::Wat => wasm_pipeline(input, context),
     }
 }
 
+pub(crate) fn project_assembly_pipeline(
+    input: midenc_session::InputFile,
+    context: Rc<Context>,
+) -> CompilerResult<Artifact> {
+    let mut stage = ProjectAssemblyStage;
+    stage.run(input, context)
+}
+
+#[cfg(false)]
 pub(crate) fn cargo_project_pipeline(
     input: midenc_session::InputFile,
     context: Rc<Context>,
@@ -70,9 +71,10 @@ pub(crate) fn cargo_project_pipeline(
 
 pub(crate) fn cargo_project_codegen_pipeline(
     input: midenc_session::InputFile,
+    filesystem_cache_dir: Option<&std::path::Path>,
     context: Rc<Context>,
 ) -> CompilerResult<CodegenOutput> {
-    let mut build_project_stage = CargoBuildStage;
+    let mut build_project_stage = CargoBuildStage::new(filesystem_cache_dir);
     let wasm = build_project_stage.run(input, context.clone())?;
     wasm_codegen_pipeline(wasm, context)
 }

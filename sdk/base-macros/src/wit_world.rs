@@ -156,17 +156,6 @@ impl ManifestPackage {
             .and_then(Value::as_table)
             .ok_or_else(|| syn::Error::new(error_span, "manifest missing [package] table"))?
             .clone();
-        let project_kind = manifest
-            .get("package")
-            .and_then(Value::as_table)
-            .and_then(|package| package.get("metadata"))
-            .and_then(Value::as_table)
-            .and_then(|metadata| metadata.get("miden"))
-            .and_then(Value::as_table)
-            .and_then(|miden| miden.get("project-kind"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         let source_manager = Arc::new(DefaultSourceManager::default());
         let project = miden_project::Project::load(&miden_project_toml_path, &source_manager)
@@ -187,6 +176,13 @@ impl ManifestPackage {
             ));
         };
         let target = target.inner().clone();
+
+        let project_kind = package
+            .metadata()
+            .get("miden")
+            .and_then(|meta| meta.get("project-kind"))
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
 
         let description = package.description().unwrap_or_else(|| {
             package_table

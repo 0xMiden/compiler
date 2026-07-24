@@ -179,6 +179,7 @@ pub(crate) fn cargo_build(
     package: Arc<miden_project::Package>,
     target: &miden_project::Target,
     manifest_path: std::path::PathBuf,
+    filesystem_cache_dir: Option<&std::path::Path>,
     options: &midenc_session::Options,
     cargo_opts: &CargoOptions,
     source_manager: Arc<dyn SourceManager>,
@@ -246,7 +247,7 @@ pub(crate) fn cargo_build(
     ));
     let context = Rc::new(midenc_hir::Context::new(session));
 
-    crate::cargo_project_codegen_pipeline(input, context.clone())
+    crate::cargo_project_codegen_pipeline(input, filesystem_cache_dir, context)
     // We expect dependencies to *always* produce packages (.masp)
     /*
     let CodegenOutput {

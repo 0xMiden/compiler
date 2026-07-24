@@ -353,7 +353,7 @@ impl CompilerTestBuilder {
                 let mut session =
                     Rc::new(Session::new(input.clone(), options, None, source_manager).unwrap());
                 let context = Rc::new(Context::new(session.clone()));
-                let mut cargo_build_stage = midenc_compile::stages::CargoBuildStage;
+                let mut cargo_build_stage = midenc_compile::stages::CargoBuildStage::new(None);
                 let wasm_artifact = cargo_build_stage.run(input, context.clone());
                 // Keep generated WIT available when Cargo fails after macro expansion but before
                 // producing the final Wasm artifact.

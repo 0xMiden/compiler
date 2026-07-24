@@ -4,4 +4,4 @@ version = "0.1.0"
 
 [[bin]]
 name = "assert-debug-test"
-path = "<virtual>"
+path = "src/lib.rs"

@@ -14,5 +14,5 @@ fn auth_component_no_auth() {
 
     // Test that the package loads
     let bytes = auth_comp_package.to_bytes();
-    let _loaded_package = miden_mast_package::Package::read_from_bytes_trusted(&bytes).unwrap();
+    let _loaded_package = miden_mast_package::Package::read_from_bytes_unchecked(&bytes).unwrap();
 }

@@ -174,9 +174,9 @@ impl Stage for AssembleProjectStage {
     }
 }
 
-struct RustSourceProvider {
-    session: Rc<Session>,
-    compiled: RefCell<FxHashMap<(PackageId, Version), CodegenOutput>>,
+pub struct RustSourceProvider {
+    pub session: Rc<Session>,
+    pub compiled: RefCell<FxHashMap<(PackageId, Version), CodegenOutput>>,
 }
 
 impl ProjectSourceProvider for RustSourceProvider {
@@ -198,12 +198,19 @@ impl ProjectSourceProvider for RustSourceProvider {
             }
         }
 
+        let filesystem_cache_dir = self
+            .session
+            .project
+            .manifest_path()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("target").join("miden").join("packages"));
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = Arc::new(DefaultSourceManager::default());
         let compiled = crate::cargo::cargo_build(
             context.package.clone(),
             context.target,
             context.manifest_path.with_file_name("Cargo.toml"),
+            filesystem_cache_dir.as_deref(),
             &self.session.options,
             &cargo_opts,
             source_manager,
@@ -230,12 +237,19 @@ impl ProjectSourceProvider for RustSourceProvider {
             }
         }
 
+        let filesystem_cache_dir = self
+            .session
+            .project
+            .manifest_path()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("target").join("miden").join("packages"));
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = Arc::new(DefaultSourceManager::default());
         let compiled = crate::cargo::cargo_build(
             context.package.clone(),
             context.target,
             context.manifest_path.with_file_name("Cargo.toml"),
+            filesystem_cache_dir.as_deref(),
             &self.session.options,
             &cargo_opts,
             source_manager,
@@ -365,7 +379,7 @@ pub(super) fn assemble_virtual_project_with_registry(
     Ok(package)
 }
 
-fn prepare_assembler(
+pub(super) fn prepare_assembler(
     assembler: &mut miden_assembly::Assembler,
     project_package: &midenc_session::miden_project::Package,
     session: &Session,
