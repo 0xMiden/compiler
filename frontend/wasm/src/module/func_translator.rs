@@ -15,7 +15,7 @@ use std::{
 use cranelift_entity::EntityRef;
 use midenc_hir::{
     BlockRef, Builder, Context, Op, Type,
-    diagnostics::{ColumnNumber, LineNumber},
+    diagnostics::{ColumnNumber, LineNumber, SourceContent, Uri},
     dialects::{
         builtin::{BuiltinOpBuilder, FunctionRef},
         debuginfo::attributes::InlineCallFrame,
@@ -447,6 +447,21 @@ fn resolve_source_location(
     } else {
         path.to_path_buf()
     };
+    let remapped_uri = Uri::from(path.as_path());
+    let register_remapped_source = source_file.uri() != &remapped_uri
+        && session
+            .source_manager
+            .get_by_uri(&remapped_uri)
+            .is_none_or(|existing| existing.as_str() != source_file.as_str());
+    if register_remapped_source {
+        let mut content = SourceContent::new(
+            source_file.content().language(),
+            remapped_uri.clone(),
+            source_file.as_str(),
+        );
+        content.set_version(source_file.content().version());
+        session.source_manager.load_from_raw_parts(remapped_uri, content);
+    }
 
     Ok((!span.is_unknown()).then_some(ResolvedSourceLocation {
         path,

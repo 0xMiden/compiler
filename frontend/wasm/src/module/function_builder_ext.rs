@@ -13,6 +13,7 @@ use midenc_hir::{
     BlockRef, Builder, Context, EntityRef, FxHashMap, FxHashSet, Ident, Listener, ListenerType, Op,
     OpBuilder, OperationRef, ProgramPoint, RegionRef, SmallVec, SourceSpan, Spanned, Type,
     ValueRef,
+    diagnostics::{SourceContent, Uri},
     dialects::{
         builtin::{
             BuiltinOpBuilder, FunctionBuilder, FunctionRef,
@@ -736,6 +737,21 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             })
             .max_by_key(|path| path.len())
             .unwrap_or_else(|| uri.as_str().to_owned());
+        let remapped_uri = Uri::new(&file);
+        let register_remapped_source = source_file.uri() != &remapped_uri
+            && session
+                .source_manager
+                .get_by_uri(&remapped_uri)
+                .is_none_or(|existing| existing.as_str() != source_file.as_str());
+        if register_remapped_source {
+            let mut content = SourceContent::new(
+                source_file.content().language(),
+                remapped_uri.clone(),
+                source_file.as_str(),
+            );
+            content.set_version(source_file.content().version());
+            session.source_manager.load_from_raw_parts(remapped_uri, content);
+        }
         let path = Path::new(&file);
         let file_symbol = Symbol::intern(&file);
         let directory_symbol = path.parent().and_then(|parent| parent.to_str()).map(Symbol::intern);
