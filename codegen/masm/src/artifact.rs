@@ -146,7 +146,6 @@ inventory::submit! {
 impl fmt::Display for MasmComponent {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         for module in self.modules.iter() {
-            writeln!(f, "# mod {}\n", module.path())?;
             writeln!(f, "{module}")?;
         }
         Ok(())

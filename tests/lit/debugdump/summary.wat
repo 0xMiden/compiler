@@ -5,15 +5,20 @@
 
 ;; Check summary is present
 ;; CHECK: Summary:
+;; CHECK: Strings:
 ;; CHECK: Types:
-;; CHECK: Sources:
 ;; CHECK: Functions:
+;; CHECK: Source Files:
+;; CHECK: Locations:
+;; CHECK: Source Nodes:
 
 ;; Make sure full dump sections are NOT present with --summary
 ;; CHECK-NOT: .debug_str contents:
 ;; CHECK-NOT: .debug_types contents:
 ;; CHECK-NOT: .debug_files contents:
 ;; CHECK-NOT: .debug_functions contents:
+
+;; CHECK: Found 0 debug variable records
 
 (module
   (func $test (export "test") (param i32) (result i32)

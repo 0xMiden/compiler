@@ -55,8 +55,27 @@ pub(crate) fn project_assembly_pipeline(
     input: midenc_session::InputFile,
     context: Rc<Context>,
 ) -> CompilerResult<Artifact> {
-    let mut stage = ProjectAssemblyStage;
-    stage.run(input, context)
+    let session = context.session();
+    let project_package = session.project.package();
+    // HACK(pauls): This is a temporary workaround until we refactor the compiler pipeline and
+    // route all compilation through a common pipeline where we can perform analysis uniformly
+    let is_masm_target = if session.options.target_type.unwrap_or_default().is_executable() {
+        project_package
+            .executable_targets()
+            .iter()
+            .find(|t| t.name.inner().as_ref() == session.name.as_str())
+            .is_some_and(|t| t.path.as_str().ends_with(".masm"))
+    } else {
+        project_package
+            .library_target()
+            .is_some_and(|t| t.path.as_str().ends_with(".masm"))
+    };
+    if is_masm_target {
+        masm_project_pipeline(None, context)
+    } else {
+        let mut stage = ProjectAssemblyStage;
+        stage.run(input, context)
+    }
 }
 
 #[cfg(false)]

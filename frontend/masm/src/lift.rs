@@ -129,7 +129,6 @@ fn lift_modules(
 
     let mut registry = ModuleRegistry::new(
         linker,
-        root_index,
         module_indices,
         external_signatures,
         external_types,
@@ -159,7 +158,6 @@ fn lift_modules(
 struct ModuleRegistry {
     context: Rc<Context>,
     linker: Box<Linker>,
-    root_index: ModuleIndex,
     top_level_modules: Vec<ModuleIndex>,
     world: Option<midenc_hir::dialects::builtin::WorldRef>,
     modules: FxHashMap<ModuleIndex, midenc_hir::dialects::builtin::ModuleRef>,
@@ -175,7 +173,6 @@ struct ModuleRegistry {
 impl ModuleRegistry {
     fn new(
         linker: Box<Linker>,
-        root_index: ModuleIndex,
         top_level_modules: Vec<ModuleIndex>,
         external_signatures: ExternalSignatureMap,
         external_types: ExternalTypeMap,
@@ -190,7 +187,6 @@ impl ModuleRegistry {
         Self {
             context,
             linker,
-            root_index,
             top_level_modules,
             world: None,
             modules: FxHashMap::default(),
@@ -207,11 +203,11 @@ impl ModuleRegistry {
         for root in self.top_level_modules.iter().copied() {
             let root_path = self.linker[root].path().clone();
             for (index, item) in self.linker[root].symbols().enumerate() {
-                let gid = self.root_index + ast::ItemIndex::new(index);
+                let gid = root + ast::ItemIndex::new(index);
                 if !item.is_procedure() {
                     continue;
                 }
-                let path = root_path.join(self.linker[gid].name());
+                let path = root_path.join(item.name());
                 let toposort = self.linker.topological_sort_from_root(gid).map_err(|cycle| {
                     let iter = cycle.into_node_ids();
                     let mut nodes = Vec::with_capacity(iter.len());

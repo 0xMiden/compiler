@@ -197,12 +197,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         }
 
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
+            && should_fill_debug_attr_location(
+                attr.file,
+                attr.line,
+                attr.column,
+                file_symbol,
+                line,
+                column,
+            )
+        {
             attr.file = file_symbol;
-            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                attr.line = line;
-                attr.column = column;
-            }
+            attr.line = line;
+            attr.column = column;
         }
 
         // If DWARF didn't provide a location expression, synthesize one from the
@@ -304,12 +311,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         let Some(mut attr) = attr_opt else {
             return;
         };
-        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+        if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
+            && should_fill_debug_attr_location(
+                attr.file,
+                attr.line,
+                attr.column,
+                file_symbol,
+                line,
+                column,
+            )
+        {
             attr.file = file_symbol;
-            if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                attr.line = line;
-                attr.column = column;
-            }
+            attr.line = line;
+            attr.column = column;
         }
 
         let Some(storage) = entry.storage else {
@@ -362,12 +376,19 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             let Some(mut attr) = attr_opt else {
                 continue;
             };
-            if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span) {
+            if let Some((file_symbol, _directory, line, column)) = self.span_to_location(span)
+                && should_fill_debug_attr_location(
+                    attr.file,
+                    attr.line,
+                    attr.column,
+                    file_symbol,
+                    line,
+                    column,
+                )
+            {
                 attr.file = file_symbol;
-                if should_fill_debug_attr_location(attr.line, attr.column, line, column) {
-                    attr.line = line;
-                    attr.column = column;
-                }
+                attr.line = line;
+                attr.column = column;
             }
             if let Err(err) = DIBuilder::builder_mut(self).debug_value(value, attr, span) {
                 warn!("failed to emit local-backed dbg.value for local {local_index}: {err:?}");
@@ -809,11 +830,17 @@ fn wasm_stack_value_from_expression(
 }
 
 fn should_fill_debug_attr_location(
+    current_file: Symbol,
     current_line: u32,
     current_column: Option<u32>,
+    span_file: Symbol,
     span_line: u32,
     span_column: Option<u32>,
 ) -> bool {
+    let file_changed = current_file != span_file;
+    if file_changed {
+        return true;
+    }
     if current_line != 0 || current_column.is_some() || span_line == 0 {
         return false;
     }

@@ -4,9 +4,9 @@
 ;; RUN: miden-objtool dump debug-info %t/out.masp --section locations | filecheck %s
 
 ;; Check header for .debug_loc section
-;; CHECK: .debug_loc contents (DebugVar entries from MAST):
+;; CHECK: .debug_loc contents (DebugLoc entries from MAST):
 ;; For raw WAT files without debug info, we expect no decorators
-;; CHECK: (no DebugVar entries found)
+;; CHECK: Total DebugVar entries: 0
 
 (module
   (func $add (export "add") (param i32 i32) (result i32)

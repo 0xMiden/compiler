@@ -1601,6 +1601,8 @@ fn apply_debug_var_metadata(
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
     session: &midenc_session::Session,
 ) {
+    use miden_assembly_syntax::debuginfo::SourceManagerExt;
+
     // Set arg_index if this is a parameter
     if let Some(arg_index) = var.arg_index {
         debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
@@ -1612,14 +1614,20 @@ fn apply_debug_var_metadata(
 
     // Set source location
     if let Some(line) = core::num::NonZeroU32::new(var.line) {
-        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Location, Uri};
+        use miden_assembly::debuginfo::{ColumnNumber, LineNumber, Location, Uri};
         let uri = Uri::new(var.file.as_str());
-        let file_line_col = FileLineCol::new(
-            uri.clone(),
-            LineNumber::new(line.get()).unwrap_or_default(),
-            var.column.and_then(ColumnNumber::new).unwrap_or_default(),
-        );
-        if let Some(span) = session.source_manager.file_line_col_to_span(file_line_col) {
+        let line = LineNumber::new(line.get()).unwrap_or_default();
+        let column = var.column.and_then(ColumnNumber::new).unwrap_or_default();
+        let file = session.source_manager.get_by_uri(&uri);
+        if let Some(file) = file {
+            if let Some(span) = file.line_column_to_span(line, column) {
+                let loc = Location::new(uri, span.start(), span.end());
+                debug_var.set_location(loc);
+            }
+        } else if let Some(path) = uri.to_path()
+            && let Some(file) = session.source_manager.load_file(&path).ok()
+            && let Some(span) = file.line_column_to_span(line, column)
+        {
             let loc = Location::new(uri, span.start(), span.end());
             debug_var.set_location(loc);
         }

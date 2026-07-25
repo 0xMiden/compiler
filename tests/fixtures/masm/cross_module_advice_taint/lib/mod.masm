@@ -1,4 +1,4 @@
-use example::support
+pub mod support
 
 pub proc entry() -> u32
    adv_push

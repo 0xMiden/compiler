@@ -1,5 +1,7 @@
 # RUN: midenc -Zlint -Canalyze-only %s 2>&1 | filecheck %s
 
+namespace test
+
 const FOO = 1
 
 
