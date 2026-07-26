@@ -3,7 +3,7 @@ use core::fmt;
 
 use midenc_session::diagnostics::Report;
 
-use super::CheckpointId;
+use super::{ArtifactId, CheckpointId};
 use crate::CompilerResult;
 
 /// Identifies a registered frontend.
@@ -43,9 +43,22 @@ pub struct FrontendRegistration {
     pub route: &'static [CheckpointId],
     /// User-facing stop aliases mapped onto this route's checkpoints.
     pub aliases: &'static [(&'static str, CheckpointId)],
+    /// The artifact each checkpoint on this route produces.
+    ///
+    /// Declared rather than derived so the pipeline core never enumerates checkpoints.
+    /// [`FrontendRegistry::register`] requires an entry for every route checkpoint and
+    /// rejects entries for checkpoints that are not on the route.
+    pub artifacts: &'static [(CheckpointId, ArtifactId)],
 }
 
 impl FrontendRegistration {
+    /// The artifact produced at `checkpoint`, if it is on this route.
+    pub fn artifact_at(&self, checkpoint: CheckpointId) -> Option<ArtifactId> {
+        self.artifacts
+            .iter()
+            .find_map(|(candidate, artifact)| (*candidate == checkpoint).then_some(*artifact))
+    }
+
     /// Resolve a stop alias such as `parse` to this route's corresponding checkpoint.
     pub fn resolve_alias(&self, alias: &str) -> Option<CheckpointId> {
         self.aliases
@@ -94,7 +107,8 @@ impl FrontendRegistry {
     /// Register `registration` for each of its extensions.
     ///
     /// Returns an error if the route is empty, if an alias names a checkpoint outside the
-    /// route, or if any extension is already claimed by another frontend.
+    /// route, if the declared artifacts do not cover the route exactly, or if any extension
+    /// is already claimed by another frontend.
     pub fn register(&mut self, registration: FrontendRegistration) -> CompilerResult<()> {
         if registration.route.is_empty() {
             return Err(Report::msg(format!(
@@ -107,6 +121,23 @@ impl FrontendRegistry {
                 return Err(Report::msg(format!(
                     "frontend '{}' maps alias '{alias}' to '{checkpoint}', which is not on its \
                      route",
+                    registration.id
+                )));
+            }
+        }
+        for checkpoint in registration.route {
+            if registration.artifact_at(*checkpoint).is_none() {
+                return Err(Report::msg(format!(
+                    "frontend '{}' declares '{checkpoint}' on its route, but no artifact for it",
+                    registration.id
+                )));
+            }
+        }
+        for (checkpoint, artifact) in registration.artifacts {
+            if !registration.supports(*checkpoint) {
+                return Err(Report::msg(format!(
+                    "frontend '{}' declares artifact '{artifact}' at '{checkpoint}', which is not \
+                     on its route",
                     registration.id
                 )));
             }
@@ -161,9 +192,19 @@ pub(crate) mod tests {
             ("lower", CheckpointId::MASM_LOWERED),
             ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
         ],
+        artifacts: &[
+            (CheckpointId::WASM_PARSED, ArtifactId::WASM),
+            (CheckpointId::HIR_INITIAL, ArtifactId::HIR),
+            (CheckpointId::HIR_ANALYZED, ArtifactId::HIR),
+            (CheckpointId::HIR_TRANSFORMED, ArtifactId::HIR),
+            (CheckpointId::MASM_LOWERED, ArtifactId::MASM),
+            (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+        ],
     };
 
-    const MASM: FrontendRegistration = FrontendRegistration {
+    /// A route with no `wasm` producer, and no `hir.transformed`, so tests can tell
+    /// "this frontend never produces it" from "not before the cap".
+    pub(crate) const MASM: FrontendRegistration = FrontendRegistration {
         id: FrontendId::new("masm"),
         extensions: &["masm"],
         route: &[
@@ -177,6 +218,12 @@ pub(crate) mod tests {
             ("analyze", CheckpointId::HIR_ANALYZED),
             ("lower", CheckpointId::MASM_LOWERED),
             ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
+        ],
+        artifacts: &[
+            (CheckpointId::MASM_PARSED, ArtifactId::MASM),
+            (CheckpointId::HIR_ANALYZED, ArtifactId::HIR),
+            (CheckpointId::MASM_LOWERED, ArtifactId::MASM),
+            (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
         ],
     };
 
@@ -203,6 +250,7 @@ pub(crate) mod tests {
             extensions: &["masm"],
             route: &[CheckpointId::PACKAGE_ASSEMBLED],
             aliases: &[],
+            artifacts: &[(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE)],
         };
         let err = registry().register(CONFLICT).expect_err("masm is already registered");
         let rendered = format!("{err}");
@@ -216,6 +264,7 @@ pub(crate) mod tests {
             extensions: &["nothing"],
             route: &[],
             aliases: &[],
+            artifacts: &[],
         };
         let err = FrontendRegistry::new().register(EMPTY).expect_err("empty route");
         assert!(format!("{err}").contains("empty route"));
@@ -228,8 +277,45 @@ pub(crate) mod tests {
             extensions: &["bad"],
             route: &[CheckpointId::PACKAGE_ASSEMBLED],
             aliases: &[("parse", CheckpointId::HIR_INITIAL)],
+            artifacts: &[(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE)],
         };
         let err = FrontendRegistry::new().register(BAD).expect_err("alias off-route");
+        assert!(format!("{err}").contains("hir.initial"));
+    }
+
+    #[test]
+    fn artifact_at_maps_route_checkpoints_to_artifacts() {
+        assert_eq!(WASM.artifact_at(CheckpointId::HIR_TRANSFORMED), Some(ArtifactId::HIR));
+        assert_eq!(WASM.artifact_at(CheckpointId::PACKAGE_ASSEMBLED), Some(ArtifactId::PACKAGE));
+        assert_eq!(WASM.artifact_at(CheckpointId::MASM_PARSED), None);
+    }
+
+    #[test]
+    fn a_route_checkpoint_with_no_declared_artifact_is_rejected() {
+        const MISSING: FrontendRegistration = FrontendRegistration {
+            id: FrontendId::new("missing"),
+            extensions: &["missing"],
+            route: &[CheckpointId::HIR_INITIAL, CheckpointId::PACKAGE_ASSEMBLED],
+            aliases: &[],
+            artifacts: &[(CheckpointId::HIR_INITIAL, ArtifactId::HIR)],
+        };
+        let err = FrontendRegistry::new().register(MISSING).expect_err("incomplete artifacts");
+        assert!(format!("{err}").contains("package.assembled"));
+    }
+
+    #[test]
+    fn an_artifact_declared_off_route_is_rejected() {
+        const OFF_ROUTE: FrontendRegistration = FrontendRegistration {
+            id: FrontendId::new("off"),
+            extensions: &["off"],
+            route: &[CheckpointId::PACKAGE_ASSEMBLED],
+            aliases: &[],
+            artifacts: &[
+                (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+                (CheckpointId::HIR_INITIAL, ArtifactId::HIR),
+            ],
+        };
+        let err = FrontendRegistry::new().register(OFF_ROUTE).expect_err("artifact off-route");
         assert!(format!("{err}").contains("hir.initial"));
     }
 

@@ -16,10 +16,6 @@ edition.workspace = true
 [lib]
 doctest = false
 
-[[test]]
-name = "pipeline_api"
-path = "tests/pipeline_api.rs"
-
 [features]
 default = ["std"]
 std = [

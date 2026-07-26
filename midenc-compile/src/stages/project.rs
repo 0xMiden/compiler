@@ -1,10 +1,9 @@
 use alloc::{boxed::Box, rc::Rc};
-use core::cell::RefCell;
 use std::path::Path;
 
 use miden_assembly::{ProjectSourceProvider, ProjectTargetSelector};
 use miden_assembly_syntax::DisplayHex;
-use midenc_hir::{Context, FxHashMap, Report};
+use midenc_hir::{Context, Report};
 use midenc_session::InputFile;
 
 use super::Artifact;
@@ -53,10 +52,9 @@ impl Stage for ProjectAssemblyStage {
         } else {
             ProjectTargetSelector::Library
         };
-        let providers = [Box::new(RustSourceProvider {
-            session: session.clone(),
-            compiled: RefCell::new(FxHashMap::default()),
-        }) as Box<dyn ProjectSourceProvider>];
+        let providers =
+            [Box::new(RustSourceProvider::new(session.clone()))
+                as Box<dyn ProjectSourceProvider>];
         let mut project_assembler = assembler.for_project_at_path_with_providers(
             &manifest_path,
             registry.as_mut(),

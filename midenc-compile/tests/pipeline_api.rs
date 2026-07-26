@@ -26,6 +26,12 @@ const WASM: FrontendRegistration = FrontendRegistration {
         ("lower", CheckpointId::MASM_LOWERED),
         ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
     ],
+    artifacts: &[
+        (CheckpointId::HIR_INITIAL, ArtifactId::HIR),
+        (CheckpointId::HIR_TRANSFORMED, ArtifactId::HIR),
+        (CheckpointId::MASM_LOWERED, ArtifactId::MASM),
+        (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+    ],
 };
 
 #[test]

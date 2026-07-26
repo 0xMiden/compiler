@@ -3,14 +3,16 @@ use core::{cell::RefCell, ops::ControlFlow};
 
 use miden_assembly::{
     ProjectSourceInputs, ProjectSourceProvider, ProjectTargetSelector, ResolvedPackage,
-    utils::DisplayHex,
+    TargetAssemblyContext, utils::DisplayHex,
 };
-use miden_mast_package::{Package, TargetType, Version};
+use miden_mast_package::{Package, TargetType};
 use midenc_codegen_masm::{MasmComponent, intrinsics};
-use midenc_hir::FxHashMap;
-use midenc_session::PackageId;
 
 use super::*;
+use crate::pipeline::{
+    CaptureSlot, CheckpointId, Flow, Frontend, Goal, TargetContext, TargetKey, TargetRole,
+    frontends::RustProjectFrontend,
+};
 
 /// The artifact produced by the full compiler pipeline.
 ///
@@ -64,33 +66,35 @@ impl Stage for AssembleStage {
         } else {
             ProjectTargetSelector::Library
         };
-        let package_id = project_package.name().into_inner();
-        let version = project_package.version().into_inner().clone();
-
         let mut registry = session.package_registry()?;
         let package = if project_package.manifest_path().is_some() {
+            // This run has *already* produced `input` for the target `selector` names, so hand
+            // it to the provider rather than letting it spawn a nested cargo build to
+            // reproduce work we just did. The seed key must name the resolved target, not
+            // just the package: a package-derived key inserts fine and simply never matches.
+            let target = selector.select_target(&project_package)?;
+            let key = TargetKey::new(
+                project_package.name().into_inner(),
+                target.name.inner().clone(),
+                target.ty,
+            );
             assemble_project_with_registry(
                 project_package.clone(),
                 selector,
                 &session,
                 &mut registry,
-                [Box::new(RustSourceProvider {
-                    session: session.clone(),
-                    compiled: RefCell::new(FxHashMap::from_iter([((package_id, version), input)])),
-                }) as Box<dyn ProjectSourceProvider>],
+                [Box::new(RustSourceProvider::seeded(session.clone(), key, input))
+                    as Box<dyn ProjectSourceProvider>],
             )?
         } else {
-            let sources = input.clone();
             assemble_virtual_project_with_registry(
                 project_package.clone(),
                 selector,
-                sources,
+                input,
                 &session,
                 &mut registry,
-                [Box::new(RustSourceProvider {
-                    session: session.clone(),
-                    compiled: RefCell::new(FxHashMap::default()),
-                }) as Box<dyn ProjectSourceProvider>],
+                [Box::new(RustSourceProvider::new(session.clone()))
+                    as Box<dyn ProjectSourceProvider>],
             )?
         };
 
@@ -157,10 +161,8 @@ impl Stage for AssembleProjectStage {
                     selector,
                     session,
                     &mut registry,
-                    [Box::new(RustSourceProvider {
-                        session: context.session_rc(),
-                        compiled: RefCell::new(FxHashMap::default()),
-                    }) as Box<dyn ProjectSourceProvider>],
+                    [Box::new(RustSourceProvider::new(context.session_rc()))
+                        as Box<dyn ProjectSourceProvider>],
                 )?
             }
         };
@@ -174,9 +176,75 @@ impl Stage for AssembleProjectStage {
     }
 }
 
+/// Bridges the assembler's [`ProjectSourceProvider`] callbacks onto [`RustProjectFrontend`].
+///
+/// This type owns no language logic of its own. Each callback wraps the assembler's
+/// [`TargetAssemblyContext`] in a pipeline [`TargetContext`] and delegates to the matching
+/// [`Frontend`] method; the cargo build, its memoization and the package post-processing all
+/// live in the frontend.
+///
+/// The session is not held directly: it reaches the frontend through [`RustProjectFrontend`],
+/// and the callbacks through the HIR context, which owns it.
 pub struct RustSourceProvider {
-    pub session: Rc<Session>,
-    pub compiled: RefCell<FxHashMap<(PackageId, Version), CodegenOutput>>,
+    /// The HIR context handed to every [`TargetContext`] this adapter builds, and thus the
+    /// source of `cx.session()`.
+    ///
+    /// Built once rather than per callback: [`Context::new`] registers every dialect, and
+    /// the Rust frontend builds no HIR into it anyway — the nested `midenc` invocation cargo
+    /// drives has its own context.
+    context: Rc<Context>,
+    frontend: RustProjectFrontend,
+}
+
+impl RustSourceProvider {
+    /// Construct an adapter that builds within `session`, with nothing pre-built.
+    pub fn new(session: Rc<Session>) -> Self {
+        let frontend = RustProjectFrontend::new(session.clone());
+        Self::with_frontend(session, frontend)
+    }
+
+    /// Construct an adapter whose frontend already holds `output` for the target `key` names.
+    ///
+    /// `key` must be built from the *selector-resolved target*, not from the package: see
+    /// [`RustProjectFrontend::seeded`] for why a package-derived key silently never matches.
+    pub fn seeded(session: Rc<Session>, key: TargetKey, output: CodegenOutput) -> Self {
+        let frontend = RustProjectFrontend::seeded(session.clone(), key, output);
+        Self::with_frontend(session, frontend)
+    }
+
+    // TODO(increment-3): build this Context per target rather than once per provider, per
+    // the spec's Option scoping section. Each target gets its own `Options`, hence its own
+    // `Context`, and the session `TargetContext::session` derives follows from it.
+    fn with_frontend(session: Rc<Session>, frontend: RustProjectFrontend) -> Self {
+        Self {
+            context: Rc::new(Context::new(session)),
+            frontend,
+        }
+    }
+
+    /// Wrap one assembler callback's context in the context the frontend expects.
+    ///
+    /// The assembler drives a full build through package assembly, so the goal is
+    /// [`CheckpointId::PACKAGE_ASSEMBLED`] and the capture slot is a throwaway: nothing
+    /// short of assembly can stop, and the frontend publishes no checkpoints at all, so
+    /// there are no observers to notify and nothing is ever captured.
+    // TODO(increment-3): role derivation is not implemented. Every callback is labelled
+    // [`TargetRole::Root`], including those for dependencies and required libraries, which
+    // disarms the guard the root-only capture rule exists to provide. It is inert only
+    // because this frontend publishes no checkpoints, and `provide_sources` reports any
+    // `Flow::Stop` as an internal error; deriving the real role must come before either
+    // changes.
+    fn target_context<'a>(&self, assembly: &'a TargetAssemblyContext<'a>) -> TargetContext<'a> {
+        TargetContext::new(
+            assembly,
+            self.context.clone(),
+            None,
+            TargetRole::Root,
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            Vec::new(),
+            Rc::new(RefCell::new(CaptureSlot::default())),
+        )
+    }
 }
 
 impl ProjectSourceProvider for RustSourceProvider {
@@ -186,104 +254,36 @@ impl ProjectSourceProvider for RustSourceProvider {
 
     fn provide_sources(
         &self,
-        context: &miden_assembly::TargetAssemblyContext<'_>,
+        context: &TargetAssemblyContext<'_>,
     ) -> Result<ProjectSourceInputs, Report> {
-        let package_id = context.package.name().into_inner();
-        let version = context.package.version().into_inner().clone();
-        let key = (package_id, version);
-        {
-            let compiled = self.compiled.borrow();
-            if let Some(found) = compiled.get(&key) {
-                return found.component.source_inputs(context.target, &self.session);
-            }
+        let cx = self.target_context(context);
+        match self.frontend.compile(&cx)? {
+            Flow::Continue(inputs) => Ok(inputs),
+            Flow::Stop(stopped) => Err(Report::msg(format!(
+                "internal error: compiling target '{}' of package '{}' stopped at '{}', but this \
+                 path always builds through '{}' and the Rust frontend publishes no checkpoints, \
+                 so no stop is reachable here",
+                cx.target_key().name(),
+                cx.target_key().package(),
+                stopped.checkpoint(),
+                CheckpointId::PACKAGE_ASSEMBLED,
+            ))),
         }
-
-        let filesystem_cache_dir = self
-            .session
-            .project
-            .manifest_path()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("target").join("miden").join("packages"));
-        let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
-        let source_manager = self.session.source_manager.clone();
-        let compiled = crate::cargo::cargo_build(
-            context.package.clone(),
-            context.target,
-            context.manifest_path.with_file_name("Cargo.toml"),
-            filesystem_cache_dir.as_deref(),
-            &self.session.options,
-            &cargo_opts,
-            source_manager,
-        )?;
-
-        let source_inputs = compiled.component.source_inputs(context.target, &self.session)?;
-
-        self.compiled.borrow_mut().insert(key, compiled);
-
-        Ok(source_inputs)
     }
 
     fn provide_source_provenance(
         &self,
-        context: &miden_assembly::TargetAssemblyContext<'_>,
+        context: &TargetAssemblyContext<'_>,
     ) -> Result<miden_assembly::ProjectSourceProvenanceInputs, Report> {
-        let package_id = context.package.name().into_inner();
-        let version = context.package.version().into_inner().clone();
-        let key = (package_id, version);
-        {
-            let compiled = self.compiled.borrow();
-            if let Some(found) = compiled.get(&key) {
-                return Ok(found.source_provenance());
-            }
-        }
-
-        let filesystem_cache_dir = self
-            .session
-            .project
-            .manifest_path()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("target").join("miden").join("packages"));
-        let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
-        let source_manager = self.session.source_manager.clone();
-        let compiled = crate::cargo::cargo_build(
-            context.package.clone(),
-            context.target,
-            context.manifest_path.with_file_name("Cargo.toml"),
-            filesystem_cache_dir.as_deref(),
-            &self.session.options,
-            &cargo_opts,
-            source_manager,
-        )?;
-
-        let provenance = compiled.source_provenance();
-
-        self.compiled.borrow_mut().insert(key, compiled);
-
-        Ok(provenance)
+        self.frontend.provenance(&self.target_context(context))
     }
 
     fn post_process_package(
         &self,
         package: &mut Package,
-        context: &miden_assembly::TargetAssemblyContext<'_>,
+        context: &TargetAssemblyContext<'_>,
     ) -> Result<(), Report> {
-        let package_id = context.package.name().into_inner();
-        let version = context.package.version().into_inner().clone();
-        let key = (package_id, version);
-
-        let compiled = self.compiled.borrow();
-        let CodegenOutput {
-            component,
-            account_component_metadata_bytes,
-            source_provenance: _,
-        } = &compiled[&key];
-        post_process_package(
-            package,
-            component,
-            account_component_metadata_bytes.as_deref(),
-            context.target,
-            context.package_registry,
-        )
+        self.frontend.post_process(package, &self.target_context(context))
     }
 }
 
@@ -426,7 +426,7 @@ pub(super) fn prepare_assembler(
     Ok(())
 }
 
-fn post_process_package(
+pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
     account_component_metadata_bytes: Option<&[u8]>,

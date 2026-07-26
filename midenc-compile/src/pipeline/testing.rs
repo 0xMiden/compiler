@@ -17,6 +17,38 @@ use midenc_session::{
 
 use crate::CompilerResult;
 
+/// Write `contents` to `<temp>/midenc-pipeline-fixtures/<dir>/<file>` and return its path.
+///
+/// [`VirtualProject`] needs a target root that exists on disk, because the dependency graph
+/// resolves and reads it. This is the one place that materializes one, so the tests across
+/// `pipeline` agree on where fixtures live and on the failure messages when they cannot be
+/// written.
+///
+/// `dir` must be unique per fixture: the directory is not cleaned up between runs, and
+/// tests within a crate run concurrently, so two tests sharing a `dir` would race on the
+/// same file.
+///
+/// Test-only, so that shipped builds of this module keep to `std::path` and do not reach
+/// for `std::fs`. `tempfile` would be the obvious alternative, but it is not a
+/// dev-dependency of this crate and this does not warrant adding one.
+#[cfg(test)]
+pub(crate) fn fixture_source(dir: &str, file: &str, contents: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join("midenc-pipeline-fixtures").join(dir);
+    std::fs::create_dir_all(&dir).expect("should create fixture dir");
+    let path = dir.join(file);
+    std::fs::write(&path, contents).expect("should write fixture source");
+    path
+}
+
+/// A [`fixture_source`] holding the smallest valid WebAssembly module.
+///
+/// The wasm frontend is not run over these; the module only has to be a plausible target
+/// root with a `.wat` extension, which is what dispatch keys on.
+#[cfg(test)]
+pub(crate) fn wat_fixture(dir: &str, file: &str) -> std::path::PathBuf {
+    fixture_source(dir, file, "(module)")
+}
+
 /// A synthesized project with no manifest on disk, wrapping a single target.
 pub struct VirtualProject {
     package: Arc<ProjectPackage>,
@@ -103,18 +135,6 @@ impl VirtualProject {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn fixture_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join("midenc-pipeline-fixtures").join(name);
-        std::fs::create_dir_all(&dir).expect("should create fixture dir");
-        dir
-    }
-
-    fn wat_fixture(name: &str, file: &str) -> std::path::PathBuf {
-        let root = fixture_dir(name).join(file);
-        std::fs::write(&root, "(module)").expect("should write fixture source");
-        root
-    }
 
     #[test]
     fn virtual_project_has_no_manifest_path() {

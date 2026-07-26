@@ -43,7 +43,7 @@ pub fn hir_to_masm(
     };
 
     let codegen = stage("codegen", CodegenStage.run(hir, context))?;
-    // TODO(increment-2): only `codegen.component` survives this call. `CodegenOutput` also carries
+    // TODO(increment-3): only `codegen.component` survives this call. `CodegenOutput` also carries
     // `account_component_metadata_bytes` and `source_provenance`, both threaded from parse through
     // `MidenComponent`; assembly consumes them to attach the account-component metadata section to
     // the package (see `attach_account_component_metadata` in `stages/assemble.rs`). Dropping them
@@ -74,7 +74,7 @@ pub fn hir_to_masm(
 /// `internal error: legacy analysis stage stopped early: ...` — an ICE for a legitimate
 /// user error. Nothing calls [`hir_to_masm`] outside tests yet, so no user can hit it today.
 ///
-/// TODO(increment-2): wiring this service into a real driver must first route the analysis
+/// TODO(increment-3): wiring this service into a real driver must first route the analysis
 /// stage's diagnostic-driven stop to the user as a normal compilation failure (the stage's
 /// own `has_errors()` branch), distinct from the flag-driven sentinels. The stage bodies
 /// then move into this module and the flag checks are deleted, at which point this wrapper
@@ -99,14 +99,11 @@ mod tests {
     use super::*;
     use crate::pipeline::{
         ArtifactId, CaptureSlot, Goal, Outcome, RecordingObserver, TargetContext, TargetRole,
-        testing::VirtualProject,
+        testing::{VirtualProject, wat_fixture},
     };
 
     fn library(name: &str) -> VirtualProject {
-        let dir = std::env::temp_dir().join("midenc-pipeline-fixtures").join(name);
-        std::fs::create_dir_all(&dir).expect("should create fixture dir");
-        let root = dir.join("lib.wat");
-        std::fs::write(&root, "(module)").expect("should write fixture source");
+        let root = wat_fixture(name, "lib.wat");
         VirtualProject::new(name, &root, TargetType::Library).expect("should build")
     }
 
@@ -178,7 +175,7 @@ mod tests {
 
         let cx = TargetContext::for_testing(
             &assembly,
-            context.session_rc(),
+            context,
             TargetRole::Root,
             Goal::at(goal),
             observer.clone(),

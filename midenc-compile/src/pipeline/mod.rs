@@ -16,15 +16,20 @@
 //!
 //! # Status
 //!
-//! Increment 1 of the pipeline redesign. These contracts are additive and are not yet
-//! wired into compilation: the `Stage` chain in [`crate::stages`] remains the only live
-//! path. See `tasks/specs/2026-07-25-midenc-compile-pipeline-design.md`.
+//! Increment 2 of the pipeline redesign. The Rust *project* path is live: every
+//! `cargo miden build` reaches [`frontends::rust::RustProjectFrontend`], which owns the
+//! cargo build, its memoization, and the package post-processing behind the [`Frontend`]
+//! contract. Direct file inputs are unchanged — the standalone `Stage` chains in
+//! [`crate::stages`] still own parse and codegen for them, and no frontend publishes
+//! checkpoints yet, so `--stop-after` and `--emit` remain resolved by the legacy flags.
+//! See `tasks/specs/2026-07-25-midenc-compile-pipeline-design.md`.
 
 mod artifact;
 pub mod backend;
 mod checkpoint;
 mod flow;
 mod frontend;
+pub mod frontends;
 mod goal;
 mod observer;
 mod outcome;

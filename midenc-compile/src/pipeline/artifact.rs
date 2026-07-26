@@ -97,6 +97,35 @@ mod tests {
     }
 
     #[test]
+    fn artifact_ids_are_stable_strings() {
+        // These strings are user-visible: they are what `--emit=<name>` names, so changing
+        // one is a change to the CLI surface rather than an internal rename.
+        assert_eq!(ArtifactId::WASM.as_str(), "wasm");
+        assert_eq!(ArtifactId::HIR.as_str(), "hir");
+        assert_eq!(ArtifactId::MASM.as_str(), "masm");
+        assert_eq!(ArtifactId::PACKAGE.as_str(), "package");
+    }
+
+    #[test]
+    fn artifact_ids_display_as_their_string_form() {
+        assert_eq!(alloc::format!("{}", ArtifactId::PACKAGE), "package");
+    }
+
+    #[test]
+    fn a_frontend_constructed_id_equals_the_core_constant_it_names() {
+        // Equality is by content, so a frontend that declares its own artifact id for one
+        // of the core's families is recognized as naming that family.
+        assert_eq!(ArtifactId::new("masm"), ArtifactId::MASM);
+        assert_ne!(ArtifactId::new("masm"), ArtifactId::HIR);
+        // And an id no core constant names stays distinct from all of them.
+        let foreign = ArtifactId::new("synthetic");
+        assert_eq!(foreign.as_str(), "synthetic");
+        for known in [ArtifactId::WASM, ArtifactId::HIR, ArtifactId::MASM, ArtifactId::PACKAGE] {
+            assert_ne!(foreign, known);
+        }
+    }
+
+    #[test]
     fn downcast_returns_the_owned_value_on_a_type_match() {
         let artifact = Artifact::new(ArtifactId::HIR, Hir(7));
         assert_eq!(artifact.downcast::<Hir>().expect("should downcast"), Hir(7));

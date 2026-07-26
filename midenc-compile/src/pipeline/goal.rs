@@ -104,6 +104,15 @@ pub fn resolve_goal(
         None => terminal,
     };
 
+    // Whether some checkpoint in `frontend.route[..=last]` produces `artifact`, according to
+    // the registration's own declaration. Passing the goal position answers "can this run
+    // emit it?"; passing the terminal position answers "can this frontend emit it at all?".
+    let produces_by = |artifact: ArtifactId, last: usize| {
+        frontend.route[..=last]
+            .iter()
+            .any(|checkpoint| frontend.artifact_at(*checkpoint) == Some(artifact))
+    };
+
     for spec in request.specs() {
         let (output_types, is_expansion): (Vec<OutputType>, bool) = match spec {
             OutputTypeSpec::All { .. } => (OutputType::all().to_vec(), true),
@@ -115,7 +124,7 @@ pub fn resolve_goal(
             let Some(artifact) = artifact_id_for_output(output_type) else {
                 continue;
             };
-            if produces_by(frontend, artifact, goal) {
+            if produces_by(artifact, goal) {
                 continue;
             }
             // An expansion asks for whatever this run can produce, so an artifact this run
@@ -127,7 +136,7 @@ pub fn resolve_goal(
             // mistake than asking a frontend for an artifact it never produces at all. It
             // can only arise under `--stop-after`, since an uncapped goal is the terminal
             // checkpoint and therefore reaches everything the route produces.
-            return Err(if produces_by(frontend, artifact, terminal) {
+            return Err(if produces_by(artifact, terminal) {
                 Report::msg(format!(
                     "cannot emit '{}': it is produced after the requested stop point '{}'",
                     output_type.extension(),
@@ -180,37 +189,6 @@ fn resolve_stop_after(value: &str, frontend: &FrontendRegistration) -> CompilerR
     )))
 }
 
-/// Whether some checkpoint in `frontend.route[..=last]` produces `artifact`.
-///
-/// Passing the goal position answers "can this run emit it?"; passing the terminal position
-/// answers "can this frontend emit it at all?".
-fn produces_by(frontend: &FrontendRegistration, artifact: ArtifactId, last: usize) -> bool {
-    frontend.route[..=last].iter().any(|checkpoint| produces(*checkpoint) == Some(artifact))
-}
-
-/// The artifact produced by a built-in checkpoint.
-///
-/// Frontend-native checkpoints are not represented here. Increment 2 moves this mapping
-/// onto [`FrontendRegistration`] so frontend-declared checkpoints participate too.
-///
-/// Written as an `if` chain because Rust does not allow associated constants in patterns.
-fn produces(checkpoint: CheckpointId) -> Option<ArtifactId> {
-    if checkpoint == CheckpointId::WASM_PARSED {
-        Some(ArtifactId::WASM)
-    } else if checkpoint == CheckpointId::HIR_INITIAL
-        || checkpoint == CheckpointId::HIR_ANALYZED
-        || checkpoint == CheckpointId::HIR_TRANSFORMED
-    {
-        Some(ArtifactId::HIR)
-    } else if checkpoint == CheckpointId::MASM_PARSED || checkpoint == CheckpointId::MASM_LOWERED {
-        Some(ArtifactId::MASM)
-    } else if checkpoint == CheckpointId::PACKAGE_ASSEMBLED {
-        Some(ArtifactId::PACKAGE)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use alloc::{format, string::ToString, vec};
@@ -218,30 +196,32 @@ mod tests {
     use midenc_session::OutputType;
 
     use super::*;
-    use crate::pipeline::{FrontendId, registry::tests::WASM};
-
-    /// A frontend whose route never produces a `wasm` artifact, to distinguish "this route
-    /// cannot produce it at all" from "not before the cap".
-    const MASM: FrontendRegistration = FrontendRegistration {
-        id: FrontendId::new("masm"),
-        extensions: &["masm"],
-        route: &[
-            CheckpointId::MASM_PARSED,
-            CheckpointId::HIR_ANALYZED,
-            CheckpointId::MASM_LOWERED,
-            CheckpointId::PACKAGE_ASSEMBLED,
-        ],
-        aliases: &[
-            ("parse", CheckpointId::MASM_PARSED),
-            ("analyze", CheckpointId::HIR_ANALYZED),
-            ("lower", CheckpointId::MASM_LOWERED),
-            ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
-        ],
+    // `MASM`'s route produces no `wasm` artifact at all, which is what separates "this
+    // frontend cannot produce it" from "not before the cap".
+    use crate::pipeline::{
+        FrontendId,
+        registry::tests::{MASM, WASM},
     };
 
     fn typed(output_type: OutputType) -> OutputTypeSpec {
         OutputTypeSpec::Typed {
             output_type,
+            path: None,
+        }
+    }
+
+    /// A `Subset` spec over `output_types`, sharing one destination.
+    ///
+    /// Increment 1's review established that `Subset` is produced by exactly one input: the
+    /// `ir` shorthand in `midenc-session/src/outputs.rs`, which expands to
+    /// `OutputType::ir()` — wat, hir, masm. A user naming several outputs writes several
+    /// `--emit` flags and gets one `Typed` spec each, never a `Subset`. That is why the
+    /// resolver treats `Subset` like `All`, as an *expansion*: it asks for whatever of the
+    /// shorthand's members this run can produce, so an unreachable member is skipped rather
+    /// than reported. Naming `masm` outright would still be an error.
+    fn subset(output_types: &[OutputType]) -> OutputTypeSpec {
+        OutputTypeSpec::Subset {
+            output_types: output_types.iter().copied().collect(),
             path: None,
         }
     }
@@ -341,6 +321,32 @@ mod tests {
     }
 
     #[test]
+    fn the_ir_subset_expands_within_the_cap() {
+        // `--emit=ir --stop-after=analyze` on the wasm route: of wat, hir and masm, only
+        // masm is past the cap. As an expansion it is skipped, so this resolves; the same
+        // outputs named individually would be a usage error, as the test below pins.
+        let request = OutputRequest::new(vec![subset(OutputType::ir())])
+            .with_stop_after(Some("analyze".to_string()));
+        let goal = resolve_goal(&request, &WASM).expect("the ir subset expands within the cap");
+        assert_eq!(goal.checkpoint(), CheckpointId::HIR_ANALYZED);
+
+        // The discriminating half: the same member, named rather than expanded, is rejected.
+        let named = OutputRequest::new(vec![typed(OutputType::Masm)])
+            .with_stop_after(Some("analyze".to_string()));
+        resolve_goal(&named, &WASM).expect_err("a named masm past the cap is still an error");
+    }
+
+    #[test]
+    fn the_ir_subset_skips_members_the_route_never_produces() {
+        // Uncapped, so the only reason to skip `wat` is that the masm route has no wasm
+        // producer at all. `an_artifact_the_route_never_produces_is_a_different_usage_error`
+        // pins that naming it outright still fails.
+        let request = OutputRequest::new(vec![subset(OutputType::ir())]);
+        let goal = resolve_goal(&request, &MASM).expect("an unproducible member is skipped");
+        assert_eq!(goal.checkpoint(), CheckpointId::PACKAGE_ASSEMBLED);
+    }
+
+    #[test]
     fn an_unknown_alias_lists_the_valid_set() {
         let request = OutputRequest::new(vec![]).with_stop_after(Some("codegen".to_string()));
         let err = resolve_goal(&request, &WASM).expect_err("codegen is not an alias");
@@ -367,5 +373,61 @@ mod tests {
         let request = OutputRequest::new(vec![]).with_stop_after(Some("masm.parsed".to_string()));
         let err = resolve_goal(&request, &WASM).expect_err("masm.parsed is off-route");
         assert!(format!("{err}").contains("masm.parsed"));
+    }
+
+    #[test]
+    fn a_frontend_declared_checkpoint_participates_in_goal_resolution() {
+        // The point of moving the mapping onto the registration: a checkpoint the core
+        // has never heard of must still resolve as a stop point and validate outputs.
+        const NATIVE: CheckpointId = CheckpointId::new("synthetic.parsed");
+        const SYNTHETIC: FrontendRegistration = FrontendRegistration {
+            id: FrontendId::new("synthetic"),
+            extensions: &["synth"],
+            route: &[NATIVE, CheckpointId::HIR_INITIAL, CheckpointId::PACKAGE_ASSEMBLED],
+            aliases: &[("parse", NATIVE), ("assemble", CheckpointId::PACKAGE_ASSEMBLED)],
+            artifacts: &[
+                (NATIVE, ArtifactId::new("synthetic")),
+                (CheckpointId::HIR_INITIAL, ArtifactId::HIR),
+                (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+            ],
+        };
+
+        let request = OutputRequest::new(vec![]).with_stop_after(Some("parse".to_string()));
+        let goal = resolve_goal(&request, &SYNTHETIC).expect("should resolve");
+        assert_eq!(goal.checkpoint(), NATIVE);
+
+        // And an output the synthetic route cannot produce is still rejected.
+        let request = OutputRequest::new(vec![OutputTypeSpec::Typed {
+            output_type: OutputType::Masm,
+            path: None,
+        }]);
+        let err = resolve_goal(&request, &SYNTHETIC).expect_err("synthetic route has no masm");
+        assert!(format!("{err}").contains("masm"));
+    }
+
+    #[test]
+    fn a_frontend_declared_checkpoint_can_satisfy_a_requested_output() {
+        // The discriminating case for a declared mapping: a core-owned `produces` returns
+        // `None` for a checkpoint it has never heard of, so `synthetic.lowered` would
+        // produce nothing at all. No checkpoint on this route would then produce `masm` —
+        // not by the cap and not by the terminal checkpoint either — so this `--emit` would
+        // be rejected as "frontend 'synthetic' does not produce a 'masm' artifact", even
+        // though the registration declares exactly that mapping.
+        const NATIVE: CheckpointId = CheckpointId::new("synthetic.lowered");
+        const SYNTHETIC: FrontendRegistration = FrontendRegistration {
+            id: FrontendId::new("synthetic"),
+            extensions: &["synth"],
+            route: &[NATIVE, CheckpointId::PACKAGE_ASSEMBLED],
+            aliases: &[("lower", NATIVE)],
+            artifacts: &[
+                (NATIVE, ArtifactId::MASM),
+                (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+            ],
+        };
+
+        let request = OutputRequest::new(vec![typed(OutputType::Masm)])
+            .with_stop_after(Some("lower".to_string()));
+        let goal = resolve_goal(&request, &SYNTHETIC).expect("synthetic.lowered produces masm");
+        assert_eq!(goal.checkpoint(), NATIVE);
     }
 }

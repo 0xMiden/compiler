@@ -11,7 +11,7 @@ use super::Stage;
 use crate::{CompilerResult, CompilerStopped};
 
 mod analyze;
-mod assemble;
+pub(crate) mod assemble;
 mod cargo;
 mod codegen;
 mod parse;

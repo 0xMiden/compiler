@@ -3,7 +3,10 @@ use core::{any::Any, cell::RefCell};
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, TargetAssemblyContext};
 use miden_mast_package::Package as MastPackage;
-use midenc_session::{PackageId, Session, diagnostics::Report, miden_project::TargetType};
+use midenc_hir::Context;
+use midenc_session::{
+    InputFile, PackageId, Session, diagnostics::Report, miden_project::TargetType,
+};
 
 use super::{
     Artifact, ArtifactId, CheckpointId, Flow, Goal, Observer, Outcome, Stopped, TargetRole,
@@ -99,9 +102,13 @@ impl CaptureSlot {
 /// Everything a frontend needs to compile one target.
 pub struct TargetContext<'a> {
     assembly: &'a TargetAssemblyContext<'a>,
-    // TODO(increment-3): replace with a per-target Session built from
-    // TargetAssemblyContext::package, per the Option scoping section of the spec.
-    session: Rc<Session>,
+    context: Rc<Context>,
+    /// The original compiler input, when one backs this target.
+    ///
+    /// [`TargetAssemblyContext`] exposes only paths, but stdin-backed inputs live in memory
+    /// as [`midenc_session::InputType::Stdin`] and have no path at all. Frontends that must
+    /// read the raw input bytes go through here.
+    input: Option<&'a InputFile>,
     role: TargetRole,
     goal: Goal,
     observers: Vec<Rc<RefCell<dyn Observer>>>,
@@ -109,23 +116,41 @@ pub struct TargetContext<'a> {
 }
 
 impl<'a> TargetContext<'a> {
-    /// Construct a context with a single observer, for use in tests.
+    /// Construct a context for the target described by `assembly`.
+    ///
+    /// `context` is the HIR context the frontend builds into, and also the source of this
+    /// target's [`Session`]. `input` is the original compiler input, if one backs this
+    /// target; see the [`TargetContext::input`] accessor for why paths are not enough.
+    pub fn new(
+        assembly: &'a TargetAssemblyContext<'a>,
+        context: Rc<Context>,
+        input: Option<&'a InputFile>,
+        role: TargetRole,
+        goal: Goal,
+        observers: Vec<Rc<RefCell<dyn Observer>>>,
+        capture: Rc<RefCell<CaptureSlot>>,
+    ) -> Self {
+        Self {
+            assembly,
+            context,
+            input,
+            role,
+            goal,
+            observers,
+            capture,
+        }
+    }
+
+    /// Construct a context with no input and a single observer, for use in tests.
     pub fn for_testing(
         assembly: &'a TargetAssemblyContext<'a>,
-        session: Rc<Session>,
+        context: Rc<Context>,
         role: TargetRole,
         goal: Goal,
         observer: Rc<RefCell<dyn Observer>>,
         capture: Rc<RefCell<CaptureSlot>>,
     ) -> Self {
-        Self {
-            assembly,
-            session,
-            role,
-            goal,
-            observers: vec![observer],
-            capture,
-        }
+        Self::new(assembly, context, None, role, goal, vec![observer], capture)
     }
 
     /// The assembler-provided context: dependency graph, target, paths, package registry.
@@ -133,12 +158,28 @@ impl<'a> TargetContext<'a> {
         self.assembly
     }
 
+    /// The HIR context this target's IR must be built into.
+    pub fn context(&self) -> Rc<Context> {
+        self.context.clone()
+    }
+
+    /// The original compiler input backing this target, if there is one.
+    ///
+    /// Frontends that need the raw input bytes must use this rather than the paths on
+    /// [`TargetContext::assembly`]: a stdin-backed input exists only in memory and has no
+    /// path to read it back from.
+    pub fn input(&self) -> Option<&'a InputFile> {
+        self.input
+    }
+
     /// The session for this target.
     ///
-    /// In increment 1 this is lifted from the HIR `Context` the caller supplied.
-    /// Increment 3 replaces it with a per-target session.
+    /// This is the session the HIR context owns, so the two can never disagree. The spec's
+    /// Option scoping section gives each target its own `Options` and its own
+    /// [`Context`], and a `Context` cannot exist without a session, so per-target sessions
+    /// arrive via the per-target context rather than by adding a second field here.
     pub fn session(&self) -> Rc<Session> {
-        self.session.clone()
+        self.context.session_rc()
     }
 
     /// This target's role in the overall compilation.
@@ -169,9 +210,27 @@ impl<'a> TargetContext<'a> {
 
     /// Publish `artifact` at `checkpoint`.
     ///
-    /// Notifies observers, then compares `checkpoint` against this target's goal. On a
-    /// match the artifact is captured and [`Flow::Stop`] is returned; otherwise the
-    /// artifact is handed back via [`Flow::Continue`].
+    /// Notifies observers, then, **for the root target only**, compares `checkpoint`
+    /// against this target's goal. On a match the artifact is captured and [`Flow::Stop`]
+    /// is returned; otherwise — and always for a non-root target — the artifact is handed
+    /// back via [`Flow::Continue`].
+    ///
+    /// Only [`TargetRole::Root`] can stop. It alone is given the caller's goal, while every
+    /// other role is compiled to completion regardless of what was asked for, so a non-root
+    /// target's checkpoints are observable but never terminal: this always returns
+    /// [`Flow::Continue`] for them, never captures, and never returns [`Flow::Stop`], even
+    /// when `checkpoint` equals the goal it was assigned.
+    ///
+    /// That matters because non-root targets are conventionally assigned
+    /// [`Goal::at(CheckpointId::PACKAGE_ASSEMBLED)`](Goal::at), the very checkpoint an
+    /// orchestrator publishes uniformly for every target once its package is assembled.
+    /// Treating that as terminal for a dependency would force callers to special-case
+    /// non-root notification; continuing by construction keeps both observers and the
+    /// orchestrator uniform across roles.
+    ///
+    /// Checking that a non-root target really was assigned a full-build goal belongs where
+    /// goals are assigned, not here. A mis-assigned goal then costs extra work rather than
+    /// yielding a wrong artifact, which is the safer failure.
     ///
     /// Rendering for `--emit` is added in increment 3, where the resolved output request
     /// is available.
@@ -187,7 +246,7 @@ impl<'a> TargetContext<'a> {
             observer.borrow_mut().on_checkpoint(checkpoint, self.role, &artifact);
         }
 
-        if checkpoint != self.goal.checkpoint() {
+        if !self.role.is_root() || checkpoint != self.goal.checkpoint() {
             let value = artifact.downcast::<T>().map_err(|artifact| {
                 Report::msg(format!(
                     "internal error: artifact at '{checkpoint}' changed type while being \
@@ -238,32 +297,25 @@ mod tests {
     use alloc::{format, rc::Rc};
     use core::cell::RefCell;
 
-    use midenc_session::miden_project::TargetType;
+    use midenc_session::{InputType, miden_project::TargetType};
 
     use super::*;
-    use crate::pipeline::{Goal, RecordingObserver, testing::VirtualProject};
+    use crate::pipeline::{
+        Goal, RecordingObserver,
+        testing::{VirtualProject, wat_fixture},
+    };
 
     #[derive(Debug, PartialEq)]
     struct Payload(u32);
-
-    fn wat_fixture(name: &str, file: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join("midenc-pipeline-fixtures").join(name);
-        std::fs::create_dir_all(&dir).expect("should create fixture dir");
-        let root = dir.join(file);
-        std::fs::write(&root, "(module)").expect("should write fixture source");
-        root
-    }
 
     fn library(name: &str) -> VirtualProject {
         let root = wat_fixture(name, "lib.wat");
         VirtualProject::new(name, &root, TargetType::Library).expect("should build")
     }
 
-    /// A default session, lifted from a default HIR context.
-    ///
-    /// Increment 3 replaces this with a per-target session built from the callback package.
-    fn session() -> Rc<midenc_session::Session> {
-        midenc_hir::Context::default().session_rc()
+    /// A default HIR context, which is also the source of the target's session.
+    fn context() -> Rc<Context> {
+        Rc::new(Context::default())
     }
 
     #[test]
@@ -275,7 +327,7 @@ mod tests {
 
         let cx = TargetContext::for_testing(
             &assembly,
-            session(),
+            context(),
             TargetRole::Root,
             Goal::at(CheckpointId::MASM_LOWERED),
             observer.clone(),
@@ -299,7 +351,7 @@ mod tests {
 
         let cx = TargetContext::for_testing(
             &assembly,
-            session(),
+            context(),
             TargetRole::Root,
             Goal::at(CheckpointId::HIR_INITIAL),
             observer,
@@ -314,6 +366,67 @@ mod tests {
         let captured = capture.borrow_mut().take().expect("artifact should be captured");
         assert_eq!(captured.checkpoint(), CheckpointId::HIR_INITIAL);
         assert_eq!(captured.downcast::<Payload>().unwrap(), Payload(9));
+    }
+
+    #[test]
+    fn a_non_root_target_continues_even_at_its_goal() {
+        let project = library("ctx_role_guard");
+        let assembly = project.assembly_context().expect("assembly context");
+
+        // Non-root targets are conventionally assigned `PACKAGE_ASSEMBLED`, which is also
+        // what an orchestrator publishes for every target once assembly finishes. Reaching
+        // it must still be non-terminal for a dependency.
+        let goal = Goal::at(CheckpointId::PACKAGE_ASSEMBLED);
+
+        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
+        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let cx = TargetContext::for_testing(
+            &assembly,
+            context(),
+            TargetRole::Dependency,
+            goal,
+            observer.clone(),
+            capture.clone(),
+        );
+
+        match cx
+            .checkpoint(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE, Payload(7))
+            .expect("a dependency publishing at its goal must not error")
+        {
+            // Assert the payload, not just the variant: a guard that returned a default
+            // value would otherwise pass.
+            Flow::Continue(payload) => assert_eq!(payload, Payload(7)),
+            Flow::Stop(_) => panic!("a non-root target must never stop, even at its goal"),
+        }
+        assert!(capture.borrow().is_empty(), "nothing may be captured for a non-root target");
+        assert_eq!(
+            observer.borrow().records(),
+            &[(CheckpointId::PACKAGE_ASSEMBLED, TargetRole::Dependency)],
+            "a non-root target's checkpoints are still observable"
+        );
+
+        // Mirror: the very same goal and checkpoint on the *root* target must still capture
+        // and stop, so the behaviour discriminates on role rather than never capturing.
+        let root_capture = Rc::new(RefCell::new(CaptureSlot::default()));
+        let root = TargetContext::for_testing(
+            &assembly,
+            context(),
+            TargetRole::Root,
+            goal,
+            Rc::new(RefCell::new(RecordingObserver::default())),
+            root_capture.clone(),
+        );
+        match root
+            .checkpoint(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE, Payload(1))
+            .expect("the root target may stop at its goal")
+        {
+            Flow::Stop(stopped) => {
+                assert_eq!(stopped.checkpoint(), CheckpointId::PACKAGE_ASSEMBLED)
+            }
+            Flow::Continue(_) => panic!("expected the root target to stop at its goal"),
+        }
+        let captured = root_capture.borrow_mut().take().expect("root capture");
+        assert_eq!(captured.downcast::<Payload>().unwrap(), Payload(1));
     }
 
     #[test]
@@ -341,7 +454,7 @@ mod tests {
 
         let lib_target = TargetContext::for_testing(
             &lib_cx,
-            session(),
+            context(),
             TargetRole::RequiredLibrary,
             Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
             observer.clone(),
@@ -349,7 +462,7 @@ mod tests {
         );
         let exe_target = TargetContext::for_testing(
             &exe_cx,
-            session(),
+            context(),
             TargetRole::Root,
             Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
             observer,
@@ -437,12 +550,64 @@ mod tests {
     }
 
     #[test]
+    fn session_is_derived_from_the_hir_context() {
+        let project = library("ctx_session");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let cx = TargetContext::new(
+            &assembly,
+            context.clone(),
+            None,
+            TargetRole::Root,
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![Rc::new(RefCell::new(RecordingObserver::default())) as Rc<RefCell<dyn Observer>>],
+            Rc::new(RefCell::new(CaptureSlot::default())),
+        );
+
+        assert!(Rc::ptr_eq(&cx.context(), &context), "the frontend builds HIR into this context");
+        assert!(
+            Rc::ptr_eq(&cx.session(), &context.session_rc()),
+            "the session must be the one the HIR context owns, not a second one"
+        );
+        assert!(cx.input().is_none(), "no input was supplied for this target");
+    }
+
+    #[test]
+    fn the_original_input_is_reachable_including_stdin_bytes() {
+        let project = library("ctx_input");
+        let assembly = project.assembly_context().expect("assembly context");
+        let input = InputFile::from_bytes(b"(module)".to_vec(), "stdin.wat".into())
+            .expect("should build a stdin input");
+        let cx = TargetContext::new(
+            &assembly,
+            context(),
+            Some(&input),
+            TargetRole::Root,
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![Rc::new(RefCell::new(RecordingObserver::default())) as Rc<RefCell<dyn Observer>>],
+            Rc::new(RefCell::new(CaptureSlot::default())),
+        );
+
+        let reached = cx.input().expect("a frontend must be able to reach the original input");
+        assert!(
+            reached.as_path().is_none(),
+            "a stdin input has no path, so paths alone cannot reach its bytes"
+        );
+        match &reached.file {
+            InputType::Stdin { input, .. } => {
+                assert_eq!(input.as_slice(), b"(module)", "the stdin bytes must be readable")
+            }
+            other => panic!("expected a stdin-backed input, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn a_virtual_project_is_reported_as_virtual() {
         let project = library("ctx_virtual");
         let assembly = project.assembly_context().expect("assembly context");
         let cx = TargetContext::for_testing(
             &assembly,
-            session(),
+            context(),
             TargetRole::Root,
             Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
             Rc::new(RefCell::new(RecordingObserver::default())),
