@@ -10,6 +10,8 @@ extern crate std;
 pub mod cargo;
 mod compiler;
 #[cfg(feature = "std")]
+pub mod pipeline;
+#[cfg(feature = "std")]
 pub mod rust;
 mod stage;
 pub mod stages;
