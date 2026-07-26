@@ -1,4 +1,13 @@
 # RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/masm/cross_module_advice_taint/miden-project.toml 2>&1 | filecheck %s
+#
+# The lint stops the build by returning `CompilerStopped`, which `midenc-driver` downcasts
+# into a *clean* exit. On a project the error now travels back out through the assembler's
+# call stack before the driver sees it, so a wrapper introduced anywhere along that path
+# would turn this run into a failed compilation. The pipe above cannot catch that -- the
+# status observed there is filecheck's -- so assert midenc's own status separately. lit
+# joins RUN lines with `&&`, so a non-zero exit here fails the test. Output is left
+# unredirected on purpose: if this ever does fail, the error is what you want to read.
+# RUN: midenc -Zlint -Canalyze-only %S/../../fixtures/masm/cross_module_advice_taint/miden-project.toml
 
 CHECK-LABEL: lib/support.masm
 CHECK:  unconstrained advice data is consumed here as a constrained value

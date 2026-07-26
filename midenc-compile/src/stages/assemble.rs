@@ -1,16 +1,15 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::{cell::RefCell, ops::ControlFlow};
+use core::ops::ControlFlow;
 
 use miden_assembly::{
-    ProjectSourceInputs, ProjectSourceProvider, ProjectTargetSelector, ResolvedPackage,
-    TargetAssemblyContext, utils::DisplayHex,
+    ProjectSourceProvider, ProjectTargetSelector, ResolvedPackage, utils::DisplayHex,
 };
 use miden_mast_package::{Package, TargetType};
 use midenc_codegen_masm::{MasmComponent, intrinsics};
 
 use super::*;
 use crate::pipeline::{
-    CaptureSlot, CheckpointId, Flow, Frontend, Goal, TargetContext, TargetKey, TargetRole,
+    CheckpointId, Frontend, FrontendProvider, Goal, RequestState, RootTarget, TargetKey,
     frontends::RustProjectFrontend,
 };
 
@@ -78,23 +77,34 @@ impl Stage for AssembleStage {
                 target.name.inner().clone(),
                 target.ty,
             );
+            let root = RootTarget::new(project_package.clone(), &target);
             assemble_project_with_registry(
                 project_package.clone(),
                 selector,
                 &session,
                 &mut registry,
-                [Box::new(RustSourceProvider::seeded(session.clone(), key, input))
-                    as Box<dyn ProjectSourceProvider>],
+                [rust_source_provider(
+                    session.clone(),
+                    root,
+                    RustProjectFrontend::seeded(session.clone(), key, input),
+                )],
             )?
         } else {
+            let root = RootTarget::new(
+                project_package.clone(),
+                &selector.select_target(&project_package)?,
+            );
             assemble_virtual_project_with_registry(
                 project_package.clone(),
                 selector,
                 input,
                 &session,
                 &mut registry,
-                [Box::new(RustSourceProvider::new(session.clone()))
-                    as Box<dyn ProjectSourceProvider>],
+                [rust_source_provider(
+                    session.clone(),
+                    root,
+                    RustProjectFrontend::new(session.clone()),
+                )],
             )?
         };
 
@@ -156,13 +166,17 @@ impl Stage for AssembleProjectStage {
                 } else {
                     ProjectTargetSelector::Library
                 };
+                let root = RootTarget::new(package.clone(), &selector.select_target(&package)?);
                 assemble_project_with_registry(
-                    package,
+                    package.clone(),
                     selector,
                     session,
                     &mut registry,
-                    [Box::new(RustSourceProvider::new(context.session_rc()))
-                        as Box<dyn ProjectSourceProvider>],
+                    [rust_source_provider(
+                        context.session_rc(),
+                        root,
+                        RustProjectFrontend::new(context.session_rc()),
+                    )],
                 )?
             }
         };
@@ -176,115 +190,34 @@ impl Stage for AssembleProjectStage {
     }
 }
 
-/// Bridges the assembler's [`ProjectSourceProvider`] callbacks onto [`RustProjectFrontend`].
+/// The single `"rs"` source provider the standalone path registers with the assembler.
 ///
-/// This type owns no language logic of its own. Each callback wraps the assembler's
-/// [`TargetAssemblyContext`] in a pipeline [`TargetContext`] and delegates to the matching
-/// [`Frontend`] method; the cargo build, its memoization and the package post-processing all
-/// live in the frontend.
+/// These `Stage` chains always drive a whole build through package assembly, so the request
+/// state's goal is [`CheckpointId::PACKAGE_ASSEMBLED`], it carries no observers, and its
+/// capture slot is a throwaway: [`RustProjectFrontend`] publishes no checkpoints, so nothing
+/// can stop and nothing is ever captured.
 ///
-/// The session is not held directly: it reaches the frontend through [`RustProjectFrontend`],
-/// and the callbacks through the HIR context, which owns it.
-pub struct RustSourceProvider {
-    /// The HIR context handed to every [`TargetContext`] this adapter builds, and thus the
-    /// source of `cx.session()`.
-    ///
-    /// Built once rather than per callback: [`Context::new`] registers every dialect, and
-    /// the Rust frontend builds no HIR into it anyway — the nested `midenc` invocation cargo
-    /// drives has its own context.
-    context: Rc<Context>,
+/// `root` is the target the surrounding selector resolved, and is what lets the provider
+/// derive each callback's role. Which role a callback gets makes no difference to this
+/// frontend — it neither publishes nor reads the role — but deriving it is free and leaves
+/// nothing hardcoded to go stale.
+///
+/// No `"masm"` provider is registered alongside it, deliberately. Claiming that extension
+/// displaces the assembler's own [`MasmSourceProvider`](miden_assembly::MasmSourceProvider)
+/// for every Miden Assembly target in the graph; the project path does exactly that on
+/// purpose, and the standalone path has no reason to.
+fn rust_source_provider(
+    session: Rc<Session>,
+    root: RootTarget,
     frontend: RustProjectFrontend,
-}
-
-impl RustSourceProvider {
-    /// Construct an adapter that builds within `session`, with nothing pre-built.
-    pub fn new(session: Rc<Session>) -> Self {
-        let frontend = RustProjectFrontend::new(session.clone());
-        Self::with_frontend(session, frontend)
-    }
-
-    /// Construct an adapter whose frontend already holds `output` for the target `key` names.
-    ///
-    /// `key` must be built from the *selector-resolved target*, not from the package: see
-    /// [`RustProjectFrontend::seeded`] for why a package-derived key silently never matches.
-    pub fn seeded(session: Rc<Session>, key: TargetKey, output: CodegenOutput) -> Self {
-        let frontend = RustProjectFrontend::seeded(session.clone(), key, output);
-        Self::with_frontend(session, frontend)
-    }
-
-    // TODO(increment-3): build this Context per target rather than once per provider, per
-    // the spec's Option scoping section. Each target gets its own `Options`, hence its own
-    // `Context`, and the session `TargetContext::session` derives follows from it.
-    fn with_frontend(session: Rc<Session>, frontend: RustProjectFrontend) -> Self {
-        Self {
-            context: Rc::new(Context::new(session)),
-            frontend,
-        }
-    }
-
-    /// Wrap one assembler callback's context in the context the frontend expects.
-    ///
-    /// The assembler drives a full build through package assembly, so the goal is
-    /// [`CheckpointId::PACKAGE_ASSEMBLED`] and the capture slot is a throwaway: nothing
-    /// short of assembly can stop, and the frontend publishes no checkpoints at all, so
-    /// there are no observers to notify and nothing is ever captured.
-    // TODO(increment-3): role derivation is not implemented. Every callback is labelled
-    // [`TargetRole::Root`], including those for dependencies and required libraries, which
-    // disarms the guard the root-only capture rule exists to provide. It is inert only
-    // because this frontend publishes no checkpoints, and `provide_sources` reports any
-    // `Flow::Stop` as an internal error; deriving the real role must come before either
-    // changes.
-    fn target_context<'a>(&self, assembly: &'a TargetAssemblyContext<'a>) -> TargetContext<'a> {
-        TargetContext::new(
-            assembly,
-            self.context.clone(),
-            None,
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            Vec::new(),
-            Rc::new(RefCell::new(CaptureSlot::default())),
-        )
-    }
-}
-
-impl ProjectSourceProvider for RustSourceProvider {
-    fn file_type(&self) -> &'static str {
-        "rs"
-    }
-
-    fn provide_sources(
-        &self,
-        context: &TargetAssemblyContext<'_>,
-    ) -> Result<ProjectSourceInputs, Report> {
-        let cx = self.target_context(context);
-        match self.frontend.compile(&cx)? {
-            Flow::Continue(inputs) => Ok(inputs),
-            Flow::Stop(stopped) => Err(Report::msg(format!(
-                "internal error: compiling target '{}' of package '{}' stopped at '{}', but this \
-                 path always builds through '{}' and the Rust frontend publishes no checkpoints, \
-                 so no stop is reachable here",
-                cx.target_key().name(),
-                cx.target_key().package(),
-                stopped.checkpoint(),
-                CheckpointId::PACKAGE_ASSEMBLED,
-            ))),
-        }
-    }
-
-    fn provide_source_provenance(
-        &self,
-        context: &TargetAssemblyContext<'_>,
-    ) -> Result<miden_assembly::ProjectSourceProvenanceInputs, Report> {
-        self.frontend.provenance(&self.target_context(context))
-    }
-
-    fn post_process_package(
-        &self,
-        package: &mut Package,
-        context: &TargetAssemblyContext<'_>,
-    ) -> Result<(), Report> {
-        self.frontend.post_process(package, &self.target_context(context))
-    }
+) -> Box<dyn ProjectSourceProvider> {
+    Box::new(FrontendProvider::new(
+        "rs",
+        Rc::new(frontend) as Rc<dyn Frontend>,
+        session,
+        Rc::new(RequestState::new(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), Vec::new())),
+        root,
+    ))
 }
 
 fn selected_executable_target_name<'a>(
@@ -318,6 +251,11 @@ pub(super) fn assemble_project_with_registry(
     let mut project_assembler =
         assembler.for_project_with_providers(project_package, registry, source_providers)?;
 
+    // The build profile is hardcoded here, where `Pipeline::compile` passes the name from
+    // `Options::profile`. That asymmetry is the remaining half of the profile rule: project
+    // inputs (`miden-project.toml`/`Cargo.toml`) go through the pipeline and honor `--release`,
+    // while standalone inputs still reach this legacy chain and always build `dev`. It
+    // converges when standalone inputs move onto the pipeline, with the standalone frontends.
     project_assembler.assemble(selector, "dev")
 }
 
@@ -356,6 +294,8 @@ pub(super) fn assemble_virtual_project_with_registry(
         package_id,
         project_package,
         &target,
+        // Hardcoded for the same reason as in `assemble_project_with_registry` above: this is
+        // the standalone-input arm, which does not yet honor `Options::profile`.
         "dev",
         miden_assembly::InterruptedTargetRole::Root,
         None,
@@ -388,7 +328,12 @@ pub(super) fn assemble_virtual_project_with_registry(
     Ok(package)
 }
 
-pub(super) fn prepare_assembler(
+/// Apply the session's link inputs to `assembler` before a project is assembled with it.
+///
+/// `pub(crate)` rather than `pub(super)` because [`crate::pipeline`] assembles through this
+/// same sequence: the pipeline driver builds its own [`miden_assembly::Assembler`] and must
+/// prepare it exactly as the legacy stages do, or the two paths link different inputs.
+pub(crate) fn prepare_assembler(
     assembler: &mut miden_assembly::Assembler,
     project_package: &midenc_session::miden_project::Package,
     session: &Session,

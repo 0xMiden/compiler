@@ -15,7 +15,6 @@ pub(crate) mod assemble;
 mod cargo;
 mod codegen;
 mod parse;
-mod project;
 mod rewrite;
 
 pub use self::{
@@ -27,7 +26,6 @@ pub use self::{
         MasmSources, MidenComponent, ParseComponentStage, ParseHirStage, ParseMasmStage,
         ParseRustStage, ParseWasmStage,
     },
-    project::ProjectAssemblyStage,
     rewrite::ApplyRewritesStage,
 };
 
@@ -51,31 +49,46 @@ pub fn run_default_pipeline(
     }
 }
 
+/// Assemble the project `input` locates, through the frontend-neutral pipeline.
+///
+/// Dispatch is by the selected target's root extension, so a Rust-rooted and a
+/// Miden-Assembly-rooted manifest arrive here alike; there is no special case for either.
 pub(crate) fn project_assembly_pipeline(
     input: midenc_session::InputFile,
     context: Rc<Context>,
 ) -> CompilerResult<Artifact> {
-    let session = context.session();
-    let project_package = session.project.package();
-    // HACK(pauls): This is a temporary workaround until we refactor the compiler pipeline and
-    // route all compilation through a common pipeline where we can perform analysis uniformly
-    let is_masm_target = if session.options.target_type.unwrap_or_default().is_executable() {
-        project_package
-            .executable_targets()
-            .iter()
-            .find(|t| t.name.inner().as_ref() == session.name.as_str())
-            .is_some_and(|t| t.path.as_str().ends_with(".masm"))
-    } else {
-        project_package
-            .library_target()
-            .is_some_and(|t| t.path.as_str().ends_with(".masm"))
-    };
-    if is_masm_target {
-        masm_project_pipeline(None, context)
-    } else {
-        let mut stage = ProjectAssemblyStage;
-        stage.run(input, context)
-    }
+    use alloc::vec::Vec;
+
+    use miden_assembly_syntax::DisplayHex;
+
+    use crate::pipeline::{CompilationRequest, OutputRequest, Pipeline};
+
+    let session = context.session_rc();
+    let mut registry = session.package_registry()?;
+
+    // No outputs are requested and no observers attached here. `--emit` is *not* forwarded
+    // into the request: `Options::output_types` cannot distinguish an explicit `--emit` from
+    // the implicit `masp` that `Options::with_output_types` inserts on every invocation, and
+    // forwarding explicit specs would turn today's silent no-op into a usage error — the Rust
+    // route holds a single checkpoint, so any named output short of the package would fail to
+    // resolve against it. Validating explicit `--emit` specs against a route belongs with the
+    // CLI, which still holds its raw `Vec<OutputTypeSpec>`.
+    //
+    // What is emitted is nonetheless decided by the session: `Pipeline::compile` attaches an
+    // observer that renders the selected target's artifacts through the route's own
+    // declarations, and `Session::emit` writes only the output types the session asked for.
+    let request =
+        CompilationRequest::new(session, input).with_outputs(OutputRequest::new(Vec::new()));
+
+    let outcome = Pipeline::with_default_frontends()?.compile(request, registry.as_mut())?;
+    let package = outcome.into_package()?;
+
+    log::debug!(
+        "successfully assembled package with digest {}",
+        DisplayHex::new(&package.digest().as_bytes())
+    );
+
+    Ok(Artifact::Assembled(package))
 }
 
 #[cfg(false)]

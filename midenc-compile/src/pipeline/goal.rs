@@ -98,17 +98,17 @@ pub fn resolve_goal(
     request: &OutputRequest,
     frontend: &FrontendRegistration,
 ) -> CompilerResult<Goal> {
-    let terminal = frontend.route.len() - 1;
+    let terminal = frontend.route().len() - 1;
     let goal = match request.stop_after() {
         Some(value) => resolve_stop_after(value, frontend)?,
         None => terminal,
     };
 
-    // Whether some checkpoint in `frontend.route[..=last]` produces `artifact`, according to
+    // Whether some checkpoint in `frontend.route()[..=last]` produces `artifact`, according to
     // the registration's own declaration. Passing the goal position answers "can this run
     // emit it?"; passing the terminal position answers "can this frontend emit it at all?".
     let produces_by = |artifact: ArtifactId, last: usize| {
-        frontend.route[..=last]
+        frontend.route()[..=last]
             .iter()
             .any(|checkpoint| frontend.artifact_at(*checkpoint) == Some(artifact))
     };
@@ -140,20 +140,20 @@ pub fn resolve_goal(
                 Report::msg(format!(
                     "cannot emit '{}': it is produced after the requested stop point '{}'",
                     output_type.extension(),
-                    frontend.route[goal]
+                    frontend.route()[goal]
                 ))
             } else {
                 Report::msg(format!(
                     "cannot emit '{}': frontend '{}' does not produce a '{artifact}' artifact",
                     output_type.extension(),
-                    frontend.id
+                    frontend.id()
                 ))
             });
         }
     }
 
     Ok(Goal {
-        checkpoint: frontend.route[goal],
+        checkpoint: frontend.route()[goal],
     })
 }
 
@@ -164,20 +164,20 @@ fn resolve_stop_after(value: &str, frontend: &FrontendRegistration) -> CompilerR
             Report::msg(format!(
                 "internal error: alias '{value}' maps to '{checkpoint}', which is not on the \
                  route of frontend '{}'",
-                frontend.id
+                frontend.id()
             ))
         });
     }
 
     if let Some(position) =
-        frontend.route.iter().position(|checkpoint| checkpoint.as_str() == value)
+        frontend.route().iter().position(|checkpoint| checkpoint.as_str() == value)
     {
         return Ok(position);
     }
 
     let aliases = frontend.alias_names().collect::<Vec<_>>().join(", ");
     let checkpoints = frontend
-        .route
+        .route()
         .iter()
         .map(|checkpoint| checkpoint.as_str())
         .collect::<Vec<_>>()
@@ -185,7 +185,7 @@ fn resolve_stop_after(value: &str, frontend: &FrontendRegistration) -> CompilerR
     Err(Report::msg(format!(
         "'{value}' is not a valid stop point for frontend '{}'; expected one of the aliases \
          [{aliases}] or checkpoints [{checkpoints}]",
-        frontend.id
+        frontend.id()
     )))
 }
 
@@ -198,9 +198,12 @@ mod tests {
     use super::*;
     // `MASM`'s route produces no `wasm` artifact at all, which is what separates "this
     // frontend cannot produce it" from "not before the cap".
+    // `decl` declares an artifact with a renderer that writes nothing, and `unexercised`
+    // builds a frontend that compiles nothing: goal resolution neither emits nor runs a
+    // frontend, so nothing here calls either.
     use crate::pipeline::{
         FrontendId,
-        registry::tests::{MASM, WASM},
+        registry::tests::{MASM, WASM, decl, unexercised},
     };
 
     fn typed(output_type: OutputType) -> OutputTypeSpec {
@@ -380,17 +383,18 @@ mod tests {
         // The point of moving the mapping onto the registration: a checkpoint the core
         // has never heard of must still resolve as a stop point and validate outputs.
         const NATIVE: CheckpointId = CheckpointId::new("synthetic.parsed");
-        const SYNTHETIC: FrontendRegistration = FrontendRegistration {
-            id: FrontendId::new("synthetic"),
-            extensions: &["synth"],
-            route: &[NATIVE, CheckpointId::HIR_INITIAL, CheckpointId::PACKAGE_ASSEMBLED],
-            aliases: &[("parse", NATIVE), ("assemble", CheckpointId::PACKAGE_ASSEMBLED)],
-            artifacts: &[
-                (NATIVE, ArtifactId::new("synthetic")),
-                (CheckpointId::HIR_INITIAL, ArtifactId::HIR),
-                (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+        const SYNTHETIC: FrontendRegistration = FrontendRegistration::new(
+            FrontendId::new("synthetic"),
+            &["synth"],
+            &[NATIVE, CheckpointId::HIR_INITIAL, CheckpointId::PACKAGE_ASSEMBLED],
+            &[("parse", NATIVE), ("assemble", CheckpointId::PACKAGE_ASSEMBLED)],
+            &[
+                decl(NATIVE, ArtifactId::new("synthetic")),
+                decl(CheckpointId::HIR_INITIAL, ArtifactId::HIR),
+                decl(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
             ],
-        };
+            unexercised,
+        );
 
         let request = OutputRequest::new(vec![]).with_stop_after(Some("parse".to_string()));
         let goal = resolve_goal(&request, &SYNTHETIC).expect("should resolve");
@@ -414,16 +418,17 @@ mod tests {
         // be rejected as "frontend 'synthetic' does not produce a 'masm' artifact", even
         // though the registration declares exactly that mapping.
         const NATIVE: CheckpointId = CheckpointId::new("synthetic.lowered");
-        const SYNTHETIC: FrontendRegistration = FrontendRegistration {
-            id: FrontendId::new("synthetic"),
-            extensions: &["synth"],
-            route: &[NATIVE, CheckpointId::PACKAGE_ASSEMBLED],
-            aliases: &[("lower", NATIVE)],
-            artifacts: &[
-                (NATIVE, ArtifactId::MASM),
-                (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+        const SYNTHETIC: FrontendRegistration = FrontendRegistration::new(
+            FrontendId::new("synthetic"),
+            &["synth"],
+            &[NATIVE, CheckpointId::PACKAGE_ASSEMBLED],
+            &[("lower", NATIVE)],
+            &[
+                decl(NATIVE, ArtifactId::MASM),
+                decl(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
             ],
-        };
+            unexercised,
+        );
 
         let request = OutputRequest::new(vec![typed(OutputType::Masm)])
             .with_stop_after(Some("lower".to_string()));

@@ -43,7 +43,7 @@ pub fn hir_to_masm(
     };
 
     let codegen = stage("codegen", CodegenStage.run(hir, context))?;
-    // TODO(increment-3): only `codegen.component` survives this call. `CodegenOutput` also carries
+    // TODO(increment-4): only `codegen.component` survives this call. `CodegenOutput` also carries
     // `account_component_metadata_bytes` and `source_provenance`, both threaded from parse through
     // `MidenComponent`; assembly consumes them to attach the account-component metadata section to
     // the package (see `attach_account_component_metadata` in `stages/assemble.rs`). Dropping them
@@ -74,7 +74,7 @@ pub fn hir_to_masm(
 /// `internal error: legacy analysis stage stopped early: ...` — an ICE for a legitimate
 /// user error. Nothing calls [`hir_to_masm`] outside tests yet, so no user can hit it today.
 ///
-/// TODO(increment-3): wiring this service into a real driver must first route the analysis
+/// TODO(increment-4): wiring this service into a real driver must first route the analysis
 /// stage's diagnostic-driven stop to the user as a normal compilation failure (the stage's
 /// own `has_errors()` branch), distinct from the flag-driven sentinels. The stage bodies
 /// then move into this module and the flag checks are deleted, at which point this wrapper
@@ -98,7 +98,8 @@ mod tests {
 
     use super::*;
     use crate::pipeline::{
-        ArtifactId, CaptureSlot, Goal, Outcome, RecordingObserver, TargetContext, TargetRole,
+        ArtifactId, Goal, Observer, Outcome, RecordingObserver, RequestState, TargetContext,
+        TargetRole,
         testing::{VirtualProject, wat_fixture},
     };
 
@@ -171,22 +172,17 @@ mod tests {
         let project = library(name);
         let assembly = project.assembly_context().expect("assembly context");
         let observer = Rc::new(RefCell::new(RecordingObserver::default()));
-        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
-
-        let cx = TargetContext::for_testing(
-            &assembly,
-            context,
-            TargetRole::Root,
+        let state = RequestState::new(
             Goal::at(goal),
-            observer.clone(),
-            capture.clone(),
+            alloc::vec![observer.clone() as Rc<RefCell<dyn Observer>>],
         );
+
+        let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
 
         let flow = hir_to_masm(&cx, component).expect("backend should succeed");
         assert!(flow.is_stop(), "the goal is on the backend's route, so it must stop there");
         let trace = observer.borrow().records().iter().map(|(c, _)| *c).collect();
-        let captured = capture.borrow_mut().take();
-        (trace, captured)
+        (trace, state.take_outcome())
     }
 
     #[test]

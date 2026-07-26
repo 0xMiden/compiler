@@ -9,8 +9,59 @@ use midenc_session::{Session, diagnostics::Report};
 
 use crate::{
     CodegenOutput, CompilerResult,
-    pipeline::{Flow, Frontend, TargetContext, TargetKey},
+    pipeline::{
+        Artifact, ArtifactDecl, ArtifactId, CheckpointId, Flow, Frontend, FrontendId,
+        FrontendRegistration, TargetContext, TargetKey,
+    },
 };
+
+/// Declares the frontend that handles targets rooted at a `.rs` file.
+///
+/// # Why the route holds a single checkpoint
+///
+/// A route describes the checkpoints a frontend *reaches*, because that is what
+/// `--stop-after` and `--emit` are validated against. [`RustProjectFrontend`] reaches none
+/// of the intermediate ones: its build is a nested `midenc` invocation driven by cargo,
+/// which hands back only a final [`CodegenOutput`], so there is no point in this process at
+/// which the initial HIR, the transformed HIR or the lowered Miden Assembly exists to be
+/// published. Declaring them anyway would let `--stop-after=lower` resolve to a checkpoint
+/// the run never reaches, and the request would then end with an empty capture slot rather
+/// than a diagnostic.
+///
+/// [`CheckpointId::PACKAGE_ASSEMBLED`] is on the route because the *driver* publishes it
+/// once the assembler returns a package, as it does for every frontend. So this route is
+/// the honest minimum: a Rust build either produces a package or fails.
+///
+/// Surfacing the nested run's checkpoints — which would grow this route — is a later
+/// increment's work; see [`Frontend::compile`] on [`RustProjectFrontend`].
+pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
+    FrontendId::new("rust"),
+    &["rs"],
+    &[CheckpointId::PACKAGE_ASSEMBLED],
+    &[("assemble", CheckpointId::PACKAGE_ASSEMBLED)],
+    // The assembled package is written by [`crate::compile`]; see [`unrendered`].
+    &[ArtifactDecl {
+        checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
+        id: ArtifactId::PACKAGE,
+        render: unrendered,
+    }],
+    make_rust,
+);
+
+/// Build the frontend this registration declares.
+fn make_rust(session: Rc<Session>) -> Rc<dyn Frontend> {
+    Rc::new(RustProjectFrontend::new(session))
+}
+
+/// This frontend's renderer, which writes nothing.
+///
+/// The assembled package is already written by [`crate::compile`], which emits it in both
+/// `mast` and `masp` form once the pipeline hands it back; declaring a renderer here would
+/// make two writers for one artifact. The `masm` route declares its package artifact the same
+/// way, for the same reason.
+fn unrendered(_artifact: &Artifact, _session: &Session) -> CompilerResult<()> {
+    Ok(())
+}
 
 /// Compiles a target whose sources are Rust, by shelling out to cargo.
 ///
@@ -180,7 +231,7 @@ impl Frontend for RustProjectFrontend {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{sync::Arc, vec::Vec};
+    use alloc::{string::ToString, sync::Arc, vec::Vec};
 
     use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
     use midenc_codegen_masm::MasmComponent;
@@ -189,9 +240,77 @@ mod tests {
 
     use super::*;
     use crate::pipeline::{
-        CaptureSlot, CheckpointId, Goal, RecordingObserver, TargetRole,
+        CheckpointId, FrontendId, FrontendRegistry, Goal, OutputRequest, RequestState, TargetRole,
+        resolve_goal,
         testing::{VirtualProject, wat_fixture},
     };
+
+    /// The route declares exactly what this frontend reaches, and no more.
+    ///
+    /// A route is what `--stop-after` and `--emit` are validated against, so declaring the
+    /// checkpoints a Rust build *conceptually* passes through — `wasm.parsed`, the three HIR
+    /// points, `masm.lowered` — would make every one of them a stop point that resolves
+    /// successfully and is then never reached, leaving the run with an empty capture slot.
+    /// The cargo build is a nested `midenc` invocation and publishes nothing back, so the
+    /// only checkpoint reachable here is the one the driver itself publishes once the
+    /// package is assembled. See [`Frontend::compile`] on this frontend.
+    #[test]
+    fn the_route_declares_only_the_checkpoint_a_cargo_build_reaches() {
+        assert_eq!(RUST_FRONTEND.id(), FrontendId::new("rust"));
+        assert_eq!(
+            RUST_FRONTEND.extensions(),
+            &["rs"],
+            "dispatch is by target-root extension, and a Rust target is rooted at a `.rs` file"
+        );
+        assert_eq!(RUST_FRONTEND.route(), &[CheckpointId::PACKAGE_ASSEMBLED]);
+        assert_eq!(RUST_FRONTEND.terminal(), CheckpointId::PACKAGE_ASSEMBLED);
+        FrontendRegistry::new()
+            .register(RUST_FRONTEND)
+            .expect("the route, its aliases and its artifacts must be mutually consistent");
+    }
+
+    /// An uncapped run reaches the package; a stop point short of it is rejected outright.
+    ///
+    /// The second half is the point of declaring the route honestly: `--stop-after=lower`
+    /// must fail with a diagnostic naming what this frontend *can* stop at, rather than
+    /// resolving to a checkpoint no cargo build ever publishes and returning nothing.
+    #[test]
+    fn a_stop_point_this_frontend_never_reaches_is_rejected() {
+        let goal = resolve_goal(&OutputRequest::default(), &RUST_FRONTEND)
+            .expect("an uncapped run resolves to the terminal checkpoint");
+        assert_eq!(goal.checkpoint(), CheckpointId::PACKAGE_ASSEMBLED);
+
+        let capped = OutputRequest::new(Vec::new()).with_stop_after(Some("lower".to_string()));
+        let err = resolve_goal(&capped, &RUST_FRONTEND)
+            .expect_err("this frontend publishes nothing at `lower`");
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("assemble") && rendered.contains("package.assembled"),
+            "the rejection must name the stop points this route does offer: {rendered}"
+        );
+    }
+
+    /// The registration builds *this* frontend, not merely some frontend.
+    ///
+    /// `Rc<dyn Frontend>` is opaque, so the instance is identified by behaviour: only
+    /// [`RustProjectFrontend::post_process`] reports a cache miss as a missing cargo build.
+    #[test]
+    fn instantiate_builds_a_rust_project_frontend() {
+        let project = library("rust_frontend_instantiate");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let state = request();
+        let cx = target_context(&assembly, context.clone(), &state);
+
+        let frontend = RUST_FRONTEND.instantiate(context.session_rc());
+        let err = frontend
+            .post_process(&mut any_package(), &cx)
+            .expect_err("nothing was built for this target");
+        assert!(
+            format!("{err}").contains("no cargo build was cached for it"),
+            "only the Rust frontend reports a miss this way, got: {err}"
+        );
+    }
 
     fn library(name: &str) -> VirtualProject {
         let root = wat_fixture(name, "lib.wat");
@@ -216,19 +335,19 @@ mod tests {
         Rc::new(Context::default())
     }
 
-    /// Build a target context for `assembly`, with throwaway observers and capture slot.
+    /// The state of a full build: no observers, and a capture slot nothing reaches. These
+    /// tests exercise `post_process`, which publishes no checkpoints.
+    fn request() -> RequestState {
+        RequestState::new(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), Vec::new())
+    }
+
+    /// Build a target context for `assembly` within `state`.
     fn target_context<'a>(
         assembly: &'a miden_assembly::TargetAssemblyContext<'a>,
         context: Rc<Context>,
+        state: &'a RequestState,
     ) -> TargetContext<'a> {
-        TargetContext::for_testing(
-            assembly,
-            context,
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            Rc::new(RefCell::new(RecordingObserver::default())),
-            Rc::new(RefCell::new(CaptureSlot::default())),
-        )
+        TargetContext::for_testing(assembly, context, TargetRole::Root, state)
     }
 
     /// The `[lib]`/`[[bin]]` collision the old `(PackageId, Version)` key could not express.
@@ -246,8 +365,9 @@ mod tests {
         let exe_assembly = exe.assembly_context().expect("exe assembly context");
 
         let context = context();
-        let lib_cx = target_context(&lib_assembly, context.clone());
-        let exe_cx = target_context(&exe_assembly, context.clone());
+        let state = request();
+        let lib_cx = target_context(&lib_assembly, context.clone(), &state);
+        let exe_cx = target_context(&exe_assembly, context.clone(), &state);
         assert_eq!(
             lib_cx.target_key().package(),
             exe_cx.target_key().package(),
@@ -289,8 +409,9 @@ mod tests {
         let exe_assembly = exe.assembly_context().expect("exe assembly context");
 
         let context = context();
-        let lib_cx = target_context(&lib_assembly, context.clone());
-        let exe_cx = target_context(&exe_assembly, context.clone());
+        let state = request();
+        let lib_cx = target_context(&lib_assembly, context.clone(), &state);
+        let exe_cx = target_context(&exe_assembly, context.clone(), &state);
 
         let frontend = RustProjectFrontend::new(context.session_rc());
         let lib_err = format!(
@@ -329,7 +450,8 @@ mod tests {
         let project = library("rust_frontend_seeded");
         let assembly = project.assembly_context().expect("assembly context");
         let context = context();
-        let cx = target_context(&assembly, context.clone());
+        let state = request();
+        let cx = target_context(&assembly, context.clone(), &state);
 
         let frontend =
             RustProjectFrontend::seeded(context.session_rc(), cx.target_key(), codegen_output());
@@ -346,15 +468,9 @@ mod tests {
     fn post_process_without_a_cached_build_is_an_invariant_error() {
         let project = library("rust_frontend_post_process");
         let assembly = project.assembly_context().expect("assembly context");
-        let context = Rc::new(Context::default());
-        let cx = TargetContext::for_testing(
-            &assembly,
-            context.clone(),
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            Rc::new(RefCell::new(RecordingObserver::default())),
-            Rc::new(RefCell::new(CaptureSlot::default())),
-        );
+        let context = context();
+        let state = request();
+        let cx = target_context(&assembly, context.clone(), &state);
 
         let frontend = RustProjectFrontend::new(context.session_rc());
         let mut package = any_package();

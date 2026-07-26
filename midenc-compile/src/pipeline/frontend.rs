@@ -1,5 +1,5 @@
-use alloc::{format, rc::Rc, sync::Arc, vec, vec::Vec};
-use core::{any::Any, cell::RefCell};
+use alloc::{format, rc::Rc, sync::Arc};
+use core::any::Any;
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, TargetAssemblyContext};
 use miden_mast_package::Package as MastPackage;
@@ -8,9 +8,7 @@ use midenc_session::{
     InputFile, PackageId, Session, diagnostics::Report, miden_project::TargetType,
 };
 
-use super::{
-    Artifact, ArtifactId, CheckpointId, Flow, Goal, Observer, Outcome, Stopped, TargetRole,
-};
+use super::{Artifact, ArtifactId, CheckpointId, Flow, Outcome, RequestState, Stopped, TargetRole};
 use crate::CompilerResult;
 
 /// Uniquely identifies a target within a compilation request.
@@ -110,9 +108,11 @@ pub struct TargetContext<'a> {
     /// read the raw input bytes go through here.
     input: Option<&'a InputFile>,
     role: TargetRole,
-    goal: Goal,
-    observers: Vec<Rc<RefCell<dyn Observer>>>,
-    capture: Rc<RefCell<CaptureSlot>>,
+    /// The goal, observers and capture slot of the request this target belongs to.
+    ///
+    /// These are identical for every target of one request, so they are owned once by the
+    /// caller driving the request and borrowed by each per-target context.
+    state: &'a RequestState,
 }
 
 impl<'a> TargetContext<'a> {
@@ -121,36 +121,31 @@ impl<'a> TargetContext<'a> {
     /// `context` is the HIR context the frontend builds into, and also the source of this
     /// target's [`Session`]. `input` is the original compiler input, if one backs this
     /// target; see the [`TargetContext::input`] accessor for why paths are not enough.
+    /// `state` is the request-scoped state every target of this request shares.
     pub fn new(
         assembly: &'a TargetAssemblyContext<'a>,
         context: Rc<Context>,
         input: Option<&'a InputFile>,
         role: TargetRole,
-        goal: Goal,
-        observers: Vec<Rc<RefCell<dyn Observer>>>,
-        capture: Rc<RefCell<CaptureSlot>>,
+        state: &'a RequestState,
     ) -> Self {
         Self {
             assembly,
             context,
             input,
             role,
-            goal,
-            observers,
-            capture,
+            state,
         }
     }
 
-    /// Construct a context with no input and a single observer, for use in tests.
+    /// Construct a context with no input, for use in tests.
     pub fn for_testing(
         assembly: &'a TargetAssemblyContext<'a>,
         context: Rc<Context>,
         role: TargetRole,
-        goal: Goal,
-        observer: Rc<RefCell<dyn Observer>>,
-        capture: Rc<RefCell<CaptureSlot>>,
+        state: &'a RequestState,
     ) -> Self {
-        Self::new(assembly, context, None, role, goal, vec![observer], capture)
+        Self::new(assembly, context, None, role, state)
     }
 
     /// The assembler-provided context: dependency graph, target, paths, package registry.
@@ -221,19 +216,24 @@ impl<'a> TargetContext<'a> {
     /// [`Flow::Continue`] for them, never captures, and never returns [`Flow::Stop`], even
     /// when `checkpoint` equals the goal it was assigned.
     ///
-    /// That matters because non-root targets are conventionally assigned
-    /// [`Goal::at(CheckpointId::PACKAGE_ASSEMBLED)`](Goal::at), the very checkpoint an
-    /// orchestrator publishes uniformly for every target once its package is assembled.
-    /// Treating that as terminal for a dependency would force callers to special-case
-    /// non-root notification; continuing by construction keeps both observers and the
-    /// orchestrator uniform across roles.
+    /// That matters because a request has exactly *one* goal, shared by every target it
+    /// builds: it is held by the [`RequestState`] each per-target context borrows, and
+    /// nothing assigns a goal per target. So under `--stop-after` a dependency's goal is the
+    /// root's goal — short of `package.assembled`, and perfectly reachable on the
+    /// dependency's own route — and the role check here is the only thing keeping that
+    /// dependency from stopping at it and capturing an artifact that is not the one the
+    /// caller asked for. Without `--stop-after` the shared goal is `package.assembled`, the
+    /// very checkpoint the driver publishes uniformly for every target once its package is
+    /// assembled; treating that as terminal for a dependency would force callers to
+    /// special-case non-root notification, so continuing by construction keeps observers and
+    /// driver uniform across roles there too.
     ///
-    /// Checking that a non-root target really was assigned a full-build goal belongs where
-    /// goals are assigned, not here. A mis-assigned goal then costs extra work rather than
-    /// yielding a wrong artifact, which is the safer failure.
-    ///
-    /// Rendering for `--emit` is added in increment 3, where the resolved output request
-    /// is available.
+    /// Rendering for `--emit` does not happen here. The driver attaches an `EmitObserver`
+    /// (`pipeline/driver.rs`) which renders the root target's artifacts through the route's
+    /// own [`ArtifactDecl::render`](super::ArtifactDecl) as each checkpoint is reached. It is
+    /// deliberately not gated on the request's resolved outputs: [`Session::emit`] consults
+    /// `should_emit` itself, so the observer renders unconditionally and a run that asked for
+    /// nothing simply writes nothing.
     pub fn checkpoint<T: Any>(
         &self,
         checkpoint: CheckpointId,
@@ -242,11 +242,9 @@ impl<'a> TargetContext<'a> {
     ) -> CompilerResult<Flow<T>> {
         let artifact = Artifact::new(id, artifact);
 
-        for observer in &self.observers {
-            observer.borrow_mut().on_checkpoint(checkpoint, self.role, &artifact);
-        }
+        self.state.notify(checkpoint, self.role, &artifact);
 
-        if !self.role.is_root() || checkpoint != self.goal.checkpoint() {
+        if !self.role.is_root() || checkpoint != self.state.goal().checkpoint() {
             let value = artifact.downcast::<T>().map_err(|artifact| {
                 Report::msg(format!(
                     "internal error: artifact at '{checkpoint}' changed type while being \
@@ -257,7 +255,7 @@ impl<'a> TargetContext<'a> {
             return Ok(Flow::Continue(value));
         }
 
-        self.capture.borrow_mut().put(checkpoint, artifact)?;
+        self.state.capture(checkpoint, artifact)?;
         Ok(Flow::Stop(Stopped::new(checkpoint)))
     }
 }
@@ -273,10 +271,17 @@ pub trait Frontend {
     /// Collect the source inputs that determine this target's build provenance.
     ///
     /// This must not depend on assembled dependencies, must not publish checkpoints, and
-    /// must never stop. It is called before `compile` for dependency targets, and
-    /// repeatedly while hashing the dependency closure, so implementations must memoize by
-    /// [`TargetContext::target_key`], whose [`TargetKey`] can key either a `HashMap` or a
-    /// `BTreeMap`.
+    /// must never stop. It is called before `compile` for dependency targets, and repeatedly
+    /// while hashing the dependency closure.
+    ///
+    /// Because of that repetition, an implementation that *pays* to produce its provenance —
+    /// by compiling, invoking a build tool, or otherwise redoing work `compile` already did —
+    /// must memoize by [`TargetContext::target_key`], whose [`TargetKey`] can key either a
+    /// `HashMap` or a `BTreeMap`. An implementation whose provenance is a cheap re-read of
+    /// its own sources need not, and may prefer not to: see
+    /// [`MasmProjectFrontend`](super::frontends::MasmProjectFrontend), which delegates to the
+    /// assembler's stateless `MasmSourceProvider` precisely so that its cost stays what the
+    /// built-in it displaces cost.
     fn provenance(&self, cx: &TargetContext<'_>) -> CompilerResult<ProjectSourceProvenanceInputs>;
 
     /// Apply language-specific post-processing to the assembled package.
@@ -294,14 +299,14 @@ pub trait Frontend {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, rc::Rc};
+    use alloc::{format, rc::Rc, vec, vec::Vec};
     use core::cell::RefCell;
 
     use midenc_session::{InputType, miden_project::TargetType};
 
     use super::*;
     use crate::pipeline::{
-        Goal, RecordingObserver,
+        Goal, Observer, RecordingObserver,
         testing::{VirtualProject, wat_fixture},
     };
 
@@ -318,52 +323,47 @@ mod tests {
         Rc::new(Context::default())
     }
 
+    /// The request state for a run to `goal` that notifies `observer`.
+    fn request(goal: Goal, observer: &Rc<RefCell<RecordingObserver>>) -> RequestState {
+        RequestState::new(goal, vec![observer.clone() as Rc<RefCell<dyn Observer>>])
+    }
+
+    /// The request state for a run to `goal` whose observations are not inspected.
+    fn unobserved_request(goal: Goal) -> RequestState {
+        RequestState::new(goal, Vec::new())
+    }
+
     #[test]
     fn checkpoint_before_the_goal_returns_the_artifact() {
         let project = library("ctx_continue");
         let assembly = project.assembly_context().expect("assembly context");
-        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
         let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = request(Goal::at(CheckpointId::MASM_LOWERED), &observer);
 
-        let cx = TargetContext::for_testing(
-            &assembly,
-            context(),
-            TargetRole::Root,
-            Goal::at(CheckpointId::MASM_LOWERED),
-            observer.clone(),
-            capture.clone(),
-        );
+        let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
 
         match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, Payload(1)).unwrap() {
             Flow::Continue(payload) => assert_eq!(payload, Payload(1)),
             Flow::Stop(_) => panic!("goal is masm.lowered, should not stop at hir.initial"),
         }
-        assert!(capture.borrow().is_empty(), "nothing captured before the goal");
         assert_eq!(observer.borrow().records(), &[(CheckpointId::HIR_INITIAL, TargetRole::Root)]);
+        assert!(state.take_outcome().is_none(), "nothing captured before the goal");
     }
 
     #[test]
     fn checkpoint_at_the_goal_captures_and_stops() {
         let project = library("ctx_stop");
         let assembly = project.assembly_context().expect("assembly context");
-        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
-        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = unobserved_request(Goal::at(CheckpointId::HIR_INITIAL));
 
-        let cx = TargetContext::for_testing(
-            &assembly,
-            context(),
-            TargetRole::Root,
-            Goal::at(CheckpointId::HIR_INITIAL),
-            observer,
-            capture.clone(),
-        );
+        let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
 
         match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, Payload(9)).unwrap() {
             Flow::Stop(stopped) => assert_eq!(stopped.checkpoint(), CheckpointId::HIR_INITIAL),
             Flow::Continue(_) => panic!("expected to stop at the goal"),
         }
 
-        let captured = capture.borrow_mut().take().expect("artifact should be captured");
+        let captured = state.take_outcome().expect("artifact should be captured");
         assert_eq!(captured.checkpoint(), CheckpointId::HIR_INITIAL);
         assert_eq!(captured.downcast::<Payload>().unwrap(), Payload(9));
     }
@@ -373,21 +373,15 @@ mod tests {
         let project = library("ctx_role_guard");
         let assembly = project.assembly_context().expect("assembly context");
 
-        // Non-root targets are conventionally assigned `PACKAGE_ASSEMBLED`, which is also
-        // what an orchestrator publishes for every target once assembly finishes. Reaching
-        // it must still be non-terminal for a dependency.
+        // One goal is shared by every target of a request, so a dependency's goal is
+        // whatever the root asked for. Here that is `PACKAGE_ASSEMBLED`, which is also what
+        // the driver publishes for every target once assembly finishes: reaching it must
+        // still be non-terminal for a dependency.
         let goal = Goal::at(CheckpointId::PACKAGE_ASSEMBLED);
 
-        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
         let observer = Rc::new(RefCell::new(RecordingObserver::default()));
-        let cx = TargetContext::for_testing(
-            &assembly,
-            context(),
-            TargetRole::Dependency,
-            goal,
-            observer.clone(),
-            capture.clone(),
-        );
+        let state = request(goal, &observer);
+        let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Dependency, &state);
 
         match cx
             .checkpoint(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE, Payload(7))
@@ -398,24 +392,17 @@ mod tests {
             Flow::Continue(payload) => assert_eq!(payload, Payload(7)),
             Flow::Stop(_) => panic!("a non-root target must never stop, even at its goal"),
         }
-        assert!(capture.borrow().is_empty(), "nothing may be captured for a non-root target");
         assert_eq!(
             observer.borrow().records(),
             &[(CheckpointId::PACKAGE_ASSEMBLED, TargetRole::Dependency)],
             "a non-root target's checkpoints are still observable"
         );
+        assert!(state.take_outcome().is_none(), "nothing may be captured for a non-root target");
 
         // Mirror: the very same goal and checkpoint on the *root* target must still capture
         // and stop, so the behaviour discriminates on role rather than never capturing.
-        let root_capture = Rc::new(RefCell::new(CaptureSlot::default()));
-        let root = TargetContext::for_testing(
-            &assembly,
-            context(),
-            TargetRole::Root,
-            goal,
-            Rc::new(RefCell::new(RecordingObserver::default())),
-            root_capture.clone(),
-        );
+        let root_state = unobserved_request(goal);
+        let root = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &root_state);
         match root
             .checkpoint(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE, Payload(1))
             .expect("the root target may stop at its goal")
@@ -425,7 +412,7 @@ mod tests {
             }
             Flow::Continue(_) => panic!("expected the root target to stop at its goal"),
         }
-        let captured = root_capture.borrow_mut().take().expect("root capture");
+        let captured = root_state.take_outcome().expect("root capture");
         assert_eq!(captured.downcast::<Payload>().unwrap(), Payload(1));
     }
 
@@ -449,25 +436,12 @@ mod tests {
 
         let lib_cx = lib.assembly_context().expect("lib ctx");
         let exe_cx = exe.assembly_context().expect("exe ctx");
-        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
-        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        // One request state for both targets, as a real request has.
+        let state = unobserved_request(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
 
-        let lib_target = TargetContext::for_testing(
-            &lib_cx,
-            context(),
-            TargetRole::RequiredLibrary,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            observer.clone(),
-            capture.clone(),
-        );
-        let exe_target = TargetContext::for_testing(
-            &exe_cx,
-            context(),
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            observer,
-            capture,
-        );
+        let lib_target =
+            TargetContext::for_testing(&lib_cx, context(), TargetRole::RequiredLibrary, &state);
+        let exe_target = TargetContext::for_testing(&exe_cx, context(), TargetRole::Root, &state);
 
         assert_ne!(
             lib_target.target_key(),
@@ -554,15 +528,8 @@ mod tests {
         let project = library("ctx_session");
         let assembly = project.assembly_context().expect("assembly context");
         let context = context();
-        let cx = TargetContext::new(
-            &assembly,
-            context.clone(),
-            None,
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            vec![Rc::new(RefCell::new(RecordingObserver::default())) as Rc<RefCell<dyn Observer>>],
-            Rc::new(RefCell::new(CaptureSlot::default())),
-        );
+        let state = unobserved_request(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        let cx = TargetContext::new(&assembly, context.clone(), None, TargetRole::Root, &state);
 
         assert!(Rc::ptr_eq(&cx.context(), &context), "the frontend builds HIR into this context");
         assert!(
@@ -578,15 +545,8 @@ mod tests {
         let assembly = project.assembly_context().expect("assembly context");
         let input = InputFile::from_bytes(b"(module)".to_vec(), "stdin.wat".into())
             .expect("should build a stdin input");
-        let cx = TargetContext::new(
-            &assembly,
-            context(),
-            Some(&input),
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            vec![Rc::new(RefCell::new(RecordingObserver::default())) as Rc<RefCell<dyn Observer>>],
-            Rc::new(RefCell::new(CaptureSlot::default())),
-        );
+        let state = unobserved_request(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        let cx = TargetContext::new(&assembly, context(), Some(&input), TargetRole::Root, &state);
 
         let reached = cx.input().expect("a frontend must be able to reach the original input");
         assert!(
@@ -605,14 +565,8 @@ mod tests {
     fn a_virtual_project_is_reported_as_virtual() {
         let project = library("ctx_virtual");
         let assembly = project.assembly_context().expect("assembly context");
-        let cx = TargetContext::for_testing(
-            &assembly,
-            context(),
-            TargetRole::Root,
-            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            Rc::new(RefCell::new(RecordingObserver::default())),
-            Rc::new(RefCell::new(CaptureSlot::default())),
-        );
+        let state = unobserved_request(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
         assert!(cx.is_virtual_project());
     }
 }

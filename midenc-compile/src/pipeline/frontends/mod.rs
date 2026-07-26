@@ -2,9 +2,13 @@
 //!
 //! Each submodule implements [`Frontend`](super::Frontend) for one source language.
 
+pub mod masm;
 pub mod rust;
 
-pub use self::rust::RustProjectFrontend;
+pub use self::{
+    masm::{MASM_FRONTEND, MasmProjectFrontend},
+    rust::{RUST_FRONTEND, RustProjectFrontend},
+};
 
 #[cfg(test)]
 mod synthetic {
@@ -68,14 +72,14 @@ mod synthetic {
         ast::ModuleKind,
     };
     use midenc_hir::Context;
-    use midenc_session::{diagnostics::Report, miden_project::TargetType};
+    use midenc_session::{Session, diagnostics::Report, miden_project::TargetType};
 
     use crate::{
         CompilerResult,
         pipeline::{
-            ArtifactId, CaptureSlot, CheckpointId, Flow, Frontend, FrontendId,
-            FrontendRegistration, FrontendRegistry, Goal, Outcome, OutputRequest,
-            RecordingObserver, TargetContext, TargetRole, resolve_goal,
+            Artifact, ArtifactDecl, ArtifactId, CheckpointId, Flow, Frontend, FrontendId,
+            FrontendRegistration, FrontendRegistry, Goal, Observer, Outcome, OutputRequest,
+            RecordingObserver, RequestState, TargetContext, TargetRole, resolve_goal,
             testing::{self, VirtualProject},
         },
     };
@@ -106,21 +110,53 @@ mod synthetic {
     /// [`backend::hir_to_masm`](crate::pipeline::backend::hir_to_masm), whose own three
     /// checkpoints would then be reached but undeclared. Going straight to Miden Assembly is
     /// both smaller and honest, and still exercises a foreign checkpoint feeding a core one.
-    const SYNTHETIC_FRONTEND: FrontendRegistration = FrontendRegistration {
-        id: FrontendId::new("synthetic"),
-        extensions: &["synth"],
-        route: &[SYNTHETIC_PARSED, CheckpointId::MASM_LOWERED, CheckpointId::PACKAGE_ASSEMBLED],
-        aliases: &[
+    const SYNTHETIC_FRONTEND: FrontendRegistration = FrontendRegistration::new(
+        FrontendId::new("synthetic"),
+        &["synth"],
+        &[SYNTHETIC_PARSED, CheckpointId::MASM_LOWERED, CheckpointId::PACKAGE_ASSEMBLED],
+        &[
             ("parse", SYNTHETIC_PARSED),
             ("lower", CheckpointId::MASM_LOWERED),
             ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
         ],
-        artifacts: &[
-            (SYNTHETIC_PARSED, SYNTHETIC),
-            (CheckpointId::MASM_LOWERED, ArtifactId::MASM),
-            (CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE),
+        &[
+            ArtifactDecl {
+                checkpoint: SYNTHETIC_PARSED,
+                id: SYNTHETIC,
+                render: unrendered,
+            },
+            ArtifactDecl {
+                checkpoint: CheckpointId::MASM_LOWERED,
+                id: ArtifactId::MASM,
+                render: unrendered,
+            },
+            ArtifactDecl {
+                checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
+                id: ArtifactId::PACKAGE,
+                render: unrendered,
+            },
         ],
-    };
+        make_synthetic,
+    );
+
+    /// Build the frontend this registration declares.
+    ///
+    /// The `.synth` frontend holds no per-target state, so it ignores the session; a real
+    /// frontend keeps it for the memoization [`Frontend::provenance`] requires.
+    fn make_synthetic(_session: Rc<Session>) -> Rc<dyn Frontend> {
+        Rc::new(SyntheticFrontend)
+    }
+
+    /// This frontend's renderer, which writes nothing.
+    ///
+    /// Emission is not exercised here: these tests run the frontend to a goal and inspect
+    /// the captured artifact directly, so no `--emit` destination is ever resolved. Rendering
+    /// a [`SyntheticModule`] would mean giving it an
+    /// [`OutputType`](midenc_session::OutputType), which is a session-level vocabulary this
+    /// fixture deliberately stays out of.
+    fn unrendered(_artifact: &Artifact, _session: &Session) -> CompilerResult<()> {
+        Ok(())
+    }
 
     // ---------------------------------------------------------------------------------------
     // The frontend itself.
@@ -265,27 +301,30 @@ mod synthetic {
 
     /// Run the synthetic frontend over a fresh project to `goal`.
     ///
+    /// The frontend comes from [`FrontendRegistration::instantiate`] rather than being
+    /// constructed here, so what these tests exercise is what a caller holding only the
+    /// registration would get.
+    ///
     /// Returns whether the run stopped, the observed checkpoint trace, and whatever the
     /// target captured.
     fn run(name: &str, goal: Goal) -> (bool, Vec<CheckpointId>, Option<Outcome>) {
         let project = project(name);
         let assembly = project.assembly_context().expect("assembly context");
         let observer = Rc::new(RefCell::new(RecordingObserver::default()));
-        let capture = Rc::new(RefCell::new(CaptureSlot::default()));
+        let state =
+            RequestState::new(goal, alloc::vec![observer.clone() as Rc<RefCell<dyn Observer>>]);
 
         let cx = TargetContext::for_testing(
             &assembly,
             Rc::new(Context::default()),
             TargetRole::Root,
-            goal,
-            observer.clone(),
-            capture.clone(),
+            &state,
         );
 
-        let flow = SyntheticFrontend.compile(&cx).expect("the synthetic frontend should compile");
+        let frontend = SYNTHETIC_FRONTEND.instantiate(cx.session());
+        let flow = frontend.compile(&cx).expect("the synthetic frontend should compile");
         let trace = observer.borrow().records().iter().map(|(c, _)| *c).collect();
-        let captured = capture.borrow_mut().take();
-        (flow.is_stop(), trace, captured)
+        (flow.is_stop(), trace, state.take_outcome())
     }
 
     // ---------------------------------------------------------------------------------------
@@ -302,7 +341,7 @@ mod synthetic {
             .expect("a frontend built from its own ids must register like any other");
 
         let found = registry.for_extension("synth").expect("dispatch is by target-root extension");
-        assert_eq!(found.id, FrontendId::new("synthetic"));
+        assert_eq!(found.id(), FrontendId::new("synthetic"));
         assert!(found.supports(SYNTHETIC_PARSED), "the native checkpoint is on the route");
         assert_eq!(found.terminal(), CheckpointId::PACKAGE_ASSEMBLED);
     }
@@ -417,16 +456,19 @@ mod synthetic {
         let project = project("synthetic_provenance");
         let assembly = project.assembly_context().expect("assembly context");
         let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = RequestState::new(
+            Goal::at(SYNTHETIC_PARSED),
+            alloc::vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+        );
         let cx = TargetContext::for_testing(
             &assembly,
             Rc::new(Context::default()),
             TargetRole::Root,
-            Goal::at(SYNTHETIC_PARSED),
-            observer.clone(),
-            Rc::new(RefCell::new(CaptureSlot::default())),
+            &state,
         );
 
-        let provenance = SyntheticFrontend.provenance(&cx).expect("provenance should succeed");
+        let frontend = SYNTHETIC_FRONTEND.instantiate(cx.session());
+        let provenance = frontend.provenance(&cx).expect("provenance should succeed");
         assert_eq!(&*provenance.root.content, SOURCE);
         assert!(provenance.support.is_empty());
         assert!(
