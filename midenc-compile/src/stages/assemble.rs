@@ -1,5 +1,5 @@
 use alloc::{boxed::Box, sync::Arc, vec::Vec};
-use core::cell::RefCell;
+use core::{cell::RefCell, ops::ControlFlow};
 
 use miden_assembly::{
     ProjectSourceInputs, ProjectSourceProvider, ProjectTargetSelector, ResolvedPackage,
@@ -352,16 +352,25 @@ pub(super) fn assemble_virtual_project_with_registry(
     let sources = input.component.source_inputs(&target, session)?;
     let source_provenance = input.source_provenance;
     let mut cache = alloc::collections::BTreeMap::new();
-    let ResolvedPackage { mut package, .. } = project_assembler.assemble_source_package(
+    let mut package = match project_assembler.assemble_source_package(
         package_id,
         project_package,
         &target,
         "dev",
+        miden_assembly::InterruptedTargetRole::Root,
         None,
         Some(sources),
         Some(source_provenance),
         &mut cache,
-    )?;
+    )? {
+        ControlFlow::Continue(ResolvedPackage { package, .. }) => package,
+        ControlFlow::Break(interrupted) => {
+            return Err(Report::msg(format!(
+                "unexpected interruption assembling '{}'",
+                interrupted.package
+            )));
+        }
+    };
     // Drop the cache so we know that the `package` is the only reference
     drop(cache);
 
