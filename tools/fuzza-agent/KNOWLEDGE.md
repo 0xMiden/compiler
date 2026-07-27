@@ -18,6 +18,30 @@ Maintenance rules:
   in the reports — neither is duplicated in this file.
 - Do **not** re-derive anything recorded here.
 
+## Out-of-scope surfaces (standing decisions — do not target)
+
+- **Linker-stub / `export_name` cases are out of scope** (decision
+  2026-07-27): stubs (`#[unsafe(export_name = "ns::path")]` functions with
+  `unreachable` bodies) and the routing machinery behind them
+  (`frontend/wasm/src/module/linker_stubs.rs`, `frontend/wasm/src/
+  intrinsics/`, the miden-ABI transform + signature tables, `emit/felt.rs`)
+  are implementation details of the current linking scheme — a future
+  linker could drop stubs entirely, and tests must not couple to that.
+  Never propose stub-based cases or an `export_name` override; treat this
+  entire surface as permanently closed rather than cold.
+- **Float bit-transport cases are out of scope** (same decision): f32
+  values silently traveling as felt bit patterns is implementation-
+  dependent behavior, not a contract — no case may assert it. The durable
+  float facts, so the surface is never re-probed (verified 2026-07-23; no
+  committed cases): every float COMPUTE operator (f32/f64 arithmetic,
+  compares, converts, truncs, promote/demote) fails with the translator's
+  clean catch-all diagnostic `Wasm op <Name> is not supported`; `f64` in a
+  signature or local fails type conversion (`unsupported type 'f64'`);
+  only bit TRANSPORT (f32 consts/reinterprets/params/load/store, mapped
+  onto Felt carrying the IEEE bits < 2^32 < p) is silently accepted; and
+  felt ARITHMETIC has no float-operator producer, so no IEEE-vs-field
+  arithmetic leak is constructible from safe Rust.
+
 ## Toolchain & pipeline facts
 
 - `cargo-miden` builds with RUSTFLAGS target features `+bulk-memory` and
@@ -87,8 +111,10 @@ Maintenance rules:
   constant shift counts are materialized as pushed operands.
 - Memory-op immediate/typed arms: the `load_imm` family has only unit-test
   callers; `store_imm` non-u32 arms require GlobalVariables (only
-  `__stack_pointer` exists); felt load/store is unobservable (no f32
-  reinterpret support); `repr(packed)` / dynamically-unaligned access adds
+  `__stack_pointer` exists); felt load/store has no in-scope producer
+  (f32 bit transport is out of scope by decision — see "Out-of-scope
+  surfaces" — and LLVM int-ifies plain from_bits/to_bits memory traffic
+  anyway); `repr(packed)` / dynamically-unaligned access adds
   nothing (dynamic-pointer load/store delegates wholesale to intrinsics —
   alignment branching is imm-pointer-only); wasm `memory.copy` is always
   u8-typed (typed memcpy arms dead).
