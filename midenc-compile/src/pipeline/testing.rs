@@ -1,13 +1,16 @@
 //! Construction helpers for compiling without a project manifest on disk.
 //!
-//! Used by tests today, and by input preparation for standalone inputs from increment 4.
-//! Standalone inputs still run the legacy [`Stage`](crate::Stage) chains, so nothing outside
-//! tests synthesizes a project yet.
+//! `synthesize_target` is shared with
+//! [`prepare_standalone`](crate::pipeline::prepare_standalone), which builds the project a
+//! real standalone request compiles. Everything else here is for tests: [`VirtualProject`]
+//! materializes a manifest and an assembly context for one, which is what lets a frontend or
+//! the shared backend be driven without a project on disk.
 
 use alloc::{format, sync::Arc, vec, vec::Vec};
 use std::path::Path as FsPath;
 
 use miden_assembly::TargetAssemblyContext;
+use miden_assembly_syntax::Path as MasmPath;
 use miden_package_registry::NoPackageStore;
 use midenc_session::{
     diagnostics::{DefaultSourceManager, Report, SourceManager},
@@ -56,6 +59,188 @@ pub(crate) fn fixture_dir(dir: &str) -> std::path::PathBuf {
     dir
 }
 
+/// A context whose session writes `--emit=hir` into `out_dir`.
+#[cfg(test)]
+pub(crate) fn hir_emitting_context(out_dir: &FsPath) -> alloc::rc::Rc<midenc_hir::Context> {
+    use midenc_session::{OutputFile, OutputType, OutputTypeSpec, OutputTypes};
+
+    let output_types = OutputTypes::new([OutputTypeSpec::Typed {
+        output_type: OutputType::Hir,
+        path: Some(OutputFile::Directory(out_dir.to_path_buf())),
+    }])
+    .expect("hir is a valid output type");
+    context_emitting(output_types, |_| {})
+}
+
+/// Every `.hir` document in `dir`, as `(file stem, contents)`, sorted by stem.
+///
+/// Counting *documents on disk* is what makes the emission testable at all, and it has a
+/// limit worth stating where the helper lives: [`Emit`](midenc_session::Emit) for a `String`
+/// reports no name, so every HIR emission in one session resolves to the same destination and
+/// `write_to_file` truncates it. A document written twice therefore looks exactly like one
+/// written once. This helper proves an emission happened; it cannot prove it happened only
+/// once. `this_route_names_the_hir_emission_once`, in each frontend's tests, covers that half
+/// by counting the emission's call sites in the source instead.
+#[cfg(test)]
+pub(crate) fn hir_documents(dir: &FsPath) -> Vec<(alloc::string::String, alloc::string::String)> {
+    use alloc::string::ToString;
+
+    let mut documents = std::fs::read_dir(dir)
+        .expect("the output directory should exist")
+        .map(|entry| entry.expect("should read a directory entry").path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("hir"))
+        .map(|path| {
+            let stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("a written document has a name")
+                .to_string();
+            (stem, std::fs::read_to_string(&path).expect("should read the document"))
+        })
+        .collect::<Vec<_>>();
+    documents.sort();
+    documents
+}
+
+/// A context whose session emits `output_types` and was otherwise configured by `configure`.
+///
+/// Silent, so that a test which raises diagnostics does not write them into the test output.
+/// Silencing does not hide them from `has_errors()`: the error counter is bumped before the
+/// emitter is consulted.
+#[cfg(test)]
+pub(crate) fn context_emitting(
+    output_types: midenc_session::OutputTypes,
+    configure: impl FnOnce(&mut midenc_session::Options),
+) -> alloc::rc::Rc<midenc_hir::Context> {
+    use alloc::{boxed::Box, rc::Rc};
+
+    use midenc_session::{InputFile, Options, Session, Verbosity};
+
+    let mut options = Box::new(Options::default());
+    configure(&mut options);
+    let options = options.with_verbosity(Verbosity::Silent).with_output_types(output_types, None);
+    let source_manager = Arc::new(DefaultSourceManager::default());
+    let session = Session::new(InputFile::empty(), options, None, source_manager)
+        .expect("should build a session");
+    Rc::new(midenc_hir::Context::new(Rc::new(session)))
+}
+
+/// The smallest [`MidenComponent`] the backend accepts, built in `context`.
+///
+/// A single public `main` whose body is just `ret`. Adapted from the passing test in
+/// `midenc-compile/tests/codegen_legalization.rs`, and shared because the backend's own tests
+/// and the seed's alike need a component that survives analysis, rewrites and codegen without
+/// tripping any of them.
+///
+/// `context` is taken rather than created so that a caller can supply a session — the lint
+/// flag, the requested output types — and have the component belong to it.
+#[cfg(test)]
+pub(crate) fn minimal_component(
+    context: &alloc::rc::Rc<midenc_hir::Context>,
+) -> crate::MidenComponent {
+    component_in_namespace(context, "test_ns", None, None)
+}
+
+/// The component name [`component_in_namespace`] builds under, and its version.
+///
+/// Constants rather than literals because they are half of the component's id, and a target
+/// that assembles what this module builds has to name that whole id — see
+/// [`component_target_namespace`].
+#[cfg(test)]
+const COMPONENT_NAME: &str = "test";
+#[cfg(test)]
+const COMPONENT_VERSION: (u64, u64, u64) = (1, 0, 0);
+
+/// The target namespace a project must declare to assemble what
+/// [`component_in_namespace`]`(_, namespace, ..)` produces.
+///
+/// Codegen roots a component's Miden Assembly at its *id* — namespace, name and version
+/// together, as one quoted path component — and the assembler refuses to assemble a target
+/// whose root module sits anywhere but the target's own namespace. So a manifest for such a
+/// target reads `namespace = "test_ns:test@1.0.0"`, not `namespace = "test_ns"`. Real projects
+/// look the same: `tests/fixtures/components/cross-ctx-account` declares
+/// `namespace = "miden:cross-ctx-account/foo@1.0.0"`.
+#[cfg(test)]
+pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::String {
+    let (major, minor, patch) = COMPONENT_VERSION;
+    alloc::format!("{namespace}:{COMPONENT_NAME}@{major}.{minor}.{patch}")
+}
+
+/// [`minimal_component`], in `namespace`, carrying `rodata` and `metadata` if given.
+///
+/// The namespace is a parameter because a component assembled as part of a project must be
+/// lowered into the *target's* namespace: codegen derives the root Miden Assembly module path
+/// from the component's id, and the assembler rejects a root module that does not sit exactly
+/// at the target's own namespace. The id is not the namespace alone, so a caller that assembles
+/// what this builds must declare its target's namespace as
+/// [`component_target_namespace(namespace)`](component_target_namespace) rather than
+/// `namespace`.
+///
+/// `rodata`, when given, is planted as a read-only [`builtin::Segment`](midenc_hir::dialects::builtin::Segment)
+/// at offset 0 of linear memory. That is what makes codegen produce a
+/// [`Rodata`](midenc_codegen_masm::Rodata) segment, and therefore what makes the rodata advice
+/// map assembly attaches to the package non-empty. `metadata` stands in for the serialized
+/// account-component metadata a real account-component target carries; nothing validates it,
+/// so arbitrary bytes suffice to observe whether the section survives to the package.
+#[cfg(test)]
+pub(crate) fn component_in_namespace(
+    context: &alloc::rc::Rc<midenc_hir::Context>,
+    namespace: &str,
+    rodata: Option<&[u8]>,
+    metadata: Option<Vec<u8>>,
+) -> crate::MidenComponent {
+    use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
+    use midenc_hir::{
+        BuilderExt, Ident, OpBuilder, SourceSpan, Visibility,
+        dialects::builtin::{
+            self, BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, ModuleBuilder, WorldBuilder,
+            attributes::Signature,
+        },
+        version::Version,
+    };
+
+    let mut builder = OpBuilder::new(context.clone());
+    let world = builder.create::<builtin::World, ()>(SourceSpan::UNKNOWN)().unwrap();
+    let mut world_builder = WorldBuilder::new(world);
+    let component = world_builder
+        .define_component(
+            Ident::with_empty_span(midenc_hir::interner::Symbol::intern(namespace)),
+            Ident::with_empty_span(COMPONENT_NAME.into()),
+            Version::new(COMPONENT_VERSION.0, COMPONENT_VERSION.1, COMPONENT_VERSION.2),
+        )
+        .unwrap();
+
+    let mut component_builder = ComponentBuilder::new(component);
+    let module = component_builder.define_module(Ident::with_empty_span("test".into())).unwrap();
+    let signature = Signature::new(context, [], []);
+    let mut module_builder = ModuleBuilder::new(module);
+    if let Some(rodata) = rodata {
+        module_builder
+            .define_data_segment(0, rodata.to_vec(), true, SourceSpan::UNKNOWN)
+            .expect("should define the data segment");
+    }
+    let function = module_builder
+        .define_function(Ident::with_empty_span("main".into()), Visibility::Public, signature)
+        .unwrap();
+
+    let mut builder = OpBuilder::new(context.clone());
+    let mut function_builder = FunctionBuilder::new(function, &mut builder);
+    function_builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+
+    crate::MidenComponent {
+        world,
+        component: Some(component),
+        account_component_metadata_bytes: metadata,
+        source_provenance: ProjectSourceProvenanceInputs {
+            root: SourceFileProvenance {
+                path: FsPath::new(file!()).to_path_buf().into_boxed_path(),
+                content: alloc::string::String::new().into_boxed_str(),
+            },
+            support: Default::default(),
+        },
+    }
+}
+
 /// A [`fixture_source`] holding the smallest valid WebAssembly module.
 ///
 /// The wasm frontend is not run over these; the module only has to be a plausible target
@@ -67,26 +252,58 @@ pub(crate) fn wat_fixture(dir: &str, file: &str) -> std::path::PathBuf {
 
 /// Construct the target named `name`, rooted at `target_root`, of type `target_type`.
 ///
-/// Executable targets use [`Target::executable`], whose namespace is `$exec`. This must
-/// match the root module path the backend produces, or assembly fails the namespace check
-/// in `load_target_sources`. Library targets use [`Target::library`], which derives the
-/// target's name from the absolutized namespace, so a library named `foo` has the target
-/// name `::foo` — distinct from the `foo` an executable of the same package gets, which is
-/// what lets one package hold both.
-fn synthesize_target(
+/// Shared with [`prepare_standalone`](crate::pipeline::prepare_standalone), which synthesizes
+/// the target of a real standalone build, so everything below is a correctness requirement
+/// rather than a fixture detail.
+///
+/// # The namespace is decided by the target type
+///
+/// Two of the six types are rooted at a reserved namespace, and each is reserved because
+/// something addresses it by that name:
+///
+/// - **Executables** are rooted at `$exec`, the path `MasmComponent::source_inputs` gives the
+///   module it builds with `Module::new_executable`. `load_target_sources` rejects a root
+///   module that does not sit exactly at its target's namespace, so a name-derived namespace
+///   fails every executable.
+/// - **Kernels** are rooted at `$kernel`, mirroring the manifest, which maps
+///   `TargetType::Kernel` to `Path::kernel_path()` unconditionally and never derives a kernel's
+///   namespace from a name. It has to: semantic analysis rewrites every `syscall.foo` to
+///   `$kernel::foo`, so a kernel assembled elsewhere exports procedures no `syscall` can
+///   address, and the linker's `link_with_kernel` asserts that a kernel package contains a
+///   module whose path `is_kernel_path()`.
+///
+/// The remaining four — library, account component, note and transaction script — take the
+/// absolutized `name`, and their target *name* is derived from that namespace, so a library
+/// named `foo` has the target name `::foo`. That is what distinguishes it from the `foo` an
+/// executable of the same package gets, and therefore what lets one package hold both. The two
+/// reserved-namespace types keep the caller's `name` instead: their namespace is a sentinel
+/// shared by every target of that type and could not identify one.
+///
+/// # Why not `Target::executable` and `Target::library`
+///
+/// Both are thin wrappers over [`Target::new`] that hardcode a target type, and `Target::library`
+/// hardcodes `TargetType::Library` — so routing the four library-like types through it silently
+/// discards the requested type. `assemble_source_package` asserts the assembled package's kind
+/// equals its target's, so that would emit a `Library`-kind package for an account component.
+/// The wrappers' *shapes* are reproduced exactly; only the type is carried through.
+pub(crate) fn synthesize_target(
     name: &str,
     target_root: &FsPath,
     target_type: TargetType,
 ) -> CompilerResult<Target> {
     let uri = Uri::from(target_root);
-    if target_type.is_executable() {
-        return Ok(Target::executable(name, uri));
+    match target_type {
+        TargetType::Executable => Ok(Target::new(target_type, name, MasmPath::exec_path(), uri)),
+        TargetType::Kernel => Ok(Target::new(target_type, name, MasmPath::kernel_path(), uri)),
+        _ => {
+            let namespace: Arc<MasmPath> = MasmPath::new(name)
+                .to_absolute()
+                .map(|path| Arc::from(path.into_owned()))
+                .map_err(|err| Report::msg(format!("invalid namespace '{name}': {err}")))?;
+            let derived_name: Arc<str> = namespace.as_str().into();
+            Ok(Target::new(target_type, derived_name, namespace, uri))
+        }
     }
-    let namespace = miden_assembly_syntax::Path::new(name)
-        .to_absolute()
-        .map(|path| Arc::from(path.into_owned()))
-        .map_err(|err| Report::msg(format!("invalid namespace '{name}': {err}")))?;
-    Ok(Target::library(namespace, uri))
 }
 
 /// A synthesized project with no manifest on disk.
@@ -129,6 +346,25 @@ impl VirtualProject {
         let library = synthesize_target(name, library_root, TargetType::Library)?;
         let package = ProjectPackage::new(name, executable.clone()).with_targets([library.clone()]);
         Self::assemble(Arc::from(package), vec![executable, library])
+    }
+
+    /// The target a standalone preparation synthesized, ready to be served by a frontend.
+    ///
+    /// This is what lets a test hold preparation and a frontend to the *same* namespace —
+    /// the invariant `load_target_sources` enforces — without either side restating it.
+    ///
+    /// Preparation's package is not reused verbatim: it carries the `miden-core` registry
+    /// dependency every standalone build links against, and [`NoPackageStore`] cannot resolve
+    /// it, so building its dependency graph fails outright. A target's namespace has nothing
+    /// to do with its dependency closure, so the target is lifted into a package of its own
+    /// under the same name.
+    #[cfg(test)]
+    pub(crate) fn for_prepared_target(
+        prepared: &crate::pipeline::PreparedProject,
+    ) -> CompilerResult<Self> {
+        let target = prepared.target.clone();
+        let package = ProjectPackage::new(prepared.package.name().inner().as_ref(), target.clone());
+        Self::assemble(Arc::from(package), vec![target])
     }
 
     /// Resolve `package`'s dependency graph and wrap it up with its `targets`.
@@ -246,7 +482,7 @@ mod tests {
         assert!(library.is_library());
         assert_eq!(
             executable.namespace.inner().as_ref(),
-            miden_assembly_syntax::Path::exec_path(),
+            MasmPath::exec_path(),
             "executable targets must use $exec"
         );
         assert_eq!(
@@ -286,7 +522,7 @@ mod tests {
             .expect("should build virtual project");
         assert_eq!(
             project.target().namespace.inner().as_ref(),
-            miden_assembly_syntax::Path::exec_path(),
+            MasmPath::exec_path(),
             "executable targets must use $exec, matching Module::new_executable"
         );
     }

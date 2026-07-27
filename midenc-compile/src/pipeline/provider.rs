@@ -8,7 +8,7 @@ use miden_assembly::{
 use miden_mast_package::Package as MastPackage;
 use midenc_hir::Context;
 use midenc_session::{
-    Session,
+    InputFile, Session,
     diagnostics::Report,
     miden_project::{Package as ProjectPackage, Target, TargetType},
 };
@@ -121,6 +121,9 @@ pub struct FrontendProvider {
     state: Rc<RequestState>,
     /// The selected target, which is what makes role derivation possible.
     root: RootTarget,
+    /// The compiler input this request was given, when the frontend needs it; see
+    /// [`FrontendProvider::with_input`].
+    input: Option<InputFile>,
 }
 
 impl FrontendProvider {
@@ -141,7 +144,28 @@ impl FrontendProvider {
             session,
             state,
             root,
+            input: None,
         }
+    }
+
+    /// Hand `input` to the frontend on every callback this provider serves.
+    ///
+    /// Nothing supplies one yet: only a standalone preparation will, once standalone inputs
+    /// are prepared here. A project target's frontend reads its sources from
+    /// `assembly().resolved_target_root`, but a standalone input may be stdin-backed — it
+    /// exists only in memory and has no path at all — so the bytes can only reach the frontend
+    /// through the request's own [`InputFile`].
+    ///
+    /// It will therefore be supplied to the provider for the *selected* target's root
+    /// extension, which is the target the input backs. Every callback that provider serves is
+    /// handed it, including a same-extension dependency's. That is expected to be
+    /// unreachable — a standalone request's project is to be synthesized with only the
+    /// `miden-core` registry dependency, which has no sources to compile — but the route that
+    /// would establish it does not exist yet, so treat it as a property the standalone
+    /// preparation owes rather than one already held.
+    pub fn with_input(mut self, input: InputFile) -> Self {
+        self.input = Some(input);
+        self
     }
 
     /// Wrap one assembler callback's context in the context the frontend expects.
@@ -150,14 +174,15 @@ impl FrontendProvider {
     /// scopes `Options` — and therefore a `Context`, and the session derived from it — per
     /// target, not per provider.
     ///
-    /// No [`InputFile`](midenc_session::InputFile) is passed: a project target's frontend
-    /// reads its sources from `assembly().resolved_target_root`. The compilation request's
-    /// input reaches the context in the increment that adds standalone inputs.
+    /// The [`InputFile`] is whatever this provider was built with; see
+    /// [`FrontendProvider::with_input`] for why only some providers carry one. The borrow
+    /// handed on is of `self`, which is what lets [`TargetContext::input`] hand back a
+    /// reference for the same lifetime as the assembly context's.
     fn target_context<'a>(&'a self, assembly: &'a TargetAssemblyContext<'a>) -> TargetContext<'a> {
         TargetContext::new(
             assembly,
             Rc::new(Context::new(self.session.clone())),
-            None,
+            self.input.as_ref(),
             self.root.role_of(assembly),
             &self.state,
         )
@@ -222,6 +247,7 @@ mod tests {
     use core::cell::RefCell;
 
     use miden_assembly::{ModuleParser, SourceFileProvenance, ast::ModuleKind};
+    use midenc_session::{InputFile, InputType};
 
     use super::*;
     use crate::{
@@ -245,17 +271,30 @@ mod tests {
 
     /// A frontend that publishes once, then hands back trivial Miden Assembly.
     ///
-    /// It also records the role it was invoked with, so a test can check the role the
-    /// *provider* derived rather than only re-deriving it itself.
+    /// It also records the role and the input it was invoked with, so a test can check what
+    /// the *provider* derived and passed on rather than only re-deriving it itself.
     struct PublishingFrontend {
         roles: RefCell<Vec<TargetRole>>,
+        inputs: RefCell<Vec<Option<InputFile>>>,
     }
 
     impl PublishingFrontend {
         fn new() -> Rc<Self> {
             Rc::new(Self {
                 roles: RefCell::new(Vec::new()),
+                inputs: RefCell::new(Vec::new()),
             })
+        }
+
+        /// The inputs this frontend has been handed, in the same order as [`Self::roles`].
+        fn inputs(&self) -> Vec<Option<InputFile>> {
+            self.inputs.borrow().clone()
+        }
+
+        /// Note what `cx` carried for this callback.
+        fn observe(&self, cx: &TargetContext<'_>) {
+            self.roles.borrow_mut().push(cx.role());
+            self.inputs.borrow_mut().push(cx.input().cloned());
         }
 
         /// The roles this frontend has been invoked with, in order.
@@ -280,7 +319,7 @@ mod tests {
 
     impl Frontend for PublishingFrontend {
         fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
-            self.roles.borrow_mut().push(cx.role());
+            self.observe(cx);
             let name = cx.assembly().target.name.inner().to_string();
             match cx.checkpoint(PUBLISHED, ArtifactId::MASM, Published(name))? {
                 Flow::Continue(_) => Ok(Flow::Continue(Self::sources(cx)?)),
@@ -293,7 +332,7 @@ mod tests {
             package: &mut MastPackage,
             cx: &TargetContext<'_>,
         ) -> CompilerResult<()> {
-            self.roles.borrow_mut().push(cx.role());
+            self.observe(cx);
             package.description = Some(format!("post-processed as {:?}", cx.role()));
             Ok(())
         }
@@ -302,7 +341,7 @@ mod tests {
             &self,
             cx: &TargetContext<'_>,
         ) -> CompilerResult<ProjectSourceProvenanceInputs> {
-            self.roles.borrow_mut().push(cx.role());
+            self.observe(cx);
             Ok(ProjectSourceProvenanceInputs {
                 root: SourceFileProvenance {
                     path: cx.assembly().resolved_target_root.clone(),
@@ -621,6 +660,87 @@ mod tests {
             vec![TargetRole::RequiredLibrary; 2],
             "both providers must reach the same frontend instance, each deriving the same role"
         );
+    }
+
+    /// Drive all three of `provider`'s callbacks over `project`'s library target.
+    ///
+    /// Every one of them builds a [`TargetContext`], so a property of that construction —
+    /// such as which input it carries — has to hold for all three rather than for the one a
+    /// test happened to call.
+    fn drive_every_callback(provider: &FrontendProvider, project: &VirtualProject) {
+        let library = library_of(project);
+        assert!(!provide(provider, project, library));
+        let assembly = project.assembly_context_for(library).expect("library context");
+        provider
+            .provide_source_provenance(&assembly)
+            .expect("provenance should succeed");
+        provider
+            .post_process_package(&mut any_package(), &assembly)
+            .expect("post-processing should succeed");
+    }
+
+    #[test]
+    fn an_input_supplied_to_the_provider_reaches_every_callback() {
+        // A stdin-backed input, because that is the case paths cannot serve and therefore
+        // the whole reason a context carries an input: `resolved_target_root` names a file
+        // that was never written.
+        //
+        // This is also the test increment 2 owed `TargetContext::input`'s lifetime. The
+        // accessor hands back `Option<&'a InputFile>` for the *assembly* context's `'a`,
+        // which only type-checks because `target_context<'a>(&'a self, ..)` borrows the
+        // provider for that same `'a` — the restrictive direction, and one no caller had
+        // exercised.
+        let project = both_targets("provider_input");
+        let frontend = PublishingFrontend::new();
+        let state = Rc::new(RequestState::new(Goal::at(PUBLISHED), Vec::new()));
+        let input = InputFile::from_bytes(b"(module)".to_vec(), "stdin.wat".into())
+            .expect("stdin bytes are a valid compiler input");
+        let provider = FrontendProvider::new(
+            "wat",
+            frontend.clone() as Rc<dyn Frontend>,
+            Context::default().session_rc(),
+            state,
+            root_of(&project),
+        )
+        .with_input(input.clone());
+
+        drive_every_callback(&provider, &project);
+
+        let mut handed_over = frontend.inputs();
+        assert_eq!(
+            handed_over,
+            vec![Some(input); 3],
+            "the request's input must reach the frontend through every callback"
+        );
+        let reached = handed_over.remove(0).expect("an input was handed over");
+        assert!(reached.as_path().is_none(), "a stdin input has no path to be read back from");
+        match &reached.file {
+            InputType::Stdin { input, .. } => {
+                assert_eq!(input.as_slice(), b"(module)", "the stdin bytes must be readable")
+            }
+            other => panic!("expected a stdin-backed input, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_provider_built_without_an_input_hands_the_frontend_none() {
+        // The half that keeps the test above from passing on a provider that fabricates an
+        // input: a project target's frontend reads `assembly().resolved_target_root`, and
+        // must be told there is nothing else.
+        let project = both_targets("provider_no_input");
+        let frontend = PublishingFrontend::new();
+        let state = Rc::new(RequestState::new(Goal::at(PUBLISHED), Vec::new()));
+        let provider = FrontendProvider::new(
+            "wat",
+            frontend.clone() as Rc<dyn Frontend>,
+            Context::default().session_rc(),
+            state,
+            root_of(&project),
+        );
+
+        drive_every_callback(&provider, &project);
+
+        assert_eq!(frontend.inputs(), vec![None; 3]);
     }
 
     #[test]

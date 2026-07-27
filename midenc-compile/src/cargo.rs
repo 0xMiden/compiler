@@ -236,7 +236,7 @@ pub(crate) fn cargo_build(
         package
     };
 
-    let input = InputFile::from_path(manifest_path).unwrap();
+    let input = InputFile::from_path(manifest_path.clone()).unwrap();
     let session = Rc::new(Session::new_project(
         package_name.clone(),
         Some(input.clone()),
@@ -247,13 +247,17 @@ pub(crate) fn cargo_build(
     ));
     let context = Rc::new(midenc_hir::Context::new(session));
 
-    crate::cargo_project_codegen_pipeline(input, filesystem_cache_dir, context)
+    crate::pipeline::frontends::rust::compile_manifest(
+        &manifest_path,
+        filesystem_cache_dir,
+        context,
+    )
     // We expect dependencies to *always* produce packages (.masp)
     /*
     let CodegenOutput {
         component,
         account_component_metadata_bytes,
-    } = crate::cargo_project_codegen_pipeline(input, context.clone())?
+    } = crate::pipeline::frontends::rust::compile_manifest(&manifest_path, None, context.clone())?
     else {
         panic!(
             "expected cargo build of {package_name} to produce component, but got HIR output \

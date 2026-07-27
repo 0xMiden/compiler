@@ -10,7 +10,7 @@ use crate::{
     attributes::IntegerLikeAttr,
     diagnostics::{Report, SourceSpan, Uri},
     dialects::builtin::{
-        BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, WorldRef,
+        BuiltinOpBuilder, Function, Module, Ret, RetImm, UnrealizedConversionCast, World, WorldRef,
         attributes::{AbiParam, Signature},
     },
     parse::{self, ParseResult, ParserConfig},
@@ -184,6 +184,97 @@ builtin.function public extern(\"C\") @retconst() -> u8 {
 };",
     );
     assert!(result.is_err(), "expected an out-of-range immediate to be rejected");
+
+    Ok(())
+}
+
+/// A whole `builtin.world` — the shape `midenc --emit=hir` writes, and the shape that must
+/// survive being fed back in.
+const WORLD_SOURCE: &str = "\
+builtin.world {
+    builtin.module public @lib {
+        builtin.function public extern(\"C\") @main() {
+            builtin.ret;
+        };
+    };
+};";
+
+/// The same content without the enclosing world, which the parser does have to wrap.
+const MODULE_SOURCE: &str = "\
+builtin.module public @lib {
+    builtin.function public extern(\"C\") @main() {
+        builtin.ret;
+    };
+};";
+
+#[test]
+fn parsing_a_world_yields_that_world_rather_than_nesting_it() -> TestResult {
+    let test = ParserTest::default();
+
+    let parsed = test.parse_any("parse_world.hir", WORLD_SOURCE)?;
+    let world = parsed
+        .try_downcast_op::<World>()
+        .expect("expected the parsed operation to be a 'builtin.world'");
+
+    // The world the file declares *is* the root. Nothing was created around it.
+    assert!(
+        parsed.parent_op().is_none(),
+        "a parsed 'builtin.world' must not be nested inside another operation, but it hangs from \
+         a '{}'",
+        parsed.parent_op().unwrap().borrow().name()
+    );
+
+    // And because it is the root, symbols inside it have well-formed paths. A world is an
+    // anonymous symbol table, and `Symbol::path` asserts that an anonymous symbol table has no
+    // parent — so a world nested in a world does not merely produce a wrong path here, it
+    // panics.
+    let module_op = world.borrow().body().entry().front().expect("the world declares a module");
+    {
+        let module = module_op.borrow();
+        let module = module.downcast_ref::<Module>().expect("expected 'lib' to be a module");
+        let path = module.path();
+        assert!(path.is_absolute(), "a symbol path is rooted at the world");
+        assert_eq!(path.to_string(), "lib");
+    }
+
+    // The function's path crosses two symbol tables, so it also pins that the world contributes
+    // no component of its own — it is the root, not a named ancestor.
+    let function = {
+        let module = module_op.borrow();
+        let module = module.downcast_ref::<Module>().unwrap();
+        module.body().entry().front().expect("the module defines a function")
+    };
+    let function = function.borrow();
+    let function = function.downcast_ref::<Function>().expect("expected 'main' to be a function");
+    assert_eq!(function.path().to_string(), "lib/main");
+
+    Ok(())
+}
+
+#[test]
+fn parsing_a_module_still_wraps_it_in_a_world() -> TestResult {
+    let test = ParserTest::default();
+
+    let parsed = test.parse_any("parse_module_wrapped.hir", MODULE_SOURCE)?;
+    let module = parsed
+        .try_downcast_op::<Module>()
+        .expect("expected the parsed operation to be a 'builtin.module'");
+
+    // The discriminating half: an operation that is not a world still gets the world it needs to
+    // resolve symbols against.
+    let parent = parsed
+        .parent_op()
+        .expect("a top-level operation that is not a world must be given a world to live in");
+    assert!(
+        parent.borrow().is::<World>(),
+        "expected the wrapper to be a 'builtin.world', got a '{}'",
+        parent.borrow().name()
+    );
+    assert!(parent.parent_op().is_none(), "the wrapper world must itself be the root");
+
+    let path = module.borrow().path();
+    assert!(path.is_absolute(), "a symbol path is rooted at the wrapper world");
+    assert_eq!(path.to_string(), "lib");
 
     Ok(())
 }

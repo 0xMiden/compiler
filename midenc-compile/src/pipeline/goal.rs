@@ -1,6 +1,10 @@
-use alloc::{format, string::String, vec::Vec};
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
-use midenc_session::{OutputType, OutputTypeSpec, diagnostics::Report};
+use midenc_session::{Options, OutputType, OutputTypeSpec, diagnostics::Report};
 
 use super::{ArtifactId, CheckpointId, FrontendRegistration};
 use crate::CompilerResult;
@@ -157,6 +161,248 @@ pub fn resolve_goal(
     })
 }
 
+/// A request to end compilation early, as expressed by a `-C` stop flag.
+///
+/// # These are stop points, not switches
+///
+/// Each variant names a *phase*, and asking for it means "run up to and including that phase,
+/// then exit". They are therefore resolved into a [`Goal`] like any `--stop-after` value, and
+/// the existing stop-at-goal machinery does the exiting. No frontend checks these flags: a
+/// frontend-local exit would be a second mechanism, disagreeing with the goal on when the
+/// checkpoint gets published and on what — if anything — the run captures.
+///
+/// # Why a flag maps to a checkpoint rather than to a route alias
+///
+/// The mapping is deliberately not "`-Cparse-only` means `--stop-after=parse`". On the
+/// Wasm-derived routes the `parse` alias is `wasm.parsed`, while the flag has always stopped
+/// *after* the WebAssembly had been translated to HIR — one checkpoint later. Naming
+/// checkpoints keeps the flags meaning what they have always meant.
+///
+/// # And why the mapping is a preference list rather than a single checkpoint
+///
+/// Routes differ in which phases they have. Rather than matching on frontend identity — which
+/// would put language knowledge back into the frontend-neutral core — each flag names the
+/// checkpoints that could serve it, most preferred first, and `stop_checkpoint` takes the
+/// first one the route declares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StopFlag {
+    /// `-Cparse-only`: stop once the input has become the route's first intermediate form.
+    ///
+    /// For a route that produces HIR that is `hir.initial`, the point the legacy
+    /// `ParseWasmStage` and `ParseHirStage` stopped at — after translation, not merely after
+    /// the source had been read. A route that produces no HIR stops at `masm.parsed`.
+    ParseOnly,
+    /// `-Canalyze-only`: stop once the analysis phase has run.
+    ///
+    /// The owner's framing, and the reason this is not conditional on `-Zlint`: the flag names
+    /// the analysis *step*, of which the advice-taint lint is today the only member. A run
+    /// that asked to stop after analysis stops there whether or not any lint was enabled.
+    AnalyzeOnly,
+    /// `-Clink-only`: stop once the inputs have been linked, without generating Miden Assembly.
+    ///
+    /// Linking is what the wasm-to-HIR translation does, so this lands on `hir.initial` like
+    /// `-Cparse-only`; the two flags differ in what they *suppress* downstream, not in where
+    /// they stop. That is where `ParseWasmStage` stopped for it
+    /// (`stages/parse/wasm.rs`), and it is the same answer for a `.hir` input, whose
+    /// `hir.initial` *is* already-linked HIR.
+    ///
+    /// The `.hir` route is worth a note, because the obvious reading of the legacy chain says
+    /// `masm.lowered`: `CodegenStage::run` raises `CompilerStopped("link-only=true")` *after*
+    /// lowering. That check is unreachable. `CodegenStage::enabled` returns
+    /// `Session::should_codegen()`, which is `false` whenever `link_only` is set, and
+    /// `Chain::run` refuses to run a disabled stage — so the legacy `.hir` chain under
+    /// `-Clink-only` never reached codegen at all and exited from `Chain::run` with the
+    /// unhelpful "second stage of chain is disabled". Stopping at `hir.initial` is what the
+    /// flag says and what the Wasm route already did.
+    ///
+    /// This is also the one flag a route may legitimately not have: a target that is already
+    /// Miden Assembly is assembled, never linked into HIR, so there is no phase to stop after
+    /// and the flag is inert rather than rejected.
+    LinkOnly,
+    /// The derived rewrite-only mode: the request asked for no output needing linking or
+    /// codegen, so compilation stops after the rewrites.
+    ///
+    /// This is not a flag. It is [`Session::rewrite_only`](midenc_session::Session::rewrite_only),
+    /// restated over `Options` by `rewrite_only`, and it is unreachable from the command
+    /// line: every command line goes through
+    /// [`Options::with_output_types`](midenc_session::Options::with_output_types), which
+    /// inserts the implicit `masp`, and clap rejects `-Clink-only` together with `-Cno-link`.
+    /// It is mapped because a caller building `Options` directly can still express it.
+    RewriteOnly,
+}
+
+impl StopFlag {
+    /// How this stop point is named in diagnostics.
+    pub const fn flag(self) -> &'static str {
+        match self {
+            Self::ParseOnly => "-Cparse-only",
+            Self::AnalyzeOnly => "-Canalyze-only",
+            Self::LinkOnly => "-Clink-only",
+            Self::RewriteOnly => "rewrite-only mode",
+        }
+    }
+
+    /// The reason a [`CompilerStopped`](crate::CompilerStopped) raised for this stop carries.
+    ///
+    /// These are the strings the legacy stages used, so a run stopped by a flag reports what
+    /// it has always reported.
+    pub const fn reason(self) -> &'static str {
+        match self {
+            Self::ParseOnly => "parse-only",
+            Self::AnalyzeOnly => "analyze-only",
+            Self::LinkOnly => "link-only",
+            Self::RewriteOnly => "rewrite-only",
+        }
+    }
+
+    /// The checkpoints that can serve this stop, most preferred first.
+    const fn checkpoints(self) -> &'static [CheckpointId] {
+        match self {
+            Self::ParseOnly => &[CheckpointId::HIR_INITIAL, CheckpointId::MASM_PARSED],
+            Self::AnalyzeOnly => &[CheckpointId::HIR_ANALYZED],
+            Self::LinkOnly => &[CheckpointId::HIR_INITIAL],
+            Self::RewriteOnly => &[CheckpointId::HIR_TRANSFORMED],
+        }
+    }
+
+    /// Whether a route serving none of [`Self::checkpoints`] is a usage error.
+    ///
+    /// True for every stop that names a phase each compilation route performs somewhere, so
+    /// that a route unable to express it is reported rather than silently ignored — which is
+    /// what a manifest-backed Rust target did with `-Canalyze-only` before these flags became
+    /// goals.
+    ///
+    /// False for [`Self::LinkOnly`] alone, whose phase a Miden Assembly route genuinely does
+    /// not have; see that variant.
+    const fn is_required(self) -> bool {
+        !matches!(self, Self::LinkOnly)
+    }
+}
+
+/// The derived rewrite-only mode: neither linking nor codegen was asked for.
+///
+/// This restates [`Session::rewrite_only`](midenc_session::Session::rewrite_only) over
+/// `Options` alone, because goal resolution never sees a session.
+/// `the_derived_rewrite_only_mode_agrees_with_the_session_predicate` runs both over the shapes
+/// that make the predicate interesting, so the two cannot drift in silence.
+fn rewrite_only(options: &Options) -> bool {
+    let should_link = options.output_types.should_link() && !options.no_link;
+    let should_codegen = options.output_types.should_codegen() && !options.link_only;
+    !options.parse_only && !options.analyze_only && !(should_link || should_codegen)
+}
+
+/// Which stop `options` asks for, if any.
+///
+/// A request naming two of the `-C` flags is a usage error reporting both, rather than a
+/// silent precedence rule. It is not reachable from the command line — `CodegenOptions`
+/// declares each flag `conflicts_with_all` the others (`compiler.rs`) — but an `Options` built
+/// programmatically can carry two.
+///
+/// [`StopFlag::RewriteOnly`] is consulted only when none of the three flags is set, which
+/// keeps it from competing with them. For `-Cparse-only` and `-Canalyze-only` that is not a new
+/// rule at all — `rewrite_only()` excludes both by construction.
+///
+/// For `-Clink-only` it *is* a choice, and it is only half-precedented: the legacy wasm chain
+/// stopped on `link_only` in `ParseWasmStage`, ahead of `ApplyRewritesStage`'s rewrite-only
+/// exit, but the `.hir` chain had no `link_only` check in `ParseHirStage`, so there the
+/// rewrite-only exit would have come first. Preferring the named flag over the derived mode is
+/// the choice made here, and nothing observes it: the pair is unreachable from the command
+/// line, because `Options::with_output_types` inserts the implicit `masp` and therefore makes
+/// `should_link()` true, which makes `rewrite_only()` false whenever `-Clink-only` is given.
+pub fn stop_flag(options: &Options) -> CompilerResult<Option<StopFlag>> {
+    let named = [
+        (options.parse_only, StopFlag::ParseOnly),
+        (options.analyze_only, StopFlag::AnalyzeOnly),
+        (options.link_only, StopFlag::LinkOnly),
+    ]
+    .into_iter()
+    .filter_map(|(is_set, flag)| is_set.then_some(flag))
+    .collect::<Vec<_>>();
+
+    match named.as_slice() {
+        [] => Ok(rewrite_only(options).then_some(StopFlag::RewriteOnly)),
+        [flag] => Ok(Some(*flag)),
+        several => Err(Report::msg(format!(
+            "{} name different stop points; give at most one",
+            several
+                .iter()
+                .map(|flag| format!("'{}'", flag.flag()))
+                .collect::<Vec<_>>()
+                .join(" and ")
+        ))),
+    }
+}
+
+/// Fold the stop `options` asks for into `request`, as a `--stop-after` value.
+///
+/// The result goes through [`resolve_goal`] like any other request, so the flags and
+/// `--stop-after` share one resolution path and one set of diagnostics.
+pub fn apply_stop_flags(
+    request: OutputRequest,
+    options: &Options,
+    frontend: &FrontendRegistration,
+) -> CompilerResult<OutputRequest> {
+    let Some(flag) = stop_flag(options)? else {
+        return Ok(request);
+    };
+    if let Some(stop_after) = request.stop_after() {
+        return Err(Report::msg(format!(
+            "'--stop-after={stop_after}' and '{}' name different stop points; give at most one",
+            flag.flag()
+        )));
+    }
+    match stop_checkpoint(flag, frontend)? {
+        Some(checkpoint) => Ok(request.with_stop_after(Some(checkpoint.as_str().to_string()))),
+        None => Ok(request),
+    }
+}
+
+/// The checkpoint `flag` stops at on `frontend`'s route.
+///
+/// `None` means the flag names a phase this route does not have and is therefore inert; see
+/// [`StopFlag::is_required`]. Otherwise a route that cannot serve the flag is reported as a
+/// limitation of the compiler, because that is what it is: the phase happens, but not
+/// anywhere this request can observe. A manifest-backed Rust target is the live case — it
+/// compiles by recursing with a fresh `Session` and `Context`, whose checkpoints this
+/// request's observers never see, so its route is `package.assembled` alone.
+fn stop_checkpoint(
+    flag: StopFlag,
+    frontend: &FrontendRegistration,
+) -> CompilerResult<Option<CheckpointId>> {
+    if let Some(checkpoint) = flag
+        .checkpoints()
+        .iter()
+        .copied()
+        .find(|checkpoint| frontend.supports(*checkpoint))
+    {
+        return Ok(Some(checkpoint));
+    }
+    if !flag.is_required() {
+        return Ok(None);
+    }
+
+    let wanted = flag
+        .checkpoints()
+        .iter()
+        .map(|checkpoint| checkpoint.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let route = frontend
+        .route()
+        .iter()
+        .map(|checkpoint| checkpoint.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(Report::msg(format!(
+        "'{}' is not supported for '{}' targets yet: it stops compilation at whichever of \
+         [{wanted}] the route reaches, and this one reaches none of them — its checkpoints are \
+         [{route}]. This is a known limitation of the compiler rather than a problem with your \
+         project.",
+        flag.flag(),
+        frontend.id(),
+    )))
+}
+
 /// Resolve a `--stop-after` value to a route position.
 fn resolve_stop_after(value: &str, frontend: &FrontendRegistration) -> CompilerResult<usize> {
     if let Some(checkpoint) = frontend.resolve_alias(value) {
@@ -193,9 +439,12 @@ fn resolve_stop_after(value: &str, frontend: &FrontendRegistration) -> CompilerR
 mod tests {
     use alloc::{format, string::ToString, vec};
 
-    use midenc_session::OutputType;
+    use midenc_session::{Options, OutputType};
 
     use super::*;
+    use crate::pipeline::frontends::{
+        HIR_FRONTEND, MASM_FRONTEND, RUST_FRONTEND, RUST_STANDALONE_FRONTEND, WASM_FRONTEND,
+    };
     // `MASM`'s route produces no `wasm` artifact at all, which is what separates "this
     // frontend cannot produce it" from "not before the cap".
     // `decl` declares an artifact with a renderer that writes nothing, and `unexercised`
@@ -434,5 +683,280 @@ mod tests {
             .with_stop_after(Some("lower".to_string()));
         let goal = resolve_goal(&request, &SYNTHETIC).expect("synthetic.lowered produces masm");
         assert_eq!(goal.checkpoint(), NATIVE);
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The `-C` stop flags.
+    //
+    // These run against the *shipped* registrations rather than the fixtures above, because
+    // what a flag means is a claim about the routes users actually compile on. A fixture
+    // route could be given whatever checkpoints made the mapping look right.
+    // -------------------------------------------------------------------------------------
+
+    /// The options a command line carrying the flags `configure` sets arrives with.
+    ///
+    /// `with_output_types` is not decoration: every command line goes through it (see
+    /// `compiler.rs`), and it inserts the implicit `masp`. Without it `output_types` is empty,
+    /// which makes the derived [`StopFlag::RewriteOnly`] true and every case below ambiguous.
+    fn options_with(configure: impl FnOnce(&mut Options)) -> Options {
+        let mut options = alloc::boxed::Box::new(Options::default());
+        configure(&mut options);
+        *options.with_output_types(Default::default(), None)
+    }
+
+    /// The checkpoint `options` stop compilation at on `frontend`'s route, if any.
+    fn resolved_stop(options: &Options, frontend: &FrontendRegistration) -> Option<CheckpointId> {
+        let request =
+            apply_stop_flags(OutputRequest::default(), options, frontend).unwrap_or_else(|err| {
+                panic!("the flags must map on the '{}' route: {err}", frontend.id())
+            });
+        request
+            .stop_after()
+            .map(|value| resolve_goal(&request, frontend).expect(value).checkpoint())
+    }
+
+    #[test]
+    fn each_stop_flag_maps_onto_the_checkpoint_its_route_reaches() {
+        // The whole table, per route. `-Cparse-only` and `-Clink-only` name checkpoints that
+        // are *not* the route's `parse` alias on the Wasm-derived routes: the legacy stages
+        // stopped after the wasm -> HIR translation, not after the wasm was parsed.
+        let cases: &[(&str, FrontendRegistration, Option<CheckpointId>, Option<CheckpointId>)] = &[
+            (
+                "wasm",
+                WASM_FRONTEND,
+                Some(CheckpointId::HIR_INITIAL),
+                Some(CheckpointId::HIR_INITIAL),
+            ),
+            (
+                "rust-standalone",
+                RUST_STANDALONE_FRONTEND,
+                Some(CheckpointId::HIR_INITIAL),
+                Some(CheckpointId::HIR_INITIAL),
+            ),
+            (
+                "hir",
+                HIR_FRONTEND,
+                Some(CheckpointId::HIR_INITIAL),
+                Some(CheckpointId::HIR_INITIAL),
+            ),
+            // The MASM route has no HIR of its own to stop at, and no link phase at all.
+            ("masm", MASM_FRONTEND, Some(CheckpointId::MASM_PARSED), None),
+        ];
+
+        for (name, frontend, parse_stop, link_stop) in cases {
+            assert_eq!(
+                resolved_stop(&options_with(|options| options.parse_only = true), frontend),
+                *parse_stop,
+                "-Cparse-only on the '{name}' route"
+            );
+            assert_eq!(
+                resolved_stop(&options_with(|options| options.analyze_only = true), frontend),
+                Some(CheckpointId::HIR_ANALYZED),
+                "-Canalyze-only on the '{name}' route"
+            );
+            assert_eq!(
+                resolved_stop(&options_with(|options| options.link_only = true), frontend),
+                *link_stop,
+                "-Clink-only on the '{name}' route"
+            );
+        }
+    }
+
+    #[test]
+    fn the_derived_rewrite_only_mode_stops_after_the_rewrites() {
+        // `rewrite_only()` is not a flag: it holds when the request asked for no output that
+        // needs linking or codegen, which is why the fixture skips `with_output_types`.
+        let options = Options::default();
+        assert_eq!(
+            stop_flag(&options).expect("no two flags are set"),
+            Some(StopFlag::RewriteOnly),
+            "an empty output-type set is what makes the derived mode hold"
+        );
+        for frontend in [WASM_FRONTEND, RUST_STANDALONE_FRONTEND, HIR_FRONTEND] {
+            assert_eq!(
+                resolved_stop(&options, &frontend),
+                Some(CheckpointId::HIR_TRANSFORMED),
+                "the rewrite-only mode stops after the rewrites on the '{}' route",
+                frontend.id()
+            );
+        }
+
+        // And it is rejected on the MASM route, which never reaches `hir.transformed` — the
+        // same reason `--stop-after=transform` is rejected there.
+        let err = apply_stop_flags(OutputRequest::default(), &options, &MASM_FRONTEND)
+            .expect_err("the masm route has no rewrite phase");
+        assert!(format!("{err}").contains("hir.transformed"), "{err}");
+    }
+
+    #[test]
+    fn analyze_only_on_a_manifest_backed_rust_target_is_a_known_limitation() {
+        // `RUST_FRONTEND` compiles a manifest-backed Rust target by recursing with a fresh
+        // `Session`/`Context`, whose checkpoints this request's observers never see; its route
+        // is `package.assembled` alone. Today the flag is silently ignored there, which is the
+        // behaviour this replaces.
+        let options = options_with(|options| options.analyze_only = true);
+        let err = apply_stop_flags(OutputRequest::default(), &options, &RUST_FRONTEND)
+            .expect_err("the rust project route cannot express an analysis stop");
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("-Canalyze-only"), "must name the flag: {rendered}");
+        assert!(
+            rendered.contains("not supported"),
+            "must read as an unsupported request, not a malformed one: {rendered}"
+        );
+        assert!(
+            rendered.contains("known limitation"),
+            "must say the limitation is the compiler's, not the project's: {rendered}"
+        );
+        assert!(rendered.contains("hir.analyzed"), "must name the stop point: {rendered}");
+        assert!(
+            rendered.contains("package.assembled"),
+            "must name what the route does reach: {rendered}"
+        );
+
+        // `-Cparse-only` is rejected here for the same reason and by the same rule; it is not
+        // singled out for `-Canalyze-only`.
+        let options = options_with(|options| options.parse_only = true);
+        let err = apply_stop_flags(OutputRequest::default(), &options, &RUST_FRONTEND)
+            .expect_err("nor can it express a parse stop");
+        assert!(format!("{err}").contains("-Cparse-only"), "{err}");
+
+        // `-Clink-only` is *not*, and that asymmetry is deliberate: `is_required` is a property
+        // of the flag, not of the route. A linking phase is one a route may legitimately not
+        // have — which is the MASM case the mapping has to preserve — so the flag is inert
+        // wherever its checkpoint is absent, here included. Asserted rather than left to prose,
+        // because it is the one place the two rules visibly disagree.
+        let options = options_with(|options| options.link_only = true);
+        assert_eq!(
+            resolved_stop(&options, &RUST_FRONTEND),
+            None,
+            "-Clink-only must be inert on the rust project route, not a diagnostic"
+        );
+    }
+
+    #[test]
+    fn analyze_only_stops_at_the_analysis_checkpoint_without_the_lint_flag() {
+        // The discriminating pair for the question `-Zlint` raises: `-Canalyze-only` names a
+        // stop point, so it must resolve identically whether or not any lint was enabled.
+        // Nothing else pins this — most lit fixtures use the flag *without* `-Zlint`.
+        for frontend in [WASM_FRONTEND, RUST_STANDALONE_FRONTEND, HIR_FRONTEND, MASM_FRONTEND] {
+            for lint in [false, true] {
+                let options = options_with(|options| {
+                    options.analyze_only = true;
+                    options.lint = lint;
+                });
+                assert_eq!(
+                    resolved_stop(&options, &frontend),
+                    Some(CheckpointId::HIR_ANALYZED),
+                    "-Canalyze-only with lint={lint} on the '{}' route",
+                    frontend.id()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_stop_flags_are_a_usage_error_naming_both() {
+        // Not reachable from the command line: `CodegenOptions` declares each of the three
+        // with `conflicts_with_all` over the other two (`compiler.rs`), so clap rejects the
+        // pair first. Only an `Options` built programmatically can carry two, and a silent
+        // precedence rule is the wrong answer for it.
+        let options = options_with(|options| {
+            options.parse_only = true;
+            options.link_only = true;
+        });
+        let err = stop_flag(&options).expect_err("two flags name two stop points");
+        let rendered = format!("{err}");
+        assert!(rendered.contains("-Cparse-only"), "must name the first flag: {rendered}");
+        assert!(rendered.contains("-Clink-only"), "must name the second flag: {rendered}");
+    }
+
+    #[test]
+    fn a_stop_flag_and_an_explicit_stop_after_are_a_usage_error() {
+        let options = options_with(|options| options.analyze_only = true);
+        let request = OutputRequest::default().with_stop_after(Some("parse".to_string()));
+        let err = apply_stop_flags(request, &options, &WASM_FRONTEND)
+            .expect_err("two stop points were named");
+        let rendered = format!("{err}");
+        assert!(rendered.contains("--stop-after=parse"), "{rendered}");
+        assert!(rendered.contains("-Canalyze-only"), "{rendered}");
+    }
+
+    #[test]
+    fn a_request_carrying_no_stop_flag_is_left_alone() {
+        // The half without which every assertion above could be satisfied by a mapping that
+        // stopped every build: the usual command line names no stop point at all.
+        let options = options_with(|_| {});
+        assert_eq!(stop_flag(&options).expect("no flags are set"), None);
+        for frontend in [
+            WASM_FRONTEND,
+            RUST_STANDALONE_FRONTEND,
+            HIR_FRONTEND,
+            MASM_FRONTEND,
+            RUST_FRONTEND,
+        ] {
+            assert_eq!(
+                resolved_stop(&options, &frontend),
+                None,
+                "on the '{}' route",
+                frontend.id()
+            );
+            let goal = resolve_goal(
+                &apply_stop_flags(OutputRequest::default(), &options, &frontend)
+                    .expect("no flag, nothing to map"),
+                &frontend,
+            )
+            .expect("an unflagged request resolves to the terminal checkpoint");
+            assert_eq!(goal.checkpoint(), CheckpointId::PACKAGE_ASSEMBLED);
+        }
+    }
+
+    #[test]
+    fn the_derived_rewrite_only_mode_agrees_with_the_session_predicate() {
+        // `rewrite_only` restates `Session::rewrite_only` against `Options` alone, because
+        // goal resolution never sees a session. The two must not drift, so both are run over
+        // the shapes that make the predicate interesting.
+        use alloc::{boxed::Box, sync::Arc};
+
+        use midenc_session::{
+            InputFile, Session, Verbosity,
+            diagnostics::{DefaultSourceManager, SourceManager},
+        };
+
+        /// A named options shape: what to call it, and how to build it.
+        type Shape = (&'static str, fn(&mut Options));
+
+        let shapes: &[Shape] = &[
+            ("the usual command line", |_| {}),
+            ("no requested outputs", |options| options.output_types = Default::default()),
+            ("-Cparse-only", |options| options.parse_only = true),
+            ("-Canalyze-only", |options| options.analyze_only = true),
+            ("-Clink-only with no outputs", |options| {
+                options.link_only = true;
+                options.output_types = Default::default();
+            }),
+            ("-Cno-link with no outputs", |options| {
+                options.no_link = true;
+                options.output_types = Default::default();
+            }),
+        ];
+
+        for (name, configure) in shapes {
+            let mut options =
+                Box::new(Options::default()).with_output_types(Default::default(), None);
+            options.diagnostics.verbosity = Verbosity::Silent;
+            configure(&mut options);
+            let expected = rewrite_only(&options);
+
+            let source_manager: Arc<dyn SourceManager + Send + Sync> =
+                Arc::new(DefaultSourceManager::default());
+            let session = Session::new(InputFile::empty(), options, None, source_manager)
+                .expect("should build a session");
+            assert_eq!(
+                session.rewrite_only(),
+                expected,
+                "the Options-only predicate must agree with the session's for {name}"
+            );
+        }
     }
 }

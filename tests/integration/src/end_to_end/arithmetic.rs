@@ -2,7 +2,6 @@ use std::any::type_name;
 
 use miden_core::Felt;
 use miden_debug::{DebugQuery, FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
-use midenc_frontend_wasm::WasmTranslationConfig;
 use num_traits::{PrimInt, ToBytes};
 use proptest::{
     prelude::*,
@@ -887,10 +886,7 @@ fn test_overflowing_arith<T>(
         a.{fn_name}(b)
     }}"#
     );
-    let config = WasmTranslationConfig::default();
-    let artifact_name = format!("test_{fn_name}_{ty_name}");
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
     let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
@@ -947,10 +943,7 @@ where
         0
     }}"#
     );
-    let config = WasmTranslationConfig::default();
-    let artifact_name = format!("test_{fn_name}_{lhs_ty_name}_{rhs_ty_name}");
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
     let res = TestRunner::default().run(&strategy, move |(a, b)| {
@@ -1004,10 +997,7 @@ fn test_checked_arith<T>(
         }}
     }}"#
     );
-    let config = WasmTranslationConfig::default();
-    let artifact_name = format!("test_{fn_name}_{ty_name}");
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
     let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {

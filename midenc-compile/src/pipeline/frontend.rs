@@ -258,6 +258,17 @@ impl<'a> TargetContext<'a> {
         self.state.capture(checkpoint, artifact)?;
         Ok(Flow::Stop(Stopped::new(checkpoint)))
     }
+
+    /// Run the request's pre-assembly hook against `lowered`, if it has one.
+    ///
+    /// Called by [`backend::hir_to_masm`](super::backend::hir_to_masm) once a target has been
+    /// lowered and the run is going on to assemble it; see
+    /// [`PreAssemblyHook`](super::PreAssemblyHook) for what it is for and why it is not an
+    /// [`Observer`](super::Observer). A frontend that lowers by some other route calls this
+    /// itself or does not offer the hook at all — there is no default.
+    pub fn pre_assembly(&self, lowered: &super::backend::LoweredTarget) -> CompilerResult<()> {
+        self.state.pre_assembly(self.role, lowered)
+    }
 }
 
 /// A language frontend: turns a target's sources into assembly-ready Miden Assembly.

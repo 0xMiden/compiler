@@ -1,5 +1,4 @@
 //! Shared support infrastructure for integration tests.
-#![feature(debug_closure_helpers)]
 #![deny(warnings)]
 #![deny(missing_docs)]
 

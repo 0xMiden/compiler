@@ -37,124 +37,354 @@ pub trait ToMasmComponent {
 
 /// Derivation of a MASM component from an HIR world
 ///
-/// This currently works by treating all definition-carrying modules in the world as part of a
-/// single logical component.
+/// A world is not a component, and the difference is what this impl exists to handle: a
+/// component's body holds modules, interfaces and functions, while a world's body holds
+/// *components* as well. Handing a world's own operation to `MasmComponentBuilder`, which walks a
+/// component body, therefore panics the moment it meets the first `builtin.component`.
+///
+/// So the shape of the world decides how it is lowered:
+///
+/// - A world holding **no** component is treated as one logical component whose body is the
+///   world's, which is what it has always meant here. This is the shape `frontend/masm`'s
+///   disassembler produces — it defines modules directly on the world — so it is a live path.
+/// - A world holding **one** component is lowered by lowering that component, because a
+///   component is what a Miden package is rooted at and carries the identity it is rooted at.
+///   Delegating rather than reimplementing is deliberate: the result is then the same
+///   [`MasmComponent`] the equivalent standalone `builtin.component` produces, by construction
+///   rather than by two implementations agreeing.
+/// - A world holding **more than one** component is reported, and that limitation is external to
+///   this crate — see `too_many_components`.
+///
+/// # Top-level items beside the component are normal, and are not an error
+///
+/// A world is not "a component, optionally". It may hold a component — the current codegen unit —
+/// **plus any number of sibling interfaces and modules**, which are either
+///
+/// - *external dependencies represented in the IR*, which hold declarations only and contribute
+///   nothing to the generated Miden Assembly, or
+/// - *supporting modules*, which are meant to be translated 1:1 to Miden Assembly modules and
+///   linked into the final assembly as ad-hoc modules.
+///
+/// A world holding a single component is only the *happy path*, and only for the Rust frontend,
+/// which compiles to one Wasm component and translates it to one HIR component. Other frontends,
+/// the MASM one included, legitimately produce several top-level items. **Neither kind of sibling
+/// may fail a build.**
+///
+/// The first kind is handled: `is_declaration_only` recognizes it and it is ignored, silently,
+/// because that is exactly what it is worth. The second kind is **stubbed** — see
+/// `report_untranslated_siblings` for the TODO and for why translating it is not a small change.
+///
+/// Every producer hands this impl a *top-level* world: the world a whole-`builtin.world` `.hir`
+/// file parses to, the world `midenc_hir::parse` anchors any other top-level operation at, the
+/// world the Wasm frontend builds, and the one `frontend/masm`'s disassembler builds.
 impl ToMasmComponent for builtin::World {
     fn to_masm_component(
         &self,
         analysis_manager: AnalysisManager,
     ) -> Result<MasmComponent, Report> {
-        // Get the current compiler context
-        let context = self.as_operation().context_rc();
-
-        // Run the linker for this component in order to compute its data layout
-        let link_info = Linker::default().link(None, self.as_operation()).map_err(Report::msg)?;
-
-        // Get the entrypoint, if specified
-        let entrypoint = match context.session().options.entrypoint.as_deref() {
-            Some(entry) => {
-                let entry_id = entry.parse::<FunctionIdent>().map_err(|_| {
-                    Report::msg(format!("invalid entrypoint identifier: '{entry}'"))
-                })?;
-                let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(
-                    Span::new(entry_id.function.span, entry_id.function.as_str().into()),
-                ));
-
-                let path = LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?;
-                let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
-                Some(masm::InvocationTarget::Path(Span::new(
-                    entry_id.function.span,
-                    qualified.into_inner(),
-                )))
+        let mut components = Vec::new();
+        let mut siblings = Vec::new();
+        for op in self.body().entry().body().iter() {
+            match op.as_operation_ref().try_downcast_op::<builtin::Component>() {
+                Ok(component) => components.push(component),
+                Err(op) => siblings.push(op),
             }
-            None => None,
-        };
+        }
 
-        // If we have global variables or data segments, we will require a component initializer
-        // function, as well as a module to hold component-level functions such as init
-        let requires_init = link_info.has_globals() || link_info.has_data_segments();
-        let toplevel_namespaces = self
-            .body()
-            .entry()
-            .body()
-            .iter()
-            .filter_map(|op| {
-                if op.is::<builtin::Module>() || op.is::<builtin::Component>() {
-                    Some(op.as_operation_ref())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let init = if requires_init {
-            let name = masm::ProcedureName::new("init").unwrap();
-            let qualified = match toplevel_namespaces.len() {
-                1 => {
-                    let namespace =
-                        toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
-                    masm::QualifiedProcedureName::new(format!("::{namespace}").as_str(), name)
-                }
-                _ => masm::QualifiedProcedureName::new("::init", name),
-            };
+        match components.len() {
+            0 => world_body_to_masm_component(self, analysis_manager),
+            1 => {
+                // The analysis manager is rooted at the world, and `AnalysisManager::nest`
+                // accepts any proper descendant, so the component impl can nest at its own
+                // modules from here exactly as it does when codegen anchors it at the component
+                // itself.
+                let lowered = components[0].borrow().to_masm_component(analysis_manager)?;
+                // Reported after lowering succeeded, so that a build which failed for an
+                // unrelated reason is not also told about a limitation it never reached.
+                report_untranslated_siblings(self, &siblings);
+                Ok(lowered)
+            }
+            _ => Err(too_many_components(self, &components)),
+        }
+    }
+}
+
+/// Whether `op`, a top-level item of a world, contributes nothing to the generated Miden Assembly.
+///
+/// This is how an *external dependency represented in the IR* is told apart from a *supporting
+/// module*: the former holds declarations only. There is no flag for it — `Symbol::is_declaration`
+/// is defined on functions and global variables but not on the modules and interfaces that hold
+/// them, so the question has to be asked of the contents.
+///
+/// Deliberately conservative: anything unrecognized counts as carrying definitions. Guessing wrong
+/// in that direction produces a warning about something that did not need one, while guessing
+/// wrong in the other direction silently omits code.
+fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
+    /// A body defines nothing if every item in it is itself only a declaration.
+    ///
+    /// An empty body is vacuously declaration-only, which is the answer we want: an empty module
+    /// would lower to an empty Miden Assembly module.
+    fn body_is_all_declarations(region: &midenc_hir::Region) -> bool {
+        region.entry().body().iter().all(|item| {
+            if let Some(function) = item.downcast_ref::<builtin::Function>() {
+                function.is_declaration()
+            } else if let Some(gv) = item.downcast_ref::<builtin::GlobalVariable>() {
+                gv.is_declaration()
+            } else {
+                // A `builtin::Segment` initializes memory, and so does anything unrecognized as
+                // far as this predicate is willing to assume.
+                false
+            }
+        })
+    }
+
+    if let Ok(module) = op.try_downcast_op::<builtin::Module>() {
+        let module = module.borrow();
+        body_is_all_declarations(&module.body())
+    } else if let Ok(interface) = op.try_downcast_op::<builtin::Interface>() {
+        let interface = interface.borrow();
+        body_is_all_declarations(&interface.body())
+    } else if let Ok(function) = op.try_downcast_op::<builtin::Function>() {
+        let function = function.borrow();
+        function.is_declaration()
+    } else {
+        false
+    }
+}
+
+/// Warn about supporting modules beside a component that this crate does not yet translate.
+///
+/// **This is a deliberate stub, not a rejection and not a silent drop.** The intended semantics,
+/// recorded here so the next person has the design rather than having to rederive it:
+///
+/// > A top-level module beside the component is a *supporting module*. It should be emitted 1:1 as
+/// > a Miden Assembly module and linked into the final assembly as an ad-hoc module — which, once
+/// > it is in [`MasmComponent::modules`], is what happens already: `MasmComponent::source_inputs`
+/// > puts every module whose path is not the component root into `support`.
+///
+/// TODO(codegen): translate these 1:1 instead of warning.
+///
+/// # Why it is not a small change, and why it is not attempted here
+///
+/// The obstacle is **linking, not emission**. [`Linker::link`] walks only the direct
+/// `builtin::Module` children of the operation it is handed, so the [`LinkInfo`] the component
+/// impl computes — `link(Some(id), <the component>)` — cannot see a sibling of the *world*. And
+/// `LinkInfo` is what assigns every global variable its address and every data segment its offset,
+/// so a sibling lowered against a `LinkInfo` of its own would lay its globals over the component's.
+///
+/// Doing it properly therefore means one link over the world, with the component's id, and a
+/// component impl that accepts a pre-computed [`LinkInfo`] rather than computing its own — plus a
+/// decision, which is not this crate's to make alone, about whether supporting modules share the
+/// component's globals table, heap base and `init`. Until that lands, omitting them loudly is the
+/// honest behaviour: the happy path is unaffected, and anyone who hits this is told exactly what
+/// was left out and why.
+///
+/// Declaration-only siblings are *not* reported. They are ignored by design, and warning about
+/// them would make the normal case noisy.
+fn report_untranslated_siblings(world: &builtin::World, siblings: &[midenc_hir::OperationRef]) {
+    let untranslated = siblings
+        .iter()
+        .filter(|op| !is_declaration_only(op))
+        .collect::<SmallVec<[_; 4]>>();
+    if untranslated.is_empty() {
+        return;
+    }
+
+    let mut diagnostic = world
+        .as_operation()
+        .context()
+        .diagnostics()
+        .diagnostic(miden_assembly::diagnostics::Severity::Warning)
+        .with_message(
+            "top-level items carrying definitions beside a component are not yet translated to \
+             Miden Assembly",
+        );
+    // The first label has to be the primary one; the builder asserts on that ordering.
+    for (index, op) in untranslated.into_iter().enumerate() {
+        let op = op.borrow();
+        let label = format!("this '{}' is omitted from the generated package", op.name());
+        diagnostic = if index == 0 {
+            diagnostic.with_primary_label(op.span(), label)
+        } else {
+            diagnostic.with_secondary_label(op.span(), label)
+        };
+    }
+    diagnostic
+        .with_help(
+            "a module declared beside a component in a world is a supporting module, and is meant \
+             to be emitted 1:1 as a Miden Assembly module and linked in as an ad-hoc module. That \
+             is not implemented yet, so this build omits it, and code that calls into it will \
+             fail to resolve. Top-level items that only declare symbols — external dependencies \
+             represented in the IR — contribute no Miden Assembly and are ignored by design; they \
+             are not reported here.",
+        )
+        .emit();
+}
+
+/// The report for a world declaring more than one component.
+///
+/// The **one** shape this impl rejects, and the blocker is external to this crate rather than a
+/// gap in it: a Miden package's metadata can currently describe a single component, so a build
+/// emits one component per package. Two components in a world would have to become two packages.
+/// Work on multi-component packages is happening elsewhere; until it lands there is nothing this
+/// crate could do with the second component but invent merge semantics, which would be worse than
+/// saying so.
+///
+/// Note what this is *not*: a claim that worlds are single-component by nature. They are not, and
+/// sibling interfaces and modules are ordinary — see the docs on `ToMasmComponent for
+/// builtin::World`. Only a second *component* stops a build.
+///
+/// The wording matters as much as the rejection, so the message says what is unimplemented and the
+/// help says who is unblocking it, rather than implying the input is wrong.
+fn too_many_components(world: &builtin::World, components: &[builtin::ComponentRef]) -> Report {
+    // The limitation belongs in the *message*, not only in the help: a `Report` built from a
+    // diagnostic renders its message alone under `Display`, which is all a caller that only
+    // formats the error ever sees.
+    let mut diagnostic = world
+        .as_operation()
+        .context()
+        .diagnostics()
+        .diagnostic(miden_assembly::diagnostics::Severity::Error)
+        .with_message(format!(
+            "lowering a world containing {} components is not yet implemented",
+            components.len()
+        ))
+        .with_primary_label(world.span(), "in this world");
+    for component in components {
+        let component = component.borrow();
+        diagnostic = diagnostic.with_secondary_label(component.span(), "this component");
+    }
+    diagnostic
+        .with_help(
+            "this is a known limitation of the compiler rather than a problem with this input: a \
+             Miden package's metadata can currently describe only one component, so a build emits \
+             one component per package. Support for multiple components in a package is being \
+             worked on; until it lands, compile each component separately.",
+        )
+        .into_report()
+}
+
+/// Derive a MASM component by treating `world`'s body as a component body.
+///
+/// The meaning a world has always had here, and correct only when the world declares no
+/// component of its own: every definition-carrying module in it belongs to one logical
+/// component, which has no identity beyond the namespace those modules sit in.
+fn world_body_to_masm_component(
+    world: &builtin::World,
+    analysis_manager: AnalysisManager,
+) -> Result<MasmComponent, Report> {
+    // Get the current compiler context
+    let context = world.as_operation().context_rc();
+
+    // Run the linker for this component in order to compute its data layout
+    let link_info = Linker::default().link(None, world.as_operation()).map_err(Report::msg)?;
+
+    // Get the entrypoint, if specified
+    let entrypoint = match context.session().options.entrypoint.as_deref() {
+        Some(entry) => {
+            let entry_id = entry
+                .parse::<FunctionIdent>()
+                .map_err(|_| Report::msg(format!("invalid entrypoint identifier: '{entry}'")))?;
+            let name = masm::ProcedureName::from_raw_parts(masm::Ident::from_raw_parts(Span::new(
+                entry_id.function.span,
+                entry_id.function.as_str().into(),
+            )));
+
+            let path = LibraryPath::new(entry_id.module.as_str()).into_diagnostic()?;
+            let qualified = masm::QualifiedProcedureName::new(path.as_path(), name);
             Some(masm::InvocationTarget::Path(Span::new(
-                SourceSpan::default(),
+                entry_id.function.span,
                 qualified.into_inner(),
             )))
-        } else {
-            None
-        };
+        }
+        None => None,
+    };
 
-        // Define the initial component modules set
-        //
-        // The top-level component module is always defined, but may be empty
-        let root = match toplevel_namespaces.len() {
+    // If we have global variables or data segments, we will require a component initializer
+    // function, as well as a module to hold component-level functions such as init
+    let requires_init = link_info.has_globals() || link_info.has_data_segments();
+    let toplevel_namespaces = world
+        .body()
+        .entry()
+        .body()
+        .iter()
+        // Only modules: this function is reached only for a world that declares no component,
+        // so a `builtin::Component` arm here would be unreachable.
+        .filter_map(|op| {
+            if op.is::<builtin::Module>() {
+                Some(op.as_operation_ref())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let init = if requires_init {
+        let name = masm::ProcedureName::new("init").unwrap();
+        let qualified = match toplevel_namespaces.len() {
             1 => {
                 let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
-                Arc::from(
-                    masm::PathBuf::new(&format!("::{namespace}"))
-                        .expect("invalid namespace")
-                        .into_boxed_path(),
-                )
+                masm::QualifiedProcedureName::new(format!("::{namespace}").as_str(), name)
             }
-            _ => Arc::<masm::Path>::from(masm::Path::new("::init")),
+            _ => masm::QualifiedProcedureName::new("::init", name),
         };
-        let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
-        let modules = vec![init_module];
+        Some(masm::InvocationTarget::Path(Span::new(
+            SourceSpan::default(),
+            qualified.into_inner(),
+        )))
+    } else {
+        None
+    };
 
-        let rodata = data_segments_to_rodata(&link_info)?;
+    // Define the initial component modules set
+    //
+    // The top-level component module is always defined, but may be empty
+    let root = match toplevel_namespaces.len() {
+        1 => {
+            let namespace = toplevel_namespaces[0].borrow().symbol_name_if_symbol().unwrap();
+            Arc::from(
+                masm::PathBuf::new(&format!("::{namespace}"))
+                    .expect("invalid namespace")
+                    .into_boxed_path(),
+            )
+        }
+        _ => Arc::<masm::Path>::from(masm::Path::new("::init")),
+    };
+    let init_module = Arc::new(masm::Module::new(masm::ModuleKind::Library, &root));
+    let modules = vec![init_module];
 
-        // Compute the first page boundary after the end of the globals table (or reserved memory
-        // if no globals) to use as the start of the dynamic heap when the program is executed
-        let heap_base = core::cmp::max(
-            link_info.reserved_memory_bytes(),
-            link_info.globals_layout().next_page_boundary() as usize,
-        );
-        let heap_base = u32::try_from(heap_base)
-            .expect("unable to allocate dynamic heap: global table too large");
-        let stack_pointer = link_info.globals_layout().stack_pointer_offset();
-        let mut masm_component = MasmComponent {
-            id: None,
-            root,
-            init,
-            entrypoint,
-            rodata,
-            heap_base,
-            stack_pointer,
-            modules,
-        };
-        let builder = MasmComponentBuilder {
-            analysis_manager,
-            component: &mut masm_component,
-            link_info: &link_info,
-            source_manager: context.session().source_manager.clone(),
-            init_body: Default::default(),
-            invoked_from_init: Default::default(),
-        };
+    let rodata = data_segments_to_rodata(&link_info)?;
 
-        builder.build(self.as_operation())?;
+    // Compute the first page boundary after the end of the globals table (or reserved memory
+    // if no globals) to use as the start of the dynamic heap when the program is executed
+    let heap_base = core::cmp::max(
+        link_info.reserved_memory_bytes(),
+        link_info.globals_layout().next_page_boundary() as usize,
+    );
+    let heap_base =
+        u32::try_from(heap_base).expect("unable to allocate dynamic heap: global table too large");
+    let stack_pointer = link_info.globals_layout().stack_pointer_offset();
+    let mut masm_component = MasmComponent {
+        id: None,
+        root,
+        init,
+        entrypoint,
+        rodata,
+        heap_base,
+        stack_pointer,
+        modules,
+    };
+    let builder = MasmComponentBuilder {
+        analysis_manager,
+        component: &mut masm_component,
+        link_info: &link_info,
+        source_manager: context.session().source_manager.clone(),
+        init_body: Default::default(),
+        invoked_from_init: Default::default(),
+    };
 
-        Ok(masm_component)
-    }
+    builder.build(world.as_operation())?;
+
+    Ok(masm_component)
 }
 
 /// 1:1 conversion from HIR component to MASM component
@@ -1039,9 +1269,540 @@ fn patch_debug_var_locals_in_block(
 
 #[cfg(test)]
 mod tests {
-    use midenc_hir::PointerType;
+    use alloc::{format, rc::Rc, string::String};
+
+    use midenc_hir::{Context, OperationRef, PointerType, diagnostics::Uri};
+    use midenc_session::{
+        InputFile, Options, Session,
+        diagnostics::{CaptureEmitter, DefaultSourceManager},
+    };
 
     use super::*;
+
+    // -------------------------------------------------------------------------------------
+    // Fixtures.
+    //
+    // Task 7's, copied from `midenc-compile/src/pipeline/frontends/hir.rs` rather than shared:
+    // `midenc-compile` depends on this crate, so nothing here can import from it. Its report
+    // records which shapes parse — in particular that a component id is *one quoted*
+    // symbol-path component, because `ComponentId::try_from` splits the `:` and the `@` back
+    // out of it itself.
+    // -------------------------------------------------------------------------------------
+
+    /// A component, written on its own — the other half of the equivalence [`WORLD`] pins.
+    const COMPONENT: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module private @test {
+        builtin.function public extern("C") @main() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+    /// [`COMPONENT`] inside the world that declares it — the *shape* `--emit=hir` writes, and so
+    /// the shape a whole-world `.hir` file has.
+    ///
+    /// Not its literal text, though: `OpPrinter for builtin::Component` prints the id **bare**
+    /// (`@hir_ns:test@1.0.0`) while the parser requires it **quoted**, so `--emit=hir` output
+    /// holding a component does not re-parse. The quoting here works around that; the defect
+    /// is recorded as a `TODO(hir)` on that printer.
+    const WORLD: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module private @test {
+            builtin.function public extern("C") @main() {
+                builtin.ret;
+            };
+        };
+    };
+};
+"#;
+
+    /// [`WORLD`] with an *external dependency represented in the IR* beside its component.
+    ///
+    /// The sibling's one function is declared and not defined — an empty body is what
+    /// `Symbol::is_declaration` keys on, and therefore what `is_declaration_only` asks about.
+    ///
+    /// The braces are empty rather than absent on purpose. `builtin.function` carries the
+    /// `SingleRegion` trait, so a function written with no region at all fails verification
+    /// ("requires exactly one region, but got 0") even though that is precisely how the printer
+    /// writes a declaration. An empty region is a body with no blocks, which is what
+    /// `is_declaration` means.
+    const WORLD_WITH_DECLARATION_ONLY_SIBLING: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module private @test {
+            builtin.function public extern("C") @main() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.module public @external_dep {
+        builtin.function public extern("C") @sibling() {
+        };
+    };
+};
+"#;
+
+    /// [`WORLD`] with a *supporting module* beside its component.
+    ///
+    /// Identical to [`WORLD_WITH_DECLARATION_ONLY_SIBLING`] but for the sibling's body, which is
+    /// the single bit `is_declaration_only` decides on.
+    const WORLD_WITH_SUPPORTING_SIBLING: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module private @test {
+            builtin.function public extern("C") @main() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.module public @supporting {
+        builtin.function public extern("C") @sibling() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+    /// A world declaring two components, which is what this crate does not implement.
+    const TWO_COMPONENT_WORLD: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:first@1.0.0" {
+        builtin.module private @first {
+            builtin.function public extern("C") @main() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.component private @"hir_ns:second@1.0.0" {
+        builtin.module private @second {
+            builtin.function public extern("C") @other() {
+                builtin.ret;
+            };
+        };
+    };
+};
+"#;
+
+    /// A bare `builtin.module`, which the parser likewise anchors at a world of its own.
+    ///
+    /// That world holds no component at all, which is the shape `frontend/masm`'s disassembler
+    /// produces — `declare_modules` defines modules directly on the world — and therefore the
+    /// live path this change must leave alone.
+    const MODULE: &str = r#"
+builtin.module public @lib {
+    builtin.function public extern("C") @main() {
+        builtin.ret;
+    };
+};
+"#;
+
+    /// [`MODULE`] twice over: a component-less world declaring **several** top-level modules.
+    ///
+    /// Derived from the shared fixture rather than written out, so it cannot drift from the
+    /// single-module shape it is the counterpart of — the same construction
+    /// `a_hir_root_declaring_several_top_level_modules_declares_nothing` uses in
+    /// `midenc-compile/src/pipeline/prepare.rs`, which is the preparation half of the same
+    /// question.
+    fn two_module_world() -> String {
+        format!("builtin.world {{{}{}}};\n", MODULE, MODULE.replace("@lib", "@second"))
+    }
+
+    /// A library target whose namespace is `namespace`, as [`MasmComponent::source_inputs`]
+    /// receives one.
+    fn library_target(namespace: &str) -> midenc_session::miden_project::Target {
+        midenc_session::miden_project::Target::library(
+            Arc::<masm::Path>::from(
+                masm::LibraryPath::new(namespace)
+                    .unwrap()
+                    .to_absolute()
+                    .unwrap()
+                    .into_owned()
+                    .into_boxed_path(),
+            ),
+            Uri::new("lib.hir"),
+        )
+    }
+
+    /// Parse `text`, returning the top-level operation it holds.
+    ///
+    /// `verify: true` matches what the `.hir` frontend does, since HIR that arrives as text has
+    /// not been through any of the builders that maintain the IR's invariants.
+    fn parse(context: &Rc<Context>, text: &str) -> OperationRef {
+        let config = midenc_hir::parse::ParserConfig {
+            context: context.clone(),
+            verify: true,
+        };
+        midenc_hir::parse::parse_any(config, Uri::new("test.hir"), text)
+            .expect("the fixture should parse")
+    }
+
+    /// Lower `world`, as `pipeline::backend::codegen` does when extraction named no component:
+    /// the analysis manager is rooted at the world, not at anything inside it.
+    fn lower_world(world: builtin::WorldRef) -> Result<MasmComponent, Report> {
+        let analysis_manager = AnalysisManager::new(world.as_operation_ref(), None);
+        let world = world.borrow();
+        world.to_masm_component(analysis_manager)
+    }
+
+    /// Parse `text`, whose top-level operation must be a `builtin.world`.
+    fn parse_world(context: &Rc<Context>, text: &str) -> builtin::WorldRef {
+        parse(context, text)
+            .try_downcast_op::<builtin::World>()
+            .unwrap_or_else(|_| panic!("the fixture should parse as a world"))
+    }
+
+    /// The world the parser anchored `op` at.
+    ///
+    /// Only for fixtures whose top-level operation is *not* a world; one that is comes back as
+    /// the root, with nothing above it. See [`parse_world`].
+    fn anchoring_world(op: OperationRef) -> builtin::WorldRef {
+        op.parent_op()
+            .expect("the parser anchors every non-world top-level operation at a world it creates")
+            .try_downcast_op::<builtin::World>()
+            .unwrap_or_else(|_| panic!("and that anchor is a world"))
+    }
+
+    /// A context whose session captures its diagnostics instead of printing them.
+    ///
+    /// Needed because the sibling stub's whole observable behaviour is a *warning*: it must not
+    /// fail the build and must not be silent, and neither half is checkable against a session
+    /// that writes to stderr.
+    fn capturing_context() -> (Rc<Context>, alloc::sync::Arc<CaptureEmitter>) {
+        let emitter = alloc::sync::Arc::new(CaptureEmitter::new());
+        let options = alloc::boxed::Box::new(Options::default());
+        let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
+        let session =
+            Session::new(InputFile::empty(), options, Some(emitter.clone()), source_manager)
+                .expect("should build a session");
+        (Rc::new(Context::new(Rc::new(session))), emitter)
+    }
+
+    /// Everything a caller can observe about a lowered component, as one comparable value.
+    fn summarize(component: &MasmComponent) -> String {
+        format!(
+            "id: {:?}\nroot: {}\ninit: {:?}\nentrypoint: {:?}\nheap_base: {}\nstack_pointer: \
+             {:?}\nrodata: {:?}\n{component}",
+            component.id.as_ref().map(|id| id.to_string()),
+            component.root,
+            component.init,
+            component.entrypoint,
+            component.heap_base,
+            component.stack_pointer,
+            component.rodata,
+        )
+    }
+
+    /// A world holding a single component lowers to exactly what that component lowers to.
+    ///
+    /// The defect: the world's *own* operation used to be handed to
+    /// [`MasmComponentBuilder::build`], which walks a component *body* and accepts only
+    /// modules, interfaces and functions — so it panicked with "invalid component-level
+    /// operation: 'builtin.component' is not supported in a component body" on the first
+    /// component it met.
+    ///
+    /// The equality is the point, and it is why the fix delegates rather than reimplements: a
+    /// component is what a Miden package is rooted at, so the world around it must not change
+    /// the answer.
+    ///
+    /// The world here is parsed from `.hir` text rather than taken from the parser's anchor, so
+    /// the world under test is the one the file declares — the shape `--emit=hir` writes. See
+    /// [`WORLD`] for why the id is quoted here but is not in what `--emit=hir` actually prints.
+    #[test]
+    fn a_world_holding_one_component_lowers_as_that_component() {
+        let context = Rc::new(Context::default());
+        let from_world =
+            lower_world(parse_world(&context, WORLD)).expect("a single-component world lowers");
+
+        // A second context, so that neither lowering can be reading anything the other cached.
+        let context = Rc::new(Context::default());
+        let op = parse(&context, COMPONENT);
+        let component = op
+            .try_downcast_op::<builtin::Component>()
+            .unwrap_or_else(|_| panic!("the fixture parses as a component"));
+        let analysis_manager = AnalysisManager::new(op, None);
+        let from_component = component
+            .borrow()
+            .to_masm_component(analysis_manager)
+            .expect("and so does the component on its own");
+
+        assert_eq!(
+            summarize(&from_world),
+            summarize(&from_component),
+            "a world holding one component must lower to what that component lowers to"
+        );
+    }
+
+    /// And a component on its own still lowers rooted at its own id.
+    ///
+    /// The discriminating half. Without it the equality above could be satisfied by breaking
+    /// the *component* path to match the world's — no id, a root taken from the enclosing
+    /// namespace — which is the path every Wasm, Rust and manifest build takes.
+    #[test]
+    fn a_component_lowers_rooted_at_its_own_id() {
+        let context = Rc::new(Context::default());
+        let op = parse(&context, COMPONENT);
+        let component = op
+            .try_downcast_op::<builtin::Component>()
+            .unwrap_or_else(|_| panic!("the fixture parses as a component"));
+        let analysis_manager = AnalysisManager::new(op, None);
+        let lowered = component
+            .borrow()
+            .to_masm_component(analysis_manager)
+            .expect("the component lowers");
+
+        let id = lowered.id.as_ref().expect("a component knows its own id");
+        assert_eq!(id.to_string(), "hir_ns:test@1.0.0");
+        assert_eq!(
+            lowered.root.to_string(),
+            "::\"hir_ns:test@1.0.0\"",
+            "a component's Miden Assembly is rooted at its id, as one quoted path component"
+        );
+        assert!(
+            format!("{lowered}").contains("main"),
+            "and its function must have been lowered: {lowered}"
+        );
+    }
+
+    /// A world declaring more than one component is reported, not merged and not panicked on.
+    #[test]
+    fn a_world_declaring_two_components_is_reported_as_unimplemented() {
+        let context = Rc::new(Context::default());
+        let op = parse(&context, TWO_COMPONENT_WORLD);
+        let world = op
+            .try_downcast_op::<builtin::World>()
+            .unwrap_or_else(|_| panic!("the fixture parses as a world"));
+        let err = lower_world(world)
+            .err()
+            .expect("lowering two components into one package is not implemented");
+
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("lowering a world containing 2 components"),
+            "the report must say what it found, and how many of them: {msg}"
+        );
+        assert!(
+            msg.contains("not yet implemented"),
+            "and must read as a limitation of the compiler rather than a malformed input: {msg}"
+        );
+    }
+
+    /// A declaration-only sibling is ignored entirely, and changes nothing about the result.
+    ///
+    /// This is an *external dependency represented in the IR* — normal, expected, and worth
+    /// nothing to code generation. The assertion is the strong one: the world lowers to exactly
+    /// what the same component lowers to with no sibling at all, so the sibling cannot have
+    /// leaked into the output. And nothing is warned about, because warning here would make the
+    /// ordinary case noisy.
+    #[test]
+    fn a_declaration_only_sibling_is_ignored() {
+        let (context, emitter) = capturing_context();
+        let world = parse_world(&context, WORLD_WITH_DECLARATION_ONLY_SIBLING);
+        let with_sibling = lower_world(world).expect("a declaration-only sibling must not fail");
+
+        let context = Rc::new(Context::default());
+        let alone =
+            lower_world(parse_world(&context, WORLD)).expect("and neither must its absence");
+
+        assert_eq!(
+            summarize(&with_sibling),
+            summarize(&alone),
+            "a sibling that only declares symbols contributes no Miden Assembly"
+        );
+        assert!(
+            emitter.captured().is_empty(),
+            "and it is ignored by design, so it must not be reported: {}",
+            emitter.captured()
+        );
+    }
+
+    /// A sibling module carrying definitions is omitted, loudly — the deliberate stub.
+    ///
+    /// Both halves matter, and each is a thing the owner ruled out doing:
+    ///
+    /// - it must **not** fail the build, because supporting modules beside a component are a
+    ///   legitimate shape that other frontends produce, and
+    /// - it must **not** be silent, because omitting a module that carries definitions leaves
+    ///   callers of it unresolvable at assembly time.
+    ///
+    /// When `report_untranslated_siblings`'s TODO is done — the sibling emitted 1:1 as a Miden
+    /// Assembly module and linked in as an ad-hoc module — this test should be replaced by one
+    /// asserting the module reaches `MasmComponent::modules`, not deleted.
+    #[test]
+    fn a_sibling_module_with_definitions_is_omitted_with_a_warning() {
+        let (context, emitter) = capturing_context();
+        let world = parse_world(&context, WORLD_WITH_SUPPORTING_SIBLING);
+
+        let lowered = lower_world(world)
+            .expect("a supporting module beside a component must not fail the build");
+        assert!(
+            !context.session().diagnostics.has_errors(),
+            "and must not be reported as an error either"
+        );
+
+        let captured = emitter.captured();
+        assert!(
+            captured.contains("not yet translated to Miden Assembly"),
+            "the omission must be reported, not silent: {captured}"
+        );
+        assert!(
+            captured.contains("supporting"),
+            "and the report must name the item that was left out: {captured}"
+        );
+
+        // The component itself still lowered, so the warning is about the sibling alone.
+        assert_eq!(
+            lowered.id.as_ref().map(|id| id.to_string()).as_deref(),
+            Some("hir_ns:test@1.0.0")
+        );
+        assert!(
+            !format!("{lowered}").contains("sibling"),
+            "the stub omits the sibling, and this pins that until the TODO is done: {lowered}"
+        );
+    }
+
+    /// A world holding no component at all still lowers as one logical component.
+    ///
+    /// The other live path this change must not disturb: `frontend/masm`'s disassembler builds
+    /// exactly this shape, and `frontend/masm/tests/e2e.rs` lowers it back through this impl.
+    #[test]
+    fn a_world_of_modules_still_lowers_as_a_component_body() {
+        let context = Rc::new(Context::default());
+        let module = parse(&context, MODULE);
+        let lowered = lower_world(anchoring_world(module))
+            .expect("a world of modules lowers as it always did");
+
+        assert!(lowered.id.is_none(), "a world declares no component id of its own");
+        assert_eq!(
+            lowered.root.to_string(),
+            "::lib",
+            "its root is the single top-level namespace it holds"
+        );
+        assert!(
+            format!("{lowered}").contains("main"),
+            "and the module's function must have been lowered: {lowered}"
+        );
+    }
+
+    /// A component-less world's Miden Assembly is rooted at the *target's* namespace.
+    ///
+    /// Lowering has no target and so cannot answer this: with several top-level modules
+    /// `world_body_to_masm_component` falls through to the placeholder `::init`, which is not a
+    /// name any source declares and which therefore no synthesized namespace can equal. Since
+    /// `load_target_sources` rejects a root module that does not sit exactly at its target's
+    /// namespace, such a build could not assemble at all. The first assertion pins that lowering
+    /// still produces the placeholder, which is what makes the second one about
+    /// [`MasmComponent::source_inputs`] rather than about lowering.
+    ///
+    /// # What this does *not* claim
+    ///
+    /// The second assertion pins the limitation that comes with it, so the next person reads it
+    /// here rather than rediscovering it. With several top-level modules the placeholder root is
+    /// an **empty** module and the real ones are its *siblings*, not its children —
+    /// `define_module` finds their absolute paths do not begin with the root and defines them
+    /// top-level — so moving the root moves nothing else, and they stay outside the namespace.
+    /// Such a build therefore still does not assemble; what it no longer does is fail on a
+    /// namespace no source could have produced.
+    ///
+    /// TODO(codegen): decide what a world of several top-level modules should *be*. Nesting them
+    /// under the target's namespace would rename every procedure in them, which is not this
+    /// change's to do; rejecting the shape outright may well be the better answer.
+    #[test]
+    fn a_world_of_several_modules_is_rooted_at_the_target_namespace() {
+        let context = Rc::new(Context::default());
+        let lowered = lower_world(parse_world(&context, &two_module_world()))
+            .expect("a world of several modules lowers");
+        assert_eq!(
+            lowered.root.to_string(),
+            "::init",
+            "lowering has no target to root at, so it still picks its placeholder"
+        );
+
+        let target = library_target("::example");
+        let sources = lowered
+            .source_inputs(&target, context.session())
+            .expect("and its source inputs are what the assembler is handed");
+
+        assert_eq!(
+            sources.root.path(),
+            target.namespace.inner().as_ref(),
+            "a world declaring no component has no identity of its own, so its root is the \
+             namespace its target names"
+        );
+        assert_eq!(
+            sources
+                .support
+                .iter()
+                .map(|module| module.path().to_string())
+                .collect::<Vec<_>>(),
+            vec!["::lib", "::second"],
+            "and the modules the world declares are siblings of the placeholder rather than \
+             children of it, so they do not move with it"
+        );
+    }
+
+    /// A component-less world whose root already agrees with its target comes back unchanged.
+    ///
+    /// The single-module shape, end to end from `.hir`: lowering roots at `::{module}`, and
+    /// preparation's `.hir` scan reads that same module's name, so the two normally agree and
+    /// subsuming this case into the same rule costs the common case nothing.
+    ///
+    /// What this pins is the *outcome* — that nothing observable moved — which is what a caller
+    /// sees. It does not pin the equality guard in `MasmComponent::source_inputs`, and cannot:
+    /// this fixture's one procedure calls nothing, so there is no call target whose rewriting
+    /// would be detectable, and re-rooting to the same path is lossless anyway. The guard itself
+    /// is pinned by `a_component_less_world_already_at_the_target_namespace_is_left_alone` in
+    /// `artifact.rs`, against a fixture that does have callees.
+    #[test]
+    fn a_world_of_one_module_already_at_its_targets_namespace_is_left_alone() {
+        let context = Rc::new(Context::default());
+        let module = parse(&context, MODULE);
+        let lowered = lower_world(anchoring_world(module)).expect("a world of one module lowers");
+        let emitted = format!("{}", lowered.modules[0]);
+
+        let target = library_target("::lib");
+        assert_eq!(
+            lowered.root.as_ref(),
+            target.namespace.inner().as_ref(),
+            "the module's own name and the target's namespace must really be the same path, or \
+             this test is about some other case"
+        );
+
+        let sources = lowered
+            .source_inputs(&target, context.session())
+            .expect("its source inputs are what the assembler is handed");
+
+        assert_eq!(sources.root.path(), target.namespace.inner().as_ref());
+        assert_eq!(format!("{}", sources.root), emitted, "and nothing in it moved");
+    }
+
+    /// A world holding a component keeps that component's id, whatever its target is called.
+    ///
+    /// The discriminating half of the two above, at the seam that decides it: re-rooting is
+    /// justified only for a component-less world, whose modules have no identity beyond the
+    /// namespace they sit in. An authored component id *is* the code's identity — every dependent
+    /// addresses its procedures through it — so a target named something else must not silently
+    /// rename them, and this is the shape every Wasm and Rust build produces.
+    #[test]
+    fn a_world_holding_one_component_keeps_that_components_id() {
+        let context = Rc::new(Context::default());
+        let lowered =
+            lower_world(parse_world(&context, WORLD)).expect("a single-component world lowers");
+
+        let target = library_target("::example");
+        let sources = lowered
+            .source_inputs(&target, context.session())
+            .expect("its source inputs are what the assembler is handed");
+
+        assert_eq!(
+            sources.root.path().to_string(),
+            "::\"hir_ns:test@1.0.0\"",
+            "an authored component's root is its own library path, and a target named otherwise \
+             must fail the assembler's root-module check rather than be quietly accommodated"
+        );
+    }
 
     #[test]
     fn type_expr_from_hir_pointer_conversion_preserves_address_space() {

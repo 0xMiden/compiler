@@ -2,7 +2,7 @@ use std::{path::PathBuf, rc::Rc};
 
 use anyhow::{Context as _, Result, anyhow};
 use clap::Args;
-use midenc_compile::{Compiler, stages::Artifact};
+use midenc_compile::{CompiledArtifact, Compiler};
 use midenc_session::{InputFile, diagnostics::PrintDiagnostic};
 
 /// Command-line arguments accepted by `cargo miden build`.
@@ -46,7 +46,7 @@ impl BuildCommand {
                 .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
 
         match artifact {
-            Artifact::Assembled(package) => {
+            CompiledArtifact::Assembled(package) => {
                 let output_path = metadata_out_dir
                     .join(&*package.name)
                     .with_extension(miden_mast_package::Package::EXTENSION);

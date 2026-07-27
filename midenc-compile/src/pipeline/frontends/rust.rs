@@ -1,12 +1,41 @@
-//! The frontend for Rust projects driven by cargo.
+//! The frontends for targets written in Rust.
+//!
+//! There are two, and the difference between them is where the compilation happens:
+//!
+//! - [`RUST_FRONTEND`] is the **project** frontend. Its targets are declared by a manifest, and
+//!   building one means running `cargo`, which runs `midenc` again in a nested process. Nothing
+//!   of that run is observable from here, so its route holds only the checkpoint the driver
+//!   itself publishes. This is what the registry holds under `rs`, because it is what a Rust
+//!   *dependency* of any project is.
+//! - [`RUST_STANDALONE_FRONTEND`] is the entry point for `midenc foo.rs`. One file is compiled
+//!   to WebAssembly in this process — by `rustc` directly, or through a temporary Cargo project
+//!   when the source declares dependencies — and everything past that is what a `.wasm` input
+//!   does, so its route is [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s.
+//!
+//! Both claim the `rs` extension and no registry may hold both, which is exactly why the
+//! standalone one is installed per request rather than registered; see
+//! [`RUST_STANDALONE_FRONTEND`].
 
-use alloc::{collections::BTreeMap, format, rc::Rc};
+use alloc::{
+    collections::BTreeMap,
+    format,
+    rc::Rc,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use core::cell::RefCell;
+use std::{
+    ffi::OsStr,
+    path::{Path, PathBuf},
+};
 
-use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
+use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, SourceFileProvenance};
 use miden_mast_package::Package as MastPackage;
-use midenc_session::{Session, diagnostics::Report};
+use midenc_hir::{Context, formatter::DisplayMany};
+use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
 
+use super::wasm::{WasmFrontend, WasmSource};
 use crate::{
     CodegenOutput, CompilerResult,
     pipeline::{
@@ -53,14 +82,735 @@ fn make_rust(session: Rc<Session>) -> Rc<dyn Frontend> {
     Rc::new(RustProjectFrontend::new(session))
 }
 
-/// This frontend's renderer, which writes nothing.
+/// A renderer for the checkpoints on these two routes, every one of which something else
+/// writes.
 ///
-/// The assembled package is already written by [`crate::compile`], which emits it in both
-/// `mast` and `masp` form once the pipeline hands it back; declaring a renderer here would
-/// make two writers for one artifact. The `masm` route declares its package artifact the same
-/// way, for the same reason.
+/// Every use of it names its writer at the declaration site. A second emission would not be a
+/// harmless duplicate: [`Session::emit`] resolves an output type's destination once, so two
+/// writers of one artifact either race for the same file or, when that destination is stdout,
+/// print the artifact twice.
 fn unrendered(_artifact: &Artifact, _session: &Session) -> CompilerResult<()> {
     Ok(())
+}
+
+/// Declares the frontend that handles a **standalone** `.rs` file — `midenc foo.rs`.
+///
+/// # Why this is a second registration rather than a wider route on [`RUST_FRONTEND`]
+///
+/// A route describes the checkpoints a frontend *reaches*, because that is what `--stop-after`
+/// and `--emit` are validated against, and the two Rust entry points differ in exactly that. A
+/// standalone file publishes as it goes; a manifest-backed target is compiled by a recursive
+/// build behind `cargo`, against a `Session` and `Context` of its own, and publishes nothing
+/// this request can see (see [`RustProjectFrontend::compile`]). One route
+/// covering both would offer stop points a cargo build never reaches, and such a request would
+/// end in the driver's empty-capture error rather than a diagnostic.
+///
+/// # This is not registered, and must not be
+///
+/// [`FrontendRegistry::register`](crate::pipeline::FrontendRegistry::register) rejects a second
+/// claim on an extension, and the registry's `rs` entry stays [`RUST_FRONTEND`] — a Rust
+/// *dependency* of any project is a cargo build, whatever the root of that project is. So a
+/// standalone request carries this registration in
+/// [`PreparedProject::frontend`](crate::pipeline::PreparedProject), which is what
+/// `resolve_goal` and the driver's emit observer read, and installs a provider built from it
+/// for the `rs` extension for that request alone — the request-scoped override
+/// [`Pipeline::providers`](crate::pipeline::Pipeline) takes. That cannot reach a dependency: a
+/// synthesized project has no Rust source dependencies, only the `miden-core` registry one.
+///
+/// Preparation answers with this registration, and the driver installs the override built from
+/// it, for a standalone request's root target alone. The registry's own `rs` entry is untouched,
+/// so every other Rust target in the graph is still built by [`RUST_FRONTEND`].
+///
+/// # Nothing on this route is rendered
+///
+/// Past `wasm.parsed` this *is* [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s route, run by
+/// the same code, so it inherits that route's inline emissions and declares the same
+/// `unrendered` table for the same reason: each document is written by the phase that produces
+/// it, and a renderer here would be a second writer. Each declaration below names its writer.
+pub const RUST_STANDALONE_FRONTEND: FrontendRegistration = FrontendRegistration::new(
+    FrontendId::new("rust-standalone"),
+    &["rs"],
+    &[
+        CheckpointId::WASM_PARSED,
+        CheckpointId::HIR_INITIAL,
+        CheckpointId::HIR_ANALYZED,
+        CheckpointId::HIR_TRANSFORMED,
+        CheckpointId::MASM_LOWERED,
+        CheckpointId::PACKAGE_ASSEMBLED,
+    ],
+    &[
+        ("parse", CheckpointId::WASM_PARSED),
+        ("analyze", CheckpointId::HIR_ANALYZED),
+        ("transform", CheckpointId::HIR_TRANSFORMED),
+        ("lower", CheckpointId::MASM_LOWERED),
+        ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
+    ],
+    &[
+        // `--emit=wat` is written by `WasmFrontend::emit_wat`, which this route reaches
+        // through [`WasmFrontend::compile_wasm`]. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::WASM_PARSED,
+            id: ArtifactId::WASM,
+            render: unrendered,
+        },
+        // The *pre*-rewrite `--emit=hir` document is written by `WasmFrontend::translate`,
+        // likewise reached through the shared tail. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::HIR_INITIAL,
+            id: ArtifactId::HIR,
+            render: unrendered,
+        },
+        // Nothing writes here, and nothing may: `backend::analyze` emits no document of its
+        // own, and the HIR it publishes is the very same world `hir.initial` already wrote.
+        // See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::HIR_ANALYZED,
+            id: ArtifactId::HIR,
+            render: unrendered,
+        },
+        // The *post*-rewrite `--emit=hir` document is written by
+        // [`backend::apply_rewrites`](crate::pipeline::backend::apply_rewrites). See
+        // [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::HIR_TRANSFORMED,
+            id: ArtifactId::HIR,
+            render: unrendered,
+        },
+        // `--emit=masm` is written by [`backend::codegen`](crate::pipeline::backend::codegen),
+        // the only point at which the lowered component exists in a form the session can
+        // write. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::MASM_LOWERED,
+            id: ArtifactId::MASM,
+            render: unrendered,
+        },
+        // The assembled package is written by [`crate::compile`], which emits it in both
+        // `mast` and `masp` form once the pipeline hands it back. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
+            id: ArtifactId::PACKAGE,
+            render: unrendered,
+        },
+    ],
+    make_rust_standalone,
+);
+
+/// Build the frontend the standalone registration declares.
+fn make_rust_standalone(_session: Rc<Session>) -> Rc<dyn Frontend> {
+    Rc::new(RustStandaloneFrontend::default())
+}
+
+/// Build the project the manifest at `manifest_path` declares, and lower it to Miden Assembly.
+///
+/// This is the **manifest** Rust entry point, and the counterpart of [`compile_rust_to_wasm`]:
+/// where that one compiles a single source file in this process, this one runs `cargo` over a
+/// whole project — which runs `midenc` again, nested, once per Rust crate. It is not the only
+/// caller of that build: [`build_manifest_to_wasm`] stops one step earlier, and both delegate
+/// to the same `manifest::cargo_build`.
+///
+/// `manifest_path` may name either a `miden-project.toml` or the `Cargo.toml` beside it; see
+/// `manifest::cargo_build`, which does the resolution. `filesystem_cache_dir`, when given, is
+/// where the nested build publishes and looks for compiled dependency packages; see
+/// `manifest::cargo_env`.
+///
+/// # Why a [`CodegenOutput`] rather than an assembled package
+///
+/// The caller is `crate::cargo::cargo_build`, which builds a *source dependency* of some
+/// other project. What that project's assembly needs from this one is the lowered component —
+/// its Miden Assembly, its rodata, and its account-component metadata — not a package of its
+/// own, so this stops at codegen.
+pub fn compile_manifest(
+    manifest_path: &Path,
+    filesystem_cache_dir: Option<&Path>,
+    context: Rc<Context>,
+) -> CompilerResult<CodegenOutput> {
+    let session = context.session_rc();
+    let wasm = build_manifest_to_wasm(manifest_path, filesystem_cache_dir, &session)?;
+    lower_wasm_artifact(wasm, context)
+}
+
+/// Run `cargo` over the project the manifest at `manifest_path` declares, and hand back the
+/// WebAssembly it produced.
+///
+/// The front half of [`compile_manifest`], stopping where the Rust toolchain does. It exists
+/// because a caller can want the WebAssembly *itself* rather than anything lowered from it —
+/// to feed it back into the compiler as an input, under a session of its own — and neither
+/// [`compile_manifest`] nor [`crate::compile_to_memory`] can serve that: one returns a lowered
+/// component and the other an assembled package.
+///
+/// # This is `CargoBuildStage`, and the path is the contract
+///
+/// `tests/support/src/compiler_test.rs` builds every Cargo-based fixture through here and then
+/// installs the result as `session.input`, which is how a fixture's WebAssembly is compiled
+/// with the very options the test declared. It reached that build as
+/// `midenc_compile::stages::CargoBuildStage` until that module was deleted; this path
+/// replaces it, and — like the type it replaces — moving or narrowing it breaks that crate.
+///
+/// The example below is the guard, and it is a **doctest** on purpose: doctests compile as an
+/// external crate, so this fails for the same reason `tests/support` would. An in-crate
+/// `#[test]` naming the same path cannot — it resolves through `crate::` and survives the item
+/// being narrowed to `pub(crate)`, which is precisely the edit that breaks the real consumer.
+///
+/// ```
+/// use midenc_compile::pipeline::frontends::rust::build_manifest_to_wasm;
+///
+/// // Named, not called: calling it runs a real `cargo build`. What `tests/support` depends on
+/// // is that this path resolves and that the item is callable with a manifest path, no
+/// // filesystem package cache, and a session.
+/// let _build = build_manifest_to_wasm;
+/// ```
+///
+/// # The last artifact wins
+///
+/// A single-package build produces exactly one WebAssembly artifact; a multi-package
+/// `--package` build produces several and only the last is taken. That is the behaviour as it
+/// stands, inherited from the stage this replaces, rather than a choice made here.
+pub fn build_manifest_to_wasm(
+    manifest_path: &Path,
+    filesystem_cache_dir: Option<&Path>,
+    session: &Session,
+) -> CompilerResult<InputFile> {
+    let options = session.options.clone();
+    let mut outputs = manifest::cargo_build(manifest_path, filesystem_cache_dir, options)?;
+    outputs.pop().ok_or_else(|| {
+        Report::msg(format!(
+            "`cargo build` of '{}' produced no WebAssembly artifact",
+            manifest_path.display()
+        ))
+    })
+}
+
+/// Lower the WebAssembly a manifest build produced, through to Miden Assembly.
+///
+/// The work is [`wasm::lower_wasm_input`](super::wasm::lower_wasm_input)'s: parsing the module,
+/// analyzing it, rewriting it and lowering it are exactly what a `.wasm` input does, and that is
+/// where the WebAssembly route's copy of those phases lives.
+///
+/// # Why not [`WasmFrontend::compile`](super::wasm::WasmFrontend), which is the same route
+///
+/// Two reasons, either alone decisive:
+///
+/// - `compile_wasm` publishes through a [`TargetContext`], which is built from an *assembler's*
+///   view of a target. A nested dependency build has no assembler to build one from.
+/// - it does not return a [`CodegenOutput`] at all. It returns `Flow<ProjectSourceInputs>` and
+///   stashes the lowered component in the frontend under [`TargetContext::target_key`], for
+///   `post_process` to collect — which is exactly what this caller needs handed back.
+///
+/// Reaching *past* it into [`backend::hir_to_masm`](crate::pipeline::backend::hir_to_masm)
+/// would not help either: it takes the same [`TargetContext`]. So the phases are shared one
+/// level down, at the functions each of them is, rather than at the frontend callback.
+///
+/// Named rather than inlined so that the half of the entry point which does *not* require a
+/// multi-minute `cargo build -Z build-std` against the SDK is assertable on its own.
+fn lower_wasm_artifact(wasm: InputFile, context: Rc<Context>) -> CompilerResult<CodegenOutput> {
+    super::wasm::lower_wasm_input(&wasm, context)
+}
+
+/// Compile the Rust source `input` to WebAssembly, and hand back the file it produced.
+///
+/// This is the `.rs → .wasm` half of the old `ParseRustStage`, and it is the *only* copy.
+///
+/// The result is a path rather than the bytes because that is the shape its caller wants it in:
+/// [`RustStandaloneFrontend`] reads it and attributes the translated module to it — which is what
+/// makes a standalone `.rs` build's HIR named after the artifact, exactly as the legacy
+/// `ParseRustStage → ParseWasmStage` chain named it.
+///
+/// # Where the output goes
+///
+/// `<target_dir>/<artifact name>.wasm` on the `rustc` route, and wherever `cargo` put its
+/// single `cdylib` artifact on the other. Neither is chosen here; both are what the legacy
+/// stage did.
+pub fn compile_rust_to_wasm(input: &InputFile, session: &Session) -> CompilerResult<PathBuf> {
+    let file_type = input.file_type();
+    if !matches!(file_type, FileType::Rust) {
+        return Err(Report::msg(format!("invalid input file: expected '.rs', got {file_type}")));
+    }
+    let options = &session.options;
+    let build = RustBuild::select(input, session)?;
+    match (&input.file, build) {
+        (InputType::Real(path), RustBuild::CargoProject { dependencies }) => {
+            let filename = path
+                .file_name()
+                .ok_or_else(|| Report::msg("invalid input path: not a valid file name"))?;
+            let project_dir = prepare_temporary_cargo_project(path, filename, session)?;
+            cargo_build(&project_dir, filename, dependencies, session, options)
+        }
+        (InputType::Real(path), RustBuild::Rustc) => rustc(path, None, session, options),
+        (InputType::Stdin { name, input }, build) => {
+            // Piped-in source has to reach the disk before either builder can see it, so it is
+            // written under the artifact name in the system temporary directory — the same
+            // place, and the same name, the legacy stage used.
+            let tmp = std::env::temp_dir();
+            let name_of_artifact = session.project.package().name().into_inner();
+            match build {
+                RustBuild::CargoProject { dependencies } => {
+                    let project_dir = tmp.join(&*name_of_artifact);
+                    let src_dir = project_dir.join("src");
+                    std::fs::create_dir_all(&src_dir).map_err(|err| {
+                        Report::msg(format!("failed to create temporary Cargo project: {err}"))
+                    })?;
+                    let filename = format!("{}.rs", name.file_stem().unwrap_or("lib"));
+                    let tmp_rs = src_dir.join(&filename);
+                    std::fs::write(&tmp_rs, input).map_err(|err| {
+                        Report::msg(format!("failed to write Rust input to temporary file: {err}"))
+                    })?;
+                    cargo_build(
+                        &project_dir,
+                        Path::new(&filename).as_os_str(),
+                        dependencies,
+                        session,
+                        options,
+                    )
+                }
+                RustBuild::Rustc => {
+                    let tmp_rs = tmp.join(&*name_of_artifact).with_extension("rs");
+                    std::fs::write(&tmp_rs, input).map_err(|err| {
+                        Report::msg(format!("failed to write Rust input to temporary file: {err}"))
+                    })?;
+                    rustc(&tmp_rs, Some(&tmp), session, options)
+                }
+            }
+        }
+    }
+}
+
+/// How one standalone Rust source is turned into WebAssembly.
+///
+/// The two routes differ in what they can resolve, not in what they produce: `rustc` compiles
+/// a single file against `core` and nothing else, so a source that needs *any* crate
+/// dependency has to be built as a Cargo package instead. Two things ask for one:
+///
+/// - **Cargo frontmatter** in the source itself, which names dependencies outright. Only
+///   looked for when `--cargo-frontmatter` asked for it.
+/// - **The Miden protocol**, which some target types and some `-l` libraries require, and
+///   which is delivered as the `miden` SDK crate.
+///
+/// A separate type rather than a bare `bool` so that the choice is nameable — and therefore
+/// assertable — without running either builder, which is what a test of the Cargo route
+/// otherwise costs.
+#[derive(Debug)]
+enum RustBuild {
+    /// `rustc` compiles the file directly.
+    Rustc,
+    /// The file is copied into a temporary Cargo package and built by `cargo`.
+    CargoProject {
+        /// The dependency table the source's cargo frontmatter declared, if it declared one.
+        ///
+        /// `None` when this route was taken for the *other* reason — a protocol target — in
+        /// which case `cargo_build` supplies the SDK dependencies by itself.
+        dependencies: Option<toml_edit::Table>,
+    },
+}
+
+impl RustBuild {
+    /// Decide how `input` is built within `session`.
+    ///
+    /// Reading the source is part of the decision, because the frontmatter is *in* it; that
+    /// read is the whole cost of asking.
+    fn select(input: &InputFile, session: &Session) -> CompilerResult<Self> {
+        let options = &session.options;
+        let dependencies = if options.cargo_frontmatter {
+            match &input.file {
+                InputType::Real(path) => {
+                    let working_dir = if path.is_absolute() {
+                        path.parent().unwrap().to_path_buf()
+                    } else {
+                        let path = path.canonicalize().map_err(|err| {
+                            Report::msg(format!("unable to canonicalize input file path: {err}"))
+                        })?;
+                        path.parent().unwrap().to_path_buf()
+                    };
+                    let input = std::fs::read_to_string(path)
+                        .map_err(|err| Report::msg(format!("unable to read input: {err}")))?;
+                    crate::cargo::parse_cargo_frontmatter(&input, &working_dir)?
+                }
+                InputType::Stdin { input, .. } => {
+                    let input = core::str::from_utf8(input)
+                        .map_err(|err| Report::msg(format!("input is not valid utf-8: {err}")))?;
+                    let working_dir = std::env::current_dir().map_err(|err| {
+                        Report::msg(format!("unable to obtain current working directory: {err}"))
+                    })?;
+                    crate::cargo::parse_cargo_frontmatter(input, &working_dir)?
+                }
+            }
+        } else {
+            None
+        };
+        let use_cargo = dependencies.is_some()
+            || options.target_requires_protocol()
+            || options.link_libraries.iter().any(|lib| lib.is_protocol());
+        Ok(if use_cargo {
+            Self::CargoProject { dependencies }
+        } else {
+            Self::Rustc
+        })
+    }
+}
+
+/// Creates a temporary Cargo project structure for the Rust source file at `path`
+///
+/// NOTE: This does not write the `Cargo.toml` file - that is handled by the caller, depending on
+/// how the Cargo metadata is derived.
+fn prepare_temporary_cargo_project(
+    path: &Path,
+    filename: &OsStr,
+    session: &Session,
+) -> CompilerResult<PathBuf> {
+    let tmp = std::env::temp_dir().canonicalize().unwrap();
+    let name = session.project.package().name().into_inner();
+    let project_dir = tmp.join(&*name);
+    let src_dir = project_dir.join("src");
+    let tmp_rs = src_dir.join(filename);
+    std::fs::create_dir_all(&src_dir)
+        .map_err(|err| Report::msg(format!("failed to create temporary Cargo project: {err}")))?;
+    std::fs::copy(path, &tmp_rs).map_err(|err| {
+        Report::msg(format!("failed to copy input file to temporary Cargo project: {err}"))
+    })?;
+    Ok(project_dir)
+}
+
+fn cargo_build(
+    project_dir: &Path,
+    filename: &OsStr,
+    frontmatter_dependencies: Option<toml_edit::Table>,
+    session: &Session,
+    options: &Options,
+) -> CompilerResult<PathBuf> {
+    let package = session.project.package();
+    let package_name = package.name().into_inner();
+    let package_version = package.version().into_inner();
+
+    let mut dependencies = frontmatter_dependencies.unwrap_or_default();
+    let requires_protocol = options.target_requires_protocol();
+    if let Ok(path) = std::env::var("MIDENC_SOURCE_TREE")
+        && std::env::var("MIDENC_LINK_FROM_SOURCE_TREE").is_ok_and(|v| v == "1")
+    {
+        let path = Path::new(&path);
+        if !dependencies.contains_key("miden-sdk-alloc") {
+            let alloc_path = path.join("sdk/alloc");
+            dependencies.insert("miden-sdk-alloc", dependency_path_to_toml_item(&alloc_path));
+        }
+        if requires_protocol && !dependencies.contains_key("miden") {
+            let miden_path = path.join("sdk/sdk");
+            dependencies.insert("miden", dependency_path_to_toml_item(&miden_path));
+        } else if !requires_protocol && !dependencies.contains_key("miden-stdlib-sys") {
+            let stdlib_sys_path = path.join("sdk/stdlib-sys");
+            dependencies.insert("miden-stdlib-sys", dependency_path_to_toml_item(&stdlib_sys_path));
+        }
+    } else {
+        if !dependencies.contains_key("miden-sdk-alloc") {
+            dependencies.insert("miden-sdk-alloc", str_to_toml_item("*"));
+        }
+        let requires_protocol = options.target_requires_protocol();
+        if requires_protocol && !dependencies.contains_key("miden") {
+            dependencies.insert("miden", str_to_toml_item("*"));
+        } else if !requires_protocol && !dependencies.contains_key("miden-stdlib-sys") {
+            dependencies.insert("miden-stdlib-sys", str_to_toml_item("*"));
+        }
+    }
+
+    let cargo_toml = format!(
+        "\
+cargo-features = [\"trim-paths\"]
+
+[package]
+name = \"{package_name}\"
+version = \"{package_version}\"
+edition = \"2024\"
+authors = []
+
+[dependencies]
+{dependencies}
+
+[lib]
+crate-type = [\"cdylib\"]
+path = \"src/{filename}\"
+
+[profile.release]
+panic = \"abort\"
+# optimize for size
+opt-level = \"s\"
+debug = true
+trim-paths = [\"diagnostics\", \"object\"]
+",
+        filename = filename.display(),
+    );
+
+    let manifest_path = project_dir.join("Cargo.toml");
+    std::fs::write(&manifest_path, &cargo_toml)
+        .map_err(|err| Report::msg(format!("failed to generate temporary Cargo.toml: {err}")))?;
+
+    let cargo_build_args = build_cargo_args(&manifest_path, options);
+
+    // Enable memcopy and 128-bit arithmetic ops
+    let mut rustflags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+    // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
+    // cfg-based dependency selection.
+    rustflags.push_str(" --cfg miden");
+    // Enable errors on missing stub functions
+    rustflags.push_str(" -C link-args=--fatal-warnings");
+    // Remove the source file paths in the data segment for panics
+    // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+    rustflags.push_str(" -Zlocation-detail=none");
+    // Build with panic=immediate-abort
+    rustflags.push_str(" -Zunstable-options");
+    rustflags.push_str(" -Cpanic=immediate-abort");
+    if let Ok(inherited) = std::env::var("RUSTFLAGS")
+        && !inherited.is_empty()
+    {
+        rustflags.push(' ');
+        rustflags.push_str(&inherited);
+    }
+    if let Some(explicit) = options.rustflags.as_deref() {
+        rustflags.push(' ');
+        rustflags.push_str(explicit);
+    }
+
+    let wasi = if options.target_requires_protocol() {
+        "wasip2"
+    } else {
+        "wasip1"
+    };
+
+    let cargo_env = std::env::var("CARGO").map(PathBuf::from).ok();
+    let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
+
+    // When a specific cargo wasn't provided, resolve the toolchain to build under via rustup. This
+    // honors an inherited RUSTUP_TOOLCHAIN or the active `rust-toolchain.toml` pin rather than
+    // forcing the generic `nightly` channel, which matters because the SDK crates require a
+    // specific nightly and this build runs from a temporary directory where directory overrides do
+    // not apply.
+    let toolchain = if cargo_env.is_none() {
+        crate::rust::rustup_toolchain()
+    } else {
+        None
+    };
+
+    let mut cargo = std::process::Command::new(cargo_path);
+    if let Some(toolchain) = toolchain.as_deref() {
+        cargo.arg(format!("+{toolchain}"));
+    }
+    cargo.env("RUSTFLAGS", rustflags);
+    // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
+    // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
+    // to Miden VM code by `midenc`.
+    cargo.env("MIDENC_TARGET_IS_MIDEN_VM", "1");
+    cargo.args(&cargo_build_args);
+
+    // Handle the target for buildable commands
+    crate::rust::install_wasm32_target(wasi, toolchain.as_deref())?;
+
+    cargo.arg("--target").arg(format!("wasm32-{wasi}"));
+
+    // It will output the message as json so we can extract the wasm files that will be
+    // componentized
+    cargo.arg("--message-format").arg("json-render-diagnostics");
+    cargo.stdout(std::process::Stdio::piped());
+    cargo.stderr(std::process::Stdio::inherit());
+
+    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+
+    let mut outputs: Vec<PathBuf> = artifacts
+        .into_iter()
+        .flat_map(|a| a.filenames)
+        .filter_map(|path| {
+            if path.extension().is_some_and(|ext| ext == "wasm") {
+                Some(path.into_std_path_buf())
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // We expect just a single artifact named `{package_name}.wasm`
+    if outputs.len() != 1 {
+        Err(Report::msg(format!(
+            "expected `cargo build` to produce a single artifact, got: {outputs:#?}"
+        )))
+    } else {
+        Ok(outputs.pop().unwrap())
+    }
+}
+
+fn rustc(
+    input: &Path,
+    tmp_dir: Option<&Path>,
+    session: &Session,
+    options: &Options,
+) -> CompilerResult<PathBuf> {
+    let package_name = session.project.package().name().into_inner();
+
+    log::debug!(target: "rustc", "preparing to invoke rustc for {package_name}");
+    log::debug!(target: "rustc", "  current_dir = {}", options.current_dir.display());
+    log::debug!(target: "rustc", "  target_dir  = {}", options.target_dir.display());
+    log::debug!(target: "rustc", "  tmp_dir     = {}", tmp_dir.unwrap_or(Path::new("unknown")).display());
+
+    // Output is the same name as the input, just with a different extension
+    let output_file = options.target_dir.join(format!("{package_name}.wasm"));
+
+    // Set up the command used to compile the test inputs (typically Rust -> Wasm)
+    let mut command = std::process::Command::new("rustc");
+    // Pipe output of command to terminal
+    if options.diagnostics.is_verbose() {
+        command.stdout(std::process::Stdio::inherit());
+        command.stderr(std::process::Stdio::inherit());
+    } else {
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+    }
+
+    // If `RUSTFLAGS` is present, convert them to `rustc` flags
+    let mut rustflags = std::env::var("RUSTFLAGS").ok().unwrap_or_default();
+    if let Some(explicit) = options.rustflags.as_deref() {
+        if !rustflags.is_empty() {
+            rustflags.push(' ');
+        }
+        rustflags.push_str(explicit);
+    }
+    let rustflags = rustflags.split_ascii_whitespace().collect::<Vec<_>>();
+    let mut rustc_flags = Vec::with_capacity(rustflags.len());
+    let mut rustflags = rustflags.into_iter();
+    let mut target = None;
+    while let Some(flag) = rustflags.next() {
+        if flag == "--target"
+            && let Some(value) = rustflags.next()
+        {
+            target = Some(value.to_string());
+            continue;
+        } else if flag == "-C"
+            && let Some(value) = rustflags.next()
+        {
+            if value == "panic=immediate-abort" {
+                continue;
+            }
+            rustc_flags.extend([flag, value]);
+        } else {
+            rustc_flags.push(flag);
+        }
+    }
+
+    let mut command = command;
+    command
+        .arg("--crate-name")
+        .arg(package_name.replace("-", "_"))
+        .args(["--crate-type", "cdylib"])
+        .args(["--edition", "2024"])
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
+        // cfg-based dependency selection.
+        .args(["--cfg", "miden"])
+        // Enable errors on missing stub functions
+        .args(["-C", "link-args=--fatal-warnings"])
+        .arg("--remap-path-scope=diagnostics,debuginfo,coverage,object")
+        .arg("--remap-path-prefix")
+        .arg(format!("{}=.", options.current_dir.display()));
+    for remap_prefix in options.remap_path_prefixes.iter() {
+        command.args([
+            "--remap-path-prefix".into(),
+            format!(
+                "{}={}",
+                remap_prefix.source_prefix().display(),
+                remap_prefix.target_prefix().display()
+            ),
+        ]);
+    }
+    if let Some(tmp_dir) = tmp_dir {
+        command.arg("--remap-path-prefix").arg(format!("{}=.", tmp_dir.display()));
+    }
+    command
+        .args(["-Z", "unstable-options"])
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        .args(["-Z", "location-detail=none"])
+        .arg("-g") // generate debug info
+        .args(["-C", "opt-level=s"]) // optimize for size
+        .args(["-C", "target-feature=+wide-arithmetic"])
+        .args(rustc_flags)
+        .arg("--target")
+        .arg(target.as_deref().unwrap_or("wasm32-wasip1"))
+        .arg("-o")
+        .arg(&output_file)
+        .arg(input);
+    log::debug!(target: "rustc", "executing `{} {}`", command.get_program().display(),
+        DisplayMany::new(command.get_args().map(|arg| arg.display()), " ")
+    );
+    let output = command
+        .output()
+        .map_err(|err| Report::msg(format!("failed to execute `rustc`: {err}")))?;
+    if !output.status.success() {
+        return Err(Report::msg(
+            "`rustc` returned an error when compiling the input, see stderr output for more \
+             details",
+        ));
+    }
+
+    Ok(output_file)
+}
+
+fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
+    let mut args = vec!["build".to_string()];
+
+    // Add build-std flags required for Miden compilation
+    args.extend(
+        [
+            "-Z",
+            "build-std=core,alloc,panic_abort",
+            "-Z",
+            "build-std-features=optimize_for_size",
+        ]
+        .into_iter()
+        .map(|s| s.to_string()),
+    );
+
+    // Configure profile settings
+    let cfg_pairs: Vec<(&str, &str)> = vec![
+        ("profile.dev.panic", "\"abort\""),
+        ("profile.dev.opt-level", "1"),
+        ("profile.dev.overflow-checks", "false"),
+        ("profile.dev.debug", "true"),
+        ("profile.dev.debug-assertions", "false"),
+        ("profile.release.opt-level", "\"s\""),
+        ("profile.release.lto", "true"),
+        ("profile.release.codegen-units", "1"),
+        ("profile.release.panic", "\"abort\""),
+    ];
+
+    for (key, value) in cfg_pairs {
+        args.push("--config".to_string());
+        args.push(format!("{key}={value}"));
+    }
+
+    // Forward cargo-specific options
+    if options.profile == "release" {
+        args.push("--release".to_string());
+    }
+
+    args.push("--manifest-path".to_string());
+    args.push(manifest_path.to_string_lossy().to_string());
+
+    if options.workspace {
+        args.push("--workspace".to_string());
+    }
+
+    for package in &options.packages {
+        args.push("--package".to_string());
+        args.push(package.to_string());
+    }
+
+    args
+}
+
+fn dependency_path_to_toml_item(path: &Path) -> toml_edit::Item {
+    use toml_edit::*;
+
+    let mut table = Table::new();
+    table.insert("path", Item::Value(Value::String(Formatted::new(path.display().to_string()))));
+    Item::Table(table)
+}
+
+fn str_to_toml_item(s: &str) -> toml_edit::Item {
+    use toml_edit::*;
+
+    Item::Value(Value::String(Formatted::new(s.to_string())))
 }
 
 /// Compiles a target whose sources are Rust, by shelling out to cargo.
@@ -125,6 +875,36 @@ impl RustProjectFrontend {
     /// invoked *in*, not from `cx.session()`: the package cache lives under the root
     /// project's `target/` directory and the cargo flags come from the root invocation, and
     /// both must be the same for every target of the build.
+    /// Build this target with cargo, in the `Session` its **role** entitles it to.
+    ///
+    /// # The rule, and why it is a branch here rather than a set of copied options
+    ///
+    /// The root project build gets the `Session` and `Context` the driver constructed;
+    /// everything else gets a fresh `Session` carrying only those options that are inherently
+    /// global. Almost every compiler option names the *root* target — `--entrypoint` says which
+    /// function of the root is the program's entry, `--test-harness` asks for extra code in the
+    /// root's generated main, `--emit` and the `-C` stop flags describe what the caller wants to
+    /// see of the root — and inheriting any of them into a dependency would be wrong: a
+    /// dependency stopped at its own analysis never produces the package the root is waiting for.
+    ///
+    /// Both halves used to run through [`crate::cargo::cargo_build`], which builds `nested_options`
+    /// from a fixed subset. That is right for a dependency and wrong for the root: the root's
+    /// `--entrypoint` was dropped, so codegen produced a component with no entrypoint, and
+    /// `MasmComponent::source_inputs` then emitted a *library* root module for an executable
+    /// target — which `load_target_sources` rejects with "requested target type is executable,
+    /// but root module provided to assembler ... is library".
+    ///
+    /// Expressing the rule as a branch on [`TargetRole`](crate::pipeline::TargetRole) is what
+    /// makes the dependency case *structurally* unable to inherit root options: the dependency
+    /// arm never receives the root `Context` at all, so there is nothing for it to inherit from,
+    /// rather than a list of fields someone must remember not to copy. The role is the assembler's
+    /// own answer, derived per callback by
+    /// [`FrontendProvider::role_of`](crate::pipeline::FrontendProvider) —
+    /// [`MasmProjectFrontend`](super::masm::MasmProjectFrontend) makes root-only decisions the
+    /// same way.
+    ///
+    /// **No option was reclassified.** A dependency's `nested_options` are exactly what they were;
+    /// the change is that the root no longer goes through them.
     fn build(&self, cx: &TargetContext<'_>) -> CompilerResult<CodegenOutput> {
         let assembly = cx.assembly();
         let filesystem_cache_dir = self
@@ -133,12 +913,24 @@ impl RustProjectFrontend {
             .manifest_path()
             .and_then(|p| p.parent())
             .map(|p| p.join("target").join("miden").join("packages"));
+        let cargo_manifest_path = assembly.manifest_path.with_file_name("Cargo.toml");
+
+        if cx.role().is_root() {
+            // `cx.context()` is a `Context` over the driver's own `Session`, which is what
+            // carries the user's options; see this function's doc.
+            return compile_manifest(
+                &cargo_manifest_path,
+                filesystem_cache_dir.as_deref(),
+                cx.context(),
+            );
+        }
+
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = self.session.source_manager.clone();
         crate::cargo::cargo_build(
             assembly.package.clone(),
             assembly.target,
-            assembly.manifest_path.with_file_name("Cargo.toml"),
+            cargo_manifest_path,
             filesystem_cache_dir.as_deref(),
             &self.session.options,
             &cargo_opts,
@@ -153,14 +945,28 @@ impl Frontend for RustProjectFrontend {
     /// **This publishes no checkpoints, and therefore never returns [`Flow::Stop`].** That
     /// is deliberate, not an oversight. The intermediate artifacts a checkpoint names — the
     /// initial HIR, the analyzed and transformed HIR, the lowered Miden Assembly — are
-    /// produced inside the nested `midenc` invocation that `cargo` drives, which returns
-    /// only its final [`CodegenOutput`]. This frontend does not call
+    /// produced by a *recursive* compilation, which returns only its final [`CodegenOutput`].
+    /// That recursion happens in this process, not in a nested `midenc`: `crate::cargo::cargo_build`
+    /// builds a fresh `Options`, `Session` and `Context` and compiles against them, and the only
+    /// processes spawned are `cargo` and `rustc`, both for Rust-to-WebAssembly. What isolates the
+    /// two compilations is therefore the `Session`/`Context` pair, not a process boundary — and
+    /// that is enough, because the recursive build publishes against its own `RequestState`,
+    /// which this request's observers never see. This frontend does not call
     /// [`backend::hir_to_masm`](crate::pipeline::backend::hir_to_masm), so there is nothing
     /// here to publish and no point at which it could honour a `--stop-after` short of
     /// assembly.
     ///
-    /// Surfacing the nested run's checkpoints means propagating the goal and the observers
-    /// into it, which is a later increment's work.
+    /// Surfacing the recursive run's checkpoints means propagating the goal and the observers
+    /// into it, which is a later increment's work. Until then a `-C` stop flag naming a phase
+    /// this route cannot reach is reported as a known limitation rather than ignored; see
+    /// [`StopFlag`](crate::pipeline::StopFlag).
+    ///
+    /// The isolation is also what a dependency build *needs*. Every `--stop-after`, `--emit`,
+    /// `-Zlint` and `-Canalyze-only` refers to the top-level target alone: dependencies must be
+    /// fully assembled before the top-level target can begin, so the fresh `Options` those
+    /// builds get deliberately carry none of those flags. Propagating them would stop a
+    /// dependency at its own analysis and the package the top-level build is waiting for would
+    /// never arrive.
     fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
         let key = cx.target_key();
         let session = cx.session();
@@ -219,7 +1025,7 @@ impl Frontend for RustProjectFrontend {
                 key.package()
             ))
         })?;
-        crate::stages::assemble::post_process_package(
+        crate::pipeline::assembly::post_process_package(
             package,
             &found.component,
             found.account_component_metadata_bytes.as_deref(),
@@ -229,20 +1035,634 @@ impl Frontend for RustProjectFrontend {
     }
 }
 
+/// Compiles a target whose root is a single Rust source file.
+///
+/// The build is two halves, and only the first is Rust-specific: [`compile_rust_to_wasm`]
+/// produces a WebAssembly module in this process, and everything past that is what a `.wasm`
+/// target does. The second half is *shared*, not reimplemented — this frontend holds a
+/// [`WasmFrontend`] and hands the module to its `compile_wasm` — so the two routes
+/// publish the same checkpoints, write the same inline `--emit` documents, and stash the same
+/// [`CodegenOutput`] for post-processing, none of which a copy could be relied on to keep true.
+///
+/// The embedded frontend also owns the per-target state, which is why [`Frontend::post_process`]
+/// simply delegates: what codegen produced was stashed there, under
+/// [`TargetContext::target_key`].
+#[derive(Default)]
+pub struct RustStandaloneFrontend {
+    /// The WebAssembly half of this route, which is everything past `wasm.parsed`.
+    wasm: WasmFrontend,
+}
+
+impl RustStandaloneFrontend {
+    /// Locate this target's Rust source.
+    ///
+    /// # Which of the two sources wins
+    ///
+    /// A stdin-backed input is the one case a path cannot serve: it exists only in memory, and
+    /// the target root synthesized for it names a file that was never written. So it is taken
+    /// from [`TargetContext::input`], and everything else from
+    /// `assembly().resolved_target_root` — which is also the safer choice for a file-backed
+    /// input, because a provider serves every callback for its extension and a same-extension
+    /// dependency would otherwise be compiled from the *root's* source. See
+    /// [`WasmFrontend`](super::wasm::WasmFrontend), which is built the same way and explains
+    /// why that combination is expected to be unreachable rather than relied upon.
+    fn read(cx: &TargetContext<'_>) -> CompilerResult<InputFile> {
+        match cx.input() {
+            Some(input) if matches!(input.file, InputType::Stdin { .. }) => Ok(input.clone()),
+            _ => {
+                let path = cx.assembly().resolved_target_root.clone();
+                let file_type = FileType::try_from(path.as_ref()).map_err(|err| {
+                    Report::msg(format!("invalid target root '{}': {err}", path.display()))
+                })?;
+                Ok(InputFile::new(file_type, InputType::Real(path.into_path_buf())))
+            }
+        }
+    }
+}
+
+impl Frontend for RustStandaloneFrontend {
+    /// Compile this target's Rust to WebAssembly, then finish as a `.wasm` target would.
+    ///
+    /// Every checkpoint on this route is published by the shared tail, `wasm.parsed` included:
+    /// the module this half produces is exactly what that checkpoint names, so publishing it
+    /// here as well would publish it twice.
+    fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
+        let source = Self::read(cx)?;
+        let path = compile_rust_to_wasm(&source, &cx.session())?;
+        let wasm = std::fs::read(&path).map_err(|err| {
+            Report::msg(format!(
+                "failed to read the WebAssembly compiled from '{}' at '{}': {err}",
+                source.file_name(),
+                path.display()
+            ))
+        })?;
+        self.wasm.compile_wasm(cx, WasmSource::new(path.into_boxed_path(), wasm))
+    }
+
+    /// Attach the account-component metadata and the rodata advice map this target produced.
+    ///
+    /// Delegated, because the shared tail is what stashed them.
+    fn post_process(
+        &self,
+        package: &mut MastPackage,
+        cx: &TargetContext<'_>,
+    ) -> CompilerResult<()> {
+        self.wasm.post_process(package, cx)
+    }
+
+    /// This target's build provenance: its Rust source, as written.
+    ///
+    /// **Not** the WebAssembly it compiles to, which is what
+    /// [`WasmFrontend::provenance`](super::wasm::WasmFrontend) answers with and what the
+    /// embedded frontend memoizes for its own use. Two reasons, and the first is decisive:
+    /// this callback is reached while the assembler hashes the dependency closure, repeatedly
+    /// and possibly *before* `compile` has run at all, and answering with the WebAssembly would
+    /// mean invoking `rustc` — or `cargo` — to answer a question about provenance.
+    /// [`Frontend::provenance`] rules that out.
+    ///
+    /// The second is that it is the better answer regardless: provenance is what a human reads
+    /// out of a package to see what it was built from, and for `midenc foo.rs` that is
+    /// `foo.rs`. Reading one text file is the cheap case [`Frontend::provenance`] exempts from
+    /// memoization, so nothing is cached here.
+    ///
+    /// This does leave the `source_provenance` the shared tail records *inside* the compiled
+    /// component holding the disassembled WebAssembly instead, which is what the legacy
+    /// `.rs → .wasm → HIR` chain recorded. That field is write-only on this route — the
+    /// provenance the assembler hashes is what comes back from here — so the two are not in
+    /// competition; unifying them belongs with the field's only reader,
+    /// [`RustProjectFrontend::provenance`].
+    ///
+    /// # Known limitation: `support` is empty, and the Cargo route has sources it does not name
+    ///
+    /// A standalone target is one file, so on the `rustc` route the root *is* the whole of the
+    /// build's sources. On the Cargo route it is not: cargo frontmatter may declare a path
+    /// dependency — `example = { path = "vendor/example" }` — which is compiled into the target
+    /// and appears nowhere in what this returns. The assembler hashes this answer to decide
+    /// whether a cached build is still current, so an edit under `vendor/example/` leaves a
+    /// stale build looking current.
+    ///
+    /// It is latent rather than live: nothing routes a standalone input through the assembler
+    /// yet, so this callback is unreached until that flip. Naming the frontmatter's path
+    /// dependencies here means walking them, which is `RustBuild::select`'s table — reachable,
+    /// but a change of what this method costs, and worth deciding once the caller exists.
+    /// [`RustProjectFrontend::provenance`] does not have the problem: it derives from the
+    /// completed cargo build, which knows every file it read.
+    fn provenance(&self, cx: &TargetContext<'_>) -> CompilerResult<ProjectSourceProvenanceInputs> {
+        let source = Self::read(cx)?;
+        let root = match &source.file {
+            InputType::Real(path) => SourceFileProvenance::from_path(path.clone())?,
+            InputType::Stdin { name, input } => SourceFileProvenance {
+                path: name.as_path().to_path_buf().into_boxed_path(),
+                content: core::str::from_utf8(input)
+                    .map_err(|err| Report::msg(format!("failed to read {name}: {err}")))?
+                    .to_string()
+                    .into_boxed_str(),
+            },
+        };
+        Ok(ProjectSourceProvenanceInputs {
+            root,
+            support: Vec::new(),
+        })
+    }
+}
+
+pub(crate) mod manifest {
+    //! The manifest-driven `cargo` build.
+    //!
+    //! Everything here is a move: it ran as `midenc_compile::stages::cargo::support` and is
+    //! reached now through [`compile_manifest`](super::compile_manifest) and
+    //! [`build_manifest_to_wasm`](super::build_manifest_to_wasm), which are the two depths a
+    //! caller can want it to. The one change of substance is that the environment the nested
+    //! `cargo` is spawned with is now named — see [`cargo_env`] — so the filesystem package
+    //! cache can be asserted without running a build.
+    //!
+    //! It is a module rather than a set of free functions in the parent because the names
+    //! collide: `cargo_build` and `build_cargo_args` here are *not* the ones the standalone
+    //! entry point uses, and both pairs have to keep their own names to stay recognisable
+    //! against the code they were moved from. Disambiguate by path.
+    //!
+    //! No `#[cfg(feature = "std")]`: [`crate::pipeline`] is std-only, so the gate the original
+    //! carried is implied by where this now lives.
+
+    use std::{
+        boxed::Box,
+        path::{Path, PathBuf},
+        string::{String, ToString},
+        sync::Arc,
+        vec::Vec,
+    };
+
+    use miden_assembly::{DefaultSourceManager, SourceManager};
+    use miden_mast_package::TargetType;
+    use midenc_hir::{
+        Report,
+        diagnostics::{IntoDiagnostic, SourceManagerExt},
+    };
+    use midenc_session::{InputFile, OptLevel, RemapPathPrefix, miden_project};
+
+    use crate::{CompilerResult, cargo::CargoOptions};
+
+    /// Executes a Cargo-based build with the provided compiler options and package registry
+    pub(crate) fn cargo_build(
+        manifest_path: &Path,
+        filesystem_cache_dir: Option<&Path>,
+        mut compiler_opts: Box<midenc_session::Options>,
+    ) -> CompilerResult<Vec<InputFile>> {
+        // Extract cargo-specific options from parsed Compiler struct
+        compiler_opts.manifest_path = Some(manifest_path.to_path_buf());
+        let cargo_opts = CargoOptions::from_compiler(&compiler_opts)?;
+
+        let cwd = compiler_opts.current_dir.clone();
+        let (project_dir, project_manifest_path) = match compiler_opts.manifest_path.as_mut() {
+            Some(manifest_path)
+                if manifest_path
+                    .file_stem()
+                    .is_some_and(|stem| stem.eq_ignore_ascii_case("miden-project")) =>
+            {
+                let manifest_path = manifest_path.clone();
+                let cwd = manifest_path.parent().map(|dir| dir.to_path_buf()).unwrap_or(cwd);
+                (cwd, manifest_path)
+            }
+            Some(cargo_manifest_path) => {
+                let Some(project_dir) = cargo_manifest_path.parent() else {
+                    return Err(Report::msg(
+                        "unable to locate project manifest: --manifest-path specifies a path with \
+                         no parent",
+                    ));
+                };
+                let manifest_path = project_dir.join("miden-project.toml");
+                let project_dir = project_dir.to_path_buf();
+                *cargo_manifest_path = manifest_path.clone();
+                (project_dir, manifest_path)
+            }
+            None => {
+                let Ok(cwd) = std::env::current_dir() else {
+                    return Err(Report::msg(
+                        "unable to locate project manifest: current working directory is \
+                         unavailable",
+                    ));
+                };
+                let manifest_path = cwd.join("miden-project.toml");
+                compiler_opts.manifest_path = Some(manifest_path.clone());
+                (cwd, manifest_path)
+            }
+        };
+
+        let source_manager =
+            Arc::new(DefaultSourceManager::default()) as Arc<dyn SourceManager + Send + Sync>;
+        let outputs = if compiler_opts.workspace {
+            let source = source_manager.load_file(&project_manifest_path).into_diagnostic()?;
+            let workspace = miden_project::Workspace::load(source, &source_manager)?;
+            build_workspace(
+                &workspace,
+                project_dir,
+                compiler_opts,
+                &cargo_opts,
+                filesystem_cache_dir,
+                source_manager,
+            )?
+        } else {
+            // Check if the project manifest is a workspace manifest - this requires us to build
+            // the entire workspace, rather than a single project. However, we only support this
+            // if `--package` was given, as otherwise there is no way for us to select a package
+            // to build
+            let source = source_manager.load_file(&project_manifest_path).into_diagnostic()?;
+            if let miden_project::ast::MidenProject::Workspace(_) =
+                miden_project::ast::MidenProject::parse(source.clone())?
+            {
+                if compiler_opts.packages.is_empty() {
+                    return Err(Report::msg(
+                        "a workspace manifest was provided, but --workspace was not specified",
+                    ));
+                }
+                let workspace = miden_project::Workspace::load(source, &source_manager)
+                    .map(Arc::<miden_project::Workspace>::from)?;
+                let mut outputs = Vec::new();
+                for requested in compiler_opts.packages.iter() {
+                    let Some(package) = workspace.get_member_by_name(requested) else {
+                        return Err(Report::msg(format!(
+                            "requested pacakge '{requested}' is not a valid workspace member"
+                        )));
+                    };
+                    let mut compiler_opts = compiler_opts.clone();
+                    let project = miden_project::Project::WorkspacePackage {
+                        package,
+                        workspace: workspace.clone(),
+                    };
+                    modify_midenc_options_for_target(&project, &mut compiler_opts)?;
+                    let output = build_project(
+                        project,
+                        &compiler_opts,
+                        &cargo_opts,
+                        filesystem_cache_dir,
+                        Arc::clone(&source_manager),
+                    )?;
+                    outputs.push(output);
+                }
+                outputs
+            } else {
+                let project =
+                    miden_project::Project::load(&project_manifest_path, &source_manager)?;
+                let package_name = project.package().name().into_inner();
+                if compiler_opts.packages.len() > 1 {
+                    return Err(Report::msg(format!(
+                        "multiple packages were requested via --package, but the project manifest \
+                         only defines a single package ({package_name})"
+                    )));
+                } else if !compiler_opts.packages.is_empty()
+                    && !compiler_opts.packages.iter().any(|p| &*package_name == p)
+                {
+                    return Err(Report::msg(format!(
+                        "the provided project manifest defines a package ({}) that differs from \
+                         the one requested via --package ({package_name})",
+                        &compiler_opts.packages[0]
+                    )));
+                }
+                modify_midenc_options_for_target(&project, &mut compiler_opts)?;
+                let output = build_project(
+                    project,
+                    &compiler_opts,
+                    &cargo_opts,
+                    filesystem_cache_dir,
+                    source_manager,
+                )?;
+                vec![output]
+            }
+        };
+
+        Ok(outputs)
+    }
+
+    fn build_workspace(
+        workspace: &miden_project::Workspace,
+        _cwd: PathBuf,
+        _compiler_opts: Box<midenc_session::Options>,
+        _cargo_opts: &CargoOptions,
+        _filesystem_cache_dir: Option<&std::path::Path>,
+        _source_manager: Arc<dyn SourceManager>,
+    ) -> CompilerResult<Vec<InputFile>> {
+        //let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
+
+        //let mut packages =
+        //   load_component_metadata(&metadata, cargo_opts.packages.iter(), cargo_opts.workspace)?;
+
+        if workspace.members().is_empty() {
+            return Err(Report::msg(format!(
+                "workspace ({}) contains no members",
+                workspace.manifest_path().unwrap_or(Path::new("virtual")).display()
+            )));
+        }
+
+        todo!("build a dependency graph of the workspace members and build each package")
+    }
+
+    fn build_project(
+        _project: miden_project::Project,
+        compiler_opts: &midenc_session::Options,
+        cargo_opts: &CargoOptions,
+        filesystem_cache_dir: Option<&std::path::Path>,
+        _source_manager: Arc<dyn SourceManager + Send + Sync>,
+    ) -> CompilerResult<InputFile> {
+        /*
+        let tmp = tempfile::TempDir::new()
+            .map_err(|err| Report::msg(format!("could not create temporary directory: {err}")))?;
+        let mut default_registry =
+            midenc_session::registry::HybridPackageRegistry::new(compiler_opts)?;
+        let registry = registry.unwrap_or(&mut default_registry);
+        let package = project.package();
+        let dependency_graph = miden_project::ProjectDependencyGraphBuilder::new(&*registry)
+            .with_source_manager(source_manager.clone())
+            .with_git_cache_root(
+                compiler_opts
+                    .midenup_home
+                    .as_deref()
+                    .unwrap_or(tmp.path())
+                    .join("git")
+                    .join("checkouts"),
+            );
+
+        let dependency_graph = dependency_graph.build(package.clone())?;
+        crate::cargo::load_cargo_based_source_dependencies(
+            &package,
+            &dependency_graph,
+            registry,
+            compiler_opts,
+            cargo_opts,
+            source_manager,
+        )?;
+         */
+
+        let rustup_toolchain = crate::rust::rustup_toolchain();
+        let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
+
+        // Enable memcopy and 128-bit arithmetic ops
+        let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
+        // cfg-based dependency selection.
+        extra_rust_flags.push_str(" --cfg miden");
+        // Enable errors on missing stub functions
+        extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        extra_rust_flags.push_str(" -Zlocation-detail=none");
+        // Build with panic=immediate-abort
+        extra_rust_flags.push_str(" -Zunstable-options");
+        extra_rust_flags.push_str(" -Cpanic=immediate-abort");
+        if let Ok(inherited) = std::env::var("RUSTFLAGS")
+            && !inherited.is_empty()
+        {
+            extra_rust_flags.push(' ');
+            extra_rust_flags.push_str(&inherited);
+        }
+        if let Some(explicit) = compiler_opts.rustflags.as_deref() {
+            extra_rust_flags.push(' ');
+            extra_rust_flags.push_str(explicit);
+        }
+
+        let wasi = if compiler_opts.target_requires_protocol() {
+            "wasip2"
+        } else {
+            "wasip1"
+        };
+
+        let env = cargo_env(filesystem_cache_dir, extra_rust_flags);
+        let mut wasm_outputs =
+            run_cargo(wasi, rustup_toolchain.as_deref(), &cargo_build_args, env)?;
+
+        assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
+        let wasm_output = wasm_outputs.pop().expect("expected at least one Wasm artifact");
+
+        Ok(InputFile::from_path(wasm_output).unwrap())
+    }
+
+    /// The environment the nested `cargo` is spawned with.
+    ///
+    /// `MIDENC_PACKAGE_CACHE` is the whole reason `filesystem_cache_dir` is threaded down from
+    /// the entry point: it tells the nested `midenc` invocations where to publish the packages
+    /// they compile and where to look for the ones their own dependencies already produced.
+    /// Absent a cache directory the variable is *unset* rather than set to an empty path, which
+    /// is what makes the nested build fall back to its own default.
+    ///
+    /// Named — rather than left inline where it was — so that this can be asserted without
+    /// spawning `cargo -Z build-std` against the SDK.
+    pub(super) fn cargo_env(
+        filesystem_cache_dir: Option<&Path>,
+        extra_rust_flags: String,
+    ) -> Vec<(&'static str, String)> {
+        if let Some(filesystem_cache_dir) = filesystem_cache_dir {
+            vec![
+                ("RUSTFLAGS", extra_rust_flags),
+                ("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()),
+            ]
+        } else {
+            vec![("RUSTFLAGS", extra_rust_flags)]
+        }
+    }
+
+    /// Returns the Cargo profile value for a compiler optimization level.
+    fn cargo_profile_opt_level(opt_level: OptLevel) -> &'static str {
+        match opt_level {
+            OptLevel::None | OptLevel::Balanced => "2",
+            OptLevel::Basic => "1",
+            OptLevel::Max => "3",
+            OptLevel::Size => "\"s\"",
+            OptLevel::SizeMin => "\"z\"",
+        }
+    }
+
+    /// Builds the argument vector for the underlying `cargo build` invocation.
+    fn build_cargo_args(cargo_opts: &CargoOptions, opt_level: OptLevel) -> Vec<String> {
+        let mut args = vec!["build".to_string()];
+
+        // Add build-std flags required for Miden compilation
+        args.extend(
+            [
+                "-Z",
+                "build-std=core,alloc,panic_abort",
+                "-Z",
+                "build-std-features=optimize_for_size",
+            ]
+            .into_iter()
+            .map(|s| s.to_string()),
+        );
+
+        // Configure profile settings
+        let cfg_pairs: Vec<(&str, &str)> = vec![
+            ("profile.dev.panic", "\"abort\""),
+            ("profile.dev.opt-level", "1"),
+            ("profile.dev.overflow-checks", "false"),
+            ("profile.dev.debug", "true"),
+            ("profile.dev.debug-assertions", "false"),
+            ("profile.release.opt-level", cargo_profile_opt_level(opt_level)),
+            ("profile.release.lto", "true"),
+            ("profile.release.codegen-units", "1"),
+            ("profile.release.panic", "\"abort\""),
+        ];
+
+        for (key, value) in cfg_pairs {
+            args.push("--config".to_string());
+            args.push(format!("{key}={value}"));
+        }
+
+        // Forward cargo-specific options
+        if cargo_opts.release {
+            args.push("--release".to_string());
+        }
+
+        if let Some(ref manifest_path) = cargo_opts.manifest_path {
+            args.push("--manifest-path".to_string());
+            args.push(manifest_path.to_string_lossy().to_string());
+        }
+
+        if cargo_opts.workspace {
+            args.push("--workspace".to_string());
+        }
+
+        for package in &cargo_opts.packages {
+            args.push("--package".to_string());
+            args.push(package.to_string());
+        }
+
+        args
+    }
+
+    fn run_cargo<E>(
+        wasi: &str,
+        toolchain: Option<&str>,
+        spawn_args: &[String],
+        env: E,
+    ) -> CompilerResult<Vec<PathBuf>>
+    where
+        E: IntoIterator<Item = (&'static str, String)>,
+    {
+        let cargo_env = std::env::var("CARGO").map(PathBuf::from).ok();
+        let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
+
+        let mut cargo = std::process::Command::new(cargo_path);
+        cargo.envs(env);
+        if cargo_env.is_none() {
+            cargo.arg(format!("+{}", toolchain.unwrap_or("nightly")));
+        }
+
+        // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm
+        // for a "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that
+        // will be compiled to Miden VM code by `midenc`.
+        cargo.env("MIDENC_TARGET_IS_MIDEN_VM", "1");
+        cargo.args(spawn_args);
+
+        // Handle the target for buildable commands
+        crate::rust::install_wasm32_target(wasi, None)?;
+
+        cargo.arg("--target").arg(format!("wasm32-{wasi}"));
+
+        // It will output the message as json so we can extract the wasm files
+        // that will be componentized
+        cargo.arg("--message-format").arg("json-render-diagnostics");
+        cargo.stdout(std::process::Stdio::piped());
+        cargo.stderr(std::process::Stdio::inherit());
+
+        let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+
+        let outputs: Vec<PathBuf> = artifacts
+            .into_iter()
+            .filter_map(|a| {
+                let path: PathBuf = a.filenames.first().unwrap().clone().into();
+                if path.to_str().unwrap().contains("wasm32-wasip") {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(outputs)
+    }
+
+    /// Produces the `midenc` CLI flags implied by the detected target environment and project type.
+    fn modify_midenc_options_for_target(
+        project: &miden_project::Project,
+        options: &mut midenc_session::Options,
+    ) -> CompilerResult<()> {
+        let project = project.package();
+
+        // source paths in debug information.
+        let package_source_dir = project.manifest_path().and_then(|path| path.parent());
+        if options.debug != midenc_session::DebugInfo::None
+            && let Some(source_dir) = package_source_dir
+        {
+            options.remap_path_prefixes.push(RemapPathPrefix {
+                from: source_dir.to_path_buf().into_boxed_path(),
+                to: None,
+            });
+        }
+
+        let target_type = match options.target_type {
+            None => project
+                .library_target()
+                .map(|target| target.ty)
+                .unwrap_or(TargetType::Executable),
+            Some(target_type) => target_type,
+        };
+
+        match target_type {
+            TargetType::Executable => {
+                let target = if let Some(target_name) = options.target.as_deref() {
+                    project
+                        .executable_targets()
+                        .iter()
+                        .find(|t| target_name == &**t.name.inner())
+                        .ok_or_else(|| {
+                        Report::msg(format!("no executable target name '{target_name}'"))
+                    })?
+                } else if project.executable_targets().len() == 1 {
+                    &project.executable_targets()[0]
+                } else {
+                    return Err(Report::msg(
+                        "ambiguous executable target selection: use --target to select a specific \
+                         executable target",
+                    ));
+                };
+                let masm_module_name = target.name.inner().replace('-', "_");
+                options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+            }
+            TargetType::Kernel => {
+                return Err(Report::msg("kernels are not currently supported via midenc"));
+            }
+            TargetType::Library | TargetType::AccountComponent | TargetType::Note => (),
+            TargetType::TransactionScript => {
+                options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
+            }
+            _ => return Err(Report::msg("unsupported --target-type: {target_type}")),
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use alloc::{string::ToString, sync::Arc, vec::Vec};
+    use alloc::{
+        string::{String, ToString},
+        sync::Arc,
+        vec,
+        vec::Vec,
+    };
+    use core::cell::RefCell;
 
     use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
     use midenc_codegen_masm::MasmComponent;
     use midenc_hir::Context;
-    use midenc_session::miden_project::TargetType;
+    use midenc_session::{
+        InputFile, Options, OutputFile, OutputType, OutputTypeSpec, OutputTypes,
+        miden_project::TargetType,
+    };
 
     use super::*;
     use crate::pipeline::{
-        CheckpointId, FrontendId, FrontendRegistry, Goal, OutputRequest, RequestState, TargetRole,
+        CheckpointId, FrontendId, FrontendRegistry, Goal, Observer, OutputRequest,
+        RecordingObserver, RequestState, TargetRole,
+        frontends::WASM_FRONTEND,
         resolve_goal,
-        testing::{VirtualProject, wat_fixture},
+        testing::{self, VirtualProject, wat_fixture},
     };
 
     /// The route declares exactly what this frontend reaches, and no more.
@@ -521,5 +1941,729 @@ mod tests {
                 support: Vec::new(),
             },
         }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The standalone entry point: one `.rs` file to WebAssembly.
+    // -------------------------------------------------------------------------------------
+
+    /// A Rust source `rustc` can compile straight to a WebAssembly `cdylib`.
+    ///
+    /// `#![no_std]` and a panic handler of its own, because the entry point builds with no
+    /// sysroot crates beyond `core`: this is the shape every standalone `.rs` fixture in
+    /// `tests/lit/debug` is written in. The exported `add` is what makes a compiled module
+    /// distinguishable from an empty one.
+    const BARE_SOURCE: &str = r#"
+#![no_std]
+#![no_main]
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn add(a: u32, b: u32) -> u32 {
+    a + b
+}
+"#;
+
+    /// The same source, preceded by `cargo -Zscript`-style frontmatter.
+    ///
+    /// The dependency is declared by a *relative* path, which is what makes the frontmatter
+    /// observably parsed: `parse_cargo_frontmatter` absolutizes such a path against the
+    /// directory the source was read from, so the table that comes back names a directory no
+    /// literal in this file spells.
+    const FRONTMATTER_SOURCE: &str = r#"//! ```cargo
+//! [dependencies]
+//! example = { path = "vendor/example" }
+//! ```
+#![no_std]
+#![no_main]
+
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn add(a: u32, b: u32) -> u32 {
+    a + b
+}
+"#;
+
+    /// A context whose session is named `name` and whose build artifacts land in `target_dir`.
+    ///
+    /// Both are set explicitly because both are read by the entry point: the artifact name
+    /// decides the `--crate-name` and the output file's stem, and `target_dir` is where that
+    /// output file is written. `Session`'s own derivation for the empty input this builds on
+    /// would give the *current directory's* base name and the workspace's `target/`, neither
+    /// of which a test can assert against or is entitled to write into.
+    fn rust_context(
+        name: &str,
+        target_dir: &std::path::Path,
+        configure: impl FnOnce(&mut Options),
+    ) -> Rc<Context> {
+        testing::context_emitting(Default::default(), |options| {
+            options.name = Some(name.to_string());
+            options.target_dir = target_dir.to_path_buf();
+            configure(options);
+        })
+    }
+
+    /// The compiler input naming the `.rs` file at `path`.
+    fn rust_input(path: &std::path::Path) -> InputFile {
+        InputFile::from_path(path).expect("a `.rs` file is a valid compiler input")
+    }
+
+    /// A `.rs` fixture holding `source`, and the directory it was written to.
+    fn rust_fixture(dir: &str, source: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let path = testing::fixture_source(dir, "lib.rs", source);
+        let parent = path.parent().expect("a fixture is written into a directory").to_path_buf();
+        (path, parent)
+    }
+
+    /// A bare `.rs` file is compiled to WebAssembly by the public entry point.
+    ///
+    /// The assertion goes as far as the *content* of the module, not merely its magic number:
+    /// `rustc` writing an empty module would still produce four valid bytes, so the fixture's
+    /// own export is what says the source was compiled rather than a placeholder emitted.
+    #[test]
+    fn a_bare_rust_file_compiles_to_wasm_through_the_entry_point() {
+        let (source, _) = rust_fixture("rust_entry_point_bare", BARE_SOURCE);
+        let target_dir = testing::fixture_dir("rust_entry_point_bare_out");
+        let context = rust_context("rust_entry_point_bare", &target_dir, |_| {});
+
+        let wasm = compile_rust_to_wasm(&rust_input(&source), context.session())
+            .expect("rustc should compile the fixture to WebAssembly");
+
+        assert_eq!(
+            wasm,
+            target_dir.join("rust_entry_point_bare.wasm"),
+            "the module is written into the session's target directory, under the artifact name"
+        );
+        let bytes = std::fs::read(&wasm).expect("the produced module should be readable");
+        assert_eq!(&bytes[..4], b"\0asm", "the entry point must produce a WebAssembly binary");
+        let wat = midenc_frontend_wasm::wasm_to_wat(&bytes).expect("the module should disassemble");
+        assert!(
+            wat.contains(r#"(export "add""#),
+            "and it must be the fixture's own module, not an empty one: {wat}"
+        );
+    }
+
+    /// Cargo frontmatter sends a `.rs` source through a temporary Cargo project instead.
+    ///
+    /// Asserted on the selection rather than on a completed build: the Cargo route runs
+    /// `cargo build -Z build-std` against the Miden SDK, which is minutes of work and a network
+    /// fetch, and is exercised end to end by the lit suite. What is decidable here is *which*
+    /// route was chosen and what it was given, which is the whole of what this task changed.
+    #[test]
+    fn cargo_frontmatter_takes_the_temporary_cargo_project_route() {
+        let (source, dir) = rust_fixture("rust_entry_point_frontmatter", FRONTMATTER_SOURCE);
+        let target_dir = testing::fixture_dir("rust_entry_point_frontmatter_out");
+        let context = rust_context("rust_entry_point_frontmatter", &target_dir, |options| {
+            options.cargo_frontmatter = true;
+        });
+
+        let build = RustBuild::select(&rust_input(&source), context.session())
+            .expect("the frontmatter should parse");
+
+        let RustBuild::CargoProject { dependencies } = build else {
+            panic!("a source declaring dependencies cannot be built by `rustc` alone: {build:?}");
+        };
+        let dependencies = dependencies.expect("the frontmatter's own dependency table");
+        assert!(
+            dependencies.contains_key("example"),
+            "the dependency the frontmatter declares must reach the Cargo project: {dependencies}"
+        );
+        assert!(
+            dependencies
+                .to_string()
+                .contains(&dir.join("vendor/example").display().to_string()),
+            "and its relative path must be resolved against the source's own directory: \
+             {dependencies}"
+        );
+    }
+
+    /// The two halves that keep the test above from passing for the wrong reason.
+    ///
+    /// The same source with frontmatter parsing switched off, and a source with no frontmatter
+    /// at all, must both go to `rustc` — otherwise "takes the Cargo route" would be what every
+    /// `.rs` input does.
+    #[test]
+    fn a_source_declaring_no_dependencies_is_compiled_by_rustc() {
+        let (frontmatter, _) = rust_fixture("rust_entry_point_route_off", FRONTMATTER_SOURCE);
+        let (bare, _) = rust_fixture("rust_entry_point_route_bare", BARE_SOURCE);
+        let target_dir = testing::fixture_dir("rust_entry_point_route_out");
+
+        let ignored = rust_context("rust_entry_point_route_off", &target_dir, |_| {});
+        assert!(
+            matches!(
+                RustBuild::select(&rust_input(&frontmatter), ignored.session()),
+                Ok(RustBuild::Rustc)
+            ),
+            "frontmatter is only looked for when `--cargo-frontmatter` asked for it"
+        );
+
+        let looking = rust_context("rust_entry_point_route_bare", &target_dir, |options| {
+            options.cargo_frontmatter = true;
+        });
+        assert!(
+            matches!(
+                RustBuild::select(&rust_input(&bare), looking.session()),
+                Ok(RustBuild::Rustc)
+            ),
+            "a source that declares no dependencies has nothing a Cargo project would add"
+        );
+    }
+
+    /// A target type that requires the Miden protocol takes the Cargo route without frontmatter.
+    ///
+    /// The second of the two reasons a standalone build needs Cargo: the protocol SDK is a
+    /// crate dependency, and `rustc` alone cannot resolve one.
+    #[test]
+    fn a_protocol_target_takes_the_cargo_route_without_frontmatter() {
+        let (source, _) = rust_fixture("rust_entry_point_protocol", BARE_SOURCE);
+        let target_dir = testing::fixture_dir("rust_entry_point_protocol_out");
+        let context = rust_context("rust_entry_point_protocol", &target_dir, |options| {
+            options.target_type = Some(TargetType::AccountComponent);
+        });
+
+        assert!(
+            matches!(
+                RustBuild::select(&rust_input(&source), context.session()),
+                Ok(RustBuild::CargoProject { dependencies: None })
+            ),
+            "an account component links the protocol SDK, which only Cargo can supply"
+        );
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The two routes.
+    // -------------------------------------------------------------------------------------
+
+    /// The checkpoints a standalone `.rs` build publishes for itself, in order.
+    ///
+    /// `package.assembled` — the sixth on the route — is absent because the orchestrator
+    /// publishes it, as it does for every frontend.
+    fn standalone_trace() -> Vec<CheckpointId> {
+        vec![
+            CheckpointId::WASM_PARSED,
+            CheckpointId::HIR_INITIAL,
+            CheckpointId::HIR_ANALYZED,
+            CheckpointId::HIR_TRANSFORMED,
+            CheckpointId::MASM_LOWERED,
+        ]
+    }
+
+    /// A standalone `.rs` target reaches every checkpoint its route declares; a manifest-backed
+    /// one reaches none of them.
+    ///
+    /// This is why there are two registrations for one extension rather than one widened
+    /// route. A route is what `--stop-after` and `--emit` are validated against, so it has to
+    /// describe what the frontend *actually publishes* — and the two Rust entry points differ
+    /// in exactly that. The standalone build runs in this process and publishes as it goes; the
+    /// manifest-backed build is a nested `midenc` invocation behind `cargo`, which hands back
+    /// only a finished [`CodegenOutput`] and publishes nothing, leaving `package.assembled`
+    /// — the one checkpoint the driver itself publishes — as all its route can offer.
+    ///
+    /// The manifest-backed half runs against a *seeded* frontend so that no cargo build is
+    /// spawned. That is not a weakening: `RustProjectFrontend::compile` serves a seeded target
+    /// from its cache by the same code path a completed cargo build takes, and the point being
+    /// asserted is what it publishes on the way, which is nothing either way.
+    #[test]
+    fn a_standalone_rust_target_publishes_the_route_a_manifest_backed_one_cannot() {
+        let (source, _) = rust_fixture("rust_standalone_route", BARE_SOURCE);
+        let target_dir = testing::fixture_dir("rust_standalone_route_out");
+        let context = rust_context("rust_standalone_route", &target_dir, |_| {});
+
+        let project = VirtualProject::new("rust_standalone_route", &source, TargetType::Library)
+            .expect("should build project");
+        let assembly = project.assembly_context().expect("assembly context");
+        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = RequestState::new(
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+        );
+        let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
+
+        let flow = RUST_STANDALONE_FRONTEND
+            .instantiate(cx.session())
+            .compile(&cx)
+            .expect("the standalone frontend should compile a bare `.rs` file");
+
+        assert!(!flow.is_stop(), "package.assembled is the orchestrator's to publish, not ours");
+        assert_eq!(
+            observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
+            standalone_trace(),
+            "the frontend publishes the WebAssembly it built and the HIR it translated, and the \
+             shared backend the three that follow"
+        );
+        assert_eq!(
+            RUST_STANDALONE_FRONTEND.route().len(),
+            standalone_trace().len() + 1,
+            "and the route declares exactly those, plus the terminal checkpoint the driver \
+             publishes"
+        );
+
+        // The manifest-backed half, over the same shape of target.
+        let manifest_observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let manifest_state = RequestState::new(
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![manifest_observer.clone() as Rc<RefCell<dyn Observer>>],
+        );
+        let manifest_cx = TargetContext::for_testing(
+            &assembly,
+            context.clone(),
+            TargetRole::Root,
+            &manifest_state,
+        );
+        // Seeded with a *real* codegen output rather than the hand-built [`codegen_output`]
+        // above: `compile` asks the component for its source inputs, and the hand-built one
+        // holds no modules, which is enough only for the `post_process` tests that use it.
+        let lowered = crate::pipeline::backend::codegen(
+            testing::minimal_component(&context),
+            context.clone(),
+        )
+        .expect("the minimal component should lower");
+        let seeded =
+            RustProjectFrontend::seeded(context.session_rc(), manifest_cx.target_key(), lowered);
+
+        seeded
+            .compile(&manifest_cx)
+            .expect("a seeded target is served from the cache rather than rebuilt");
+
+        assert!(
+            manifest_observer.borrow().records().is_empty(),
+            "a cargo build publishes nothing back into this process, so its route can only \
+             declare the checkpoint the driver publishes itself"
+        );
+        assert_eq!(
+            RUST_FRONTEND.route(),
+            &[CheckpointId::PACKAGE_ASSEMBLED],
+            "which is what its route says"
+        );
+    }
+
+    /// `--stop-after=parse` is a stop point on the standalone route and a usage error on the
+    /// project one.
+    ///
+    /// The user-visible consequence of the two routes: a standalone `.rs` build can be stopped
+    /// at its WebAssembly, and asking a cargo-driven build for the same must fail with a
+    /// diagnostic naming what it *can* stop at rather than resolving to a checkpoint no cargo
+    /// build ever reaches.
+    #[test]
+    fn stop_after_parse_resolves_on_the_standalone_route_and_is_rejected_on_the_project_route() {
+        let request = OutputRequest::new(Vec::new()).with_stop_after(Some("parse".to_string()));
+
+        let goal = resolve_goal(&request, &RUST_STANDALONE_FRONTEND)
+            .expect("a standalone `.rs` build stops at the WebAssembly it produced");
+        assert_eq!(goal.checkpoint(), CheckpointId::WASM_PARSED);
+
+        let err = resolve_goal(&request, &RUST_FRONTEND)
+            .expect_err("a cargo-driven build publishes nothing at `parse`");
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("assemble") && rendered.contains("package.assembled"),
+            "the rejection must name the stop points that route does offer: {rendered}"
+        );
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The standalone registration.
+    // -------------------------------------------------------------------------------------
+
+    /// The standalone route *is* the WebAssembly route, and this is what holds it to that.
+    ///
+    /// The tables in [`RUST_STANDALONE_FRONTEND`] are a hand copy of
+    /// [`WASM_FRONTEND`](super::super::wasm::WASM_FRONTEND)'s, but what this route *publishes*
+    /// is not: `compile` delegates to `WasmFrontend::compile_wasm`, so the publications come
+    /// from `wasm.rs` while the declarations are a separate literal over here. Nothing else
+    /// ties the two together — [`TargetContext::checkpoint`] does not check a published
+    /// checkpoint against the route that declared it — so divergence is silent, and silent in
+    /// both directions:
+    ///
+    /// - a checkpoint **added** to `WASM_FRONTEND` and to the shared tail would leave this
+    ///   route under-declaring it. `EmitObserver` finds no `decl_at` and skips it, so that
+    ///   `--emit` simply never happens on a standalone `.rs` build, with no diagnostic.
+    /// - a checkpoint **removed** from the tail would leave this route offering a stop point
+    ///   nothing reaches — the empty-capture error this registration exists to avoid.
+    ///
+    /// Asserted against `WASM_FRONTEND` itself rather than against literals, because a literal
+    /// is just a third copy of the same table.
+    ///
+    /// The artifact *ids* are compared per checkpoint; the renderers are not, and must not be.
+    /// Each route declares its own `unrendered`, and comparing `fn` pointers is meaningless
+    /// anyway — the compiler may merge two functions with identical bodies. What the tests
+    /// above pin is that neither route's renderers write.
+    #[test]
+    fn the_standalone_route_is_the_wasm_route() {
+        assert_eq!(
+            RUST_STANDALONE_FRONTEND.route(),
+            WASM_FRONTEND.route(),
+            "past `wasm.parsed` this route is run by the wasm frontend's own code, so it must \
+             declare exactly what that code publishes"
+        );
+        assert_eq!(
+            RUST_STANDALONE_FRONTEND.aliases(),
+            WASM_FRONTEND.aliases(),
+            "and `--stop-after` must name the same points on both, since the same phases produce \
+             them"
+        );
+        for checkpoint in WASM_FRONTEND.route() {
+            assert_eq!(
+                RUST_STANDALONE_FRONTEND.artifact_at(*checkpoint),
+                WASM_FRONTEND.artifact_at(*checkpoint),
+                "the artifact published at {checkpoint} is produced by one piece of code, so both \
+                 routes must declare it as the same thing"
+            );
+        }
+
+        // And the two are still distinct registrations, or the equalities above would be a
+        // tautology about one value compared with itself.
+        assert_ne!(RUST_STANDALONE_FRONTEND.id(), WASM_FRONTEND.id());
+        assert_eq!(RUST_STANDALONE_FRONTEND.extensions(), &["rs"]);
+        assert_eq!(WASM_FRONTEND.extensions(), &["wasm", "wat"]);
+    }
+
+    /// The standalone registration is well-formed, and is a *different* frontend.
+    ///
+    /// The aliases are checked here against literals, which
+    /// [`the_standalone_route_is_the_wasm_route`] deliberately does not: that test pins the two
+    /// routes *to each other*, and this one pins what a user types. Renaming an alias on both
+    /// routes at once would satisfy that test and fail this one, which is the point.
+    #[test]
+    fn the_standalone_registration_is_accepted_by_the_registry() {
+        let mut registry = FrontendRegistry::new();
+        registry
+            .register(RUST_STANDALONE_FRONTEND)
+            .expect("the standalone registration must be well-formed");
+
+        assert_ne!(
+            RUST_STANDALONE_FRONTEND.id(),
+            RUST_FRONTEND.id(),
+            "two registrations for one extension must be distinguishable, since which of them a \
+             request runs is decided per request"
+        );
+        let found = registry.for_extension("rs").expect("dispatch is by target-root extension");
+        assert_eq!(found.id(), RUST_STANDALONE_FRONTEND.id());
+        assert_eq!(found.terminal(), CheckpointId::PACKAGE_ASSEMBLED);
+        assert_eq!(found.resolve_alias("parse"), Some(CheckpointId::WASM_PARSED));
+        assert_eq!(found.resolve_alias("analyze"), Some(CheckpointId::HIR_ANALYZED));
+        assert_eq!(found.resolve_alias("transform"), Some(CheckpointId::HIR_TRANSFORMED));
+        assert_eq!(found.resolve_alias("lower"), Some(CheckpointId::MASM_LOWERED));
+        assert_eq!(found.resolve_alias("assemble"), Some(CheckpointId::PACKAGE_ASSEMBLED));
+        assert_eq!(found.artifact_at(CheckpointId::WASM_PARSED), Some(ArtifactId::WASM));
+        assert_eq!(found.artifact_at(CheckpointId::HIR_INITIAL), Some(ArtifactId::HIR));
+        assert_eq!(found.artifact_at(CheckpointId::MASM_LOWERED), Some(ArtifactId::MASM));
+    }
+
+    /// One registry cannot hold both, which is why the standalone one is request-scoped.
+    ///
+    /// The registry's `rs` entry stays the *project* frontend, because that is what a Rust
+    /// dependency of any project is; a standalone request installs its own provider for the
+    /// extension instead. This pins the constraint that forces that arrangement rather than
+    /// leaving it as a claim in a doc comment.
+    #[test]
+    fn one_registry_cannot_hold_both_rust_registrations() {
+        let mut registry = FrontendRegistry::new();
+        registry
+            .register(RUST_FRONTEND)
+            .expect("the project registration should register");
+
+        let err = registry
+            .register(RUST_STANDALONE_FRONTEND)
+            .expect_err("`rs` is already claimed");
+        let rendered = format!("{err}");
+        assert!(rendered.contains("'rs'"), "the rejection must name the extension: {rendered}");
+    }
+
+    // -------------------------------------------------------------------------------------
+    // Emission.
+    //
+    // Every `--emit` this route can satisfy is written inline by the code that owns it — the
+    // `--emit=wat` document by the wasm frontend's own emitter, the two `--emit=hir` documents
+    // by translation and by the shared backend's rewrites, `--emit=masm` by the shared
+    // backend's codegen, and the package by `crate::compile`. Declaring a renderer here as
+    // well would make two writers for one output type, and `Session::emit` resolves an output
+    // type's destination once: the second writer either races for the same file or prints the
+    // document twice when that destination is stdout.
+    // -------------------------------------------------------------------------------------
+
+    /// Every document with the `extension` extension in `dir`.
+    fn documents(dir: &std::path::Path, extension: &str) -> Vec<std::path::PathBuf> {
+        std::fs::read_dir(dir)
+            .expect("the output directory should exist")
+            .map(|entry| entry.expect("should read a directory entry").path())
+            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some(extension))
+            .collect()
+    }
+
+    /// None of the standalone route's declared renderers writes anything of its own.
+    #[test]
+    fn every_declaration_on_the_standalone_route_is_unrendered() {
+        let out_dir = testing::fixture_dir("rust_standalone_unrendered_out");
+        for (checkpoint, output_type, extension) in [
+            (CheckpointId::WASM_PARSED, OutputType::Wat, "wat"),
+            (CheckpointId::HIR_INITIAL, OutputType::Hir, "hir"),
+            (CheckpointId::HIR_ANALYZED, OutputType::Hir, "hir"),
+            (CheckpointId::HIR_TRANSFORMED, OutputType::Hir, "hir"),
+            (CheckpointId::MASM_LOWERED, OutputType::Masm, "masm"),
+            (CheckpointId::PACKAGE_ASSEMBLED, OutputType::Masp, "masp"),
+        ] {
+            let output_types = OutputTypes::new([OutputTypeSpec::Typed {
+                output_type,
+                path: Some(OutputFile::Directory(out_dir.clone())),
+            }])
+            .expect("the output type is valid");
+            let context = testing::context_emitting(output_types, |_| {});
+            let decl = RUST_STANDALONE_FRONTEND
+                .decl_at(checkpoint)
+                .expect("every route checkpoint declares an artifact");
+            let artifact = Artifact::new(decl.id, String::from("unused"));
+
+            (decl.render)(&artifact, context.session())
+                .unwrap_or_else(|err| panic!("rendering {checkpoint} must succeed: {err}"));
+
+            assert!(
+                documents(&out_dir, extension).is_empty(),
+                "{checkpoint} must write nothing: its artifact is written inline"
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The manifest entry point: a project manifest to Miden Assembly.
+    // -------------------------------------------------------------------------------------
+
+    /// A workspace-level `miden-project.toml`.
+    ///
+    /// Deliberately memberless: every assertion below is about a decision the build makes
+    /// *before* it would descend into a member, and a member would have to exist on disk.
+    const WORKSPACE_MANIFEST: &str = "[workspace]\nmembers = []\n";
+
+    /// A package-level `miden-project.toml`, naming one package.
+    const PACKAGE_MANIFEST: &str = "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n";
+
+    /// A context for a manifest build, configured by `configure`.
+    fn manifest_context(configure: impl FnOnce(&mut Options)) -> Rc<Context> {
+        testing::context_emitting(Default::default(), configure)
+    }
+
+    /// The message [`compile_manifest`] failed with, or a panic carrying `unless`.
+    ///
+    /// [`CodegenOutput`] is not [`Debug`](core::fmt::Debug) — it holds a whole lowered
+    /// component — so `expect_err` cannot be used on what this entry point returns.
+    fn manifest_error(result: CompilerResult<CodegenOutput>, unless: &str) -> String {
+        match result {
+            Ok(_) => panic!("{unless}"),
+            Err(err) => format!("{err}"),
+        }
+    }
+
+    /// Write `manifest` as `<temp>/…/<dir>/miden-project.toml` and hand back its directory.
+    ///
+    /// [`testing::fixture_dir`] rather than [`testing::fixture_source`], because these tests
+    /// assert on what is *absent* from the directory as much as what is present — the
+    /// `Cargo.toml` derivation below turns on there being no `Cargo.toml` to read — and only
+    /// `fixture_dir` empties the directory first.
+    fn manifest_fixture(dir: &str, manifest: &str) -> std::path::PathBuf {
+        let dir = testing::fixture_dir(dir);
+        std::fs::write(dir.join("miden-project.toml"), manifest)
+            .expect("should write the project manifest");
+        dir
+    }
+
+    /// A Cargo manifest path is resolved to the project manifest beside it.
+    ///
+    /// This is the shape every caller passes — `cargo miden` hands over a `Cargo.toml` — and
+    /// the derivation is invisible unless something downstream of it can only have come from
+    /// the sibling. So the fixture directory holds a *workspace* `miden-project.toml` and no
+    /// `Cargo.toml` at all: the workspace rejection can only be raised by a build that read
+    /// the sibling, and an implementation that loaded the given path verbatim would fail to
+    /// find a file instead.
+    #[test]
+    fn a_cargo_manifest_is_resolved_to_the_project_manifest_beside_it() {
+        let dir = manifest_fixture("rust_manifest_from_cargo_toml", WORKSPACE_MANIFEST);
+        assert!(!dir.join("Cargo.toml").exists(), "the Cargo manifest must not exist");
+
+        let msg = manifest_error(
+            compile_manifest(&dir.join("Cargo.toml"), None, manifest_context(|_| {})),
+            "a workspace manifest cannot be built without a selection",
+        );
+        assert!(
+            msg.contains("--workspace was not specified"),
+            "the build must have read the `miden-project.toml` beside the Cargo manifest: {msg}"
+        );
+    }
+
+    /// A path already naming a project manifest is used as given.
+    ///
+    /// The discriminating half of the test above: the same rejection, reached without any
+    /// derivation, which is what says the derivation applies to Cargo manifests only.
+    #[test]
+    fn a_project_manifest_is_used_as_given() {
+        let dir = manifest_fixture("rust_manifest_direct", WORKSPACE_MANIFEST);
+
+        let msg = manifest_error(
+            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            "a workspace manifest cannot be built without a selection",
+        );
+        assert!(
+            msg.contains("--workspace was not specified"),
+            "a `miden-project.toml` path must be loaded as given: {msg}"
+        );
+    }
+
+    /// `--workspace` and `--package` each take the workspace route, and reach different code.
+    ///
+    /// Together with the two tests above this pins the whole of the workspace fork: without a
+    /// selection the build refuses, with `--workspace` it enters the workspace builder, and
+    /// with `--package` it resolves the selection against the workspace's members. All three
+    /// are decided before `cargo` is spawned, which is what makes them assertable at all.
+    #[test]
+    fn a_workspace_manifest_is_built_only_when_a_selection_was_made() {
+        let dir = manifest_fixture("rust_manifest_workspace", WORKSPACE_MANIFEST);
+        let manifest = dir.join("miden-project.toml");
+
+        let msg = manifest_error(
+            compile_manifest(&manifest, None, manifest_context(|options| options.workspace = true)),
+            "this workspace has no members to build",
+        );
+        assert!(
+            msg.contains("contains no members"),
+            "`--workspace` must reach the workspace builder: {msg}"
+        );
+
+        let msg = manifest_error(
+            compile_manifest(
+                &manifest,
+                None,
+                manifest_context(|options| options.packages = vec!["absent".to_string()]),
+            ),
+            "the selected package is not a member of this workspace",
+        );
+        assert!(
+            msg.contains("is not a valid workspace member"),
+            "`--package` must be resolved against the workspace's own members: {msg}"
+        );
+    }
+
+    /// A `--package` selection must name the package the manifest defines.
+    ///
+    /// The single-package half of the fork above, and the one a mistyped `--package` hits:
+    /// selecting a package that is not this one must be reported rather than silently
+    /// building whatever the manifest happens to define.
+    ///
+    /// # The message this asserts on is inverted, and that is a defect, not an intent
+    ///
+    /// The diagnostic interpolates the two package names into **opposite** slots, so it reads
+    /// *"the provided project manifest defines a package (other) that differs from the one
+    /// requested via --package (fixture)"* — the requested name where the defined one belongs
+    /// and vice versa. The assertion below is therefore about *which names appear*, not about
+    /// which role each is given: `msg.contains("fixture")` passes on the inverted text, and
+    /// would keep passing if the slots were corrected.
+    ///
+    /// The bug is **pre-existing**: the message came over verbatim with the rest of
+    /// `stages::cargo::support`, and correcting it in a move task would have made the move
+    /// unverifiable. It is reported separately. Anyone tightening this test to assert on the
+    /// roles must fix the message first, or the tightened assertion will fail.
+    #[test]
+    fn a_package_selection_must_name_the_manifests_own_package() {
+        let dir = manifest_fixture("rust_manifest_package_selection", PACKAGE_MANIFEST);
+
+        let msg = manifest_error(
+            compile_manifest(
+                &dir.join("miden-project.toml"),
+                None,
+                manifest_context(|options| options.packages = vec!["other".to_string()]),
+            ),
+            "`other` is not the package this manifest defines",
+        );
+        assert!(
+            msg.contains("--package") && msg.contains("fixture") && msg.contains("other"),
+            "the rejection must name both the requested package and the one the manifest defines, \
+             whichever way round it prints them: {msg}"
+        );
+    }
+
+    /// The filesystem cache directory reaches the `cargo` invocation, and only when given.
+    ///
+    /// This is the second of the entry point's two parameters, and the one with no other
+    /// observable effect: it is delivered to the nested build as `MIDENC_PACKAGE_CACHE`, which
+    /// is how a dependency compiled here is found again by the crates that import it. Asserted
+    /// against the environment the spawn is configured with rather than by running `cargo`,
+    /// which is minutes of work and a network fetch.
+    #[test]
+    fn the_filesystem_cache_directory_is_handed_to_the_nested_cargo_build() {
+        let rustflags = String::from("-C target-feature=+bulk-memory");
+        let cache = std::path::Path::new("/tmp/midenc-package-cache");
+
+        let with = manifest::cargo_env(Some(cache), rustflags.clone());
+        assert!(
+            with.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
+            "the rust flags must survive the cache directory being added: {with:?}"
+        );
+        let (_, found) = with
+            .iter()
+            .find(|(key, _)| *key == "MIDENC_PACKAGE_CACHE")
+            .expect("a cache directory must be delivered to the nested build");
+        assert_eq!(found, &cache.display().to_string());
+
+        let without = manifest::cargo_env(None, rustflags.clone());
+        assert!(
+            !without.iter().any(|(key, _)| *key == "MIDENC_PACKAGE_CACHE"),
+            "no cache directory means the variable is unset, not set to nothing: {without:?}"
+        );
+        assert!(
+            without.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
+            "and the rust flags are handed over either way: {without:?}"
+        );
+    }
+
+    /// A WebAssembly module with a body, for the lowering half of the entry point.
+    const MANIFEST_WAT: &str = r#"
+(module
+  (func $add (export "add") (param i32 i32) (result i32)
+    local.get 0
+    local.get 1
+    i32.add)
+)
+"#;
+
+    /// The entry point's second half turns the build's WebAssembly into a [`CodegenOutput`].
+    ///
+    /// The first half is a real `cargo build -Z build-std` against the Miden SDK — minutes of
+    /// work and a network fetch — so what is decidable here is that the module such a build
+    /// hands back is lowered all the way to Miden Assembly, which is the whole of what this
+    /// entry point contributes past the build itself. The lit suite and the `cargo miden`
+    /// integration tests cover the two halves joined.
+    #[test]
+    fn the_web_assembly_a_manifest_build_produces_is_lowered_to_miden_assembly() {
+        let wasm = testing::fixture_source("rust_manifest_lowering", "lib.wat", MANIFEST_WAT);
+        let input = InputFile::from_path(wasm).expect("a `.wat` file is a valid compiler input");
+
+        let output = lower_wasm_artifact(input, manifest_context(|_| {}))
+            .expect("the module a manifest build produces must lower to Miden Assembly");
+
+        // Two weaker assertions this deliberately avoids. A module *count* is satisfied by a
+        // build that lowered nothing: codegen emits a root module for every component, an
+        // empty one included. And a bare `masm.contains("add")` is satisfied by a body that
+        // dropped the export entirely, because `add` is also a Miden Assembly mnemonic — this
+        // fixture's `i32.add` lowers to `u32wrapping_add`, whose text contains it.
+        //
+        // So the assertion is the procedure *declaration*, carrying the signature the fixture
+        // declared: nothing but lowering this module's own exported function produces it.
+        let masm = output
+            .component
+            .modules
+            .iter()
+            .map(|module| format!("{module}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            masm.contains("pub proc add(i32, i32) -> i32"),
+            "the lowered Miden Assembly must export the fixture's own procedure: {masm}"
+        );
     }
 }

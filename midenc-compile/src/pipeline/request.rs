@@ -1,8 +1,36 @@
 use alloc::{rc::Rc, vec::Vec};
 use core::cell::RefCell;
 
-use super::{Artifact, CaptureSlot, CheckpointId, Goal, Observer, Outcome, TargetRole};
+use super::{
+    Artifact, CaptureSlot, CheckpointId, Goal, Observer, Outcome, TargetRole,
+    backend::LoweredTarget,
+};
 use crate::CompilerResult;
+
+/// A callback run against the root target's Miden Assembly, just before it is assembled.
+///
+/// This is the pipeline's form of the "pre-assembly stage" the legacy chains took as a closure
+/// between codegen and assembly, and it exists because an [`Observer`] cannot serve it: the
+/// `masm.lowered` checkpoint publishes the [`ProjectSourceInputs`](miden_assembly::ProjectSourceInputs)
+/// alone, which is what [`ArtifactId::MASM`](super::ArtifactId) means on every route, while a
+/// caller resuming a build wants the lowered [`MasmComponent`](midenc_codegen_masm::MasmComponent)
+/// — its text, its entrypoint, its rodata. [`LoweredTarget`] is the value that holds both, and
+/// this is the one point at which it exists.
+///
+/// # Why `'static`, and what that costs a caller
+///
+/// The hook travels to the frontend inside an [`Rc<RequestState>`], which is owned by the
+/// [`FrontendProvider`](super::FrontendProvider)s the assembler holds — and those are
+/// `Box<dyn ProjectSourceProvider>`, hence `'static`. So a hook cannot borrow the caller's
+/// locals the way the legacy `&mut F` closure did; a caller that needs to get something out
+/// shares an `Rc<RefCell<_>>` with it. That is the same arrangement an [`Observer`] already
+/// uses, for the same reason.
+///
+/// # It is not called for a run that does not assemble
+///
+/// "Pre-assembly" is meant literally: a request whose goal is `masm.lowered` or earlier stops
+/// at the checkpoint and never reaches this, because there is no assembly for it to precede.
+pub type PreAssemblyHook = Rc<RefCell<dyn FnMut(&LoweredTarget) -> CompilerResult<()>>>;
 
 /// The parts of a compilation request that are identical for every target.
 ///
@@ -24,6 +52,8 @@ pub struct RequestState {
     /// The request's single captured artifact, private to this type: it is written only by
     /// [`RequestState::capture`] and read only by [`RequestState::take_outcome`].
     capture: RefCell<CaptureSlot>,
+    /// The hook to run against the root target's Miden Assembly before it is assembled.
+    pre_assembly: Option<PreAssemblyHook>,
 }
 
 impl RequestState {
@@ -33,6 +63,29 @@ impl RequestState {
             goal,
             observers,
             capture: RefCell::new(CaptureSlot::default()),
+            pre_assembly: None,
+        }
+    }
+
+    /// The same, with a [`PreAssemblyHook`] attached.
+    pub fn with_pre_assembly(mut self, pre_assembly: Option<PreAssemblyHook>) -> Self {
+        self.pre_assembly = pre_assembly;
+        self
+    }
+
+    /// Run this request's pre-assembly hook, if it has one, against `lowered`.
+    ///
+    /// Only for the **root** target. A dependency is compiled to a package of its own and
+    /// assembled on its own; a caller that asked to see what is about to be assembled asked
+    /// about the target it named, and firing once per target in the graph would hand it Miden
+    /// Assembly it never asked for and cannot distinguish.
+    pub fn pre_assembly(&self, role: TargetRole, lowered: &LoweredTarget) -> CompilerResult<()> {
+        if !role.is_root() {
+            return Ok(());
+        }
+        match &self.pre_assembly {
+            Some(hook) => (hook.borrow_mut())(lowered),
+            None => Ok(()),
         }
     }
 

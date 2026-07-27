@@ -208,6 +208,13 @@ pub fn parse_file_generic(
 ///
 /// If parsing is successful, the populated [World] is returned. Otherwise, the error that caused
 /// parsing to fail is returned.
+///
+/// **This wraps unconditionally, unlike [`parse_anchored_source`]**, which returns a parsed
+/// `builtin.world` as the root rather than nesting it in the world it created to parse into. A
+/// generic-format source that is itself a world therefore still yields a world within a world,
+/// which is invalid IR — see [`parse_anchored_source`] for why. Left as it is because these entry
+/// points have no callers outside this module's tests, and the one test covering them is
+/// `#[ignore]`d; revive the generic format and this needs fixing first.
 fn parse_source_generic(
     config: ParserConfig,
     source_file: Arc<SourceFile>,
@@ -296,6 +303,35 @@ pub fn parse_file_anchored(
     parse_anchored_source(Some(anchor), config, source_file)
 }
 
+/// Parse the single top-level operation in `source_file`, and return it.
+///
+/// # The world the parser needs, and the one it must not leave behind
+///
+/// Symbol resolution is rooted at a [World], so parsing needs one to anchor the operation it is
+/// reading — `OperationParser` takes a [World] and parses into its body. For a source whose
+/// top-level operation is a module, a component or anything else, that world is a genuine
+/// addition: the operation had none, and callers rely on getting one (see
+/// `midenc_compile`'s `extract_miden_component_or_bail`).
+///
+/// For a source that *is* a `builtin.world`, it is not. Leaving the parsed world nested inside
+/// the anchor produces a world within a world, which is not merely redundant — it is invalid
+/// IR. A world is an **anonymous** symbol table, and [`crate::Symbol::path`] asserts that an
+/// anonymous symbol table has no parent, so the first `path()` on any symbol inside the inner
+/// world panics rather than returning a wrong answer. That is what made `midenc`'s own
+/// `--emit=hir` output impossible to feed back to `midenc`.
+///
+/// So when the parsed operation is itself a [World], it is detached from the anchor and returned
+/// as the root. The detach happens *after* `finalize`, because finalize resolves deferred
+/// locations and runs verification by walking down from the anchor; detaching first would skip
+/// both for everything the file declared. The now-empty anchor is left to the context's arena,
+/// which is how every other discarded entity is disposed of.
+///
+/// **Note that [`parse_source_generic`] does none of this.** The generic-format entry points —
+/// [`parse_generic`] and [`parse_file_generic`] — go through `TopLevelOperationParser` instead,
+/// return the anchor world itself rather than what was parsed into it, and would still nest a
+/// world inside a world. That is deliberate rather than overlooked: those functions have no
+/// callers outside this module's tests, and the one test covering them is `#[ignore]`d. If the
+/// generic format is ever revived, it needs the same treatment.
 fn parse_anchored_source(
     anchor: Option<OperationName>,
     config: ParserConfig,
@@ -321,6 +357,21 @@ fn parse_anchored_source(
     operation_parser
         .finalize()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
+
+    // See the note above: a parsed world is the root, not something to be rooted.
+    //
+    // The mutable borrow held across `remove` is safe *because* the operation is a `World`, and
+    // that is not incidental. `remove` reaches `EntityListItem::on_removed`
+    // (`ir/operation.rs:234`), which re-borrows the operation immutably to unregister it from
+    // its parent's symbol table — but only inside `if this.name().implements::<dyn Symbol>()`.
+    // A `World` implements `SymbolTable` and not `Symbol`, so that branch is skipped and no
+    // second borrow is taken. If `World` ever gains `Symbol`, this line becomes a runtime
+    // aliasing panic with no compile error to warn you, and it would need to drop the borrow
+    // first.
+    if op.borrow().is::<World>() {
+        let mut parsed_world = op;
+        parsed_world.borrow_mut().remove();
+    }
 
     match anchor {
         None => Ok(op),

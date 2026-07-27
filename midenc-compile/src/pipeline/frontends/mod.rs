@@ -2,12 +2,16 @@
 //!
 //! Each submodule implements [`Frontend`](super::Frontend) for one source language.
 
+pub mod hir;
 pub mod masm;
 pub mod rust;
+pub mod wasm;
 
 pub use self::{
+    hir::{HIR_FRONTEND, HirFrontend},
     masm::{MASM_FRONTEND, MasmProjectFrontend},
-    rust::{RUST_FRONTEND, RustProjectFrontend},
+    rust::{RUST_FRONTEND, RUST_STANDALONE_FRONTEND, RustProjectFrontend, RustStandaloneFrontend},
+    wasm::{WASM_FRONTEND, WasmFrontend},
 };
 
 #[cfg(test)]

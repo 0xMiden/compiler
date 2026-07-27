@@ -265,7 +265,25 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
     assembler
         .link_package(intrinsics::load(), miden_project::Linkage::Static)
         .expect("intrinsics should link");
-    let target = miden_project::Target::library(MasmPath::new("test"), Uri::new("test.masm"));
+    // The namespace is absolutized because that is what a real target's is. `Target::library` does
+    // not do it for you, and every site that builds a target the *assembler* will see does it
+    // itself: `Package::extract_library_target` for a manifest, `Path::exec_path`/`kernel_path`
+    // for an executable or kernel, and `synthesize_target` and `pipeline::testing` for a
+    // standalone input. (Targets built for other purposes need not bother — `sdk/base-macros`
+    // makes a relative one as a placeholder inside a synthetic `Package` — but none of those
+    // reach assembly.) `load_target_sources` compares the namespace against a root module path,
+    // which is always absolute, so a relative namespace could never match any target anyway.
+    //
+    // It matters here because a disassembled program is a world declaring no *component*, and
+    // `MasmComponent::source_inputs` roots one of those at its target's namespace: with a relative
+    // namespace it would dutifully rewrite this component's absolute module paths to relative
+    // ones, and the assembler would reject every call in it as an "invalid relative item path".
+    let target = miden_project::Target::library(
+        MasmPath::new("test")
+            .to_absolute()
+            .expect("a target namespace is an absolute path"),
+        Uri::new("test.masm"),
+    );
     let inputs = masm_component.source_inputs(&target, context.session()).unwrap();
     let library = assembler
         .assemble_library("test", inputs.root, inputs.support)

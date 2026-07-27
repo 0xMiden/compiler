@@ -9,17 +9,18 @@ use miden_assembly::{
 use miden_mast_package::Package as MastPackage;
 use miden_package_registry::{PackageCache, PackageId};
 use midenc_session::{
-    InputFile, Session,
+    FileType, InputFile, Session,
     diagnostics::Report,
     miden_project::{Target, TargetType},
 };
 
 use super::{
     Artifact, ArtifactId, CheckpointId, FrontendProvider, FrontendRegistration, FrontendRegistry,
-    Observer, Outcome, OutputRequest, PreparedProject, RequestState, RootTarget, TargetRole,
-    prepare_project, resolve_goal,
+    Observer, Outcome, OutputRequest, PreAssemblyHook, PreparedProject, RequestState, RootTarget,
+    Start, TargetRole, apply_stop_flags, assembly::prepare_assembler, prepare_project,
+    prepare_standalone, require_input_path_for_seed, resolve_goal, seed,
 };
-use crate::{CompilerResult, CompilerStopped, stages::assemble::prepare_assembler};
+use crate::{CompilerResult, CompilerStopped};
 
 /// One compilation, as asked for by a caller.
 ///
@@ -36,6 +37,10 @@ pub struct CompilationRequest {
     outputs: OutputRequest,
     /// Observers to notify at every checkpoint of every target.
     observers: Vec<Rc<RefCell<dyn Observer>>>,
+    /// Where this compilation begins: at the input, or at an artifact already in hand.
+    start: Start,
+    /// A callback to run against the root target's Miden Assembly, just before assembly.
+    pre_assembly: Option<PreAssemblyHook>,
 }
 
 impl CompilationRequest {
@@ -47,6 +52,8 @@ impl CompilationRequest {
             input,
             outputs: OutputRequest::default(),
             observers: Vec::new(),
+            start: Start::Input,
+            pre_assembly: None,
         }
     }
 
@@ -59,6 +66,28 @@ impl CompilationRequest {
     /// Request `outputs`, which decide where this compilation stops and what it emits.
     pub fn with_outputs(mut self, outputs: OutputRequest) -> Self {
         self.outputs = outputs;
+        self
+    }
+
+    /// Begin at `start` rather than at the input.
+    ///
+    /// A [`Start::At`] resumes the selected target's route from an artifact the caller already
+    /// holds; see [`Start`] for what it may carry, and `pipeline/seed.rs` for how it is
+    /// installed. Everything else about the request — the project, the target, the goal, the
+    /// observers — is unchanged, which is what makes a seeded run comparable with an unseeded
+    /// one.
+    pub fn with_start(mut self, start: Start) -> Self {
+        self.start = start;
+        self
+    }
+
+    /// Run `pre_assembly` against the root target's Miden Assembly, just before it is
+    /// assembled.
+    ///
+    /// See [`PreAssemblyHook`] for why this is not an [`Observer`], and for the `'static`
+    /// bound it carries.
+    pub fn with_pre_assembly(mut self, pre_assembly: PreAssemblyHook) -> Self {
+        self.pre_assembly = Some(pre_assembly);
         self
     }
 }
@@ -162,20 +191,37 @@ impl Pipeline {
     }
 
     /// Construct a pipeline with every frontend this compiler ships.
+    ///
+    /// Four registrations, one per extension family the compiler can compile from source:
+    /// `rs`, `masm`, `wasm`/`wat` and `hir`. They are registered for *every* build, project or
+    /// standalone, because a registration answers for any target with its extension — a Rust
+    /// project with a Miden Assembly dependency needs the `masm` entry as much as a
+    /// `midenc lib.masm` does.
+    ///
+    /// [`RUST_STANDALONE_FRONTEND`](super::frontends::RUST_STANDALONE_FRONTEND) is deliberately
+    /// **not** here, and cannot be: it claims `rs`, which
+    /// [`RUST_FRONTEND`](super::frontends::RUST_FRONTEND) already holds, and the registry
+    /// rejects a second claim on an extension. The two are different entry points to the same
+    /// language — one runs `cargo`, one compiles a file in this process — and choosing between
+    /// them is a property of the *request*, not of the registry. `select_standalone_frontend`
+    /// in `prepare.rs` makes that choice, for the root target of a standalone request alone.
     pub fn with_default_frontends() -> CompilerResult<Self> {
         let mut registry = FrontendRegistry::new();
         registry.register(super::frontends::RUST_FRONTEND)?;
         registry.register(super::frontends::MASM_FRONTEND)?;
+        registry.register(super::frontends::WASM_FRONTEND)?;
+        registry.register(super::frontends::HIR_FRONTEND)?;
         Ok(Self::new(registry))
     }
 
     /// Compile `request`, caching assembled packages in `cache`.
     ///
-    /// The project is prepared once — one compiler-side `Project::load` — and the goal is
-    /// resolved against the route of the frontend that preparation selected. Assembly then
-    /// follows the same sequence the legacy stages use, differing only in that it is driven
-    /// through `assemble_interruptible`, so that a request stopping short of assembly is a
-    /// success rather than an error.
+    /// The project is prepared once — one compiler-side `Project::load` for a manifest input,
+    /// one synthesis for a standalone one — and the goal is resolved against the route of the
+    /// frontend that preparation selected, after the session's `-C` stop flags have been folded
+    /// into the request as a stop point. Everything past preparation is common to both kinds of
+    /// input: one [`PreparedProject`], one set of providers, one `assemble_interruptible`, so
+    /// that a request stopping short of assembly is a success rather than an error.
     pub fn compile(
         &self,
         request: CompilationRequest,
@@ -186,14 +232,25 @@ impl Pipeline {
             input,
             outputs,
             mut observers,
+            start,
+            pre_assembly,
         } = request;
 
-        let prepared = prepare_project(
-            &input,
-            &session.options,
-            &self.registry,
-            session.source_manager.as_ref(),
-        )?;
+        // Before the project is loaded, so that a seeded request naming no input reports what it
+        // is missing rather than whatever preparation makes of a locator it cannot use.
+        if let Start::At { .. } = &start {
+            require_input_path_for_seed(&input)?;
+        }
+
+        // Decided here, not re-derived later: it is the one question preparation asked, and the
+        // providers below have to give the same answer it did.
+        let is_standalone = input.file_type() != FileType::Toml;
+        let prepared = self.prepare(&input, &session)?;
+        // The `-C` stop flags are folded in here rather than by the caller, because the
+        // checkpoint each one names depends on the route, and which frontend runs is not known
+        // until preparation has selected the target. Every request this method serves picks
+        // them up, so a route flipped over to the pipeline later inherits them.
+        let outputs = apply_stop_flags(outputs, &session.options, &prepared.frontend)?;
         let goal = resolve_goal(&outputs, &prepared.frontend)?;
 
         // Appended after the caller's own, so that a caller observing a checkpoint sees it
@@ -201,13 +258,28 @@ impl Pipeline {
         // supplying observers of its own.
         let emitter = Rc::new(RefCell::new(EmitObserver::new(session.clone(), prepared.frontend)));
         observers.push(emitter.clone() as Rc<RefCell<dyn Observer>>);
-        let state = Rc::new(RequestState::new(goal, observers));
+        let state = Rc::new(RequestState::new(goal, observers).with_pre_assembly(pre_assembly));
 
         let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone())
             .with_warnings_as_errors(session.options.diagnostics.warnings.warnings_as_errors());
         prepare_assembler(&mut assembler, &prepared.package, &session)?;
 
-        let providers = self.providers(&session, &state, &prepared);
+        // The request-scoped providers, in the order they are applied: later wins for the
+        // extension it claims. Both serve the *selected* target's root extension, so a seeded
+        // standalone request installs the standalone provider and then displaces it — which is
+        // right, because the seed replaces reading the input the standalone provider carries.
+        let mut request_scoped = Vec::new();
+        if is_standalone {
+            request_scoped.push(self.standalone_provider(&session, &state, &prepared, input)?);
+        }
+        if let Start::At {
+            checkpoint,
+            artifact,
+        } = start
+        {
+            request_scoped.push(seed::provider(checkpoint, artifact, &prepared, &session, &state)?);
+        }
+        let providers = self.providers(&session, &state, &prepared, request_scoped);
         let mut project_assembler =
             assembler.for_project_with_providers(prepared.package.clone(), cache, providers)?;
 
@@ -240,6 +312,80 @@ impl Pipeline {
         outcome_of(assembled, &state, &prepared.target)
     }
 
+    /// Resolve `input` into the project, target and frontend this request runs with.
+    ///
+    /// # One question decides it: does the input name a manifest?
+    ///
+    /// A `.toml` input is a *locator*: it names the project to build and nothing is compiled
+    /// from it, so the project is loaded from it. Every other input is a *source file* (or
+    /// bytes on standard input), from which a project is synthesized around a single target
+    /// rooted at that file. Both produce a [`PreparedProject`], and nothing downstream of here
+    /// asks which kind of input it came from.
+    ///
+    /// The frontend is chosen the same way in both cases — by the extension of the *selected
+    /// target's root*, never by the input's own — which is what makes a Rust-rooted manifest
+    /// and a `midenc foo.rs` reach the same dispatch. The one deliberate difference is which
+    /// registration a standalone `rs` root gets; `select_standalone_frontend` in `prepare.rs`
+    /// explains it.
+    ///
+    /// # `.masp` is the one input that is neither
+    ///
+    /// A `.masp` is an already-assembled package, so there is nothing to compile and no
+    /// frontend to dispatch to. It is refused here, with the wording the legacy dispatcher
+    /// used, rather than being synthesized into a target no registration answers for — which
+    /// would fail later with a diagnostic about extensions rather than about what was asked.
+    fn prepare(&self, input: &InputFile, session: &Session) -> CompilerResult<PreparedProject> {
+        match input.file_type() {
+            FileType::Toml => prepare_project(
+                input,
+                &session.options,
+                &self.registry,
+                session.source_manager.as_ref(),
+            ),
+            FileType::Masp => Err(Report::msg("unsupported input file type '.masp'")),
+            _ => prepare_standalone(input, session, &self.registry),
+        }
+    }
+
+    /// The provider a **standalone** request installs for its root target's extension.
+    ///
+    /// Two things make it necessary, and either alone would:
+    ///
+    /// - **The frontend may not be the registry's.** A standalone `.rs` root is compiled in this
+    ///   process rather than by `cargo`, so preparation answers with
+    ///   [`RUST_STANDALONE_FRONTEND`](super::frontends::RUST_STANDALONE_FRONTEND) — which cannot
+    ///   be registered, because [`RUST_FRONTEND`](super::frontends::RUST_FRONTEND) already claims
+    ///   `rs` and the registry rejects a second claim. Without this override the assembler would
+    ///   consult the registry's `rs` provider and run a `cargo` build of a manifest that does not
+    ///   exist.
+    /// - **The frontend needs the input itself.** A standalone input may be stdin-backed: it
+    ///   exists only in memory, and the target root synthesized for it names a file that was
+    ///   never written. [`FrontendProvider::with_input`] is how the bytes reach the frontend, and
+    ///   the provider that carries them must be the one serving the target the input backs.
+    ///
+    /// It is built from `prepared.frontend` rather than from the registry, so it is the *selected*
+    /// registration in both cases — a `.wasm` root gets a second instance of the registry's own
+    /// wasm frontend, which is the cost [`Pipeline::providers`] describes and which buys the
+    /// input.
+    fn standalone_provider(
+        &self,
+        session: &Rc<Session>,
+        state: &Rc<RequestState>,
+        prepared: &PreparedProject,
+        input: InputFile,
+    ) -> CompilerResult<Box<dyn ProjectSourceProvider>> {
+        Ok(Box::new(
+            FrontendProvider::new(
+                super::selected_provider_extension(prepared)?,
+                prepared.frontend.instantiate(session.clone()),
+                session.clone(),
+                state.clone(),
+                RootTarget::new(prepared.package.clone(), &prepared.target),
+            )
+            .with_input(input),
+        ))
+    }
+
     /// Build one provider per registered extension, sharing one frontend per registration.
     ///
     /// Every registered frontend gets providers, not only the one selected for the root
@@ -253,11 +399,57 @@ impl Pipeline {
     /// resulting `Rc` is cloned into each of that registration's extensions. Instantiating
     /// per extension instead would split a frontend's per-target memoization across its own
     /// providers.
+    ///
+    /// `request_scoped` are providers that must serve *one* extension for this request alone,
+    /// displacing the registry's. They go in last, in order, and that is the whole mechanism:
+    /// `SourceProviderRegistry::new` collects providers into a map keyed by
+    /// [`ProjectSourceProvider::file_type`], so the last one written for an extension is the
+    /// one the assembler consults — which is also how two of them compose, the later winning.
+    /// The extension each serves is that `&'static str` — the assembler's registry is keyed by
+    /// nothing else — so a caller building one takes it from
+    /// [`selected_provider_extension`](super::selected_provider_extension), never from the
+    /// resolved target root, which is a runtime `Cow<str>`.
+    ///
+    /// Passing one is *additive*: the registry's provider for that extension is still built,
+    /// and simply loses. So an override phrased as "instantiate the selected registration again"
+    /// really does produce a second instance of a registration the registry already holds, and
+    /// that is worth understanding before writing one.
+    ///
+    /// # The seed does exactly that, and it is safe
+    ///
+    /// `seed.rs` wraps `prepared.frontend.instantiate(session)` so that every target the seed is
+    /// *not* for is compiled as it would have been. For a project request that is a second
+    /// instance of the registry's own registration. Two things make it harmless:
+    ///
+    /// - **Providers partition by extension.** The seed's provider wins for the selected root's
+    ///   extension and serves *every* target with it, so no single target is ever served by both
+    ///   instances. What splits is a registration that claims *several* extensions — a seeded
+    ///   `.wasm` root with a `.wat` dependency runs the two through different instances.
+    /// - **Frontend state is keyed by [`TargetKey`](super::TargetKey), not by instance.** Every
+    ///   shipped frontend memoizes into a map keyed that way (`frontends/wasm.rs`,
+    ///   `frontends/rust.rs`), and each target's `provide_sources`, `provide_source_provenance`
+    ///   and `post_process_package` all arrive through the one provider for its extension. So a
+    ///   split across extensions costs a second empty map, not a lost memoization.
+    ///
+    /// The remaining cost is an allocation. Sharing the registry's instance instead would mean
+    /// this method handing its instances back out, which is a wider change than the saving is
+    /// worth — but if this ever grows a third override, that is the direction.
+    ///
+    /// # Why this is a parameter, and not carried by [`PreparedProject`]
+    ///
+    /// Hanging it off the preparation is the obvious shape, and it does not work: a provider
+    /// needs the [`RequestState`] every target of a request shares, and that is built in
+    /// [`Pipeline::compile`] from a [`Goal`](super::Goal) resolved *against*
+    /// `prepared.frontend` — so it does not exist while preparation is running, which in any
+    /// case only receives `&session.options` and not the `Rc<Session>` a
+    /// [`FrontendProvider`] also needs. A preparation could therefore only carry a recipe,
+    /// not a provider. Whoever needs an override builds it here, where both are in hand.
     fn providers(
         &self,
         session: &Rc<Session>,
         state: &Rc<RequestState>,
         prepared: &PreparedProject,
+        request_scoped: Vec<Box<dyn ProjectSourceProvider>>,
     ) -> Vec<Box<dyn ProjectSourceProvider>> {
         let root = RootTarget::new(prepared.package.clone(), &prepared.target);
         let mut providers = Vec::new();
@@ -273,6 +465,7 @@ impl Pipeline {
                 )) as Box<dyn ProjectSourceProvider>);
             }
         }
+        providers.extend(request_scoped);
         providers
     }
 }
@@ -282,9 +475,14 @@ impl Pipeline {
 /// [`CompilerStopped`] is the odd one out: it is not a failure at all, but the signal a
 /// frontend raises to end the build early — `midenc-driver` downcasts it into `Ok(())` and
 /// exits 0 (`midenc-driver/src/lib.rs`). So a recorded render failure carried alongside it
-/// would be dropped and the run would report success having written nothing and said nothing.
-/// `midenc <manifest> -Zlint -Canalyze-only --emit=masm=<unwritable>` is exactly that shape:
-/// `masm.parsed` renders and fails, then the lint stops the build.
+/// would be dropped and the run would report success having written nothing and said nothing:
+/// a renderer fails at an early checkpoint, and the frontend then ends the build cleanly.
+///
+/// No shipped frontend takes that route now that the `-C` stop flags are goals — a goal reached
+/// stops the build through [`Flow::Stop`](super::Flow::Stop), which arrives here as
+/// `ControlFlow::Break` rather than as an error, and the render failure is surfaced by the
+/// caller's own check. The guard stays because [`CompilerStopped`] is public and any frontend
+/// may still raise it.
 ///
 /// A *genuine* assembler error wins instead. It is the more informative of the two — the
 /// render very likely failed because the thing it was handed was never built correctly — and
@@ -592,9 +790,10 @@ mod tests {
 
     /// A frontend that publishes `masm.parsed` and then ends the build with its own error.
     ///
-    /// Stands in for [`MasmProjectFrontend`](crate::pipeline::frontends::MasmProjectFrontend)
-    /// under `-Zlint -Canalyze-only`, which publishes and then raises [`CompilerStopped`] —
-    /// the shape in which a render failure can be lost, since the stop is not a failure.
+    /// Stands in for any frontend that publishes and then raises [`CompilerStopped`] — the
+    /// shape in which a render failure can be lost, since the stop is not a failure. No
+    /// shipped frontend does so any more; see [`prefer_render_error`], whose guard this
+    /// fixture is the only remaining exercise of.
     struct EndingFrontend(fn() -> Report);
 
     impl Frontend for EndingFrontend {
@@ -856,8 +1055,19 @@ path = "{root}"
 
     /// A session opened over a fixture project rooted at a `.<extension>` file.
     fn session_rooted_at(dir: &str, extension: &str) -> (Rc<Session>, PathBuf) {
+        session_configured(dir, extension, |_| {})
+    }
+
+    /// The same, with `configure` applied to the options the session is built from.
+    fn session_configured(
+        dir: &str,
+        extension: &str,
+        configure: impl FnOnce(&mut Options),
+    ) -> (Rc<Session>, PathBuf) {
         let manifest = manifest_rooted_at(dir, extension);
-        let options = Box::new(Options::default()).with_output_types(Default::default(), None);
+        let mut options = Box::new(Options::default());
+        configure(&mut options);
+        let options = options.with_output_types(Default::default(), None);
         let source_manager: Arc<dyn SourceManager + Send + Sync> =
             Arc::new(DefaultSourceManager::default());
         let session = Session::new(input(&manifest), options, None, source_manager)
@@ -1096,6 +1306,54 @@ path = "{root}"
     }
 
     // -------------------------------------------------------------------------------------
+    // The `-C` stop flags.
+    //
+    // `goal.rs` owns the mapping and tests it against every shipped route. What is checked
+    // here is that a request picks it up at all: a flag left in `Options` and never consulted
+    // would satisfy every assertion there.
+    // -------------------------------------------------------------------------------------
+
+    #[test]
+    fn a_stop_flag_in_the_session_options_caps_the_build() {
+        // The stub route has no HIR, so `-Cparse-only` falls through to `masm.parsed` — which
+        // is what makes this a test of the mapping rather than of a hardcoded checkpoint.
+        let (session, manifest) =
+            session_configured("driver_parse_only", STUB, |options| options.parse_only = true);
+        let observer = recorder();
+        let request = CompilationRequest::new(session, input(&manifest))
+            .with_observers(vec![observer.clone() as Rc<RefCell<dyn Observer>>]);
+
+        let outcome = pipeline()
+            .compile(request, &mut NoPackageStore)
+            .expect("stopping short of assembly is a success, not an error");
+
+        assert_eq!(outcome.checkpoint(), CheckpointId::MASM_PARSED);
+        assert_eq!(
+            trace(&observer),
+            vec![(CheckpointId::MASM_PARSED, TargetRole::Root)],
+            "the flag must cap the build exactly as `--stop-after` does"
+        );
+    }
+
+    #[test]
+    fn a_stop_flag_the_route_cannot_express_is_reported() {
+        // The stub route reaches no analysis checkpoint, so this is the manifest-backed Rust
+        // shape in miniature: a flag naming a phase the route never reaches must be a
+        // diagnostic rather than a silently uncapped build.
+        let (session, manifest) =
+            session_configured("driver_analyze_only", STUB, |options| options.analyze_only = true);
+        let request = CompilationRequest::new(session, input(&manifest));
+
+        let err = pipeline()
+            .compile(request, &mut NoPackageStore)
+            .expect_err("the stub route cannot stop after an analysis it never performs");
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("-Canalyze-only"), "{rendered}");
+        assert!(rendered.contains("known limitation"), "{rendered}");
+    }
+
+    // -------------------------------------------------------------------------------------
     // Rendering.
     // -------------------------------------------------------------------------------------
 
@@ -1247,9 +1505,11 @@ path = "{root}"
     fn a_render_failure_survives_a_clean_stop() {
         // The hole a `?` on `assemble_interruptible` leaves. `CompilerStopped` is not a
         // failure: `midenc-driver` downcasts it into `Ok(())` and exits 0. So a render
-        // failure recorded before the stop must displace it, or
-        // `-Zlint -Canalyze-only --emit=masm=<unwritable>` exits 0 having written nothing and
-        // said nothing.
+        // failure recorded before the stop must displace it, or a run whose `--emit`
+        // destination could not be written exits 0 having written nothing and said nothing.
+        // The stop-at-goal path reaches the same conclusion by a different branch — an
+        // interruption is `Ok(ControlFlow::Break)`, so the caller's own render-error check
+        // fires — which is why this fixture ends the build with an error instead.
         let err =
             compile_expecting_error("driver_render_stop", "stopboom", STOP_AFTER_FAILED_RENDER);
 
@@ -1274,7 +1534,7 @@ path = "{root}"
 
         assert!(
             err.is::<CompilerStopped>(),
-            "a stop with nothing to report must stay a stop, or every -Canalyze-only run fails: \
+            "a stop with nothing to report must stay a stop, or every early-exiting run fails: \
              {err}"
         );
         assert_eq!(
@@ -1351,7 +1611,7 @@ path = "{root}"
         .expect("the fixture project should prepare");
         let state = Rc::new(RequestState::new(Goal::at(CheckpointId::MASM_PARSED), Vec::new()));
 
-        let providers = pipeline.providers(&session, &state, &prepared);
+        let providers = pipeline.providers(&session, &state, &prepared, Vec::new());
 
         assert_eq!(
             providers.iter().map(|provider| provider.file_type()).collect::<Vec<_>>(),
@@ -1367,16 +1627,346 @@ path = "{root}"
         );
     }
 
-    #[test]
-    fn the_default_pipeline_registers_the_shipped_frontends() {
-        let pipeline = Pipeline::with_default_frontends().expect("the shipped frontends register");
-        assert_eq!(
-            pipeline.registry.for_extension("rs").map(|found| found.id()),
-            Some(FrontendId::new("rust"))
-        );
-        assert_eq!(
-            pipeline.registry.for_extension("masm").map(|found| found.id()),
-            Some(FrontendId::new("masm"))
+    // -------------------------------------------------------------------------------------
+    // The request-scoped provider.
+    // -------------------------------------------------------------------------------------
+
+    /// A second registration claiming [`STUB`], which no registry may hold beside
+    /// [`STUB_FRONTEND`] — `FrontendRegistry::register` rejects the duplicate extension.
+    ///
+    /// Its frontend skips `masm.parsed`, so which of the two served a callback is readable
+    /// off the observer trace rather than having to be inferred from the sources handed back.
+    const OVERRIDING: FrontendRegistration = FrontendRegistration::new(
+        FrontendId::new("overriding"),
+        &[STUB],
+        &[CheckpointId::MASM_LOWERED, CheckpointId::PACKAGE_ASSEMBLED],
+        &[],
+        &[
+            ArtifactDecl {
+                checkpoint: CheckpointId::MASM_LOWERED,
+                id: ArtifactId::MASM,
+                render: unrendered,
+            },
+            ArtifactDecl {
+                checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
+                id: ArtifactId::PACKAGE,
+                render: unrendered,
+            },
+        ],
+        make_skipping,
+    );
+
+    /// A single-target virtual project rooted at a `.stub` file.
+    fn stub_project(name: &str) -> VirtualProject {
+        let root = crate::pipeline::testing::fixture_source(name, "lib.stub", "stub");
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build")
+    }
+
+    /// The preparation a request to build `project`'s selected target with `frontend`
+    /// arrives at the driver with.
+    ///
+    /// Built by hand rather than through [`prepare_project`], which can only ever select a
+    /// frontend the registry holds — and a request-scoped provider exists precisely for the
+    /// requests whose frontend it does not.
+    fn prepared_for(project: &VirtualProject, frontend: FrontendRegistration) -> PreparedProject {
+        PreparedProject {
+            package: project.package(),
+            manifest_path: PathBuf::new(),
+            target: project.target().clone(),
+            profile_name: "dev".to_string(),
+            frontend,
+        }
+    }
+
+    /// Serve `project`'s selected target from `providers`, the way the assembler does: keyed
+    /// by extension, last writer winning.
+    fn serve(providers: Vec<Box<dyn ProjectSourceProvider>>, project: &VirtualProject) {
+        let assembly = project.assembly_context().expect("assembly context");
+        let served = miden_assembly::SourceProviderRegistry::new(providers)
+            .get_provider(STUB)
+            .expect("some provider must serve the stub extension")
+            .provide_sources_interruptible(&assembly)
+            .expect("neither fixture frontend errors");
+        assert!(
+            served.is_continue(),
+            "these fixtures publish short of the goal, so the build must run on and the trace \
+             must be the whole of what the serving frontend published"
         );
     }
+
+    /// The request state for a full build that records what it reaches.
+    fn recording_state(observer: &Rc<RefCell<RecordingObserver>>) -> Rc<RequestState> {
+        Rc::new(RequestState::new(
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+        ))
+    }
+
+    #[test]
+    fn a_request_scoped_provider_serves_the_extension_the_registry_would_have() {
+        let pipeline = pipeline();
+        assert_eq!(
+            pipeline.registry.for_extension(STUB).map(FrontendRegistration::id),
+            Some(STUB_FRONTEND.id()),
+            "the registry serves `.stub` with its own registration, which is what the \
+             request-scoped one has to displace"
+        );
+        assert_ne!(OVERRIDING.id(), STUB_FRONTEND.id(), "two registrations claim one extension");
+
+        let project = stub_project("driver_override_installed");
+        let (session, _manifest) = session("driver_override_installed");
+        let observer = recorder();
+        let state = recording_state(&observer);
+
+        // The extension comes from the overriding registration's own `&'static str`
+        // extensions — the type the assembler's provider map is keyed by — and never from the
+        // resolved target root, which yields a runtime `Cow<str>`.
+        let extension: &'static str = OVERRIDING.extensions()[0];
+        let overriding = Box::new(FrontendProvider::new(
+            extension,
+            OVERRIDING.instantiate(session.clone()),
+            session.clone(),
+            state.clone(),
+            RootTarget::new(project.package(), project.target()),
+        )) as Box<dyn ProjectSourceProvider>;
+        assert_eq!(
+            overriding.file_type(),
+            STUB,
+            "the override must be installed under the extension it is meant to displace"
+        );
+
+        let prepared = prepared_for(&project, STUB_FRONTEND);
+        let providers = pipeline.providers(&session, &state, &prepared, alloc::vec![overriding]);
+        assert_eq!(
+            providers.iter().map(|provider| provider.file_type()).collect::<Vec<_>>(),
+            vec![STUB, STUB],
+            "installing an override is additive: the registry's provider for the extension is \
+             still built, and merely loses. An implementation that replaced it instead would \
+             satisfy every other assertion here"
+        );
+
+        serve(providers, &project);
+
+        assert_eq!(
+            trace(&observer),
+            vec![(CheckpointId::MASM_LOWERED, TargetRole::Root)],
+            "the request-scoped provider must serve the callback: its frontend never publishes \
+             `masm.parsed`, which the registry's does"
+        );
+    }
+
+    #[test]
+    fn without_a_request_scoped_provider_the_registrys_serves() {
+        // The discriminating half: the same extension, the same target, and nothing
+        // overriding it must still reach the registry's frontend. Without this, a driver
+        // that dropped the registry's provider entirely would pass the test above.
+        let pipeline = pipeline();
+        let project = stub_project("driver_override_absent");
+        let (session, _manifest) = session("driver_override_absent");
+        let observer = recorder();
+        let state = recording_state(&observer);
+        let prepared = prepared_for(&project, STUB_FRONTEND);
+
+        serve(pipeline.providers(&session, &state, &prepared, Vec::new()), &project);
+
+        assert_eq!(
+            trace(&observer),
+            vec![
+                (CheckpointId::MASM_PARSED, TargetRole::Root),
+                (CheckpointId::MASM_LOWERED, TargetRole::Root),
+            ],
+            "the registry's own frontend publishes both of its checkpoints"
+        );
+    }
+
+    #[test]
+    fn the_default_pipeline_registers_every_shipped_frontend() {
+        // One registration per extension family the compiler compiles from source. A missing
+        // one is not a degraded build but a "no frontend is registered for '<ext>'" failure of
+        // every standalone input with that extension, since the standalone dispatch selects
+        // out of this registry.
+        let pipeline = Pipeline::with_default_frontends().expect("the shipped frontends register");
+        for (extension, id) in [
+            ("rs", "rust"),
+            ("masm", "masm"),
+            ("wasm", "wasm"),
+            ("wat", "wasm"),
+            ("hir", "hir"),
+        ] {
+            assert_eq!(
+                pipeline.registry.for_extension(extension).map(|found| found.id()),
+                Some(FrontendId::new(id)),
+                "'{extension}' must dispatch to the '{id}' frontend"
+            );
+        }
+    }
+
+    // -------------------------------------------------------------------------------------
+    // The standalone dispatch.
+    //
+    // A source file rather than a manifest: preparation synthesizes the project instead of
+    // loading one, and the driver installs a provider carrying the request's own input.
+    //
+    // These stop at what is decidable without a package registry. A synthesized project depends
+    // on `miden-core`, which is resolved from the toolchain — so a whole standalone build in
+    // process would assert about the environment rather than about this dispatch. The end-to-end
+    // claim is the lit suite's, which compiles `.rs` and `.wat` inputs through this branch.
+    // -------------------------------------------------------------------------------------
+
+    /// A session over the standalone `input`, with no manifest anywhere.
+    fn standalone_session(input: &InputFile) -> Rc<Session> {
+        let options = Box::new(Options::default())
+            .with_verbosity(midenc_session::Verbosity::Silent)
+            .with_output_types(Default::default(), None);
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+        Rc::new(
+            Session::new(input.clone(), options, None, source_manager)
+                .expect("a standalone input should open a session"),
+        )
+    }
+
+    #[test]
+    fn a_source_file_input_is_prepared_as_a_synthesized_project() {
+        let root = crate::pipeline::testing::wat_fixture("driver_standalone_wat", "lib.wat");
+        let input = input(&root);
+        let session = standalone_session(&input);
+
+        let prepared = Pipeline::with_default_frontends()
+            .expect("the shipped frontends register")
+            .prepare(&input, &session)
+            .expect("a `.wat` file is a standalone input, and needs no manifest");
+
+        assert_eq!(
+            prepared.manifest_path,
+            PathBuf::new(),
+            "a synthesized project was named by no locator, and says so"
+        );
+        assert_eq!(
+            prepared.frontend.id(),
+            FrontendId::new("wasm"),
+            "the frontend is chosen by the synthesized target's root extension, exactly as it is \
+             for a manifest"
+        );
+    }
+
+    #[test]
+    fn a_manifest_input_is_prepared_by_loading_it() {
+        // The discriminating half: the branch is on the input's file type, so a dispatch that
+        // synthesized unconditionally would satisfy the test above and lose every project build.
+        let (session, manifest) = session("driver_standalone_manifest");
+        let input = input(&manifest);
+
+        let prepared = pipeline()
+            .prepare(&input, &session)
+            .expect("the fixture project should prepare");
+
+        assert_eq!(
+            prepared.manifest_path, manifest,
+            "a `.toml` input is a locator: the project is loaded from it, not synthesized"
+        );
+    }
+
+    #[test]
+    fn an_already_assembled_package_is_not_an_input() {
+        // `.masp` is neither a locator nor something a frontend compiles, so it is refused in
+        // preparation with the wording the legacy dispatcher used — rather than synthesized into
+        // a target whose extension no registration claims, which would fail later with a
+        // diagnostic about extensions instead of about what was asked for.
+        let root =
+            crate::pipeline::testing::fixture_source("driver_standalone_masp", "lib.masp", "");
+        let input = input(&root);
+        let session = standalone_session(&input);
+
+        let err = Pipeline::with_default_frontends()
+            .expect("the shipped frontends register")
+            .prepare(&input, &session)
+            .expect_err("a package is not a compiler input");
+
+        assert!(
+            format!("{err}").contains("unsupported input file type '.masp'"),
+            "the refusal must name the file type: {err}"
+        );
+    }
+
+    #[test]
+    fn a_standalone_request_hands_its_own_input_to_the_frontend() {
+        // The property the standalone provider exists for, beyond substituting a registration:
+        // a stdin-backed input lives only in memory, and the target root synthesized for it
+        // names a file that was never written — so a frontend reading `resolved_target_root`
+        // finds nothing. `FrontendProvider::with_input` is the only way the bytes reach it, and
+        // this branch is the only thing that supplies one.
+        let project = stub_project("driver_standalone_input");
+        let (session, _manifest) = session("driver_standalone_input");
+        let observer = recorder();
+        let state = recording_state(&observer);
+        let prepared = prepared_for(&project, INPUT_OBSERVING_FRONTEND);
+        let piped = InputFile::new(
+            midenc_session::FileType::Wat,
+            midenc_session::InputType::Stdin {
+                name: "stdin.wat".into(),
+                input: b"(module)".to_vec(),
+            },
+        );
+
+        let provider = pipeline()
+            .standalone_provider(&session, &state, &prepared, piped)
+            .expect("the fixture target root has an extension the frontend claims");
+        assert_eq!(
+            provider.file_type(),
+            STUB,
+            "the override must be keyed by the selected root's extension, not by the input's"
+        );
+
+        serve(alloc::vec![provider], &project);
+
+        assert!(
+            SAW_INPUT.with_borrow(|saw| *saw),
+            "the frontend must be handed the request's own input, or a piped-in source cannot be \
+             read at all"
+        );
+    }
+
+    std::thread_local! {
+        /// Whether [`INPUT_OBSERVING_FRONTEND`] was given the request's input.
+        static SAW_INPUT: RefCell<bool> = const { RefCell::new(false) };
+    }
+
+    /// A frontend that records whether its context carried the compiler input.
+    struct InputObservingFrontend;
+
+    impl Frontend for InputObservingFrontend {
+        fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
+            SAW_INPUT.with_borrow_mut(|saw| *saw = cx.input().is_some());
+            StubFrontend.compile(cx)
+        }
+
+        fn provenance(
+            &self,
+            cx: &TargetContext<'_>,
+        ) -> CompilerResult<ProjectSourceProvenanceInputs> {
+            StubFrontend.provenance(cx)
+        }
+    }
+
+    fn make_input_observing(_session: Rc<Session>) -> Rc<dyn Frontend> {
+        Rc::new(InputObservingFrontend)
+    }
+
+    const INPUT_OBSERVING_FRONTEND: FrontendRegistration = FrontendRegistration::new(
+        FrontendId::new("input-observing"),
+        &[STUB],
+        &[
+            CheckpointId::MASM_PARSED,
+            CheckpointId::MASM_LOWERED,
+            CheckpointId::PACKAGE_ASSEMBLED,
+        ],
+        &[],
+        &[ArtifactDecl {
+            checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
+            id: ArtifactId::PACKAGE,
+            render: unrendered,
+        }],
+        make_input_observing,
+    );
 }

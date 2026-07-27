@@ -7,12 +7,12 @@ use miden_assembly::{
 };
 use midenc_frontend_masm::{DisassembledWorld, DisassemblerConfig};
 use midenc_session::{
-    OutputMode, Session,
+    FileName, InputType, OutputMode, Session,
     diagnostics::{IntoDiagnostic, Report},
 };
 
 use crate::{
-    CompilerResult, CompilerStopped,
+    CompilerResult,
     pipeline::{
         Artifact, ArtifactDecl, ArtifactId, CheckpointId, Flow, Frontend, FrontendId,
         FrontendRegistration, TargetContext,
@@ -156,15 +156,105 @@ impl Default for MasmProjectFrontend {
 }
 
 impl MasmProjectFrontend {
+    /// Read this target's Miden Assembly sources.
+    ///
+    /// Almost always [`MasmSourceProvider`]'s job, and the type doc says why it must stay that
+    /// way. The exception is the one case a path cannot serve: a standalone input piped in on
+    /// standard input exists only in memory, and the target root synthesized for it names a
+    /// file nobody ever wrote. Those bytes reach a frontend only through
+    /// [`TargetContext::input`], so they are parsed here.
+    ///
+    /// Preferring the path whenever there *is* one is not merely equivalent, it is the safer of
+    /// the two. A provider is built for an extension and serves every callback for it, so a
+    /// `.masm` dependency of a standalone `.masm` request would otherwise be compiled from the
+    /// root's bytes. That combination is expected to be unreachable — a synthesized project has
+    /// one target and a registry-only dependency, with no sources of its own — and reading each
+    /// target's own root means it does not have to be. [`WasmFrontend`](super::wasm::WasmFrontend)
+    /// splits the same way, for the same reason.
+    fn provide(&self, cx: &TargetContext<'_>) -> CompilerResult<ProjectSourceInputs> {
+        match cx.input().map(|input| &input.file) {
+            Some(InputType::Stdin { name, input }) => Self::parse_stdin(name, input, cx),
+            _ => self.sources.provide_sources(cx.assembly()),
+        }
+    }
+
+    /// Parse the root module of a target backed by `bytes` read from standard input.
+    ///
+    /// This is `ParseMasmStage::parse_masm_from_bytes` re-homed, and corrected on the two axes
+    /// the type doc names. It differs from the legacy version in exactly those:
+    ///
+    /// * **Module path.** The legacy version named the module after the *input* — `stdin` —
+    ///   which `load_target_sources` rejects on sight. The path is the target's namespace, as
+    ///   it is for every other MASM target.
+    /// * **Module kind.** From `target.ty`, not from the session's requested target type.
+    ///
+    /// The *source file's* URI is still the input's name, so a diagnostic raised in these bytes
+    /// points at `stdin` rather than at a namespace, which is the name the user would recognize.
+    /// Only the module's path is the namespace.
+    ///
+    /// There is no module tree to walk — bytes in memory have no directory — so a standalone
+    /// `.masm` piped in is a single module, as it has always been.
+    fn parse_stdin(
+        name: &FileName,
+        bytes: &[u8],
+        cx: &TargetContext<'_>,
+    ) -> CompilerResult<ProjectSourceInputs> {
+        use alloc::{format, string::ToString, vec::Vec};
+
+        use miden_assembly::{ModuleParser, ast::ModuleKind};
+        use midenc_session::{
+            diagnostics::{SourceLanguage, Uri, WrapErr},
+            miden_project::TargetType,
+        };
+
+        let assembly = cx.assembly();
+        let source = core::str::from_utf8(bytes)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("input '{name}' contains invalid utf-8"))?;
+        let source_file = assembly.source_manager.load(
+            SourceLanguage::Masm,
+            Uri::new(name.as_str()),
+            source.to_string(),
+        );
+
+        let kind = match assembly.target.ty {
+            TargetType::Executable => ModuleKind::Executable,
+            TargetType::Kernel => ModuleKind::Kernel,
+            _ => ModuleKind::Library,
+        };
+        let mut parser = ModuleParser::new(Some(kind));
+        parser.set_warnings_as_errors(assembly.warnings_as_errors);
+        let root = parser.parse(
+            Some(assembly.target.namespace.inner().as_ref()),
+            source_file,
+            assembly.source_manager.clone(),
+        )?;
+
+        Ok(ProjectSourceInputs {
+            root,
+            support: Vec::new(),
+        })
+    }
+
     /// Disassemble this target to HIR and run the advice-taint lint over it.
     ///
-    /// This is `MasmAnalysisStage`'s lint-only branch, re-homed. The [`CompilerStopped`]
-    /// short-circuit is kept verbatim, message included: `midenc-driver` downcasts that error
-    /// into a clean exit, so it is a stop signal rather than a failure, and turning it into a
-    /// [`Flow::Stop`] would need `--stop-after` plumbing that does not exist yet.
+    /// This is `MasmAnalysisStage`'s lint-only branch, re-homed. It performs the analysis and
+    /// nothing else: where the legacy stage — and, until the `-C` stop flags became goals,
+    /// this method — ended the run itself on `-Canalyze-only`, that stop is now resolved to a
+    /// goal at `hir.analyzed` (see [`StopFlag`](crate::pipeline::StopFlag)) and taken by the
+    /// caller's [`TargetContext::checkpoint`] below. A frontend-local stop would fire *before*
+    /// that publication, so the goal would never be reached and the request would come back
+    /// with nothing captured.
+    ///
+    /// What is *not* kept either is the legacy stage's conflation of that stop with a lint
+    /// that raised errors. The two shared one `CompilerStopped`, which `midenc-driver`
+    /// downcasts into a clean exit, so broken code exited zero. Errors fail the compilation
+    /// with an ordinary [`Report`], as they do in
+    /// [`backend::analyze`](crate::pipeline::backend::analyze), the other live copy of this
+    /// rule.
     ///
     /// `hir.analyzed` is therefore published by the caller only when this *returns*, which
-    /// preserves the legacy ordering: a run the lint stops publishes nothing for it.
+    /// preserves the legacy ordering: a run the lint fails publishes nothing for it.
     ///
     /// # A lint-only run of a project now pays for its dependencies first
     ///
@@ -242,8 +332,8 @@ impl MasmProjectFrontend {
         for diagnostic in analysis.diagnostics(&source_manager) {
             session.diagnostics.emit(diagnostic);
         }
-        if session.diagnostics.has_errors() || session.analyze_only() {
-            return Err(CompilerStopped("either errors were raised, or analyze-only is set").into());
+        if session.diagnostics.has_errors() {
+            return Err(Report::msg(crate::pipeline::lint_errors_reported(&session.options)));
         }
 
         Ok(world)
@@ -258,20 +348,44 @@ impl Frontend for MasmProjectFrontend {
     /// target that is already Miden Assembly, and the second checkpoint exists so that a
     /// route-wide `--stop-after=lower` means the same thing whatever the source language.
     ///
-    /// `hir.analyzed` sits between them on the route but is only *reached* under `-Zlint`,
-    /// and then only for the root target. The lint gate is the legacy stage's. The root gate
-    /// is a correctness requirement: `analyze` disassembles `session.project`, which
-    /// is the *root* project no matter which target the callback is for, so running it for a
-    /// MASM dependency of a Rust project would disassemble the wrong project — and would pay
-    /// for a full disassembly once per dependency.
+    /// `hir.analyzed` sits between them on the route but is only *reached* when something asks
+    /// for it, and then only for the root target. The root gate is a correctness requirement:
+    /// `analyze` disassembles `session.project`, which is the *root* project no matter which
+    /// target the callback is for, so running it for a MASM dependency of a Rust project would
+    /// disassemble the wrong project — and would pay for a full disassembly once per
+    /// dependency.
+    ///
+    /// # Why `-Canalyze-only` runs the analysis, and not only `-Zlint`
+    ///
+    /// The lint gate is the legacy stage's, and on its own it is not enough now that
+    /// `-Canalyze-only` resolves to a goal at `hir.analyzed`: a run that asked to stop there
+    /// and never published it would sail past the point it was told to stop at, and the driver
+    /// would report that — correctly — as an internal error.
+    ///
+    /// So the flag turns the analysis on. That is what it means: *run up to and including the
+    /// analysis step, then exit*. This route is the only one where the two questions coincide,
+    /// because here the analysis **is** the lint; the HIR-producing routes reach
+    /// [`backend::analyze`](crate::pipeline::backend::analyze), which is a step that always
+    /// runs and whose lints are separately gated on `-Zlint`.
+    ///
+    /// The visible consequence is that `-Canalyze-only` alone now reports advice-taint findings
+    /// for a Miden Assembly target, where before it silently built the whole package. **And
+    /// those findings can fail the build.** They are `Severity::Warning`, so ordinarily the run
+    /// stops cleanly at `hir.analyzed` and exits zero — but under `-Dwarnings` they promote to
+    /// errors, `has_errors()` trips, and `analyze` returns an ordinary [`Report`] rather than
+    /// reaching the checkpoint at all. That is the correct outcome (a lint error must not exit
+    /// zero, which is the conflation the legacy stage made), and it is why
+    /// [`lint_errors_reported`](crate::pipeline) takes the options: the summary line has to name
+    /// `-Canalyze-only` on such a run, not the `-Zlint` the user never passed.
     fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
-        let inputs = self.sources.provide_sources(cx.assembly())?;
+        let inputs = self.provide(cx)?;
         let inputs = match cx.checkpoint(CheckpointId::MASM_PARSED, ArtifactId::MASM, inputs)? {
             Flow::Continue(inputs) => inputs,
             Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
         };
 
-        if cx.session().options.lint && cx.role().is_root() {
+        let session = cx.session();
+        if (session.options.lint || session.options.analyze_only) && cx.role().is_root() {
             let world = self.analyze(&inputs, cx)?;
             if let Flow::Stop(stopped) =
                 cx.checkpoint(CheckpointId::HIR_ANALYZED, ArtifactId::HIR, world)?
@@ -284,6 +398,18 @@ impl Frontend for MasmProjectFrontend {
     }
 
     /// This target's build provenance, as the assembler's own provider computes it.
+    ///
+    /// Note the asymmetry with [`Frontend::compile`], which is deliberate: that one grew a
+    /// branch for a stdin-backed input, and this one did not. It cannot be reached for one. A
+    /// synthesized project has no manifest path, which makes its dependency-graph node a
+    /// `ProjectSource::Virtual`, and `build_source_provenance` returns `None` for those without
+    /// consulting any provider (`miden-assembly/src/project/dependency_graph.rs`, the
+    /// `ProjectSource::Virtual` arm) — while a stdin-backed input is only ever a *standalone*
+    /// one. So this serves manifest-backed MASM targets, every one of which has a path on disk,
+    /// and delegating verbatim stays correct.
+    ///
+    /// Were that to change, this would fail loudly rather than quietly: the upstream provider
+    /// reads `resolved_target_root`, which for a stdin target names a file nobody wrote.
     fn provenance(&self, cx: &TargetContext<'_>) -> CompilerResult<ProjectSourceProvenanceInputs> {
         self.sources.provide_source_provenance(cx.assembly())
     }
@@ -331,6 +457,31 @@ mod tests {
     /// The submodule [`ROOT`] declares.
     const SUPPORT: &str = "pub proc clean\n    push.1\n    u32wrapping_add\nend\n";
 
+    /// A root module the advice-taint lint *does* complain about.
+    ///
+    /// Modelled directly on `tests/fixtures/masm/cross_module_advice_taint`: `adv_push` obtains
+    /// unconstrained advice data, which [`DIRTY_SUPPORT`] then consumes as a constrained value.
+    /// The finding is a `Severity::Warning`, so it fails a build only under
+    /// warnings-as-errors — which is exactly the case
+    /// [`analyze_only_alone_does_not_blame_a_flag_the_user_never_passed`] needs.
+    ///
+    /// The two operand-stack values matter: `u32wrapping_add` consumes two, and `adv_push`
+    /// supplies one, so folding this into a single procedure fails disassembly with a stack
+    /// underflow before the lint ever runs.
+    const DIRTY_ROOT: &str = "pub mod support\n\npub proc entry() -> u32\n    adv_push\n    \
+                              exec.support::consume\nend\n";
+
+    /// The submodule [`DIRTY_ROOT`] taints.
+    const DIRTY_SUPPORT: &str = "pub proc consume\n    push.1\n    u32wrapping_add\nend\n";
+
+    /// The root module the standard-input fixtures are handed as bytes.
+    ///
+    /// Deliberately unlike [`ROOT`]: it declares no submodule, and its procedure has a name
+    /// nothing on disk carries — so a run that read the target root off disk instead of taking
+    /// the bytes it was given cannot produce it. It has to open with a Miden Assembly top-level
+    /// item, because that is what [`InputFile::from_bytes`] classifies standard input by.
+    const STDIN_ROOT: &str = "pub proc from_stdin\n    push.1\nend\n";
+
     /// A whole MASM *program*, for the one fixture whose target is an executable.
     ///
     /// A `begin … end` body only parses as [`ModuleKind::Executable`], which is what makes it
@@ -349,6 +500,13 @@ mod tests {
         VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
     }
 
+    /// Materialize a MASM library project whose root trips the advice-taint lint.
+    fn dirty_project(name: &str) -> VirtualProject {
+        let root = testing::fixture_source(name, "lib.masm", DIRTY_ROOT);
+        testing::fixture_source(name, "support.masm", DIRTY_SUPPORT);
+        VirtualProject::new(name, &root, TargetType::Library).expect("should build project")
+    }
+
     /// Materialize a MASM *executable* project named `name` on disk.
     ///
     /// The counterpart to [`project`] for the module-kind half of the invariant: every other
@@ -357,6 +515,47 @@ mod tests {
     fn executable_project(name: &str) -> VirtualProject {
         let root = testing::fixture_source(name, "main.masm", PROGRAM);
         VirtualProject::new(name, &root, TargetType::Executable).expect("should build project")
+    }
+
+    /// Prepare `<dir>/lib.masm` holding `source` as a standalone request, and lift the target
+    /// preparation synthesized into a project this frontend can be run over.
+    ///
+    /// Both halves of the namespace arrangement in one place: `prepare_standalone` decides the
+    /// target, and what comes back is what the frontend is then asked to parse — which is the
+    /// only way to observe the two agreeing, or refusing to.
+    ///
+    /// The session is built **without** `--name` unless `configure` sets one, because that flag
+    /// is what suppresses the pre-scan. The artifact name is therefore the input's file stem,
+    /// `lib`.
+    fn prepare_standalone_masm(
+        dir: &str,
+        source: &str,
+        configure: impl FnOnce(&mut Options),
+    ) -> (crate::pipeline::PreparedProject, VirtualProject) {
+        let root = testing::fixture_source(dir, "lib.masm", source);
+        let input = InputFile::from_path(&root).expect("a `.masm` file is a compiler input");
+        let mut options = Box::<Options>::default();
+        configure(&mut options);
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+        let session = Session::new(input.clone(), options, None, source_manager)
+            .expect("a source file input should open a compiler session");
+        let mut registry = FrontendRegistry::new();
+        registry
+            .register(MASM_FRONTEND)
+            .expect("the masm registration must be well-formed");
+
+        let prepared = crate::pipeline::prepare_standalone(&input, &session, &registry)
+            .expect("a `.masm` file is a standalone input this frontend handles");
+        let project = VirtualProject::for_prepared_target(&prepared)
+            .expect("the prepared target should assemble into a virtual project");
+        (prepared, project)
+    }
+
+    /// The compiler input a `midenc <flags> -` invocation piping Miden Assembly produces.
+    fn stdin_input() -> InputFile {
+        InputFile::from_bytes(STDIN_ROOT.as_bytes().to_vec(), "stdin".into())
+            .expect("miden assembly on standard input is a recognized compiler input")
     }
 
     /// A default HIR context, which is also the source of a target's session.
@@ -473,10 +672,23 @@ mod tests {
     /// constructed here, so what these tests exercise is what a caller holding only the
     /// registration would get.
     fn run(project: &VirtualProject, context: Rc<Context>, goal: Goal) -> Run {
+        run_with_input(project, context, goal, None)
+    }
+
+    /// [`run`], with the request's own compiler input supplied to the target context.
+    ///
+    /// Only a standalone request carries one; a project target's frontend is handed `None` and
+    /// reads `assembly().resolved_target_root`.
+    fn run_with_input(
+        project: &VirtualProject,
+        context: Rc<Context>,
+        goal: Goal,
+        input: Option<&InputFile>,
+    ) -> Run {
         let assembly = project.assembly_context().expect("assembly context");
         let observer = Rc::new(RefCell::new(Trace::default()));
         let state = RequestState::new(goal, vec![observer.clone() as Rc<RefCell<dyn Observer>>]);
-        let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
+        let cx = TargetContext::new(&assembly, context, input, TargetRole::Root, &state);
 
         let frontend = MASM_FRONTEND.instantiate(cx.session());
         let flow = frontend.compile(&cx).expect("the masm frontend should compile");
@@ -540,7 +752,8 @@ mod tests {
         );
     }
 
-    /// Without `-Zlint` the disassemble-to-HIR analysis is never reached.
+    /// With neither `-Zlint` nor `-Canalyze-only` the disassemble-to-HIR analysis is never
+    /// reached.
     ///
     /// Asserted on the trace rather than on the absence of an error: an implementation that
     /// ran the analysis and threw the result away would raise no error either.
@@ -551,7 +764,8 @@ mod tests {
 
         assert!(
             !run.trace.contains(&CheckpointId::HIR_ANALYZED),
-            "hir.analyzed is on the route but must only be reached under -Zlint, got {:?}",
+            "hir.analyzed is on the route but must only be reached when something asks for it, \
+             got {:?}",
             run.trace
         );
     }
@@ -589,6 +803,117 @@ mod tests {
         assert!(
             !world.module.borrow().body().is_empty(),
             "the lifted root module must hold the fixture's procedures"
+        );
+    }
+
+    /// `-Canalyze-only` runs the analysis, whether or not `-Zlint` was given.
+    ///
+    /// The flag names a stop point, and `hir.analyzed` is where it stops — so if the analysis
+    /// did not run, the goal would never be published and the build would run to completion
+    /// past the point the user asked to stop at, which the driver reports as an internal
+    /// error. On this route the analysis *is* the lint, so the flag has to turn it on; on the
+    /// HIR-producing routes `backend::analyze` already runs unconditionally.
+    #[test]
+    fn analyze_only_reaches_the_analysis_without_the_lint_flag() {
+        let project = project("masm_frontend_analyze_only");
+        let context = context_with(|options| options.analyze_only = true);
+        let run = run(&project, context, Goal::at(CheckpointId::HIR_ANALYZED));
+
+        assert!(run.stopped, "hir.analyzed is the goal, so the frontend must stop there");
+        assert_eq!(
+            run.trace,
+            vec![CheckpointId::MASM_PARSED, CheckpointId::HIR_ANALYZED],
+            "the analysis must run and publish, with no lint flag in sight"
+        );
+        let captured = run.captured.expect("stopping at the goal must capture");
+        assert_eq!(captured.artifact().id(), ArtifactId::HIR);
+    }
+
+    /// A lint failure reached through `-Canalyze-only` alone must not blame `-Zlint`.
+    ///
+    /// The findings are warnings, so under `-Dwarnings` they promote to errors and the run
+    /// fails with the summary line rather than stopping cleanly at `hir.analyzed`. Before the
+    /// flags became goals this command exited zero with a full package, so the message is the
+    /// only thing the user has to go on — and naming a flag they never passed sends them
+    /// looking for the wrong thing.
+    #[test]
+    fn analyze_only_alone_does_not_blame_a_flag_the_user_never_passed() {
+        use midenc_session::Warnings;
+
+        /// Compile `project` under `configure`d options, which must fail.
+        ///
+        /// Not `expect_err`: `Flow<ProjectSourceInputs>` is not `Debug`, because
+        /// `ProjectSourceInputs` is not.
+        fn failure(name: &str, configure: impl FnOnce(&mut Options)) -> Report {
+            let project = dirty_project(name);
+            let assembly = project.assembly_context().expect("assembly context");
+            let state = RequestState::new(Goal::at(CheckpointId::HIR_ANALYZED), vec![]);
+            let cx = TargetContext::for_testing(
+                &assembly,
+                context_with(configure),
+                TargetRole::Root,
+                &state,
+            );
+            match MASM_FRONTEND.instantiate(cx.session()).compile(&cx) {
+                Err(err) => err,
+                Ok(_) => panic!("a promoted advice-taint warning must fail the build"),
+            }
+        }
+
+        let err = failure("masm_frontend_analyze_only_warnings_as_errors", |options| {
+            options.analyze_only = true;
+            options.diagnostics.warnings = Warnings::Error;
+        });
+
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("-Canalyze-only"),
+            "the summary must name the flag that asked for the analysis: {rendered}"
+        );
+        assert!(
+            !rendered.contains("-Zlint"),
+            "and must not name one the user never passed: {rendered}"
+        );
+        assert!(
+            !err.is::<crate::CompilerStopped>(),
+            "a lint error is a failure, not a stop: exiting zero here is the conflation the \
+             legacy stage made"
+        );
+
+        // The other half: with `-Zlint` actually given, that is what the message names.
+        let err = failure("masm_frontend_lint_warnings_as_errors", |options| {
+            options.lint = true;
+            options.diagnostics.warnings = Warnings::Error;
+        });
+        assert!(format!("{err}").contains("-Zlint"), "{err}");
+    }
+
+    /// And the frontend no longer ends the build itself when the flag is set.
+    ///
+    /// The stop belongs to the goal machinery now (`pipeline::goal`), which resolves
+    /// `-Canalyze-only` to `hir.analyzed`. A second, frontend-local stop would fire *before*
+    /// the checkpoint published, so nothing would be captured and the request would come back
+    /// with no artifact at all.
+    #[test]
+    fn analyze_only_does_not_end_the_build_before_the_checkpoint() {
+        let project = project("masm_frontend_analyze_only_continues");
+        let context = context_with(|options| {
+            options.analyze_only = true;
+            options.lint = true;
+        });
+        // A goal past the analysis: nothing here asks the frontend to stop, so a
+        // frontend-local `-Canalyze-only` exit would surface as an error from `compile`.
+        let run = run(&project, context, Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+
+        assert!(!run.stopped, "package.assembled is the orchestrator's to publish");
+        assert_eq!(
+            run.trace,
+            vec![
+                CheckpointId::MASM_PARSED,
+                CheckpointId::HIR_ANALYZED,
+                CheckpointId::MASM_LOWERED
+            ],
+            "with the goal past the analysis the flag must not stop anything"
         );
     }
 
@@ -741,6 +1066,235 @@ mod tests {
         assert_eq!(inputs.root.kind(), ModuleKind::Executable);
         assert_eq!(inputs.root.path(), namespace.as_ref(), "an executable roots at `$exec`");
         assert!(inputs.support.is_empty(), "the program declares no submodules");
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Standard input.
+    // ---------------------------------------------------------------------------------------
+
+    /// A stdin-backed input is compiled from the bytes it carries, not from a path.
+    ///
+    /// This is the one case a path cannot serve: the input exists only in memory, and the
+    /// target root synthesized for it names a file nobody wrote. The fixture makes that
+    /// discriminating by putting a *different* module on disk at the target root, so a
+    /// delegation to the assembler's own provider succeeds — and produces the wrong module.
+    #[test]
+    fn a_stdin_backed_input_is_compiled_from_the_bytes_it_carries() {
+        let project = project("masm_frontend_stdin");
+        let input = stdin_input();
+
+        let run =
+            run_with_input(&project, context(), Goal::at(CheckpointId::MASM_PARSED), Some(&input));
+        let inputs = run
+            .captured
+            .expect("stopping at masm.parsed must capture")
+            .downcast::<ProjectSourceInputs>()
+            .expect("the parsed artifact must be the assembler's own source inputs");
+
+        let rendered = inputs.root.to_string();
+        assert!(
+            rendered.contains("from_stdin"),
+            "the root module must be the one piped in: {rendered}"
+        );
+        assert!(
+            !rendered.contains("proc entry"),
+            "and not the one sitting at the target root on disk: {rendered}"
+        );
+        assert!(
+            inputs.support.is_empty(),
+            "bytes in memory have no directory to walk, so standard input contributes no support \
+             modules"
+        );
+    }
+
+    /// And the module it parses sits at the target's namespace.
+    ///
+    /// The legacy `ParseMasmStage::parse_masm_from_bytes` named the module after the *input*
+    /// — `stdin` — which `load_target_sources` rejects out of hand.
+    #[test]
+    fn a_stdin_root_module_sits_at_the_targets_namespace() {
+        let project = project("masm_frontend_stdin_namespace");
+        let namespace = project.target().namespace.inner().clone();
+        let input = stdin_input();
+
+        let run =
+            run_with_input(&project, context(), Goal::at(CheckpointId::MASM_PARSED), Some(&input));
+        let inputs = run
+            .captured
+            .expect("stopping at masm.parsed must capture")
+            .downcast::<ProjectSourceInputs>()
+            .expect("the parsed artifact must be the assembler's own source inputs");
+
+        assert!(
+            inputs.root.to_string().contains("from_stdin"),
+            "the module under test must be the one piped in, or this asserts nothing about the \
+             branch that parses it"
+        );
+        assert_eq!(
+            inputs.root.path(),
+            namespace.as_ref(),
+            "the assembler rejects any root module whose path is not the target's namespace, \
+             whichever source the bytes came from"
+        );
+    }
+
+    /// And its kind comes from the target's type, not the session's.
+    ///
+    /// The same invariant [`the_root_modules_kind_is_the_targets_type_not_the_sessions`] pins
+    /// for the path, restated for the bytes: `parse_masm_from_bytes` derived the kind from
+    /// `session.options.target_type` too, and this branch is new code that could reproduce it.
+    #[test]
+    fn a_stdin_root_modules_kind_is_the_targets_type_not_the_sessions() {
+        let project = project("masm_frontend_stdin_kind");
+        assert!(project.target().is_library(), "the fixture must be a library target");
+        let context = context_with(|options| options.target_type = Some(TargetType::Executable));
+        let input = stdin_input();
+
+        let run =
+            run_with_input(&project, context, Goal::at(CheckpointId::MASM_PARSED), Some(&input));
+        let inputs = run
+            .captured
+            .expect("stopping at masm.parsed must capture")
+            .downcast::<ProjectSourceInputs>()
+            .expect("the parsed artifact must be the assembler's own source inputs");
+
+        assert!(
+            inputs.root.to_string().contains("from_stdin"),
+            "the module under test must be the one piped in, or this asserts nothing about the \
+             branch that parses it"
+        );
+        assert_eq!(
+            inputs.root.kind(),
+            ModuleKind::Library,
+            "the kind must follow the target being assembled, not the session's target type"
+        );
+    }
+
+    /// A *file*-backed input is still served by the assembler's own provider.
+    ///
+    /// The discriminating half: a frontend that answered every supplied input from memory, or
+    /// that simply re-read the input path itself, would lose the module tree — the submodule
+    /// this fixture's root declares only arrives because `read_modules_from_root` walked for
+    /// it.
+    #[test]
+    fn a_file_backed_input_is_still_read_through_the_upstream_provider() {
+        let project = project("masm_frontend_file_input");
+        let root_path = project
+            .assembly_context()
+            .expect("assembly context")
+            .resolved_target_root
+            .clone();
+        let input = InputFile::from_path(&root_path).expect("a `.masm` file is a compiler input");
+
+        let run =
+            run_with_input(&project, context(), Goal::at(CheckpointId::MASM_PARSED), Some(&input));
+        let inputs = run
+            .captured
+            .expect("stopping at masm.parsed must capture")
+            .downcast::<ProjectSourceInputs>()
+            .expect("the parsed artifact must be the assembler's own source inputs");
+
+        assert_eq!(
+            inputs.support.len(),
+            1,
+            "the root declares one submodule, so the module tree must still have been walked"
+        );
+    }
+
+    /// Preparation and this frontend must agree about the namespace.
+    ///
+    /// The two halves are decided in different places and by different rules — preparation
+    /// synthesizes the target from a scan of the root file, and the assembler's own provider
+    /// parses that root with `Some(target.namespace)`, which semantic analysis then compares
+    /// against the declaration it finds there. This is the only test that runs both, and so the
+    /// oracle for the whole arrangement: preparation that missed the declaration would
+    /// synthesize `::lib` from the artifact name, and the parse below would fail outright with a
+    /// namespace conflict rather than merely disagree.
+    ///
+    /// The three shapes are the ones whose *spelling* could diverge between the two sides.
+    /// Preparation absolutizes what it scanned; semantic analysis canonicalizes the declaration
+    /// and then absolutizes that. A single bare component cannot tell those apart — a
+    /// multi-component path and a quoted one can, and the quoted form is what a
+    /// component-rooted module carries.
+    #[test]
+    fn a_declared_namespace_reaches_the_target_the_frontend_is_asked_to_parse() {
+        for (declared, namespace) in [
+            ("declared_ns", "::declared_ns"),
+            ("foo::bar", "::foo::bar"),
+            ("\"miden:base/foo@1.0.0\"", "::\"miden:base/foo@1.0.0\""),
+        ] {
+            let source = format!("namespace {declared}\n\npub proc entry\n    push.1\nend\n");
+            let dir = format!("masm_frontend_prepared_{}", declared.len());
+            let (prepared, project) = prepare_standalone_masm(&dir, &source, |_| {});
+            assert_eq!(
+                prepared.target.namespace.inner().as_str(),
+                namespace,
+                "the artifact name here is the file stem, `lib`, so a target rooted at `::lib` \
+                 would mean the declaration was never read"
+            );
+
+            let run = run(&project, context(), Goal::at(CheckpointId::MASM_PARSED));
+            let inputs = run
+                .captured
+                .expect("stopping at masm.parsed must capture")
+                .downcast::<ProjectSourceInputs>()
+                .expect("the parsed artifact must be the assembler's own source inputs");
+
+            assert_eq!(
+                inputs.root.path(),
+                prepared.target.namespace.inner().as_ref(),
+                "the namespace preparation synthesized is the one the root module must parse at"
+            );
+        }
+    }
+
+    /// `--name` asserts what the root must declare; it does not rewrite it.
+    ///
+    /// The other outcome of the arrangement above, and the one that matters most: when the flag
+    /// and the file disagree the build **fails**, naming both. The flag's name implies the
+    /// stronger meaning, so this is the semantics a future simplification would most plausibly
+    /// "fix" — and it would do so in the direction of a build that succeeds under a namespace
+    /// the source never claimed. Nothing short of driving preparation *and* the parse pins it:
+    /// preparation alone succeeds here, and it is semantic analysis that refuses.
+    #[test]
+    fn a_name_that_disagrees_with_the_root_fails_rather_than_overriding_it() {
+        let source = format!("namespace declared_ns\n\n{ROOT}");
+        let (prepared, project) =
+            prepare_standalone_masm("masm_frontend_prepared_named", &source, |options| {
+                options.name = Some("chosen".to_string());
+            });
+        assert_eq!(
+            prepared.target.namespace.inner().as_str(),
+            "::chosen",
+            "preparation passes --name through unconditionally, so this half succeeds"
+        );
+
+        let assembly = project.assembly_context().expect("assembly context");
+        let state = RequestState::new(Goal::at(CheckpointId::MASM_PARSED), vec![]);
+        let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
+        // Not `expect_err`: `Flow<ProjectSourceInputs>` is not `Debug`.
+        let err = match MASM_FRONTEND.instantiate(cx.session()).compile(&cx) {
+            Err(err) => err,
+            Ok(_) => panic!(
+                "a root declaring `declared_ns` must not assemble under the `::chosen` namespace \
+                 --name asked for"
+            ),
+        };
+
+        // The whole diagnostic, not just its summary: a namespace conflict reports as
+        // "syntax error" at the top and carries the two paths in its labels.
+        let rendered = format!(
+            "{}",
+            midenc_session::diagnostics::reporting::PrintDiagnostic::new_without_color(&err)
+        );
+        assert!(
+            rendered.contains("::chosen"),
+            "the failure must name the namespace that was asserted: {rendered}"
+        );
+        assert!(
+            rendered.contains("declared_ns"),
+            "and the one the source declares, or the disagreement is unreadable: {rendered}"
+        );
     }
 
     /// Provenance reports this target's sources, without publishing anything.

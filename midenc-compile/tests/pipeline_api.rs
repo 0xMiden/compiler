@@ -11,9 +11,9 @@ use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs};
 use midenc_compile::{
     CompilerResult,
     pipeline::{
-        Artifact, ArtifactDecl, ArtifactId, CheckpointId, Flow, Frontend, FrontendId,
-        FrontendRegistration, FrontendRegistry, Goal, Outcome, OutputRequest, TargetContext,
-        resolve_goal,
+        Artifact, ArtifactDecl, ArtifactId, CheckpointId, CompilationRequest, Flow, Frontend,
+        FrontendId, FrontendRegistration, FrontendRegistry, Goal, Outcome, OutputRequest, Start,
+        TargetContext, resolve_goal,
     },
 };
 use midenc_session::{OutputType, OutputTypeSpec, Session, diagnostics::Report};
@@ -108,4 +108,24 @@ fn an_external_crate_can_build_and_unwrap_an_outcome() {
     // Goal and Flow are constructible externally too.
     let _ = Goal::at(CheckpointId::MASM_LOWERED);
     assert!(!Flow::Continue(0u32).is_stop());
+}
+
+#[test]
+fn an_external_crate_can_seed_a_request() {
+    // The surface a caller resuming a build needs: the start point, the artifact envelope it
+    // carries, and the builder that attaches it. Constructing a whole request would need a
+    // session and an input; naming the method proves it is reachable and that its shape is what
+    // a seeded caller can call.
+    let seed = Start::At {
+        checkpoint: CheckpointId::HIR_INITIAL,
+        artifact: Artifact::new(ArtifactId::HIR, 7u32),
+    };
+    match &seed {
+        Start::At { checkpoint, .. } => assert_eq!(*checkpoint, CheckpointId::HIR_INITIAL),
+        Start::Input => panic!("this seed resumes from an artifact"),
+    }
+
+    let attach: fn(CompilationRequest, Start) -> CompilationRequest =
+        CompilationRequest::with_start;
+    let _ = attach;
 }
