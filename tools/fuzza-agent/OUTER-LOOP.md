@@ -27,7 +27,8 @@ closed by an unreachability argument).
   `fuzza-cov-step` runs; one full `test-all` + clippy + format pass at campaign
   end). The journal is what survives context loss and what subagents read for
   cross-iteration state.
-- Read `KNOWLEDGE.md` and the `#[ignore]`d tests in `tests.rs` first —
+- Read `KNOWLEDGE.md` and the `#[ignore]`d tests in the differential test
+  modules first —
   together they say what is known-unreachable, what is currently bug-blocked
   (each blocking test's comment names its unblock condition), and which shapes
   must not be re-reported. Prior campaign journals (`work_log.md` is
@@ -55,9 +56,9 @@ prompts made agents re-derive known facts):
 
 1. **Target area + context** — what it is, why now, what the last iteration
    learned that aims this one (e.g. a precise `File:line` target list).
-2. **Step-0 reads** — `README.md`, `KNOWLEDGE.md`, `AGENT-PROMPT.md`,
-   `tests.rs` + existing cases (including the `#[ignore]`d bug reproducers),
-   the director journal, prior scratch logs.
+2. **Step-0 reads** — `README.md`, `KNOWLEDGE.md`, `AGENT-PROMPT.md`, the
+   test modules + existing cases (including the `#[ignore]`d bug
+   reproducers), the director journal, prior scratch logs.
 3. **Area resolution seed** — starter `FUZZA_AREA` paths plus the instruction
    to verify/refine them against the baseline report.
 4. **Operational notes** — env-var prefixing, clean baseline command, long
@@ -71,8 +72,8 @@ prompts made agents re-derive known facts):
    (ignore + pinned `<case>_repro` twin + split composite cases), compile-panic
    policy (unsupported-construct ⇒ delete; compiler panic on safe Rust ⇒ keep
    as `#[ignore]`d finding), zero-delta policy, **no git commands**, the
-   allowed file set (`cases/`, `tests.rs`, `scratch/`, `KNOWLEDGE.md`), style
-   rules.
+   allowed file set (`cases/`, the test modules under `tests/`, `scratch/`,
+   `KNOWLEDGE.md`), style rules.
 8. **Deliverable** — a structured result: final `FUZZA_AREA`, baseline/final
    area coverage, every case attempted (kept or deleted, with per-case
    deltas), divergences with exact inputs and error text, stop reason, the
@@ -87,7 +88,8 @@ its task from the journal (it worked, but only because the journal existed).
 ## Processing an iteration
 
 1. Verify the tree matches the report: `git status` should show only case
-   files, `tests.rs`, scratch, and `KNOWLEDGE.md`; hunt for stray emit dumps.
+   files, test modules, scratch, and `KNOWLEDGE.md`; hunt for stray emit
+   dumps.
 2. Read the new cases against the constraints (no_std, determinism, guarded
    division, statics restored, signature ≤16 felts).
 3. **Re-verify every claimed divergence yourself** by running its pinned twin

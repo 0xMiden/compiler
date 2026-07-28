@@ -9,8 +9,9 @@ Before touching anything, read (in this order):
 2. [`KNOWLEDGE.md`](KNOWLEDGE.md) — the accumulated fact base: compiler
    reachability facts, LLVM pre-cleaning traps, case-writing tricks, and
    operational gotchas. Do **not** re-derive anything recorded there.
-3. `tests/integration/src/end_to_end/differential/tests.rs` and the case files
-   it references — do not duplicate constructs existing cases already cover.
+3. The test modules under `tests/integration/src/end_to_end/differential/tests/`
+   and the case files they reference — do not duplicate constructs existing
+   cases already cover.
    Pay special attention to the `#[ignore]`d tests: they are the single source
    of truth for known bugs (failure, exact inputs, what has been bounded, and
    the un-ignore conditions). Some otherwise-reasonable shapes are currently
@@ -87,14 +88,18 @@ Each new case is a single `.rs` file at
 - Stay away from known compile-breakers unless they are your target: flat
   signatures over 16 stack felts, function pointers, and recursion (see
   `KNOWLEDGE.md`), plus the shapes behind the `#[ignore]`d compiler-panic
-  reproducers in `tests.rs`.
+  reproducers in the test modules.
 
-Wire the new case in `tests/integration/src/end_to_end/differential/tests.rs`:
+Wire the new case into the thematic module under
+`tests/integration/src/end_to_end/differential/tests/` that matches what the
+case's doc comment says it exercises (`arith`, `control_flow`, `calls`,
+`memory`, `spills`, `signed`, `wide`, `boundaries`, `scale`); companions like
+`<name>_repro`/`<name>_edges` go directly below their base case:
 
 ```rust
 #[test]
 fn <name>() {
-    run_case("<name>", include_str!("cases/case_<name>.rs"));
+    run_case("<name>", include_str!("../cases/case_<name>.rs"));
 }
 ```
 
@@ -191,7 +196,7 @@ fn <name>() {
      `<name>_repro` that calls `run_case_with_inputs` with the exact failing
      pair, so the bug reproduces deterministically instead of only when
      proptest happens to draw it (see `switch_shapes_repro` and
-     `sext_shapes_repro` in `tests.rs`). If the case mixes several constructs,
+     `sext_shapes_repro` in the test modules). If the case mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore
      reason are the bug's **only** documentation (nothing goes in README or
@@ -211,7 +216,7 @@ fn <name>() {
      scope — delete it and note the dead end in the scratch log. A compiler
      *panic* on safe, supported-looking Rust is a **finding**, not a dead end:
      minimize the case and keep it as an `#[ignore = "<panic message +
-     location>"]`d test (see `spill_edge` and `i64_srem` in `tests.rs`) — here
+     location>"]`d test (see `spill_edge` and `i64_srem` in the test modules) — here
      too the test is the bug's only documentation, so make its comment
      self-sufficient. Check the existing `#[ignore]`d tests first: several
      panics are already known and must not be re-reported as new.

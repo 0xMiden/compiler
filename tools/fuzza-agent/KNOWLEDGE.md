@@ -441,8 +441,8 @@ single source of truth for known bugs: each one's doc comment and ignore
 reason carry the failure, the exact inputs, what passing sibling cases have
 *bounded*, and what would allow un-ignoring. Runtime divergences additionally
 carry a pinned `<case>_repro` twin (`run_case_with_inputs` with the exact
-failing pair). Read the `#[ignore]`d tests in `tests.rs` before writing
-cases — some otherwise-reasonable shapes are currently blocked by bugs
+failing pair). Read the `#[ignore]`d tests in the differential test modules
+before writing cases — some otherwise-reasonable shapes are currently blocked by bugs
 documented there — and never re-report one as a new finding. This file
 deliberately records no bug specifics, so fixing a bug means cleaning up only
 at the test site.

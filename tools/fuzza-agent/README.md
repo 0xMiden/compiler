@@ -55,9 +55,9 @@ cargo test -p midenc-integration-tests differential
 cargo nextest run -p midenc-integration-tests -E 'test(/differential::/)'
 ```
 
-Cases known to surface compiler bugs are marked `#[ignore = "..."]` in
-`tests/integration/src/end_to_end/differential/tests.rs` with the reason and
-the exact failing inputs in the attribute. Run them explicitly with
+Cases known to surface compiler bugs are marked `#[ignore = "..."]` in the
+test modules under `tests/integration/src/end_to_end/differential/tests/`
+with the reason and the exact failing inputs in the attribute. Run them explicitly with
 `--ignored` (or `--run-ignored all` under nextest) to investigate. Ignored
 cases come in three flavors:
 
@@ -71,18 +71,21 @@ cases come in three flavors:
 
 The specifics of each bug — the failure, the exact inputs, what passing
 sibling cases have *bounded*, and what would allow un-ignoring — live only
-with the tests themselves (doc comments and ignore reasons in `tests.rs`), so
-fixing a bug means cleaning up at the test site alone.
+with the tests themselves (doc comments and ignore reasons in the test
+modules), so fixing a bug means cleaning up at the test site alone.
 
 ## Adding a case manually
 
 1. Create `tests/integration/src/end_to_end/differential/cases/case_<name>.rs`
    with the `entrypoint` function.
-2. Wire it up in `tests/integration/src/end_to_end/differential/tests.rs`:
+2. Wire it up in the thematic module under
+   `tests/integration/src/end_to_end/differential/tests/` that matches what
+   the case exercises (companions like `<name>_repro`/`<name>_edges` sit
+   directly below their base case):
    ```rust
    #[test]
    fn <name>() {
-       run_case("<name>", include_str!("cases/case_<name>.rs"));
+       run_case("<name>", include_str!("../cases/case_<name>.rs"));
    }
    ```
 
