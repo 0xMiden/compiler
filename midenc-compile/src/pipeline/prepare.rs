@@ -48,14 +48,14 @@ use miden_assembly::ProjectTargetSelector;
 use miden_assembly_syntax::debuginfo::Span;
 use midenc_session::{
     DebugInfo, FileType, InputFile, InputType, Options, Session,
-    diagnostics::{Report, SourceManager},
+    diagnostics::{Report, SourceManager, Uri},
     miden_project::{
         Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Project, Target,
         TargetType, VersionReq, VersionRequirement,
     },
 };
 
-use super::{FrontendRegistration, FrontendRegistry, testing::synthesize_target};
+use super::{FrontendRegistration, FrontendRegistry};
 use crate::CompilerResult;
 
 /// Everything a compilation request needs about the project it was asked to build.
@@ -177,6 +177,62 @@ pub fn prepare_standalone(
     })
 }
 
+/// Construct the target named `name`, rooted at `target_root`, of type `target_type`.
+///
+/// Shared with [`prepare_standalone`], which synthesizes the target of a real standalone build, so
+/// everything below is a correctness requirement rather than a fixture detail.
+///
+/// # The namespace is decided by the target type
+///
+/// Two of the six types are rooted at a reserved namespace, and each is reserved because
+/// something addresses it by that name:
+///
+/// - **Executables** are rooted at `$exec`, the path `MasmComponent::source_inputs` gives the
+///   module it builds with `Module::new_executable`. `load_target_sources` rejects a root
+///   module that does not sit exactly at its target's namespace, so a name-derived namespace
+///   fails every executable.
+/// - **Kernels** are rooted at `$kernel`, mirroring the manifest, which maps
+///   `TargetType::Kernel` to `Path::kernel_path()` unconditionally and never derives a kernel's
+///   namespace from a name. It has to: semantic analysis rewrites every `syscall.foo` to
+///   `$kernel::foo`, so a kernel assembled elsewhere exports procedures no `syscall` can
+///   address, and the linker's `link_with_kernel` asserts that a kernel package contains a
+///   module whose path `is_kernel_path()`.
+///
+/// The remaining four — library, account component, note and transaction script — take the
+/// absolutized `name`, and their target *name* is derived from that namespace, so a library
+/// named `foo` has the target name `::foo`. That is what distinguishes it from the `foo` an
+/// executable of the same package gets, and therefore what lets one package hold both. The two
+/// reserved-namespace types keep the caller's `name` instead: their namespace is a sentinel
+/// shared by every target of that type and could not identify one.
+///
+/// # Why not `Target::executable` and `Target::library`
+///
+/// Both are thin wrappers over [`Target::new`] that hardcode a target type, and `Target::library`
+/// hardcodes `TargetType::Library` — so routing the four library-like types through it silently
+/// discards the requested type. `assemble_source_package` asserts the assembled package's kind
+/// equals its target's, so that would emit a `Library`-kind package for an account component.
+/// The wrappers' *shapes* are reproduced exactly; only the type is carried through.
+pub(crate) fn synthesize_target(
+    name: &str,
+    target_root: &Path,
+    target_type: TargetType,
+) -> CompilerResult<Target> {
+    use miden_assembly_syntax::Path as MasmPath;
+
+    let uri = Uri::from(target_root);
+    match target_type {
+        TargetType::Executable => Ok(Target::new(target_type, name, MasmPath::exec_path(), uri)),
+        TargetType::Kernel => Ok(Target::new(target_type, name, MasmPath::kernel_path(), uri)),
+        _ => {
+            let namespace: Arc<MasmPath> = MasmPath::new(name)
+                .to_absolute()
+                .map(|path| Arc::from(path.into_owned()))
+                .map_err(|err| Report::msg(format!("invalid namespace '{name}': {err}")))?;
+            let derived_name: Arc<str> = namespace.as_str().into();
+            Ok(Target::new(target_type, derived_name, namespace, uri))
+        }
+    }
+}
 /// The path a standalone `input`'s synthesized target is rooted at.
 ///
 /// A file input is rooted at itself. Standard input has no path, and cannot simply be given

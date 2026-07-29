@@ -1,22 +1,18 @@
 //! Construction helpers for compiling without a project manifest on disk.
 //!
-//! `synthesize_target` is shared with
-//! [`prepare_standalone`](crate::pipeline::prepare_standalone), which builds the project a
-//! real standalone request compiles. Everything else here is for tests: [`VirtualProject`]
-//! materializes a manifest and an assembly context for one, which is what lets a frontend or
-//! the shared backend be driven without a project on disk.
-
-use alloc::{format, sync::Arc, vec, vec::Vec};
+//! [`VirtualProject`] materializes a manifest and an assembly context for one, which is what lets a
+//! frontend or the shared backend be driven without a project on disk.
+use alloc::{boxed::Box, rc::Rc, sync::Arc, vec, vec::Vec};
 use std::path::Path as FsPath;
 
 use miden_assembly::TargetAssemblyContext;
 use miden_assembly_syntax::Path as MasmPath;
 use miden_package_registry::NoPackageStore;
 use midenc_session::{
-    diagnostics::{DefaultSourceManager, Report, SourceManager},
+    diagnostics::{DefaultSourceManager, SourceManager},
     miden_project::{
         Package as ProjectPackage, Profile, ProjectDependencyGraph, ProjectDependencyGraphBuilder,
-        Target, TargetType, Uri,
+        Target, TargetType,
     },
 };
 
@@ -36,7 +32,6 @@ use crate::CompilerResult;
 /// Test-only, so that shipped builds of this module keep to `std::path` and do not reach
 /// for `std::fs`. `tempfile` would be the obvious alternative, but it is not a
 /// dev-dependency of this crate and this does not warrant adding one.
-#[cfg(test)]
 pub(crate) fn fixture_source(dir: &str, file: &str, contents: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("midenc-pipeline-fixtures").join(dir);
     std::fs::create_dir_all(&dir).expect("should create fixture dir");
@@ -51,7 +46,6 @@ pub(crate) fn fixture_source(dir: &str, file: &str, contents: &str) -> std::path
 /// renderer wrote* — and especially one asserting that nothing was written — would otherwise
 /// be satisfied, or defeated, by a leftover from an earlier run. `dir` must therefore be
 /// unique per test, and must not name a directory holding fixture sources.
-#[cfg(test)]
 pub(crate) fn fixture_dir(dir: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("midenc-pipeline-fixtures").join(dir);
     let _ = std::fs::remove_dir_all(&dir);
@@ -60,7 +54,6 @@ pub(crate) fn fixture_dir(dir: &str) -> std::path::PathBuf {
 }
 
 /// A context whose session writes `--emit=hir` into `out_dir`.
-#[cfg(test)]
 pub(crate) fn hir_emitting_context(out_dir: &FsPath) -> alloc::rc::Rc<midenc_hir::Context> {
     use midenc_session::{OutputFile, OutputType, OutputTypeSpec, OutputTypes};
 
@@ -81,7 +74,6 @@ pub(crate) fn hir_emitting_context(out_dir: &FsPath) -> alloc::rc::Rc<midenc_hir
 /// written once. This helper proves an emission happened; it cannot prove it happened only
 /// once. `this_route_names_the_hir_emission_once`, in each frontend's tests, covers that half
 /// by counting the emission's call sites in the source instead.
-#[cfg(test)]
 pub(crate) fn hir_documents(dir: &FsPath) -> Vec<(alloc::string::String, alloc::string::String)> {
     use alloc::string::ToString;
 
@@ -107,13 +99,10 @@ pub(crate) fn hir_documents(dir: &FsPath) -> Vec<(alloc::string::String, alloc::
 /// Silent, so that a test which raises diagnostics does not write them into the test output.
 /// Silencing does not hide them from `has_errors()`: the error counter is bumped before the
 /// emitter is consulted.
-#[cfg(test)]
 pub(crate) fn context_emitting(
     output_types: midenc_session::OutputTypes,
     configure: impl FnOnce(&mut midenc_session::Options),
-) -> alloc::rc::Rc<midenc_hir::Context> {
-    use alloc::{boxed::Box, rc::Rc};
-
+) -> Rc<midenc_hir::Context> {
     use midenc_session::{InputFile, Options, Session, Verbosity};
 
     let mut options = Box::new(Options::default());
@@ -134,10 +123,7 @@ pub(crate) fn context_emitting(
 ///
 /// `context` is taken rather than created so that a caller can supply a session — the lint
 /// flag, the requested output types — and have the component belong to it.
-#[cfg(test)]
-pub(crate) fn minimal_component(
-    context: &alloc::rc::Rc<midenc_hir::Context>,
-) -> crate::MidenComponent {
+pub(crate) fn minimal_component(context: &Rc<midenc_hir::Context>) -> crate::MidenComponent {
     component_in_namespace(context, "test_ns", None, None)
 }
 
@@ -146,9 +132,7 @@ pub(crate) fn minimal_component(
 /// Constants rather than literals because they are half of the component's id, and a target
 /// that assembles what this module builds has to name that whole id — see
 /// [`component_target_namespace`].
-#[cfg(test)]
 const COMPONENT_NAME: &str = "test";
-#[cfg(test)]
 const COMPONENT_VERSION: (u64, u64, u64) = (1, 0, 0);
 
 /// The target namespace a project must declare to assemble what
@@ -160,10 +144,9 @@ const COMPONENT_VERSION: (u64, u64, u64) = (1, 0, 0);
 /// target reads `namespace = "test_ns:test@1.0.0"`, not `namespace = "test_ns"`. Real projects
 /// look the same: `tests/fixtures/components/cross-ctx-account` declares
 /// `namespace = "miden:cross-ctx-account/foo@1.0.0"`.
-#[cfg(test)]
 pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::String {
     let (major, minor, patch) = COMPONENT_VERSION;
-    alloc::format!("{namespace}:{COMPONENT_NAME}@{major}.{minor}.{patch}")
+    format!("{namespace}:{COMPONENT_NAME}@{major}.{minor}.{patch}")
 }
 
 /// [`minimal_component`], in `namespace`, carrying `rodata` and `metadata` if given.
@@ -182,7 +165,6 @@ pub(crate) fn component_target_namespace(namespace: &str) -> alloc::string::Stri
 /// map assembly attaches to the package non-empty. `metadata` stands in for the serialized
 /// account-component metadata a real account-component target carries; nothing validates it,
 /// so arbitrary bytes suffice to observe whether the section survives to the package.
-#[cfg(test)]
 pub(crate) fn component_in_namespace(
     context: &alloc::rc::Rc<midenc_hir::Context>,
     namespace: &str,
@@ -245,65 +227,8 @@ pub(crate) fn component_in_namespace(
 ///
 /// The wasm frontend is not run over these; the module only has to be a plausible target
 /// root with a `.wat` extension, which is what dispatch keys on.
-#[cfg(test)]
 pub(crate) fn wat_fixture(dir: &str, file: &str) -> std::path::PathBuf {
     fixture_source(dir, file, "(module)")
-}
-
-/// Construct the target named `name`, rooted at `target_root`, of type `target_type`.
-///
-/// Shared with [`prepare_standalone`](crate::pipeline::prepare_standalone), which synthesizes
-/// the target of a real standalone build, so everything below is a correctness requirement
-/// rather than a fixture detail.
-///
-/// # The namespace is decided by the target type
-///
-/// Two of the six types are rooted at a reserved namespace, and each is reserved because
-/// something addresses it by that name:
-///
-/// - **Executables** are rooted at `$exec`, the path `MasmComponent::source_inputs` gives the
-///   module it builds with `Module::new_executable`. `load_target_sources` rejects a root
-///   module that does not sit exactly at its target's namespace, so a name-derived namespace
-///   fails every executable.
-/// - **Kernels** are rooted at `$kernel`, mirroring the manifest, which maps
-///   `TargetType::Kernel` to `Path::kernel_path()` unconditionally and never derives a kernel's
-///   namespace from a name. It has to: semantic analysis rewrites every `syscall.foo` to
-///   `$kernel::foo`, so a kernel assembled elsewhere exports procedures no `syscall` can
-///   address, and the linker's `link_with_kernel` asserts that a kernel package contains a
-///   module whose path `is_kernel_path()`.
-///
-/// The remaining four — library, account component, note and transaction script — take the
-/// absolutized `name`, and their target *name* is derived from that namespace, so a library
-/// named `foo` has the target name `::foo`. That is what distinguishes it from the `foo` an
-/// executable of the same package gets, and therefore what lets one package hold both. The two
-/// reserved-namespace types keep the caller's `name` instead: their namespace is a sentinel
-/// shared by every target of that type and could not identify one.
-///
-/// # Why not `Target::executable` and `Target::library`
-///
-/// Both are thin wrappers over [`Target::new`] that hardcode a target type, and `Target::library`
-/// hardcodes `TargetType::Library` — so routing the four library-like types through it silently
-/// discards the requested type. `assemble_source_package` asserts the assembled package's kind
-/// equals its target's, so that would emit a `Library`-kind package for an account component.
-/// The wrappers' *shapes* are reproduced exactly; only the type is carried through.
-pub(crate) fn synthesize_target(
-    name: &str,
-    target_root: &FsPath,
-    target_type: TargetType,
-) -> CompilerResult<Target> {
-    let uri = Uri::from(target_root);
-    match target_type {
-        TargetType::Executable => Ok(Target::new(target_type, name, MasmPath::exec_path(), uri)),
-        TargetType::Kernel => Ok(Target::new(target_type, name, MasmPath::kernel_path(), uri)),
-        _ => {
-            let namespace: Arc<MasmPath> = MasmPath::new(name)
-                .to_absolute()
-                .map(|path| Arc::from(path.into_owned()))
-                .map_err(|err| Report::msg(format!("invalid namespace '{name}': {err}")))?;
-            let derived_name: Arc<str> = namespace.as_str().into();
-            Ok(Target::new(target_type, derived_name, namespace, uri))
-        }
-    }
 }
 
 /// A synthesized project with no manifest on disk.
@@ -325,7 +250,7 @@ impl VirtualProject {
     ///
     /// See `synthesize_target` for how the target's namespace is derived.
     pub fn new(name: &str, target_root: &FsPath, target_type: TargetType) -> CompilerResult<Self> {
-        let target = synthesize_target(name, target_root, target_type)?;
+        let target = super::prepare::synthesize_target(name, target_root, target_type)?;
         let package = ProjectPackage::new(name, target.clone());
         Self::assemble(Arc::from(package), vec![target])
     }
@@ -342,6 +267,8 @@ impl VirtualProject {
         executable_root: &FsPath,
         library_root: &FsPath,
     ) -> CompilerResult<Self> {
+        use super::prepare::synthesize_target;
+
         let executable = synthesize_target(name, executable_root, TargetType::Executable)?;
         let library = synthesize_target(name, library_root, TargetType::Library)?;
         let package = ProjectPackage::new(name, executable.clone()).with_targets([library.clone()]);
@@ -358,7 +285,6 @@ impl VirtualProject {
     /// it, so building its dependency graph fails outright. A target's namespace has nothing
     /// to do with its dependency closure, so the target is lifted into a package of its own
     /// under the same name.
-    #[cfg(test)]
     pub(crate) fn for_prepared_target(
         prepared: &crate::pipeline::PreparedProject,
     ) -> CompilerResult<Self> {
@@ -439,7 +365,6 @@ impl VirtualProject {
     }
 }
 
-#[cfg(test)]
 mod tests {
     use super::*;
 

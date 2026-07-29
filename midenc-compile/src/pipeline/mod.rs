@@ -67,6 +67,7 @@ mod provider;
 mod registry;
 mod request;
 mod seed;
+#[cfg(test)]
 pub mod testing;
 
 /// The failure reported when an enabled lint raised error diagnostics.
