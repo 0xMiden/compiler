@@ -74,7 +74,7 @@ impl TryFrom<Word> for AccountId {
 ///
 /// The `key` identifies the asset in the account vault and the `value` stores the corresponding
 /// asset contents. This matches the v0.14 protocol/base ABI.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(C)]
 pub struct Asset {
     /// The asset's vault key.
@@ -358,7 +358,7 @@ impl core::fmt::Display for AssetAmount {
 }
 
 /// A note recipient digest.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct Recipient {
     pub inner: Word,
@@ -425,7 +425,7 @@ impl From<Recipient> for Word {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct Tag {
     pub inner: Felt,
@@ -479,7 +479,7 @@ impl TryFrom<Word> for NoteIdx {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 #[repr(transparent)]
 pub struct NoteType {
     pub inner: Felt,

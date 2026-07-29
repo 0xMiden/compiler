@@ -104,6 +104,13 @@
 //! `ToFeltRepr`/`FromFeltRepr`. The overall encoding is always the concatenation of the nested
 //! encodings.
 //!
+//! ## Fixed length
+//!
+//! `FromFeltRepr` carries the statically known encoded length as `FIXED_LEN`. The derive computes
+//! it automatically: structs sum their field lengths; enums add the tag length to the variants'
+//! common payload length. A `Vec`/`Option` field, or enum variants of differing lengths, makes the
+//! type variable-length (`FIXED_LEN = None`).
+//!
 //! ## Unsupported items
 //!
 //! - Unions are not supported.
@@ -179,6 +186,41 @@ fn enum_mismatch_msg(trait_name: &str, name: &syn::Ident) -> String {
     format!("{trait_name} cannot be derived for enum `{name}`")
 }
 
+/// Renders a `FIXED_LEN` expression summing the given field types' statically known lengths.
+fn sum_fixed_len_expr(felt_repr_crate: &TokenStream2, field_types: &[&syn::Type]) -> TokenStream2 {
+    quote! {
+        #felt_repr_crate::sum_fixed_len(&[
+            #(<#field_types as #felt_repr_crate::FromFeltRepr>::FIXED_LEN),*
+        ])
+    }
+}
+
+/// Renders a `FIXED_LEN` expression for an enum: the tag length plus the variants' common payload
+/// length, or `None` when variant payloads differ or are variable-length.
+fn enum_fixed_len_expr(
+    felt_repr_crate: &TokenStream2,
+    variants: &Punctuated<Variant, Comma>,
+) -> TokenStream2 {
+    let variant_payload_lens: Vec<TokenStream2> = variants
+        .iter()
+        .map(|variant| {
+            let field_types: Vec<_> = match &variant.fields {
+                Fields::Unit => Vec::new(),
+                Fields::Unnamed(fields) => fields.unnamed.iter().map(|f| &f.ty).collect(),
+                Fields::Named(fields) => fields.named.iter().map(|f| &f.ty).collect(),
+            };
+            sum_fixed_len_expr(felt_repr_crate, &field_types)
+        })
+        .collect();
+
+    quote! {
+        #felt_repr_crate::sum_fixed_len(&[
+            <u32 as #felt_repr_crate::FromFeltRepr>::FIXED_LEN,
+            #felt_repr_crate::uniform_fixed_len(&[#(#variant_payload_lens),*]),
+        ])
+    }
+}
+
 /// Validates that an enum does not use explicit discriminants.
 fn ensure_no_explicit_discriminants(
     variants: &Punctuated<Variant, Comma>,
@@ -248,8 +290,11 @@ fn derive_from_felt_repr_impl(
                 let field_names: Vec<_> =
                     fields.iter().map(|field| field.ident.as_ref().unwrap()).collect();
                 let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+                let fixed_len = sum_fixed_len_expr(&felt_repr_crate, &field_types);
                 quote! {
                     impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
+                        const FIXED_LEN: ::core::option::Option<usize> = #fixed_len;
+
                         #[inline(always)]
                         fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
                             Ok(Self {
@@ -261,11 +306,14 @@ fn derive_from_felt_repr_impl(
             }
             StructFields::Unnamed(fields) => {
                 let field_types: Vec<_> = fields.iter().map(|field| &field.ty).collect();
+                let fixed_len = sum_fixed_len_expr(&felt_repr_crate, &field_types);
                 let reads = field_types.iter().map(|ty| {
                     quote! { <#ty as #felt_repr_crate::FromFeltRepr>::from_felt_repr(reader)? }
                 });
                 quote! {
                     impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
+                        const FIXED_LEN: ::core::option::Option<usize> = #fixed_len;
+
                         #[inline(always)]
                         fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
                             Ok(Self(#(#reads),*))
@@ -278,6 +326,7 @@ fn derive_from_felt_repr_impl(
             let variants = extract_enum_variants(input, trait_name)?;
             ensure_no_explicit_discriminants(variants, trait_name, name)?;
 
+            let fixed_len = enum_fixed_len_expr(&felt_repr_crate, variants);
             let arms = variants.iter().enumerate().map(|(variant_ordinal, variant)| {
                 let variant_ident = &variant.ident;
                 let tag = variant_ordinal as u32;
@@ -307,6 +356,8 @@ fn derive_from_felt_repr_impl(
 
             quote! {
                 impl #impl_generics #felt_repr_crate::FromFeltRepr for #name #ty_generics #where_clause {
+                    const FIXED_LEN: ::core::option::Option<usize> = #fixed_len;
+
                     #[inline(always)]
                     fn from_felt_repr(reader: &mut #felt_repr_crate::FeltReader<'_>) -> #felt_repr_crate::FeltReprResult<Self> {
                         let tag_pos = reader.pos();

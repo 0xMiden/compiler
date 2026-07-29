@@ -85,6 +85,104 @@ if let Some(index) = active_note::find_attachment(scheme) {
 }
 ```
 
+### Typed transaction-script arguments
+
+`#[tx_script]` entrypoints now receive typed script arguments decoded from the `TX_SCRIPT_ARGS`
+word. Existing `fn run(arg: Word, ...)` entrypoints keep compiling and behave unchanged (`Word`
+decodes as itself), so no edit is required — but scripts that manually fetch their arguments from
+the advice provider can delete that plumbing: declare a struct deriving
+`FromFeltRepr`/`ToFeltRepr` and take it by value. The entrypoint may have any name and accept
+the script-args and account parameters in any order (the account reference is optional);
+encodings of at most 4 felts
+travel in the args word directly, longer or variable-length ones travel through the advice
+provider, hash-verified against the args word. The derives' generated code refers to the
+`miden_field_repr` crate, which the `miden` crate re-exports under its own name: `use miden::*;`
+makes it resolve. A module that does not glob-import `miden` needs `use miden::miden_field_repr;`
+(or a direct `miden-field-repr` dependency) alongside the struct.
+
+Before:
+
+```rust
+use miden::{intrinsics::advice::adv_push_mapvaln, *};
+
+#[tx_script]
+fn run(arg: Word, account: &mut Wallet) {
+    let num_felts = adv_push_mapvaln(arg);
+    let num_felts_u64 = num_felts.as_canonical_u64();
+    assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));
+    let num_words = Felt::new(num_felts_u64 / 4).unwrap();
+    let input = adv_load_preimage(num_words, arg);
+    let tag = input[0];
+    let note_type = input[1];
+    let recipient: [Felt; 4] = input[2..6].try_into().unwrap();
+    let note_idx = account.create_note(tag.into(), note_type.into(), recipient.into());
+    // ...
+}
+```
+
+After:
+
+```rust
+use miden::*;
+
+/// Arguments of the transaction script, transported via the `TX_SCRIPT_ARGS` word.
+#[derive(FromFeltRepr, ToFeltRepr)]
+pub struct TxScriptArg {
+    pub tag: Tag,
+    pub note_type: NoteType,
+    pub recipient: Recipient,
+}
+
+#[tx_script]
+fn run(inputs: TxScriptArg, account: &mut Wallet) {
+    let note_idx = account.create_note(inputs.tag, inputs.note_type, inputs.recipient);
+    // ...
+}
+```
+
+On the host, build the transaction with `ScriptArgs::encode` on a struct declared with the
+identical field layout (keep the two definitions in sync — sharing the schema through the Miden
+package is planned). The trait lives in the `miden-tx-script-args` crate, whose off-chain
+dependencies are only `miden-field` and `miden-field-repr` — host code does not need the
+on-chain SDK:
+
+```rust
+match script_args.encode() {
+    // Word mode: the encoding is the script-args word; no advice map involved.
+    EncodedScriptArgs::Word(word) => builder.tx_script_args(word),
+    // Commitment mode: hash the preimage into the script-args word and register the
+    // advice-map entry (`hash_elements` from the host's Miden crypto crate).
+    EncodedScriptArgs::Preimage(felts) => {
+        let args_word = Poseidon2::hash_elements(&felts);
+        builder.tx_script_args(args_word).extend_advice_map([(args_word, felts)])
+    }
+}
+```
+
+### `FromFeltRepr` manual implementations declare `FIXED_LEN`
+
+`FromFeltRepr` gained a required `FIXED_LEN: Option<usize>` associated constant: the statically
+known encoded length in felts, or `None` for variable-length encodings. `#[derive(FromFeltRepr)]`
+computes it automatically — only manual trait implementations need an edit.
+
+Before:
+
+```rust
+impl FromFeltRepr for MyType {
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> { /* reads 3 felts */ }
+}
+```
+
+After:
+
+```rust
+impl FromFeltRepr for MyType {
+    const FIXED_LEN: Option<usize> = Some(3);
+
+    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> { /* reads 3 felts */ }
+}
+```
+
 ### Mark account interface procedures with `#[account_procedure]`
 
 A component's methods are no longer implicitly part of the account interface. Mark every method that

@@ -3,7 +3,7 @@
 //! These tests verify the correctness of `ToFeltRepr` and `FromFeltRepr` implementations without
 //! involving on-chain execution.
 
-use miden_field::Felt;
+use miden_field::{Felt, Word};
 use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
 /// Serializes `value` off-chain and deserializes it back, asserting equality.
@@ -439,6 +439,67 @@ fn test_tuple_struct_roundtrip() {
         vec![Felt::new(22).unwrap(), Felt::new(1).unwrap(), Felt::new(33).unwrap()]
     );
     assert_roundtrip(&original);
+}
+
+#[test]
+fn test_word_roundtrip() {
+    let original = Word::new([
+        Felt::new(1).unwrap(),
+        Felt::new(2).unwrap(),
+        Felt::new(3).unwrap(),
+        Felt::new(4).unwrap(),
+    ]);
+
+    let felts = original.to_felt_repr();
+    assert_eq!(felts.len(), 4);
+    assert_eq!(felts[0], Felt::new(1).unwrap());
+    assert_eq!(felts[3], Felt::new(4).unwrap());
+
+    assert_roundtrip(&original);
+}
+
+/// Enum whose variants all encode to the same payload length.
+#[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+enum UniformEnum {
+    A(Felt),
+    B { value: u32 },
+}
+
+#[test]
+fn test_fixed_len_primitives() {
+    assert_eq!(<Felt as FromFeltRepr>::FIXED_LEN, Some(1));
+    assert_eq!(<u64 as FromFeltRepr>::FIXED_LEN, Some(2));
+    assert_eq!(<u32 as FromFeltRepr>::FIXED_LEN, Some(1));
+    assert_eq!(<u8 as FromFeltRepr>::FIXED_LEN, Some(1));
+    assert_eq!(<bool as FromFeltRepr>::FIXED_LEN, Some(1));
+    assert_eq!(<Word as FromFeltRepr>::FIXED_LEN, Some(4));
+    assert_eq!(<Option<Felt> as FromFeltRepr>::FIXED_LEN, None);
+    assert_eq!(<Vec<Felt> as FromFeltRepr>::FIXED_LEN, None);
+}
+
+#[test]
+fn test_fixed_len_structs() {
+    #[derive(Debug, Clone, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
+    struct Pair(Felt, u64);
+
+    assert_eq!(<TwoFelts as FromFeltRepr>::FIXED_LEN, Some(2));
+    assert_eq!(<MixedStruct as FromFeltRepr>::FIXED_LEN, Some(4));
+    assert_eq!(<Pair as FromFeltRepr>::FIXED_LEN, Some(3));
+    // Nested fixed-length structs sum transitively.
+    assert_eq!(<Outer as FromFeltRepr>::FIXED_LEN, Some(5));
+    // Variable-length fields make the whole struct variable-length.
+    assert_eq!(<WithOption as FromFeltRepr>::FIXED_LEN, None);
+    assert_eq!(<WithVec as FromFeltRepr>::FIXED_LEN, None);
+}
+
+#[test]
+fn test_fixed_len_enums() {
+    // Unit-only variants: tag only.
+    assert_eq!(<SimpleEnum as FromFeltRepr>::FIXED_LEN, Some(1));
+    // All payloads share one length: tag + payload.
+    assert_eq!(<UniformEnum as FromFeltRepr>::FIXED_LEN, Some(2));
+    // Payload lengths differ between variants.
+    assert_eq!(<MixedEnum as FromFeltRepr>::FIXED_LEN, None);
 }
 
 #[test]

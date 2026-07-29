@@ -1,6 +1,6 @@
 [package]
-name = "miden"
-description = "Miden SDK"
+name = "miden-tx-script-args"
+description = "Typed transaction-script argument transport for the Miden VM"
 version = "0.14.0-rc.1"
 rust-version.workspace = true
 authors.workspace = true
@@ -13,23 +13,22 @@ edition.workspace = true
 
 [lib]
 crate-type = ["rlib"]
-test = false
 doctest = false
 
 [dependencies]
-miden-sdk-alloc = { version = "0.14.0-rc.1", path = "../alloc" }
-miden-stdlib-sys.workspace = true
-miden-base = { version = "0.14.0-rc.1", path = "../base" }
-miden-base-macros = { version = "0.14.0-rc.1", path = "../base-macros" }
-miden-base-sys.workspace = true
-miden-field-repr.workspace = true
 miden-field = { workspace = true, default-features = false }
-miden-tx-script-args.workspace = true
-wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
+miden-field-repr.workspace = true
+
+# The guest-side decode transport (advice provider access and VM asserts) is only needed when
+# compiling for the Miden VM; off-chain consumers never build the on-chain bindings.
+[target.'cfg(target_family = "wasm")'.dependencies]
+miden-stdlib-sys.workspace = true
 
 [features]
 default = []
-internal-wit-emit = ["miden-base-macros/internal-wit-emit"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(miden)"] }
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"

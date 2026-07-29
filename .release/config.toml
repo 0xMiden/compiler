@@ -219,6 +219,12 @@ publish = true
 version-source = "sdk"
 
 [[packages]]
+name = "miden-tx-script-args"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
 name = "midenc-frontend-wasm-metadata"
 unit = "sdk"
 publish = true

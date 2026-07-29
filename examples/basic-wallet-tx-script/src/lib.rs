@@ -2,43 +2,32 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-// However, we could still use some standard library types while
-// remaining no-std compatible, if we uncommented the following lines:
-//
-//
-// extern crate alloc;
-// use alloc::vec::Vec;
-
-use miden::{intrinsics::advice::adv_push_mapvaln, *};
+use miden::*;
 
 /// Native account of the transaction script: exposes the `basic-wallet` component methods (e.g.
 /// `move_asset_to_note`) gathered from the `basic_wallet` package.
 #[account(basic_wallet::BasicWallet)]
 struct Wallet;
 
-// Input layout constants
-const TAG_INDEX: usize = 0;
-const NOTE_TYPE_INDEX: usize = 1;
-const RECIPIENT_START: usize = 2;
-const RECIPIENT_END: usize = 6;
-const ASSET_START: usize = 6;
-const ASSET_END: usize = 14;
+/// Arguments of the transaction script, transported via the `TX_SCRIPT_ARGS` word.
+///
+/// The encoding exceeds one word, so the args word is the hash of the encoded fields and the
+/// values travel through the advice provider, verified against the args word (see `ScriptArgs`).
+/// Hosts building the transaction encode a struct with the identical field layout.
+#[derive(FromFeltRepr, ToFeltRepr)]
+pub struct TxScriptArg {
+    /// The output note's tag.
+    pub tag: Tag,
+    /// The output note's type.
+    pub note_type: NoteType,
+    /// The output note's recipient digest.
+    pub recipient: Recipient,
+    /// The asset to move to the output note.
+    pub asset: Asset,
+}
 
 #[tx_script]
-fn run(arg: Word, account: &mut Wallet) {
-    let num_felts = adv_push_mapvaln(arg);
-    let num_felts_u64 = num_felts.as_canonical_u64();
-    assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));
-    let num_words = Felt::new(num_felts_u64 / 4).unwrap();
-    let commitment = arg;
-    let input = adv_load_preimage(num_words, commitment);
-    let tag = input[TAG_INDEX];
-    let note_type = input[NOTE_TYPE_INDEX];
-    let recipient: [Felt; 4] = input[RECIPIENT_START..RECIPIENT_END].try_into().unwrap();
-    let note_idx = account.create_note(tag.into(), note_type.into(), recipient.into());
-    let asset: [Felt; 8] = input[ASSET_START..ASSET_END].try_into().unwrap();
-    let asset_key: [Felt; 4] = asset[..4].try_into().unwrap();
-    let asset_value: [Felt; 4] = asset[4..].try_into().unwrap();
-    let asset = Asset::new(asset_key, asset_value);
-    account.move_asset_to_note(asset, note_idx);
+fn run(inputs: TxScriptArg, account: &mut Wallet) {
+    let note_idx = account.create_note(inputs.tag, inputs.note_type, inputs.recipient);
+    account.move_asset_to_note(inputs.asset, note_idx);
 }

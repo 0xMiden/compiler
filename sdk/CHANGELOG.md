@@ -26,6 +26,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `#[note]` macro writes the note's WIT interface (entrypoint plus constructors) to
   `target/generated-wit/`, so dependent crates can reference it via
   `[package.metadata.component.target.dependencies]` #786
+- `#[tx_script]` entrypoints now take typed script arguments: the entrypoint is a free function
+  of any name whose by-value parameter can be any `ScriptArgs` type (every
+  `FromFeltRepr + ToFeltRepr` type qualifies, e.g. `Felt`, `Word`, or a user struct deriving
+  both) and is decoded automatically from the `TX_SCRIPT_ARGS` word — packed directly in the
+  args word when the encoding statically fits its 4 felts, or fetched from the advice provider
+  and hash-verified against the args word otherwise. The parameters may appear in any order
+  (the account reference is optional); existing `fn run(arg: Word, ...)` signatures keep
+  compiling and behave unchanged. On the host, `ScriptArgs::encode` on a struct with the
+  identical layout yields the args word or the advice-map preimage (`EncodedScriptArgs`). The
+  trait lives in the new `miden-tx-script-args` crate (re-exported from `miden`), which
+  off-chain code can depend on without pulling in any on-chain SDK crates. See the
+  [migration guide](./sdk/MIGRATION.md) for adopting typed arguments #1291
+- `Tag`, `NoteType`, `Recipient`, and `Asset` now implement `FromFeltRepr`/`ToFeltRepr`, so
+  they can be used as fields of derived script-argument structs. The `miden` crate additionally
+  re-exports `miden_field_repr` under its own crate name, so the derives' generated code
+  resolves in crates that only depend on `miden` and glob-import it #1291
 
 ### Migration and breaking changes
 
@@ -38,6 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FromFeltRepr`, and a manual `ToFeltRepr` impl on the note type now conflicts with the
   generated one; see [MIGRATION.md](./sdk/MIGRATION.md) for the required changes. `AccountId`
   implements `ToFeltRepr` #786
+- `FromFeltRepr` has a new required associated constant `FIXED_LEN: Option<usize>` — the
+  statically known encoded length in felts, used by `ScriptArgs` to pick the transport mode at
+  compile time. `#[derive(FromFeltRepr)]` computes it automatically; only manual trait
+  implementations must add it. See the [migration guide](./sdk/MIGRATION.md) #1291
 
 ## [0.14.0-rc.1]
 

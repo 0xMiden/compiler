@@ -948,6 +948,7 @@ dependencies = [
  "miden-field-repr",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
+ "miden-tx-script-args",
  "wit-bindgen",
 ]
 
@@ -1432,6 +1433,15 @@ name = "miden-stdlib-sys"
 version = "0.14.0-rc.1"
 dependencies = [
  "miden-field",
+]
+
+[[package]]
+name = "miden-tx-script-args"
+version = "0.13.1"
+dependencies = [
+ "miden-field 0.25.1",
+ "miden-field-repr",
+ "miden-stdlib-sys",
 ]
 
 [[package]]
