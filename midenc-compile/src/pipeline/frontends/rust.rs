@@ -1,16 +1,18 @@
 //! The frontends for targets written in Rust.
 //!
-//! There are two, and the difference between them is where the compilation happens:
+//! There are two, and the difference between them is how the WebAssembly is produced:
 //!
 //! - [`RUST_FRONTEND`] is the **project** frontend. Its targets are declared by a manifest, and
-//!   building one means running `cargo`, which runs `midenc` again in a nested process. Nothing
-//!   of that run is observable from here, so its route holds only the checkpoint the driver
-//!   itself publishes. This is what the registry holds under `rs`, because it is what a Rust
-//!   *dependency* of any project is.
+//!   building one means running `cargo`. This is what the registry holds under `rs`, because it
+//!   is what a Rust *dependency* of any project is.
 //! - [`RUST_STANDALONE_FRONTEND`] is the entry point for `midenc foo.rs`. One file is compiled
 //!   to WebAssembly in this process — by `rustc` directly, or through a temporary Cargo project
-//!   when the source declares dependencies — and everything past that is what a `.wasm` input
-//!   does, so its route is [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s.
+//!   when the source declares dependencies.
+//!
+//! Past that point neither is Rust-specific at all: both hand their WebAssembly to
+//! [`WasmFrontend::compile_wasm`](super::wasm::WasmFrontend), so both run
+//! [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s route, publish its checkpoints and write its
+//! inline `--emit` documents. That is why all three registrations declare the same route.
 //!
 //! Both claim the `rs` extension and no registry may hold both, which is exactly why the
 //! standalone one is installed per request rather than registered; see
@@ -46,34 +48,104 @@ use crate::{
 
 /// Declares the frontend that handles targets rooted at a `.rs` file.
 ///
-/// # Why the route holds a single checkpoint
+/// # A route describes what a frontend reaches *as the root*, and this one reaches all of it
 ///
-/// A route describes the checkpoints a frontend *reaches*, because that is what
-/// `--stop-after` and `--emit` are validated against. [`RustProjectFrontend`] reaches none
-/// of the intermediate ones: its build is a nested `midenc` invocation driven by cargo,
-/// which hands back only a final [`CodegenOutput`], so there is no point in this process at
-/// which the initial HIR, the transformed HIR or the lowered Miden Assembly exists to be
-/// published. Declaring them anyway would let `--stop-after=lower` resolve to a checkpoint
-/// the run never reaches, and the request would then end with an empty capture slot rather
-/// than a diagnostic.
+/// A route is what `--stop-after`, the `-C` stop flags and `--emit` are validated against, so it
+/// has to describe what the frontend actually publishes. It is consulted for the **selected root
+/// target and nothing else**: `apply_stop_flags`, [`resolve_goal`](crate::pipeline::resolve_goal)
+/// and the driver's emit observer all read `PreparedProject::frontend`, which preparation derives
+/// from the *root* target's extension, and the observer additionally renders only for
+/// [`TargetRole::Root`](crate::pipeline::TargetRole). Nothing anywhere asks a route what a
+/// dependency reaches.
 ///
-/// [`CheckpointId::PACKAGE_ASSEMBLED`] is on the route because the *driver* publishes it
-/// once the assembler returns a package, as it does for every frontend. So this route is
-/// the honest minimum: a Rust build either produces a package or fails.
+/// That is what makes one registration able to describe [`RustProjectFrontend`] honestly even
+/// though its two arms differ. As the root, a manifest-backed Rust target is built by running
+/// `cargo` to WebAssembly and then handing that WebAssembly to
+/// [`WasmFrontend::compile_wasm`](super::wasm::WasmFrontend) — so it publishes exactly what a
+/// `.wasm` target publishes, because it is run by that code. As a *dependency* it publishes
+/// nothing, and nothing asks it to.
 ///
-/// Surfacing the nested run's checkpoints — which would grow this route — is a later
-/// increment's work; see [`Frontend::compile`] on [`RustProjectFrontend`].
+/// The route is therefore [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s, held to that by
+/// `the_project_route_is_the_wasm_route`.
+///
+/// # Why there are still two Rust registrations
+///
+/// Not because the routes differ any more — they are identical — but because the two entry
+/// points build different things: this one runs `cargo` over a manifest, and
+/// [`RUST_STANDALONE_FRONTEND`] compiles one file in this process. A registration binds an
+/// extension to *one* frontend constructor, and a registry may hold only one claim on `rs`; see
+/// [`RUST_STANDALONE_FRONTEND`] for how the choice is made per request.
+///
+/// # Nothing on this route is rendered
+///
+/// Each document is written by the phase that produces it, reached through the shared
+/// WebAssembly tail, so a renderer here would be a second writer. Each declaration below names
+/// its writer, and each declares the private `unrendered` renderer, whose own documentation
+/// explains why a second writer is not a harmless duplicate.
 pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
     FrontendId::new("rust"),
     &["rs"],
-    &[CheckpointId::PACKAGE_ASSEMBLED],
-    &[("assemble", CheckpointId::PACKAGE_ASSEMBLED)],
-    // The assembled package is written by [`crate::compile`]; see [`unrendered`].
-    &[ArtifactDecl {
-        checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
-        id: ArtifactId::PACKAGE,
-        render: unrendered,
-    }],
+    &[
+        CheckpointId::WASM_PARSED,
+        CheckpointId::HIR_INITIAL,
+        CheckpointId::HIR_ANALYZED,
+        CheckpointId::HIR_TRANSFORMED,
+        CheckpointId::MASM_LOWERED,
+        CheckpointId::PACKAGE_ASSEMBLED,
+    ],
+    &[
+        ("parse", CheckpointId::WASM_PARSED),
+        ("analyze", CheckpointId::HIR_ANALYZED),
+        ("transform", CheckpointId::HIR_TRANSFORMED),
+        ("lower", CheckpointId::MASM_LOWERED),
+        ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
+    ],
+    &[
+        // `--emit=wat` is written by `WasmFrontend::emit_wat`, which this route reaches through
+        // [`WasmFrontend::compile_wasm`](super::wasm::WasmFrontend). See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::WASM_PARSED,
+            id: ArtifactId::WASM,
+            render: unrendered,
+        },
+        // The *pre*-rewrite `--emit=hir` document is written by `WasmFrontend::translate`,
+        // likewise reached through the shared tail. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::HIR_INITIAL,
+            id: ArtifactId::HIR,
+            render: unrendered,
+        },
+        // Nothing writes here, and nothing may: `backend::analyze` emits no document of its own,
+        // and the HIR it publishes is the very same world `hir.initial` already wrote. See
+        // [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::HIR_ANALYZED,
+            id: ArtifactId::HIR,
+            render: unrendered,
+        },
+        // The *post*-rewrite `--emit=hir` document is written by
+        // [`backend::apply_rewrites`](crate::pipeline::backend::apply_rewrites). See
+        // [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::HIR_TRANSFORMED,
+            id: ArtifactId::HIR,
+            render: unrendered,
+        },
+        // `--emit=masm` is written by [`backend::codegen`](crate::pipeline::backend::codegen),
+        // the only point at which the lowered component exists in a form the session can write.
+        // See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::MASM_LOWERED,
+            id: ArtifactId::MASM,
+            render: unrendered,
+        },
+        // The assembled package is written by [`crate::compile`]; see [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::PACKAGE_ASSEMBLED,
+            id: ArtifactId::PACKAGE,
+            render: unrendered,
+        },
+    ],
     make_rust,
 );
 
@@ -95,15 +167,15 @@ fn unrendered(_artifact: &Artifact, _session: &Session) -> CompilerResult<()> {
 
 /// Declares the frontend that handles a **standalone** `.rs` file — `midenc foo.rs`.
 ///
-/// # Why this is a second registration rather than a wider route on [`RUST_FRONTEND`]
+/// # Why this is a second registration, given that the routes are now identical
 ///
-/// A route describes the checkpoints a frontend *reaches*, because that is what `--stop-after`
-/// and `--emit` are validated against, and the two Rust entry points differ in exactly that. A
-/// standalone file publishes as it goes; a manifest-backed target is compiled by a recursive
-/// build behind `cargo`, against a `Session` and `Context` of its own, and publishes nothing
-/// this request can see (see [`RustProjectFrontend::compile`]). One route
-/// covering both would offer stop points a cargo build never reaches, and such a request would
-/// end in the driver's empty-capture error rather than a diagnostic.
+/// It was once the route: a manifest-backed target published nothing this request could see, so
+/// one route covering both would have offered stop points a `cargo` build never reached. That is
+/// no longer true — [`RustProjectFrontend`] runs the same shared tail — and the reason is now
+/// simply that the two entry points build *different things*. A standalone `.rs` is compiled by
+/// `rustc`, or by a temporary Cargo project synthesized around it; a manifest-backed target is
+/// built by `cargo` over the manifest the project declares. A [`FrontendRegistration`] binds an
+/// extension to one constructor, so two constructors mean two registrations.
 ///
 /// # This is not registered, and must not be
 ///
@@ -202,7 +274,7 @@ fn make_rust_standalone(_session: Rc<Session>) -> Rc<dyn Frontend> {
 
 /// Build the project the manifest at `manifest_path` declares, and lower it to Miden Assembly.
 ///
-/// This is the **manifest** Rust entry point, and the counterpart of [`compile_rust_to_wasm`]:
+/// This is the **dependency** Rust entry point, and the counterpart of [`compile_rust_to_wasm`]:
 /// where that one compiles a single source file in this process, this one runs `cargo` over a
 /// whole project — which runs `midenc` again, nested, once per Rust crate. It is not the only
 /// caller of that build: [`build_manifest_to_wasm`] stops one step earlier, and both delegate
@@ -219,6 +291,14 @@ fn make_rust_standalone(_session: Rc<Session>) -> Rc<dyn Frontend> {
 /// other project. What that project's assembly needs from this one is the lowered component —
 /// its Miden Assembly, its rodata, and its account-component metadata — not a package of its
 /// own, so this stops at codegen.
+///
+/// # And why it publishes nothing
+///
+/// It has no [`TargetContext`], because a source dependency built this way is not a target of
+/// the assembly in progress — there is no assembler callback to build one from. That is not a
+/// gap: a dependency's checkpoints are precisely what must *not* reach this request's observers
+/// or its goal, so the type system holding it here is the guard. The **root** target does not
+/// come through here at all; see [`RustProjectFrontend::compile`].
 pub fn compile_manifest(
     manifest_path: &Path,
     filesystem_cache_dir: Option<&Path>,
@@ -815,23 +895,48 @@ fn str_to_toml_item(s: &str) -> toml_edit::Item {
 
 /// Compiles a target whose sources are Rust, by shelling out to cargo.
 ///
-/// The build is a *nested* compilation: `cargo_build` runs `cargo` with a derived
-/// [`midenc_session::Options`], and that inner compiler run performs parsing, rewriting and
-/// codegen itself. Nothing of it is observable from here, so this frontend publishes no
-/// checkpoints at all — see [`Frontend::compile`].
+/// # Two arms, divided by role, and the division is what this type is about
+///
+/// The **root** target — the one the request selected — is built by running `cargo` to
+/// WebAssembly and then handing that WebAssembly to the shared WebAssembly tail, in this
+/// process, against the `Context` the driver's own `Session` backs. It therefore publishes
+/// every checkpoint on [`RUST_FRONTEND`]'s route, and can stop at any of them.
+///
+/// A **dependency** is built by `crate::cargo::cargo_build`, which constructs a fresh
+/// `Options`, `Session` and `Context` and compiles against them. It publishes nothing, and must
+/// not: every `--stop-after`, `--emit`, `-Zlint` and `-Canalyze-only` names the top-level target
+/// alone, and a dependency stopped at its own analysis would never produce the package the root
+/// is waiting for. The arm is *structurally* unable to publish — it never receives a
+/// [`TargetContext`] beyond the role check, and the function it calls,
+/// [`compile_manifest`], has no way to publish at all.
+///
+/// # Three caches, one per thing that is expensive to recompute
 ///
 /// [`Frontend::compile`], [`Frontend::provenance`] and [`Frontend::post_process`] are each
-/// called for the same target, the last of them against a *fresh* [`TargetContext`], so the
-/// build's [`CodegenOutput`] is memoized in `compiled` and every method reaches it by
-/// [`TargetContext::target_key`].
+/// called for the same target, the last of them against a *fresh* [`TargetContext`], and
+/// `provenance` repeatedly and possibly before `compile`. Everything memoized here is keyed by
+/// [`TargetContext::target_key`] rather than by package identity: a project with both a `[lib]`
+/// and a `[[bin]]` has one package id for two targets, so a package-keyed cache serves the
+/// library's codegen output to the executable.
 pub struct RustProjectFrontend {
     session: Rc<Session>,
-    /// The cargo build's output, per target.
+    /// A **dependency** target's cargo build output, and any seed a caller supplied.
     ///
-    /// Keyed by [`TargetKey`] rather than by package identity: a project with both a `[lib]`
-    /// and a `[[bin]]` has one package id for two targets, so a package-keyed cache serves
-    /// the library's codegen output to the executable.
+    /// Not the root's: the root's lowering is done by `wasm`, which keeps its own.
     compiled: RefCell<BTreeMap<TargetKey, CodegenOutput>>,
+    /// The WebAssembly `cargo` produced for a **root** target.
+    ///
+    /// Memoized because either of two callbacks may reach it first — `provenance` describes the
+    /// WebAssembly and `compile` lowers it — and a `cargo` build is the most expensive thing
+    /// this frontend does.
+    built: RefCell<BTreeMap<TargetKey, WasmSource>>,
+    /// The WebAssembly half of the **root** arm, which is everything past the cargo build.
+    ///
+    /// Held rather than reimplemented, exactly as [`RustStandaloneFrontend`] holds one: the two
+    /// routes then publish the same checkpoints, write the same inline `--emit` documents, and
+    /// stash the same [`CodegenOutput`] for post-processing, none of which a copy could be
+    /// relied on to keep true.
+    wasm: WasmFrontend,
 }
 
 impl RustProjectFrontend {
@@ -840,6 +945,8 @@ impl RustProjectFrontend {
         Self {
             session,
             compiled: RefCell::new(BTreeMap::new()),
+            built: RefCell::new(BTreeMap::new()),
+            wasm: WasmFrontend::default(),
         }
     }
 
@@ -866,18 +973,32 @@ impl RustProjectFrontend {
         Self {
             session,
             compiled: RefCell::new(BTreeMap::from([(key, output)])),
+            built: RefCell::new(BTreeMap::new()),
+            wasm: WasmFrontend::default(),
         }
     }
 
-    /// Run cargo for this target, uncached.
+    /// Where the nested builds publish and look for compiled dependency packages.
     ///
-    /// The build is configured from `self.session`, the session of the project cargo is
-    /// invoked *in*, not from `cx.session()`: the package cache lives under the root
-    /// project's `target/` directory and the cargo flags come from the root invocation, and
-    /// both must be the same for every target of the build.
-    /// Build this target with cargo, in the `Session` its **role** entitles it to.
+    /// Derived from `self.session` — the session the project `cargo` is invoked *in* — rather
+    /// than from `cx.session()`: the cache lives under the root project's `target/` directory
+    /// and must be the same for every target of the build.
+    fn filesystem_cache_dir(&self) -> Option<PathBuf> {
+        self.session
+            .project
+            .manifest_path()
+            .and_then(|p| p.parent())
+            .map(|p| p.join("target").join("miden").join("packages"))
+    }
+
+    /// Run `cargo` over this **root** target's manifest, and hand back the WebAssembly it
+    /// produced.
     ///
-    /// # The rule, and why it is a branch here rather than a set of copied options
+    /// Memoized, because two callbacks want it and either may come first: `provenance` describes
+    /// this WebAssembly and `compile` lowers it. Without the memo the assembler's provenance
+    /// hashing would spawn a `cargo` build per call.
+    ///
+    /// # The `Session` this uses is the driver's, and that is the rule
     ///
     /// The root project build gets the `Session` and `Context` the driver constructed;
     /// everything else gets a fresh `Session` carrying only those options that are inherently
@@ -887,99 +1008,120 @@ impl RustProjectFrontend {
     /// see of the root — and inheriting any of them into a dependency would be wrong: a
     /// dependency stopped at its own analysis never produces the package the root is waiting for.
     ///
-    /// Both halves used to run through [`crate::cargo::cargo_build`], which builds `nested_options`
+    /// Both arms used to run through [`crate::cargo::cargo_build`], which builds `nested_options`
     /// from a fixed subset. That is right for a dependency and wrong for the root: the root's
     /// `--entrypoint` was dropped, so codegen produced a component with no entrypoint, and
     /// `MasmComponent::source_inputs` then emitted a *library* root module for an executable
     /// target — which `load_target_sources` rejects with "requested target type is executable,
     /// but root module provided to assembler ... is library".
+    fn built_for_root(&self, cx: &TargetContext<'_>) -> CompilerResult<WasmSource> {
+        let key = cx.target_key();
+        if let Some(found) = self.built.borrow().get(&key) {
+            return Ok(found.clone());
+        }
+
+        let cargo_manifest_path = cx.assembly().manifest_path.with_file_name("Cargo.toml");
+        let wasm = build_manifest_to_wasm(
+            &cargo_manifest_path,
+            self.filesystem_cache_dir().as_deref(),
+            &cx.session(),
+        )?;
+        let source = WasmFrontend::read_input(&wasm)?;
+        self.built.borrow_mut().insert(key, source.clone());
+        Ok(source)
+    }
+
+    /// Build this **dependency** target with cargo, uncached.
     ///
-    /// Expressing the rule as a branch on [`TargetRole`](crate::pipeline::TargetRole) is what
-    /// makes the dependency case *structurally* unable to inherit root options: the dependency
-    /// arm never receives the root `Context` at all, so there is nothing for it to inherit from,
-    /// rather than a list of fields someone must remember not to copy. The role is the assembler's
-    /// own answer, derived per callback by
+    /// # Why the role is a branch rather than a set of copied options
+    ///
+    /// Expressing the owner's root-versus-dependency rule as a branch on
+    /// [`TargetRole`](crate::pipeline::TargetRole) is what makes the dependency case
+    /// *structurally* unable to inherit root options, or to publish a checkpoint: this arm never
+    /// receives the root `Context`, and [`compile_manifest`] — which is what
+    /// [`crate::cargo::cargo_build`] ends in — takes no [`TargetContext`] and so has nothing to
+    /// publish through. Neither is a list of things someone must remember not to do. The role is
+    /// the assembler's own answer, derived per callback by
     /// [`FrontendProvider::role_of`](crate::pipeline::FrontendProvider) —
     /// [`MasmProjectFrontend`](super::masm::MasmProjectFrontend) makes root-only decisions the
     /// same way.
     ///
     /// **No option was reclassified.** A dependency's `nested_options` are exactly what they were;
     /// the change is that the root no longer goes through them.
-    fn build(&self, cx: &TargetContext<'_>) -> CompilerResult<CodegenOutput> {
+    fn build_dependency(&self, cx: &TargetContext<'_>) -> CompilerResult<CodegenOutput> {
+        debug_assert!(!cx.role().is_root(), "the root target is built by `built_for_root`");
         let assembly = cx.assembly();
-        let filesystem_cache_dir = self
-            .session
-            .project
-            .manifest_path()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("target").join("miden").join("packages"));
-        let cargo_manifest_path = assembly.manifest_path.with_file_name("Cargo.toml");
-
-        if cx.role().is_root() {
-            // `cx.context()` is a `Context` over the driver's own `Session`, which is what
-            // carries the user's options; see this function's doc.
-            return compile_manifest(
-                &cargo_manifest_path,
-                filesystem_cache_dir.as_deref(),
-                cx.context(),
-            );
-        }
-
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = self.session.source_manager.clone();
         crate::cargo::cargo_build(
             assembly.package.clone(),
             assembly.target,
-            cargo_manifest_path,
-            filesystem_cache_dir.as_deref(),
+            assembly.manifest_path.with_file_name("Cargo.toml"),
+            self.filesystem_cache_dir().as_deref(),
             &self.session.options,
             &cargo_opts,
             source_manager,
         )
+    }
+
+    /// What was lowered for this target, whichever arm produced it.
+    ///
+    /// A dependency's build and a caller-supplied seed live in `compiled`; the root's lowering
+    /// is kept by the embedded [`WasmFrontend`], because that is what performed it.
+    fn lowered(&self, key: &TargetKey) -> Option<CodegenOutput> {
+        self.compiled.borrow().get(key).cloned().or_else(|| self.wasm.lowered_for(key))
     }
 }
 
 impl Frontend for RustProjectFrontend {
     /// Build this target with cargo, returning the Miden Assembly it produced.
     ///
-    /// **This publishes no checkpoints, and therefore never returns [`Flow::Stop`].** That
-    /// is deliberate, not an oversight. The intermediate artifacts a checkpoint names — the
-    /// initial HIR, the analyzed and transformed HIR, the lowered Miden Assembly — are
-    /// produced by a *recursive* compilation, which returns only its final [`CodegenOutput`].
-    /// That recursion happens in this process, not in a nested `midenc`: `crate::cargo::cargo_build`
-    /// builds a fresh `Options`, `Session` and `Context` and compiles against them, and the only
-    /// processes spawned are `cargo` and `rustc`, both for Rust-to-WebAssembly. What isolates the
-    /// two compilations is therefore the `Session`/`Context` pair, not a process boundary — and
-    /// that is enough, because the recursive build publishes against its own `RequestState`,
-    /// which this request's observers never see. This frontend does not call
-    /// [`backend::hir_to_masm`](crate::pipeline::backend::hir_to_masm), so there is nothing
-    /// here to publish and no point at which it could honour a `--stop-after` short of
-    /// assembly.
+    /// # The root target publishes; a dependency does not
     ///
-    /// Surfacing the recursive run's checkpoints means propagating the goal and the observers
-    /// into it, which is a later increment's work. Until then a `-C` stop flag naming a phase
-    /// this route cannot reach is reported as a known limitation rather than ignored; see
-    /// [`StopFlag`](crate::pipeline::StopFlag).
+    /// For the **root** target, `cargo` produces WebAssembly and everything past that is what a
+    /// `.wasm` target does — so the WebAssembly is handed to the embedded [`WasmFrontend`],
+    /// which publishes `wasm.parsed`, `hir.initial` and, through
+    /// [`backend::hir_to_masm`](crate::pipeline::backend::hir_to_masm), the three that follow.
+    /// Any of them may be the request's goal, and the [`Flow::Stop`] that follows is returned
+    /// from here to `provide_sources_interruptible`, the one callback that can express a stop.
     ///
-    /// The isolation is also what a dependency build *needs*. Every `--stop-after`, `--emit`,
-    /// `-Zlint` and `-Canalyze-only` refers to the top-level target alone: dependencies must be
-    /// fully assembled before the top-level target can begin, so the fresh `Options` those
-    /// builds get deliberately carry none of those flags. Propagating them would stop a
-    /// dependency at its own analysis and the package the top-level build is waiting for would
-    /// never arrive.
+    /// For a **dependency**, `crate::cargo::cargo_build` builds a fresh `Options`, `Session` and
+    /// `Context` and compiles against them, and hands back only a finished [`CodegenOutput`].
+    /// Nothing of it is published, and nothing may be: every `--stop-after`, `--emit`, `-Zlint`
+    /// and `-Canalyze-only` refers to the top-level target alone, dependencies must be fully
+    /// assembled before the top-level target can begin, and the fresh `Options` those builds get
+    /// deliberately carry none of those flags. A dependency that stopped at its own analysis
+    /// would never produce the package the root is waiting for.
+    ///
+    /// # Anything already lowered is served from the cache, ahead of either arm
+    ///
+    /// Two things arrive here, and the lookup has to see both. A caller-supplied *seed* is a
+    /// [`CodegenOutput`] this process already produced, and serving it spares the cargo build
+    /// entirely, whatever the target's role. And a *second callback for one target* must be
+    /// served rather than rebuilt — which for the root means consulting what the embedded
+    /// [`WasmFrontend`] stashed, because that is where the root's lowering lives.
+    ///
+    /// The root half of that is not a saving but a correctness guard. Re-entering `compile_wasm`
+    /// would re-translate, re-publish every checkpoint on the route — so `--emit=wat`, both
+    /// `--emit=hir` documents and `--emit=masm` would all be written a second time — and then
+    /// fail on the capture slot's "already captured" invariant. Nothing in tree calls
+    /// `provide_sources_interruptible` twice for one target, so this is a guard rather than a
+    /// path; it is here because the arrangement it replaced had it for free, from a cache that
+    /// held every arm's output.
     fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
         let key = cx.target_key();
         let session = cx.session();
-        {
-            let compiled = self.compiled.borrow();
-            if let Some(found) = compiled.get(&key) {
-                return Ok(Flow::Continue(
-                    found.component.source_inputs(cx.assembly().target, &session)?,
-                ));
-            }
+        if let Some(found) = self.lowered(&key) {
+            return Ok(Flow::Continue(
+                found.component.source_inputs(cx.assembly().target, &session)?,
+            ));
         }
 
-        let compiled = self.build(cx)?;
+        if cx.role().is_root() {
+            return self.wasm.compile_wasm(cx, self.built_for_root(cx)?);
+        }
+
+        let compiled = self.build_dependency(cx)?;
         let source_inputs = compiled.component.source_inputs(cx.assembly().target, &session)?;
         self.compiled.borrow_mut().insert(key, compiled);
         Ok(Flow::Continue(source_inputs))
@@ -987,8 +1129,17 @@ impl Frontend for RustProjectFrontend {
 
     /// The build provenance of this target's sources.
     ///
-    /// Called repeatedly while the assembler hashes the dependency closure, so it shares
-    /// `compile`'s cache: the first of the two to run pays for the build.
+    /// Called repeatedly while the assembler hashes the dependency closure, and possibly before
+    /// `compile` has run at all, so every arm memoizes.
+    ///
+    /// # The root's provenance is the WebAssembly, and is answered without lowering anything
+    ///
+    /// This is what keeps publishing out of a callback that cannot express a stop:
+    /// [`Frontend::provenance`] must never publish and never stop, so the root arm goes only as
+    /// far as the `cargo` build and describes what came out of it. The lowering — and with it
+    /// every checkpoint — happens in `compile`. The answer is the same either way: the
+    /// provenance a lowered root carries is the one the shared tail recorded for exactly this
+    /// WebAssembly, and both arms fill the same memo inside the embedded [`WasmFrontend`].
     fn provenance(&self, cx: &TargetContext<'_>) -> CompilerResult<ProjectSourceProvenanceInputs> {
         let key = cx.target_key();
         {
@@ -998,7 +1149,12 @@ impl Frontend for RustProjectFrontend {
             }
         }
 
-        let compiled = self.build(cx)?;
+        if cx.role().is_root() {
+            let source = self.built_for_root(cx)?;
+            return self.wasm.provenance_of(cx, &source);
+        }
+
+        let compiled = self.build_dependency(cx)?;
         let provenance = compiled.source_provenance();
         self.compiled.borrow_mut().insert(key, compiled);
         Ok(provenance)
@@ -1006,18 +1162,18 @@ impl Frontend for RustProjectFrontend {
 
     /// Attach the account-component metadata and rodata this target's build produced.
     ///
-    /// The assembler builds a fresh context for this call, so the build is recovered from
-    /// the cache by [`TargetContext::target_key`]. A miss means the assembler asked to
-    /// post-process a target this frontend never compiled, which is a compiler bug: report
-    /// it rather than indexing into the map and panicking.
+    /// The assembler builds a fresh context for this call, so the build is recovered by
+    /// [`TargetContext::target_key`] — from `compiled` for a dependency or a seed, and from the
+    /// embedded [`WasmFrontend`] for the root, whose lowering it performed. A miss in both means
+    /// the assembler asked to post-process a target this frontend never compiled, which is a
+    /// compiler bug: report it rather than indexing into a map and panicking.
     fn post_process(
         &self,
         package: &mut MastPackage,
         cx: &TargetContext<'_>,
     ) -> CompilerResult<()> {
         let key = cx.target_key();
-        let compiled = self.compiled.borrow();
-        let found = compiled.get(&key).ok_or_else(|| {
+        let found = self.lowered(&key).ok_or_else(|| {
             Report::msg(format!(
                 "internal error: cannot post-process target '{}' of package '{}': no cargo build \
                  was cached for it, so `compile` never ran for this target",
@@ -1665,47 +1821,83 @@ mod tests {
         testing::{self, VirtualProject, wat_fixture},
     };
 
-    /// The route declares exactly what this frontend reaches, and no more.
+    /// The project route *is* the WebAssembly route, and this is what holds it to that.
     ///
-    /// A route is what `--stop-after` and `--emit` are validated against, so declaring the
-    /// checkpoints a Rust build *conceptually* passes through — `wasm.parsed`, the three HIR
-    /// points, `masm.lowered` — would make every one of them a stop point that resolves
-    /// successfully and is then never reached, leaving the run with an empty capture slot.
-    /// The cargo build is a nested `midenc` invocation and publishes nothing back, so the
-    /// only checkpoint reachable here is the one the driver itself publishes once the
-    /// package is assembled. See [`Frontend::compile`] on this frontend.
+    /// A route is what `--stop-after`, the `-C` stop flags and `--emit` are validated against,
+    /// so it has to describe what the frontend actually publishes — and past the `cargo` build,
+    /// a manifest-backed Rust root target is run by
+    /// [`WasmFrontend::compile_wasm`](super::super::wasm::WasmFrontend) itself. So the
+    /// declaration here is a hand copy of a table that lives in `wasm.rs`, and nothing ties the
+    /// two together at compile time; this is what does, in both directions:
+    ///
+    /// - a checkpoint **added** to `WASM_FRONTEND` and to the shared tail would leave this route
+    ///   under-declaring it, and `EmitObserver` would silently skip `--emit` for it.
+    /// - a checkpoint **removed** from the tail would leave this route offering a stop point
+    ///   nothing reaches — the driver's empty-capture error.
+    ///
+    /// Compared against `WASM_FRONTEND` itself rather than against literals, because a literal
+    /// is just a third copy of the same table. The renderers are deliberately not compared; see
+    /// [`the_standalone_route_is_the_wasm_route`].
     #[test]
-    fn the_route_declares_only_the_checkpoint_a_cargo_build_reaches() {
+    fn the_project_route_is_the_wasm_route() {
         assert_eq!(RUST_FRONTEND.id(), FrontendId::new("rust"));
         assert_eq!(
             RUST_FRONTEND.extensions(),
             &["rs"],
             "dispatch is by target-root extension, and a Rust target is rooted at a `.rs` file"
         );
-        assert_eq!(RUST_FRONTEND.route(), &[CheckpointId::PACKAGE_ASSEMBLED]);
+        assert_eq!(
+            RUST_FRONTEND.route(),
+            WASM_FRONTEND.route(),
+            "past the cargo build this route is run by the wasm frontend's own code, so it must \
+             declare exactly what that code publishes"
+        );
+        assert_eq!(
+            RUST_FRONTEND.aliases(),
+            WASM_FRONTEND.aliases(),
+            "and `--stop-after` must name the same points on both, since the same phases produce \
+             them"
+        );
+        for checkpoint in WASM_FRONTEND.route() {
+            assert_eq!(
+                RUST_FRONTEND.artifact_at(*checkpoint),
+                WASM_FRONTEND.artifact_at(*checkpoint),
+                "the artifact published at {checkpoint} is produced by one piece of code, so both \
+                 routes must declare it as the same thing"
+            );
+        }
         assert_eq!(RUST_FRONTEND.terminal(), CheckpointId::PACKAGE_ASSEMBLED);
+        assert_ne!(RUST_FRONTEND.id(), WASM_FRONTEND.id(), "they are still two registrations");
         FrontendRegistry::new()
             .register(RUST_FRONTEND)
             .expect("the route, its aliases and its artifacts must be mutually consistent");
     }
 
-    /// An uncapped run reaches the package; a stop point short of it is rejected outright.
+    /// Every stop point on the route resolves; a name that is on no route is still rejected.
     ///
-    /// The second half is the point of declaring the route honestly: `--stop-after=lower`
-    /// must fail with a diagnostic naming what this frontend *can* stop at, rather than
-    /// resolving to a checkpoint no cargo build ever publishes and returning nothing.
+    /// The first half is the whole of what this task bought a manifest-backed build:
+    /// `--stop-after=lower` used to be rejected here, because a cargo build published nothing
+    /// short of the package. The second half is the guard that the route did not simply become
+    /// permissive — a name nothing declares must still fail, naming what the route does offer.
     #[test]
-    fn a_stop_point_this_frontend_never_reaches_is_rejected() {
+    fn every_stop_point_on_the_project_route_resolves_and_an_unknown_one_does_not() {
         let goal = resolve_goal(&OutputRequest::default(), &RUST_FRONTEND)
             .expect("an uncapped run resolves to the terminal checkpoint");
         assert_eq!(goal.checkpoint(), CheckpointId::PACKAGE_ASSEMBLED);
 
-        let capped = OutputRequest::new(Vec::new()).with_stop_after(Some("lower".to_string()));
+        for (alias, checkpoint) in RUST_FRONTEND.aliases() {
+            let capped = OutputRequest::new(Vec::new()).with_stop_after(Some(alias.to_string()));
+            let goal = resolve_goal(&capped, &RUST_FRONTEND)
+                .unwrap_or_else(|err| panic!("`--stop-after={alias}` must resolve: {err}"));
+            assert_eq!(goal.checkpoint(), *checkpoint);
+        }
+
+        let capped = OutputRequest::new(Vec::new()).with_stop_after(Some("nonesuch".to_string()));
         let err = resolve_goal(&capped, &RUST_FRONTEND)
-            .expect_err("this frontend publishes nothing at `lower`");
+            .expect_err("no route declares a `nonesuch` checkpoint");
         let rendered = format!("{err}");
         assert!(
-            rendered.contains("assemble") && rendered.contains("package.assembled"),
+            rendered.contains("lower") && rendered.contains("masm.lowered"),
             "the rejection must name the stop points this route does offer: {rendered}"
         );
     }
@@ -2142,11 +2334,11 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
     // The two routes.
     // -------------------------------------------------------------------------------------
 
-    /// The checkpoints a standalone `.rs` build publishes for itself, in order.
+    /// The checkpoints a `.rs` build publishes for itself, in order, on either route.
     ///
     /// `package.assembled` — the sixth on the route — is absent because the orchestrator
     /// publishes it, as it does for every frontend.
-    fn standalone_trace() -> Vec<CheckpointId> {
+    fn rust_trace() -> Vec<CheckpointId> {
         vec![
             CheckpointId::WASM_PARSED,
             CheckpointId::HIR_INITIAL,
@@ -2156,23 +2348,9 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         ]
     }
 
-    /// A standalone `.rs` target reaches every checkpoint its route declares; a manifest-backed
-    /// one reaches none of them.
-    ///
-    /// This is why there are two registrations for one extension rather than one widened
-    /// route. A route is what `--stop-after` and `--emit` are validated against, so it has to
-    /// describe what the frontend *actually publishes* — and the two Rust entry points differ
-    /// in exactly that. The standalone build runs in this process and publishes as it goes; the
-    /// manifest-backed build is a nested `midenc` invocation behind `cargo`, which hands back
-    /// only a finished [`CodegenOutput`] and publishes nothing, leaving `package.assembled`
-    /// — the one checkpoint the driver itself publishes — as all its route can offer.
-    ///
-    /// The manifest-backed half runs against a *seeded* frontend so that no cargo build is
-    /// spawned. That is not a weakening: `RustProjectFrontend::compile` serves a seeded target
-    /// from its cache by the same code path a completed cargo build takes, and the point being
-    /// asserted is what it publishes on the way, which is nothing either way.
+    /// A standalone `.rs` target reaches every checkpoint its route declares.
     #[test]
-    fn a_standalone_rust_target_publishes_the_route_a_manifest_backed_one_cannot() {
+    fn a_standalone_rust_target_publishes_its_whole_route() {
         let (source, _) = rust_fixture("rust_standalone_route", BARE_SOURCE);
         let target_dir = testing::fixture_dir("rust_standalone_route_out");
         let context = rust_context("rust_standalone_route", &target_dir, |_| {});
@@ -2195,78 +2373,323 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         assert!(!flow.is_stop(), "package.assembled is the orchestrator's to publish, not ours");
         assert_eq!(
             observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
-            standalone_trace(),
+            rust_trace(),
             "the frontend publishes the WebAssembly it built and the HIR it translated, and the \
              shared backend the three that follow"
         );
         assert_eq!(
             RUST_STANDALONE_FRONTEND.route().len(),
-            standalone_trace().len() + 1,
+            rust_trace().len() + 1,
             "and the route declares exactly those, plus the terminal checkpoint the driver \
              publishes"
         );
+    }
 
-        // The manifest-backed half, over the same shape of target.
-        let manifest_observer = Rc::new(RefCell::new(RecordingObserver::default()));
-        let manifest_state = RequestState::new(
+    // -------------------------------------------------------------------------------------
+    // The manifest-backed route's two arms.
+    //
+    // These drive `RustProjectFrontend` with the `cargo` build already done — its result
+    // planted in the frontend's own memo — because what is under test is everything *past*
+    // the build, and a real `cargo build -Z build-std` against the SDK is minutes of work and
+    // a network fetch. The two integration gates
+    // (`end_to_end::examples::is_prime` and `sdk::rust_sdk_account_package_build_is_deterministic`)
+    // exercise the build itself.
+    // -------------------------------------------------------------------------------------
+
+    /// The WebAssembly a `cargo` build of this fixture would have produced.
+    fn built_wasm() -> WasmSource {
+        let wasm = wat::parse_str(MANIFEST_WAT).expect("the fixture should assemble to wasm");
+        WasmSource::new(std::path::PathBuf::from("rust_project_root.wasm").into_boxed_path(), wasm)
+    }
+
+    /// A frontend for which `cargo` has already run for the target `key` names.
+    ///
+    /// Planted into `built` — the memo `built_for_root` fills — rather than into `compiled`:
+    /// seeding a [`CodegenOutput`] would short-circuit `compile` before the role branch, which
+    /// is precisely the branch these tests are about.
+    fn already_built(session: Rc<Session>, key: TargetKey) -> RustProjectFrontend {
+        let frontend = RustProjectFrontend::new(session);
+        frontend.built.borrow_mut().insert(key, built_wasm());
+        frontend
+    }
+
+    /// A manifest-backed Rust **root** target publishes the whole of its route.
+    ///
+    /// This is the defect this task closes. The route was `[package.assembled]` alone, because
+    /// the root's build ran through `compile_manifest` — which has no [`TargetContext`] and
+    /// hands back a finished [`CodegenOutput`] — so the intermediate artifacts existed and were
+    /// never published. The root arm now runs the same shared WebAssembly tail a standalone
+    /// `.rs` build runs, and publishes exactly what that tail publishes.
+    #[test]
+    fn a_manifest_backed_root_target_publishes_the_whole_route() {
+        let project = library("rust_project_root_publishes");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = RequestState::new(
             Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
-            vec![manifest_observer.clone() as Rc<RefCell<dyn Observer>>],
+            vec![observer.clone() as Rc<RefCell<dyn Observer>>],
         );
-        let manifest_cx = TargetContext::for_testing(
-            &assembly,
-            context.clone(),
-            TargetRole::Root,
-            &manifest_state,
-        );
-        // Seeded with a *real* codegen output rather than the hand-built [`codegen_output`]
-        // above: `compile` asks the component for its source inputs, and the hand-built one
-        // holds no modules, which is enough only for the `post_process` tests that use it.
-        let lowered = crate::pipeline::backend::codegen(
-            testing::minimal_component(&context),
-            context.clone(),
-        )
-        .expect("the minimal component should lower");
-        let seeded =
-            RustProjectFrontend::seeded(context.session_rc(), manifest_cx.target_key(), lowered);
+        let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
 
-        seeded
-            .compile(&manifest_cx)
-            .expect("a seeded target is served from the cache rather than rebuilt");
+        let frontend = already_built(context.session_rc(), cx.target_key());
+        let flow = frontend.compile(&cx).expect("the root arm should lower the built WebAssembly");
 
-        assert!(
-            manifest_observer.borrow().records().is_empty(),
-            "a cargo build publishes nothing back into this process, so its route can only \
-             declare the checkpoint the driver publishes itself"
+        assert!(!flow.is_stop(), "package.assembled is the orchestrator's to publish, not ours");
+        assert_eq!(
+            observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
+            rust_trace(),
+            "a manifest-backed root target publishes what the shared tail publishes"
         );
         assert_eq!(
-            RUST_FRONTEND.route(),
-            &[CheckpointId::PACKAGE_ASSEMBLED],
-            "which is what its route says"
+            RUST_FRONTEND.route().len(),
+            rust_trace().len() + 1,
+            "and the route declares exactly those, plus the terminal checkpoint the driver \
+             publishes"
         );
     }
 
-    /// `--stop-after=parse` is a stop point on the standalone route and a usage error on the
-    /// project one.
+    /// A root target stops at the goal, at every checkpoint its route offers short of the
+    /// package.
     ///
-    /// The user-visible consequence of the two routes: a standalone `.rs` build can be stopped
-    /// at its WebAssembly, and asking a cargo-driven build for the same must fail with a
-    /// diagnostic naming what it *can* stop at rather than resolving to a checkpoint no cargo
-    /// build ever reaches.
+    /// Publishing is not enough on its own: the gate a `--stop-after` or `-C` flag needs is that
+    /// the stop reaches `provide_sources_interruptible`, which is what [`Frontend::compile`]
+    /// returning [`Flow::Stop`] does. Each checkpoint is driven on its own, because a route that
+    /// stopped only at its first would satisfy a single-goal test.
     #[test]
-    fn stop_after_parse_resolves_on_the_standalone_route_and_is_rejected_on_the_project_route() {
-        let request = OutputRequest::new(Vec::new()).with_stop_after(Some("parse".to_string()));
+    fn a_manifest_backed_root_target_stops_at_each_goal_on_its_route() {
+        for goal in rust_trace() {
+            let project = library("rust_project_root_stops");
+            let assembly = project.assembly_context().expect("assembly context");
+            let context = context();
+            let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+            let state = RequestState::new(
+                Goal::at(goal),
+                vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+            );
+            let cx =
+                TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
 
-        let goal = resolve_goal(&request, &RUST_STANDALONE_FRONTEND)
-            .expect("a standalone `.rs` build stops at the WebAssembly it produced");
-        assert_eq!(goal.checkpoint(), CheckpointId::WASM_PARSED);
+            let frontend = already_built(context.session_rc(), cx.target_key());
+            let flow = frontend.compile(&cx).expect("the root arm should reach the goal");
 
-        let err = resolve_goal(&request, &RUST_FRONTEND)
-            .expect_err("a cargo-driven build publishes nothing at `parse`");
+            assert!(flow.is_stop(), "the run must stop at its goal '{goal}'");
+            let published = observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>();
+            assert_eq!(
+                published.last(),
+                Some(&goal),
+                "no work may happen past the stop point, so '{goal}' must be the last \
+                 publication: {published:?}"
+            );
+            let captured = state.take_outcome().expect("the goal must have been captured");
+            assert_eq!(captured.checkpoint(), goal);
+        }
+    }
+
+    /// A **dependency** target publishes nothing, and does not take the root's built
+    /// WebAssembly.
+    ///
+    /// The discriminating half of the two tests above, and the one that keeps the root arm from
+    /// quietly becoming every arm. The same frontend, with the same `cargo` result already in
+    /// hand, driven with the dependency role: it must ignore that result — a dependency is built
+    /// by `crate::cargo::cargo_build` against a `Session` of its own — and publish nothing on
+    /// the way. The build then fails, because this fixture's virtual project has no manifest for
+    /// a nested build to read, and that failure *is* the evidence the other arm was taken.
+    #[test]
+    fn a_dependency_target_publishes_nothing_and_ignores_the_roots_build() {
+        let project = library("rust_project_dependency");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = RequestState::new(
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+        );
+        let cx =
+            TargetContext::for_testing(&assembly, context.clone(), TargetRole::Dependency, &state);
+
+        let frontend = already_built(context.session_rc(), cx.target_key());
+        // `ProjectSourceInputs` is not `Debug`, so `expect_err` is unavailable here.
+        let Err(err) = frontend.compile(&cx) else {
+            panic!(
+                "a dependency must not be served the root's WebAssembly: it is built by a nested \
+                 cargo invocation, which this fixture has no manifest for"
+            );
+        };
+
+        assert!(
+            observer.borrow().records().is_empty(),
+            "a dependency's checkpoints must never reach this request's observers: {:?}",
+            observer.borrow().records()
+        );
+        assert!(
+            state.take_outcome().is_none(),
+            "and a dependency must never capture the request's artifact, whatever its goal"
+        );
         let rendered = format!("{err}");
         assert!(
-            rendered.contains("assemble") && rendered.contains("package.assembled"),
-            "the rejection must name the stop points that route does offer: {rendered}"
+            !rendered.contains("wasm.parsed") && !rendered.contains("hir."),
+            "the failure must be the nested build's, not a stop this arm cannot express: \
+             {rendered}"
         );
+    }
+
+    /// A second `compile` for one root target is served from what the first lowered.
+    ///
+    /// The arrangement this replaced cached every arm's [`CodegenOutput`] in one map, so a second
+    /// callback for a target was served for free. The root's lowering now lives in the embedded
+    /// [`WasmFrontend`] instead, and a lookup that missed it would re-enter `compile_wasm`: that
+    /// re-publishes every checkpoint on the route — writing `--emit=wat`, both `--emit=hir`
+    /// documents and `--emit=masm` a second time — before failing on the capture slot's
+    /// "already captured" invariant.
+    ///
+    /// Asserted through the observer rather than through the return value, because a re-lowering
+    /// that happened to succeed would still return usable sources; what must not happen is the
+    /// second round of publications.
+    #[test]
+    fn a_second_compile_of_one_root_target_is_served_rather_than_relowered() {
+        let project = library("rust_project_root_second_compile");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        let state = RequestState::new(
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+        );
+        let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
+
+        let frontend = already_built(context.session_rc(), cx.target_key());
+        frontend.compile(&cx).expect("the first callback lowers the built WebAssembly");
+        let after_first = observer.borrow().records().len();
+        assert_eq!(after_first, rust_trace().len(), "the first callback publishes the route");
+
+        frontend.compile(&cx).expect("the second callback must be served, not rebuilt");
+        assert_eq!(
+            observer.borrow().records().len(),
+            after_first,
+            "a second callback for one target must publish nothing further: {:?}",
+            observer.borrow().records()
+        );
+    }
+
+    /// The root target is post-processed from what the shared tail lowered.
+    ///
+    /// The root's [`CodegenOutput`] is not in this frontend's own `compiled` map — the embedded
+    /// [`WasmFrontend`] produced it and keeps it — so a `post_process` that consulted only
+    /// `compiled` would report every root target as never compiled. The paired assertion is the
+    /// discriminating one: the *same* frontend must still report a miss for a target nothing was
+    /// built for, so this cannot be satisfied by dropping the check.
+    #[test]
+    fn a_root_target_is_post_processed_from_what_the_shared_tail_lowered() {
+        let project = library("rust_project_root_post_process");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let state = request();
+        let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
+
+        let frontend = already_built(context.session_rc(), cx.target_key());
+        let err = frontend
+            .post_process(&mut any_package(), &cx)
+            .expect_err("nothing has been compiled for this target yet");
+        assert!(
+            format!("{err}").contains("no cargo build was cached for it"),
+            "a miss must still be reported as one: {err}"
+        );
+
+        frontend.compile(&cx).expect("the root arm should lower the built WebAssembly");
+        frontend
+            .post_process(&mut any_package(), &cx)
+            .expect("the root's lowering is the embedded wasm frontend's, and must be found there");
+    }
+
+    /// The root arm answers `provenance` without lowering anything, and without publishing.
+    ///
+    /// [`Frontend::provenance`] must not publish and must never stop, and the assembler reaches
+    /// it while hashing the dependency closure — possibly *before* `compile*, and repeatedly. So
+    /// the root arm goes only as far as the `cargo` build and describes what came out of it; a
+    /// root arm that answered by lowering would publish `hir.transformed` from a callback whose
+    /// caller cannot express a stop.
+    #[test]
+    fn the_root_arms_provenance_publishes_nothing() {
+        let project = library("rust_project_root_provenance");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let observer = Rc::new(RefCell::new(RecordingObserver::default()));
+        // A goal short of the package, so that a publication from here would also *stop* — the
+        // failure mode this exists to prevent, rather than merely a noisy observer.
+        let state = RequestState::new(
+            Goal::at(CheckpointId::HIR_TRANSFORMED),
+            vec![observer.clone() as Rc<RefCell<dyn Observer>>],
+        );
+        let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
+
+        let frontend = already_built(context.session_rc(), cx.target_key());
+        let provenance = frontend.provenance(&cx).expect("the root's provenance is its wasm");
+
+        assert!(
+            observer.borrow().records().is_empty(),
+            "provenance must publish nothing: {:?}",
+            observer.borrow().records()
+        );
+        assert!(state.take_outcome().is_none(), "and must never capture");
+        assert_eq!(
+            provenance.root.path.as_ref(),
+            std::path::Path::new("rust_project_root.wasm"),
+            "the root's provenance is the WebAssembly cargo produced, not the `.rs` target root"
+        );
+        assert!(
+            provenance.root.content.contains("(module"),
+            "and its content is that WebAssembly as text: {}",
+            provenance.root.content
+        );
+    }
+
+    /// `compile` and `provenance` share one `cargo` build, whichever the assembler reaches
+    /// first.
+    ///
+    /// The memo is not an optimization here: the assembler asks for provenance repeatedly while
+    /// hashing the dependency closure, and a `cargo` build per call would be minutes each. The
+    /// planted entry is removed after the first read, so a second build attempt would fail
+    /// rather than silently succeed.
+    #[test]
+    fn the_roots_cargo_build_is_shared_by_provenance_and_compile() {
+        let project = library("rust_project_root_memo");
+        let assembly = project.assembly_context().expect("assembly context");
+        let context = context();
+        let state = request();
+        let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
+
+        let frontend = already_built(context.session_rc(), cx.target_key());
+        frontend.provenance(&cx).expect("the first callback pays for the build");
+        assert!(
+            frontend.built.borrow().contains_key(&cx.target_key()),
+            "the build must be memoized for the callbacks still to come"
+        );
+        frontend
+            .compile(&cx)
+            .expect("the second callback must be served the same build, not run another");
+    }
+
+    /// `--stop-after=parse` resolves the same way on both Rust routes.
+    ///
+    /// It used to be a stop point on the standalone route and a usage error on the project one,
+    /// because a cargo-driven build published nothing at `parse`. Both now run the same shared
+    /// tail, so both stop at the WebAssembly they produced.
+    #[test]
+    fn stop_after_parse_resolves_the_same_way_on_both_rust_routes() {
+        let request = OutputRequest::new(Vec::new()).with_stop_after(Some("parse".to_string()));
+
+        for frontend in [RUST_STANDALONE_FRONTEND, RUST_FRONTEND] {
+            let goal = resolve_goal(&request, &frontend).unwrap_or_else(|err| {
+                panic!("a `.rs` build stops at the WebAssembly it produced: {err}")
+            });
+            assert_eq!(
+                goal.checkpoint(),
+                CheckpointId::WASM_PARSED,
+                "on the '{}' route",
+                frontend.id()
+            );
+        }
     }
 
     // -------------------------------------------------------------------------------------
@@ -2399,25 +2822,27 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
             .collect()
     }
 
-    /// None of the standalone route's declared renderers writes anything of its own.
-    #[test]
-    fn every_declaration_on_the_standalone_route_is_unrendered() {
-        let out_dir = testing::fixture_dir("rust_standalone_unrendered_out");
-        for (checkpoint, output_type, extension) in [
-            (CheckpointId::WASM_PARSED, OutputType::Wat, "wat"),
-            (CheckpointId::HIR_INITIAL, OutputType::Hir, "hir"),
-            (CheckpointId::HIR_ANALYZED, OutputType::Hir, "hir"),
-            (CheckpointId::HIR_TRANSFORMED, OutputType::Hir, "hir"),
-            (CheckpointId::MASM_LOWERED, OutputType::Masm, "masm"),
-            (CheckpointId::PACKAGE_ASSEMBLED, OutputType::Masp, "masp"),
-        ] {
+    /// The declared output type and file extension of each checkpoint on the Rust routes.
+    const RENDERED_AS: [(CheckpointId, OutputType, &str); 6] = [
+        (CheckpointId::WASM_PARSED, OutputType::Wat, "wat"),
+        (CheckpointId::HIR_INITIAL, OutputType::Hir, "hir"),
+        (CheckpointId::HIR_ANALYZED, OutputType::Hir, "hir"),
+        (CheckpointId::HIR_TRANSFORMED, OutputType::Hir, "hir"),
+        (CheckpointId::MASM_LOWERED, OutputType::Masm, "masm"),
+        (CheckpointId::PACKAGE_ASSEMBLED, OutputType::Masp, "masp"),
+    ];
+
+    /// Run every declared renderer of `frontend` into `dir`, and assert that none of them wrote.
+    fn assert_route_is_unrendered(frontend: FrontendRegistration, dir: &str) {
+        let out_dir = testing::fixture_dir(dir);
+        for (checkpoint, output_type, extension) in RENDERED_AS {
             let output_types = OutputTypes::new([OutputTypeSpec::Typed {
                 output_type,
                 path: Some(OutputFile::Directory(out_dir.clone())),
             }])
             .expect("the output type is valid");
             let context = testing::context_emitting(output_types, |_| {});
-            let decl = RUST_STANDALONE_FRONTEND
+            let decl = frontend
                 .decl_at(checkpoint)
                 .expect("every route checkpoint declares an artifact");
             let artifact = Artifact::new(decl.id, String::from("unused"));
@@ -2430,6 +2855,24 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
                 "{checkpoint} must write nothing: its artifact is written inline"
             );
         }
+    }
+
+    /// None of the standalone route's declared renderers writes anything of its own.
+    #[test]
+    fn every_declaration_on_the_standalone_route_is_unrendered() {
+        assert_route_is_unrendered(RUST_STANDALONE_FRONTEND, "rust_standalone_unrendered_out");
+    }
+
+    /// Nor does any of the project route's, which now declares the same six checkpoints.
+    ///
+    /// It reaches them through the same shared tail, so each document is already written by the
+    /// phase that produced it — `--emit=wat` by `WasmFrontend::emit_wat`, the two `--emit=hir`
+    /// documents by translation and by `backend::apply_rewrites`, `--emit=masm` by
+    /// `backend::codegen`, and the package by `crate::compile`. A renderer here would be a
+    /// second writer for an output type whose destination `Session::emit` resolves once.
+    #[test]
+    fn every_declaration_on_the_project_route_is_unrendered() {
+        assert_route_is_unrendered(RUST_FRONTEND, "rust_project_unrendered_out");
     }
 
     // -------------------------------------------------------------------------------------

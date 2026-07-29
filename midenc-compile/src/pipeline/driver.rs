@@ -1337,9 +1337,10 @@ path = "{root}"
 
     #[test]
     fn a_stop_flag_the_route_cannot_express_is_reported() {
-        // The stub route reaches no analysis checkpoint, so this is the manifest-backed Rust
-        // shape in miniature: a flag naming a phase the route never reaches must be a
-        // diagnostic rather than a silently uncapped build.
+        // The stub route reaches no analysis checkpoint: a flag naming a phase the route never
+        // reaches must be a diagnostic rather than a silently uncapped build. No shipped route
+        // is in that position — the manifest-backed Rust route was the live case and no longer
+        // is — which is exactly why the property is pinned on a fixture rather than left to one.
         let (session, manifest) =
             session_configured("driver_analyze_only", STUB, |options| options.analyze_only = true);
         let request = CompilationRequest::new(session, input(&manifest));

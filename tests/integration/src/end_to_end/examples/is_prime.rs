@@ -1,26 +1,13 @@
-// PARKED — blocked on the recursive-checkpoint task, not abandoned.
-//
 // This test wants *two* artifacts from one build: the assembled package, and the optimized HIR
 // component, which it evaluates with `HirEvaluator` and compares against the Rust original.
 //
-// The fixture is a Cargo project, so it compiles through `RUST_FRONTEND`, whose route is
-// `[package.assembled]` alone: a manifest-backed Rust target is built by recursing into a nested
-// `midenc` with its own `Session`, `Context` and `RequestState`, so the outer run's observers
-// never see `hir.initial` or `hir.transformed`. There is therefore no HIR for this test to ask
-// for — see `RustProjectFrontend::compile`, which records that surfacing the recursive run's
-// checkpoints means propagating the goal and the observers into it, and that this is a later
-// increment's work.
-//
-// Re-enable this test as a gate of that task: it must compile and pass once a manifest-backed
-// build publishes its intermediate checkpoints. Note that HIR handed *out* of a run also needs
-// the root target's `Context` to be retained, because HIR operations hold only a raw pointer to
-// the arena they were allocated in — the owner has approved that retention for the root target.
-//
-// It is `#[cfg(false)]` rather than `#[ignore]` because `#[ignore]` would report as a skipped
-// test forever, which reads as flakiness rather than as a known gap. Note that `cfg(false)` means
-// the body is not type-checked either, so the task that re-enables it should expect to fix drift
-// in the test as well as in the compiler.
-#[cfg(false)]
+// It was parked for the length of the pipeline redesign, because a Cargo fixture compiles through
+// `RUST_FRONTEND`, whose route was `[package.assembled]` alone: the root target was built by
+// recursing with its own `Session` and `Context`, so the outer run's observers never saw
+// `hir.transformed`. The root arm now runs the shared WebAssembly tail in this process and
+// publishes every checkpoint on that route, and `CompilerTest::hir` retains the run's `Context`
+// so the component is still evaluable after the run returns — HIR operations hold only a raw
+// pointer to the arena they were allocated in.
 #[test]
 fn is_prime() {
     use miden_debug::ToMidenRepr;

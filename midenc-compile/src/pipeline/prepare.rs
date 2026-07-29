@@ -709,13 +709,17 @@ fn reject_unselected_workspace_root(manifest_path: &Path) -> CompilerResult<()> 
 ///
 /// A Rust target has two entry points. The registry holds
 /// [`RUST_FRONTEND`](super::frontends::RUST_FRONTEND), which builds a manifest-declared target
-/// by running `cargo`; that is what a Rust *dependency* of any project is, and it is what the
-/// registry must keep answering for every target this request builds beyond the root. A
-/// standalone `.rs` file is not that: it is compiled in this process, and publishes checkpoints
-/// a cargo build never reaches. Since a route is what `--stop-after` and `--emit` are validated
-/// against, the request has to carry
-/// [`RUST_STANDALONE_FRONTEND`](super::frontends::RUST_STANDALONE_FRONTEND) instead — and it
+/// by running `cargo` over the manifest; that is what a Rust *dependency* of any project is, and
+/// it is what the registry must keep answering for every target this request builds beyond the
+/// root. A standalone `.rs` file is not that: there is no manifest, and the file is compiled by
+/// `rustc` — or by a temporary Cargo project synthesized around it — in this process. So the
+/// request has to carry
+/// [`RUST_STANDALONE_FRONTEND`](super::frontends::RUST_STANDALONE_FRONTEND) instead, and it
 /// cannot get it from the registry, which rejects a second claim on an extension.
+///
+/// The two declare the *same* route — past the WebAssembly both entry points run the same shared
+/// tail — so what the substitution decides is which build runs, not what `--stop-after` and
+/// `--emit` may name. It was once both; see [`RUST_STANDALONE_FRONTEND`].
 ///
 /// Only the *selected* registration is substituted, never the registry's own entry, so this
 /// decides how the root target is compiled and nothing else. The driver installs a provider
@@ -1487,9 +1491,9 @@ path = "other.wat"
         assert_eq!(
             prepared.frontend.id(),
             RUST_STANDALONE_FRONTEND.id(),
-            "a standalone `.rs` file is compiled in this process, so the request runs the \
-             registration that describes what that publishes — not the registry's, which \
-             describes a nested cargo build"
+            "a standalone `.rs` file has no manifest for cargo to build, so the request runs the \
+             registration that compiles one file in this process — not the registry's, which runs \
+             cargo over a manifest"
         );
         assert_eq!(
             registry_with_rust().for_extension("rs").map(FrontendRegistration::id),
@@ -1528,7 +1532,8 @@ path = "other.wat"
         assert_eq!(
             prepared.frontend.id(),
             RUST_FRONTEND.id(),
-            "a manifest-backed Rust target is built by cargo, and its route must say so"
+            "a manifest-backed Rust target is built by cargo over its manifest, whatever else is \
+             in the request"
         );
     }
 

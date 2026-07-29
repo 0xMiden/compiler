@@ -251,6 +251,12 @@ impl WasmProvenance {
 /// Visible to the sibling frontends because
 /// [`RustStandaloneFrontend`](super::rust::RustStandaloneFrontend) *produces* its WebAssembly
 /// rather than reading it, and then hands it to [`WasmFrontend::compile_wasm`] to finish.
+///
+/// `Clone` because a caller that produces its WebAssembly rather than reading it has to keep the
+/// bytes: [`RustProjectFrontend`](super::rust::RustProjectFrontend) memoizes what `cargo` built so
+/// that `provenance` and `compile` — either of which the assembler may reach first — do not run
+/// two `cargo` builds for one target, and `compile_wasm` takes its source by value.
+#[derive(Clone)]
 pub(super) struct WasmSource {
     /// The path the bytes are attributed to.
     ///
@@ -314,8 +320,13 @@ impl WasmFrontend {
     ///
     /// The counterpart of [`WasmFrontend::read`] for a caller that holds an [`InputFile`] and no
     /// target: it dispatches on the input's own shape rather than on a resolved target root, and
-    /// so has no root to prefer. See [`lower_wasm_input`], its only caller.
-    fn read_input(input: &midenc_session::InputFile) -> CompilerResult<WasmSource> {
+    /// so has no root to prefer.
+    ///
+    /// Two callers, and both hold WebAssembly that no target root names: [`lower_wasm_input`],
+    /// and [`RustProjectFrontend`](super::rust::RustProjectFrontend), whose root target's
+    /// WebAssembly is what `cargo` just produced rather than the `.rs` file the target is rooted
+    /// at.
+    pub(super) fn read_input(input: &midenc_session::InputFile) -> CompilerResult<WasmSource> {
         let file_type = input.file_type();
         match &input.file {
             InputType::Real(path) => Ok(WasmSource {
@@ -393,7 +404,13 @@ impl WasmFrontend {
     }
 
     /// The provenance of `source`, computing it only if this target has none yet.
-    fn provenance_of(
+    ///
+    /// Visible to the sibling frontends because
+    /// [`RustProjectFrontend`](super::rust::RustProjectFrontend) delegates its **root** target's
+    /// tail here: the provenance of a manifest-backed Rust root is the provenance of the
+    /// WebAssembly `cargo` produced, so it has to land in the same memo `compile_wasm` fills or
+    /// the two would disagree about what the target was built from.
+    pub(super) fn provenance_of(
         &self,
         cx: &TargetContext<'_>,
         source: &WasmSource,
@@ -525,6 +542,17 @@ impl WasmFrontend {
         );
 
         Ok(Flow::Continue(sources))
+    }
+
+    /// What codegen produced for the target `key` names, if [`WasmFrontend::compile_wasm`] has
+    /// run for it.
+    ///
+    /// For the sibling frontend that delegates its tail here and answers `post_process` itself:
+    /// [`RustProjectFrontend`](super::rust::RustProjectFrontend) serves a *dependency* from its
+    /// own cargo-build cache and its **root** from this one, and reports a miss in a single
+    /// wording rather than in two that differ by which arm looked.
+    pub(super) fn lowered_for(&self, key: &TargetKey) -> Option<CodegenOutput> {
+        self.lowered.borrow().get(key).cloned()
     }
 }
 

@@ -848,6 +848,15 @@ pub struct CompilerTest {
     /// assembler callback and dropped when that callback returns. Rendering inside the callback
     /// — which is what an observer does — is what makes the document outlive the run.
     hir_initial: Option<String>,
+    /// The post-rewrite HIR component, live, together with the `Context` that keeps it valid.
+    ///
+    /// The one artifact this harness keeps as HIR rather than as text, because
+    /// [`CompilerTest::hir`]'s caller evaluates it. Holding the `Rc<Context>` here is what makes
+    /// that sound; see [`ArtifactCollector`], and note that dropping this `CompilerTest` drops
+    /// the context and invalidates any `ComponentRef` handed out of [`CompilerTest::hir`].
+    hir_transformed: Option<(Rc<Context>, midenc_hir::dialects::builtin::ComponentRef)>,
+    /// The Miden Assembly the run handed to the assembler, rendered as text.
+    masm_lowered: Option<String>,
     /// The compiled package containing a program executable by the VM
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
     /// The goal of the one compilation this test performs, once it has been performed.
@@ -862,6 +871,8 @@ impl fmt::Debug for CompilerTest {
             .field("artifact_name", &self.artifact_name)
             .field("entrypoint", &self.entrypoint)
             .field("hir_initial", &self.hir_initial.is_some())
+            .field("hir_transformed", &self.hir_transformed.is_some())
+            .field("masm_lowered", &self.masm_lowered.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -877,6 +888,8 @@ impl Default for CompilerTest {
             artifact_name: "unknown".into(),
             entrypoint: None,
             hir_initial: None,
+            hir_transformed: None,
+            masm_lowered: None,
             package: None,
             compiled_to: None,
         }
@@ -966,6 +979,45 @@ impl CompilerTest {
         }
     }
 
+    /// The post-rewrite HIR component this build produced, **live**.
+    ///
+    /// Not a rendering: the caller evaluates it with `midenc_hir_eval::HirEvaluator` after the
+    /// run has returned, which needs the operations themselves. That is sound only because this
+    /// `CompilerTest` retains the run's `Context` — HIR reaches its context through a raw
+    /// pointer — so the returned handle is valid for exactly as long as this value is. Dropping
+    /// the test and keeping the component is a use-after-free.
+    ///
+    /// # Why this asks for a full build
+    ///
+    /// The harness compiles **once**, and this artifact's callers want the package too. Capping
+    /// the run at `hir.transformed` would make a later `compile_package()` a second compilation,
+    /// which [`CompilerTest::compile`] refuses. Compare [`CompilerTest::expect_ir_unoptimized`],
+    /// which does cap, because the HIR document is the whole of what its callers want.
+    pub fn hir(&mut self) -> midenc_hir::dialects::builtin::ComponentRef {
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.hir_transformed
+            .as_ref()
+            .expect(
+                "the run must have published `hir.transformed` with a component; this route does \
+                 not reach it",
+            )
+            .1
+    }
+
+    /// The Miden Assembly this build handed to the assembler, as text.
+    ///
+    /// What `masm.lowered` publishes: the root module and its support modules, which is what the
+    /// package is assembled *from*. Its caller compares it across repeated builds to localize a
+    /// digest divergence — identical text means the divergence was introduced at assembly — so
+    /// it is only meaningful beside the package from the same run, and asks for a full build for
+    /// the same reason [`CompilerTest::hir`] does.
+    pub fn masm_src(&mut self) -> String {
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.masm_lowered
+            .clone()
+            .expect("the run must have published `masm.lowered`; this route does not reach it")
+    }
+
     /// Compile this test's input **once**, to `goal`, capturing every artifact on the way.
     ///
     /// # One invocation, several artifacts
@@ -1019,7 +1071,12 @@ impl CompilerTest {
             .unwrap_or_else(|err| panic!("{}", format_report(err)))
             .compile(request, registry.as_mut());
 
-        self.hir_initial = observer.borrow_mut().hir_initial.take();
+        {
+            let mut collected = observer.borrow_mut();
+            self.hir_initial = collected.hir_initial.take();
+            self.hir_transformed = collected.hir_transformed.take();
+            self.masm_lowered = collected.masm_lowered.take();
+        }
         self.package = match outcome {
             Ok(outcome) if goal.checkpoint() == CheckpointId::PACKAGE_ASSEMBLED => {
                 Some(outcome.into_package().map_err(format_report))
@@ -1041,33 +1098,81 @@ fn goal_is_reached_by(wanted: Goal, reached: Goal) -> bool {
 
 /// Collects the intermediate artifacts a test may ask for, as the run publishes them.
 ///
-/// Rendering happens **here**, inside the assembler's callback, and that is the point: HIR
-/// operations hold only a raw pointer to the `Context` they were allocated in, and a pipeline run
-/// builds each target's HIR in a `Context` created per callback and dropped when it returns. A
-/// component cloned out of an observer would dangle; the text it rendered does not.
+/// # Two ways to survive the run, and the raw-pointer constraint decides which
+///
+/// HIR operations hold only a raw pointer to the `Context` they were allocated in, and a pipeline
+/// run builds each target's HIR in a `Context` created per assembler callback. So a document is
+/// either **rendered here**, inside the callback, or the `Context` itself is **retained** —
+/// `Operation::context_rc` hands back an owning `Rc`, so a handle taken while the callback is
+/// running keeps the arena alive for as long as this collector lives. There is no third option: a
+/// component cloned out of an observer without its context would dangle.
+///
+/// Rendering is the cheaper of the two and is what the text accessors use. Retention is what
+/// `hir.transformed` needs, because [`CompilerTest::hir`]'s caller evaluates the component
+/// *after* the run returns, and that capability is the compiler's, not a test workaround.
 #[derive(Default)]
 struct ArtifactCollector {
     /// The pre-rewrite HIR document, if the run reached `hir.initial`.
     hir_initial: Option<String>,
+    /// The post-rewrite HIR component, and the `Context` that keeps it alive.
+    ///
+    /// The `Rc` is not decoration: dropping it invalidates the `ComponentRef` beside it.
+    hir_transformed: Option<(Rc<Context>, midenc_hir::dialects::builtin::ComponentRef)>,
+    /// The Miden Assembly handed to the assembler, if the run reached `masm.lowered`.
+    masm_lowered: Option<String>,
 }
 
 impl Observer for ArtifactCollector {
     fn on_checkpoint(&mut self, checkpoint: CheckpointId, role: TargetRole, artifact: &Artifact) {
         // Only the root target's artifacts: a dependency's HIR is not what the test asked about,
         // and on a route where both are published the last one to arrive would win.
-        if !role.is_root() || checkpoint != CheckpointId::HIR_INITIAL {
+        if !role.is_root() {
             return;
         }
-        if let Some(hir) = artifact.downcast_ref::<midenc_compile::MidenComponent>() {
-            // The *component*, not the world that anchors it: that is the document these
-            // assertions were written against, and the world wrapper is not part of it.
-            // Component-less HIR falls back to the world, which is then the whole of it.
-            self.hir_initial = Some(match hir.component {
-                Some(component) => component.borrow().as_operation().to_string(),
-                None => hir.world.borrow().as_operation().to_string(),
-            });
+        if checkpoint == CheckpointId::HIR_INITIAL {
+            if let Some(hir) = artifact.downcast_ref::<midenc_compile::MidenComponent>() {
+                // The *component*, not the world that anchors it: that is the document these
+                // assertions were written against, and the world wrapper is not part of it.
+                // Component-less HIR falls back to the world, which is then the whole of it.
+                self.hir_initial = Some(match hir.component {
+                    Some(component) => component.borrow().as_operation().to_string(),
+                    None => hir.world.borrow().as_operation().to_string(),
+                });
+            }
+        } else if checkpoint == CheckpointId::HIR_TRANSFORMED {
+            if let Some(hir) = artifact.downcast_ref::<midenc_compile::MidenComponent>()
+                && let Some(component) = hir.component
+            {
+                // Taken from the **component**, not from the world that anchors it. The two
+                // share a `Context` today — `WasmFrontend::translate` builds both in the one
+                // it was handed — but that is an invariant of the frontend, not of this
+                // collector, and what has to stay alive is the arena the component is in.
+                // Reading it off the component makes the pair self-evidently matched, and the
+                // two are stored together so they cannot be separated. See this type's doc.
+                let context = component.borrow().as_operation().context_rc();
+                self.hir_transformed = Some((context, component));
+            }
+        } else if checkpoint == CheckpointId::MASM_LOWERED
+            && let Some(sources) = artifact.downcast_ref::<miden_assembly::ProjectSourceInputs>()
+        {
+            self.masm_lowered = Some(render_masm(sources));
         }
     }
+}
+
+/// Render the Miden Assembly a run handed to the assembler.
+///
+/// The root module first and the support modules after it, each as the assembler's own printer
+/// writes them. This is the text `masm.lowered` publishes — what is *about to be assembled* —
+/// rather than `--emit=masm`'s document, which is the lowered component the sources were derived
+/// from.
+fn render_masm(sources: &miden_assembly::ProjectSourceInputs) -> String {
+    let mut rendered = format!("{}", sources.root);
+    for module in &sources.support {
+        rendered.push('\n');
+        rendered.push_str(&format!("{module}"));
+    }
+    rendered
 }
 
 const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");

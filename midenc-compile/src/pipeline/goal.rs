@@ -362,9 +362,15 @@ pub fn apply_stop_flags(
 /// `None` means the flag names a phase this route does not have and is therefore inert; see
 /// [`StopFlag::is_required`]. Otherwise a route that cannot serve the flag is reported as a
 /// limitation of the compiler, because that is what it is: the phase happens, but not
-/// anywhere this request can observe. A manifest-backed Rust target is the live case — it
-/// compiles by recursing with a fresh `Session` and `Context`, whose checkpoints this
-/// request's observers never see, so its route is `package.assembled` alone.
+/// anywhere this request can observe.
+///
+/// No shipped route is in that position today. A manifest-backed Rust target was the live case —
+/// it compiled by recursing with a fresh `Session` and `Context`, whose checkpoints this
+/// request's observers never saw, so its route was `package.assembled` alone — and it no longer
+/// is: its root target now runs the shared WebAssembly tail in this process and publishes every
+/// checkpoint on that route. The branch stays because it is the honest answer for any future
+/// route that compiles somewhere this request cannot see, and because leaving such a flag
+/// *ignored* is what it replaced.
 fn stop_checkpoint(
     flag: StopFlag,
     frontend: &FrontendRegistration,
@@ -788,49 +794,51 @@ mod tests {
         assert!(format!("{err}").contains("hir.transformed"), "{err}");
     }
 
+    /// Every `-C` stop flag lands on a manifest-backed Rust target exactly where it lands on a
+    /// standalone one.
+    ///
+    /// This is the user-visible half of propagating the goal into the root Rust build. Until
+    /// that landed, `RUST_FRONTEND`'s route was `package.assembled` alone — its target was
+    /// compiled by recursing with a fresh `Session`/`Context` whose checkpoints this request's
+    /// observers never saw — and each of these flags was rejected as a known limitation of the
+    /// compiler. The root target now runs the shared WebAssembly tail in this process, so there
+    /// is nothing left to be limited about.
+    ///
+    /// Asserted against `RUST_STANDALONE_FRONTEND`'s answers rather than against literals: the
+    /// claim is that the two Rust entry points stop in the same places, and a literal would
+    /// still pass if both drifted together.
     #[test]
-    fn analyze_only_on_a_manifest_backed_rust_target_is_a_known_limitation() {
-        // `RUST_FRONTEND` compiles a manifest-backed Rust target by recursing with a fresh
-        // `Session`/`Context`, whose checkpoints this request's observers never see; its route
-        // is `package.assembled` alone. Today the flag is silently ignored there, which is the
-        // behaviour this replaces.
-        let options = options_with(|options| options.analyze_only = true);
-        let err = apply_stop_flags(OutputRequest::default(), &options, &RUST_FRONTEND)
-            .expect_err("the rust project route cannot express an analysis stop");
+    fn every_stop_flag_lands_on_a_manifest_backed_rust_target_where_it_lands_on_a_standalone_one() {
+        /// One `-C` stop flag: how it is spelled, and how it is set.
+        type Flag = (&'static str, fn(&mut Options));
 
-        let rendered = format!("{err}");
-        assert!(rendered.contains("-Canalyze-only"), "must name the flag: {rendered}");
-        assert!(
-            rendered.contains("not supported"),
-            "must read as an unsupported request, not a malformed one: {rendered}"
-        );
-        assert!(
-            rendered.contains("known limitation"),
-            "must say the limitation is the compiler's, not the project's: {rendered}"
-        );
-        assert!(rendered.contains("hir.analyzed"), "must name the stop point: {rendered}");
-        assert!(
-            rendered.contains("package.assembled"),
-            "must name what the route does reach: {rendered}"
-        );
+        let flags: [Flag; 3] = [
+            ("-Cparse-only", |options| options.parse_only = true),
+            ("-Canalyze-only", |options| options.analyze_only = true),
+            ("-Clink-only", |options| options.link_only = true),
+        ];
 
-        // `-Cparse-only` is rejected here for the same reason and by the same rule; it is not
-        // singled out for `-Canalyze-only`.
-        let options = options_with(|options| options.parse_only = true);
-        let err = apply_stop_flags(OutputRequest::default(), &options, &RUST_FRONTEND)
-            .expect_err("nor can it express a parse stop");
-        assert!(format!("{err}").contains("-Cparse-only"), "{err}");
+        for (name, set) in flags {
+            let options = options_with(set);
+            let standalone = resolved_stop(&options, &RUST_STANDALONE_FRONTEND);
+            assert!(
+                standalone.is_some(),
+                "{name} must resolve on the standalone route, or this proves nothing"
+            );
+            assert_eq!(
+                resolved_stop(&options, &RUST_FRONTEND),
+                standalone,
+                "{name} must stop in the same place on both Rust routes"
+            );
+        }
 
-        // `-Clink-only` is *not*, and that asymmetry is deliberate: `is_required` is a property
-        // of the flag, not of the route. A linking phase is one a route may legitimately not
-        // have — which is the MASM case the mapping has to preserve — so the flag is inert
-        // wherever its checkpoint is absent, here included. Asserted rather than left to prose,
-        // because it is the one place the two rules visibly disagree.
-        let options = options_with(|options| options.link_only = true);
+        // And the derived rewrite-only mode, which is not a flag and is reached by a different
+        // branch of `stop_flag`.
+        let options = Options::default();
         assert_eq!(
             resolved_stop(&options, &RUST_FRONTEND),
-            None,
-            "-Clink-only must be inert on the rust project route, not a diagnostic"
+            Some(CheckpointId::HIR_TRANSFORMED),
+            "the rewrite-only mode stops after the rewrites on the rust project route too"
         );
     }
 
