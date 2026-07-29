@@ -87,13 +87,13 @@ pub fn hir_to_masm(
     let hir = analyze(hir, context.clone())?;
     let hir = match cx.checkpoint(CheckpointId::HIR_ANALYZED, ArtifactId::HIR, hir)? {
         Flow::Continue(hir) => hir,
-        Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+        Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
     };
 
     apply_rewrites(hir.world.as_operation_ref(), context)?;
     let hir = match cx.checkpoint(CheckpointId::HIR_TRANSFORMED, ArtifactId::HIR, hir)? {
         Flow::Continue(hir) => hir,
-        Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+        Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
     };
 
     masm_from_transformed_hir(cx, hir)
@@ -142,7 +142,7 @@ pub fn masm_from_transformed_hir(
             cx.pre_assembly(&lowered)?;
             Flow::Continue(lowered)
         }
-        Flow::Stop(stopped) => Flow::Stop(stopped),
+        Flow::Break(stopped) => Flow::Break(stopped),
     })
 }
 
@@ -407,7 +407,7 @@ mod tests {
         let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
 
         let flow = hir_to_masm(&cx, component).expect("backend should succeed");
-        assert!(flow.is_stop(), "the goal is on the backend's route, so it must stop there");
+        assert!(flow.is_break(), "the goal is on the backend's route, so it must stop there");
         let trace = observer.borrow().records().iter().map(|(c, _)| *c).collect();
         (trace, state.take_outcome())
     }
@@ -497,7 +497,7 @@ mod tests {
         let state = RequestState::new(Goal::at(goal), Vec::new()).with_pre_assembly(Some(hook));
         let cx = TargetContext::for_testing(&assembly, context, TargetRole::Root, &state);
 
-        hir_to_masm(&cx, component).expect("the backend should compile");
+        let _ = hir_to_masm(&cx, component).expect("the backend should compile");
         *seen.borrow()
     }
 
@@ -542,7 +542,7 @@ mod tests {
             .with_pre_assembly(Some(hook));
         let cx = TargetContext::for_testing(&assembly, context, TargetRole::Dependency, &state);
 
-        hir_to_masm(&cx, component).expect("the backend should compile");
+        let _ = hir_to_masm(&cx, component).expect("the backend should compile");
 
         assert_eq!(*seen.borrow(), 0, "only the root target's Miden Assembly reaches the hook");
     }
@@ -592,7 +592,7 @@ mod tests {
             "the fixture must raise nothing of its own, or the assertion below is vacuous"
         );
 
-        run_to_completion("backend_lint_clean", context, component)
+        let _ = run_to_completion("backend_lint_clean", context, component)
             .expect("a clean lint run must compile");
     }
 
@@ -711,7 +711,7 @@ mod tests {
         let context = hir_emitting_context(&out_dir);
         let component = minimal_component(&context);
 
-        run_to_completion("backend_emit_hir", context, component)
+        let _ = run_to_completion("backend_emit_hir", context, component)
             .expect("the backend should compile");
 
         let documents = hir_documents(&out_dir);
@@ -791,7 +791,7 @@ mod tests {
         ) -> CompilerResult<Flow<miden_assembly::ProjectSourceInputs>> {
             let lowered = match hir_to_masm(cx, Self::hir(cx))? {
                 Flow::Continue(lowered) => lowered,
-                Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+                Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
             };
             // Destructured rather than moved whole, so that anything assembly needs and this
             // frontend fails to keep is a compile error here rather than a missing section
@@ -1009,7 +1009,7 @@ path = "{root}"
         let service_dir = fixture_dir("backend_same_document_service");
         let context = hir_emitting_context(&service_dir);
         let component = minimal_component(&context);
-        run_to_completion("backend_same_document", context, component)
+        let _ = run_to_completion("backend_same_document", context, component)
             .expect("the backend should compile");
 
         let direct_dir = fixture_dir("backend_same_document_direct");

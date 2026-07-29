@@ -107,7 +107,7 @@ fn an_external_crate_can_build_and_unwrap_an_outcome() {
 
     // Goal and Flow are constructible externally too.
     let _ = Goal::at(CheckpointId::MASM_LOWERED);
-    assert!(!Flow::Continue(0u32).is_stop());
+    assert!(!Flow::Continue(0u32).is_break());
 }
 
 #[test]

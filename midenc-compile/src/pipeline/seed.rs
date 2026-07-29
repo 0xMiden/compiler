@@ -397,7 +397,7 @@ impl Frontend for SeedFrontend {
             source_provenance,
         } = match self.resume(cx, hir)? {
             Flow::Continue(lowered) => lowered,
-            Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+            Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
         };
         self.lowered.borrow_mut().insert(
             cx.target_key(),
@@ -559,7 +559,7 @@ mod tests {
                 source_provenance,
             } = match backend::hir_to_masm(cx, hir)? {
                 Flow::Continue(lowered) => lowered,
-                Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+                Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
             };
             self.lowered.borrow_mut().insert(
                 cx.target_key(),
@@ -576,15 +576,15 @@ mod tests {
     impl Frontend for SeedFixtureFrontend {
         fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
             let name = cx.assembly().target.name.inner().to_string();
-            if let Flow::Stop(stopped) =
+            if let Flow::Break(stopped) =
                 cx.checkpoint(CheckpointId::WASM_PARSED, ArtifactId::WASM, Parsed(name))?
             {
-                return Ok(Flow::Stop(stopped));
+                return Ok(Flow::Break(stopped));
             }
             let hir = Self::hir(&cx.context());
             let hir = match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, hir)? {
                 Flow::Continue(hir) => hir,
-                Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+                Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
             };
             self.lower(cx, hir)
         }

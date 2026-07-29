@@ -1847,9 +1847,9 @@ path = "other.wat"
             &state,
         );
 
-        // The returned `Flow` is dropped rather than asserted on: it is not `Debug`, and what
-        // this needs is the artifact captured at the goal.
-        HIR_FRONTEND.instantiate(cx.session()).compile(&cx)?;
+        // The returned `ControlFlow` is dropped rather than asserted on: it is not `Debug`, and
+        // what this needs is the artifact captured at the goal.
+        let _ = HIR_FRONTEND.instantiate(cx.session()).compile(&cx)?;
         Ok(state
             .take_outcome()
             .expect("stopping at masm.lowered must capture the lowered sources")

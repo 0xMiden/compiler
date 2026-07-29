@@ -215,7 +215,7 @@ impl ProjectSourceProvider for FrontendProvider {
     ) -> Result<ProjectSourceInputs, Report> {
         match self.frontend.compile(&self.target_context(context))? {
             Flow::Continue(inputs) => Ok(inputs),
-            Flow::Stop(stopped) => Err(Report::msg(format!(
+            Flow::Break(stopped) => Err(Report::msg(format!(
                 "internal error: compilation of target '{}' of package '{}' stopped at '{}', but \
                  `provide_sources` has no way to report a stop; a request whose goal is short of \
                  assembly must be driven through `provide_sources_interruptible`",
@@ -230,10 +230,7 @@ impl ProjectSourceProvider for FrontendProvider {
         &self,
         context: &TargetAssemblyContext<'_>,
     ) -> Result<ControlFlow<(), ProjectSourceInputs>, Report> {
-        Ok(match self.frontend.compile(&self.target_context(context))? {
-            Flow::Continue(inputs) => ControlFlow::Continue(inputs),
-            Flow::Stop(_) => ControlFlow::Break(()),
-        })
+        Ok(self.frontend.compile(&self.target_context(context))?.map_break(|_| ()))
     }
 }
 
@@ -323,7 +320,7 @@ mod tests {
             let name = cx.assembly().target.name.inner().to_string();
             match cx.checkpoint(PUBLISHED, ArtifactId::MASM, Published(name))? {
                 Flow::Continue(_) => Ok(Flow::Continue(Self::sources(cx)?)),
-                Flow::Stop(stopped) => Ok(Flow::Stop(stopped)),
+                Flow::Break(stopped) => Ok(Flow::Break(stopped)),
             }
         }
 

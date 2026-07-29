@@ -2370,7 +2370,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
             .compile(&cx)
             .expect("the standalone frontend should compile a bare `.rs` file");
 
-        assert!(!flow.is_stop(), "package.assembled is the orchestrator's to publish, not ours");
+        assert!(!flow.is_break(), "package.assembled is the orchestrator's to publish, not ours");
         assert_eq!(
             observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
             rust_trace(),
@@ -2435,7 +2435,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         let frontend = already_built(context.session_rc(), cx.target_key());
         let flow = frontend.compile(&cx).expect("the root arm should lower the built WebAssembly");
 
-        assert!(!flow.is_stop(), "package.assembled is the orchestrator's to publish, not ours");
+        assert!(!flow.is_break(), "package.assembled is the orchestrator's to publish, not ours");
         assert_eq!(
             observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
             rust_trace(),
@@ -2473,7 +2473,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
             let frontend = already_built(context.session_rc(), cx.target_key());
             let flow = frontend.compile(&cx).expect("the root arm should reach the goal");
 
-            assert!(flow.is_stop(), "the run must stop at its goal '{goal}'");
+            assert!(flow.is_break(), "the run must stop at its goal '{goal}'");
             let published = observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>();
             assert_eq!(
                 published.last(),
@@ -2559,11 +2559,11 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         let cx = TargetContext::for_testing(&assembly, context.clone(), TargetRole::Root, &state);
 
         let frontend = already_built(context.session_rc(), cx.target_key());
-        frontend.compile(&cx).expect("the first callback lowers the built WebAssembly");
+        let _ = frontend.compile(&cx).expect("the first callback lowers the built WebAssembly");
         let after_first = observer.borrow().records().len();
         assert_eq!(after_first, rust_trace().len(), "the first callback publishes the route");
 
-        frontend.compile(&cx).expect("the second callback must be served, not rebuilt");
+        let _ = frontend.compile(&cx).expect("the second callback must be served, not rebuilt");
         assert_eq!(
             observer.borrow().records().len(),
             after_first,
@@ -2596,7 +2596,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
             "a miss must still be reported as one: {err}"
         );
 
-        frontend.compile(&cx).expect("the root arm should lower the built WebAssembly");
+        let _ = frontend.compile(&cx).expect("the root arm should lower the built WebAssembly");
         frontend
             .post_process(&mut any_package(), &cx)
             .expect("the root's lowering is the embedded wasm frontend's, and must be found there");
@@ -2665,7 +2665,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
             frontend.built.borrow().contains_key(&cx.target_key()),
             "the build must be memoized for the callbacks still to come"
         );
-        frontend
+        let _ = frontend
             .compile(&cx)
             .expect("the second callback must be served the same build, not run another");
     }

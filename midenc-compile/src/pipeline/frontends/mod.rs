@@ -247,7 +247,7 @@ mod synthetic {
             let module = SyntheticModule::parse(&Self::read(cx)?)?;
             let module = match cx.checkpoint(SYNTHETIC_PARSED, SYNTHETIC, module)? {
                 Flow::Continue(module) => module,
-                Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+                Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
             };
 
             let sources = module.lower(cx)?;
@@ -328,7 +328,7 @@ mod synthetic {
         let frontend = SYNTHETIC_FRONTEND.instantiate(cx.session());
         let flow = frontend.compile(&cx).expect("the synthetic frontend should compile");
         let trace = observer.borrow().records().iter().map(|(c, _)| *c).collect();
-        (flow.is_stop(), trace, state.take_outcome())
+        (flow.is_break(), trace, state.take_outcome())
     }
 
     // ---------------------------------------------------------------------------------------

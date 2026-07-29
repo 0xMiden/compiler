@@ -381,16 +381,16 @@ impl Frontend for MasmProjectFrontend {
         let inputs = self.provide(cx)?;
         let inputs = match cx.checkpoint(CheckpointId::MASM_PARSED, ArtifactId::MASM, inputs)? {
             Flow::Continue(inputs) => inputs,
-            Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+            Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
         };
 
         let session = cx.session();
         if (session.options.lint || session.options.analyze_only) && cx.role().is_root() {
             let world = self.analyze(&inputs, cx)?;
-            if let Flow::Stop(stopped) =
+            if let Flow::Break(stopped) =
                 cx.checkpoint(CheckpointId::HIR_ANALYZED, ArtifactId::HIR, world)?
             {
-                return Ok(Flow::Stop(stopped));
+                return Ok(Flow::Break(stopped));
             }
         }
 
@@ -697,7 +697,7 @@ mod tests {
             (observed.checkpoints.clone(), observed.roots.clone())
         };
         Run {
-            stopped: flow.is_stop(),
+            stopped: flow.is_break(),
             trace,
             roots,
             captured: state.take_outcome(),
@@ -939,7 +939,7 @@ mod tests {
         );
 
         let frontend = MASM_FRONTEND.instantiate(cx.session());
-        frontend.compile(&cx).expect("a dependency target should compile");
+        let _ = frontend.compile(&cx).expect("a dependency target should compile");
 
         assert_eq!(
             observer.borrow().checkpoints,

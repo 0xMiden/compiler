@@ -256,7 +256,7 @@ impl<'a> TargetContext<'a> {
         }
 
         self.state.capture(checkpoint, artifact)?;
-        Ok(Flow::Stop(Stopped::new(checkpoint)))
+        Ok(Flow::Break(Stopped::new(checkpoint)))
     }
 
     /// Run the request's pre-assembly hook against `lowered`, if it has one.
@@ -355,7 +355,7 @@ mod tests {
 
         match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, Payload(1)).unwrap() {
             Flow::Continue(payload) => assert_eq!(payload, Payload(1)),
-            Flow::Stop(_) => panic!("goal is masm.lowered, should not stop at hir.initial"),
+            Flow::Break(_) => panic!("goal is masm.lowered, should not stop at hir.initial"),
         }
         assert_eq!(observer.borrow().records(), &[(CheckpointId::HIR_INITIAL, TargetRole::Root)]);
         assert!(state.take_outcome().is_none(), "nothing captured before the goal");
@@ -370,7 +370,7 @@ mod tests {
         let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
 
         match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, Payload(9)).unwrap() {
-            Flow::Stop(stopped) => assert_eq!(stopped.checkpoint(), CheckpointId::HIR_INITIAL),
+            Flow::Break(stopped) => assert_eq!(stopped.checkpoint(), CheckpointId::HIR_INITIAL),
             Flow::Continue(_) => panic!("expected to stop at the goal"),
         }
 
@@ -401,7 +401,7 @@ mod tests {
             // Assert the payload, not just the variant: a guard that returned a default
             // value would otherwise pass.
             Flow::Continue(payload) => assert_eq!(payload, Payload(7)),
-            Flow::Stop(_) => panic!("a non-root target must never stop, even at its goal"),
+            Flow::Break(_) => panic!("a non-root target must never stop, even at its goal"),
         }
         assert_eq!(
             observer.borrow().records(),
@@ -418,7 +418,7 @@ mod tests {
             .checkpoint(CheckpointId::PACKAGE_ASSEMBLED, ArtifactId::PACKAGE, Payload(1))
             .expect("the root target may stop at its goal")
         {
-            Flow::Stop(stopped) => {
+            Flow::Break(stopped) => {
                 assert_eq!(stopped.checkpoint(), CheckpointId::PACKAGE_ASSEMBLED)
             }
             Flow::Continue(_) => panic!("expected the root target to stop at its goal"),

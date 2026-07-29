@@ -509,7 +509,7 @@ impl WasmFrontend {
 
         let wasm = match cx.checkpoint(CheckpointId::WASM_PARSED, ArtifactId::WASM, wasm)? {
             Flow::Continue(wasm) => wasm,
-            Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+            Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
         };
         let source = WasmSource { path, wasm };
 
@@ -517,7 +517,7 @@ impl WasmFrontend {
         let hir = Self::translate(cx.context(), &source, provenance)?;
         let hir = match cx.checkpoint(CheckpointId::HIR_INITIAL, ArtifactId::HIR, hir)? {
             Flow::Continue(hir) => hir,
-            Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+            Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
         };
 
         // Destructured rather than moved whole, so that anything assembly needs and this
@@ -530,7 +530,7 @@ impl WasmFrontend {
             source_provenance,
         } = match backend::hir_to_masm(cx, hir)? {
             Flow::Continue(lowered) => lowered,
-            Flow::Stop(stopped) => return Ok(Flow::Stop(stopped)),
+            Flow::Break(stopped) => return Ok(Flow::Break(stopped)),
         };
         self.lowered.borrow_mut().insert(
             cx.target_key(),
@@ -790,7 +790,7 @@ mod tests {
         let frontend = WASM_FRONTEND.instantiate(cx.session());
         let flow = frontend.compile(&cx)?;
         Ok(Run {
-            stopped: flow.is_stop(),
+            stopped: flow.is_break(),
             trace: observer.borrow().records().iter().map(|(checkpoint, _)| *checkpoint).collect(),
             captured: state.take_outcome(),
         })
@@ -1115,7 +1115,7 @@ mod tests {
         let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
 
         let frontend = WASM_FRONTEND.instantiate(cx.session());
-        frontend.compile(&cx).expect("the fixture should compile");
+        let _ = frontend.compile(&cx).expect("the fixture should compile");
         std::fs::remove_file(&assembly.resolved_target_root)
             .expect("the fixture's own sources should be removable");
 

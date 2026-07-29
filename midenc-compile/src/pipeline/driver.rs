@@ -671,10 +671,10 @@ mod tests {
     impl Frontend for StubFrontend {
         fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
             let name = cx.assembly().target.name.inner().to_string();
-            if let Flow::Stop(stopped) =
+            if let Flow::Break(stopped) =
                 cx.checkpoint(CheckpointId::MASM_PARSED, ArtifactId::MASM, Parsed(name))?
             {
-                return Ok(Flow::Stop(stopped));
+                return Ok(Flow::Break(stopped));
             }
             let sources = Self::sources(cx)?;
             cx.checkpoint(CheckpointId::MASM_LOWERED, ArtifactId::MASM, sources)
@@ -799,10 +799,10 @@ mod tests {
     impl Frontend for EndingFrontend {
         fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
             let name = cx.assembly().target.name.inner().to_string();
-            if let Flow::Stop(stopped) =
+            if let Flow::Break(stopped) =
                 cx.checkpoint(CheckpointId::MASM_PARSED, ArtifactId::MASM, Parsed(name))?
             {
-                return Ok(Flow::Stop(stopped));
+                return Ok(Flow::Break(stopped));
             }
             Err(self.0())
         }
