@@ -308,10 +308,13 @@ impl FileType {
         }
 
         fn is_masm_top_level_item(line: &str) -> bool {
-            line.starts_with("pub proc")
+            line.starts_with("namespace")
+                || line.starts_with("extern package")
+                || line.starts_with("pub proc")
                 || line.starts_with("proc ")
                 || line.starts_with("adv_map")
                 || line.starts_with("const ")
+                || line.starts_with("begin ")
         }
 
         fn is_project_toml_item(line: &str) -> bool {
@@ -330,14 +333,14 @@ impl FileType {
                 !line.starts_with(';')
             });
             if let Some(first_line) = first_line {
-                if first_line.starts_with("(module #") {
+                if first_line.starts_with("builtin.") {
                     return Ok(FileType::Hir);
                 }
                 if first_line.starts_with("(module") {
                     return Ok(FileType::Wat);
                 }
                 if is_rust_top_level_item(first_line) {
-                    return Ok(FileType::Masm);
+                    return Ok(FileType::Rust);
                 }
                 if is_masm_top_level_item(first_line) {
                     return Ok(FileType::Masm);
@@ -346,11 +349,30 @@ impl FileType {
                     return Ok(FileType::Toml);
                 }
             }
+
+            // We could not detect from the first line alone, so fall back to attempting to parse
+            // the most common types - a failure is assumed to mean that the input does not match.
+            //
+            // We try in an order such that the faster checks are performed first - in the case of
+            // Rust, we have to actually invoke `rustc` to try and check if the input parses, so
+            // it is the slowest. We can't actually attempt to parse HIR here, but we also control
+            // its output format, so it is unlikely valid HIR reaches here anyway. We don't attempt
+            // to parse WAT here currently - if the input doesn't look like WAT we'd expect, it
+            // will get rejected.
+            let parsed = miden_assembly_syntax_cst::parse_text(content);
+            if !parsed.has_errors() {
+                return Ok(FileType::Masm);
+            }
+
+            if parses_as_rust(content) {
+                return Ok(FileType::Rust);
+            }
         }
 
         Err(InvalidInputError::UnrecognizedFileType)
     }
 }
+
 impl TryFrom<&Path> for FileType {
     type Error = InvalidInputError;
 
@@ -366,4 +388,47 @@ impl TryFrom<&Path> for FileType {
             _ => Err(InvalidInputError::UnsupportedFileType(path.to_path_buf())),
         }
     }
+}
+
+#[cfg(feature = "std")]
+fn parses_as_rust(src: &str) -> bool {
+    use std::{
+        io::Write,
+        process::{Command, Stdio},
+    };
+
+    let mut command = Command::new("rustc");
+    command
+        .arg("+nightly")
+        .arg("-Zno-analysis")
+        .arg("-Zparse-crate-root-only=yes")
+        .arg("-")
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .stdin(Stdio::piped());
+
+    let Ok(mut child) = command.spawn() else {
+        return false;
+    };
+
+    let Some(mut stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        return false;
+    };
+
+    let Ok(_) = stdin.write_all(src.as_bytes()) else {
+        let _ = child.kill();
+        return false;
+    };
+
+    let Ok(status) = child.wait() else {
+        return false;
+    };
+
+    status.success()
+}
+
+#[cfg(not(feature = "std"))]
+fn parses_as_rust(_src: &str) -> bool {
+    false
 }

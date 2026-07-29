@@ -84,6 +84,7 @@ miden-core = { version = "0.25", default-features = false }
 miden-debug = { version = "0.9" }
 miden-debug-types = { version = "0.25", default-features = false }
 miden-assembly-syntax = { version = "0.25", default-features = false }
+miden-assembly-syntax-cst = { version = "0.25", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
 miden-protocol = { version = "=0.16.0-alpha.4", default-features = false }
 miden-standards = { version = "=0.16.0-alpha.4", default-features = false }

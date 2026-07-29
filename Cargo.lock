@@ -4076,6 +4076,7 @@ dependencies = [
  "inventory",
  "log",
  "miden-assembly-syntax",
+ "miden-assembly-syntax-cst",
  "miden-core",
  "miden-core-lib",
  "miden-debug-types",

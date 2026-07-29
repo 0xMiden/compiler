@@ -37,6 +37,7 @@ heck.workspace = true
 inventory.workspace = true
 log.workspace = true
 miden-assembly-syntax.workspace = true
+miden-assembly-syntax-cst.workspace = true
 miden-core-lib.workspace = true
 miden-core.workspace = true
 miden-debug-types.workspace = true
