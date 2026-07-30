@@ -46,6 +46,21 @@ struct TxScriptArg {
     asset_value: miden_field::Word,
 }
 
+#[cfg(test)]
+mod tests {
+    use miden_tx_script_args::ScriptArgs;
+
+    use super::TxScriptArg;
+
+    /// Pins the mirror's encoded size so layout drift vs the guest struct in
+    /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
+    /// asset key and value words = 14 felts).
+    #[test]
+    fn tx_script_arg_mirror_has_the_guest_layout_size() {
+        assert_eq!(<TxScriptArg as ScriptArgs>::FIXED_LEN, Some(14));
+    }
+}
+
 /// Converts a value's felt representation into `miden_core::Felt` elements.
 pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.prefix().as_felt(), value.suffix()]
