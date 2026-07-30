@@ -28,9 +28,10 @@ pub enum EncodedScriptArgs {
     /// The encoding statically fits the `TX_SCRIPT_ARGS` word and is packed into it directly,
     /// zero-padded.
     Word(Word),
-    /// The encoding exceeds one word: these felts (zero-padded to a whole number of words) are
-    /// the advice-map preimage of the args word. The host hashes them to obtain the args word
-    /// and registers `(args_word, felts)` in the advice map.
+    /// The type uses commitment mode (a longer or variable-length encoding): these felts
+    /// (zero-padded to a whole number of words) are the advice-map preimage of the args word.
+    /// The host hashes them with `Poseidon2::hash_elements` — the Miden VM's native hash — to
+    /// obtain the args word, and registers `(args_word, felts)` in the advice map.
     Preimage(Vec<Felt>),
 }
 
@@ -42,12 +43,13 @@ pub enum EncodedScriptArgs {
 /// - **Word mode** ([`FIXED_LEN`](Self::FIXED_LEN) of at most 4 felts): the encoding is packed
 ///   directly into the args word; the unused felts are zero, and [`decode`](Self::decode) asserts
 ///   they are.
-/// - **Commitment mode** (longer or variable-length encodings): the args word is the hash of the
-///   zero-padded encoding. [`decode`](Self::decode) fetches the preimage from the advice provider
-///   and the hash is verified in-VM, so the host cannot substitute values.
+/// - **Commitment mode** (longer or variable-length encodings): the args word is the Poseidon2
+///   hash of the zero-padded encoding. [`decode`](Self::decode) fetches the preimage from the
+///   advice provider and the hash is verified in-VM, so the host cannot substitute values.
 ///
 /// The mode is a compile-time property of the argument type, so the host-side encoder and the
-/// guest-side decoder always agree on how the args word is interpreted.
+/// guest-side decoder always agree on the transport mode. The word carries no field layout —
+/// the encoding and decoding type definitions themselves must match.
 pub trait ScriptArgs: Sized {
     /// Total encoded length in felts, when statically known.
     const FIXED_LEN: Option<usize>;
@@ -299,7 +301,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "trailing data")]
     fn decode_preimage_rejects_extra_word() {
-        let _: Vec<Felt> =
-            decode_preimage(&[felt(2), felt(5), felt(6), felt(0), felt(0), felt(0), felt(0), felt(0)]);
+        let _: Vec<Felt> = decode_preimage(&[
+            felt(2),
+            felt(5),
+            felt(6),
+            felt(0),
+            felt(0),
+            felt(0),
+            felt(0),
+            felt(0),
+        ]);
     }
 }

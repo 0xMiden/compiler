@@ -63,7 +63,7 @@
 //! - `Felt`: encoded as a single `Felt`
 //! - `u64`: encoded as 2 `Felt`s (low `u32`, then high `u32`)
 //! - `u32`, `u8`: encoded as a single `Felt`
-//! - `bool`: encoded as a single `Felt` (`0` = `false`, non-zero = `true`)
+//! - `bool`: encoded as a single `Felt` (`0` = `false`, `1` = `true`; other values are rejected)
 //!
 //! ## Structs
 //!

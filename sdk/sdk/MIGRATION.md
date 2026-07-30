@@ -146,15 +146,26 @@ package is planned). The trait lives in the `miden-tx-script-args` crate, whose 
 dependencies are only `miden-field` and `miden-field-repr` — host code does not need the
 on-chain SDK:
 
+`EncodedScriptArgs` carries `miden-field` felts, while the protocol crates use their own felt
+type — convert between them via `as_canonical_u64`:
+
 ```rust
+/// Converts `miden-field` felts into the protocol crate's felt type.
+fn to_protocol_felts(felts: &[miden_field::Felt]) -> Vec<Felt> {
+    felts.iter().map(|felt| Felt::new_unchecked(felt.as_canonical_u64())).collect()
+}
+
 match script_args.encode() {
     // Word mode: the encoding is the script-args word; no advice map involved.
-    EncodedScriptArgs::Word(word) => builder.tx_script_args(word),
+    EncodedScriptArgs::Word(word) => builder.tx_script_args(Word::new(
+        [0, 1, 2, 3].map(|i| Felt::new_unchecked(word[i].as_canonical_u64())),
+    )),
     // Commitment mode: hash the preimage into the script-args word and register the
-    // advice-map entry (`hash_elements` from the host's Miden crypto crate).
+    // advice-map entry (Poseidon2 is the Miden VM's native hash).
     EncodedScriptArgs::Preimage(felts) => {
-        let args_word = Poseidon2::hash_elements(&felts);
-        builder.tx_script_args(args_word).extend_advice_map([(args_word, felts)])
+        let preimage = to_protocol_felts(&felts);
+        let args_word = Poseidon2::hash_elements(&preimage);
+        builder.tx_script_args(args_word).extend_advice_map([(args_word, preimage)])
     }
 }
 ```
