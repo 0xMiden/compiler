@@ -5,7 +5,7 @@ use syn::{FnArg, ItemFn, Type, parse_macro_input, spanned::Spanned};
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    util::generate_frontend_link_section,
+    util::{generate_frontend_link_section, is_type_named, is_unit_return_type},
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
 };
@@ -56,6 +56,7 @@ pub(crate) fn expand_guest_wrapper(
     let runtime_boilerplate = runtime_boilerplate();
     let guest_struct_ident = config.guest_struct_ident;
     let doc = config.guest_struct_doc;
+    let export_ident = quote::format_ident!("{EXPORT_NAME}");
 
     Ok(quote! {
         #runtime_boilerplate
@@ -75,7 +76,7 @@ pub(crate) fn expand_guest_wrapper(
         pub struct #guest_struct_ident;
 
         impl #export_path for #guest_struct_ident {
-            fn run(arg: ::miden::Word) {
+            fn #export_ident(arg: ::miden::Word) {
                 #run_body
             }
         }
@@ -168,7 +169,6 @@ pub(crate) fn expand(
 }
 
 /// Role of an entrypoint parameter, in declaration order.
-#[derive(Clone)]
 enum ParamRole {
     /// By-value script-args parameter, decoded from the `TX_SCRIPT_ARGS` word.
     Args(Type),
@@ -213,7 +213,7 @@ fn parse_entrypoint_signature(input_fn: &ItemFn) -> syn::Result<Vec<ParamRole>> 
     let mut params = Vec::new();
     for arg in &sig.inputs {
         let FnArg::Typed(pat_type) = arg else {
-            return Err(syn::Error::new(arg.span(), "unexpected receiver argument"));
+            unreachable!("receiver arguments are rejected before parameter classification");
         };
         let param = classify_param(pat_type.ty.as_ref())?;
 
@@ -275,30 +275,6 @@ fn classify_param(ty: &Type) -> syn::Result<ParamRole> {
         Type::Path(_) => Ok(ParamRole::Args(ty.clone())),
         other => Err(syn::Error::new(other.span(), EXPECTED)),
     }
-}
-
-/// Returns true if the entrypoint return type is unit.
-fn is_unit_return_type(output: &syn::ReturnType) -> bool {
-    match output {
-        syn::ReturnType::Default => true,
-        syn::ReturnType::Type(_, ty) => matches!(ty.as_ref(), Type::Tuple(t) if t.elems.is_empty()),
-    }
-}
-
-/// Checks if a type's final path segment matches `name` (allowing module-qualified paths like
-/// `miden::Word`).
-fn is_type_named(ty: &syn::Type, name: &str) -> bool {
-    let syn::Type::Path(type_path) = ty else {
-        return false;
-    };
-    if type_path.qself.is_some() {
-        return false;
-    }
-    type_path
-        .path
-        .segments
-        .last()
-        .is_some_and(|seg| seg.ident == name && seg.arguments.is_empty())
 }
 
 /// Builds an inlined WIT world definition for a script crate.

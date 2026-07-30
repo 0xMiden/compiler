@@ -127,15 +127,15 @@ use miden::*;
 
 /// Arguments of the transaction script, transported via the `TX_SCRIPT_ARGS` word.
 #[derive(FromFeltRepr, ToFeltRepr)]
-pub struct TxScriptArg {
+pub struct TxScriptArgs {
     pub tag: Tag,
     pub note_type: NoteType,
     pub recipient: Recipient,
 }
 
 #[tx_script]
-fn run(inputs: TxScriptArg, account: &mut Wallet) {
-    let note_idx = account.create_note(inputs.tag, inputs.note_type, inputs.recipient);
+fn run(args: TxScriptArgs, account: &mut Wallet) {
+    let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
     // ...
 }
 ```

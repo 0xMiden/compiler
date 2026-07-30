@@ -262,6 +262,7 @@ impl<'a> FeltWriter<'a> {
 ///
 /// Used by the `FromFeltRepr` derive to compute [`FromFeltRepr::FIXED_LEN`] for structs (and for
 /// enum variant payloads) as a fold over the field types' lengths.
+#[doc(hidden)]
 pub const fn sum_fixed_len(lens: &[Option<usize>]) -> Option<usize> {
     let mut total = 0usize;
     let mut i = 0;
@@ -279,6 +280,7 @@ pub const fn sum_fixed_len(lens: &[Option<usize>]) -> Option<usize> {
 ///
 /// Returns the common length when every variant's payload has the same statically known length,
 /// and `None` (variable length) otherwise. An empty variant list yields `Some(0)`.
+#[doc(hidden)]
 pub const fn uniform_fixed_len(lens: &[Option<usize>]) -> Option<usize> {
     if lens.is_empty() {
         return Some(0);

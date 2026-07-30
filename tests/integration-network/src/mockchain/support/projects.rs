@@ -190,6 +190,9 @@ miden-protocol = "*"
 }
 
 /// Returns the generated transaction-script `Cargo.toml`.
+///
+/// Unlike the account/note generators, no `internal-wit-emit` feature is passed: transaction
+/// scripts are never consumed as dependencies of other packages, so nothing reads their WIT.
 pub(crate) fn tx_script_cargo_toml(script_name: &str) -> String {
     let sdk_path = sdk_crate_path();
     format!(

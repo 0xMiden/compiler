@@ -20,7 +20,7 @@ use miden_field::{Felt, Word};
 use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 
 /// Number of felts packed into a [`Word`].
-const WORD_FELTS: usize = 4;
+const WORD_FELTS: usize = Word::NUM_ELEMENTS;
 
 /// Encoded transaction-script arguments produced by [`ScriptArgs::encode`].
 #[derive(Clone, Debug, PartialEq, Eq)]

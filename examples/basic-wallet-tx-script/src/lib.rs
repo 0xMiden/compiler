@@ -15,7 +15,7 @@ struct Wallet;
 /// values travel through the advice provider, verified against the args word (see `ScriptArgs`).
 /// Hosts building the transaction encode a struct with the identical field layout.
 #[derive(FromFeltRepr, ToFeltRepr)]
-pub struct TxScriptArg {
+pub struct TxScriptArgs {
     /// The output note's tag.
     pub tag: Tag,
     /// The output note's type.
@@ -27,7 +27,7 @@ pub struct TxScriptArg {
 }
 
 #[tx_script]
-fn run(inputs: TxScriptArg, account: &mut Wallet) {
-    let note_idx = account.create_note(inputs.tag, inputs.note_type, inputs.recipient);
-    account.move_asset_to_note(inputs.asset, note_idx);
+fn run(args: TxScriptArgs, account: &mut Wallet) {
+    let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+    account.move_asset_to_note(args.asset, note_idx);
 }

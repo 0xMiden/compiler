@@ -38,7 +38,7 @@ use rand::{SeedableRng, rngs::StdRng};
 /// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = key and value words); the
 /// layout must match the script's struct exactly.
 #[derive(FromFeltRepr, ToFeltRepr)]
-struct TxScriptArg {
+struct TxScriptArgs {
     tag: miden_field::Felt,
     note_type: miden_field::Felt,
     recipient: miden_field::Word,
@@ -50,14 +50,14 @@ struct TxScriptArg {
 mod tests {
     use miden_tx_script_args::ScriptArgs;
 
-    use super::TxScriptArg;
+    use super::TxScriptArgs;
 
     /// Pins the mirror's encoded size so layout drift vs the guest struct in
     /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
     /// asset key and value words = 14 felts).
     #[test]
     fn tx_script_arg_mirror_has_the_guest_layout_size() {
-        assert_eq!(<TxScriptArg as ScriptArgs>::FIXED_LEN, Some(14));
+        assert_eq!(<TxScriptArgs as ScriptArgs>::FIXED_LEN, Some(14));
     }
 }
 
@@ -317,13 +317,13 @@ pub(crate) fn build_asset_transfer_tx(
         .build()
         .unwrap();
 
-    // Build the script arguments through the mirror `TxScriptArg` struct — the same encoding the
+    // Build the script arguments through the mirror `TxScriptArgs` struct — the same encoding the
     // tx script decodes, so the host-side layout cannot drift from the guest side.
     let recipient_digest: [Felt; 4] = output_note.recipient().digest().into();
     let asset_elements = asset.as_elements();
     let asset_key: [Felt; 4] = asset_elements[..4].try_into().unwrap();
     let asset_value: [Felt; 4] = asset_elements[4..].try_into().unwrap();
-    let script_args = TxScriptArg {
+    let script_args = TxScriptArgs {
         tag: to_field_felt(Felt::ZERO),
         note_type: to_field_felt(Felt::from(NoteType::Public)),
         recipient: to_field_word(recipient_digest),

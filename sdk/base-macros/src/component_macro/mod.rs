@@ -27,7 +27,7 @@ use crate::{
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
-    util::generate_frontend_link_section,
+    util::{generate_frontend_link_section, is_type_named},
 };
 
 pub(crate) mod generate_wit;
@@ -1293,21 +1293,6 @@ fn extract_type_ident(ty: &Type) -> Option<syn::Ident> {
 /// Determines whether a type represents the unit type `()`.
 fn is_unit_type(ty: &Type) -> bool {
     matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
-}
-
-/// Determines whether a type path resolves to a simple identifier with the given name.
-fn is_type_named(ty: &Type, name: &str) -> bool {
-    let Type::Path(type_path) = ty else {
-        return false;
-    };
-    if type_path.qself.is_some() {
-        return false;
-    }
-    type_path
-        .path
-        .segments
-        .last()
-        .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, PathArguments::None))
 }
 
 /// Converts a snake_case identifier into kebab-case.

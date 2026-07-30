@@ -483,7 +483,7 @@ pub fn note_constructor(
 ///
 /// /// Arguments of the transaction script, transported via `TX_SCRIPT_ARGS`.
 /// #[derive(FromFeltRepr, ToFeltRepr)]
-/// struct TxScriptArg {
+/// struct TxScriptArgs {
 ///     tag: Tag,
 ///     note_type: NoteType,
 ///     recipient: Recipient,
@@ -491,9 +491,9 @@ pub fn note_constructor(
 /// }
 ///
 /// #[tx_script]
-/// fn run(inputs: TxScriptArg, account: &mut Wallet) {
-///     let note_idx = account.create_note(inputs.tag, inputs.note_type, inputs.recipient);
-///     account.move_asset_to_note(inputs.asset, note_idx);
+/// fn run(args: TxScriptArgs, account: &mut Wallet) {
+///     let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+///     account.move_asset_to_note(args.asset, note_idx);
 /// }
 /// ```
 ///
