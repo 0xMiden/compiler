@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiling and behave unchanged. On the host, `ScriptArgs::encode` on a struct with the
   identical layout yields the args word or the advice-map preimage (`EncodedScriptArgs`). The
   trait lives in the new `miden-tx-script-args` crate (re-exported from `miden`), which
-  off-chain code can depend on without pulling in any on-chain SDK crates. See the
+  off-chain code can depend on without pulling in any on-chain SDK crates. On the basic-wallet
+  example script, typed decoding costs about 400 VM cycles and 1.6 KB of package size over the
+  previous hand-rolled advice decode. See the
   [migration guide](./sdk/MIGRATION.md) for adopting typed arguments #1291
 - `FromFeltRepr` gained a `FIXED_LEN: Option<usize>` associated constant — the statically known
   encoded length in felts, used by `ScriptArgs` to pick the transport mode at compile time. It

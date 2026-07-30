@@ -71,23 +71,44 @@ const fn is_word_mode(fixed_len: Option<usize>) -> bool {
     }
 }
 
-/// Decodes a value from `reader`, panicking on malformed input.
-fn read_args<T: FromFeltRepr>(reader: &mut FeltReader<'_>) -> T {
+/// Decodes a value from `reader`, aborting on malformed input.
+#[inline(always)]
+fn decode_or_panic<T: FromFeltRepr>(reader: &mut FeltReader<'_>) -> T {
     match T::from_felt_repr(reader) {
         Ok(value) => value,
-        Err(err) => panic!("failed to decode tx script args: {err:?}"),
+        // Panic messages are unobservable in-VM (the generated guest panic handler traps without
+        // formatting), so don't pay code size for the message machinery there.
+        #[cfg(all(target_family = "wasm", miden))]
+        Err(_) => core::arch::wasm32::unreachable(),
+        #[cfg(not(all(target_family = "wasm", miden)))]
+        Err(err) => panic!("failed to decode tx script args: {err}"),
     }
 }
 
+/// Aborts decoding: an immediate trap in-VM — where panic messages are unobservable — and a panic
+/// with the message elsewhere.
+#[inline(always)]
+fn fail(message: &str) -> ! {
+    #[cfg(all(target_family = "wasm", miden))]
+    {
+        let _ = message;
+        core::arch::wasm32::unreachable()
+    }
+    #[cfg(not(all(target_family = "wasm", miden)))]
+    panic!("{message}")
+}
+
 /// Asserts a padding felt is zero: a native VM assert on Miden targets, a plain assert elsewhere.
+#[inline(always)]
 fn assert_zero_felt(felt: Felt) {
     #[cfg(all(target_family = "wasm", miden))]
     miden_stdlib_sys::assertz(felt);
     #[cfg(not(all(target_family = "wasm", miden)))]
-    assert!(felt == Felt::new(0).unwrap(), "expected zero padding felt in tx script args");
+    assert!(felt == Felt::ZERO, "expected zero padding felt in tx script args");
 }
 
 /// Asserts that every felt remaining in `reader` is zero.
+#[inline(always)]
 fn assert_zero_padding(reader: &mut FeltReader<'_>) {
     while reader.remaining() > 0 {
         assert_zero_felt(reader.read().expect("padding felt must be readable"));
@@ -103,13 +124,25 @@ fn decode_commitment<T: FromFeltRepr>(arg: Word) -> T {
     use miden_stdlib_sys::{adv_load_preimage, assert_eq, intrinsics::advice::adv_push_mapvaln};
 
     let num_felts = adv_push_mapvaln(arg).as_canonical_u64();
-    assert_eq(Felt::new(num_felts % WORD_FELTS as u64).unwrap(), Felt::new(0).unwrap());
+    assert_eq(Felt::new(num_felts % WORD_FELTS as u64).unwrap(), Felt::ZERO);
     let num_words = Felt::new(num_felts / WORD_FELTS as u64).unwrap();
     let preimage = adv_load_preimage(num_words, arg);
-    let mut reader = FeltReader::new(&preimage);
-    let value = read_args(&mut reader);
+    decode_preimage(&preimage)
+}
+
+/// Decodes a value from a commitment-mode preimage, enforcing the canonical zero padding.
+///
+/// Target-independent so the canonicality rules are unit-testable natively; only the VM decode
+/// path calls it outside tests.
+#[cfg_attr(not(all(target_family = "wasm", miden)), allow(dead_code))]
+#[inline(always)]
+fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> T {
+    let mut reader = FeltReader::new(preimage);
+    let value = decode_or_panic(&mut reader);
     // Only the zero felts padding the encoding to a whole number of words may remain.
-    assert!(reader.remaining() < WORD_FELTS, "trailing data after tx script args");
+    if reader.remaining() >= WORD_FELTS {
+        fail("trailing data after tx script args");
+    }
     assert_zero_padding(&mut reader);
     value
 }
@@ -124,10 +157,11 @@ impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
     const FIXED_LEN: Option<usize> = <T as FromFeltRepr>::FIXED_LEN;
 
     fn decode(arg: Word) -> Self {
-        if is_word_mode(Self::FIXED_LEN) {
+        // A const-evaluated branch guarantees the dead transport path is never codegenned.
+        if const { is_word_mode(Self::FIXED_LEN) } {
             let felts = [arg[0], arg[1], arg[2], arg[3]];
             let mut reader = FeltReader::new(&felts);
-            let value = read_args(&mut reader);
+            let value = decode_or_panic(&mut reader);
             assert_zero_padding(&mut reader);
             value
         } else {
@@ -137,18 +171,20 @@ impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
 
     fn encode(&self) -> EncodedScriptArgs {
         let mut felts = self.to_felt_repr();
+        // Validate before selecting the transport: a wrong manual `FIXED_LEN` would otherwise
+        // silently truncate the args word or mis-route the encoding.
         if let Some(fixed_len) = Self::FIXED_LEN {
-            debug_assert_eq!(felts.len(), fixed_len, "encoding length must match FIXED_LEN");
+            assert_eq!(felts.len(), fixed_len, "encoding length must match FIXED_LEN");
         }
-        if is_word_mode(Self::FIXED_LEN) {
+        if const { is_word_mode(Self::FIXED_LEN) } {
             while felts.len() < WORD_FELTS {
-                felts.push(Felt::new(0).unwrap());
+                felts.push(Felt::ZERO);
             }
             EncodedScriptArgs::Word(Word::new([felts[0], felts[1], felts[2], felts[3]]))
         } else {
             // Zero-pad to a whole number of words; the padding is part of the hashed preimage.
             while !felts.len().is_multiple_of(WORD_FELTS) {
-                felts.push(Felt::new(0).unwrap());
+                felts.push(Felt::ZERO);
             }
             EncodedScriptArgs::Preimage(felts)
         }
@@ -216,5 +252,54 @@ mod tests {
 
         // Length prefix, two elements, one felt of padding.
         assert_eq!(felts, vec![felt(2), felt(5), felt(6), felt(0)]);
+    }
+
+    /// A manual implementation whose `FIXED_LEN` disagrees with its actual encoding.
+    struct LyingFixedLen;
+
+    impl FromFeltRepr for LyingFixedLen {
+        const FIXED_LEN: Option<usize> = Some(1);
+
+        fn from_felt_repr(reader: &mut FeltReader<'_>) -> miden_field_repr::FeltReprResult<Self> {
+            reader.read()?;
+            reader.read()?;
+            Ok(Self)
+        }
+    }
+
+    impl ToFeltRepr for LyingFixedLen {
+        fn write_felt_repr(&self, writer: &mut miden_field_repr::FeltWriter<'_>) {
+            writer.write(felt(1));
+            writer.write(felt(2));
+        }
+    }
+
+    /// A wrong manual `FIXED_LEN` must fail loudly instead of truncating the args word.
+    #[test]
+    #[should_panic(expected = "must match FIXED_LEN")]
+    fn encode_rejects_wrong_manual_fixed_len() {
+        let _ = LyingFixedLen.encode();
+    }
+
+    /// A commitment preimage with only zero padding decodes.
+    #[test]
+    fn decode_preimage_accepts_canonical_padding() {
+        let decoded: Vec<Felt> = decode_preimage(&[felt(2), felt(5), felt(6), felt(0)]);
+        assert_eq!(decoded, vec![felt(5), felt(6)]);
+    }
+
+    /// A non-zero felt in the padding region fails the decode.
+    #[test]
+    #[should_panic(expected = "zero padding")]
+    fn decode_preimage_rejects_nonzero_padding() {
+        let _: Vec<Felt> = decode_preimage(&[felt(2), felt(5), felt(6), felt(9)]);
+    }
+
+    /// A whole extra word beyond the encoding fails the decode, even when it is all zeros.
+    #[test]
+    #[should_panic(expected = "trailing data")]
+    fn decode_preimage_rejects_extra_word() {
+        let _: Vec<Felt> =
+            decode_preimage(&[felt(2), felt(5), felt(6), felt(0), felt(0), felt(0), felt(0), felt(0)]);
     }
 }
