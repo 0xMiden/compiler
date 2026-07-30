@@ -277,19 +277,19 @@ impl MasmProjectFrontend {
     ///
     /// # The one behavioural deviation: which target gets linted
     ///
-    /// Unlike the legacy stage, the already-parsed `inputs` are passed through rather than
-    /// `None`. We have them, and letting the disassembler resolve the target from the project
-    /// would read every source a second time; the `Some(..)` form is the one the standalone
-    /// `.masm` path already takes.
+    /// The already-parsed `inputs` are handed over rather than left for the disassembler to
+    /// resolve from a manifest, which would read every source a second time. The legacy stage
+    /// let it resolve them, and that is what selected a *different* target: resolution prefers
+    /// `library_target()` and only then the executables, ignoring which target is actually
+    /// being compiled. So for a MASM project declaring both a `[lib]` and a `[[bin]]`, with no
+    /// `-Cname` to disambiguate, the legacy path always linted the library; this lints the
+    /// target being compiled. That is arguably the fix, but it *is* a behaviour difference, and
+    /// it is the one to watch for when the Toml branch is flipped over to this frontend.
     ///
-    /// External metadata is unaffected — `resolve_project_target` calls the same
-    /// `collect_dependency_metadata` the `Some(..)` branch does — but **target selection**
-    /// is. The `None` branch resolves a target by preferring `library_target()` and only then
-    /// the executables, ignoring which target is actually being compiled. So for a MASM
-    /// project declaring both a `[lib]` and a `[[bin]]`, with no `-Cname` to disambiguate,
-    /// the legacy path always linted the library; this lints the target being compiled.
-    /// That is arguably the fix, but it *is* a behaviour difference, and it is the one to
-    /// watch for when the Toml branch is flipped over to this frontend.
+    /// External procedure signatures come from the assembler's own resolved dependency graph
+    /// rather than from the root manifest's `[dependencies]` table. See
+    /// `disassemble_project_target_with_sources` for what that changes: a registry dependency
+    /// contributes nothing either way, and a source dependency now contributes transitively.
     ///
     /// The legacy stage wraps this body in `#[cfg(feature = "std")]` with a `log::warn!`
     /// fallback. That guard is not reproduced: [`crate::pipeline`] is itself `std`-gated, so
@@ -307,18 +307,14 @@ impl MasmProjectFrontend {
         let config = DisassemblerConfig {
             infer_missing_signatures: true,
         };
-        let world = midenc_frontend_masm::disassemble_project_target(
-            &session.project,
-            // The target name selects which of the project's targets to *resolve*, and is
-            // read only when no sources are supplied. We always supply them, so nothing here
-            // is selected by name and any value passed would be inert. `None` says so.
-            None,
+        let world = midenc_frontend_masm::disassemble_project_target_with_sources(
             // Cloned, because `masm.lowered` must publish the very sources `masm.parsed`
             // did, unchanged. This mirrors the clone the legacy stage made.
-            Some(ProjectSourceInputs {
+            ProjectSourceInputs {
                 root: inputs.root.clone(),
                 support: inputs.support.clone(),
-            }),
+            },
+            cx.assembly().dependency_graph,
             &config,
             context.clone(),
         )?;
@@ -349,11 +345,13 @@ impl Frontend for MasmProjectFrontend {
     /// route-wide `--stop-after=lower` means the same thing whatever the source language.
     ///
     /// `hir.analyzed` sits between them on the route but is only *reached* when something asks
-    /// for it, and then only for the root target. The root gate is a correctness requirement:
-    /// `analyze` disassembles `session.project`, which is the *root* project no matter which
-    /// target the callback is for, so running it for a MASM dependency of a Rust project would
-    /// disassemble the wrong project — and would pay for a full disassembly once per
-    /// dependency.
+    /// for it, and then only for the root target. The gate is what makes the lint mean what it
+    /// says: `-Zlint` and `-Canalyze-only` describe the target the caller named, and a run that
+    /// reported advice-taint findings against every MASM dependency of a Rust project would
+    /// report code the caller did not ask about — at the cost of a full disassembly per
+    /// dependency. It was once a correctness requirement too, because `analyze` disassembled
+    /// `session.project`, the *root* project whichever target the callback was for; it now
+    /// disassembles the sources it is handed, which are always this target's.
     ///
     /// # Why `-Canalyze-only` runs the analysis, and not only `-Zlint`
     ///
@@ -920,8 +918,9 @@ mod tests {
     /// The analysis is skipped for a target that is not the root, whatever the lint flag
     /// says.
     ///
-    /// `disassemble_project_target` is given the *root* project, so running it for a MASM
-    /// dependency would disassemble the wrong project — and would do so once per dependency.
+    /// The lint describes the target the caller named, so running it for a MASM dependency would
+    /// report findings against code nobody asked about — and would pay for a full disassembly
+    /// once per dependency.
     #[test]
     fn a_non_root_target_is_not_analyzed() {
         let project = project("masm_frontend_dependency");

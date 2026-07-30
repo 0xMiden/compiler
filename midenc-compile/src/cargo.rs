@@ -175,8 +175,13 @@ pub fn load_cargo_based_source_dependencies(
     Ok(())
 }
 
+/// Build the dependency `target` of the project at `manifest_path` with `cargo`.
+///
+/// `package_name` names the package that declares `target`, and is the name the nested session is
+/// opened under. The package itself is not needed: the nested build loads the manifest it is
+/// pointed at, and the project *that* yields is the one it compiles.
 pub(crate) fn cargo_build(
-    package: Arc<miden_project::Package>,
+    package_name: String,
     target: &miden_project::Target,
     manifest_path: std::path::PathBuf,
     filesystem_cache_dir: Option<&std::path::Path>,
@@ -184,7 +189,6 @@ pub(crate) fn cargo_build(
     cargo_opts: &CargoOptions,
     source_manager: Arc<dyn SourceManager>,
 ) -> CompilerResult<CodegenOutput> {
-    let package_name = package.name().to_string();
     // The directory of the dependency being compiled, captured before `manifest_path` is consumed
     // below. The compiled package is materialized under this directory's `target` (see the end of
     // this function).
@@ -230,17 +234,10 @@ pub(crate) fn cargo_build(
         nested_options.profile = "release".to_string();
     }
 
-    let package = if target.ty.is_executable() {
-        midenc_session::fixup_cargo_target(package)
-    } else {
-        package
-    };
-
     let input = InputFile::from_path(manifest_path.clone()).unwrap();
     let session = Rc::new(Session::new_project(
         package_name.clone(),
         Some(input.clone()),
-        miden_project::Project::Package(package),
         nested_options,
         None,
         source_manager,

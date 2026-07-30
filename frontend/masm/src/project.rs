@@ -130,7 +130,8 @@ pub fn resolve_project_target_with_dependency_graph(
 
     let source_manager = context.session().source_manager.clone();
     let sources = load_target_modules(package.as_ref(), target.inner(), source_manager)?;
-    let external_metadata = collect_dependency_graph_metadata(dependency_graph, context)?;
+    let external_metadata =
+        collect_dependency_graph_metadata(dependency_graph, RegistryNodes::Reject, context)?;
 
     Ok(ProjectTargetInput::new(sources, external_metadata))
 }
@@ -154,8 +155,31 @@ pub fn collect_dependency_metadata(
     Ok(metadata)
 }
 
-fn collect_dependency_graph_metadata(
+/// What to do with a dependency node that resolved to a registry package.
+///
+/// A registry package is an assembled artifact, not sources, and the dependency graph names it
+/// without carrying it — so a collector that has nothing but the graph cannot produce metadata for
+/// one. Whether that is an error depends on who is asking, which is why it is the caller's choice.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RegistryNodes {
+    /// Contribute no metadata for them.
+    ///
+    /// For a caller whose assembler has already linked those packages: procedures they export are
+    /// resolved from the linked package, and the disassembler's own signature inference covers
+    /// what remains. This is what iterating the root manifest's `[dependencies]` did for a
+    /// registry dependency — nothing at all — so it is also what keeps that caller's behaviour.
+    Skip,
+    /// Reject them.
+    ///
+    /// For a caller that resolves the whole target from the graph and has no other source of
+    /// package artifacts, where silently omitting one would mean disassembling against signatures
+    /// that were never checked.
+    Reject,
+}
+
+pub(crate) fn collect_dependency_graph_metadata(
     dependency_graph: &ProjectDependencyGraph,
+    registry_nodes: RegistryNodes,
     context: &Context,
 ) -> Result<ExternalMetadata> {
     let mut metadata = ExternalMetadata::default();
@@ -165,7 +189,12 @@ fn collect_dependency_graph_metadata(
         if package == dependency_graph.root() {
             continue;
         }
-        collect_dependency_graph_node_metadata(&mut metadata, node, source_manager.clone())?;
+        collect_dependency_graph_node_metadata(
+            &mut metadata,
+            node,
+            registry_nodes,
+            source_manager.clone(),
+        )?;
     }
 
     Ok(metadata)
@@ -174,6 +203,7 @@ fn collect_dependency_graph_metadata(
 fn collect_dependency_graph_node_metadata(
     metadata: &mut ExternalMetadata,
     node: &ProjectDependencyNode,
+    registry_nodes: RegistryNodes,
     source_manager: Arc<dyn SourceManager>,
 ) -> Result<()> {
     match &node.provenance {
@@ -201,11 +231,14 @@ fn collect_dependency_graph_node_metadata(
             library_path: None, ..
         })
         | ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. }) => Ok(()),
-        ProjectDependencyNodeProvenance::Registry { selected, .. } => Err(Report::msg(format!(
-            "dependency graph node '{}' resolved to registry package '{}', but registry package \
-             artifacts are not available from the dependency graph",
-            node.name, selected
-        ))),
+        ProjectDependencyNodeProvenance::Registry { selected, .. } => match registry_nodes {
+            RegistryNodes::Skip => Ok(()),
+            RegistryNodes::Reject => Err(Report::msg(format!(
+                "dependency graph node '{}' resolved to registry package '{}', but registry \
+                 package artifacts are not available from the dependency graph",
+                node.name, selected
+            ))),
+        },
     }
 }
 

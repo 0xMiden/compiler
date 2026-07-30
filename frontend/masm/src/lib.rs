@@ -17,7 +17,6 @@ use miden_assembly_syntax::{
     debuginfo::{SourceLanguage, SourceManager, Uri},
     parser::read_modules_from_root,
 };
-use miden_project::Project;
 use midenc_hir::{Context, FunctionType, Report, Type, dialects::builtin};
 
 use self::project::ExternalMetadata;
@@ -197,20 +196,31 @@ pub fn disassemble_source_with_external_signatures(
     lift::lift_project_target(target, config, context)
 }
 
-/// Disassemble a target from a `miden-project.toml` package manifest.
-pub fn disassemble_project_target(
-    project: &Project,
-    target: Option<&str>,
-    sources: Option<ProjectSourceInputs>,
+/// Disassemble already-parsed `sources`, discovering external procedure signatures from
+/// `dependency_graph`.
+///
+/// For a caller that has the target's sources in hand — the compiler's Miden Assembly frontend,
+/// which is handed them by the assembler — and so needs nothing resolved from a manifest but the
+/// signatures of the procedures those sources call into.
+///
+/// The graph is the assembler's own resolved one, which is why this takes it rather than a
+/// [`Project`](miden_project::Project): it names every dependency in the closure with its
+/// provenance already resolved, where a project's `[dependencies]` table names only the direct
+/// ones. Registry dependencies contribute nothing, which is what iterating that table gave them
+/// too — the caller's assembler has already linked those packages, and the disassembler's
+/// signature inference covers whatever the linked package does not answer.
+pub fn disassemble_project_target_with_sources(
+    sources: ProjectSourceInputs,
+    dependency_graph: &miden_project::ProjectDependencyGraph,
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let inputs = if let Some(sources) = sources {
-        let external_metadata = project::collect_dependency_metadata(project, &context)?;
-        project::ProjectTargetInput::new(sources, external_metadata)
-    } else {
-        project::resolve_project_target(project, target, &context)?
-    };
+    let external_metadata = project::collect_dependency_graph_metadata(
+        dependency_graph,
+        project::RegistryNodes::Skip,
+        &context,
+    )?;
+    let inputs = project::ProjectTargetInput::new(sources, external_metadata);
     lift::lift_project_target(inputs, config, context)
 }
 

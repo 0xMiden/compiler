@@ -44,10 +44,8 @@ pub use miden_assembly_syntax;
 pub use miden_mast_package::PackageId;
 pub use miden_package_registry;
 pub use miden_project;
-use miden_project::Uri;
 use midenc_hir_symbol::Symbol;
 
-use self::diagnostics::IntoDiagnostic;
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, Report, SourceManager},
@@ -78,10 +76,6 @@ pub struct Session {
     pub input: Option<InputFile>,
     /// The outputs to be produced by the compiler during compilation
     pub output_files: OutputFiles,
-    /// The project being compiled
-    ///
-    /// This may be a virtual manifest (i.e. materialized only in-memory)
-    pub project: miden_project::Project,
     /// Statistics gathered from the current compiler session
     #[cfg(feature = "std")]
     pub statistics: Statistics,
@@ -99,199 +93,144 @@ impl fmt::Debug for Session {
 }
 
 impl Session {
+    /// Open a session compiling `input` under `options`.
+    ///
+    /// # A project locator is read for its facts, not loaded as a project
+    ///
+    /// A `.toml` input is a *locator*: it names the project to build rather than being something
+    /// the compiler compiles. Three facts about that project are needed before this session
+    /// exists, because this constructor is downstream of none of them:
+    ///
+    /// - the **package name**, which is the artifact name absent `--name`, and which
+    ///   [`OutputFiles`] is built from below;
+    /// - the **library target's kind**, which is what [`Options::target_type`] defaults to, and
+    ///   which [`add_target_link_libraries`] then consults to decide whether the Miden protocol
+    ///   is linked;
+    /// - the **executable targets' names**, from which [`Options::entrypoint`] is defaulted.
+    ///
+    /// All three come from `ProjectManifest`, which parses the manifest's *AST* and reads
+    /// exactly those three things out of it with `miden_project`'s own extractors. What it
+    /// deliberately does not do is build a [`miden_project::Project`]: loading the project is
+    /// `prepare_project`'s, in `midenc-compile`, and the package it loads is the one that gets
+    /// assembled. A session that loaded its own would be loading the same manifest twice to
+    /// produce a package nothing compiles.
+    ///
+    /// **Failing to read the manifest is not an error here.** Which project a locator names, and
+    /// whether it names one at all, is decided and reported downstream — where the locator is
+    /// normalized anyway, and where a Cargo workspace root gets the diagnostic that belongs to
+    /// it rather than a "no such file" for the `miden-project.toml` a workspace root does not
+    /// have. So an unreadable manifest falls back to the same name derivation a source-file
+    /// input uses, and leaves `target_type` and `entrypoint` alone.
     pub fn new(
         input: InputFile,
         mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Result<Self, Report> {
-        use miden_debug_types::Span;
+        let manifest = if matches!(input.file_type(), FileType::Toml) {
+            ProjectManifest::read(&input, source_manager.as_ref())?
+        } else {
+            None
+        };
 
-        if matches!(input.file_type(), FileType::Toml) {
-            let (pkgid, project) = match &input.file {
-                InputType::Real(path) => {
-                    let is_cargo_project =
-                        path.file_name().unwrap().eq_ignore_ascii_case("Cargo.toml");
-                    let project_path = if is_cargo_project {
-                        path.with_file_name("miden-project.toml")
-                    } else {
-                        path.clone()
-                    };
-                    let project = miden_project::Project::load(&project_path, &source_manager)
-                        .map_err(|err| {
-                            err.wrap_err(format!(
-                                "failed to load Miden project from {}",
-                                project_path.display()
-                            ))
-                        })?;
-                    if options.target_type.is_none() {
-                        let project_package = project.package();
-                        let target_type = match project_package.library_target() {
-                            Some(lib) => lib.ty,
-                            None => miden_project::TargetType::Executable,
-                        };
-                        options.target_type = Some(target_type);
-                    }
-                    let project = if is_cargo_project
-                        && options.target_type.is_some_and(|ty| ty.is_executable())
-                    {
-                        match project {
-                            miden_project::Project::Package(pkg) => {
-                                miden_project::Project::Package(fixup_cargo_target(pkg))
-                            }
-                            miden_project::Project::WorkspacePackage {
-                                package: pkg,
-                                workspace,
-                            } => miden_project::Project::WorkspacePackage {
-                                package: fixup_cargo_target(pkg),
-                                workspace,
-                            },
-                        }
-                    } else {
-                        project
-                    };
-                    let pkgid = match &project {
-                        miden_project::Project::Package(pkg)
-                        | miden_project::Project::WorkspacePackage { package: pkg, .. } => {
-                            pkg.name().inner().clone()
-                        }
-                    };
-                    (pkgid, project)
-                }
-                InputType::Stdin { name, input } => {
-                    let content = core::str::from_utf8(input).map_err(|err| {
-                        Report::msg(format!(
-                            "unable to load source file '{name}' due to invalid utf-8: {err}"
-                        ))
-                    })?;
-                    let source_file = source_manager.load(
-                        miden_debug_types::SourceLanguage::Other("toml"),
-                        miden_debug_types::Uri::new(name.as_str()),
-                        content.to_string(),
-                    );
-                    let package = miden_project::Package::load(source_file)?;
-                    let pkgid = package.name().inner().clone();
-                    (pkgid, miden_project::Project::Package(package.into()))
-                }
-            };
-            let name = options.name.clone().unwrap_or_else(|| pkgid.to_string());
+        if let Some(manifest) = manifest.as_ref() {
             if options.target_type.is_none() {
-                let project_package = project.package();
-                let target_type = match project_package.library_target() {
+                options.target_type = Some(match manifest.library.as_ref() {
                     Some(lib) => lib.ty,
                     None => miden_project::TargetType::Executable,
-                };
-                options.target_type = Some(target_type);
+                });
             }
             if is_cargo_project_input(&input) {
-                infer_cargo_project_entrypoint(&project, &mut options)?;
+                infer_cargo_project_entrypoint(manifest, &mut options)?;
             }
-            Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
-        } else {
-            let name = options
-                .name
-                .clone()
-                .or_else(|| {
-                    log::debug!(target: "driver", "no name specified, attempting to derive from output file");
-                    options.output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
-                })
-                .unwrap_or_else(|| {
-                    log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
-                    match &input {
-                        InputFile {
-                            file: InputType::Real(path),
+        }
+
+        let name = options
+            .name
+            .clone()
+            .or_else(|| manifest.as_ref().map(|manifest| manifest.name.to_string()))
+            .or_else(|| {
+                log::debug!(target: "driver", "no name specified, attempting to derive from output file");
+                options.output_file.as_ref().and_then(|of| of.filestem().map(|stem| stem.to_string()))
+            })
+            .unwrap_or_else(|| {
+                log::debug!(target: "driver", "unable to derive name from output file, deriving from input");
+                match &input {
+                    InputFile {
+                        file: InputType::Real(path),
+                        ..
+                    } => path
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .or_else(|| path.extension().and_then(|stem| stem.to_str()))
+                        .unwrap_or_else(|| {
+                            panic!(
+                                "invalid input path: '{}' has no file stem or extension",
+                                path.display()
+                            )
+                        })
+                        .to_string(),
+                        input @ InputFile {
+                            file: InputType::Stdin { name, .. },
                             ..
-                        } => path
-                            .file_stem()
-                            .and_then(|stem| stem.to_str())
-                            .or_else(|| path.extension().and_then(|stem| stem.to_str()))
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "invalid input path: '{}' has no file stem or extension",
-                                    path.display()
-                                )
-                            })
-                            .to_string(),
-                            input @ InputFile {
-                                file: InputType::Stdin { name, .. },
-                                ..
-                            } => {
-                            let name = name.as_str();
-                            if matches!(name, "empty" | "stdin") {
-                                log::debug!(target: "driver", "no good input file name to use, using current directory base name");
-                                options
-                                    .current_dir
-                                    .file_stem()
-                                    .and_then(|stem| stem.to_str())
-                                    .unwrap_or(name)
-                                    .to_string()
-                            } else {
-                                input.filestem().to_owned()
-                            }
+                        } => {
+                        let name = name.as_str();
+                        if matches!(name, "empty" | "stdin") {
+                            log::debug!(target: "driver", "no good input file name to use, using current directory base name");
+                            options
+                                .current_dir
+                                .file_stem()
+                                .and_then(|stem| stem.to_str())
+                                .unwrap_or(name)
+                                .to_string()
+                        } else {
+                            input.filestem().to_owned()
                         }
                     }
-                });
-            log::debug!(target: "driver", "artifact name set to '{name}'");
-
-            let namespace = miden_assembly_syntax::Path::new(name.as_str())
-                .to_absolute()
-                .into_diagnostic()?
-                .into_owned();
-            let default_target = miden_project::Target::new(
-                options.target_type.unwrap_or_default(),
-                name.clone(),
-                namespace,
-                match &input.file {
-                    InputType::Real(path) => Uri::from(path.as_path()),
-                    InputType::Stdin { name, .. } => Uri::new(name.as_str()),
-                },
-            );
-            if let InputType::Real(path) = &input.file {
-                #[cfg(feature = "std")]
-                {
-                    let tmp = std::env::temp_dir().canonicalize().unwrap();
-                    let project_dir = tmp.join(&name).join("src");
-                    let project_remap_target = if path.is_absolute() {
-                        Some(
-                            path.strip_prefix(&options.current_dir)
-                                .ok()
-                                .or(path.as_path().parent())
-                                .unwrap()
-                                .to_path_buf()
-                                .into_boxed_path(),
-                        )
-                    } else {
-                        path.parent().map(|p| p.to_path_buf().into_boxed_path())
-                    };
-                    options.remap_path_prefixes.push(RemapPathPrefix {
-                        from: project_dir.into_boxed_path(),
-                        to: project_remap_target,
-                    });
                 }
+            });
+        log::debug!(target: "driver", "artifact name set to '{name}'");
+
+        // Where `prepare_temporary_cargo_project` copies a standalone Rust source to, mapped back
+        // to where the source came from, so that debug information names the file the user wrote.
+        // Only for a source-file input: a project is built by `cargo` in place, and is never
+        // copied anywhere.
+        if !matches!(input.file_type(), FileType::Toml)
+            && let InputType::Real(path) = &input.file
+        {
+            #[cfg(feature = "std")]
+            {
+                let tmp = std::env::temp_dir().canonicalize().unwrap();
+                let project_dir = tmp.join(&name).join("src");
+                let project_remap_target = if path.is_absolute() {
+                    Some(
+                        path.strip_prefix(&options.current_dir)
+                            .ok()
+                            .or(path.as_path().parent())
+                            .unwrap()
+                            .to_path_buf()
+                            .into_boxed_path(),
+                    )
+                } else {
+                    path.parent().map(|p| p.to_path_buf().into_boxed_path())
+                };
+                options.remap_path_prefixes.push(RemapPathPrefix {
+                    from: project_dir.into_boxed_path(),
+                    to: project_remap_target,
+                });
             }
-            let package = miden_project::Package::new(name.clone(), default_target);
-
-            // Currently, we always require the core library to be linked
-            let package = package.with_dependencies([miden_project::Dependency::new(
-                Span::unknown("miden-core".to_string().into()),
-                miden_project::DependencyVersionScheme::Registry(
-                    miden_project::VersionRequirement::Semantic(Span::unknown(
-                        miden_project::VersionReq::STAR.clone(),
-                    )),
-                ),
-                miden_project::Linkage::Dynamic,
-            )]);
-
-            let project = miden_project::Project::Package(package.into());
-            Ok(Self::new_project(name, Some(input), project, options, emitter, source_manager))
         }
+
+        Ok(Self::new_project(name, Some(input), options, emitter, source_manager))
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Open a session named `name`, for a caller that already knows what it is building.
+    ///
+    /// [`Session::new`] derives `name` from its input; this takes it. Both then do the same
+    /// thing, and neither knows anything about the project being built beyond its name.
     pub fn new_project(
         name: String,
         input: Option<InputFile>,
-        project: miden_project::Project,
         mut options: Box<Options>,
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager>,
@@ -362,7 +301,7 @@ impl Session {
         create_target_dir(options.target_dir.as_path());
         create_target_dir(&options.target_dir.as_path().join(&options.profile));
 
-        // Linka against implicitly required libraries
+        // Link against implicitly required libraries
         let requires_protocol = options.target_requires_protocol();
         add_target_link_libraries(&mut options.link_libraries, requires_protocol);
 
@@ -373,7 +312,6 @@ impl Session {
             diagnostics,
             input,
             output_files,
-            project,
             #[cfg(feature = "std")]
             statistics: Default::default(),
         }
@@ -417,13 +355,40 @@ impl Session {
 
     /// Get a new package registry instance for this session
     pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
-        let manifest_path = self
-            .project
-            .manifest_path()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("target").join("miden").join("packages"));
-        registry::HybridPackageRegistry::new_with_filesystem_cache(&self.options, manifest_path)
-            .map(Box::new)
+        registry::HybridPackageRegistry::new_with_filesystem_cache(
+            &self.options,
+            self.filesystem_package_cache_dir(),
+        )
+        .map(Box::new)
+    }
+
+    /// Where compiled dependency packages of this session's project are published and looked for.
+    ///
+    /// `None` unless this session's input is a project locator: the cache lives under the
+    /// project's own `target/` directory, and a session compiling a standalone source file has no
+    /// project directory to put one under. Both readers — this session's package registry and the
+    /// nested `cargo` builds a Rust project's dependencies run through — must agree on the answer,
+    /// which is why there is one derivation of it.
+    ///
+    /// Derived from the input locator rather than from a loaded manifest, which is what
+    /// [`Session::new`] no longer has. That is also a repair: the manifest path was previously
+    /// taken from a package that `fixup_cargo_target` had rebuilt for every executable
+    /// `Cargo.toml` input, and a rebuilt package has no manifest path — so an executable project
+    /// silently got no filesystem cache at all, while a library project of the same shape got one.
+    pub fn filesystem_package_cache_dir(&self) -> Option<PathBuf> {
+        let input = self.input.as_ref()?;
+        if !matches!(input.file_type(), FileType::Toml) {
+            return None;
+        }
+        let project_dir = input.as_path()?.parent()?;
+        // Canonicalized because the loaded manifest path this replaces was: the cache directory
+        // is compared by path across nested builds, so `.`-relative and symlinked spellings of
+        // one directory must not resolve to two caches.
+        #[cfg(feature = "std")]
+        let project_dir = project_dir.canonicalize().unwrap_or_else(|_| project_dir.to_path_buf());
+        #[cfg(not(feature = "std"))]
+        let project_dir = project_dir.to_path_buf();
+        Some(project_dir.join("target").join("miden").join("packages"))
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to
@@ -561,57 +526,6 @@ impl Session {
     }
 }
 
-pub fn fixup_cargo_target(package: Arc<miden_project::Package>) -> Arc<miden_project::Package> {
-    let mut prev_targets = package.executable_targets().iter();
-    let mut default_target = match package.library_target().cloned() {
-        Some(target) => target.into_inner(),
-        None => prev_targets.next().unwrap().inner().clone(),
-    };
-    rewrite_component_target_namespace(&mut default_target, &package);
-    let new_package = miden_project::Package::new(package.name().into_inner(), default_target)
-        .with_version(package.version().into_inner().clone())
-        .with_dependencies(package.dependencies().iter().cloned())
-        .with_lints(package.lints().clone())
-        .with_metadata(package.metadata().clone())
-        .with_targets(prev_targets.map(|t| {
-            let mut t = t.inner().clone();
-            rewrite_component_target_namespace(&mut t, &package);
-            t
-        }));
-    let new_package = package
-        .profiles()
-        .iter()
-        .cloned()
-        .fold(new_package, |pkg, profile| pkg.with_profile(profile));
-    new_package.into()
-}
-
-fn rewrite_component_target_namespace(
-    target: &mut miden_project::Target,
-    package: &miden_project::Package,
-) {
-    use heck::ToKebabCase;
-    use miden_assembly_syntax::ast;
-    use miden_debug_types::Span;
-
-    let namespace_id = target.namespace.to_relative().as_ident().map(|id| id.into_inner());
-    if target.ty.is_executable()
-        || namespace_id.as_deref().is_none_or(|id| package.name().inner() != id)
-    {
-        return;
-    }
-
-    // If the namespace is the same as the package name, then the default
-    // namespace is being used, and we should rewrite it to use the correct
-    // namespace, derived from the component id
-    let component_namespace = package.name().to_kebab_case();
-    let component_id = format!(
-        "::miden:{component_namespace}/miden-{component_namespace}@{}",
-        package.version()
-    );
-    target.namespace = Span::unknown(ast::Path::new(&component_id).into());
-}
-
 fn is_cargo_project_input(input: &InputFile) -> bool {
     matches!(
         &input.file,
@@ -619,8 +533,103 @@ fn is_cargo_project_input(input: &InputFile) -> bool {
     )
 }
 
+/// What a project locator's manifest tells [`Session::new`], and nothing else.
+///
+/// The three facts are read with `miden_project`'s own extractors — the very ones
+/// `miden_project::Package::parse` uses — so that a target's kind, a target's defaulted name and
+/// the package's name mean here exactly what they mean to a loaded project. None of the three is
+/// inheritable from a workspace, which is what makes reading the package manifest alone correct:
+/// `[package] name` is a required key of the package's own file, `[lib] kind` defaults to
+/// `library` there, and a `[[bin]]` with no name takes the package's.
+struct ProjectManifest {
+    /// The `[package] name`.
+    name: Arc<str>,
+    /// The declared library target, if the manifest declares one.
+    library: Option<miden_project::Target>,
+    /// The declared executable targets, with names defaulted to the package's.
+    executables: alloc::vec::Vec<miden_project::Target>,
+}
+
+impl ProjectManifest {
+    /// Read the manifest the project locator `input` names.
+    ///
+    /// `Ok(None)` means the manifest could not be read or is not a package manifest, which is not
+    /// an error here — see [`Session::new`] for why, and for what a session does instead. A
+    /// locator piped in on standard input is the one exception: nothing downstream re-reads it, so
+    /// there is no better place for its diagnostic than this one.
+    fn read(input: &InputFile, source_manager: &dyn SourceManager) -> Result<Option<Self>, Report> {
+        match &input.file {
+            InputType::Real(path) => {
+                // The same normalization `normalize_locator` performs in `midenc-compile`: a
+                // `Cargo.toml` locates the `miden-project.toml` beside it, which is where
+                // `cargo miden` writes the Miden manifest for a crate.
+                let manifest_path =
+                    if path.file_name().is_some_and(|name| name.eq_ignore_ascii_case("Cargo.toml"))
+                    {
+                        path.with_file_name("miden-project.toml")
+                    } else {
+                        path.clone()
+                    };
+                #[cfg(feature = "std")]
+                {
+                    use miden_debug_types::SourceManagerExt;
+                    let Ok(source) = source_manager.load_file(&manifest_path) else {
+                        return Ok(None);
+                    };
+                    Ok(Self::parse(source).ok())
+                }
+                #[cfg(not(feature = "std"))]
+                {
+                    let _ = manifest_path;
+                    Ok(None)
+                }
+            }
+            InputType::Stdin { name, input } => {
+                let content = core::str::from_utf8(input).map_err(|err| {
+                    Report::msg(format!(
+                        "unable to load source file '{name}' due to invalid utf-8: {err}"
+                    ))
+                })?;
+                let source_file = source_manager.load(
+                    miden_debug_types::SourceLanguage::Other("toml"),
+                    miden_debug_types::Uri::new(name.as_str()),
+                    content.to_string(),
+                );
+                Self::parse(source_file).map(Some)
+            }
+        }
+    }
+
+    fn parse(source: Arc<diagnostics::SourceFile>) -> Result<Self, Report> {
+        let package = match miden_project::ast::MidenProject::parse(source)? {
+            miden_project::ast::MidenProject::Package(package) => package,
+            // A workspace manifest declares members but no package of its own, so it names
+            // nothing to derive an artifact name or a target type from. Which member was meant
+            // has to come from the caller, and saying so is the job of whoever resolves the
+            // locator; there is nothing for a session to do with one.
+            miden_project::ast::MidenProject::Workspace(_) => {
+                return Err(Report::msg(
+                    "expected a package manifest, but found a workspace manifest",
+                ));
+            }
+        };
+        // The spans are dropped: every diagnostic these facts can provoke is raised against the
+        // manifest downstream, by whoever loads it, and none of them is raised here.
+        use miden_debug_types::Span;
+        Ok(Self {
+            name: package.package.name.inner().clone(),
+            library: package.extract_library_target()?.map(Span::into_inner),
+            executables: package
+                .extract_executable_targets()
+                .into_iter()
+                .map(Span::into_inner)
+                .collect(),
+        })
+    }
+}
+
 fn infer_cargo_project_entrypoint(
-    project: &miden_project::Project,
+    manifest: &ProjectManifest,
     options: &mut Options,
 ) -> Result<(), Report> {
     if options.entrypoint.is_some() {
@@ -629,8 +638,7 @@ fn infer_cargo_project_entrypoint(
 
     match options.target_type {
         Some(miden_project::TargetType::Executable) => {
-            let package = project.package();
-            let targets = package.executable_targets();
+            let targets = &manifest.executables;
             let target = if let Some(target_name) = options.target.as_deref() {
                 targets.iter().find(|target| target_name == &**target.name.inner()).ok_or_else(
                     || Report::msg(format!("no executable target name '{target_name}'")),

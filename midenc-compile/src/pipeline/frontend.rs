@@ -206,14 +206,14 @@ impl<'a> TargetContext<'a> {
     /// Publish `artifact` at `checkpoint`.
     ///
     /// Notifies observers, then, **for the root target only**, compares `checkpoint`
-    /// against this target's goal. On a match the artifact is captured and [`Flow::Stop`]
+    /// against this target's goal. On a match the artifact is captured and [`Flow::Break`]
     /// is returned; otherwise — and always for a non-root target — the artifact is handed
     /// back via [`Flow::Continue`].
     ///
     /// Only [`TargetRole::Root`] can stop. It alone is given the caller's goal, while every
     /// other role is compiled to completion regardless of what was asked for, so a non-root
     /// target's checkpoints are observable but never terminal: this always returns
-    /// [`Flow::Continue`] for them, never captures, and never returns [`Flow::Stop`], even
+    /// [`Flow::Continue`] for them, never captures, and never returns [`Flow::Break`], even
     /// when `checkpoint` equals the goal it was assigned.
     ///
     /// That matters because a request has exactly *one* goal, shared by every target it

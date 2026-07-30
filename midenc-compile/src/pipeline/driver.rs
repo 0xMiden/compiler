@@ -479,7 +479,7 @@ impl Pipeline {
 /// a renderer fails at an early checkpoint, and the frontend then ends the build cleanly.
 ///
 /// No shipped frontend takes that route now that the `-C` stop flags are goals — a goal reached
-/// stops the build through [`Flow::Stop`](super::Flow::Stop), which arrives here as
+/// stops the build through [`Flow::Break`](super::Flow), which arrives here as
 /// `ControlFlow::Break` rather than as an error, and the render failure is surfaced by the
 /// caller's own check. The guard stays because [`CompilerStopped`] is public and any frontend
 /// may still raise it.
@@ -555,7 +555,7 @@ fn outcome_of(
 /// came from the selected target *and* left an artifact behind.
 ///
 /// The empty-slot check catches a *stop without a capture*: a frontend that returned
-/// [`Flow::Stop`](super::Flow::Stop) having never gone through
+/// [`Flow::Break`](super::Flow) having never gone through
 /// [`TargetContext::checkpoint`](super::TargetContext::checkpoint), which is the only thing
 /// that writes the slot. Nothing in tree does that, but nothing prevents it either —
 /// [`Stopped::new`](super::Stopped::new) is public, so any frontend can synthesize a stop —

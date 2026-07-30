@@ -4,7 +4,7 @@
 //!
 //! A [`CheckpointId`] names a point at which an artifact exists. Frontends run
 //! imperatively and call [`TargetContext::checkpoint`], which notifies observers and
-//! returns [`Flow::Continue`] with the artifact, or [`Flow::Stop`] once the requested goal
+//! returns [`Flow::Continue`] with the artifact, or [`Flow::Break`] once the requested goal
 //! is reached. Checkpoints carry no global ordering: each [`FrontendRegistration`]
 //! declares an ordered route, and every comparison happens within one route.
 //!

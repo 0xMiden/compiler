@@ -242,7 +242,7 @@ mod synthetic {
     }
 
     impl Frontend for SyntheticFrontend {
-        /// Parse, publish, and lower — honouring [`Flow::Stop`] at the native checkpoint.
+        /// Parse, publish, and lower — honouring [`Flow::Break`] at the native checkpoint.
         fn compile(&self, cx: &TargetContext<'_>) -> CompilerResult<Flow<ProjectSourceInputs>> {
             let module = SyntheticModule::parse(&Self::read(cx)?)?;
             let module = match cx.checkpoint(SYNTHETIC_PARSED, SYNTHETIC, module)? {

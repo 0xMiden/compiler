@@ -96,39 +96,16 @@ pub struct PreparedProject {
 /// what namespace it belongs to is believed, and preparation is the single place that decision
 /// is made. `synthesized_target_name` sets out the rule and why it lives here.
 ///
-/// # The synthesized target is not the one on the session
+/// # This is the only synthesis
 ///
-/// `Session::new` synthesizes a project of its own for `session.project`, and the target here
-/// deliberately differs from that one. Both keep the *requested target type* — `Session::new`
-/// through `Target::new(options.target_type.unwrap_or_default(), ..)`, this through
-/// `synthesize_target`, which passes it through for all six types — but they disagree about
-/// the namespace, in the two cases where the namespace is reserved:
-///
-/// - **Executables.** `Session::new` derives every namespace from the artifact name, including
-///   an executable's. `MasmComponent::source_inputs` builds an executable's root module with
-///   `Module::new_executable`, whose path is `$exec`, and `load_target_sources` rejects a root
-///   module that does not sit exactly at its target's namespace — so a name-derived namespace
-///   fails every standalone executable the moment such a build goes through a source provider.
-/// - **Kernels.** Likewise `$kernel`, which is what a manifest-declared kernel gets and what
-///   `syscall` resolution addresses.
-///
-/// They are invisible today for different reasons, and only the first is about that check.
-/// A standalone *executable* escapes it because the legacy path hands assembly its sources
-/// ready-made, so `load_target_sources` never runs. A *kernel* would be broken either way —
-/// `syscall` resolution rewrites every target into `$kernel` whichever route assembled it —
-/// but no standalone kernel build reaches codegen at all today: codegen emits only
-/// `ModuleKind::Library`, so such a target fails the assembler's root-*kind* check before its
-/// namespace is ever compared. `synthesize_target` carries the reasoning in full.
-///
-/// The package prepared here is therefore the one that gets assembled, and `session.project`
-/// is left exactly as it is. It still has readers of its own, none of which want this
-/// package: `Session::package_registry` and
-/// [`RustProjectFrontend`](super::frontends::rust::RustProjectFrontend) both take the
-/// filesystem package-cache directory from its manifest path — which a synthesized project
-/// does not have — and
-/// [`MasmProjectFrontend`](super::frontends::masm::MasmProjectFrontend) hands it to the
-/// disassembler, which reads nothing off it while sources are supplied. Converging the two
-/// syntheses means removing `Session`'s, which belongs with its eager project load.
+/// It was once one of two: `Session::new` synthesized a project of its own for a
+/// `session.project` field, and the two disagreed about the namespace of exactly the two target
+/// types whose namespace is reserved — an executable's `$exec` and a kernel's `$kernel`, which
+/// the session derived from the artifact name instead. `load_target_sources` rejects a root
+/// module that does not sit exactly at its target's namespace, so the session's answer failed
+/// every such target that went through a source provider. That field is gone, along with the
+/// disagreement; `synthesize_target` carries the namespace rule and the reasoning behind it in
+/// full, and is now the only place either question is answered.
 ///
 /// # `manifest_path` is empty, and nothing reads it
 ///
@@ -626,8 +603,8 @@ fn is_hir_identifier_char(c: char) -> bool {
 ///
 /// A manifest declares its own dependencies; a synthesized project has only this one, and
 /// without it the dependency graph has nothing to resolve `miden-core` from and nothing links.
-/// `Session::new` adds the same dependency to the project it synthesizes, in the same shape:
-/// any version, resolved from the registry, linked dynamically.
+/// Any version, resolved from the registry, linked dynamically — the shape the project
+/// `Session::new` used to synthesize gave it too, back when there were two syntheses.
 fn core_library_dependency() -> Dependency {
     Dependency::new(
         Span::unknown("miden-core".to_string().into()),
@@ -650,31 +627,25 @@ pub fn prepare_project(
 ) -> CompilerResult<PreparedProject> {
     let manifest_path = normalize_locator(input)?;
 
-    // The project is loaded here rather than taken from the session, and that is
-    // load-bearing. `Session::new` loads this same manifest, but for a `Cargo.toml` input
-    // whose target type is executable it then replaces the package with the one
-    // `fixup_cargo_target` rebuilds — which rewrites library targets' namespaces, and, being
-    // built by `Package::new`, has no manifest path. That fixed-up package is not what a
-    // project build has ever compiled: the stage this preparation replaced assembled through
-    // `for_project_at_path_with_providers`, which loads the manifest itself, so the package it
-    // built is this one — manifest-backed and un-fixed-up. Substituting
-    // `session.project.package()` here would look like a simplification and would change two
-    // things at once: the required library would be assembled under the rewritten namespace,
-    // and `DependencyGraph::from_project` branches on the package's manifest path, so a missing
-    // one takes the virtual path and yields a different dependency graph altogether.
+    // This is the only load of a project manifest in a build, and this is the package that gets
+    // assembled: manifest-backed, so `DependencyGraph::from_project` takes its real path rather
+    // than the virtual one a package built in memory falls back to, and un-rewritten, so the
+    // library target is assembled under the namespace the manifest declares.
     //
-    // What that costs is a second load of the same manifest in every project build: `Session`
-    // loaded it once already (`midenc-session/src/lib.rs`, `Session::new`). That is not new —
-    // the legacy path also loaded twice, because `for_project_at_path_with_providers` re-loaded
-    // the manifest internally — and the way to converge on one load is to remove `Session`'s own
-    // Toml branch, not to drop this one for a package it does not build.
+    // It was once the second of two. `Session::new` loaded the same manifest to build a
+    // `session.project`, and for a `Cargo.toml` input whose target type was executable it then
+    // replaced the package with one `fixup_cargo_target` rebuilt — which rewrote library targets'
+    // namespaces and, being built by `Package::new`, carried no manifest path. So the two
+    // differed in exactly the two ways above, and the session's copy was never what a project
+    // build compiled. `Session::new` now reads the manifest's *AST* for the three facts it needs
+    // before a session exists (its own documentation lists them) and builds no project at all.
     let project = Project::load(&manifest_path, source_manager).map_err(|err| {
         err.wrap_err(format!("failed to load Miden project from {}", manifest_path.display()))
     })?;
     let package = project.package();
 
     // `Session` derives the artifact name from `--name` if given, and otherwise from the
-    // loaded package's name (see `Session::new`). Preparation takes only `Options`, so that
+    // manifest's package name (see `Session::new`). Preparation takes only `Options`, so that
     // rule is restated here rather than read off a session — and
     // `the_selected_executable_is_the_one_the_session_names` runs both, so the two cannot
     // diverge in silence.
@@ -708,8 +679,10 @@ pub fn prepare_project(
 /// Resolve the project locator `input` names to the `miden-project.toml` it stands for.
 ///
 /// A `Cargo.toml` locates the `miden-project.toml` beside it, which is where `cargo miden`
-/// writes the Miden manifest for a crate. This is the same normalization `Session::new`
-/// performs, and the two must agree: they load the same project.
+/// writes the Miden manifest for a crate. This is the same normalization `Session::new` performs
+/// — through `ProjectManifest::read`, to reach the manifest facts a session needs — and the two
+/// must agree: they resolve to the same file. This is the copy that decides what gets built, and
+/// the only one that may reject a locator.
 fn normalize_locator(input: &InputFile) -> CompilerResult<PathBuf> {
     let file_name = input.file_name();
     match file_name.file_name() {
@@ -996,6 +969,32 @@ name = "other"
 path = "other.wat"
 "#;
 
+    /// A project whose library target declares a *kind*, and one that requires the protocol.
+    ///
+    /// `note` rather than the default `library` because the two are only distinguishable if the
+    /// manifest's answer is actually read: [`TargetType::default()`] is `Library`.
+    const NOTE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "prepare_fixture"
+path = "lib.wat"
+"#;
+
+    /// A project with exactly one executable target, named after the package.
+    const SINGLE_EXECUTABLE_MANIFEST: &str = r#"
+[package]
+name = "prepare_fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "prepare_fixture"
+path = "main.wat"
+"#;
+
     /// A registry that handles `.wasm` and `.wat` target roots, and nothing else.
     fn registry() -> FrontendRegistry {
         let mut registry = FrontendRegistry::new();
@@ -1108,6 +1107,93 @@ path = "other.wat"
             rendered.contains("unable to determine package from Cargo workspace root"),
             "the workspace root must be rejected on its own terms, not as a missing manifest: \
              {rendered}"
+        );
+    }
+
+    /// Open a session for the project locator at `path`, as the driver does.
+    fn session_for(path: &Path) -> Session {
+        Session::new(input(path), Box::default(), None, Arc::new(DefaultSourceManager::default()))
+            .expect("a project locator should open a compiler session")
+    }
+
+    #[test]
+    fn the_library_targets_kind_becomes_the_sessions_target_type_and_link_libraries() {
+        let manifest =
+            fixture_source("prepare_session_target_type", "miden-project.toml", NOTE_MANIFEST);
+
+        let session = session_for(&manifest);
+
+        assert_eq!(
+            session.options.target_type,
+            Some(TargetType::Note),
+            "a manifest that declares its library target's kind decides the session's target type"
+        );
+        // Which is what makes that inference load-bearing at session construction rather than
+        // something preparation could do later: `add_target_link_libraries` runs while the session
+        // is being built, and reads the target type to decide this.
+        assert!(
+            session.options.link_libraries.iter().any(|lib| lib.is_protocol()),
+            "a note target requires the Miden protocol, so the session must link it: {:?}",
+            session.options.link_libraries.iter().map(|lib| &lib.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_cargo_locator_infers_its_entrypoint_from_the_sibling_manifests_executable() {
+        let dir = "prepare_session_entrypoint";
+        fixture_source(dir, "miden-project.toml", SINGLE_EXECUTABLE_MANIFEST);
+        let cargo_manifest = fixture_source(dir, "Cargo.toml", CARGO_MANIFEST);
+
+        let session = session_for(&cargo_manifest);
+
+        assert_eq!(
+            session.options.target_type,
+            Some(TargetType::Executable),
+            "a manifest with no library target builds an executable"
+        );
+        assert_eq!(
+            session.options.entrypoint.as_deref(),
+            Some("prepare_fixture::entrypoint"),
+            "the entrypoint is derived from the sole executable target's name, which a `[[bin]]` \
+             without one takes from the package"
+        );
+    }
+
+    #[test]
+    fn a_cargo_workspace_root_opens_a_session_so_that_preparation_can_reject_it() {
+        // Same shape as `an_unselected_cargo_workspace_root_is_rejected`, from one step further
+        // back: that test calls preparation directly, and so cannot see whether a real build
+        // ever reaches it.
+        let cargo_manifest =
+            fixture_source("prepare_workspace_root_session", "Cargo.toml", CARGO_WORKSPACE_ROOT);
+        let source_manager: Arc<dyn SourceManager + Send + Sync> =
+            Arc::new(DefaultSourceManager::default());
+
+        // A workspace root has no sibling `miden-project.toml` — the *member* has one — so a
+        // session that loaded the normalized locator eagerly failed here, with a "failed to load
+        // Miden project" that displaced the diagnostic below and never reached it.
+        let session =
+            Session::new(input(&cargo_manifest), Box::default(), None, source_manager.clone())
+                .expect(
+                    "opening a session must not depend on the locator resolving to a loadable \
+                     project: which project a locator names, and whether it names one at all, is \
+                     preparation's to report",
+                );
+
+        let err = prepare_project(
+            &input(&cargo_manifest),
+            &session.options,
+            &registry(),
+            source_manager.as_ref(),
+        )
+        .expect_err("a Cargo workspace root selects no package to build");
+
+        let rendered = format!("{err}");
+        assert!(
+            rendered.contains("unable to determine package from Cargo workspace root")
+                && rendered.contains("workspace member"),
+            "the workspace root must be rejected on its own terms, by the one component that \
+             normalizes the locator: {rendered}"
         );
     }
 

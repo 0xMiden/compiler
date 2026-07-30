@@ -248,7 +248,7 @@ impl Options {
         self.flags = flags;
     }
 
-    /// Use this configuration to obtain a [Session] used for compilation
+    /// Use this configuration to obtain a [crate::Session] used for compilation
     pub fn into_session(
         self: Box<Self>,
         input: InputFile,

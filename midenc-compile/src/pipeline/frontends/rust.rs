@@ -421,10 +421,10 @@ pub fn compile_rust_to_wasm(input: &InputFile, session: &Session) -> CompilerRes
             // written under the artifact name in the system temporary directory — the same
             // place, and the same name, the legacy stage used.
             let tmp = std::env::temp_dir();
-            let name_of_artifact = session.project.package().name().into_inner();
+            let name_of_artifact = session.name.as_str();
             match build {
                 RustBuild::CargoProject { dependencies } => {
-                    let project_dir = tmp.join(&*name_of_artifact);
+                    let project_dir = tmp.join(name_of_artifact);
                     let src_dir = project_dir.join("src");
                     std::fs::create_dir_all(&src_dir).map_err(|err| {
                         Report::msg(format!("failed to create temporary Cargo project: {err}"))
@@ -443,7 +443,7 @@ pub fn compile_rust_to_wasm(input: &InputFile, session: &Session) -> CompilerRes
                     )
                 }
                 RustBuild::Rustc => {
-                    let tmp_rs = tmp.join(&*name_of_artifact).with_extension("rs");
+                    let tmp_rs = tmp.join(name_of_artifact).with_extension("rs");
                     std::fs::write(&tmp_rs, input).map_err(|err| {
                         Report::msg(format!("failed to write Rust input to temporary file: {err}"))
                     })?;
@@ -537,8 +537,7 @@ fn prepare_temporary_cargo_project(
     session: &Session,
 ) -> CompilerResult<PathBuf> {
     let tmp = std::env::temp_dir().canonicalize().unwrap();
-    let name = session.project.package().name().into_inner();
-    let project_dir = tmp.join(&*name);
+    let project_dir = tmp.join(session.name.as_str());
     let src_dir = project_dir.join("src");
     let tmp_rs = src_dir.join(filename);
     std::fs::create_dir_all(&src_dir)
@@ -556,9 +555,12 @@ fn cargo_build(
     session: &Session,
     options: &Options,
 ) -> CompilerResult<PathBuf> {
-    let package = session.project.package();
-    let package_name = package.name().into_inner();
-    let package_version = package.version().into_inner();
+    let package_name = session.name.as_str();
+    // A standalone source file belongs to no package and so declares no version. The session's
+    // synthesized project reported `0.0.0` here — `miden_project::Package::new`'s default, which
+    // nothing on this path ever overrode — and this generated manifest is thrown away with the
+    // temporary project, so the value only has to be a version `cargo` accepts.
+    let package_version = "0.0.0";
 
     let mut dependencies = frontmatter_dependencies.unwrap_or_default();
     let requires_protocol = options.target_requires_protocol();
@@ -718,7 +720,7 @@ fn rustc(
     session: &Session,
     options: &Options,
 ) -> CompilerResult<PathBuf> {
-    let package_name = session.project.package().name().into_inner();
+    let package_name = session.name.as_str();
 
     log::debug!(target: "rustc", "preparing to invoke rustc for {package_name}");
     log::debug!(target: "rustc", "  current_dir = {}", options.current_dir.display());
@@ -984,11 +986,7 @@ impl RustProjectFrontend {
     /// than from `cx.session()`: the cache lives under the root project's `target/` directory
     /// and must be the same for every target of the build.
     fn filesystem_cache_dir(&self) -> Option<PathBuf> {
-        self.session
-            .project
-            .manifest_path()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("target").join("miden").join("packages"))
+        self.session.filesystem_package_cache_dir()
     }
 
     /// Run `cargo` over this **root** target's manifest, and hand back the WebAssembly it
@@ -1054,7 +1052,7 @@ impl RustProjectFrontend {
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = self.session.source_manager.clone();
         crate::cargo::cargo_build(
-            assembly.package.clone(),
+            assembly.package.name().to_string(),
             assembly.target,
             assembly.manifest_path.with_file_name("Cargo.toml"),
             self.filesystem_cache_dir().as_deref(),
@@ -1082,7 +1080,7 @@ impl Frontend for RustProjectFrontend {
     /// `.wasm` target does — so the WebAssembly is handed to the embedded [`WasmFrontend`],
     /// which publishes `wasm.parsed`, `hir.initial` and, through
     /// [`backend::hir_to_masm`](crate::pipeline::backend::hir_to_masm), the three that follow.
-    /// Any of them may be the request's goal, and the [`Flow::Stop`] that follows is returned
+    /// Any of them may be the request's goal, and the [`Flow::Break`] that follows is returned
     /// from here to `provide_sources_interruptible`, the one callback that can express a stop.
     ///
     /// For a **dependency**, `crate::cargo::cargo_build` builds a fresh `Options`, `Session` and
@@ -2454,7 +2452,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
     ///
     /// Publishing is not enough on its own: the gate a `--stop-after` or `-C` flag needs is that
     /// the stop reaches `provide_sources_interruptible`, which is what [`Frontend::compile`]
-    /// returning [`Flow::Stop`] does. Each checkpoint is driven on its own, because a route that
+    /// returning [`Flow::Break`] does. Each checkpoint is driven on its own, because a route that
     /// stopped only at its first would satisfy a single-goal test.
     #[test]
     fn a_manifest_backed_root_target_stops_at_each_goal_on_its_route() {
