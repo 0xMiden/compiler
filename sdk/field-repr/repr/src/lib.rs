@@ -310,7 +310,12 @@ pub trait FromFeltRepr: Sized {
     /// enum whose variants encode to different lengths. When `Some(n)`, `n` must equal the exact
     /// number of felts consumed by [`Self::from_felt_repr`] (and produced by the matching
     /// `ToFeltRepr` implementation, if any).
-    const FIXED_LEN: Option<usize>;
+    ///
+    /// Defaults to `None`, which is always correct for a manual implementation — consumers that
+    /// dispatch on the length (e.g. the tx-script args transport) merely fall back to their
+    /// variable-length path. Override it with the exact count to enable fixed-length dispatch;
+    /// `#[derive(FromFeltRepr)]` computes it automatically.
+    const FIXED_LEN: Option<usize> = None;
 
     /// Deserializes from a `FeltReader`, consuming the required elements.
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self>;
@@ -387,8 +392,6 @@ impl<T> FromFeltRepr for Option<T>
 where
     T: FromFeltRepr,
 {
-    const FIXED_LEN: Option<usize> = None;
-
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let pos = reader.pos();
@@ -408,8 +411,6 @@ impl<T> FromFeltRepr for Vec<T>
 where
     T: FromFeltRepr,
 {
-    const FIXED_LEN: Option<usize> = None;
-
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let len = reader.read_len_u32()?;

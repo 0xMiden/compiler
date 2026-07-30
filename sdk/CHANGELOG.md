@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   trait lives in the new `miden-tx-script-args` crate (re-exported from `miden`), which
   off-chain code can depend on without pulling in any on-chain SDK crates. See the
   [migration guide](./sdk/MIGRATION.md) for adopting typed arguments #1291
+- `FromFeltRepr` gained a `FIXED_LEN: Option<usize>` associated constant — the statically known
+  encoded length in felts, used by `ScriptArgs` to pick the transport mode at compile time. It
+  defaults to `None` (variable length, the fail-safe commitment transport), so existing manual
+  implementations keep compiling; `#[derive(FromFeltRepr)]` computes the exact value #1291
 - `Tag`, `NoteType`, `Recipient`, and `Asset` now implement `FromFeltRepr`/`ToFeltRepr`, so
   they can be used as fields of derived script-argument structs. The `miden` crate additionally
   re-exports `miden_field_repr` under its own crate name, so the derives' generated code
@@ -54,10 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FromFeltRepr`, and a manual `ToFeltRepr` impl on the note type now conflicts with the
   generated one; see [MIGRATION.md](./sdk/MIGRATION.md) for the required changes. `AccountId`
   implements `ToFeltRepr` #786
-- `FromFeltRepr` has a new required associated constant `FIXED_LEN: Option<usize>` — the
-  statically known encoded length in felts, used by `ScriptArgs` to pick the transport mode at
-  compile time. `#[derive(FromFeltRepr)]` computes it automatically; only manual trait
-  implementations must add it. See the [migration guide](./sdk/MIGRATION.md) #1291
+
 
 ## [0.14.0-rc.1]
 

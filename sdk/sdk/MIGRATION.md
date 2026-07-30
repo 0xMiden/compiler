@@ -159,30 +159,6 @@ match script_args.encode() {
 }
 ```
 
-### `FromFeltRepr` manual implementations declare `FIXED_LEN`
-
-`FromFeltRepr` gained a required `FIXED_LEN: Option<usize>` associated constant: the statically
-known encoded length in felts, or `None` for variable-length encodings. `#[derive(FromFeltRepr)]`
-computes it automatically — only manual trait implementations need an edit.
-
-Before:
-
-```rust
-impl FromFeltRepr for MyType {
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> { /* reads 3 felts */ }
-}
-```
-
-After:
-
-```rust
-impl FromFeltRepr for MyType {
-    const FIXED_LEN: Option<usize> = Some(3);
-
-    fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> { /* reads 3 felts */ }
-}
-```
-
 ### Mark account interface procedures with `#[account_procedure]`
 
 A component's methods are no longer implicitly part of the account interface. Mark every method that
