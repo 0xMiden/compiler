@@ -15,6 +15,10 @@ edition.workspace = true
 # This tool is repository infrastructure and is never published.
 publish = false
 
+[lib]
+name = "midenc_release"
+path = "src/lib.rs"
+
 [[bin]]
 name = "release-tool"
 path = "src/main.rs"

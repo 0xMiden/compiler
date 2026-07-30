@@ -1,15 +1,11 @@
-mod config;
-mod lint;
-mod order;
-mod workspace;
-
 use std::{collections::BTreeSet, path::PathBuf};
 
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
-
-use crate::{
+use midenc_release::{
     config::{Config, Unit},
+    lint, order,
+    registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
     workspace::Workspace,
 };
 
@@ -46,6 +42,23 @@ enum Command {
         #[arg(long)]
         cargo_args: bool,
     },
+    /// Run the rehearsal registry until interrupted.
+    ///
+    /// Prints the configuration a rehearsal needs. Source replacement redirects
+    /// dependency resolution and `--index` redirects the upload target; both are
+    /// required, and `--index` without replacement fails to resolve
+    /// interdependent unpublished crates.
+    FakeRegistry {
+        /// Port to bind on; 0 selects an ephemeral port.
+        #[arg(long, default_value_t = 8732)]
+        port: u16,
+        /// Directory for the upstream index cache.
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
+        /// Serve only locally published crates, never contacting crates.io.
+        #[arg(long)]
+        offline: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
@@ -69,6 +82,16 @@ fn main() -> Result<()> {
         Some(dir) => dir,
         None => std::env::current_dir()?,
     };
+
+    // The registry stands alone: it needs neither release config nor workspace.
+    if let Command::FakeRegistry {
+        port,
+        cache_dir,
+        offline,
+    } = &cli.command
+    {
+        return run_fake_registry(*port, cache_dir.clone(), *offline);
+    }
 
     let config = Config::load(&manifest_dir.join(&cli.config))?;
     let ws = Workspace::load(&manifest_dir)?;
@@ -108,5 +131,37 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::FakeRegistry { .. } => unreachable!("handled before config loading"),
+    }
+}
+
+fn run_fake_registry(port: u16, cache_dir: Option<PathBuf>, offline: bool) -> Result<()> {
+    let upstream: std::sync::Arc<dyn Upstream> = if offline {
+        std::sync::Arc::new(NoUpstream)
+    } else {
+        std::sync::Arc::new(CurlUpstream::new(cache_dir))
+    };
+
+    let registry = Registry::start(port, Faults::default(), upstream)?;
+    let index = registry.index_url();
+
+    println!("rehearsal registry listening");
+    println!();
+    println!("  publish with:");
+    println!(
+        "    cargo publish --no-verify --index {index} --token rehearsal $(release-tool \
+         package-order --cargo-args)"
+    );
+    println!();
+    println!("  and this in $CARGO_HOME/config.toml, so resolution finds unpublished crates:");
+    println!("    [source.crates-io]");
+    println!("    replace-with = \"rehearsal\"");
+    println!("    [source.rehearsal]");
+    println!("    registry = \"{index}\"");
+    println!();
+    println!("press ctrl-c to stop");
+
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(3600));
     }
 }
