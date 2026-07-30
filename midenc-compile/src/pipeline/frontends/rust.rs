@@ -1352,7 +1352,7 @@ pub(crate) mod manifest {
         Report,
         diagnostics::{IntoDiagnostic, SourceManagerExt},
     };
-    use midenc_session::{InputFile, OptLevel, RemapPathPrefix, miden_project};
+    use midenc_session::{InputFile, OptLevel, ProjectManifest, miden_project};
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
@@ -1438,12 +1438,17 @@ pub(crate) mod manifest {
                             "requested pacakge '{requested}' is not a valid workspace member"
                         )));
                     };
-                    let mut compiler_opts = compiler_opts.clone();
+                    let compiler_opts = compiler_opts.clone();
                     let project = miden_project::Project::WorkspacePackage {
                         package,
                         workspace: workspace.clone(),
                     };
-                    modify_midenc_options_for_target(&project, &mut compiler_opts)?;
+                    // The member came off the workspace already loaded, so its facts are taken
+                    // from it rather than read from a file it never had of its own.
+                    reject_unbuildable_target(
+                        &ProjectManifest::from_package(&project.package()),
+                        &compiler_opts,
+                    )?;
                     let output = build_project(
                         project,
                         &compiler_opts,
@@ -1455,9 +1460,14 @@ pub(crate) mod manifest {
                 }
                 outputs
             } else {
+                // Loaded rather than AST-parsed: this is also where a malformed manifest of a
+                // *dependency* is first reported, since a dependency build reaches `cargo` through
+                // here without going through `prepare_project`. The facts below are then taken off
+                // the package it produced, so nothing is read twice.
                 let project =
                     miden_project::Project::load(&project_manifest_path, &source_manager)?;
-                let package_name = project.package().name().into_inner();
+                let package = project.package();
+                let package_name = package.name().into_inner();
                 if compiler_opts.packages.len() > 1 {
                     return Err(Report::msg(format!(
                         "multiple packages were requested via --package, but the project manifest \
@@ -1472,7 +1482,10 @@ pub(crate) mod manifest {
                         &compiler_opts.packages[0]
                     )));
                 }
-                modify_midenc_options_for_target(&project, &mut compiler_opts)?;
+                reject_unbuildable_target(
+                    &ProjectManifest::from_package(&package),
+                    &compiler_opts,
+                )?;
                 let output = build_project(
                     project,
                     &compiler_opts,
@@ -1732,63 +1745,59 @@ pub(crate) mod manifest {
         Ok(outputs)
     }
 
-    /// Produces the `midenc` CLI flags implied by the detected target environment and project type.
-    fn modify_midenc_options_for_target(
-        project: &miden_project::Project,
-        options: &mut midenc_session::Options,
+    /// Reject a project whose target this build cannot produce, before `cargo` is spawned for it.
+    ///
+    /// Two rejections, and both are this build's own: a **kernel**, which the compiler does not
+    /// support through this route, and an **executable that cannot be identified** — a package
+    /// declaring several `[[bin]]`s with no `--target` to choose between them, or a `--target`
+    /// naming one it does not declare. The second is [`ProjectManifest::selected_executable`],
+    /// which is also what derives the entrypoint in `Session::new`, so a project rejected here is
+    /// exactly a project no session could have named an entrypoint for.
+    ///
+    /// # This used to modify the options, and the modifications were dead
+    ///
+    /// It was `modify_midenc_options_for_target`, and it took `&mut Options`: it set
+    /// `entrypoint` and pushed a `RemapPathPrefix` for the package's source directory. Neither
+    /// write could be observed. The `Options` it received are a **clone** of the session's, made
+    /// in `build_manifest_to_wasm` and owned by [`cargo_build`] — while `entrypoint` is read off
+    /// `session.options` by codegen and `remap_path_prefixes` off `session.options` by the
+    /// WebAssembly frontend, neither of which this clone reaches. Of the clone, [`build_project`]
+    /// reads exactly three things: `optimize`, `rustflags`, and `target_requires_protocol()` for
+    /// the WASI target. So the writes went into a value that was dropped.
+    ///
+    /// It also derived a target type into a local and never assigned it back, which is why
+    /// removing the derivation changes nothing: the WASI choice reads `options.target_type` as it
+    /// arrived. `Session::new` is what sets that, from the same manifest facts, and is now the
+    /// only place either rule is written down.
+    ///
+    /// Taking `&Options` rather than `&mut Options` is what keeps it that way: a write that
+    /// cannot be observed can no longer be added back without the type saying so.
+    fn reject_unbuildable_target(
+        manifest: &ProjectManifest,
+        options: &midenc_session::Options,
     ) -> CompilerResult<()> {
-        let project = project.package();
-
-        // source paths in debug information.
-        let package_source_dir = project.manifest_path().and_then(|path| path.parent());
-        if options.debug != midenc_session::DebugInfo::None
-            && let Some(source_dir) = package_source_dir
-        {
-            options.remap_path_prefixes.push(RemapPathPrefix {
-                from: source_dir.to_path_buf().into_boxed_path(),
-                to: None,
-            });
-        }
-
-        let target_type = match options.target_type {
-            None => project
-                .library_target()
-                .map(|target| target.ty)
-                .unwrap_or(TargetType::Executable),
-            Some(target_type) => target_type,
-        };
-
+        // `--target-type` if the caller gave one, and otherwise what the manifest declares — the
+        // same order `Session::new` resolves it in.
+        let target_type = options.target_type.unwrap_or_else(|| manifest.library_target_type());
         match target_type {
             TargetType::Executable => {
-                let target = if let Some(target_name) = options.target.as_deref() {
-                    project
-                        .executable_targets()
-                        .iter()
-                        .find(|t| target_name == &**t.name.inner())
-                        .ok_or_else(|| {
-                        Report::msg(format!("no executable target name '{target_name}'"))
-                    })?
-                } else if project.executable_targets().len() == 1 {
-                    &project.executable_targets()[0]
-                } else {
-                    return Err(Report::msg(
-                        "ambiguous executable target selection: use --target to select a specific \
-                         executable target",
-                    ));
-                };
-                let masm_module_name = target.name.inner().replace('-', "_");
-                options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
+                // Selected only to be checked: which executable is *built* is decided by the
+                // `cargo` invocation and by the target the assembler asks for, not here.
+                manifest.selected_executable(options.target.as_deref())?;
+                Ok(())
             }
             TargetType::Kernel => {
-                return Err(Report::msg("kernels are not currently supported via midenc"));
+                Err(Report::msg("kernels are not currently supported via midenc"))
             }
-            TargetType::Library | TargetType::AccountComponent | TargetType::Note => (),
-            TargetType::TransactionScript => {
-                options.entrypoint = Some("miden:base/transaction-script@1.0.0::run".to_string());
-            }
-            _ => return Err(Report::msg("unsupported --target-type: {target_type}")),
+            TargetType::Library
+            | TargetType::AccountComponent
+            | TargetType::Note
+            | TargetType::TransactionScript => Ok(()),
+            // `TargetType` is `#[non_exhaustive]`, so this arm is reachable by upgrading
+            // `miden-project` alone. A target type this build has never been taught to produce is
+            // refused rather than built as whatever the arms above would have made of it.
+            unsupported => Err(Report::msg(format!("unsupported --target-type: {unsupported}"))),
         }
-        Ok(())
     }
 }
 
@@ -2886,6 +2895,32 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
     /// A package-level `miden-project.toml`, naming one package.
     const PACKAGE_MANIFEST: &str = "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n";
 
+    /// A package declaring two executables, neither of which a build can pick unaided.
+    const TWO_EXECUTABLES_MANIFEST: &str = r#"
+[package]
+name = "fixture"
+version = "0.1.0"
+
+[[bin]]
+name = "one"
+path = "one.rs"
+
+[[bin]]
+name = "two"
+path = "two.rs"
+"#;
+
+    /// A package whose library target is a kernel.
+    const KERNEL_MANIFEST: &str = r#"
+[package]
+name = "fixture"
+version = "0.1.0"
+
+[lib]
+kind = "kernel"
+path = "lib.rs"
+"#;
+
     /// A context for a manifest build, configured by `configure`.
     fn manifest_context(configure: impl FnOnce(&mut Options)) -> Rc<Context> {
         testing::context_emitting(Default::default(), configure)
@@ -2913,6 +2948,84 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         std::fs::write(dir.join("miden-project.toml"), manifest)
             .expect("should write the project manifest");
         dir
+    }
+
+    /// A kernel project is refused, and refused before `cargo` is spawned for it.
+    ///
+    /// The compiler does not support kernels through this route. Reaching `cargo` first would
+    /// spend a multi-minute build on a project that cannot be finished.
+    #[test]
+    fn a_kernel_project_is_refused_before_cargo_runs() {
+        let dir = manifest_fixture("rust_manifest_kernel", KERNEL_MANIFEST);
+
+        let msg = manifest_error(
+            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            "a kernel cannot be built through this route",
+        );
+        assert!(
+            msg.contains("kernels are not currently supported"),
+            "a kernel target must be refused on its own terms: {msg}"
+        );
+    }
+
+    /// `--target` naming an executable the project does not declare is refused.
+    #[test]
+    fn an_unknown_executable_selection_is_refused() {
+        let dir = manifest_fixture("rust_manifest_unknown_target", TWO_EXECUTABLES_MANIFEST);
+
+        let msg = manifest_error(
+            compile_manifest(
+                &dir.join("miden-project.toml"),
+                None,
+                manifest_context(|options| options.target = Some("three".to_string())),
+            ),
+            "the project declares no executable named 'three'",
+        );
+        assert!(
+            msg.contains("no executable target name 'three'"),
+            "the diagnostic must name the target it could not find: {msg}"
+        );
+    }
+
+    /// The session and the manifest build agree on which executable a project builds.
+    ///
+    /// They answer the same question for different halves of one build: the session derives
+    /// `--entrypoint` from the selected executable, and the manifest build refuses to spawn
+    /// `cargo` for a project whose executable cannot be identified. Both now go through
+    /// [`ProjectManifest::selected_executable`], and this is what says so — an ambiguity has to
+    /// be an ambiguity on both sides, or a project would be refused by one and built by the
+    /// other. They carried separate copies of the rule until they were converged.
+    #[test]
+    fn an_ambiguous_executable_is_refused_by_both_the_session_and_the_manifest_build() {
+        let dir = manifest_fixture("rust_manifest_ambiguous_target", TWO_EXECUTABLES_MANIFEST);
+        // The session's copy is reached only for a `Cargo.toml` input, which resolves to the
+        // manifest beside it — so both sides are asked about the very same project.
+        std::fs::write(dir.join("Cargo.toml"), "[package]\nname = \"fixture\"\n")
+            .expect("should write the Cargo manifest");
+
+        let from_manifest_build = manifest_error(
+            compile_manifest(&dir.join("miden-project.toml"), None, manifest_context(|_| {})),
+            "a project declaring two executables cannot be built without a selection",
+        );
+        let from_session = Session::new(
+            InputFile::from_path(dir.join("Cargo.toml")).expect("a Cargo manifest is an input"),
+            alloc::boxed::Box::default(),
+            None,
+            Arc::new(midenc_session::diagnostics::DefaultSourceManager::default()),
+        )
+        .err()
+        .map(|err| format!("{err}"))
+        .expect("a session cannot name an entrypoint for a project declaring two executables");
+
+        let expected = "ambiguous executable target selection";
+        assert!(
+            from_manifest_build.contains(expected),
+            "the manifest build must refuse an ambiguous executable: {from_manifest_build}"
+        );
+        assert!(
+            from_session.contains(expected),
+            "and the session must refuse it identically: {from_session}"
+        );
     }
 
     /// A Cargo manifest path is resolved to the project manifest beside it.

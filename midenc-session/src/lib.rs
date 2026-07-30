@@ -135,10 +135,7 @@ impl Session {
 
         if let Some(manifest) = manifest.as_ref() {
             if options.target_type.is_none() {
-                options.target_type = Some(match manifest.library.as_ref() {
-                    Some(lib) => lib.ty,
-                    None => miden_project::TargetType::Executable,
-                });
+                options.target_type = Some(manifest.library_target_type());
             }
             if is_cargo_project_input(&input) {
                 infer_cargo_project_entrypoint(manifest, &mut options)?;
@@ -533,17 +530,31 @@ fn is_cargo_project_input(input: &InputFile) -> bool {
     )
 }
 
-/// What a project locator's manifest tells [`Session::new`], and nothing else.
+/// What a project's manifest says about the targets it declares.
 ///
-/// The three facts are read with `miden_project`'s own extractors — the very ones
+/// The facts are read with `miden_project`'s own extractors — the very ones
 /// `miden_project::Package::parse` uses — so that a target's kind, a target's defaulted name and
-/// the package's name mean here exactly what they mean to a loaded project. None of the three is
+/// the package's name mean here exactly what they mean to a loaded project. None of them is
 /// inheritable from a workspace, which is what makes reading the package manifest alone correct:
 /// `[package] name` is a required key of the package's own file, `[lib] kind` defaults to
 /// `library` there, and a `[[bin]]` with no name takes the package's.
-struct ProjectManifest {
+///
+/// # This is the one place the rules live
+///
+/// Two questions are answered from these facts — [what target type a project builds by
+/// default](Self::library_target_type) and [which executable it builds](Self::selected_executable)
+/// — and both have to be answered identically everywhere, because the answers decide different
+/// halves of one build. `Session::new` uses them to set [`Options::target_type`] and
+/// [`Options::entrypoint`]; the Rust frontend's nested `cargo` build uses the second to reject a
+/// project it could not build, and used to carry its own copy of both rules over a separately
+/// loaded project. Two implementations of one rule can only ever agree by coincidence.
+///
+/// `read` parses a manifest for them, and [`from_package`](Self::from_package) takes them off a
+/// project that is already loaded. That is the whole difference between the callers: where the
+/// facts come from, never what is done with them.
+pub struct ProjectManifest {
     /// The `[package] name`.
-    name: Arc<str>,
+    name: String,
     /// The declared library target, if the manifest declares one.
     library: Option<miden_project::Target>,
     /// The declared executable targets, with names defaulted to the package's.
@@ -551,6 +562,57 @@ struct ProjectManifest {
 }
 
 impl ProjectManifest {
+    /// Take these facts off an already-loaded `package`.
+    ///
+    /// For a caller that has a [`miden_project::Package`] in hand and must not load a second one
+    /// — either because it just loaded that one, or because it came from a workspace and was
+    /// never a file of its own.
+    pub fn from_package(package: &miden_project::Package) -> Self {
+        Self {
+            name: package.name().to_string(),
+            library: package.library_target().map(|lib| lib.inner().clone()),
+            executables: package
+                .executable_targets()
+                .iter()
+                .map(|bin| bin.inner().clone())
+                .collect(),
+        }
+    }
+
+    /// The target type a project declaring these targets builds when nothing selects one.
+    ///
+    /// The library target's kind if there is a library target, and otherwise an executable —
+    /// which is what a package declaring only `[[bin]]`s is.
+    pub fn library_target_type(&self) -> miden_project::TargetType {
+        match self.library.as_ref() {
+            Some(library) => library.ty,
+            None => miden_project::TargetType::Executable,
+        }
+    }
+
+    /// The executable target this build compiles, of the ones declared.
+    ///
+    /// `requested` is `--target`, which names one outright. Without it there must be exactly one
+    /// to choose, because nothing else distinguishes them: a package declaring several says which
+    /// it means, or is asked to.
+    pub fn selected_executable(
+        &self,
+        requested: Option<&str>,
+    ) -> Result<&miden_project::Target, Report> {
+        match requested {
+            Some(name) => self
+                .executables
+                .iter()
+                .find(|target| name == &**target.name.inner())
+                .ok_or_else(|| Report::msg(format!("no executable target name '{name}'"))),
+            None if self.executables.len() == 1 => Ok(&self.executables[0]),
+            None => Err(Report::msg(
+                "ambiguous executable target selection: use --target to select a specific \
+                 executable target",
+            )),
+        }
+    }
+
     /// Read the manifest the project locator `input` names.
     ///
     /// `Ok(None)` means the manifest could not be read or is not a package manifest, which is not
@@ -617,7 +679,7 @@ impl ProjectManifest {
         // manifest downstream, by whoever loads it, and none of them is raised here.
         use miden_debug_types::Span;
         Ok(Self {
-            name: package.package.name.inner().clone(),
+            name: package.package.name.inner().to_string(),
             library: package.extract_library_target()?.map(Span::into_inner),
             executables: package
                 .extract_executable_targets()
@@ -638,20 +700,7 @@ fn infer_cargo_project_entrypoint(
 
     match options.target_type {
         Some(miden_project::TargetType::Executable) => {
-            let targets = &manifest.executables;
-            let target = if let Some(target_name) = options.target.as_deref() {
-                targets.iter().find(|target| target_name == &**target.name.inner()).ok_or_else(
-                    || Report::msg(format!("no executable target name '{target_name}'")),
-                )?
-            } else if targets.len() == 1 {
-                &targets[0]
-            } else {
-                return Err(Report::msg(
-                    "ambiguous executable target selection: use --target to select a specific \
-                     executable target",
-                ));
-            };
-
+            let target = manifest.selected_executable(options.target.as_deref())?;
             let masm_module_name = target.name.inner().replace('-', "_");
             options.entrypoint = Some(format!("{masm_module_name}::entrypoint"));
         }
