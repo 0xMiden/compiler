@@ -1,0 +1,132 @@
+//! Release-candidate preconditions.
+//!
+//! These checks run on every pull request. They are cheap, and each one
+//! corresponds to a way a release has broken or could break: an unclassified
+//! package silently joining the release surface, a publishable crate depending
+//! on a private one, or an active `[patch]` entry that makes the workspace
+//! build correctly while the published crate does not.
+
+use std::{collections::BTreeSet, path::Path};
+
+use anyhow::{Context, Result};
+
+use crate::{
+    config::{Config, Unit},
+    workspace::Workspace,
+};
+
+#[derive(Debug, Default)]
+pub struct Findings {
+    pub errors: Vec<String>,
+}
+
+impl Findings {
+    fn error(&mut self, message: impl Into<String>) {
+        self.errors.push(message.into());
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+}
+
+pub fn run(ws: &Workspace, config: &Config) -> Result<Findings> {
+    let mut findings = Findings::default();
+
+    check_classification(ws, config, &mut findings);
+    check_private_dependencies(ws, config, &mut findings);
+    check_active_patches(&ws.root, &mut findings)?;
+
+    Ok(findings)
+}
+
+/// Every workspace member is classified exactly once, and the classification
+/// agrees with the manifest's own `publish` field.
+fn check_classification(ws: &Workspace, config: &Config, findings: &mut Findings) {
+    let classified: BTreeSet<&str> = config.packages.iter().map(|p| p.name.as_str()).collect();
+
+    for name in ws.packages.keys() {
+        if !classified.contains(name.as_str()) {
+            findings.error(format!(
+                "package '{name}' is not classified in .release/config.toml; add it with an \
+                 explicit unit and publish setting"
+            ));
+        }
+    }
+
+    for package in &config.packages {
+        let Some(actual) = ws.packages.get(&package.name) else {
+            findings.error(format!(
+                "package '{}' is classified in .release/config.toml but is not a workspace member",
+                package.name
+            ));
+            continue;
+        };
+
+        if actual.publishable != package.publish {
+            let (manifest, config_says) = if actual.publishable {
+                ("publishable", "private")
+            } else {
+                ("publish = false", "publishable")
+            };
+            findings.error(format!(
+                "package '{}' is {manifest} in its manifest but classified as {config_says} in \
+                 .release/config.toml",
+                package.name
+            ));
+        }
+    }
+}
+
+/// A publishable crate cannot depend on a private one: the dependency would be
+/// unresolvable for anyone consuming the published crate.
+///
+/// Dev dependencies without a version requirement are exempt, because Cargo
+/// strips them when packaging.
+fn check_private_dependencies(ws: &Workspace, config: &Config, findings: &mut Findings) {
+    let private: BTreeSet<&str> =
+        config.packages_in(Unit::Private).map(|p| p.name.as_str()).collect();
+
+    for package in config.packages.iter().filter(|p| p.publish) {
+        let Some(actual) = ws.packages.get(&package.name) else {
+            continue;
+        };
+        for (dep, _) in &actual.local_deps {
+            if private.contains(dep.as_str()) {
+                findings.error(format!(
+                    "publishable package '{}' depends on private package '{dep}'",
+                    package.name
+                ));
+            }
+        }
+    }
+}
+
+/// An active `[patch]` entry is the most likely way to publish a broken crate:
+/// the workspace builds, the normalized manifest looks correct, and the
+/// published crate resolves to a registry version that does not have the patched
+/// behavior.
+fn check_active_patches(root: &Path, findings: &mut Findings) -> Result<()> {
+    let manifest_path = root.join("Cargo.toml");
+    let text = std::fs::read_to_string(&manifest_path)
+        .with_context(|| format!("failed to read {}", manifest_path.display()))?;
+
+    let mut in_patch_section = false;
+    for (number, line) in text.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_patch_section = trimmed.starts_with("[patch");
+            continue;
+        }
+        if !in_patch_section || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        findings.error(format!(
+            "Cargo.toml:{}: active [patch] entry `{trimmed}`; a release candidate must resolve \
+             every dependency from the registry",
+            number + 1
+        ));
+    }
+
+    Ok(())
+}
