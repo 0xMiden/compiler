@@ -355,12 +355,6 @@ impl CompilerTestBuilder {
                 // dependencies the crate declares are the ones the build uses. Extracting the
                 // WebAssembly here and re-entering the compiler with it — which is what this did
                 // — synthesized a project from the session instead, and the two disagreed.
-                //
-                // Keep generated WIT available when Cargo fails after macro expansion but before
-                // producing the final Wasm artifact. It is emitted during the build, which now
-                // happens inside `compile`, so this is a no-op here for a failure that has not
-                // occurred yet; it stays because the dump is keyed on the fixture, not on timing.
-                maybe_dump_public_generated_wit(&config);
 
                 let artifact_name = config
                     .project_dir
@@ -1084,6 +1078,9 @@ impl CompilerTest {
             Ok(_) => None,
             Err(err) => Some(Err(format_report(err))),
         };
+        if let Some(Ok(package)) = self.package.as_ref() {
+            maybe_dump_public_package_wit(&self.artifact_name, package);
+        }
     }
 }
 
@@ -1205,55 +1202,26 @@ fn get_workspace_dir() -> String {
     compiler_workspace_dir.to_string()
 }
 
-/// Copies public component WIT for a Cargo test fixture when `MIDENC_EMIT_WIT[=<path>]` is set.
+/// Writes the component WIT embedded in a compiled package when `MIDENC_EMIT_WIT[=<path>]` is set.
 ///
-/// An empty value or `1` writes `<test_name>.wit` to the current working directory. Any other
-/// non-empty value is treated as the output directory.
-fn maybe_dump_public_generated_wit(test: &CargoTest) {
+/// An empty value or `1` writes `<artifact_name>.wit` to the current working directory. Any other
+/// non-empty value is treated as the output directory. A package without a WIT section (a fixture
+/// with no `#[component]`) is skipped.
+fn maybe_dump_public_package_wit(artifact_name: &str, package: &miden_mast_package::Package) {
     let Some(out_dir) = emit_output_dir("MIDENC_EMIT_WIT") else {
         return;
     };
 
-    let generated_wit_dir = cargo_test_project_dir(test).join("target/generated-wit");
-    let mut wit_files = match fs::read_dir(&generated_wit_dir) {
-        Ok(entries) => entries
-            .map(|entry| {
-                entry.unwrap_or_else(|err| {
-                    panic!(
-                        "failed to inspect generated WIT directory '{}': {err}",
-                        generated_wit_dir.display()
-                    )
-                })
-            })
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("wit"))
-            .collect::<Vec<_>>(),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
-        Err(err) => {
-            panic!(
-                "failed to read generated WIT directory '{}': {err}",
-                generated_wit_dir.display()
-            )
-        }
-    };
-    wit_files.sort();
-
-    let [wit_file] = wit_files.as_slice() else {
-        if wit_files.is_empty() {
-            return;
-        }
-        panic!(
-            "expected one generated WIT file in '{}', found {}",
-            generated_wit_dir.display(),
-            wit_files.len()
-        );
+    let wit_section_id = miden_mast_package::SectionId::custom(
+        midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
+    )
+    .expect("the WIT section id must be a valid custom section id");
+    let Some(section) = package.sections.iter().find(|section| section.id == wit_section_id) else {
+        return;
     };
 
-    let out_file = out_dir.join(format!("{}.wit", sanitize_filename_component(test.name.as_ref())));
-    let wit_source = fs::read(wit_file).unwrap_or_else(|err| {
-        panic!("failed to read generated WIT file '{}': {err}", wit_file.display())
-    });
-    fs::write(&out_file, wit_source).unwrap_or_else(|err| {
+    let out_file = out_dir.join(format!("{}.wit", sanitize_filename_component(artifact_name)));
+    fs::write(&out_file, section.data.as_ref()).unwrap_or_else(|err| {
         panic!("failed to write generated WIT to '{}': {err}", out_file.display())
     });
     eprintln!("wrote generated WIT to '{}'", out_file.display());

@@ -3983,6 +3983,7 @@ dependencies = [
  "midenc-compile",
  "midenc-expect-test",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-session",
  "proptest",
