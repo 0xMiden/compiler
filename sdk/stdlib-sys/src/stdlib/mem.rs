@@ -187,8 +187,12 @@ pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
     unimplemented!("miden::core::mem bindings are only available when targeting the Miden VM")
 }
 
-/// Pops an arbitrary number of words from the advice stack and asserts it matches the commitment.
+/// Pops `num_words` words from the advice stack and asserts they match the commitment.
 /// Returns a Vec containing the loaded words.
+///
+/// Traps when `num_words` is `2^30` or more: that many words cannot be represented in the
+/// 32-bit wasm address space, and truncating the count would under-size the buffer the VM
+/// writes into.
 ///
 /// Callers load advice data on hot paths, so the body must stay inlined: an out-of-line copy
 /// costs call overhead per load and blocks length-based simplifications at the call site.

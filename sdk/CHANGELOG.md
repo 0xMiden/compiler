@@ -64,6 +64,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   implements `ToFeltRepr` #786
 
 
+### Fixed
+
+- `adv_load_preimage` no longer truncates huge word counts into an undersized buffer on wasm32
+  (a potential guest heap overflow); it now traps for counts of `2^30` words or more, whose felt
+  total cannot be represented in the 32-bit address space #1291
+
 ## [0.14.0-rc.1]
 
 ### Added

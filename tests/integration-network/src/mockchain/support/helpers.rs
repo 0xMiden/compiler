@@ -35,8 +35,8 @@ use rand::{SeedableRng, rngs::StdRng};
 
 /// Host-side mirror of the transaction-script arguments declared in
 /// `examples/basic-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
-/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = key and value words); the
-/// layout must match the script's struct exactly.
+/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = key and value words); what
+/// must match the script's struct is the felt-repr wire sequence, not the Rust fields.
 #[derive(FromFeltRepr, ToFeltRepr)]
 struct TxScriptArgs {
     tag: miden_field::Felt,
@@ -58,6 +58,31 @@ mod tests {
     #[test]
     fn tx_script_arg_mirror_has_the_guest_layout_size() {
         assert_eq!(<TxScriptArgs as ScriptArgs>::FIXED_LEN, Some(14));
+    }
+
+    /// Pins the mirror's wire sequence with distinct sentinels, catching same-length field
+    /// reorders that the size pin cannot.
+    #[test]
+    fn tx_script_arg_mirror_has_the_guest_wire_sequence() {
+        let felt = |value: u64| miden_field::Felt::new(value).unwrap();
+        let word = |base: u64| {
+            miden_field::Word::new([felt(base), felt(base + 1), felt(base + 2), felt(base + 3)])
+        };
+
+        let args = TxScriptArgs {
+            tag: felt(1),
+            note_type: felt(2),
+            recipient: word(10),
+            asset_key: word(20),
+            asset_value: word(30),
+        };
+
+        let expected: Vec<miden_field::Felt> =
+            [1, 2, 10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33]
+                .into_iter()
+                .map(felt)
+                .collect();
+        assert_eq!(miden_field_repr::ToFeltRepr::to_felt_repr(&args), expected);
     }
 }
 

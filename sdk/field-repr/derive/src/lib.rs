@@ -109,7 +109,8 @@
 //! `FromFeltRepr` carries the statically known encoded length as `FIXED_LEN`. The derive computes
 //! it automatically: structs sum their field lengths; enums add the tag length to the variants'
 //! common payload length. A `Vec`/`Option` field, or enum variants of differing lengths, makes the
-//! type variable-length (`FIXED_LEN = None`).
+//! type variable-length (`FIXED_LEN = None`) — as does a field whose type implements
+//! `FromFeltRepr` manually without overriding the defaulted `FIXED_LEN`.
 //!
 //! ## Unsupported items
 //!

@@ -140,11 +140,17 @@ fn run(args: TxScriptArgs, account: &mut Wallet) {
 }
 ```
 
-On the host, build the transaction with `ScriptArgs::encode` on a struct declared with the
-identical field layout (keep the two definitions in sync — sharing the schema through the Miden
-package is planned). The trait lives in the `miden-tx-script-args` crate, whose off-chain
+On the host, build the transaction with `ScriptArgs::encode` on a mirror struct that reproduces
+the guest type's *felt-repr wire sequence* — the felts, in order; the Rust fields may differ, e.g.
+a guest `Asset` field can be mirrored as its key and value `Word`s (sharing the schema through
+the Miden package is planned). Pin the mirror against drift: assert its
+`<Mirror as ScriptArgs>::FIXED_LEN` equals the guest type's, and ideally assert a golden encoding
+with distinct sentinel values, which also catches same-length field reorders. This matters
+because one drift direction fails silently: if the guest type is word mode and the mirror grows
+past 4 felts, the host switches to commitment mode and the guest decodes the hash limbs as
+argument values. The trait lives in the `miden-tx-script-args` crate, whose off-chain
 dependencies are only `miden-field` and `miden-field-repr` — host code does not need the
-on-chain SDK:
+on-chain SDK.
 
 `EncodedScriptArgs` carries `miden-field` felts, while the protocol crates use their own felt
 type — convert between them via `as_canonical_u64`:
