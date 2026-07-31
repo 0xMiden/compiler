@@ -127,6 +127,10 @@ fn build_chain_with_wallet_account() -> (MockChain, AccountId) {
     (chain, account_id)
 }
 
+/// Error code of the `#[tx_script]` wrapper's decode panic; every in-VM decode failure funnels
+/// through it (see `assert_failure_contains` for re-calibration).
+const DECODE_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
+
 /// Asserts a failed execution's error message so an unrelated failure cannot satisfy the test.
 ///
 /// The expected error codes are stable products of the deterministic guest build. All decode
@@ -177,7 +181,7 @@ pub fn word_mode_args() {
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(tampered);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
+    assert_failure_contains(&err, DECODE_PANIC_CODE);
 }
 
 /// Commitment-mode arguments pass through the advice provider hash-verified against the args
@@ -262,7 +266,7 @@ pub fn commitment_mode_args() {
         .tx_script_args(bad_word)
         .extend_advice_map([(bad_word, nonzero_padding)]);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
+    assert_failure_contains(&err, DECODE_PANIC_CODE);
 
     // Canonicality: a self-consistent preimage with a whole extra all-zero word must be rejected
     // as trailing data.
@@ -276,7 +280,7 @@ pub fn commitment_mode_args() {
         .tx_script_args(bad_word)
         .extend_advice_map([(bad_word, extra_word)]);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
+    assert_failure_contains(&err, DECODE_PANIC_CODE);
 
     // Canonicality: an advice value that is not a whole number of words fails before the decode.
     let mut non_word_multiple = preimage.clone();
@@ -289,5 +293,5 @@ pub fn commitment_mode_args() {
         .tx_script_args(bad_word)
         .extend_advice_map([(bad_word, non_word_multiple)]);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
+    assert_failure_contains(&err, DECODE_PANIC_CODE);
 }

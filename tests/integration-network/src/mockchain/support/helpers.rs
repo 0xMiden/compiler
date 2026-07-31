@@ -46,46 +46,6 @@ struct TxScriptArgs {
     asset_value: miden_field::Word,
 }
 
-#[cfg(test)]
-mod tests {
-    use miden_tx_script_args::ScriptArgs;
-
-    use super::TxScriptArgs;
-
-    /// Pins the mirror's encoded size so layout drift vs the guest struct in
-    /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
-    /// asset key and value words = 14 felts).
-    #[test]
-    fn tx_script_arg_mirror_has_the_guest_layout_size() {
-        assert_eq!(<TxScriptArgs as ScriptArgs>::FIXED_LEN, Some(14));
-    }
-
-    /// Pins the mirror's wire sequence with distinct sentinels, catching same-length field
-    /// reorders that the size pin cannot.
-    #[test]
-    fn tx_script_arg_mirror_has_the_guest_wire_sequence() {
-        let felt = |value: u64| miden_field::Felt::new(value).unwrap();
-        let word = |base: u64| {
-            miden_field::Word::new([felt(base), felt(base + 1), felt(base + 2), felt(base + 3)])
-        };
-
-        let args = TxScriptArgs {
-            tag: felt(1),
-            note_type: felt(2),
-            recipient: word(10),
-            asset_key: word(20),
-            asset_value: word(30),
-        };
-
-        let expected: Vec<miden_field::Felt> =
-            [1, 2, 10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33]
-                .into_iter()
-                .map(felt)
-                .collect();
-        assert_eq!(miden_field_repr::ToFeltRepr::to_felt_repr(&args), expected);
-    }
-}
-
 /// Converts a value's felt representation into `miden_core::Felt` elements.
 pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.prefix().as_felt(), value.suffix()]
@@ -483,4 +443,44 @@ pub(crate) fn build_counter_account_with_rust_rpo_auth(
     .expect("failed to build counter account");
 
     (account, secret_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_tx_script_args::ScriptArgs;
+
+    use super::TxScriptArgs;
+
+    /// Pins the mirror's encoded size so layout drift vs the guest struct in
+    /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
+    /// asset key and value words = 14 felts).
+    #[test]
+    fn tx_script_arg_mirror_has_the_guest_layout_size() {
+        assert_eq!(<TxScriptArgs as ScriptArgs>::FIXED_LEN, Some(14));
+    }
+
+    /// Pins the mirror's wire sequence with distinct sentinels, catching same-length field
+    /// reorders that the size pin cannot.
+    #[test]
+    fn tx_script_arg_mirror_has_the_guest_wire_sequence() {
+        let felt = |value: u64| miden_field::Felt::new(value).unwrap();
+        let word = |base: u64| {
+            miden_field::Word::new([felt(base), felt(base + 1), felt(base + 2), felt(base + 3)])
+        };
+
+        let args = TxScriptArgs {
+            tag: felt(1),
+            note_type: felt(2),
+            recipient: word(10),
+            asset_key: word(20),
+            asset_value: word(30),
+        };
+
+        let expected: Vec<miden_field::Felt> =
+            [1, 2, 10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33]
+                .into_iter()
+                .map(felt)
+                .collect();
+        assert_eq!(miden_field_repr::ToFeltRepr::to_felt_repr(&args), expected);
+    }
 }

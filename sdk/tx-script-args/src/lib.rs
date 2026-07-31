@@ -156,6 +156,12 @@ fn decode_commitment<T: FromFeltRepr>(arg: Word) -> ScriptArgsResult<T> {
     decode_preimage(&preimage)
 }
 
+/// Commitment-mode decoding requires the advice provider, which only exists on the Miden VM.
+#[cfg(not(all(target_family = "wasm", miden, feature = "miden-vm-guest")))]
+fn decode_commitment<T: FromFeltRepr>(_arg: Word) -> ScriptArgsResult<T> {
+    Err(ScriptArgsError::AdviceProviderUnavailable)
+}
+
 /// Decodes a value from a commitment-mode preimage, enforcing the canonical zero padding.
 ///
 /// This is the pure half of commitment-mode [`ScriptArgs::decode`]: it runs anywhere, so hosts
@@ -184,12 +190,6 @@ fn check_decoded_len<T: FromFeltRepr>(reader: &FeltReader<'_>) -> ScriptArgsResu
     Ok(())
 }
 
-/// Commitment-mode decoding requires the advice provider, which only exists on the Miden VM.
-#[cfg(not(all(target_family = "wasm", miden, feature = "miden-vm-guest")))]
-fn decode_commitment<T: FromFeltRepr>(_arg: Word) -> ScriptArgsResult<T> {
-    Err(ScriptArgsError::AdviceProviderUnavailable)
-}
-
 impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
     const FIXED_LEN: Option<usize> = <T as FromFeltRepr>::FIXED_LEN;
 
@@ -215,18 +215,14 @@ impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
         // Validate before selecting the transport: a wrong manual `FIXED_LEN` would otherwise
         // silently truncate the args word or mis-route the encoding.
         if let Some(fixed_len) = Self::FIXED_LEN {
-            assert_eq!(felts.len(), fixed_len, "encoding length must match FIXED_LEN");
+            assert!(felts.len() == fixed_len, "encoding length must match FIXED_LEN");
         }
         if const { is_word_mode(Self::FIXED_LEN) } {
-            while felts.len() < WORD_FELTS {
-                felts.push(Felt::ZERO);
-            }
+            felts.resize(WORD_FELTS, Felt::ZERO);
             EncodedScriptArgs::Word(Word::new([felts[0], felts[1], felts[2], felts[3]]))
         } else {
             // Zero-pad to a whole number of words; the padding is part of the hashed preimage.
-            while !felts.len().is_multiple_of(WORD_FELTS) {
-                felts.push(Felt::ZERO);
-            }
+            felts.resize(felts.len().next_multiple_of(WORD_FELTS), Felt::ZERO);
             EncodedScriptArgs::Preimage(felts)
         }
     }

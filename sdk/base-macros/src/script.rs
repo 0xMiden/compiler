@@ -22,7 +22,7 @@ pub(crate) struct ScriptConfig {
 }
 
 /// Configuration for generating a script guest wrapper.
-pub(crate) struct GuestWrapperConfig {
+struct GuestWrapperConfig {
     /// Fully-qualified export interface emitted by the generated WIT world.
     pub export_interface: &'static str,
     /// Fully-qualified path to the guest trait implemented by the generated struct.
@@ -36,11 +36,11 @@ pub(crate) struct GuestWrapperConfig {
 /// Generates the shared script wrapper boilerplate (WIT bindings + export glue + guest entrypoint).
 ///
 /// The guest entrypoint receives the `TX_SCRIPT_ARGS` word as `arg`; `run_body` may reference it.
-pub(crate) fn expand_guest_wrapper(
+fn expand_guest_wrapper(
     error_span: Span,
     config: GuestWrapperConfig,
     user_items: TokenStream2,
-    trait_impls: TokenStream2,
+    extra_items: TokenStream2,
     run_body: TokenStream2,
 ) -> syn::Result<TokenStream2> {
     let inline_wit = build_script_wit(error_span, config.export_interface)?;
@@ -66,7 +66,7 @@ pub(crate) fn expand_guest_wrapper(
         ::miden::generate!(inline = #inline_literal);
         self::bindings::export!(#guest_struct_ident);
 
-        #trait_impls
+        #extra_items
 
         // Bring ActiveAccount trait into scope so users can call account.get_id(), etc.
         #[allow(unused_imports)]
