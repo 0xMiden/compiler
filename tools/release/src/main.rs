@@ -3,8 +3,9 @@ use std::{collections::BTreeSet, path::PathBuf};
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use midenc_release::{
+    candidate::{Candidate, UnitDeclaration, render_tag},
     config::{Config, Unit, VersionSource},
-    lint, order,
+    intent, lint, order,
     reconcile::{self, Disposition, Planned},
     registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
     version,
@@ -57,6 +58,21 @@ enum Command {
         /// Print the edits without writing them.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Generate the release intent from the committed candidate.
+    ///
+    /// Deterministic by construction: identical inputs produce byte-identical
+    /// output, so a reviewed intent and an executed one are provably the same.
+    Plan {
+        /// Path to the candidate declaration.
+        #[arg(long, default_value = ".release/release.toml")]
+        candidate: PathBuf,
+        /// The commit whose source would be packaged.
+        #[arg(long)]
+        subject: String,
+        /// Write the intent here instead of stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
     /// Report what still needs publishing, against live registry state.
     ///
@@ -178,7 +194,29 @@ fn main() -> Result<()> {
             }
             version::apply(&ws, &config, &plan)?;
             println!("\nupdated {} manifest edit(s) and refreshed Cargo.lock", plan.edits.len());
-            println!("review the diff, then record the release candidate in .release/release.toml");
+
+            let candidate_path = manifest_dir.join(".release/release.toml");
+            update_candidate(&candidate_path, &config, unit, &plan.new)?;
+            println!("recorded the candidate in {}", candidate_path.display());
+            println!("review the diff, then open the release-candidate pull request");
+            Ok(())
+        }
+        Command::Plan {
+            candidate,
+            subject,
+            output,
+        } => {
+            let candidate = Candidate::load(&manifest_dir.join(&candidate))?;
+            let intent = intent::generate(&ws, &config, &candidate, &subject)?;
+            let json = intent.to_canonical_json();
+
+            match output {
+                Some(path) => {
+                    std::fs::write(&path, format!("{json}\n"))?;
+                    println!("wrote intent to {} (digest {})", path.display(), intent.digest());
+                }
+                None => println!("{json}"),
+            }
             Ok(())
         }
         Command::Reconcile { index, unit } => {
@@ -233,6 +271,45 @@ fn main() -> Result<()> {
         }
         Command::FakeRegistry { .. } => unreachable!("handled before config loading"),
     }
+}
+
+/// Record the bumped unit in the candidate declaration, preserving any other
+/// units already selected.
+fn update_candidate(
+    path: &std::path::Path,
+    config: &Config,
+    unit: UnitArg,
+    version: &semver::Version,
+) -> Result<()> {
+    let name = match unit {
+        UnitArg::Compiler => "compiler",
+        UnitArg::Sdk => "sdk",
+    };
+    let unit_config = config
+        .units
+        .get(name)
+        .ok_or_else(|| anyhow::anyhow!("unit '{name}' is not defined in .release/config.toml"))?;
+
+    let mut candidate = Candidate::load(path).unwrap_or_else(|_| Candidate {
+        schema_version: midenc_release::candidate::SUPPORTED_SCHEMA_VERSION,
+        units: Vec::new(),
+        declarations: Default::default(),
+    });
+
+    if !candidate.units.iter().any(|u| u == name) {
+        candidate.units.push(name.to_string());
+        candidate.units.sort();
+    }
+    candidate.declarations.insert(
+        name.to_string(),
+        UnitDeclaration {
+            version: version.clone(),
+            tag: render_tag(&unit_config.tag, version),
+            prerelease: !version.pre.is_empty(),
+        },
+    );
+
+    candidate.save(path)
 }
 
 fn run_fake_registry(port: u16, cache_dir: Option<PathBuf>, offline: bool) -> Result<()> {

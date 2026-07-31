@@ -352,7 +352,7 @@ fn write_response(
 }
 
 /// SHA-256, implemented here to keep this tool dependency-free.
-fn sha256_hex(data: &[u8]) -> String {
+pub fn sha256_hex(data: &[u8]) -> String {
     let digest = sha256(data);
     digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
