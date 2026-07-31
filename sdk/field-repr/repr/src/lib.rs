@@ -417,7 +417,20 @@ where
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let len = reader.read_len_u32()?;
 
-        let mut result = Vec::with_capacity(len);
+        // Reserve only what the reader can actually supply: a lying length prefix must surface
+        // as a decode error, not an allocation abort.
+        let mut result = match T::FIXED_LEN {
+            Some(width) if width > 0 => match len.checked_mul(width) {
+                Some(total) if total <= reader.remaining() => Vec::with_capacity(len),
+                _ => {
+                    return Err(FeltReprError::UnexpectedEof {
+                        pos: reader.pos(),
+                        len: reader.len(),
+                    });
+                }
+            },
+            _ => Vec::new(),
+        };
 
         let mut i = 0usize;
         while i < len {

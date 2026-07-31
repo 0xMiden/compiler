@@ -19,13 +19,15 @@ doctest = false
 miden-field = { workspace = true, default-features = false }
 miden-field-repr.workspace = true
 
-# The guest-side decode transport (advice provider access and VM asserts) is only needed when
-# compiling for the Miden VM; off-chain consumers never build the on-chain bindings.
+# The guest-side decode transport (advice-provider access) is only needed when compiling for the
+# Miden VM. It is optional behind `miden-vm-guest` — which the `miden` SDK crate enables — so no
+# host build (native, browser wasm, or WASI) ever pulls the on-chain bindings.
 [target.'cfg(target_family = "wasm")'.dependencies]
-miden-stdlib-sys.workspace = true
+miden-stdlib-sys = { workspace = true, optional = true }
 
 [features]
 default = []
+miden-vm-guest = ["dep:miden-stdlib-sys"]
 
 [package.metadata.docs.rs]
 default-target = "x86_64-unknown-linux-gnu"

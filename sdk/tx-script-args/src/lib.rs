@@ -5,9 +5,10 @@
 //! are packed into the word itself, while longer or variable-length encodings are committed to by
 //! hash and passed through the advice provider.
 //!
-//! The crate is shared between on-chain and off-chain code: [`ScriptArgs::encode`] is pure and
-//! runs anywhere, while [`ScriptArgs::decode`]'s advice-provider access is only compiled for
-//! Miden VM targets — off-chain builds do not depend on the on-chain SDK bindings at all.
+//! The crate is shared between on-chain and off-chain code: [`ScriptArgs::encode`],
+//! [`decode_preimage`], and word-mode [`ScriptArgs::decode`] are pure and run anywhere, while
+//! the advice-provider transport sits behind the `miden-vm-guest` feature (enabled by the
+//! `miden` SDK crate) — no host build, native or wasm, depends on the on-chain SDK bindings.
 
 #![no_std]
 #![deny(warnings)]
@@ -47,6 +48,9 @@ pub enum ScriptArgsError {
     TrailingData,
     /// The advice value's length was not a whole number of words (commitment mode).
     NonWordMultipleLength,
+    /// Commitment-mode decoding was attempted without the Miden VM's advice provider
+    /// (i.e. off-chain). Word-mode decoding and [`decode_preimage`] work everywhere.
+    AdviceProviderUnavailable,
 }
 
 impl From<FeltReprError> for ScriptArgsError {
@@ -64,12 +68,21 @@ impl core::fmt::Display for ScriptArgsError {
             Self::NonWordMultipleLength => {
                 f.write_str("tx script args advice value is not a whole number of words")
             }
+            Self::AdviceProviderUnavailable => {
+                f.write_str("commitment-mode tx script args can only be decoded on the Miden VM")
+            }
         }
     }
 }
 
 /// Convenience alias for results returned by script-args decoding.
 pub type ScriptArgsResult<T> = core::result::Result<T, ScriptArgsError>;
+
+mod sealed {
+    /// Seals [`ScriptArgs`](super::ScriptArgs) to its blanket implementation.
+    pub trait Sealed {}
+    impl<T: super::FromFeltRepr + super::ToFeltRepr> Sealed for T {}
+}
 
 /// Transaction-script arguments transported through the `TX_SCRIPT_ARGS` word.
 ///
@@ -83,10 +96,14 @@ pub type ScriptArgsResult<T> = core::result::Result<T, ScriptArgsError>;
 ///   hash of the zero-padded encoding. [`decode`](Self::decode) fetches the preimage from the
 ///   advice provider and the hash is verified in-VM, so the host cannot substitute values.
 ///
-/// The mode is a compile-time property of the argument type, so the host-side encoder and the
-/// guest-side decoder always agree on the transport mode. The word carries no field layout —
-/// the encoding and decoding type definitions themselves must match.
-pub trait ScriptArgs: Sized {
+/// The mode is a compile-time property of the argument type, so within one type definition the
+/// encoder and decoder always agree on the transport mode. The word carries no field layout —
+/// host-side mirrors of a guest type must reproduce its felt-repr wire sequence (see the
+/// migration guide for how to pin that).
+///
+/// The trait is sealed: the blanket `FromFeltRepr + ToFeltRepr` implementation is the only one,
+/// which is what makes the documented transport guarantees hold for every implementor.
+pub trait ScriptArgs: Sized + sealed::Sealed {
     /// Total encoded length in felts, when statically known.
     const FIXED_LEN: Option<usize>;
 
@@ -125,7 +142,7 @@ fn check_zero_padding(reader: &mut FeltReader<'_>) -> ScriptArgsResult<()> {
 ///
 /// The args word commits to the encoding: `adv_load_preimage` verifies the fetched preimage's
 /// hash against it in-VM.
-#[cfg(all(target_family = "wasm", miden))]
+#[cfg(all(target_family = "wasm", miden, feature = "miden-vm-guest"))]
 #[inline(always)]
 fn decode_commitment<T: FromFeltRepr>(arg: Word) -> ScriptArgsResult<T> {
     use miden_stdlib_sys::{adv_load_preimage, intrinsics::advice::adv_push_mapvaln};
@@ -141,13 +158,13 @@ fn decode_commitment<T: FromFeltRepr>(arg: Word) -> ScriptArgsResult<T> {
 
 /// Decodes a value from a commitment-mode preimage, enforcing the canonical zero padding.
 ///
-/// Target-independent so the canonicality rules are unit-testable natively; only the VM decode
-/// path calls it outside tests.
-#[cfg_attr(not(all(target_family = "wasm", miden)), allow(dead_code))]
+/// This is the pure half of commitment-mode [`ScriptArgs::decode`]: it runs anywhere, so hosts
+/// can round-trip [`EncodedScriptArgs::Preimage`] bytes in tests and tooling without the VM.
 #[inline(always)]
-fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> ScriptArgsResult<T> {
+pub fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> ScriptArgsResult<T> {
     let mut reader = FeltReader::new(preimage);
     let value = T::from_felt_repr(&mut reader)?;
+    check_decoded_len::<T>(&reader)?;
     // Only the zero felts padding the encoding to a whole number of words may remain.
     if reader.remaining() >= WORD_FELTS {
         return Err(ScriptArgsError::TrailingData);
@@ -156,10 +173,21 @@ fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> ScriptArgsResult<T> {
     Ok(value)
 }
 
+/// Asserts a decoder consumed exactly its declared `FIXED_LEN` felts, catching manual
+/// implementations whose decode disagrees with the constant (the encode side is checked by
+/// [`ScriptArgs::encode`]).
+#[inline(always)]
+fn check_decoded_len<T: FromFeltRepr>(reader: &FeltReader<'_>) -> ScriptArgsResult<()> {
+    if let Some(fixed_len) = T::FIXED_LEN {
+        assert!(reader.pos() == fixed_len, "decoded length must match FIXED_LEN");
+    }
+    Ok(())
+}
+
 /// Commitment-mode decoding requires the advice provider, which only exists on the Miden VM.
-#[cfg(not(all(target_family = "wasm", miden)))]
+#[cfg(not(all(target_family = "wasm", miden, feature = "miden-vm-guest")))]
 fn decode_commitment<T: FromFeltRepr>(_arg: Word) -> ScriptArgsResult<T> {
-    unimplemented!("commitment-mode tx script args can only be decoded on the Miden VM")
+    Err(ScriptArgsError::AdviceProviderUnavailable)
 }
 
 impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
@@ -174,6 +202,7 @@ impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
             let felts = [arg[0], arg[1], arg[2], arg[3]];
             let mut reader = FeltReader::new(&felts);
             let value = Self::from_felt_repr(&mut reader)?;
+            check_decoded_len::<Self>(&reader)?;
             check_zero_padding(&mut reader)?;
             Ok(value)
         } else {
@@ -306,6 +335,46 @@ mod tests {
     #[should_panic(expected = "must match FIXED_LEN")]
     fn encode_rejects_wrong_manual_fixed_len() {
         let _ = LyingFixedLen.encode();
+    }
+
+    /// A decoder that consumes fewer felts than its declared `FIXED_LEN` must fail loudly
+    /// instead of mistaking argument felts for padding.
+    #[test]
+    #[should_panic(expected = "decoded length must match FIXED_LEN")]
+    fn decode_rejects_wrong_manual_fixed_len() {
+        /// Declares two felts but consumes one.
+        struct LyingDecoder;
+
+        impl FromFeltRepr for LyingDecoder {
+            const FIXED_LEN: Option<usize> = Some(2);
+
+            fn from_felt_repr(
+                reader: &mut FeltReader<'_>,
+            ) -> miden_field_repr::FeltReprResult<Self> {
+                reader.read()?;
+                Ok(Self)
+            }
+        }
+
+        impl ToFeltRepr for LyingDecoder {
+            fn write_felt_repr(&self, writer: &mut miden_field_repr::FeltWriter<'_>) {
+                writer.write(felt(1));
+                writer.write(felt(2));
+            }
+        }
+
+        let _ = LyingDecoder::decode(Word::new([felt(1), felt(2), felt(0), felt(0)]));
+    }
+
+    /// Off-VM, commitment-mode decoding reports the missing advice provider as an error.
+    #[test]
+    fn commitment_mode_decode_reports_missing_advice_provider() {
+        let word = Word::new([felt(1), felt(2), felt(3), felt(4)]);
+
+        assert_eq!(
+            <Vec<Felt> as ScriptArgs>::decode(word),
+            Err(ScriptArgsError::AdviceProviderUnavailable)
+        );
     }
 
     /// A commitment preimage with only zero padding decodes.

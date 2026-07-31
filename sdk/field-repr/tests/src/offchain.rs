@@ -442,6 +442,17 @@ fn test_tuple_struct_roundtrip() {
 }
 
 #[test]
+fn test_vec_lying_length_prefix_errors_without_allocating() {
+    // A length prefix claiming u32::MAX elements with a 1-felt payload must error out instead
+    // of aborting on a huge allocation.
+    let felts = [Felt::new(u32::MAX as u64).unwrap(), Felt::new(7).unwrap()];
+    let mut reader = FeltReader::new(&felts);
+
+    let err = <Vec<Felt> as FromFeltRepr>::from_felt_repr(&mut reader).unwrap_err();
+    assert!(matches!(err, miden_field_repr::FeltReprError::UnexpectedEof { .. }));
+}
+
+#[test]
 fn test_word_roundtrip() {
     let original = Word::new([
         Felt::new(1).unwrap(),

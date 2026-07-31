@@ -166,7 +166,9 @@ pub(crate) fn expand(
         quote! { #frontend_link_section },
         quote! {
             #instantiation
-            #fn_ident(#(#call_args),*);
+            // `self::` keeps the call resolving to the user's function even when it shares a
+            // name with the wrapper's `arg` parameter.
+            self::#fn_ident(#(#call_args),*);
         },
     ) {
         Ok(tokens) => tokens,
@@ -200,6 +202,14 @@ fn parse_entrypoint_signature(input_fn: &ItemFn) -> syn::Result<Vec<ParamRole>> 
 
     if let Some(asyncness) = sig.asyncness {
         return Err(syn::Error::new(asyncness.span(), "entrypoint must not be `async`"));
+    }
+
+    if let Some(unsafety) = sig.unsafety {
+        return Err(syn::Error::new(unsafety.span(), "entrypoint must not be `unsafe`"));
+    }
+
+    if let Some(abi) = &sig.abi {
+        return Err(syn::Error::new(abi.span(), "entrypoint must not declare an ABI"));
     }
 
     if !sig.generics.params.is_empty() || sig.generics.where_clause.is_some() {
@@ -263,25 +273,35 @@ fn classify_param(ty: &Type) -> syn::Result<ParamRole> {
                             script-args value (a type implementing `ScriptArgs`) or a reference \
                             to an `#[account(...)]` type (e.g. `account: &mut MyAccount`)";
 
-    match ty {
+    match peel_type(ty) {
         // Any reference to a concrete path type other than `Word` is treated as the account
         // parameter; whether it really is an account wrapper is enforced by the `AccountWrapper`
         // bound. `&Word` is rejected: the args word is passed by value.
         Type::Reference(type_ref) => {
-            if !matches!(type_ref.elem.as_ref(), Type::Path(_))
-                || is_type_named(&type_ref.elem, "Word")
-            {
+            let elem = peel_type(&type_ref.elem);
+            if !matches!(elem, Type::Path(_)) || is_type_named(elem, "Word") {
                 return Err(syn::Error::new(ty.span(), EXPECTED));
             }
             Ok(ParamRole::Account {
-                ty: (*type_ref.elem).clone(),
+                ty: elem.clone(),
                 mut_ref: type_ref.mutability.is_some(),
             })
         }
         // Any by-value path type is the script-args parameter; whether it can be decoded is
         // enforced by the `ScriptArgs` bound.
-        Type::Path(_) => Ok(ParamRole::Args(ty.clone())),
+        path @ Type::Path(_) => Ok(ParamRole::Args(path.clone())),
         other => Err(syn::Error::new(other.span(), EXPECTED)),
+    }
+}
+
+/// Strips parentheses and macro-expansion groups from a type.
+fn peel_type(mut ty: &Type) -> &Type {
+    loop {
+        match ty {
+            Type::Paren(paren) => ty = &paren.elem,
+            Type::Group(group) => ty = &group.elem,
+            other => return other,
+        }
     }
 }
 
@@ -445,6 +465,37 @@ mod tests {
 
         let err = expect_err(&input_fn);
         assert!(err.to_string().contains("cannot target methods"));
+    }
+
+    #[test]
+    fn signature_accepts_parenthesized_types() {
+        let input_fn: ItemFn = parse_quote! {
+            fn run(args: (TxScriptArgs), account: &mut (Wallet)) {}
+        };
+
+        let params = roles(&input_fn);
+        assert!(matches!(params[0], ParamRole::Args(_)));
+        assert!(matches!(params[1], ParamRole::Account { mut_ref: true, .. }));
+    }
+
+    #[test]
+    fn signature_rejects_unsafe() {
+        let input_fn: ItemFn = parse_quote! {
+            unsafe fn run(args: TxScriptArgs) {}
+        };
+
+        let err = expect_err(&input_fn);
+        assert!(err.to_string().contains("must not be `unsafe`"));
+    }
+
+    #[test]
+    fn signature_rejects_extern_abi() {
+        let input_fn: ItemFn = parse_quote! {
+            extern "C" fn run(args: TxScriptArgs) {}
+        };
+
+        let err = expect_err(&input_fn);
+        assert!(err.to_string().contains("must not declare an ABI"));
     }
 
     #[test]

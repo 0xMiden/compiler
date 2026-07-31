@@ -19,6 +19,8 @@ pub use miden_field_repr as felt_repr;
 pub use miden_field_repr;
 pub use miden_sdk_alloc::BumpAlloc;
 pub use miden_stdlib_sys::*;
-pub use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs, ScriptArgsError, ScriptArgsResult};
+pub use miden_tx_script_args::{
+    EncodedScriptArgs, ScriptArgs, ScriptArgsError, ScriptArgsResult, decode_preimage,
+};
 // Re-export since `wit_bindgen::generate!` is used in `generate!`
 pub use wit_bindgen;
