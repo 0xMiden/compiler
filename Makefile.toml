@@ -463,7 +463,7 @@ dependencies = ["litcheck", "midenc", "cargo-miden", "hir-opt", "miden-objtool"]
 category = "Test"
 description = "Set up the litcheck utility"
 # 0.4.5 is the first release that supports --dump-input
-install_crate = { crate_name = "litcheck", min_version = "0.4.5", test_arg = "--help" }
+install_crate = { crate_name = "litcheck", min_version = "0.4.6", test_arg = "--help" }
 
 [tasks.docs]
 category = "Documentation"

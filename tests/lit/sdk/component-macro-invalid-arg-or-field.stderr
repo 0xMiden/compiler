@@ -1,4 +1,5 @@
 // RUN: env CARGO_TARGET_DIR=%target_dir/lit/sdk-project cargo run --bin component-macro-invalid-field --manifest-path %S/sdk-project/Cargo.toml 2>&1 | filecheck %s
+// RUN: env CARGO_TARGET_DIR=%target_dir/lit/sdk-project cargo run --bin component-macro-invalid-argument --manifest-path %S/sdk-project/Cargo.toml 2>&1 | filecheck --check-prefixes CHECK_INVALID_ARG %s
 
 // CHECK: error: storage field type can only be `StorageMap` or `StorageValue` from `miden` crate
 // CHECK-NEXT:  --> {{.*\.rs}}:[[#%d,ERRLINE:]]:{{[0-9]+}}
@@ -6,7 +7,6 @@
 // CHECK-NEXT: [[#ERRLINE]] |     counter: u32,
 // CHECK-NEXT:   |     ^^^^^^^^^^^^
 
-// RUN: env CARGO_TARGET_DIR=%target_dir/lit/sdk-project cargo run --bin component-macro-invalid-argument --manifest-path %S/sdk-project/Cargo.toml 2>&1 | filecheck --check-prefixes CHECK_INVALID_ARG %s
 
 // CHECK_INVALID_ARG: error: `#[component]` only accepts arguments on the component trait declaration; declare sibling component dependencies as `#[component(package::Interface, ...)]` on the trait
 // CHECK_INVALID_ARG-NEXT:  --> {{.*\.rs}}:[[#%d,ERRLINE:]]:{{[0-9]+}}

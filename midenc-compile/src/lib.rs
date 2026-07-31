@@ -184,8 +184,8 @@ fn artifact_from_outcome(
     use miden_assembly_syntax::DisplayHex;
 
     if outcome.checkpoint() != pipeline::CheckpointId::PACKAGE_ASSEMBLED {
-        // A stop with no flag behind it can only come from an explicit `--stop-after`, which
-        // has no command-line surface yet; the generic reason is what such a caller gets.
+        // A stop with no flag behind it came from `--stop-after`, or from a caller that set the
+        // stop point on the request itself; the generic reason names the flag either way.
         let reason = stop.map_or("stop-after", pipeline::StopFlag::reason);
         log::debug!("stopping compiler early at '{}' ({reason})", outcome.checkpoint());
         return Err(CompilerStopped(reason).into());

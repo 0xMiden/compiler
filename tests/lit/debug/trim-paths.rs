@@ -1,5 +1,5 @@
-//! RUN: env MIDENC_TRACE=module-parser=debug midenc %s --release -Canalyze-only --emit=masm=- 2>&1 | filecheck %s
-//! RUN: env MIDENC_TRACE=module-parser=debug midenc %s --release -Canalyze-only -Zprint-hir-source-locations --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR
+//! RUN: env MIDENC_TRACE=module-parser=debug midenc %s --release --stop-after=lower --emit=masm=- 2>&1 | filecheck --dump-input=fail %s
+//! RUN: env MIDENC_TRACE=module-parser=debug midenc %s --release --stop-after=transform -Zprint-hir-source-locations --emit=hir=- 2>&1 | filecheck %s --check-prefix=HIR
 //!
 //! This test verifies that source location information from DWARF is correctly
 //! resolved when trim-paths is enabled or `--remap-path-prefix` is used. Both

@@ -337,11 +337,34 @@ pub fn stop_flag(options: &Options) -> CompilerResult<Option<StopFlag>> {
 ///
 /// The result goes through [`resolve_goal`] like any other request, so the flags and
 /// `--stop-after` share one resolution path and one set of diagnostics.
+///
+/// # Three ways to name a stop point, reconciled in one place
+///
+/// [`Options::stop_after`] is `--stop-after` as the user typed it, and it is folded in here
+/// rather than by whoever built the request, so that *every* entry point honours it — the
+/// driver's, `tests/support`'s, and any other caller that assembles a request of its own. A
+/// caller may also set [`OutputRequest::with_stop_after`] directly, which is the programmatic
+/// form and needs no command line.
+///
+/// Naming a stop point twice is refused rather than resolved by precedence, whichever pair it
+/// is and even when the two agree: a request that says `parse` twice is a request whose author
+/// believed one of them was doing something, and picking a winner hides that.
 pub fn apply_stop_flags(
     request: OutputRequest,
     options: &Options,
     frontend: &FrontendRegistration,
 ) -> CompilerResult<OutputRequest> {
+    let request = match (options.stop_after.as_deref(), request.stop_after()) {
+        (Some(requested), None) => request.with_stop_after(Some(requested.to_string())),
+        (Some(from_options), Some(on_request)) => {
+            return Err(Report::msg(format!(
+                "'--stop-after={from_options}' and the requested stop point '{on_request}' name \
+                 different stop points; give at most one"
+            )));
+        }
+        (None, _) => request,
+    };
+
     let Some(flag) = stop_flag(options)? else {
         return Ok(request);
     };

@@ -1336,6 +1336,72 @@ path = "{root}"
     }
 
     #[test]
+    fn a_stop_after_in_the_session_options_caps_the_build() {
+        // `--stop-after`'s counterpart to `a_stop_flag_in_the_session_options_caps_the_build`,
+        // and the same property: the value has to be *consulted*. It reached `Options` long
+        // before anything read it, which is exactly the shape of bug this asserts against.
+        let (session, manifest) = session_configured("driver_stop_after_option", STUB, |options| {
+            options.stop_after = Some("parse".to_string())
+        });
+        let observer = recorder();
+        let request = CompilationRequest::new(session, input(&manifest))
+            .with_observers(vec![observer.clone() as Rc<RefCell<dyn Observer>>]);
+
+        let outcome = pipeline()
+            .compile(request, &mut NoPackageStore)
+            .expect("stopping short of assembly is a success, not an error");
+
+        assert_eq!(outcome.checkpoint(), CheckpointId::MASM_PARSED);
+        assert_eq!(
+            trace(&observer),
+            vec![(CheckpointId::MASM_PARSED, TargetRole::Root)],
+            "nothing past the requested stop point may run"
+        );
+    }
+
+    #[test]
+    fn a_stop_after_naming_no_checkpoint_of_the_route_is_reported() {
+        // Resolution is per-route, so the value cannot be validated when it is parsed. The
+        // diagnostic has to name what this route *does* accept, or the user has nothing to go on.
+        let (session, manifest) =
+            session_configured("driver_stop_after_unknown", STUB, |options| {
+                options.stop_after = Some("nonexistent".to_string())
+            });
+        let request = CompilationRequest::new(session, input(&manifest));
+
+        let err = pipeline()
+            .compile(request, &mut NoPackageStore)
+            .expect_err("'nonexistent' names no checkpoint or alias of the stub route");
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("'nonexistent' is not a valid stop point"), "{rendered}");
+        assert!(
+            rendered.contains("masm.parsed"),
+            "the diagnostic must list the checkpoints this route does accept: {rendered}"
+        );
+    }
+
+    #[test]
+    fn a_stop_after_and_a_stop_flag_together_are_reported() {
+        // Two ways of naming a stop point, given at once. They are the same mechanism, so this
+        // is a usage error naming both rather than a silent precedence rule.
+        let (session, manifest) =
+            session_configured("driver_stop_after_conflict", STUB, |options| {
+                options.stop_after = Some("parse".to_string());
+                options.parse_only = true;
+            });
+        let request = CompilationRequest::new(session, input(&manifest));
+
+        let err = pipeline()
+            .compile(request, &mut NoPackageStore)
+            .expect_err("naming a stop point twice is ambiguous even when the two agree");
+
+        let rendered = format!("{err}");
+        assert!(rendered.contains("--stop-after=parse"), "{rendered}");
+        assert!(rendered.contains("-Cparse-only"), "{rendered}");
+    }
+
+    #[test]
     fn a_stop_flag_the_route_cannot_express_is_reported() {
         // The stub route reaches no analysis checkpoint: a flag naming a phase the route never
         // reaches must be a diagnostic rather than a silently uncapped build. No shipped route

@@ -250,6 +250,28 @@ pub struct Compiler {
         )
     )]
     pub output_types: Vec<OutputTypeSpec>,
+    /// Stop compilation after CHECKPOINT, rather than building a package
+    ///
+    /// CHECKPOINT is either an alias — `parse`, `analyze`, `transform`, `lower`, `assemble` —
+    /// or a fully-qualified checkpoint id such as `hir.initial` or `masm.parsed`.
+    ///
+    /// Which names are accepted depends on the input: each frontend declares its own route,
+    /// and a name that route does not reach is reported along with the ones it does. A
+    /// Miden Assembly input, for instance, has no `transform` phase to stop after.
+    ///
+    /// This is the general form of the `-C` stop flags (`-Cparse-only`, `-Canalyze-only`,
+    /// `-Clink-only`); giving both is an error rather than one silently winning.
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long,
+            value_name = "CHECKPOINT",
+            env = "MIDENC_STOP_AFTER",
+            next_line_help(true),
+            help_heading = "Output"
+        )
+    )]
+    pub stop_after: Option<String>,
     /// Specify what level of debug information to emit in compilation artifacts
     #[cfg_attr(feature = "std", arg(
         long,
@@ -663,6 +685,7 @@ impl Compiler {
             search_path,
             mut link_libraries,
             output_types,
+            stop_after,
             debug,
             opt_level,
             codegen,
@@ -738,6 +761,7 @@ impl Compiler {
         options.entrypoint = entrypoint;
         options.workspace = workspace;
         options.packages = package;
+        options.stop_after = stop_after;
         options.parse_only = parse_only;
         options.analyze_only = analyze_only;
         options.link_only = link_only;
@@ -830,5 +854,43 @@ impl clap::builder::TypedValueParser for TargetTypeValueParser {
             }
             err
         })
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    use super::*;
+
+    /// Parse `args` as a command line, as `cargo miden` and the `midenc` binary both do.
+    fn options(args: &[&str]) -> Box<Options> {
+        Compiler::try_parse_from(PathBuf::from("/tmp"), args)
+            .unwrap_or_else(|err| panic!("`midenc {}` should parse: {err}", args.join(" ")))
+    }
+
+    /// `--stop-after` reaches [`Options`], which is the only way the pipeline can see it.
+    ///
+    /// The value is carried through uninterpreted: which names are valid depends on the route
+    /// the input selects, so `hir.initial` is accepted here and rejected later by a frontend
+    /// whose route lacks it. Parsing must not pre-empt that.
+    #[test]
+    fn stop_after_reaches_the_options() {
+        for value in ["parse", "analyze", "transform", "lower", "assemble", "hir.initial"] {
+            assert_eq!(
+                options(&["--stop-after", value]).stop_after.as_deref(),
+                Some(value),
+                "`--stop-after={value}` must reach the options unchanged"
+            );
+        }
+        assert_eq!(
+            options(&["--stop-after=parse"]).stop_after.as_deref(),
+            Some("parse"),
+            "the `=` form must parse too"
+        );
+    }
+
+    /// Absent the flag there is no stop point, which is what makes a full build the default.
+    #[test]
+    fn no_stop_after_means_no_cap() {
+        assert_eq!(options(&[]).stop_after, None);
     }
 }

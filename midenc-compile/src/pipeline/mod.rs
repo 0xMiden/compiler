@@ -35,11 +35,12 @@
 //!
 //! [`Pipeline::compile`] attaches an observer of its own that renders the *selected* target's
 //! artifacts as it reaches them, through the route's own [`ArtifactDecl::render`] — so `--emit`
-//! is decided by the session rather than by the request. The crate's entry points still do not
-//! forward `--emit` or `--stop-after` into the [`OutputRequest`] they build, so goal-based
-//! validation of an explicit `--emit` is not yet in force; that belongs with the CLI, which
-//! still holds the raw specs `Options` folds away. The `-C` stop flags *are* in force, because
-//! [`Pipeline::compile`] reads them off the session rather than off the request.
+//! is decided by the session rather than by the request. `--emit` is still not forwarded into
+//! the [`OutputRequest`] the entry points build, so goal-based validation of an explicit
+//! `--emit` is not yet in force; that belongs with the CLI, which still holds the raw specs
+//! `Options` folds away. `--stop-after` and the `-C` stop flags *are* in force, because
+//! [`Pipeline::compile`] reads them off the session rather than off the request — see
+//! [`apply_stop_flags`], which reconciles them with a stop point the request may carry itself.
 //!
 //! The one thing that does **not** come out of a pipeline run is HIR handed back to a caller:
 //! each target's HIR is built in a [`Context`](midenc_hir::Context) the provider creates per

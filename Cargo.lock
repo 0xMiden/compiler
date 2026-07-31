@@ -1440,7 +1440,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2499,9 +2499,9 @@ dependencies = [
 
 [[package]]
 name = "litcheck-core"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "802637ff842443b2ba88919c819c70de0c7c3e4bfe9a2c52bbaf02399d64f57c"
+checksum = "0ca224f6265fed79c4064ff881cb7aa7363ce4e0abf3891e5f6511ba038f23f1"
 dependencies = [
  "Inflector",
  "clap",
@@ -2525,9 +2525,9 @@ dependencies = [
 
 [[package]]
 name = "litcheck-filecheck"
-version = "0.4.5"
+version = "0.4.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fe714c3f4a7de1066da80f4d0a3faf2e38b9980d4a3dd2d3b00ab3e416603a8"
+checksum = "b891f7377ba51f0eac839fda2f4cae0acda031a5ce59320b1383bfa2842fa1d9"
 dependencies = [
  "aho-corasick",
  "bitflags 2.13.1",
@@ -5817,7 +5817,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6582,7 +6582,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7732,7 +7732,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

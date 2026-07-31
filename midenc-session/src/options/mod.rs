@@ -79,6 +79,17 @@ pub struct Options {
     pub remap_path_prefixes: Vec<RemapPathPrefix>,
     /// Print source location information in HIR output
     pub print_hir_source_locations: bool,
+    /// Stop compilation after the named checkpoint, as `--stop-after` asked.
+    ///
+    /// An alias declared by the route being compiled — `parse`, `analyze`, `transform`,
+    /// `lower`, `assemble` — or a fully-qualified checkpoint id such as `hir.initial`. Which
+    /// names are valid depends on the frontend the input selects, so the value is carried
+    /// uninterpreted and resolved against that route once it is known; an unrecognized one is
+    /// reported there, listing the names that route does accept.
+    ///
+    /// This is the general form of the `-C` stop flags below, and naming both is a usage error
+    /// rather than a precedence rule.
+    pub stop_after: Option<String>,
     /// Only parse inputs
     pub parse_only: bool,
     /// Only perform semantic analysis on the input
@@ -170,6 +181,7 @@ impl Options {
             output_dir,
             output_file: None,
             print_hir_source_locations: false,
+            stop_after: None,
             parse_only: false,
             analyze_only: false,
             link_only: false,

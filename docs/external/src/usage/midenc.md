@@ -5,32 +5,21 @@ sidebar_position: 2
 
 # Getting started with `midenc`
 
-The `midenc` executable is the command-line interface for the compiler driver, as well as other
-helpful tools, such as the interactive debugger.
+The `midenc` executable is the command-line interface for the compiler driver, as well as other helpful tools, such as the interactive debugger.
 
-While it is a lower-level tool compared to `cargo-miden`, just like the difference between `rustc`
-and `cargo`, it provides a lot of functionality for emitting diagnostic information, controlling
-the output of the compiler, and configuring the compilation pipeline. Most users will want to use
-`cargo-miden`, but understanding `midenc` is helpful for those times where you need to get your
-hands dirty.
+While it is a lower-level tool compared to `cargo-miden`, just like the difference between `rustc` and `cargo`, it provides a lot of functionality for emitting diagnostic information, controlling the output of the compiler, and configuring the compilation pipeline. Most users will want to use `cargo-miden`, but understanding `midenc` is helpful for those times where you need to get your hands dirty.
 
 ## Installation
 
-:::warning
+To install `midenc`, you have two choices:
 
-Currently, `midenc` (and as a result, `cargo-miden`), requires the nightly Rust toolchain, so
-make sure you have it installed first:
+1. Install via [`midenup`](https://github.com/0xMiden/midenup), which also handles other toolchain components that you'll likely want.
+2. Install from source
 
-```bash
-rustup toolchain install nightly-2026-04-29
-```
+We'll cover installation from source here - see the `midenup` README for details on how to install Miden components that way.
 
-NOTE: You can also use the latest nightly, but the specific nightly shown here is known to
-work.
 
-:::
-
-To install the `midenc`, clone the compiler repo first:
+First, clone the compiler repo:
 
 ```bash
 git clone https://github.com/0xMiden/compiler
@@ -46,9 +35,9 @@ cargo install --path midenc --locked
 
 Once installed, you should be able to invoke the compiler, you should see output similar to this:
 
-```bash
-midenc help compile
-Usage: midenc compile [OPTIONS] [-- <INPUTS>...]
+```text
+midenc --help
+Usage: midenc [OPTIONS] [FILE]
 
 Arguments:
   [INPUTS]...
@@ -57,69 +46,60 @@ Arguments:
           You may also use `-` as a file name to read a file from stdin.
 
 Options:
-      --output-dir <DIR>
-          Write all compiler artifacts to DIR
+  -p, --package <SPEC>
+          Package(s) to build
 
-  -W <LEVEL>
-          Modify how warnings are treated by the compiler
+      --manifest-path <PATH>
+          Path to the package/project manifest
 
-          [default: auto]
-
-          Possible values:
-          - none:  Disable all warnings
-          - auto:  Enable all warnings
-          - error: Promotes warnings to errors
-
-  -v, --verbose
-          When set, produces more verbose output during compilation
+          If unspecified, the compiler will create a virtual manifest for the given input
 
   -h, --help
           Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+..snip..
 ```
 
-The actual help output covers quite a bit more than shown here, this is just for illustrative
-purposes.
-
-The `midenc` executable supports two primary functions at this time:
-
-- `midenc compile` to compile one of our supported input formats to Miden Assembly
-- `midenc debug` to run a Miden program attached to an interactive debugger
-- `midenc run` to run a Miden program non-interactively, equivalent to `miden run`
+The actual help output covers quite a bit more than that - see the actual command output for the full picture.
 
 ## Compilation
 
-See the help output for `midenc compile` for detailed information on its options and their
-behavior. However, the following is an example of how one might use `midenc compile` in practice:
+See the help output for `midenc` for detailed information on its options and their behavior. However, the following is an example of how one might use `midenc` in practice:
 
 ```bash
-midenc compile --target rollup \
-    --entrypoint 'foo::main' \
+midenc --entrypoint 'foo::main' \
     -lextra \
     -L ./masm \
-    --emit=hir=-,masp \
+    --emit=hir=- \
     -o out.masp \
     target/wasm32-wasip1/release/foo.wasm
 ```
 
-In this scenario, we are in the root of a Rust crate, named `foo`, which we have compiled for the
-`wasm32-wasip1` target, which placed the resulting WebAssembly module in the
-`target/wasm32-wasip1/release` directory. This crate exports a function named `main`, which we want
-to use as the entrypoint of the program.
+In this scenario, we are in the root of a Rust crate, named `foo`, which we have compiled for the `wasm32-wasip1` target, which placed the resulting WebAssembly module in the `target/wasm32-wasip1/release` directory. This crate exports a function named `main`, which we want to use as the entrypoint of the program.
 
-Additionally, our Rust code links against some hand-written Miden Assembly code, namespaced under
-`extra`, which can be found in `./masm/extra`. We are telling `midenc` to link the `extra` library,
-and to add the `./masm` directory to the library search path.
+Additionally, our Rust code links against some hand-written Miden Assembly code, namespaced under `extra`, which can be found in `./masm/extra`. We are telling `midenc` to link the `extra` library, and to add the `./masm` directory to the library search path.
 
 Lastly, we're configuring the output:
 
-- We're using `--emit` to request `midenc` to dump Miden IR (`hir`) to stdout (specified via the `-`
-  shorthand), in addition to the Miden package artifact (`masp`).
-- We're telling `midenc` to write the compiled output to `out.masp` in the current directory, rather
-  than the default path that would have been used (`target/miden/foo.masp`).
+- We're using `--emit` to request `midenc` to dump Miden IR (`hir`) to stdout (specified via the `-` shorthand), in addition to the Miden package artifact (produced by default).
+- We're telling `midenc` to write the compiled output to `out.masp` in the current directory, rather than the default path that would have been used (`target/miden/foo.masp`).
+
+### Stopping early
+
+`--stop-after=CHECKPOINT` ends compilation once the named phase has run, rather than building a package. It is most useful together with `--emit`, to look at an intermediate form without paying for the rest of the build:
+
+```bash
+midenc --stop-after=transform --emit=hir=- foo.wasm
+```
+
+`CHECKPOINT` is either an alias — `parse`, `analyze`, `transform`, `lower`, `assemble` — or a fully-qualified checkpoint id such as `hir.initial`. Which names are valid depends on the input: each frontend declares its own route, and a name that route does not reach is reported along with the names it does accept. A Miden Assembly input, for example, has no `transform` phase.
 
 ## Debugging
 
-See [Debugging Programs](../guides/debugger.md) for details on using `midenc debug` to debug Miden programs.
+See [Debugging Programs](../guides/debugger.md) for details on how to debug Miden programs using `miden-debug`.
 
 ## Next steps
 
