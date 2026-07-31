@@ -88,6 +88,11 @@ impl Reconciliation {
         self.conflicts().next().is_none()
     }
 
+    /// The remaining publication set as `&str`, for building a `-p` list.
+    pub fn to_publish_refs(&self) -> Vec<&str> {
+        self.to_publish.iter().map(String::as_str).collect()
+    }
+
     /// Whether everything planned is already published, so Cargo must not be
     /// invoked at all. `cargo publish` errors when every `-p` package already
     /// exists, so this case has to be recognized rather than attempted.

@@ -16,7 +16,7 @@ mod publish;
 mod upstream;
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     io::{BufRead, BufReader, Read, Write},
     net::{SocketAddr, TcpListener, TcpStream},
     sync::{
@@ -33,15 +33,65 @@ pub use self::{
     upstream::{CurlUpstream, NoUpstream, Upstream},
 };
 
-/// Injectable failure behavior, for exercising the executor's retry and
-/// reconciliation paths.
+/// Injectable failure behavior.
+///
+/// Every one of these corresponds to something that has to be survivable: a
+/// release that dies partway through must leave the registry in a state
+/// reconciliation can read correctly, and must be resumable without
+/// republishing what already landed.
 #[derive(Debug, Default, Clone)]
 pub struct Faults {
     /// Reject this many upload attempts with HTTP 429 before accepting any.
     pub rate_limit_uploads: u32,
-    /// Withhold a published version from the index for this many lookups,
-    /// simulating propagation delay.
+    /// Withhold each published version from the index for this many lookups,
+    /// simulating propagation delay between upload and visibility.
     pub delay_index_visibility: u32,
+    /// Fail this many upload attempts with a 500 before accepting any.
+    pub transient_errors: u32,
+    /// Reject uploads of these crates permanently with 403, as an unconfigured
+    /// trusted publisher does. This is the failure that cannot be preflighted:
+    /// the token carries no crate list, so it surfaces mid-stage.
+    pub unauthorized_crates: BTreeSet<String>,
+    /// Expire credentials after this many successful uploads, as a token that
+    /// outlives its 30-minute lifetime would.
+    pub expire_after: Option<u32>,
+}
+
+impl Faults {
+    pub fn rate_limited(count: u32) -> Self {
+        Self {
+            rate_limit_uploads: count,
+            ..Self::default()
+        }
+    }
+
+    pub fn transient(count: u32) -> Self {
+        Self {
+            transient_errors: count,
+            ..Self::default()
+        }
+    }
+
+    pub fn unauthorized(crates: &[&str]) -> Self {
+        Self {
+            unauthorized_crates: crates.iter().map(|c| c.to_string()).collect(),
+            ..Self::default()
+        }
+    }
+
+    pub fn expiring_after(uploads: u32) -> Self {
+        Self {
+            expire_after: Some(uploads),
+            ..Self::default()
+        }
+    }
+
+    pub fn delayed_visibility(lookups: u32) -> Self {
+        Self {
+            delay_index_visibility: lookups,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -50,6 +100,7 @@ pub struct Stats {
     pub local_index_hits: AtomicU64,
     pub upstream_index_hits: AtomicU64,
     pub rate_limited: AtomicU64,
+    pub rejected: AtomicU64,
 }
 
 struct State {
@@ -60,6 +111,12 @@ struct State {
     /// Remaining lookups to withhold, keyed by crate name.
     withheld: BTreeMap<String, u32>,
     remaining_rate_limits: u32,
+    remaining_transient: u32,
+    accepted_uploads: u32,
+    /// Held here rather than on the server so that a fault can be corrected
+    /// while the registry keeps its state -- which is what a resume looks like
+    /// after an operator fixes whatever caused the failure.
+    faults: Faults,
 }
 
 /// A running registry. Dropping the handle stops accepting new connections.
@@ -82,6 +139,9 @@ impl Registry {
             archives: BTreeMap::new(),
             withheld: BTreeMap::new(),
             remaining_rate_limits: faults.rate_limit_uploads,
+            remaining_transient: faults.transient_errors,
+            accepted_uploads: 0,
+            faults: faults.clone(),
         }));
         let stats = Arc::new(Stats::default());
 
@@ -113,6 +173,17 @@ impl Registry {
 
     pub fn stats(&self) -> &Stats {
         &self.stats
+    }
+
+    /// Replace the injected faults, keeping everything already published.
+    ///
+    /// This models the recovery an operator performs between a failed attempt
+    /// and a resume: the cause is fixed, the partial state remains.
+    pub fn set_faults(&self, faults: Faults) {
+        let mut state = self.state.lock().expect("registry state is not poisoned");
+        state.remaining_rate_limits = faults.rate_limit_uploads;
+        state.remaining_transient = faults.transient_errors;
+        state.faults = faults;
     }
 
     /// The versions published for a crate, in publication order.
@@ -201,19 +272,6 @@ impl Server {
     }
 
     fn handle_publish(&self, body: &[u8]) -> (u16, &'static str, Vec<u8>) {
-        {
-            let mut state = self.state.lock().expect("registry state is not poisoned");
-            if state.remaining_rate_limits > 0 {
-                state.remaining_rate_limits -= 1;
-                self.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
-                return (
-                    429,
-                    "application/json",
-                    br#"{"errors":[{"detail":"too many requests"}]}"#.to_vec(),
-                );
-            }
-        }
-
         let request = match PublishRequest::decode(body) {
             Ok(request) => request,
             Err(err) => {
@@ -221,6 +279,10 @@ impl Server {
                 return (400, "application/json", message.into_bytes());
             }
         };
+
+        if let Some(rejection) = self.injected_fault(&request.metadata.name) {
+            return rejection;
+        }
 
         let cksum = sha256_hex(&request.crate_bytes);
         let entry = request.to_index_entry(cksum);
@@ -236,6 +298,54 @@ impl Server {
 
         self.stats.published.fetch_add(1, Ordering::Relaxed);
         (200, "application/json", br#"{"warnings":{"other":[]}}"#.to_vec())
+    }
+
+    /// Apply configured faults to one upload, in the order a real registry
+    /// would: credentials first, then authorization, then availability.
+    fn injected_fault(&self, name: &str) -> Option<(u16, &'static str, Vec<u8>)> {
+        let mut state = self.state.lock().expect("registry state is not poisoned");
+
+        if let Some(limit) = state.faults.expire_after
+            && state.accepted_uploads >= limit
+        {
+            self.stats.rejected.fetch_add(1, Ordering::Relaxed);
+            return Some((
+                401,
+                "application/json",
+                br#"{"errors":[{"detail":"token has expired"}]}"#.to_vec(),
+            ));
+        }
+
+        if state.faults.unauthorized_crates.contains(name) {
+            self.stats.rejected.fetch_add(1, Ordering::Relaxed);
+            let message = format!(
+                r#"{{"errors":[{{"detail":"the provided access token is not valid for crate '{name}'"}}]}}"#
+            );
+            return Some((403, "application/json", message.into_bytes()));
+        }
+
+        if state.remaining_transient > 0 {
+            state.remaining_transient -= 1;
+            self.stats.rejected.fetch_add(1, Ordering::Relaxed);
+            return Some((
+                500,
+                "application/json",
+                br#"{"errors":[{"detail":"internal server error"}]}"#.to_vec(),
+            ));
+        }
+
+        if state.remaining_rate_limits > 0 {
+            state.remaining_rate_limits -= 1;
+            self.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+            return Some((
+                429,
+                "application/json",
+                br#"{"errors":[{"detail":"too many requests"}]}"#.to_vec(),
+            ));
+        }
+
+        state.accepted_uploads += 1;
+        None
     }
 
     fn handle_download(&self, name: &str, version: &str) -> (u16, &'static str, Vec<u8>) {

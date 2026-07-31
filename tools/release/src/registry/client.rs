@@ -7,7 +7,7 @@
 //! A missing crate and an unreachable registry are therefore distinct results,
 //! not both "no versions".
 
-use std::{collections::BTreeMap, process::Command, sync::Mutex};
+use std::{collections::BTreeMap, process::Command};
 
 use anyhow::{Context, Result, bail};
 
@@ -24,9 +24,13 @@ pub trait IndexClient: Send + Sync {
 }
 
 /// Queries a sparse index over HTTP using `curl`.
+///
+/// Deliberately uncached. Reconciliation asks about each crate exactly once per
+/// pass, so a cache cannot help within a pass -- and across passes it is
+/// actively harmful: a cached "not published" answer taken after a successful
+/// upload would tell the executor to publish a crate that already exists.
 pub struct SparseIndex {
     base_url: String,
-    cache: Mutex<BTreeMap<String, Vec<IndexEntry>>>,
 }
 
 impl SparseIndex {
@@ -36,19 +40,12 @@ impl SparseIndex {
         let base_url = base_url.strip_prefix("sparse+").unwrap_or(&base_url).to_string();
         Self {
             base_url: base_url.trim_end_matches('/').to_string(),
-            cache: Mutex::new(BTreeMap::new()),
         }
     }
 }
 
 impl IndexClient for SparseIndex {
     fn versions(&self, name: &str) -> Result<Vec<IndexEntry>> {
-        if let Ok(cache) = self.cache.lock()
-            && let Some(hit) = cache.get(name)
-        {
-            return Ok(hit.clone());
-        }
-
         let url = format!("{}/{}", self.base_url, index_path(name));
         let output = Command::new("curl")
             .args(["--silent", "--location", "--max-time", "60"])
@@ -79,9 +76,6 @@ impl IndexClient for SparseIndex {
             other => bail!("unexpected status {other} querying {url}"),
         };
 
-        if let Ok(mut cache) = self.cache.lock() {
-            cache.insert(name.to_string(), entries.clone());
-        }
         Ok(entries)
     }
 }
