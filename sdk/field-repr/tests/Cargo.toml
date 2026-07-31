@@ -1,7 +1,8 @@
 [package]
 name = "miden-field-repr-tests"
 description = "Integration tests for felt representation serialization/deserialization"
-version = "0.13.1"
+# Never published; this version is deliberately frozen and meaningless.
+version = "0.1.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

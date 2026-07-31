@@ -1,7 +1,8 @@
 [package]
 name = "midenc-release"
 description = "Release tooling for the Miden compiler repository"
-version.workspace = true
+# Never published; this version is deliberately frozen and meaningless.
+version = "0.1.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

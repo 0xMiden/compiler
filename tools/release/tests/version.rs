@@ -88,7 +88,7 @@ description = "fixture"
         &dir.join("shared-tests/Cargo.toml"),
         r#"[package]
 name = "fixture-shared-tests"
-version = "0.13.1"
+version = "0.1.0"
 edition.workspace = true
 license.workspace = true
 description = "fixture"
@@ -279,12 +279,12 @@ fn private_packages_are_left_at_their_own_version() {
 
     let private = fs::read_to_string(dir.join("shared-tests/Cargo.toml")).unwrap();
     assert!(
-        private.contains(r#"version = "0.13.1""#),
-        "a private package is never published, so its version is not part of any domain: {private}"
+        private.contains(r#"version = "0.1.0""#),
+        "private packages stay frozen; their version belongs to no domain: {private}"
     );
 
     // It still resolves, because its dependency is workspace-inherited.
     let ws = Workspace::load(&dir).unwrap();
-    assert_eq!(ws.packages["fixture-shared-tests"].version, "0.13.1");
+    assert_eq!(ws.packages["fixture-shared-tests"].version, "0.1.0");
     assert_eq!(ws.packages["fixture-shared"].version, "0.14.0");
 }

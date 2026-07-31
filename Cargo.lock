@@ -3147,7 +3147,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr-tests"
-version = "0.13.1"
+version = "0.1.0"
 dependencies = [
  "miden-core",
  "miden-debug",
@@ -3604,7 +3604,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-benchmark-runner"
-version = "0.9.2"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3947,7 +3947,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-integration-network-tests"
-version = "0.9.2"
+version = "0.1.0"
 dependencies = [
  "miden-client",
  "miden-core",
@@ -3964,7 +3964,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-integration-test-support"
-version = "0.9.2"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "cargo-util",
@@ -3990,7 +3990,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-integration-tests"
-version = "0.9.2"
+version = "0.1.0"
 dependencies = [
  "blake3",
  "cargo_metadata 0.19.2",
@@ -4038,7 +4038,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-release"
-version = "0.9.2"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",

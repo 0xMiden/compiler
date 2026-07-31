@@ -15,6 +15,9 @@ use crate::{
     workspace::Workspace,
 };
 
+/// The frozen version every private package carries.
+pub const PRIVATE_VERSION: &str = "0.1.0";
+
 #[derive(Debug, Default)]
 pub struct Findings {
     pub errors: Vec<String>,
@@ -34,6 +37,7 @@ pub fn run(ws: &Workspace, config: &Config) -> Result<Findings> {
     let mut findings = Findings::default();
 
     check_classification(ws, config, &mut findings);
+    check_private_versions(ws, config, &mut findings);
     check_private_dependencies(ws, config, &mut findings);
     check_active_patches(&ws.root, &mut findings)?;
 
@@ -73,6 +77,27 @@ fn check_classification(ws: &Workspace, config: &Config, findings: &mut Findings
                 "package '{}' is {manifest} in its manifest but classified as {config_says} in \
                  .release/config.toml",
                 package.name
+            ));
+        }
+    }
+}
+
+/// Private packages are pinned at [`PRIVATE_VERSION`] and never move.
+///
+/// A private crate carrying a plausible-looking version invites the reader to
+/// assume it ships with the release. Freezing them all at one obviously inert
+/// version says the opposite, and keeps release churn off manifests that are
+/// never published.
+fn check_private_versions(ws: &Workspace, config: &Config, findings: &mut Findings) {
+    for package in config.packages_in(Unit::Private) {
+        let Some(actual) = ws.packages.get(&package.name) else {
+            continue;
+        };
+        if actual.version != PRIVATE_VERSION {
+            findings.error(format!(
+                "private package '{}' is at {} but private packages are frozen at {}; they are \
+                 never published, so a version that tracks a release domain is misleading",
+                package.name, actual.version, PRIVATE_VERSION
             ));
         }
     }
