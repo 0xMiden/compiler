@@ -1,0 +1,35 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "swapp-note"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+# Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
+# and transaction kernel API for the Miden rollup
+miden = { path = "../../../../sdk/sdk" }
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[package.metadata.component]
+package = "miden:swapp-note"
+
+# Miden dependencies for cargo-miden build/linking
+[package.metadata.miden.dependencies]
+"miden:basic-wallet" = { path = "../../../../examples/basic-wallet" }
+
+[package.metadata.component.target.dependencies]
+"miden:basic-wallet" = { path = "../../../../examples/basic-wallet/target/generated-wit/" }
