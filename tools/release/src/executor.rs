@@ -207,17 +207,15 @@ fn configure_cargo_home(target: &Target, options: &Options) -> Result<()> {
                 std::fs::remove_file(&config)?;
             }
         }
-        Target::Rehearsal { index_url, .. } => {
-            std::fs::write(
-                &config,
-                format!(
+        Target::Rehearsal { index_url, .. } => std::fs::write(
+            &config,
+            format!(
                     "[source.crates-io]\nreplace-with = \
                      \"rehearsal\"\n\n[source.rehearsal]\nregistry                  = \
                      \"{index_url}\"\n"
                 ),
-            )
-            .with_context(|| format!("failed to write {}", config.display()))?
-        }
+        )
+        .with_context(|| format!("failed to write {}", config.display()))?,
     }
     Ok(())
 }

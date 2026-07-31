@@ -1,0 +1,84 @@
+# The required `release / gate` check.
+#
+# Always runs, with no top-level path filters, so that a required status check
+# can never be satisfied by being skipped. Change impact is computed inside the
+# workflow instead.
+name: release
+
+on:
+  pull_request:
+  merge_group:
+
+permissions: {}
+
+concurrency:
+  group: release-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  impact:
+    name: change impact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      full: ${{ steps.classify.outputs.full }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Tiered rather than binary: ordinary dependency work should not pay for
+      # the full closure build, but anything that changes what gets published,
+      # or how, must.
+      - name: Classify
+        id: classify
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          changed=$(git diff --name-only "${BASE}" "${HEAD}")
+          echo "changed files:"; echo "${changed}"
+
+          full=false
+          while read -r file; do
+            case "${file}" in
+              tools/release/*|.release/*|Makefile.toml|.github/workflows/*|Cargo.lock|*/Cargo.toml|Cargo.toml)
+                full=true ;;
+            esac
+          done <<< "${changed}"
+
+          echo "full=${full}" >> "${GITHUB_OUTPUT}"
+          echo "full closure verification: ${full}"
+
+  verify:
+    name: verify
+    needs: impact
+    uses: ./.github/workflows/release-verify.yml
+    with:
+      ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      full: ${{ needs.impact.outputs.full == 'true' }}
+
+  gate:
+    name: gate
+    # The single required check. Runs unconditionally and fails if any required
+    # job failed *or was unexpectedly skipped*, so that a misconfigured
+    # dependency cannot turn a red build green.
+    if: always()
+    needs: [impact, verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate
+        run: |
+          set -euo pipefail
+          echo "impact: ${{ needs.impact.result }}"
+          echo "verify: ${{ needs.verify.result }}"
+          for result in "${{ needs.impact.result }}" "${{ needs.verify.result }}"; do
+            case "${result}" in
+              success) ;;
+              *) echo "a required release check did not succeed" >&2; exit 1 ;;
+            esac
+          done
+          echo "release gate: ok"
