@@ -6,7 +6,7 @@ use midenc_release::{
     candidate::{Candidate, UnitDeclaration, render_tag},
     closure,
     config::{Config, Unit, VersionSource},
-    intent, lint, order,
+    intent, lint, order, plan as release_plan,
     reconcile::{self, Disposition, Planned},
     registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
     version,
@@ -92,6 +92,25 @@ enum Command {
         #[arg(long)]
         cache_dir: Option<PathBuf>,
     },
+    /// Seal an intent against the artifacts built from it.
+    ///
+    /// Packages the closure, then binds the reviewed scope to the exact bytes
+    /// that will be published. Sealed plans are never edited: anything that
+    /// would change one requires a new intent.
+    Seal {
+        /// The intent to seal.
+        #[arg(long)]
+        intent: PathBuf,
+        /// Write the plan here instead of stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Skip the consumer build while packaging. Faster, weaker.
+        #[arg(long)]
+        no_build: bool,
+        /// Cache upstream index responses here between runs.
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
+    },
     /// Report what still needs publishing, against live registry state.
     ///
     /// This runs identically on a first attempt and on a resume; the only
@@ -104,6 +123,10 @@ enum Command {
         /// Which unit to reconcile. Omit for every publishable package.
         #[arg(long)]
         unit: Option<UnitArg>,
+        /// Reconcile against a sealed plan, so an existing version with
+        /// different content is reported as a conflict rather than skipped.
+        #[arg(long)]
+        plan: Option<PathBuf>,
     },
     /// Run the rehearsal registry until interrupted.
     ///
@@ -296,26 +319,78 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Command::Reconcile { index, unit } => {
-            let selected: BTreeSet<String> = match unit {
-                Some(unit) => config.packages_in(unit.into()).map(|p| p.name.clone()).collect(),
+        Command::Seal {
+            intent: intent_path,
+            output,
+            no_build,
+            cache_dir,
+        } => {
+            let text = std::fs::read_to_string(&intent_path)?;
+            let intent: intent::Intent = serde_json::from_str(&text)?;
+
+            let packages: Vec<String> =
+                intent.stages.iter().flat_map(|s| s.packages.iter().cloned()).collect();
+            println!("sealing {} package(s) from {}", packages.len(), intent_path.display());
+
+            let options = closure::Options {
+                packages,
+                build_consumer: !no_build,
+                allow_upstream: true,
+                cache_dir,
+            };
+            let built = closure::verify(&ws.root, &options)?;
+            let plan = release_plan::seal(&intent, &built)?;
+            let json = plan.to_canonical_json();
+
+            match output {
+                Some(path) => {
+                    std::fs::write(&path, format!("{json}\n"))?;
+                    println!("sealed plan at {} (digest {})", path.display(), plan.digest());
+                }
+                None => println!("{json}"),
+            }
+            Ok(())
+        }
+        Command::Reconcile { index, unit, plan } => {
+            let planned: Vec<Planned> = match &plan {
+                // A sealed plan carries digests, so an existing version with
+                // different content is a conflict rather than a skip.
+                Some(path) => {
+                    let plan = release_plan::Plan::load(path)?;
+                    match unit {
+                        Some(unit) => plan.planned_for(match unit {
+                            UnitArg::Compiler => "compiler",
+                            UnitArg::Sdk => "sdk",
+                        }),
+                        None => plan.planned(),
+                    }
+                }
                 None => {
-                    config.packages.iter().filter(|p| p.publish).map(|p| p.name.clone()).collect()
+                    let selected: BTreeSet<String> = match unit {
+                        Some(unit) => {
+                            config.packages_in(unit.into()).map(|p| p.name.clone()).collect()
+                        }
+                        None => config
+                            .packages
+                            .iter()
+                            .filter(|p| p.publish)
+                            .map(|p| p.name.clone())
+                            .collect(),
+                    };
+                    order::topological(&ws, &selected)?
+                        .into_iter()
+                        .map(|name| {
+                            let version = ws.packages[&name].version.clone();
+                            Planned {
+                                name,
+                                version,
+                                // Without a sealed plan, presence is all we can check.
+                                expected_cksum: None,
+                            }
+                        })
+                        .collect()
                 }
             };
-
-            let planned: Vec<Planned> = order::topological(&ws, &selected)?
-                .into_iter()
-                .map(|name| {
-                    let version = ws.packages[&name].version.clone();
-                    Planned {
-                        name,
-                        version,
-                        // No sealed plan yet, so presence is taken as a match.
-                        expected_cksum: None,
-                    }
-                })
-                .collect();
 
             let client = midenc_release::registry::client::SparseIndex::new(index);
             let result = reconcile::reconcile(&ws, &client, &planned)?;

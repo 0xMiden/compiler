@@ -8,6 +8,7 @@ pub mod config;
 pub mod intent;
 pub mod lint;
 pub mod order;
+pub mod plan;
 pub mod reconcile;
 pub mod registry;
 pub mod version;

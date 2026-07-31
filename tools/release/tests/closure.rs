@@ -156,3 +156,84 @@ fn every_selected_package_must_reach_the_registry() {
         .to_string();
     assert!(err.contains("not-a-package"), "{err}");
 }
+
+/// Sealing binds the reviewed scope to the bytes that were built, and that is
+/// what lets reconciliation tell "our version" apart from "someone else's".
+/// Until a plan is sealed, an existing version can only be skipped.
+#[test]
+fn a_sealed_plan_turns_a_foreign_version_into_a_conflict() {
+    use midenc_release::{
+        intent::{Intent, Stage, Tag},
+        plan,
+        reconcile::{self, Conflict, Disposition},
+        registry::client::StubIndex,
+        workspace::{EdgeKind, Package, Workspace},
+    };
+
+    let dir = temp_dir("sealed");
+    fixture(&dir, "", "pub fn root() -> u32 { closure_leaf::leaf() }\n");
+    generate_lockfile(&dir);
+
+    // Build for real, so the digests are the digests that would be published.
+    let built = closure::verify(&dir, &options(&["closure-leaf", "closure-root"], false)).unwrap();
+
+    let intent = Intent {
+        schema_version: 1,
+        subject: "abc123".into(),
+        candidate_digest: "cand".into(),
+        stages: vec![Stage {
+            unit: "sdk".into(),
+            version: "0.1.0".into(),
+            prerelease: false,
+            packages: vec!["closure-leaf".into(), "closure-root".into()],
+        }],
+        tags: vec![Tag {
+            unit: "sdk".into(),
+            name: "sdk/v0.1.0".into(),
+        }],
+    };
+    let sealed = plan::seal(&intent, &built).unwrap();
+
+    let real_digest = &sealed.packages[0].digest;
+    assert_eq!(real_digest.len(), 64, "the sealed digest came from a real archive");
+
+    let ws = Workspace {
+        root: dir.clone(),
+        packages: [("closure-leaf", vec![]), ("closure-root", vec!["closure-leaf"])]
+            .into_iter()
+            .map(|(name, deps)| {
+                (
+                    name.to_string(),
+                    Package {
+                        version: "0.1.0".into(),
+                        manifest_path: dir.join("Cargo.toml"),
+                        local_deps: deps
+                            .into_iter()
+                            .map(|d: &str| (d.to_string(), EdgeKind::Required))
+                            .collect(),
+                        publishable: true,
+                    },
+                )
+            })
+            .collect(),
+    };
+
+    // Someone else already holds this version, with different content.
+    let foreign = StubIndex::new().publish("closure-leaf", "0.1.0", "not-our-bytes", false);
+    let result = reconcile::reconcile(&ws, &foreign, &sealed.planned()).unwrap();
+
+    let leaf = result.outcomes.iter().find(|o| o.name == "closure-leaf").unwrap();
+    assert!(
+        matches!(leaf.disposition, Disposition::Conflict(Conflict::ChecksumMismatch { .. })),
+        "a sealed plan must not skip a version it did not publish: {:?}",
+        leaf.disposition
+    );
+    assert!(!result.is_publishable(), "the release must stop");
+
+    // The same version published with *our* bytes is a legitimate resume.
+    let ours = StubIndex::new().publish("closure-leaf", "0.1.0", real_digest, false);
+    let result = reconcile::reconcile(&ws, &ours, &sealed.planned()).unwrap();
+    let leaf = result.outcomes.iter().find(|o| o.name == "closure-leaf").unwrap();
+    assert_eq!(leaf.disposition, Disposition::Skip);
+    assert_eq!(result.to_publish, ["closure-root"], "only the remainder is republished");
+}
