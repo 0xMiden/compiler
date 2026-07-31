@@ -124,16 +124,6 @@ pub fn validate(ws: &Workspace, config: &Config, candidate: &Candidate) -> Vec<S
             ));
         }
 
-        // Templates are not released as prereleases: a generated project must
-        // resolve against stable published crates.
-        if unit == "templates" && declaration.prerelease {
-            problems.push(
-                "the templates unit cannot be released as a prerelease; generated projects must \
-                 resolve against stable versions"
-                    .to_string(),
-            );
-        }
-
         problems.extend(check_versions_match_manifests(ws, config, unit, declaration));
     }
 
@@ -196,6 +186,69 @@ mod tests {
         let version = Version::parse("0.10.0").unwrap();
         assert_eq!(render_tag("v{version}", &version), "v0.10.0");
         assert_eq!(render_tag("sdk/v{version}", &version), "sdk/v0.10.0");
+    }
+
+    fn config_with_templates() -> Config {
+        toml::from_str(
+            r#"
+schema-version = 1
+
+# The templates unit publishes no crates, so there are no package entries.
+packages = []
+
+[units.templates]
+tag = "templates/v{version}"
+changelog = "tools/cargo-miden/templates/CHANGELOG.md"
+"#,
+        )
+        .unwrap()
+    }
+
+    fn empty_workspace() -> Workspace {
+        Workspace {
+            root: std::path::PathBuf::from("/tmp"),
+            packages: Default::default(),
+        }
+    }
+
+    /// Templates must be releasable as a prerelease. A compiler change that
+    /// requires a template change cannot be prereleased otherwise, and §12.5
+    /// explicitly allows a template release in the same plan. Stable clients are
+    /// protected by resolution selecting the highest *stable* release, not by
+    /// forbidding prerelease bundles.
+    #[test]
+    fn templates_can_be_released_as_a_prerelease() {
+        let candidate = Candidate {
+            schema_version: 1,
+            units: vec!["templates".into()],
+            declarations: [(
+                "templates".to_string(),
+                declaration("2.0.0-rc.1", "templates/v2.0.0-rc.1", true),
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let problems = validate(&empty_workspace(), &config_with_templates(), &candidate);
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[test]
+    fn a_prerelease_flag_must_still_agree_with_the_version() {
+        let candidate = Candidate {
+            schema_version: 1,
+            units: vec!["templates".into()],
+            declarations: [(
+                "templates".to_string(),
+                declaration("2.0.0-rc.1", "templates/v2.0.0-rc.1", false),
+            )]
+            .into_iter()
+            .collect(),
+        };
+
+        let problems = validate(&empty_workspace(), &config_with_templates(), &candidate);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("says otherwise"), "{}", problems[0]);
     }
 
     #[test]

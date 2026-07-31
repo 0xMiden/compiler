@@ -259,9 +259,12 @@ A prerelease is selected by giving a version with a prerelease identifier, e.g.
 `midenc = "0.9"` never matches a prerelease.
 
 - GitHub releases are marked prerelease and never become `latest`.
-- Templates are never released as a prerelease, and a prerelease release does not
-  select the templates unit — a generated project must resolve against stable
-  crates.
+- **Templates can be part of a prerelease**, and must be when a compiler change
+  requires a template change. The bundle takes a prerelease version, its release
+  is marked prerelease, and stable clients never see it — template resolution
+  selects the highest *stable* compatible release, so a prerelease bundle is
+  reachable only from a prerelease `cargo-miden` or an explicit
+  `--template-version`.
 
 ---
 
