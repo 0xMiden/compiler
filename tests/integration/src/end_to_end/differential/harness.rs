@@ -6,7 +6,9 @@
 //! (`#![no_std]` + `#[panic_handler]`) before writing the case as `src/lib.rs`
 //! of a generated cargo project, builds it twice — natively as a host `cdylib`
 //! and via `cargo-miden` to a MASM package — and compares outputs across
-//! random `(u32, u32)` inputs. [`run_case_with_inputs`] does the same but
+//! boundary-biased random `(u32, u32)` inputs (uniform draws mixed with a
+//! table of width/sign-boundary values and occasional forced-equal pairs).
+//! [`run_case_with_inputs`] does the same but
 //! against an explicit list of inputs, for pinning a known divergence.
 
 use std::{
@@ -18,6 +20,7 @@ use miden_core::Felt;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use proptest::{
     prelude::*,
+    sample,
     test_runner::{Config, FileFailurePersistence, TestRunner},
 };
 
@@ -25,15 +28,55 @@ use crate::{CompilerTest, project, testing::executor_with_std};
 
 /// How [`run_case_inner`] supplies the `(input1, input2)` pairs to compare.
 enum Inputs<'a> {
-    /// 16 random pairs via proptest — the default fuzzing mode.
+    /// 16 boundary-biased random pairs via proptest (see [`fuzz_pair`]) — the
+    /// default fuzzing mode.
     Random16,
     /// A fixed list of pairs — deterministic regression inputs, e.g. for
     /// pinning a known divergence independently of the fuzzer.
     Explicit(&'a [(u32, u32)]),
 }
 
+/// `u32` values at the semantic boundaries the differential corpus probes:
+/// algebraic identities, shift counts at every lane width the cases build
+/// from their inputs (8/16/32/64/128, each ±1), sub-word sign/max values, and
+/// the i32/u32 sign and max boundaries. Uniform draws essentially never
+/// produce any of these.
+#[rustfmt::skip]
+const INTERESTING_U32: &[u32] = &[
+    0, 1, 2, 3,                            // identities, zero-length, zero/one-trip
+    7, 8, 9, 15, 16, 17,                   // i8/i16 lane-width shift counts
+    31, 32, 33, 63, 64, 65, 127, 128, 129, // u32/u64/u128 width boundaries; i8 sign
+    255, 256,                              // u8::MAX boundary
+    0x7FFF, 0x8000, 0xFFFF, 0x1_0000,      // i16/u16 sign and max boundaries
+    0x7FFF_FFFF, 0x8000_0000, 0x8000_0001, // i32 MAX / MIN / MIN+1
+    0xFFFF_FFFE, 0xFFFF_FFFF,              // u32 MAX-1 / MAX (-2 / -1 as i32)
+];
+
+/// Boundary-biased `u32`: half uniform, half drawn from [`INTERESTING_U32`],
+/// so edge semantics (zeros, MIN/MAX, width-boundary shift counts) are
+/// exercised as a matter of course rather than once in 2^32 draws, while bulk
+/// random values stay represented.
+fn fuzz_u32() -> impl Strategy<Value = u32> {
+    prop_oneof![
+        1 => any::<u32>(),
+        1 => sample::select(INTERESTING_U32),
+    ]
+}
+
+/// The input-pair distribution for [`Inputs::Random16`]: independent
+/// boundary-biased components, plus 1 pair in 8 forced equal — a relation
+/// independent draws essentially never hit (`divisor == dividend`, `x ⋄ x`
+/// self-application shapes).
+fn fuzz_pair() -> impl Strategy<Value = (u32, u32)> {
+    prop_oneof![
+        7 => (fuzz_u32(), fuzz_u32()),
+        1 => fuzz_u32().prop_map(|a| (a, a)),
+    ]
+}
+
 /// Compiles `source` for the host and for MASM, then compares the
-/// `entrypoint(u32, u32) -> u32` outputs across 16 random input pairs.
+/// `entrypoint(u32, u32) -> u32` outputs across 16 boundary-biased random
+/// input pairs (see [`fuzz_pair`]).
 ///
 /// `name` must be unique per case; it is used as the generated package name.
 pub(super) fn run_case(name: &str, source: &str) {
@@ -107,7 +150,7 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
                 ..Config::default()
             };
             TestRunner::new(cfg)
-                .run(&(any::<u32>(), any::<u32>()), |(a, b)| {
+                .run(&fuzz_pair(), |(a, b)| {
                     let (native_out, masm_out) = eval(a, b);
                     prop_assert_eq!(
                         native_out,

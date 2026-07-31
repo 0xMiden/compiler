@@ -389,9 +389,13 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   multiply — `limb.wrapping_mul((input & 1) as u64)` — which is opaque to
   known-bits, unlike `& mask` shapes (`case_u128_bits.rs`).
 - **Pinned edge grids** (`run_case_with_inputs` `<case>_edges` companions) are
-  how boundary *semantics* get differentially asserted: proptest's 16 random
-  pairs essentially never draw 0/1/MIN/MAX/width-boundary values, and grid
-  pairs are immune to LLVM folding because inputs are runtime values
+  how boundary *semantics* get differentially asserted: a grid guarantees its
+  exact pairs on every run, while random draws hit any given boundary only
+  probabilistically — even after the harness switched from uniform pairs
+  (which essentially never drew 0/1/MIN/MAX/width-boundary values) to a
+  boundary-biased mixture (2026-07-31: half-uniform / half boundary-table per
+  component, 1-in-8 forced-equal pairs). Grid pairs are also immune to LLVM
+  folding because inputs are runtime values
   (`case_shift_counts.rs` … `case_subword_sign.rs`, 2026-07-23).
 - **div/rem pair fusion**: `x / d` together with `x % d` on the *same* operand
   pair → LLVM strength-reduces the rem to mul-sub and the VM-side mod ops

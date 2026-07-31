@@ -78,8 +78,9 @@ Each new case is a single `.rs` file at
   output. No `unsafe` outside the `no_mangle` attribute.
 - Avoid operations that panic on valid `u32` inputs (guard division/modulo by
   zero **and signed division against `MIN / -1`**, use `wrapping_*` for
-  arithmetic). The harness fuzzes with random `u32` pairs; a native-side panic
-  is a case failure.
+  arithmetic). The harness fuzzes with boundary-biased random `u32` pairs —
+  zeros, `MAX`, sign boundaries, and equal pairs are drawn routinely, so an
+  unguarded edge panic *will* be hit; a native-side panic is a case failure.
 - Be careful with mutable `static`s. The native `cdylib` is loaded **once** and
   reused across all 16 proptest inputs, so a static (e.g. an `AtomicU32`) that
   you mutate carries state from one invocation to the next — which breaks

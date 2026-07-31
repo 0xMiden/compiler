@@ -25,7 +25,11 @@ handler, then for each case:
 
 1. Builds it natively as a host `cdylib` and loads it with `libloading`.
 2. Builds it via `cargo-miden` to a MASM package.
-3. Runs both with 16 random `(u32, u32)` input pairs via proptest.
+3. Runs both with 16 random `(u32, u32)` input pairs via proptest. The
+   draws are boundary-biased: each component is half uniform, half from a
+   table of width/sign-boundary values (0, 1, MAX, i32::MIN, lane-width
+   shift counts, …), and 1 pair in 8 is forced equal — so edge semantics
+   and `x ⋄ x` shapes are exercised routinely, not once in 2^32 draws.
 4. Asserts the outputs match.
 
 A divergence is a likely compiler bug, and the case file itself is the
