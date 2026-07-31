@@ -270,10 +270,9 @@ fn batch_kernel() {
         ["--entrypoint".to_string(), "batch_kernel::entrypoint".to_string()],
     );
     let package = test.compile_package();
-    let program = package.unwrap_program();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["123524"].assert_eq(stripped_mast_size_str(&package));
+    expect!["101603"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -284,10 +283,9 @@ fn batch_kernel() {
     // `Executor::execute` unrolled through the debug executor to observe the cycle counter.
     type ExecutionOutcome = Result<(miden_debug::ExecutionTrace, usize), (String, usize)>;
     let execute = |transactions: &[MockTransaction], advice: AdviceInputs| -> ExecutionOutcome {
-        let mut exec =
-            executor_with_std(build_args(block_commitment, batch_id(transactions)), Some(&package));
+        let mut exec = executor_with_std(build_args(block_commitment, batch_id(transactions)));
         exec.with_advice_inputs(advice);
-        let mut executor = exec.into_debug(&program, test.session.source_manager.clone());
+        let mut executor = exec.into_debug(package.clone(), test.session.source_manager.clone());
         while !executor.stopped {
             if let Err(err) = executor.step() {
                 return Err((err.to_string(), executor.cycle));
@@ -328,7 +326,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["40486"].assert_eq(&cycles.to_string());
+        expect!["31350"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -380,7 +378,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note.
-        expect!["35735"].assert_eq(&cycles.to_string());
+        expect!["27536"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -418,7 +416,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the Layer 1 hash check rejects the tampered pre-image.
-        expect!["1070"].assert_eq(&cycles.to_string());
+        expect!["913"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -452,7 +450,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the consume-before-create ordering gate rejects the batch.
-        expect!["18725"].assert_eq(&cycles.to_string());
+        expect!["15188"].assert_eq(&cycles.to_string());
     }
 }
 
