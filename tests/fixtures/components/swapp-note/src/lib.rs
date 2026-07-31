@@ -153,7 +153,9 @@ impl SwappNote {
             vec![self.creator.suffix, self.creator.prefix],
         );
 
-        let note_idx = output_note::create(
+        // Notes may only be created from an account component context, so the note is created
+        // through the native wallet.
+        let note_idx = account.create_note(
             Tag::from(self.p2id_tag),
             NoteType::from(self.output_note_type),
             recipient,
@@ -190,6 +192,7 @@ impl SwappNote {
         aux: Felt,
         remainder_offered_asset: Asset,
         remainder_requested_total: Felt,
+        account: &mut Wallet,
     ) {
         let storage = vec![
             self.requested_asset_key[0],
@@ -209,7 +212,9 @@ impl SwappNote {
 
         let recipient = note::build_recipient(serial_num, active_note::get_script_root(), storage);
 
-        let note_idx = output_note::create(
+        // Notes may only be created from an account component context, so the note is created
+        // through the native wallet.
+        let note_idx = account.create_note(
             active_note_tag(),
             NoteType::from(self.output_note_type),
             recipient,
@@ -239,7 +244,7 @@ impl SwappNote {
     #[note_script]
     fn run(self, arg: Word, account: &mut Wallet) {
         // The swap note must carry exactly one offered asset.
-        let note_assets = active_note::get_assets();
+        let note_assets = active_note::get_initial_assets();
         assert!(note_assets.len() == 1);
         let offered_asset = &note_assets[0];
 
@@ -296,6 +301,7 @@ impl SwappNote {
                 total_offered_out,
                 remainder_offered_asset,
                 remainder_requested_total,
+                account,
             );
         }
     }

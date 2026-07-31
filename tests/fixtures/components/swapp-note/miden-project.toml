@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 namespace = "miden:swapp-note/miden-swapp-note@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 basic-wallet = { path = "../../../../examples/basic-wallet" }
