@@ -12,6 +12,72 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
+
+Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,
+`tx::get_num_output_notes`, `active_account::get_num_procedures`, and the
+`num_assets` / `num_storage_items` fields of the note info structs. Matching this,
+`active_account::get_procedure_root` takes the procedure index as `u32` (previously `u8`), so
+count-driven loops index directly. Code that compared or computed with these as felts now works
+with plain integers:
+
+```rust
+// before
+let all_consumed: Felt = tx::get_num_input_notes();
+assert_eq!(all_consumed, felt!(2));
+
+// after
+let all_consumed: u32 = tx::get_num_input_notes();
+assert_eq!(all_consumed, 2);
+```
+
+Block heights are wrapped in the new `BlockNumber` type (comparable as integers; heights read
+from note storage convert with the validated `BlockNumber::try_from(felt)`), block timestamps
+are `u32` seconds, and expiration deltas are `u16`:
+
+```rust
+// before
+let timelock_height: Felt = inputs[3];
+assert!(tx::get_block_number() >= timelock_height);
+tx::update_expiration_block_delta(Felt::new(42).unwrap());
+
+// after
+let timelock_height = BlockNumber::try_from(inputs[3]).unwrap();
+assert!(tx::get_block_number() >= timelock_height);
+tx::update_expiration_block_delta(42);
+```
+
+Account nonces are wrapped in the new `Nonce` type (comparable as integers; use
+`as_felt()`/`as_u64()` or `Felt::from(nonce)` where the raw value is needed, e.g. when packing a
+nonce into a `Word` — `ref_block_num` below is a `BlockNumber` from `tx::get_block_number()` and
+converts the same way):
+
+```rust
+// before
+let final_nonce: Felt = self.incr_nonce();
+let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
+
+// after
+let final_nonce: Nonce = self.incr_nonce();
+let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
+```
+
+Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
+attachment indexes are passed as `u32`:
+
+```rust
+// before
+let location = active_note::find_attachment(scheme);
+if location.found() {
+    let attachment = active_note::write_attachment_to_memory(location.index);
+}
+
+// after
+if let Some(index) = active_note::find_attachment(scheme) {
+    let attachment = active_note::write_attachment_to_memory(index);
+}
+```
+
 ### Mark account interface procedures with `#[account_procedure]`
 
 A component's methods are no longer implicitly part of the account interface. Mark every method that

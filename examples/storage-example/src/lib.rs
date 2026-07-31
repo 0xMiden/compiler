@@ -7,7 +7,7 @@
 //
 // extern crate alloc;
 
-use miden::{Asset, Felt, StorageMap, StorageValue, Word, component_storage};
+use miden::{Asset, AssetAmount, StorageMap, StorageValue, Word, component_storage};
 
 use crate::bindings::exports::miden::storage_example::*;
 
@@ -23,12 +23,12 @@ struct MyAccount {
 
     /// A map from asset vault key to quantity held by the account.
     #[storage(description = "asset quantity map")]
-    asset_qty_map: StorageMap<Word, Felt>,
+    asset_qty_map: StorageMap<Word, AssetAmount>,
 }
 
 impl foo::Guest for MyAccount {
     /// Sets the quantity for `asset` if `pub_key` matches the stored owner key.
-    fn set_asset_qty(pub_key: Word, asset: Asset, qty: Felt) {
+    fn set_asset_qty(pub_key: Word, asset: Asset, qty: AssetAmount) {
         let mut my_account = MyAccount::default();
         let owner_key: Word = my_account.owner_public_key.get();
         if pub_key == owner_key {
@@ -37,7 +37,7 @@ impl foo::Guest for MyAccount {
     }
 
     /// Returns the stored quantity for `asset`, or 0 if not present.
-    fn get_asset_qty(asset: Asset) -> Felt {
+    fn get_asset_qty(asset: Asset) -> AssetAmount {
         let my_account = MyAccount::default();
         my_account.asset_qty_map.get(asset.key)
     }

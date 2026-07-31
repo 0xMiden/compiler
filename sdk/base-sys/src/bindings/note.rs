@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::{AccountId, AttachmentLocation, NoteType, RawAccountId, Recipient, Tag};
+use super::{AccountId, NoteType, RawAccountId, RawAttachmentLocation, Recipient, Tag};
 
 const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
 const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
@@ -119,7 +119,7 @@ unsafe extern "C" {
         metadata_f1: Felt,
         metadata_f2: Felt,
         metadata_f3: Felt,
-        ptr: *mut AttachmentLocation,
+        ptr: *mut RawAttachmentLocation,
     );
 }
 
@@ -260,7 +260,7 @@ pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
 /// The advice map must contain the selected attachment elements.
 pub fn write_indexed_attachment_to_memory(
     attachment_commitments: &[Word],
-    attachment_idx: Felt,
+    attachment_idx: u32,
 ) -> Vec<Word> {
     assert!(
         attachment_commitments.len() <= MAX_ATTACHMENTS_PER_NOTE,
@@ -278,7 +278,7 @@ pub fn write_indexed_attachment_to_memory(
         extern_note_write_indexed_attachment_to_memory(
             Felt::from_u32(attachment_commitments.len() as u32),
             commitments_ptr as *const Felt,
-            attachment_idx,
+            Felt::from_u32(attachment_idx),
             dest_ptr as *mut Felt,
         )
     };
@@ -374,10 +374,10 @@ pub fn metadata_into_tag(metadata: Word) -> Tag {
 }
 
 /// Searches a metadata header word for `attachment_scheme`.
-pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> AttachmentLocation {
+pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> Option<u32> {
     unsafe {
         let mut ret_area =
-            WordAligned::new(::core::mem::MaybeUninit::<AttachmentLocation>::uninit());
+            WordAligned::new(::core::mem::MaybeUninit::<RawAttachmentLocation>::uninit());
         extern_note_find_attachment_idx(
             attachment_scheme,
             metadata[0],
@@ -386,6 +386,6 @@ pub fn find_attachment_idx(attachment_scheme: Felt, metadata: Word) -> Attachmen
             metadata[3],
             ret_area.as_mut_ptr(),
         );
-        ret_area.into_inner().assume_init()
+        ret_area.into_inner().assume_init().into_attachment_index()
     }
 }

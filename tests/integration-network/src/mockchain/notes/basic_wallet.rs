@@ -271,7 +271,7 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
         .unwrap()
         .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["4805"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["4943"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -404,7 +404,7 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .unwrap()
         .foreign_accounts(vec![faucet_inputs]);
     let tx_measurements = execute_tx(&mut chain, reclaim_tx_context_builder);
-    expect!["5329"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5518"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();
