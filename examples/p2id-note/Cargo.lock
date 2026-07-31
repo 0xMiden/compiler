@@ -1441,7 +1441,7 @@ dependencies = [
 name = "miden-tx-script-args"
 version = "0.13.1"
 dependencies = [
- "miden-field 0.25.1",
+ "miden-field",
  "miden-field-repr",
  "miden-stdlib-sys",
 ]

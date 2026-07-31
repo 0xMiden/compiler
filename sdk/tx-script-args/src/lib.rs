@@ -17,7 +17,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use miden_field::{Felt, Word};
-use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
+use miden_field_repr::{FeltReader, FeltReprError, FromFeltRepr, ToFeltRepr};
 
 /// Number of felts packed into a [`Word`].
 const WORD_FELTS: usize = Word::NUM_ELEMENTS;
@@ -35,14 +35,50 @@ pub enum EncodedScriptArgs {
     Preimage(Vec<Felt>),
 }
 
+/// Failure decoding transaction-script arguments from the `TX_SCRIPT_ARGS` word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ScriptArgsError {
+    /// A value failed to decode from its felt representation.
+    Decode(FeltReprError),
+    /// A felt in the zero-padding region of the encoding was not zero.
+    NonZeroPadding,
+    /// A whole word or more of data remained after decoding the value (commitment mode).
+    TrailingData,
+    /// The advice value's length was not a whole number of words (commitment mode).
+    NonWordMultipleLength,
+}
+
+impl From<FeltReprError> for ScriptArgsError {
+    fn from(err: FeltReprError) -> Self {
+        Self::Decode(err)
+    }
+}
+
+impl core::fmt::Display for ScriptArgsError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Decode(err) => write!(f, "failed to decode tx script args: {err}"),
+            Self::NonZeroPadding => f.write_str("non-zero padding felt in tx script args"),
+            Self::TrailingData => f.write_str("trailing data after tx script args"),
+            Self::NonWordMultipleLength => {
+                f.write_str("tx script args advice value is not a whole number of words")
+            }
+        }
+    }
+}
+
+/// Convenience alias for results returned by script-args decoding.
+pub type ScriptArgsResult<T> = core::result::Result<T, ScriptArgsError>;
+
 /// Transaction-script arguments transported through the `TX_SCRIPT_ARGS` word.
 ///
 /// Every type that implements both [`FromFeltRepr`] and [`ToFeltRepr`] is a `ScriptArgs`
 /// automatically. The felt-repr encoding selects one of two transport modes at compile time:
 ///
 /// - **Word mode** ([`FIXED_LEN`](Self::FIXED_LEN) of at most 4 felts): the encoding is packed
-///   directly into the args word; the unused felts are zero, and [`decode`](Self::decode) asserts
-///   they are.
+///   directly into the args word; the unused felts are zero, and [`decode`](Self::decode) rejects
+///   anything else.
 /// - **Commitment mode** (longer or variable-length encodings): the args word is the Poseidon2
 ///   hash of the zero-padded encoding. [`decode`](Self::decode) fetches the preimage from the
 ///   advice provider and the hash is verified in-VM, so the host cannot substitute values.
@@ -54,12 +90,13 @@ pub trait ScriptArgs: Sized {
     /// Total encoded length in felts, when statically known.
     const FIXED_LEN: Option<usize>;
 
-    /// Decodes the arguments from the `TX_SCRIPT_ARGS` word in the transaction-script guest.
+    /// Decodes the arguments from the `TX_SCRIPT_ARGS` word.
     ///
-    /// Panics (failing the transaction) when the encoding is malformed: a decode error, non-zero
-    /// padding, or a commitment preimage that is not a whole number of words. Commitment-mode
-    /// decoding requires the Miden VM; word-mode decoding is pure.
-    fn decode(arg: Word) -> Self;
+    /// Returns an error when the encoding is malformed: a felt-repr decode failure, non-zero
+    /// padding, or a non-canonical commitment preimage. The `#[tx_script]`-generated entrypoint
+    /// wrapper panics on the error, failing the transaction. Commitment-mode decoding requires
+    /// the Miden VM; word-mode decoding is pure.
+    fn decode(arg: Word) -> ScriptArgsResult<Self>;
 
     /// Encodes the arguments for transaction construction on the host.
     fn encode(&self) -> EncodedScriptArgs;
@@ -73,48 +110,15 @@ const fn is_word_mode(fixed_len: Option<usize>) -> bool {
     }
 }
 
-/// Decodes a value from `reader`, aborting on malformed input.
+/// Ensures every felt remaining in `reader` is zero.
 #[inline(always)]
-fn decode_or_panic<T: FromFeltRepr>(reader: &mut FeltReader<'_>) -> T {
-    match T::from_felt_repr(reader) {
-        Ok(value) => value,
-        // Panic messages are unobservable in-VM (the generated guest panic handler traps without
-        // formatting), so don't pay code size for the message machinery there.
-        #[cfg(all(target_family = "wasm", miden))]
-        Err(_) => core::arch::wasm32::unreachable(),
-        #[cfg(not(all(target_family = "wasm", miden)))]
-        Err(err) => panic!("failed to decode tx script args: {err}"),
-    }
-}
-
-/// Aborts decoding: an immediate trap in-VM — where panic messages are unobservable — and a panic
-/// with the message elsewhere.
-#[inline(always)]
-fn fail(message: &str) -> ! {
-    #[cfg(all(target_family = "wasm", miden))]
-    {
-        let _ = message;
-        core::arch::wasm32::unreachable()
-    }
-    #[cfg(not(all(target_family = "wasm", miden)))]
-    panic!("{message}")
-}
-
-/// Asserts a padding felt is zero: a native VM assert on Miden targets, a plain assert elsewhere.
-#[inline(always)]
-fn assert_zero_felt(felt: Felt) {
-    #[cfg(all(target_family = "wasm", miden))]
-    miden_stdlib_sys::assertz(felt);
-    #[cfg(not(all(target_family = "wasm", miden)))]
-    assert!(felt == Felt::ZERO, "expected zero padding felt in tx script args");
-}
-
-/// Asserts that every felt remaining in `reader` is zero.
-#[inline(always)]
-fn assert_zero_padding(reader: &mut FeltReader<'_>) {
+fn check_zero_padding(reader: &mut FeltReader<'_>) -> ScriptArgsResult<()> {
     while reader.remaining() > 0 {
-        assert_zero_felt(reader.read().expect("padding felt must be readable"));
+        if reader.read()? != Felt::ZERO {
+            return Err(ScriptArgsError::NonZeroPadding);
+        }
     }
+    Ok(())
 }
 
 /// Fetches and decodes commitment-mode arguments from the advice provider.
@@ -122,11 +126,14 @@ fn assert_zero_padding(reader: &mut FeltReader<'_>) {
 /// The args word commits to the encoding: `adv_load_preimage` verifies the fetched preimage's
 /// hash against it in-VM.
 #[cfg(all(target_family = "wasm", miden))]
-fn decode_commitment<T: FromFeltRepr>(arg: Word) -> T {
-    use miden_stdlib_sys::{adv_load_preimage, assert_eq, intrinsics::advice::adv_push_mapvaln};
+#[inline(always)]
+fn decode_commitment<T: FromFeltRepr>(arg: Word) -> ScriptArgsResult<T> {
+    use miden_stdlib_sys::{adv_load_preimage, intrinsics::advice::adv_push_mapvaln};
 
     let num_felts = adv_push_mapvaln(arg).as_canonical_u64();
-    assert_eq(Felt::new(num_felts % WORD_FELTS as u64).unwrap(), Felt::ZERO);
+    if num_felts % WORD_FELTS as u64 != 0 {
+        return Err(ScriptArgsError::NonWordMultipleLength);
+    }
     let num_words = Felt::new(num_felts / WORD_FELTS as u64).unwrap();
     let preimage = adv_load_preimage(num_words, arg);
     decode_preimage(&preimage)
@@ -138,34 +145,37 @@ fn decode_commitment<T: FromFeltRepr>(arg: Word) -> T {
 /// path calls it outside tests.
 #[cfg_attr(not(all(target_family = "wasm", miden)), allow(dead_code))]
 #[inline(always)]
-fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> T {
+fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> ScriptArgsResult<T> {
     let mut reader = FeltReader::new(preimage);
-    let value = decode_or_panic(&mut reader);
+    let value = T::from_felt_repr(&mut reader)?;
     // Only the zero felts padding the encoding to a whole number of words may remain.
     if reader.remaining() >= WORD_FELTS {
-        fail("trailing data after tx script args");
+        return Err(ScriptArgsError::TrailingData);
     }
-    assert_zero_padding(&mut reader);
-    value
+    check_zero_padding(&mut reader)?;
+    Ok(value)
 }
 
 /// Commitment-mode decoding requires the advice provider, which only exists on the Miden VM.
 #[cfg(not(all(target_family = "wasm", miden)))]
-fn decode_commitment<T: FromFeltRepr>(_arg: Word) -> T {
+fn decode_commitment<T: FromFeltRepr>(_arg: Word) -> ScriptArgsResult<T> {
     unimplemented!("commitment-mode tx script args can only be decoded on the Miden VM")
 }
 
 impl<T: FromFeltRepr + ToFeltRepr> ScriptArgs for T {
     const FIXED_LEN: Option<usize> = <T as FromFeltRepr>::FIXED_LEN;
 
-    fn decode(arg: Word) -> Self {
+    // Inlined so the caller's error match fuses with the decode and the `Result` never has to
+    // materialize in memory on the happy path.
+    #[inline(always)]
+    fn decode(arg: Word) -> ScriptArgsResult<Self> {
         // A const-evaluated branch guarantees the dead transport path is never codegenned.
         if const { is_word_mode(Self::FIXED_LEN) } {
             let felts = [arg[0], arg[1], arg[2], arg[3]];
             let mut reader = FeltReader::new(&felts);
-            let value = decode_or_panic(&mut reader);
-            assert_zero_padding(&mut reader);
-            value
+            let value = Self::from_felt_repr(&mut reader)?;
+            check_zero_padding(&mut reader)?;
+            Ok(value)
         } else {
             decode_commitment(arg)
         }
@@ -221,7 +231,7 @@ mod tests {
             panic!("expected word mode for a single felt");
         };
 
-        assert_eq!(<Felt as ScriptArgs>::decode(word), value);
+        assert_eq!(<Felt as ScriptArgs>::decode(word), Ok(value));
     }
 
     /// A full word of arguments is transported as-is.
@@ -233,15 +243,30 @@ mod tests {
         };
 
         assert_eq!(encoded, word);
-        assert_eq!(<Word as ScriptArgs>::decode(encoded), word);
+        assert_eq!(<Word as ScriptArgs>::decode(encoded), Ok(word));
     }
 
     /// Non-zero felts in the unused part of the args word fail the decode.
     #[test]
-    #[should_panic(expected = "zero padding")]
     fn word_mode_decode_rejects_nonzero_padding() {
         let word = Word::new([felt(7), felt(0), felt(0), felt(1)]);
-        let _ = <Felt as ScriptArgs>::decode(word);
+
+        assert_eq!(<Felt as ScriptArgs>::decode(word), Err(ScriptArgsError::NonZeroPadding));
+    }
+
+    /// A word-mode decode error surfaces the underlying felt-repr failure.
+    #[test]
+    fn word_mode_decode_surfaces_felt_repr_errors() {
+        let word = Word::new([felt(2), felt(0), felt(0), felt(0)]);
+
+        assert_eq!(
+            <bool as ScriptArgs>::decode(word),
+            Err(ScriptArgsError::Decode(FeltReprError::InvalidBool {
+                pos: 0,
+                len: 4,
+                value: 2
+            }))
+        );
     }
 
     /// Commitment mode zero-pads the preimage to a whole number of words.
@@ -286,22 +311,25 @@ mod tests {
     /// A commitment preimage with only zero padding decodes.
     #[test]
     fn decode_preimage_accepts_canonical_padding() {
-        let decoded: Vec<Felt> = decode_preimage(&[felt(2), felt(5), felt(6), felt(0)]);
-        assert_eq!(decoded, vec![felt(5), felt(6)]);
+        let decoded: ScriptArgsResult<Vec<Felt>> =
+            decode_preimage(&[felt(2), felt(5), felt(6), felt(0)]);
+
+        assert_eq!(decoded, Ok(vec![felt(5), felt(6)]));
     }
 
     /// A non-zero felt in the padding region fails the decode.
     #[test]
-    #[should_panic(expected = "zero padding")]
     fn decode_preimage_rejects_nonzero_padding() {
-        let _: Vec<Felt> = decode_preimage(&[felt(2), felt(5), felt(6), felt(9)]);
+        let decoded: ScriptArgsResult<Vec<Felt>> =
+            decode_preimage(&[felt(2), felt(5), felt(6), felt(9)]);
+
+        assert_eq!(decoded, Err(ScriptArgsError::NonZeroPadding));
     }
 
     /// A whole extra word beyond the encoding fails the decode, even when it is all zeros.
     #[test]
-    #[should_panic(expected = "trailing data")]
     fn decode_preimage_rejects_extra_word() {
-        let _: Vec<Felt> = decode_preimage(&[
+        let decoded: ScriptArgsResult<Vec<Felt>> = decode_preimage(&[
             felt(2),
             felt(5),
             felt(6),
@@ -311,5 +339,7 @@ mod tests {
             felt(0),
             felt(0),
         ]);
+
+        assert_eq!(decoded, Err(ScriptArgsError::TrailingData));
     }
 }

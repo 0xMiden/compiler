@@ -129,9 +129,11 @@ fn build_chain_with_wallet_account() -> (MockChain, AccountId) {
 
 /// Asserts a failed execution's error message so an unrelated failure cannot satisfy the test.
 ///
-/// The expected error codes are stable products of the deterministic guest build, and each pins
-/// the distinct assert that must fire for its case. When an intentional SDK or codegen change
-/// shifts a code, re-calibrate it from this assert's failure output, like an expect test.
+/// The expected error codes are stable products of the deterministic guest build. All decode
+/// failures share one code — the `#[tx_script]` wrapper's panic on a `ScriptArgs::decode` error —
+/// while the in-VM hash verification fails with its own distinct stdlib code, so the
+/// hash-isolation case still proves that specific mechanism. When an intentional SDK or codegen
+/// change shifts a code, re-calibrate it from this assert's failure output, like an expect test.
 fn assert_failure_contains(err: &str, needle: &str) {
     assert!(err.contains(needle), "unexpected failure message (wanted `{needle}`): {err}");
 }
@@ -175,7 +177,7 @@ pub fn word_mode_args() {
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(tampered);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 8266143280404911932");
+    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
 }
 
 /// Commitment-mode arguments pass through the advice provider hash-verified against the args
@@ -260,7 +262,7 @@ pub fn commitment_mode_args() {
         .tx_script_args(bad_word)
         .extend_advice_map([(bad_word, nonzero_padding)]);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 8266143280404911932");
+    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
 
     // Canonicality: a self-consistent preimage with a whole extra all-zero word must be rejected
     // as trailing data.
@@ -287,5 +289,5 @@ pub fn commitment_mode_args() {
         .tx_script_args(bad_word)
         .extend_advice_map([(bad_word, non_word_multiple)]);
     let err = execute_tx_expect_failure(tx_context_builder);
-    assert_failure_contains(&err, "assertion failed with error code: 274304738700392046");
+    assert_failure_contains(&err, "assertion failed with error code: 10154102372021603817");
 }

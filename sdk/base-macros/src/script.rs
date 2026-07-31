@@ -115,8 +115,16 @@ pub(crate) fn expand(
     for param in &params {
         match param {
             ParamRole::Args(ty) => {
+                // The wrapper turns decode errors into a panic, failing the transaction. The
+                // message is static: panic messages are unobservable in-VM, so formatting the
+                // error would only cost guest code size.
                 instantiation.extend(quote! {
-                    let __miden_args = <#ty as ::miden::ScriptArgs>::decode(arg);
+                    let __miden_args = match <#ty as ::miden::ScriptArgs>::decode(arg) {
+                        ::core::result::Result::Ok(args) => args,
+                        ::core::result::Result::Err(_) => {
+                            ::core::panic!("failed to decode transaction script arguments")
+                        }
+                    };
                 });
                 call_args.push(quote! { __miden_args });
             }
