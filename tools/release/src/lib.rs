@@ -3,6 +3,7 @@
 //! The design this implements lives in `tasks/design/release-tooling.md`.
 
 pub mod candidate;
+pub mod closure;
 pub mod config;
 pub mod intent;
 pub mod lint;

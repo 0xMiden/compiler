@@ -4,6 +4,7 @@ use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use midenc_release::{
     candidate::{Candidate, UnitDeclaration, render_tag},
+    closure,
     config::{Config, Unit, VersionSource},
     intent, lint, order,
     reconcile::{self, Disposition, Planned},
@@ -73,6 +74,23 @@ enum Command {
         /// Write the intent here instead of stdout.
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Verify the packaged crates build when resolved from a registry.
+    ///
+    /// This is what justifies publishing with `--no-verify`: production skips
+    /// Cargo's verification so no build script runs beside a live token, so
+    /// this is the only proof the archives are usable. Required, not optional.
+    VerifyClosure {
+        /// Which unit to verify. Omit for every publishable package.
+        #[arg(long)]
+        unit: Option<UnitArg>,
+        /// Skip the consumer build. Much faster, and much weaker: resolution
+        /// alone cannot prove the archives contain every file they need.
+        #[arg(long)]
+        no_build: bool,
+        /// Cache upstream index responses here between runs.
+        #[arg(long)]
+        cache_dir: Option<PathBuf>,
     },
     /// Report what still needs publishing, against live registry state.
     ///
@@ -216,6 +234,65 @@ fn main() -> Result<()> {
                     println!("wrote intent to {} (digest {})", path.display(), intent.digest());
                 }
                 None => println!("{json}"),
+            }
+            Ok(())
+        }
+        Command::VerifyClosure {
+            unit,
+            no_build,
+            cache_dir,
+        } => {
+            let selected: BTreeSet<String> = match unit {
+                Some(unit) => config.packages_in(unit.into()).map(|p| p.name.clone()).collect(),
+                None => {
+                    config.packages.iter().filter(|p| p.publish).map(|p| p.name.clone()).collect()
+                }
+            };
+            let packages = order::topological(&ws, &selected)?;
+
+            // Fail early and legibly on a cross-unit dependency that is neither
+            // selected nor published, rather than letting it surface as a Cargo
+            // resolution error during packaging.
+            let index = midenc_release::registry::client::SparseIndex::new(
+                "sparse+https://index.crates.io/",
+            );
+            let problems = closure::check_external_dependencies(&ws, &index, &packages)?;
+            if !problems.is_empty() {
+                for problem in &problems {
+                    eprintln!("error: {problem}");
+                }
+                bail!("the selection is not self-contained");
+            }
+
+            println!("verifying the closure of {} package(s)...", packages.len());
+            let options = closure::Options {
+                packages,
+                build_consumer: !no_build,
+                allow_upstream: true,
+                cache_dir,
+            };
+            let result = closure::verify(&ws.root, &options)?;
+
+            for packaged in &result.crates {
+                println!(
+                    "  {} {}  {}  {} bytes",
+                    packaged.name,
+                    packaged.version,
+                    &packaged.digest[..16],
+                    packaged.size
+                );
+            }
+            println!();
+            if no_build {
+                println!(
+                    "{} package(s) resolve from a registry; the consumer build was skipped",
+                    result.crates.len()
+                );
+            } else {
+                println!(
+                    "{} package(s) package, resolve, and build from a registry",
+                    result.crates.len()
+                );
             }
             Ok(())
         }
