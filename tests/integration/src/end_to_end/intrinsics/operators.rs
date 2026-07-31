@@ -34,7 +34,7 @@ macro_rules! test_bin_op {
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         a.push_to_operand_stack(&mut args);
                         b.push_to_operand_stack(&mut args);
-                        run_masm_vs_rust(rs_out, &package, &args, &test.session)
+                        run_masm_vs_rust(rs_out, package.clone(), &args, &test.session)
                     });
                 match res {
                     Err(TestError::Fail(_, value)) => {
@@ -71,7 +71,7 @@ macro_rules! test_bin_op_via_u64 {
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         a.push_to_operand_stack(&mut args);
                         b.push_to_operand_stack(&mut args);
-                        run_masm_vs_rust(rs_out, &package, &args, &test.session)
+                        run_masm_vs_rust(rs_out, package.clone(), &args, &test.session)
                     });
                 match res {
                     Err(TestError::Fail(_, value)) => {

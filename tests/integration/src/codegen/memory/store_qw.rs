@@ -58,7 +58,7 @@ fn store_qw_unaligned_impl<T: QuadwordIO>(write_val: T) {
         ];
 
         let output = eval_package::<u32, _, _>(
-            &package,
+            package.clone(),
             initializers,
             &[Felt::new_unchecked(offs as u64)],
             context.session(),

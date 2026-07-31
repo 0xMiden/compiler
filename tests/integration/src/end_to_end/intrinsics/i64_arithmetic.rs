@@ -35,7 +35,8 @@ fn test_i64_intrinsic<S, F1, F2, D>(
     F2: Fn(&S::Value) -> Result<Vec<i64>, TrapExpectation>,
     D: Fn(&[Felt]) -> Vec<i64>,
 {
-    let program = assemble_test_program(proc_body);
+    let package = assemble_test_program(proc_body);
+    let program = package.unwrap_program();
 
     let res = NumericStrategy::<i64>::test_runner().run(&strategy, |input_tuple| {
         let expected_result = to_expected(&input_tuple);

@@ -20,16 +20,3 @@ trim-paths = ["diagnostics", "object"]
 
 [profile.dev]
 trim-paths = ["diagnostics", "object"]
-
-[package.metadata.miden]
-project-kind = "note-script"
-
-[package.metadata.component]
-package = "miden:cross-ctx-note-word-arg"
-
-# Miden dependencies for cargo-miden build/linking
-[package.metadata.miden.dependencies]
-"miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg" }
-
-[package.metadata.component.target.dependencies]
-"miden:cross-ctx-account-word-arg" = { path = "../cross-ctx-account-word-arg/wit/cross-ctx-account-word.wit" }

@@ -2,23 +2,17 @@ use alloc::{borrow::Cow, format, sync::Arc, vec::Vec};
 #[cfg(feature = "std")]
 use alloc::{boxed::Box, string::ToString};
 
-pub use miden_assembly_syntax::{
-    Library as CompiledLibrary, PathBuf as LibraryPath, PathComponent as LibraryPathComponent,
-};
-#[cfg(feature = "std")]
-use miden_core::serde::Deserializable;
+pub use miden_assembly_syntax::{PathBuf as LibraryPath, PathComponent as LibraryPathComponent};
 use miden_core_lib::CoreLibrary;
 #[cfg(feature = "std")]
 use miden_mast_package::Package;
 use miden_project::Linkage;
-use midenc_hir_symbol::sync::LazyLock;
+#[cfg(not(feature = "std"))]
+use smallvec::SmallVec;
 
 #[cfg(feature = "std")]
 use crate::{Options, Path, diagnostics::IntoDiagnostic};
 use crate::{PathBuf, diagnostics::Report};
-
-pub static STDLIB: LazyLock<Arc<CompiledLibrary>> =
-    LazyLock::new(|| Arc::new(CoreLibrary::default().into()));
 
 /// A library requested by the user to be linked against during compilation
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,7 +48,16 @@ impl LinkLibrary {
         }
     }
 
-    /// Construct a LinkLibrary for Miden base(rollup/tx kernel) library
+    /// Construct a LinkLibrary for the Miden transaction kernel library
+    pub fn tx_kernel() -> Self {
+        LinkLibrary {
+            name: "miden-tx-kernel".into(),
+            path: None,
+            linkage: Linkage::Dynamic,
+        }
+    }
+
+    /// Construct a LinkLibrary for Miden protocol library (userspace)
     pub fn protocol() -> Self {
         LinkLibrary {
             name: "miden-protocol".into(),
@@ -64,35 +67,17 @@ impl LinkLibrary {
     }
 
     #[cfg(not(feature = "std"))]
-    pub fn load(&self, _options: &Options) -> Result<CompiledLibrary, Report> {
+    pub fn load(&self, _options: &Options) -> Result<Arc<Package>, Report> {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
-            "std" | "core" => {
-                let lib = (*STDLIB).as_ref().clone();
-                Ok(Package::from_library(
-                    "miden-core".into(),
-                    Version::new(0, 22, 3),
-                    miden_project::TargetType::Library,
-                    Arc::new(lib),
-                    None,
-                )
-                .into())
+            "std" | "core" | "miden-core" => {
+                return Ok(CoreLibrary::default().package());
             }
             "base" | "protocol" | "miden-protocol" => {
-                let lib = miden_protocol::ProtocolLib::default().as_ref().clone();
-                return Ok(Package::from_library(
-                    "miden-protocol".into(),
-                    Version::new(0, 14, 0),
-                    miden_project::TargetType::Library,
-                    Arc::new(lib),
-                    Some(Dependency {
-                        name: "miden-core".into(),
-                        kind: miden_project::TargetType::Library,
-                        version: Version::new(0, 22, 3),
-                        digest: *(*STDLIB).digest(),
-                    }),
-                )
-                .into());
+                return Ok(miden_protocol::ProtocolLib::default().package());
+            }
+            "tx-kernel" | "miden-tx-kernel" => {
+                return Ok(miden_protocol::transaction::TransactionKernel::package());
             }
             name => Err(Report::msg(format!(
                 "link library '{name}' cannot be loaded: compiler was built without standard \
@@ -103,8 +88,6 @@ impl LinkLibrary {
 
     #[cfg(feature = "std")]
     pub fn load(&self, options: &Options) -> Result<Arc<Package>, Report> {
-        use miden_mast_package::{Dependency, Version};
-
         if let Some(path) = self.path.as_deref() {
             return self.load_from_path(path, options);
         }
@@ -112,31 +95,13 @@ impl LinkLibrary {
         // Handle libraries shipped with the compiler, or via Miden crates
         match self.name.as_ref() {
             "std" | "core" | "miden-core" => {
-                let lib = (*STDLIB).as_ref().clone();
-                return Ok(Package::from_library(
-                    "miden-core".into(),
-                    Version::new(0, 22, 3),
-                    miden_project::TargetType::Library,
-                    Arc::new(lib),
-                    None,
-                )
-                .into());
+                return Ok(CoreLibrary::default().package());
             }
             "base" | "protocol" | "miden-protocol" => {
-                let lib = miden_protocol::ProtocolLib::default().as_ref().clone();
-                return Ok(Package::from_library(
-                    "miden-protocol".into(),
-                    Version::new(0, 14, 0),
-                    miden_project::TargetType::Library,
-                    Arc::new(lib),
-                    Some(Dependency {
-                        name: "miden-core".into(),
-                        kind: miden_project::TargetType::Library,
-                        version: Version::new(0, 22, 3),
-                        digest: *(*STDLIB).digest(),
-                    }),
-                )
-                .into());
+                return Ok(miden_protocol::ProtocolLib::default().package());
+            }
+            "tx-kernel" | "miden-tx-kernel" => {
+                return Ok(miden_protocol::transaction::TransactionKernel::package());
             }
             _ => (),
         }
@@ -203,7 +168,7 @@ impl LinkLibrary {
 #[cfg(feature = "std")]
 pub(crate) fn load_package_from_path(path: &Path) -> Result<Arc<Package>, Report> {
     let bytes = std::fs::read(path).into_diagnostic()?;
-    miden_mast_package::Package::read_from_bytes(&bytes)
+    miden_mast_package::Package::read_from_bytes_unchecked(&bytes)
         .map_err(|e| {
             Report::msg(format!("failed to load Miden package from {}: {e}", path.display()))
         })

@@ -9,10 +9,10 @@ pub extern "C" fn note_get_inputs_plain(_ptr: *mut c_void) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }
 
-#[unsafe(export_name = "miden::protocol::active_note::get_assets")]
+#[unsafe(export_name = "miden::protocol::active_note::get_initial_assets")]
 #[optimize(none)]
 #[inline(never)]
-pub extern "C" fn note_get_assets_plain(_ptr: *mut c_void) -> usize {
+pub extern "C" fn note_get_initial_assets_plain(_ptr: *mut c_void) -> usize {
     unsafe { core::hint::unreachable_unchecked() }
 }
 

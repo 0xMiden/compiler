@@ -30,7 +30,7 @@ fn load_dw() {
 
             let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u64, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),

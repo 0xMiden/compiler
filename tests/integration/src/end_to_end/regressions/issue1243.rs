@@ -34,13 +34,15 @@ fn br_table_default_arm_for_out_of_range_selector() {
 
     // `v = 0` makes the normalized selector wrap to `0xFFFFFFFF`, which must take the default arm.
     let out =
-        eval_package::<u32, _, _>(&package, [], &[Felt::from(0u32)], &test.session, |_| Ok(()))
-            .unwrap();
+        eval_package::<u32, _, _>(package.clone(), [], &[Felt::from(0u32)], &test.session, |_| {
+            Ok(())
+        })
+        .unwrap();
     assert_eq!(out, 10);
 
     // A selector with the high bit set without wrapping must also take the default arm.
     let out = eval_package::<u32, _, _>(
-        &package,
+        package,
         [],
         &[Felt::from(0x9000_0000u32)],
         &test.session,

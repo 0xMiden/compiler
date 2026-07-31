@@ -100,7 +100,7 @@ impl Context {
     }
 
     #[inline]
-    pub fn source_manager(&self) -> Arc<dyn SourceManager + Send + Sync> {
+    pub fn source_manager(&self) -> Arc<dyn SourceManager> {
         self.session.source_manager.clone()
     }
 

@@ -90,6 +90,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the signed-narrow record received from the caller.
+    #[account_procedure]
     fn echo_signed_narrow_record(&self, input: SignedNarrowRecord) -> SignedNarrowRecord;
 }
 

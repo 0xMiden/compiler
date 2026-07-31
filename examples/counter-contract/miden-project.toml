@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "account-component"
 namespace = "miden:counter-contract/counter-contract@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

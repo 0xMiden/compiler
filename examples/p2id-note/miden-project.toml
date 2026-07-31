@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 namespace = "miden:p2id/miden-p2id@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

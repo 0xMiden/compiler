@@ -46,7 +46,7 @@ fn i64_load8_s() {
         }];
 
         let output = eval_package::<u64, _, _>(
-            &package,
+            package.clone(),
             initializers,
             &[Felt::new_unchecked(mem_addr as u64)],
             context.session(),

@@ -175,7 +175,6 @@ fn build_sibling_note_package(
             "Cargo.toml",
             &note_cargo_toml_for_dependency(
                 &names.note_name,
-                &names.note_package,
                 &names.caller_account_package,
                 caller_project_root,
             ),
@@ -201,6 +200,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]

@@ -143,6 +143,7 @@ version = \"{}\"
         "account" | "account-component" | "authentication-component" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"account-component\"\n");
+            manifest.push_str("path = \"src/lib.rs\"\n");
             manifest.push_str(&format!(
                 "namespace = \"{}\"\n\n",
                 account_component_namespace(package_name, package_version)
@@ -151,6 +152,7 @@ version = \"{}\"
         "note" | "note-script" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"note\"\n");
+            manifest.push_str("path = \"src/lib.rs\"\n");
             manifest.push_str(&format!(
                 "namespace = \"{}\"\n\n",
                 component_namespace(package_name, package_version)
@@ -160,11 +162,12 @@ version = \"{}\"
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"tx-script\"\n");
             manifest.push_str("namespace = \"miden:base/transaction-script@1.0.0\"\n\n");
+            manifest.push_str("path = \"src/lib.rs\"\n");
         }
         _ => {
             manifest.push_str("[[bin]]\n");
             manifest.push_str(&format!("name = \"{}\"\n", toml_escape(package_name)));
-            manifest.push_str("path = \"<virtual>\"\n\n");
+            manifest.push_str("path = \"src/lib.rs\"\n\n");
         }
     }
 

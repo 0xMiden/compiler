@@ -115,6 +115,7 @@ version = "0.0.1"
 [lib]
 kind = "note"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

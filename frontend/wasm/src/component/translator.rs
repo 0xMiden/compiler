@@ -67,8 +67,9 @@ pub struct ComponentTranslator<'a> {
 
     context: Rc<Context>,
 
-    /// Frontend metadata merged across all core modules that feed this component translation.
-    component_frontend_metadata: Option<FrontendMetadata>,
+    /// Frontend metadata entries merged across all core modules that feed this component
+    /// translation.
+    component_frontend_metadata: Vec<FrontendMetadata>,
 
     /// Names of component exports for which a lifting shim was emitted.
     lifted_export_names: FxHashSet<String>,
@@ -125,7 +126,7 @@ impl<'a> ComponentTranslator<'a> {
         let ns = hir2::Ident::with_empty_span(id.namespace);
         let name = hir2::Ident::with_empty_span(id.name);
         let component_frontend_metadata =
-            merge_frontend_metadata(nested_modules.iter().map(|(_, module)| module))?;
+            merge_frontend_metadata(nested_modules.iter().map(|(_, module)| module));
 
         // If a world wasn't provided to us, create one
         let world_ref = match config.world {
@@ -168,7 +169,7 @@ impl<'a> ComponentTranslator<'a> {
         }
 
         validate_lifted_frontend_metadata_exports(
-            self.component_frontend_metadata.as_ref(),
+            &self.component_frontend_metadata,
             &self.lifted_export_names,
         )?;
 
@@ -501,8 +502,8 @@ impl<'a> ComponentTranslator<'a> {
         let core_export_func_path = self.core_module_export_func_path(frame, canon_lift);
         let protocol_export_kind: Option<ProtocolExportKind> = self
             .component_frontend_metadata
-            .as_ref()
-            .and_then(|metadata| metadata.protocol_export_kind_for(name));
+            .iter()
+            .find_map(|metadata| metadata.protocol_export_kind_for(name));
 
         generate_export_lifting_function(
             &mut self.result,

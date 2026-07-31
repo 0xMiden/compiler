@@ -1,13 +1,23 @@
-use miden_debug::ToMidenRepr;
-use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{Immediate, Op, SymbolTable};
-use prop::test_runner::{Config, TestRunner};
-use proptest::prelude::*;
-
-use crate::{CompilerTest, testing::executor_with_std};
-
+// This test wants *two* artifacts from one build: the assembled package, and the optimized HIR
+// component, which it evaluates with `HirEvaluator` and compares against the Rust original.
+//
+// It was parked for the length of the pipeline redesign, because a Cargo fixture compiles through
+// `RUST_FRONTEND`, whose route was `[package.assembled]` alone: the root target was built by
+// recursing with its own `Session` and `Context`, so the outer run's observers never saw
+// `hir.transformed`. The root arm now runs the shared WebAssembly tail in this process and
+// publishes every checkpoint on that route, and `CompilerTest::hir` retains the run's `Context`
+// so the component is still evaluable after the run returns — HIR operations hold only a raw
+// pointer to the arena they were allocated in.
 #[test]
 fn is_prime() {
+    use miden_debug::ToMidenRepr;
+    use midenc_frontend_wasm::WasmTranslationConfig;
+    use midenc_hir::{Immediate, Op, SymbolTable};
+    use prop::test_runner::{Config, TestRunner};
+    use proptest::prelude::*;
+
+    use crate::{CompilerTest, testing::executor_with_std};
+
     crate::testing::setup::enable_compiler_instrumentation();
 
     fn expected(n: u32) -> bool {
@@ -67,9 +77,9 @@ fn is_prime() {
             prop_assert_eq!(rust_out as i32, result);
 
             let args = a.to_felts().to_vec();
-            let exec = executor_with_std(args, Some(&package));
+            let exec = executor_with_std(args);
             let output: u32 =
-                exec.execute_into(&package.unwrap_program(), test.session.source_manager.clone());
+                exec.execute_into(package.clone(), test.session.source_manager.clone());
             dbg!(output);
             prop_assert_eq!(rust_out as u32, output);
             Ok(())

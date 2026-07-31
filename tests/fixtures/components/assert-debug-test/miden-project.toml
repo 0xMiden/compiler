@@ -4,4 +4,11 @@ version = "0.1.0"
 
 [[bin]]
 name = "assert-debug-test"
-path = "<virtual>"
+path = "src/lib.rs"
+
+# This fixture exists to assert that debug info survives to the assembled package, so it must
+# ask for it. A manifest-backed project's build profile is the project's own — `--debug` does
+# not alter it (see `prepare.rs`'s header on why the two rules differ) — so declaring it here is
+# the only thing that can turn it on for the `release` profile this fixture is built under.
+[profile.release]
+debug = true

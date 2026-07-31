@@ -11,10 +11,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = { path = "../../sdk/sdk" }
-
-[package.metadata.component]
-package = "miden:storage-example"
-
-[package.metadata.miden]
-project-kind = "account"
-supported-types = ["RegularAccountUpdatableCode"]

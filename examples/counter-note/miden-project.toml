@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 namespace = "miden:counter-note/miden-counter-note@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

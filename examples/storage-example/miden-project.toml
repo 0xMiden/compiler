@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "account-component"
 namespace = "miden:storage-example/foo@1.0.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

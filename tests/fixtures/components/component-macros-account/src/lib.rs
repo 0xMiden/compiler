@@ -55,9 +55,11 @@ struct MyAccountStorage;
 #[component]
 trait MyAccount {
     /// Exercises exported user-defined type and SDK type in signatures and return value.
+    #[account_procedure]
     fn test_custom_types(&self, a: StructA, asset: Asset) -> StructB;
 
     /// Exercises user-defined types in a sub-module
+    #[account_procedure]
     fn test_custom_types2(&self, a: StructA, asset: Asset) -> my_types::StructC;
 }
 

@@ -1,10 +1,14 @@
 [package]
-name = "is-prime"
+# Matches the Cargo package name, and therefore the `[[bin]]` target below: a project build
+# selects its executable target by the artifact name, which is the package's own unless `--name`
+# overrides it, so a package named `is-prime` would look for an executable target of that name
+# and find only `is_prime`. It is also the name the README's `is_prime.masp` already assumes.
+name = "is_prime"
 version = "0.1.0"
 
 [[bin]]
 name = "is_prime"
-path = "<virtual>"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

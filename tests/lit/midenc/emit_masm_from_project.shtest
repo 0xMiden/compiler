@@ -1,0 +1,42 @@
+# RUN: midenc --emit=masm=- -o %t/out.masp %S/../../fixtures/masm/cross_module_advice_taint/miden-project.toml 2>&1 | filecheck %s
+#
+# `--emit` reaching a project build at all is new: the compilation a manifest input used to
+# drive reset `output_types` for every target, so this flag was a silent no-op here. The route
+# now renders what it publishes, through the `masm` frontend's own artifact declaration.
+#
+# What this pins that no unit test can: the *whole* composition -- a real `.masm`-rooted
+# manifest, the real MASM frontend, the real renderer, and a real `--emit` destination. The
+# crate's own tests cover the wiring with a stub frontend and the renderer by calling it
+# directly, so a break in how the two meet would pass both.
+#
+# This is deliberately a **full build**, not `-Canalyze-only`. The `masm` route publishes the
+# very same `ProjectSourceInputs` at both `masm.parsed` and `masm.lowered`, so declaring the
+# renderer at both -- the obvious mistake, and the one the CHECK-NOTs below exist for -- prints
+# every module twice. `-Canalyze-only` stops the build before `masm.lowered` is ever reached,
+# so it could not observe that at all. `-o %t/out.masp` keeps the assembled package out of the
+# source tree; it overrides only the final artifact, so `--emit=masm=-` still reaches stdout.
+#
+# The target's namespace is `example`, from the package name, and it is *synthesized* -- neither
+# source file declares one. So the `namespace` lines below appear only in emitted Miden
+# Assembly, which is what lets the CHECK-NOTs mean "emitted once" rather than "mentioned once".
+
+# Plain CHECK rather than CHECK-LABEL throughout: CHECK-LABEL partitions the input into
+# blocks, which would confine the trailing CHECK-NOTs to the last block and let a second copy
+# of the whole module tree through. Ordinary CHECKs keep them scoped to "everything after the
+# last match", which is what "exactly once" needs.
+
+# Support modules are written first, then the root, matching the standalone `.masm` path.
+CHECK: namespace example::support
+CHECK: pub proc dirty
+
+# `push.1` rather than the source's `push.FOO`: what is written is the parsed artifact, not a
+# copy of the file it came from.
+CHECK: push.1
+
+CHECK: namespace example
+CHECK: pub mod support
+CHECK: pub proc entry
+
+# Exactly once, not twice: these cover the whole remainder of the output.
+CHECK-NOT: namespace example::support
+CHECK-NOT: pub mod support

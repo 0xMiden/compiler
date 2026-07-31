@@ -34,7 +34,7 @@ fn load_u64_unaligned() {
         }];
 
         let output = eval_package::<u64, _, _>(
-            &package,
+            package.clone(),
             initializers,
             &[Felt::new_unchecked(offs as u64)],
             context.session(),

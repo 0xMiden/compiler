@@ -89,6 +89,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the sixteen-felt record received from the caller.
+    #[account_procedure]
     fn echo_sixteen_flattened_params(
         &self,
         input: SixteenFlattenedParams,

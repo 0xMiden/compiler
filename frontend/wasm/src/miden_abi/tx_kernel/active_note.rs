@@ -15,7 +15,7 @@ pub(crate) const MODULE_PREFIX: &[SymbolNameComponent] = &[
 
 /// Writes the active note's inputs ("storage" in protocol v0.14+) to memory and returns the count.
 pub const GET_STORAGE: &str = "get_storage";
-pub const GET_ASSETS: &str = "get_assets";
+pub const GET_INITIAL_ASSETS: &str = "get_initial_assets";
 pub const GET_SENDER: &str = "get_sender";
 pub const GET_RECIPIENT: &str = "get_recipient";
 pub const GET_SCRIPT_ROOT: &str = "get_script_root";
@@ -32,7 +32,10 @@ pub(crate) fn signatures() -> ModuleFunctionTypeMap {
     let mut m: ModuleFunctionTypeMap = Default::default();
     let mut note: FunctionTypeMap = Default::default();
     note.insert(Symbol::from(GET_STORAGE), FunctionType::new(CallConv::Wasm, [I32], [I32]));
-    note.insert(Symbol::from(GET_ASSETS), FunctionType::new(CallConv::Wasm, [I32], [I32]));
+    note.insert(
+        Symbol::from(GET_INITIAL_ASSETS),
+        FunctionType::new(CallConv::Wasm, [I32], [I32]),
+    );
     note.insert(Symbol::from(GET_SENDER), FunctionType::new(CallConv::Wasm, [], [Felt, Felt]));
     note.insert(
         Symbol::from(GET_RECIPIENT),

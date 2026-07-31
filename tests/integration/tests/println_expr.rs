@@ -30,7 +30,7 @@ fn println_dynamic() {
     log::set_max_level(log::LevelFilter::Info);
 
     let args = [Felt::from(7u32)];
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _>(package, [], &args, &test.session, |trace| {
         let result: Felt = trace.parse_result().unwrap();
         assert_eq!(result, Felt::from(0u32));
         Ok(())

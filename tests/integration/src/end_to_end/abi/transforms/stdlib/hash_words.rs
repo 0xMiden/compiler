@@ -67,11 +67,17 @@ fn hash_words() {
 
             let args = [Felt::new_unchecked(wide_ptr_addr as u64)];
 
-            eval_package::<Felt, _, _>(&package, initializers, &args, &test.session, |trace| {
-                let res: Felt = trace.parse_result().unwrap();
-                prop_assert_eq!(res, expected_digest[0]);
-                Ok(())
-            })?;
+            eval_package::<Felt, _, _>(
+                package.clone(),
+                initializers,
+                &args,
+                &test.session,
+                |trace| {
+                    let res: Felt = trace.parse_result().unwrap();
+                    prop_assert_eq!(res, expected_digest[0]);
+                    Ok(())
+                },
+            )?;
 
             Ok(())
         });

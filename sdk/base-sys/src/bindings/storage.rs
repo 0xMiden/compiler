@@ -10,7 +10,7 @@ unsafe extern "C" {
     #[link_name = "miden::protocol::active_account::get_item"]
     pub fn extern_get_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_item"]
+    #[link_name = "miden::protocol::native_account::get_initial_item"]
     pub fn extern_get_initial_storage_item(index_suffix: Felt, index_prefix: Felt, ptr: *mut Word);
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::native_account::set_item"]
@@ -35,7 +35,7 @@ unsafe extern "C" {
         ptr: *mut Word,
     );
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::active_account::get_initial_map_item"]
+    #[link_name = "miden::protocol::native_account::get_initial_map_item"]
     pub fn extern_get_initial_storage_map_item(
         index_suffix: Felt,
         index_prefix: Felt,

@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and coexist when separate wrappers select different dependency sets #1276
 
 ### BREAKING
+- Component methods must now be explicitly marked `#[account_procedure]` to be part of the account
+  interface (callable as account procedures from transaction scripts, notes, foreign procedure
+  invocation, and sibling components). Previously every lifted non-auth/note/tx component export was
+  implicitly an account procedure. Unmarked methods remain exported but are no longer part of the
+  account interface. Authentication components keep using `#[auth_script]` (its method is the
+  account interface implicitly); `#[auth_script]` and `#[account_procedure]` belong to different
+  component kinds and cannot be combined in one component. See the [migration guide](./MIGRATION.md).
 - `#[account(...)]` now generates the component methods as one trait per referenced interface
   (named after the interface, with the wrapper's visibility, implemented for the wrapper) instead
   of inherent methods on the wrapper struct. Two components that export the same method name can
@@ -32,6 +39,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `#[account(...)]` wrapper structs are supported only at module scope so their generated component
   metadata has a stable semantic identity. Move a wrapper declared inside a function or block to
   its enclosing module.
+- SDK bindings updated for VM v0.25 / protocol v0.16.0-beta.1. Several tx-kernel bindings were
+  renamed, moved, or removed to match the protocol. See the [migration guide](./MIGRATION.md).
+  - Renamed `active_note::get_assets` -> `get_initial_assets`, `input_note::get_assets` ->
+    `get_initial_assets`, and `input_note::get_assets_info` -> `get_initial_assets_info`; these
+    return the note's creation-time assets, unaffected by in-transaction removal.
+  - `active_account::has_non_fungible_asset(asset: Asset)` (and the `ActiveAccount` trait method)
+    became `has_asset(asset_id: Word)`, testing any-asset membership by asset id.
+  - Moved `get_initial_commitment`, `get_initial_storage_commitment`, `get_initial_vault_root`,
+    and `get_initial_asset` from `active_account` (and the `ActiveAccount` trait) to
+    `native_account` free functions. `storage::{get_initial_item, get_initial_map_item}` keep
+    their API but now read the native account's initial state.
+  - Removed `active_account::{get_balance, get_initial_balance}`,
+    `faucet::{create_fungible_asset, create_non_fungible_asset, has_callbacks}`, and the whole
+    `asset` module. The kernel no longer exposes in-transaction asset construction;
+    `faucet::{mint, burn}` take a pre-built `Asset`.
+  - `output_note::create` can now only be called from account-component context (runtime-enforced);
+    tx/note scripts create notes through an account component wrapper method.
 
 ### Added
 - `#[account(...)]` references accept an `as Alias` to rename the generated trait, e.g.

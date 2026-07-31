@@ -10,6 +10,7 @@ use std::{
 use heck::ToKebabCase;
 use miden_assembly_syntax::ast;
 use miden_debug_types::DefaultSourceManager;
+use miden_project::Uri;
 use proc_macro2::Span;
 use toml::{Value, value::Table};
 use wit_bindgen_core::wit_parser::{
@@ -52,10 +53,11 @@ impl ProjectPackageMetadata {
     ) -> Result<Self, syn::Error> {
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         if !miden_project_toml_path.is_file() {
-            let target = miden_project::Target::r#virtual(
-                Default::default(),
+            let target = miden_project::Target::new(
+                miden_project::TargetType::Library,
                 "default",
                 ast::Path::new("empty"),
+                Uri::new("lib/src.rs"),
             );
             return Ok(Self {
                 manifest_dir,
@@ -110,10 +112,11 @@ impl ManifestPackage {
 
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         if !miden_project_toml_path.is_file() {
-            let target = miden_project::Target::r#virtual(
-                Default::default(),
+            let target = miden_project::Target::new(
+                miden_project::TargetType::Library,
                 "default",
                 ast::Path::new("empty"),
+                Uri::new("lib/src.rs"),
             );
             return Ok(Self {
                 manifest_dir,
@@ -153,17 +156,6 @@ impl ManifestPackage {
             .and_then(Value::as_table)
             .ok_or_else(|| syn::Error::new(error_span, "manifest missing [package] table"))?
             .clone();
-        let project_kind = manifest
-            .get("package")
-            .and_then(Value::as_table)
-            .and_then(|package| package.get("metadata"))
-            .and_then(Value::as_table)
-            .and_then(|metadata| metadata.get("miden"))
-            .and_then(Value::as_table)
-            .and_then(|miden| miden.get("project-kind"))
-            .and_then(Value::as_str)
-            .map(str::to_owned);
-
         let miden_project_toml_path = manifest_dir.join("miden-project.toml");
         let source_manager = Arc::new(DefaultSourceManager::default());
         let project = miden_project::Project::load(&miden_project_toml_path, &source_manager)
@@ -184,6 +176,13 @@ impl ManifestPackage {
             ));
         };
         let target = target.inner().clone();
+
+        let project_kind = package
+            .metadata()
+            .get("miden")
+            .and_then(|meta| meta.get("project-kind"))
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
 
         let description = package.description().unwrap_or_else(|| {
             package_table
@@ -667,6 +666,7 @@ mod tests {
     };
 
     use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
+    use miden_project::Uri;
     use proc_macro2::Span;
     use toml::{Value, value::Table};
 
@@ -729,10 +729,11 @@ world basic-wallet-world {
         package_path: PathBuf,
         wit_path: Option<PathBuf>,
     ) -> Box<miden_project::Package> {
-        let target = miden_project::Target::r#virtual(
-            Default::default(),
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
             "default",
             ast::Path::new("empty"),
+            Uri::new("lib/src.rs"),
         );
         let dependency = miden_project::Dependency::new(
             MidenSpan::unknown(Arc::<str>::from("basic-wallet")),
@@ -806,7 +807,7 @@ version = "0.0.1"
 
 [[bin]]
 name = "script"
-path = "<virtual>"
+path = "src/lib.rs"
 "#,
         )
         .expect("executable project manifest fixture must be written");

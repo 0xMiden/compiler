@@ -1,9 +1,14 @@
 use std::{marker::PhantomData, sync::Arc};
 
-use miden_assembly::{Assembler, DefaultSourceManager, Parse, ParseOptions, ast::ModuleKind};
+use miden_assembly::{
+    Assembler, DefaultSourceManager,
+    ast::{Module, ModuleKind, Path as MasmPath},
+};
 use miden_core::Felt;
 use miden_core_lib::{CoreLibrary, handlers::u64_div::U64DivError};
-use miden_processor::{DefaultHost, ExecutionError, Program, operation::OperationError};
+use miden_mast_package::Package;
+use miden_processor::{DefaultHost, ExecutionError, operation::OperationError};
+use midenc_hir::diagnostics::PrintDiagnostic;
 use num_traits::{PrimInt, Unsigned};
 use proptest::{
     prelude::*,
@@ -12,62 +17,44 @@ use proptest::{
 
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
 
-const I32_INTRINSICS_MASM: &str = include_str!("../../../../codegen/masm/intrinsics/i32.masm");
-const I64_INTRINSICS_MASM: &str = include_str!("../../../../codegen/masm/intrinsics/i64.masm");
+const INTRINSICS_ROOT: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/../../codegen/masm/intrinsics/mod.masm");
 
 /// Assembles an executable program that wraps `procedure_body` inside a procedure that is called
 /// as entry point.
 ///
 /// Both i32 and i64 intrinsics modules are statically linked so the body can call the intrinsics
 /// of either type by their fully-qualified path (`::intrinsics::i32::*` or `::intrinsics::i64::*`).
-pub(super) fn assemble_test_program(procedure_body: &str) -> Program {
+pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let core_library = CoreLibrary::default();
+    let mut assembler = Assembler::new(source_manager.clone());
+    assembler
+        .link_package(core_library.package(), miden_assembly::Linkage::Dynamic)
+        .expect("failed to add core library");
 
-    // Parse both intrinsic modules with their fully-qualified paths
-    let i32_intrinsics = I32_INTRINSICS_MASM
-        .parse_with_options(
-            source_manager.clone(),
-            ParseOptions::new(ModuleKind::Library, "::intrinsics::i32"),
-        )
-        .expect("failed to parse i32 intrinsics module");
-    let i64_intrinsics = I64_INTRINSICS_MASM
-        .parse_with_options(
-            source_manager.clone(),
-            ParseOptions::new(ModuleKind::Library, "::intrinsics::i64"),
-        )
-        .expect("failed to parse i64 intrinsics module");
+    // Parse the intrinsics
+    assembler
+        .compile_and_statically_link_from_root(INTRINSICS_ROOT, Some(MasmPath::new("intrinsics")))
+        .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)));
 
     // Parse the test module with its fully-qualified path
     let test_module_source = format!("pub proc test_intrinsic\n{procedure_body}\nend");
-    let test_module = test_module_source
-        .parse_with_options(
-            source_manager.clone(),
-            ParseOptions::new(ModuleKind::Library, "::test"),
-        )
-        .expect("failed to parse test module");
-
-    // The i64 intrinsics module references core library symbols, so core must be available during
-    // compile_and_statically_link.
-    let mut assembler = Assembler::new(source_manager.clone())
-        .with_static_library(core_library.library())
-        .expect("failed to link core library");
-    assembler
-        .compile_and_statically_link(i32_intrinsics)
-        .expect("failed to statically link i32 intrinsics");
-    assembler
-        .compile_and_statically_link(i64_intrinsics)
-        .expect("failed to statically link i64 intrinsics");
+    let test_module = miden_assembly::ModuleParser::new(Some(ModuleKind::Library))
+        .parse_str(Some(MasmPath::new("test")), test_module_source, source_manager.clone())
+        .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)));
 
     let library = assembler
-        .assemble_library([test_module])
-        .expect("failed to assemble test library");
+        .assemble_library("test", test_module, None::<Box<Module>>)
+        .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)));
+
     Assembler::new(source_manager)
-        .with_static_library(library)
-        .expect("failed to link library")
-        .with_static_library(core_library.library())
-        .expect("failed to link core library")
+        .with_package(core_library.package(), miden_assembly::Linkage::Dynamic)
+        .expect("failed to add core library")
+        .with_package(library.into(), miden_assembly::Linkage::Static)
+        .expect("failed to add library package as dependency")
         .assemble_program(
+            "program",
             r#"
 use miden::core::sys
 
@@ -77,7 +64,8 @@ begin
 end
 "#,
         )
-        .expect("failed to assemble program")
+        .map(Arc::from)
+        .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)))
 }
 
 /// Returns a [`DefaultHost`] with the Miden core library loaded.
@@ -85,9 +73,12 @@ end
 /// The core library registers the event handlers required to execute core helpers that rely on
 /// the advice provider.
 pub(super) fn default_host_with_core_lib() -> DefaultHost {
+    use miden_processor::HostLibrary;
     let core_library = CoreLibrary::default();
+    let mut lib = HostLibrary::from(core_library.package());
+    lib.handlers.extend(core_library.handlers());
     let mut host = DefaultHost::default();
-    host.load_library(&core_library).expect("failed to load core library into host");
+    host.load_library(lib).expect("failed to load core library into host");
     host
 }
 
@@ -180,6 +171,9 @@ pub(super) fn miden_project_toml(name: &str) -> String {
                 version = "0.0.1"
 
                 [lib]
+                # Core Wasm modules use the frontend's synthetic wrapper component identity.
+                namespace = "root_ns:root@1.0.0"
+                path = "src/lib.rs"
 
                 [dependencies]
                 miden-core = "*"

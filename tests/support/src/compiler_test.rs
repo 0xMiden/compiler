@@ -1,6 +1,7 @@
 use core::panic;
 use std::{
     borrow::Cow,
+    cell::RefCell,
     fmt, fs,
     path::{Path, PathBuf},
     process::Command,
@@ -10,13 +11,11 @@ use std::{
 
 use miden_assembly::{DefaultSourceManager, PathBuf as LibraryPath};
 use miden_core::utils::ToHex;
-use midenc_compile::{
-    compile_link_output_to_masm_with_pre_assembly_stage, compile_to_unoptimized_hir,
+use midenc_compile::pipeline::{
+    Artifact, CheckpointId, CompilationRequest, Goal, Observer, OutputRequest, Pipeline, TargetRole,
 };
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_hir::{
-    Context, FunctionIdent, Ident, Op, demangle::demangle, dialects::builtin, interner::Symbol,
-};
+use midenc_hir::{Context, FunctionIdent, Ident, Op, demangle::demangle, interner::Symbol};
 use midenc_session::{FileName, FileType, InputFile, InputType, Session};
 
 use crate::{
@@ -316,8 +315,6 @@ impl CompilerTestBuilder {
     /// Consume the builder, invoke any tools required to obtain the inputs for the test, and if
     /// successful, return a [CompilerTest], ready for evaluation.
     pub fn build(self) -> CompilerTest {
-        use midenc_compile::Stage;
-
         let source = self.source;
 
         // Build test
@@ -350,32 +347,27 @@ impl CompilerTestBuilder {
                 options.rustflags = rustflags_env;
                 options.link_modules.extend(self.link_masm_modules);
                 let source_manager = Arc::new(DefaultSourceManager::default());
-                let mut session =
+                let session =
                     Rc::new(Session::new(input.clone(), options, None, source_manager).unwrap());
-                let context = Rc::new(Context::new(session.clone()));
-                let mut cargo_build_stage = midenc_compile::stages::CargoBuildStage;
-                let wasm_artifact = cargo_build_stage.run(input, context.clone());
-                // Keep generated WIT available when Cargo fails after macro expansion but before
-                // producing the final Wasm artifact.
-                maybe_dump_public_generated_wit(&config);
-                let wasm_artifact =
-                    wasm_artifact.expect("cargo build should have produced a wasm output");
-                let artifact_name = wasm_artifact
-                    .as_path()
-                    .unwrap()
-                    .file_stem()
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_string();
 
-                // Recreate the context so that we can invoke the compiler on the Wasm, but with
-                // all of the same compiler options
-                drop(context);
-                {
-                    let session = Rc::make_mut(&mut session);
-                    session.input = Some(wasm_artifact);
-                }
+                // The session stays pointed at the `Cargo.toml`, and that is the whole change:
+                // the manifest is compiled as a *project*, so the namespace, target kind and
+                // dependencies the crate declares are the ones the build uses. Extracting the
+                // WebAssembly here and re-entering the compiler with it — which is what this did
+                // — synthesized a project from the session instead, and the two disagreed.
+                //
+                // Keep generated WIT available when Cargo fails after macro expansion but before
+                // producing the final Wasm artifact. It is emitted during the build, which now
+                // happens inside `compile`, so this is a no-op here for a failure that has not
+                // occurred yet; it stays because the dump is keyed on the fixture, not on timing.
+                maybe_dump_public_generated_wit(&config);
+
+                let artifact_name = config
+                    .project_dir
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("unknown")
+                    .to_string();
 
                 let context = Rc::new(Context::new(session.clone()));
                 CompilerTest {
@@ -585,7 +577,7 @@ impl CompilerTestBuilder {
 
                 [[bin]]
                 name = "{name}"
-                path = "<virtual>"
+                path = "src/lib.rs"
 
                 [dependencies]
                 miden-core = "*"
@@ -729,7 +721,7 @@ impl CompilerTestBuilder {
 
                 [[bin]]
                 name = "{name}"
-                path = "<virtual>"
+                path = "src/lib.rs"
 
                 [dependencies]
                 {project_dependencies}
@@ -849,14 +841,26 @@ pub struct CompilerTest {
     artifact_name: Cow<'static, str>,
     /// The entrypoint function to use when building the IR
     entrypoint: Option<FunctionIdent>,
-    /// The compiled IR
-    hir: Option<midenc_compile::MidenComponent>,
-    /// The MASM source code
-    masm_src: Option<String>,
-    /// The compiled IR MASM program
-    ir_masm_program: Option<Result<Arc<midenc_codegen_masm::MasmComponent>, String>>,
+    /// The pre-rewrite HIR, rendered as text while the compilation was still running.
+    ///
+    /// Text rather than a live [`midenc_compile::MidenComponent`]: HIR reaches its `Context`
+    /// through a raw pointer, and the `Context` a pipeline run builds its HIR in is created per
+    /// assembler callback and dropped when that callback returns. Rendering inside the callback
+    /// — which is what an observer does — is what makes the document outlive the run.
+    hir_initial: Option<String>,
+    /// The post-rewrite HIR component, live, together with the `Context` that keeps it valid.
+    ///
+    /// The one artifact this harness keeps as HIR rather than as text, because
+    /// [`CompilerTest::hir`]'s caller evaluates it. Holding the `Rc<Context>` here is what makes
+    /// that sound; see [`ArtifactCollector`], and note that dropping this `CompilerTest` drops
+    /// the context and invalidates any `ComponentRef` handed out of [`CompilerTest::hir`].
+    hir_transformed: Option<(Rc<Context>, midenc_hir::dialects::builtin::ComponentRef)>,
+    /// The Miden Assembly the run handed to the assembler, rendered as text.
+    masm_lowered: Option<String>,
     /// The compiled package containing a program executable by the VM
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
+    /// The goal of the one compilation this test performs, once it has been performed.
+    compiled_to: Option<Goal>,
 }
 
 impl fmt::Debug for CompilerTest {
@@ -866,13 +870,9 @@ impl fmt::Debug for CompilerTest {
             .field("session", &self.session)
             .field("artifact_name", &self.artifact_name)
             .field("entrypoint", &self.entrypoint)
-            .field_with("hir", |f| match self.hir.as_ref() {
-                None => f.debug_tuple("None").finish(),
-                Some(link_output) => f
-                    .debug_tuple("Some")
-                    .field(&link_output.component.unwrap().borrow().id())
-                    .finish(),
-            })
+            .field("hir_initial", &self.hir_initial.is_some())
+            .field("hir_transformed", &self.hir_transformed.is_some())
+            .field("masm_lowered", &self.masm_lowered.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -887,10 +887,11 @@ impl Default for CompilerTest {
             context,
             artifact_name: "unknown".into(),
             entrypoint: None,
-            hir: None,
-            masm_src: None,
-            ir_masm_program: None,
+            hir_initial: None,
+            hir_transformed: None,
+            masm_lowered: None,
             package: None,
+            compiled_to: None,
         }
     }
 }
@@ -956,123 +957,251 @@ impl CompilerTest {
             .build()
     }
 
-    /// Get the translated IR component, translating the Wasm if it has not been done yet
-    pub fn hir(&mut self) -> builtin::ComponentRef {
-        self.miden_component()
-            .component
-            .expect("compiler should produce an HIR component")
-    }
-
-    /// Get a reference to the full IR linker output, translating the Wasm if needed.
-    pub fn miden_component(&mut self) -> &midenc_compile::MidenComponent {
-        use midenc_compile::compile_to_optimized_hir;
-
-        if self.hir.is_none() {
-            let link_output = compile_to_optimized_hir(self.context.clone())
-                .map_err(format_report)
-                .unwrap_or_else(|err| panic!("failed to translate wasm to hir component: {err}"));
-            self.hir = Some(link_output);
-        }
-        self.hir.as_ref().unwrap()
-    }
-
-    /// Compare the compiled(unoptimized) IR against the expected output
+    /// Compare the compiled (pre-rewrite) IR against the expected output.
+    ///
+    /// The goal is `hir.initial`, so the run stops as soon as the document exists rather than
+    /// assembling a package nothing here looks at.
     pub fn expect_ir_unoptimized(&mut self, expected_hir_file: midenc_expect_test::ExpectFile) {
-        let component = compile_to_unoptimized_hir(self.context.clone())
-            .map_err(format_report)
-            .unwrap_or_else(|err| panic!("failed to translate wasm to miden component: {err}"))
-            .component
-            .expect("failed to translate wasm to hir component");
-
-        let ir = demangle(component.borrow().as_operation().to_string());
-        expected_hir_file.assert_eq(&ir);
-    }
-
-    /// Compare the compiled MASM against the expected output
-    pub fn expect_masm(&mut self, expected_masm_file: midenc_expect_test::ExpectFile) {
-        let program = demangle(self.masm_src().as_str());
-        expected_masm_file.assert_eq(&program);
+        self.compile(Goal::at(CheckpointId::HIR_INITIAL));
+        let ir = self
+            .hir_initial
+            .as_ref()
+            .expect("the run must have published `hir.initial`; this route does not reach it");
+        expected_hir_file.assert_eq(&demangle(ir.clone()));
     }
 
     /// Lazily compiles the [miden_mast_package::Package]
     pub fn compile_package(&mut self) -> Arc<miden_mast_package::Package> {
-        if self.package.is_none() {
-            self.compile_wasm_to_masm_program().unwrap_or_else(|err| panic!("{err}"));
-        }
-        match self.package.as_ref().unwrap().as_ref() {
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        match self.package.as_ref().expect("a full run must produce a package").as_ref() {
             Ok(prog) => prog.clone(),
             Err(msg) => panic!("{msg}"),
         }
     }
 
-    /// Get the MASM source code
-    pub fn masm_src(&mut self) -> String {
-        if self.masm_src.is_none()
-            && let Err(err) = self.compile_wasm_to_masm_program()
-        {
-            panic!("{err}");
-        }
-        self.masm_src.clone().unwrap()
+    /// The post-rewrite HIR component this build produced, **live**.
+    ///
+    /// Not a rendering: the caller evaluates it with `midenc_hir_eval::HirEvaluator` after the
+    /// run has returned, which needs the operations themselves. That is sound only because this
+    /// `CompilerTest` retains the run's `Context` — HIR reaches its context through a raw
+    /// pointer — so the returned handle is valid for exactly as long as this value is. Dropping
+    /// the test and keeping the component is a use-after-free.
+    ///
+    /// # Why this asks for a full build
+    ///
+    /// The harness compiles **once**, and this artifact's callers want the package too. Capping
+    /// the run at `hir.transformed` would make a later `compile_package()` a second compilation,
+    /// which [`CompilerTest::compile`] refuses. Compare [`CompilerTest::expect_ir_unoptimized`],
+    /// which does cap, because the HIR document is the whole of what its callers want.
+    pub fn hir(&mut self) -> midenc_hir::dialects::builtin::ComponentRef {
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.hir_transformed
+            .as_ref()
+            .expect(
+                "the run must have published `hir.transformed` with a component; this route does \
+                 not reach it",
+            )
+            .1
     }
 
-    /// Assemble the Wasm input to Miden Assembly
+    /// The Miden Assembly this build handed to the assembler, as text.
     ///
-    /// If the Wasm has already been translated to the IR, it is just assembled, otherwise the
-    /// Wasm will be translated to the IR, caching the translation results, and then assembled.
-    pub(crate) fn compile_wasm_to_masm_program(&mut self) -> Result<(), String> {
-        use midenc_compile::CodegenOutput;
-        use midenc_hir::Context;
+    /// What `masm.lowered` publishes: the root module and its support modules, which is what the
+    /// package is assembled *from*. Its caller compares it across repeated builds to localize a
+    /// digest divergence — identical text means the divergence was introduced at assembly — so
+    /// it is only meaningful beside the package from the same run, and asks for a full build for
+    /// the same reason [`CompilerTest::hir`] does.
+    pub fn masm_src(&mut self) -> String {
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.masm_lowered
+            .clone()
+            .expect("the run must have published `masm.lowered`; this route does not reach it")
+    }
 
-        let mut src = None;
-        let mut masm_program = None;
-        let mut stage = |output: CodegenOutput, _context: Rc<Context>| {
-            src = Some(output.component.to_string());
-            if output.component.entrypoint.is_some() {
-                masm_program = Some(Arc::clone(&output.component));
-            }
-            Ok(output)
+    /// Compile this test's input **once**, to `goal`, capturing every artifact on the way.
+    ///
+    /// # One invocation, several artifacts
+    ///
+    /// This harness used to compile in two halves — `cargo` to WebAssembly, then a second
+    /// compilation of that WebAssembly under a project synthesized from the session — because it
+    /// once fed the intermediate outputs to expect-tests. Those became lit tests, and the
+    /// plumbing outlived them. The second compilation is what made the synthesized project
+    /// disagree with the crate's own manifest about namespace, target kind and dependencies,
+    /// which the assembler's root-module check turns into a hard error.
+    ///
+    /// So there is one invocation. Artifacts short of the goal are collected by an observer as
+    /// the run publishes them, which is also the only way to keep HIR at all: it is *rendered*
+    /// inside the callback, while the `Context` it points into is still alive.
+    ///
+    /// # Re-entry is refused rather than silently performed
+    ///
+    /// A second call with a goal the first run did not reach would need a second compilation,
+    /// which is the arrangement being removed. No test does it; if one starts to, it should say
+    /// so loudly rather than quietly paying for another build.
+    fn compile(&mut self, goal: Goal) {
+        if let Some(reached) = self.compiled_to {
+            assert!(
+                goal_is_reached_by(goal, reached),
+                "this harness compiles once: a run to '{}' cannot also serve a request for '{}'",
+                reached.checkpoint(),
+                goal.checkpoint(),
+            );
+            return;
+        }
+        self.compiled_to = Some(goal);
+
+        let input = self
+            .session
+            .input
+            .clone()
+            .expect("a compiler test must have an input to compile");
+        let observer = Rc::new(RefCell::new(ArtifactCollector::default()));
+        let request = CompilationRequest::new(self.session.clone(), input)
+            .with_observers(vec![observer.clone() as Rc<RefCell<dyn Observer>>])
+            .with_outputs(
+                OutputRequest::default()
+                    .with_stop_after(Some(goal.checkpoint().as_str().to_string())),
+            );
+
+        let mut registry = match self.session.package_registry() {
+            Ok(registry) => registry,
+            Err(err) => panic!("{}", format_report(err)),
         };
+        let outcome = Pipeline::with_default_frontends()
+            .unwrap_or_else(|err| panic!("{}", format_report(err)))
+            .compile(request, registry.as_mut());
 
-        let link_output = self.miden_component().clone();
-        let package = compile_link_output_to_masm_with_pre_assembly_stage(link_output, &mut stage)
-            .map_err(format_report)?
-            .unwrap_mast();
-
-        assert!(src.is_some(), "failed to pretty print masm artifact");
-        self.masm_src = src;
-        self.ir_masm_program = masm_program.map(Ok);
-        self.package = Some(Ok(package));
-        Ok(())
+        {
+            let mut collected = observer.borrow_mut();
+            self.hir_initial = collected.hir_initial.take();
+            self.hir_transformed = collected.hir_transformed.take();
+            self.masm_lowered = collected.masm_lowered.take();
+        }
+        self.package = match outcome {
+            Ok(outcome) if goal.checkpoint() == CheckpointId::PACKAGE_ASSEMBLED => {
+                Some(outcome.into_package().map_err(format_report))
+            }
+            Ok(_) => None,
+            Err(err) => Some(Err(format_report(err))),
+        };
     }
 }
 
+/// Whether a run that stopped at `reached` also satisfies a request for `wanted`.
+///
+/// Only the trivial case: the same checkpoint, or a full run, which passes every earlier
+/// checkpoint and therefore has had the chance to collect its artifact. Anything else needs a
+/// second compilation, which [`CompilerTest::compile`] refuses.
+fn goal_is_reached_by(wanted: Goal, reached: Goal) -> bool {
+    wanted == reached || reached.checkpoint() == CheckpointId::PACKAGE_ASSEMBLED
+}
+
+/// Collects the intermediate artifacts a test may ask for, as the run publishes them.
+///
+/// # Two ways to survive the run, and the raw-pointer constraint decides which
+///
+/// HIR operations hold only a raw pointer to the `Context` they were allocated in, and a pipeline
+/// run builds each target's HIR in a `Context` created per assembler callback. So a document is
+/// either **rendered here**, inside the callback, or the `Context` itself is **retained** —
+/// `Operation::context_rc` hands back an owning `Rc`, so a handle taken while the callback is
+/// running keeps the arena alive for as long as this collector lives. There is no third option: a
+/// component cloned out of an observer without its context would dangle.
+///
+/// Rendering is the cheaper of the two and is what the text accessors use. Retention is what
+/// `hir.transformed` needs, because [`CompilerTest::hir`]'s caller evaluates the component
+/// *after* the run returns, and that capability is the compiler's, not a test workaround.
+#[derive(Default)]
+struct ArtifactCollector {
+    /// The pre-rewrite HIR document, if the run reached `hir.initial`.
+    hir_initial: Option<String>,
+    /// The post-rewrite HIR component, and the `Context` that keeps it alive.
+    ///
+    /// The `Rc` is not decoration: dropping it invalidates the `ComponentRef` beside it.
+    hir_transformed: Option<(Rc<Context>, midenc_hir::dialects::builtin::ComponentRef)>,
+    /// The Miden Assembly handed to the assembler, if the run reached `masm.lowered`.
+    masm_lowered: Option<String>,
+}
+
+impl Observer for ArtifactCollector {
+    fn on_checkpoint(&mut self, checkpoint: CheckpointId, role: TargetRole, artifact: &Artifact) {
+        // Only the root target's artifacts: a dependency's HIR is not what the test asked about,
+        // and on a route where both are published the last one to arrive would win.
+        if !role.is_root() {
+            return;
+        }
+        if checkpoint == CheckpointId::HIR_INITIAL {
+            if let Some(hir) = artifact.downcast_ref::<midenc_compile::MidenComponent>() {
+                // The *component*, not the world that anchors it: that is the document these
+                // assertions were written against, and the world wrapper is not part of it.
+                // Component-less HIR falls back to the world, which is then the whole of it.
+                self.hir_initial = Some(match hir.component {
+                    Some(component) => component.borrow().as_operation().to_string(),
+                    None => hir.world.borrow().as_operation().to_string(),
+                });
+            }
+        } else if checkpoint == CheckpointId::HIR_TRANSFORMED {
+            if let Some(hir) = artifact.downcast_ref::<midenc_compile::MidenComponent>()
+                && let Some(component) = hir.component
+            {
+                // Taken from the **component**, not from the world that anchors it. The two
+                // share a `Context` today — `WasmFrontend::translate` builds both in the one
+                // it was handed — but that is an invariant of the frontend, not of this
+                // collector, and what has to stay alive is the arena the component is in.
+                // Reading it off the component makes the pair self-evidently matched, and the
+                // two are stored together so they cannot be separated. See this type's doc.
+                let context = component.borrow().as_operation().context_rc();
+                self.hir_transformed = Some((context, component));
+            }
+        } else if checkpoint == CheckpointId::MASM_LOWERED
+            && let Some(sources) = artifact.downcast_ref::<miden_assembly::ProjectSourceInputs>()
+        {
+            self.masm_lowered = Some(render_masm(sources));
+        }
+    }
+}
+
+/// Render the Miden Assembly a run handed to the assembler.
+///
+/// The root module first and the support modules after it, each as the assembler's own printer
+/// writes them. This is the text `masm.lowered` publishes — what is *about to be assembled* —
+/// rather than `--emit=masm`'s document, which is the lowered component the sources were derived
+/// from.
+fn render_masm(sources: &miden_assembly::ProjectSourceInputs) -> String {
+    let mut rendered = format!("{}", sources.root);
+    for module in &sources.support {
+        rendered.push('\n');
+        rendered.push_str(&format!("{module}"));
+    }
+    rendered
+}
+
+const CARGO_MANIFEST_DIR: &str = env!("CARGO_MANIFEST_DIR");
+
 fn stdlib_sys_crate_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = Path::new(CARGO_MANIFEST_DIR);
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("stdlib-sys")
 }
 
 /// Get the path to the `miden-sdk-alloc` crate
 pub fn sdk_alloc_crate_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = Path::new(CARGO_MANIFEST_DIR);
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("alloc")
 }
 
 /// Get the path to the `miden-sdk` crate
 pub fn sdk_crate_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap();
+    let cwd = Path::new(CARGO_MANIFEST_DIR);
     cwd.parent().unwrap().parent().unwrap().join("sdk").join("sdk")
 }
 
 /// Get the directory for the top-level workspace
 fn get_workspace_dir() -> String {
     // Get the directory for the integration test suite project
-    let cargo_manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-        .unwrap_or(std::env::current_dir().unwrap().to_str().unwrap().to_string());
-    let cargo_manifest_dir_path = Path::new(&cargo_manifest_dir);
+    let cargo_manifest_dir = Path::new(CARGO_MANIFEST_DIR);
     // "Exit" the integration test suite project directory to the compiler workspace directory
     // i.e. out of the `tests/integration` directory
     let compiler_workspace_dir =
-        cargo_manifest_dir_path.parent().unwrap().parent().unwrap().to_str().unwrap();
+        cargo_manifest_dir.parent().unwrap().parent().unwrap().to_str().unwrap();
     compiler_workspace_dir.to_string()
 }
 

@@ -6,7 +6,7 @@ pub(crate) fn assert_unique_protocol_export(
     expected_export_name: &str,
 ) {
     let matching_exports = package
-        .mast
+        .manifest
         .exports()
         .filter_map(|export| {
             let proc_export = export.as_procedure()?;

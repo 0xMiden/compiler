@@ -1,6 +1,7 @@
 mod debuginfo;
 
 use clap::{Subcommand, ValueEnum};
+use miden_mast_package::PackageDebugInfoError;
 
 /// Dump useful information from assembled Miden packages
 #[derive(Debug, Subcommand)]
@@ -35,6 +36,8 @@ pub enum DumpError {
     Parse(String),
     #[error("no debug_info section found in package")]
     NoDebugInfo,
+    #[error(transparent)]
+    InvalidDebugInfo(#[from] PackageDebugInfoError),
 }
 
 impl From<miden_core::serde::DeserializationError> for DumpError {

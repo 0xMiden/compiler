@@ -5,6 +5,7 @@ version = "0.1.0"
 [lib]
 kind = "tx-script"
 namespace = "miden:base/transaction-script@1.0.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"

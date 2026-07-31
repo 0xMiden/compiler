@@ -42,7 +42,7 @@ fn load_qw_with_offset_impl<T: QuadwordIO>() {
         );
 
         let output = eval_package::<T, _, _>(
-            &package,
+            package.clone(),
             initializers,
             &[Felt::new_unchecked(offs as u64)],
             context.session(),
@@ -103,7 +103,7 @@ where
 
             let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<T, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),

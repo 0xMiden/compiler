@@ -29,7 +29,7 @@ fn load_u16() {
 
             let args = [Felt::new_unchecked(write_to as u64)];
             let output = eval_package::<u16, _, _>(
-                &package,
+                package.clone(),
                 initializers,
                 &args,
                 context.session(),
@@ -112,7 +112,7 @@ macro_rules! define_unaligned_16bit_load_tests {
 
                 let args = [Felt::new_unchecked(read_from as u64)];
                 let output = eval_package::<$rust_ty, _, _>(
-                    &package,
+                    package.clone(),
                     initializers,
                     &args,
                     context.session(),

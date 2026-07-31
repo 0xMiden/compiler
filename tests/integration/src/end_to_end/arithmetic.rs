@@ -2,7 +2,6 @@ use std::any::type_name;
 
 use miden_core::Felt;
 use miden_debug::{DebugQuery, FromMidenRepr, ToMidenRepr, push_wasm_ty_to_operand_stack};
-use midenc_frontend_wasm::WasmTranslationConfig;
 use num_traits::{PrimInt, ToBytes};
 use proptest::{
     prelude::*,
@@ -39,7 +38,7 @@ macro_rules! test_bin_op {
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         a.push_to_operand_stack(&mut args);
                         b.push_to_operand_stack(&mut args);
-                        run_masm_vs_rust(rs_out, &package, &args, &test.session)
+                        run_masm_vs_rust(rs_out, package.clone(), &args, &test.session)
                     });
                 match res {
                     Err(TestError::Fail(err, value)) => {
@@ -84,7 +83,7 @@ macro_rules! test_wide_bin_op {
                     a.push_to_operand_stack(&mut args);
                     b.push_to_operand_stack(&mut args);
 
-                    eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+                    eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
                         let vm_out_bytes: [u8; 16] =
                             trace.read_from_rust_memory(out_addr)
                                 .expect("output was not written");
@@ -131,7 +130,7 @@ macro_rules! test_unary_op {
                         let rs_out = $op a;
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         a.push_to_operand_stack(&mut args);
-                        run_masm_vs_rust(rs_out, &package, &args, &test.session)
+                        run_masm_vs_rust(rs_out, package.clone(), &args, &test.session)
                     });
                 match res {
                     Err(TestError::Fail(_, value)) => {
@@ -165,7 +164,7 @@ macro_rules! test_func_two_arg {
                         let mut args = Vec::<midenc_hir::Felt>::default();
                         push_wasm_ty_to_operand_stack(a, &mut args);
                         push_wasm_ty_to_operand_stack(b, &mut args);
-                        run_masm_vs_rust(rust_out, &package, &args, &test.session)
+                        run_masm_vs_rust(rust_out, package.clone(), &args, &test.session)
                     });
                 match res {
                     Err(TestError::Fail(_, value)) => {
@@ -887,10 +886,7 @@ fn test_overflowing_arith<T>(
         a.{fn_name}(b)
     }}"#
     );
-    let config = WasmTranslationConfig::default();
-    let artifact_name = format!("test_{fn_name}_{ty_name}");
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
     let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
@@ -904,7 +900,7 @@ fn test_overflowing_arith<T>(
         push_wasm_ty_to_operand_stack(a, &mut args);
         push_wasm_ty_to_operand_stack(b, &mut args);
 
-        eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
             assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
             // At most 17 bytes are written to memory: ty_byte_size <= 16 and 1 byte for the bool.
@@ -947,10 +943,7 @@ where
         0
     }}"#
     );
-    let config = WasmTranslationConfig::default();
-    let artifact_name = format!("test_{fn_name}_{lhs_ty_name}_{rhs_ty_name}");
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
     let res = TestRunner::default().run(&strategy, move |(a, b)| {
@@ -963,7 +956,7 @@ where
         push_wasm_ty_to_operand_stack(a, &mut args);
         push_wasm_ty_to_operand_stack(b, &mut args);
 
-        eval_package::<u32, _, _>(&package, None, &args, &test.session, |trace| {
+        eval_package::<u32, _, _>(package.clone(), None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
             // At most 16 bytes are written to memory.
             assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
@@ -1004,10 +997,7 @@ fn test_checked_arith<T>(
         }}
     }}"#
     );
-    let config = WasmTranslationConfig::default();
-    let artifact_name = format!("test_{fn_name}_{ty_name}");
-    let mut test =
-        CompilerTest::rust_fn_body_with_stdlib_sys(artifact_name.clone(), &main_fn, config, None);
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
     let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
@@ -1024,7 +1014,7 @@ fn test_checked_arith<T>(
         push_wasm_ty_to_operand_stack(a, &mut args);
         push_wasm_ty_to_operand_stack(b, &mut args);
 
-        eval_package::<Felt, _, _>(&package, None, &args, &test.session, |trace| {
+        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
             assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
             // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.

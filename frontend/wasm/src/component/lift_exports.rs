@@ -437,6 +437,14 @@ fn annotate_protocol_export(
             let auth_attr = context.create_attribute::<UnitAttr, _>(());
             export_func.set_attribute("auth_script", auth_attr);
         }
+        Some(ProtocolExportKind::AccountProcedure) => {
+            let account_proc_attr = context.create_attribute::<UnitAttr, _>(());
+            export_func.set_attribute("account_procedure", account_proc_attr);
+        }
+        Some(ProtocolExportKind::TxScript) => {
+            let tx_script_attr = context.create_attribute::<UnitAttr, _>(());
+            export_func.set_attribute("transaction_script", tx_script_attr);
+        }
         None => {}
     }
 }

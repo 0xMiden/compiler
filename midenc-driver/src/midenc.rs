@@ -25,7 +25,7 @@ pub struct Midenc {
     /// The input file to compile
     ///
     /// You may specify `-` to read from stdin, otherwise you must provide a path
-    #[arg(value_name = "FILE")]
+    #[arg(value_name = "FILE", default_missing_value = "miden-project.toml")]
     input: Option<InputFile>,
     #[command(flatten)]
     options: compile::Compiler,

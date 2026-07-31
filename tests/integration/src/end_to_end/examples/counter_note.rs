@@ -36,7 +36,7 @@ fn counter_note() {
     // let mut exec = Executor::new(vec![]);
     // for dep_path in test.dependencies {
     //     let account_package =
-    //         Arc::new(Package::read_from_bytes(&std::fs::read(dep_path).unwrap()).unwrap());
+    //         Arc::new(Package::read_from_unchecked(&std::fs::read(dep_path).unwrap()).unwrap());
     //     exec.dependency_resolver_mut()
     //         .add(account_package.digest(), account_package.into());
     // }

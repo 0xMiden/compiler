@@ -102,7 +102,7 @@ fn run_index_switch_execution_test<BuildCase, BuildDefault, BuildResult>(
     for expectation in expectations {
         let selector = expectation.selector;
         let output = eval_package::<u32, _, _>(
-            &package,
+            package.clone(),
             None,
             &[Felt::from(selector)],
             context.session(),
@@ -518,7 +518,7 @@ fn index_switch_rust_enum_dispatch_regression() {
     for (which, expected) in [(0u32, 11u32), (1, 22), (2, 33)] {
         let args = [Felt::from(which)];
 
-        eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+        eval_package::<Felt, _, _>(package.clone(), [], &args, &test.session, |trace| {
             let res: Felt = trace.parse_result().unwrap();
             assert_eq!(res, Felt::from(expected));
             Ok(())

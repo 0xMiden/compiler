@@ -1,7 +1,6 @@
 use core::str::FromStr;
 use std::{
     boxed::Box,
-    collections::BTreeSet,
     path::{Path, PathBuf},
     rc::Rc,
     string::{String, ToString},
@@ -10,11 +9,10 @@ use std::{
 };
 
 use miden_assembly::SourceManager;
-use miden_package_registry::PackageStore;
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
 
-use crate::{CompilerResult, stages::Artifact};
+use crate::{CodegenOutput, CompilerResult};
 
 /// Cargo-specific options extracted from the `Compiler` struct.
 ///
@@ -105,6 +103,7 @@ impl CargoOptions {
     }
 }
 
+#[cfg(false)]
 pub fn load_cargo_based_source_dependencies(
     package: &miden_project::Package,
     dependency_graph: &miden_project::ProjectDependencyGraph,
@@ -155,15 +154,15 @@ pub fn load_cargo_based_source_dependencies(
                         ))
                     })?;
                     if target.path.is_none() {
-                        cargo_build(
+                        let package = cargo_build(
                             project_package.clone(),
                             target.inner(),
                             manifest_path.with_file_name("Cargo.toml"),
-                            registry,
                             options,
                             cargo_opts,
                             source_manager.clone(),
                         )?;
+                        registry.publish_package(package)?;
                     }
                 }
                 miden_project::ProjectSource::Virtual { .. } => {
@@ -176,19 +175,24 @@ pub fn load_cargo_based_source_dependencies(
     Ok(())
 }
 
-fn cargo_build(
-    package: Arc<miden_project::Package>,
+/// Build the dependency `target` of the project at `manifest_path` with `cargo`.
+///
+/// `package_name` names the package that declares `target`, and is the name the nested session is
+/// opened under. The package itself is not needed: the nested build loads the manifest it is
+/// pointed at, and the project *that* yields is the one it compiles.
+pub(crate) fn cargo_build(
+    package_name: String,
     target: &miden_project::Target,
     manifest_path: std::path::PathBuf,
-    registry: &mut midenc_session::registry::HybridPackageRegistry,
+    filesystem_cache_dir: Option<&std::path::Path>,
     options: &midenc_session::Options,
     cargo_opts: &CargoOptions,
-    source_manager: Arc<dyn SourceManager + Send + Sync>,
-) -> CompilerResult<Arc<miden_mast_package::Package>> {
-    let package_name = package.name().to_string();
+    source_manager: Arc<dyn SourceManager>,
+) -> CompilerResult<CodegenOutput> {
     // The directory of the dependency being compiled, captured before `manifest_path` is consumed
     // below. The compiled package is materialized under this directory's `target` (see the end of
     // this function).
+    /*
     let dependency_dir = manifest_path
         .parent()
         .ok_or_else(|| {
@@ -198,6 +202,7 @@ fn cargo_build(
             ))
         })?
         .to_path_buf();
+         */
     let mut nested_options = Box::new(midenc_session::Options {
         manifest_path: Some(manifest_path.clone()),
         target: Some(target.name.to_string()),
@@ -229,33 +234,43 @@ fn cargo_build(
         nested_options.profile = "release".to_string();
     }
 
-    let package = if target.ty.is_executable() {
-        midenc_session::fixup_targets(package, true)
-    } else {
-        package
-    };
-
-    let input = InputFile::from_path(manifest_path).unwrap();
+    let input = InputFile::from_path(manifest_path.clone()).unwrap();
     let session = Rc::new(Session::new_project(
         package_name.clone(),
         Some(input.clone()),
-        miden_project::Project::Package(package),
         nested_options,
         None,
         source_manager,
     ));
     let context = Rc::new(midenc_hir::Context::new(session));
 
+    crate::pipeline::frontends::rust::compile_manifest(
+        &manifest_path,
+        filesystem_cache_dir,
+        context,
+    )
     // We expect dependencies to *always* produce packages (.masp)
-    let Artifact::Assembled(package) = crate::cargo_project_pipeline(input, context)? else {
+    /*
+    let CodegenOutput {
+        component,
+        account_component_metadata_bytes,
+    } = crate::pipeline::frontends::rust::compile_manifest(&manifest_path, None, context.clone())?
+    else {
         panic!(
-            "expected cargo build of {package_name} to produce assembled artifact, but got HIR \
-             output instead",
+            "expected cargo build of {package_name} to produce component, but got HIR output \
+             instead",
         );
     };
 
-    registry.publish_package(package.clone())?;
+    Ok(CodegenOutput {
+        component,
+        account_component_metadata_bytes,
+    })
+     */
 
+    //component.source_inputs(target, context.session())
+
+    /*
     // Materialize the compiled dependency package on disk, in addition to publishing it to the
     // in-memory registry. A dependent crate that imports this dependency (e.g. via
     // `#[account(..)]`) resolves the dependency's `.masp` from disk while expanding its own Rust
@@ -275,6 +290,7 @@ fn cargo_build(
     })?;
 
     Ok(package)
+     */
 }
 
 /// Parse `cargo -Zscript`-style frontmatter from a given input string, if present.

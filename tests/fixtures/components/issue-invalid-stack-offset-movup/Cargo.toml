@@ -11,12 +11,6 @@ crate-type = ["cdylib"]
 [dependencies]
 miden = { path = "../../../../sdk/sdk" }
 
-[package.metadata.component]
-package = "miden:issue-invalid-stack-offset-movup"
-
-[package.metadata.miden]
-project-kind = "note-script"
-
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 

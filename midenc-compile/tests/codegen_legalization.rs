@@ -1,6 +1,7 @@
-use std::rc::Rc;
+use std::{path::Path, rc::Rc};
 
-use midenc_compile::{MidenComponent, Stage, stages::CodegenStage};
+use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
+use midenc_compile::{MidenComponent, pipeline::backend::codegen};
 use midenc_dialect_hir::HirOpBuilder;
 use midenc_hir::{
     BuilderExt, Context, Ident, OpBuilder, SourceSpan, Visibility,
@@ -11,27 +12,33 @@ use midenc_hir::{
     version::Version,
 };
 
+/// Code generation accepts a component built only from operations it can lower.
+///
+/// The two tests here are about [`codegen`]'s *legalization* step, which is the one phase that
+/// can reject HIR outright — so they call the backend phase directly rather than driving a
+/// compilation: there is no assembler, no project, and no route involved in the claim.
 #[test]
-fn codegen_stage_accepts_ops_legal_for_masm() {
+fn codegen_accepts_ops_legal_for_masm() {
     let context = Rc::new(Context::default());
     let component = build_test_component(context.clone(), |function_builder| {
         function_builder.ret(None, SourceSpan::UNKNOWN).unwrap();
     });
 
-    if let Err(err) = CodegenStage.run(component, context) {
+    if let Err(err) = codegen(component, context) {
         panic!("codegen unexpectedly rejected legal MASM IR: {err}");
     }
 }
 
+/// And it rejects one built from an operation that has no lowering, naming the operation.
 #[test]
-fn codegen_stage_fails_on_ops_not_legal_for_masm() {
+fn codegen_fails_on_ops_not_legal_for_masm() {
     let context = Rc::new(Context::default());
     let component = build_test_component(context.clone(), |function_builder| {
         let _bytes = function_builder.bytes(&[1, 2, 3, 4], SourceSpan::UNKNOWN).unwrap();
         function_builder.ret(None, SourceSpan::UNKNOWN).unwrap();
     });
 
-    let err = match CodegenStage.run(component, context) {
+    let err = match codegen(component, context) {
         Ok(_) => panic!("codegen unexpectedly accepted an unsupported HIR op"),
         Err(err) => err,
     };
@@ -72,5 +79,12 @@ fn build_test_component(
         world,
         component: Some(component),
         account_component_metadata_bytes: None,
+        source_provenance: ProjectSourceProvenanceInputs {
+            root: SourceFileProvenance {
+                path: Path::new(file!()).to_path_buf().into_boxed_path(),
+                content: String::new().into_boxed_str(),
+            },
+            support: Default::default(),
+        },
     }
 }

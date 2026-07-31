@@ -25,7 +25,8 @@ where
     F1: Fn(&S::Value) -> Vec<Felt>,
     F2: Fn(&S::Value) -> Result<Vec<i32>, TrapExpectation>,
 {
-    let program = assemble_test_program(proc_body);
+    let package = assemble_test_program(proc_body);
+    let program = package.unwrap_program();
 
     let res = NumericStrategy::<i32>::test_runner().run(&strategy, |input_tuple| {
         let expected_result = to_expected(&input_tuple);

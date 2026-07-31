@@ -5,21 +5,11 @@ sidebar_position: 5
 
 # Debugging programs
 
-A very useful tool in the Miden compiler suite, is its TUI-based interactive debugger, accessible
-via the `midenc debug` command.
-
-:::warning
-
-The debugger is still quite new, and while very useful already, it still has a fair number of
-UX annoyances. Please report any bugs you encounter, and we'll try to get them patched ASAP!
-
-:::
+A very useful tool in the Miden compiler suite, is its TUI-based interactive debugger, accessible via the `miden-debug` crate, which is available as the `miden debug` command in the `miden` CLI.
 
 ## Getting started
 
-The debugger is launched by executing `midenc debug`, and giving it a path to a program compiled
-by `midenc compile`. See [Program Inputs](#program-inputs) for information on how to provide inputs
-to the program you wish to debug. Run `midenc help debug` for more detailed usage documentation.
+The debugger is launched by executing `miden debug`, and giving it a path to a program compiled by `midenc`. See [Program Inputs](#program-inputs) for information on how to provide inputs to the program you wish to debug. Run `miden debug --help` for more detailed usage documentation.
 
 The debugger may also be used as a library, but that is left as an exercise for the reader for now.
 
@@ -27,10 +17,10 @@ The debugger may also be used as a library, but that is left as an exercise for 
 
 ```shell
 # Compile a program to MAST from a rustc-generated Wasm module
-midenc compile foo.wasm -o foo.masp
+midenc foo.wasm -o foo.masp
 
 # Load that program into the debugger and start executing it
-midenc debug foo.masp
+miden debug foo.masp
 ```
 
 ## Program inputs
@@ -38,7 +28,7 @@ midenc debug foo.masp
 To pass arguments to the program on the operand stack, or via the advice provider, you have two
 options, depending on the needs of the program:
 
-1. Pass arguments to `midenc debug` in the same order you wish them to appear on the stack. That
+1. Pass arguments to `miden debug` in the same order you wish them to appear on the stack. That
    is, the first argument you specify will be on top of the stack, and so on.
 2. Specify a configuration file from which to load inputs for the program, via the `--inputs` option.
 
@@ -48,7 +38,7 @@ To specify the contents of the operand stack, you can do so by following the raw
 Each operand must be a valid field element value, in either decimal or hexadecimal format. For example:
 
 ```shell
-midenc debug foo.masp -- 1 2 0xdeadbeef
+miden debug foo.masp -- 1 2 0xdeadbeef
 ```
 
 If you pass arguments via the command line in conjunction with `--inputs`, then the command line arguments
@@ -57,7 +47,7 @@ set of inputs, and then try out different arguments using the command line.
 
 ### Via inputs config
 
-While simply passing operands to the `midenc debug` command is useful, it only allows you to specify
+While simply passing operands to the `miden debug` command is useful, it only allows you to specify
 inputs to be passed via operand stack. To provide inputs via the advice provider, you will need to use
 the `--inputs` option. The configuration file expected by `--inputs` also lets you tweak the execution
 options for the VM, such as the maximum and expected cycle counts.

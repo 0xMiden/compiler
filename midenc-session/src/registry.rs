@@ -13,11 +13,18 @@ use miden_project::VersionRequirement;
 type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
 
 #[derive(Debug, thiserror::Error, Diagnostic)]
+#[non_exhaustive]
 enum InstallPackageError {
     #[error("package {package}@{version} is already registered under a different digest")]
     AlreadyInstalledWithDifferentDigest {
         package: PackageId,
         version: miden_project::Version,
+    },
+    #[cfg(any(test, feature = "std"))]
+    #[error("failed to write {package} to filesystem cache: {err}")]
+    FilesystemCacheInsertion {
+        package: PackageId,
+        err: std::io::Error,
     },
 }
 
@@ -31,31 +38,55 @@ enum InstallPackageError {
 pub struct HybridPackageRegistry {
     packages: FxHashMap<PackageId, PackageVersions>,
     artifacts: FxHashMap<PackageId, BTreeMap<miden_package_registry::Version, Arc<Package>>>,
+    #[cfg(any(test, feature = "std"))]
+    filesystem_cache: Option<std::path::PathBuf>,
 }
 
 impl HybridPackageRegistry {
+    #[cfg(any(test, feature = "std"))]
+    pub fn filesystem_cache_dir(&self) -> Option<&std::path::Path> {
+        self.filesystem_cache.as_deref()
+    }
+
     /// Get an empty, uninitialized registry
     pub fn empty() -> Self {
         Self {
             packages: Default::default(),
             artifacts: Default::default(),
+            filesystem_cache: None,
         }
     }
 
     /// Get a new instance of the registry, using the current compiler options
     #[cfg(any(test, feature = "std"))]
     pub fn new(options: &crate::Options) -> Result<Self, Report> {
+        Self::new_with_filesystem_cache(options, None)
+    }
+
+    /// Get a new instance of the registry, using the current compiler options and an optional
+    /// filesystem cache directory
+    #[cfg(any(test, feature = "std"))]
+    pub fn new_with_filesystem_cache(
+        options: &crate::Options,
+        filesystem_cache: Option<std::path::PathBuf>,
+    ) -> Result<Self, Report> {
+        use alloc::string::ToString;
+
         // Load system libraries
         let mut registry = if options.sysroot.is_some() {
             Self::from_local_registry(options)?
         } else {
             Self::empty()
         };
+        registry.filesystem_cache = filesystem_cache;
 
         // Load link libraries
         let core = crate::LinkLibrary::core();
+        let tx_kernel = crate::LinkLibrary::tx_kernel();
         let protocol = crate::LinkLibrary::protocol();
-        let implied_libraries = vec![&core, &protocol];
+        let implied_libraries = vec![&core, &tx_kernel, &protocol]
+            .into_iter()
+            .filter(|ll| !options.link_libraries.iter().any(|oll| oll.name == ll.name));
         let link_libraries = options.link_libraries.iter().chain(implied_libraries);
         for lib in link_libraries {
             let package = lib.load(options)?;
@@ -63,6 +94,7 @@ impl HybridPackageRegistry {
                 Ok(_) => (),
                 // Ignore duplicates when initializing the registry
                 Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }) => (),
+                Err(err) => return Err(Report::msg(err.to_string())),
             }
         }
 
@@ -81,6 +113,8 @@ impl HybridPackageRegistry {
     /// This returns an error if `--sysroot` was not provided/set.
     #[cfg(any(test, feature = "std"))]
     pub fn from_local_registry(options: &crate::Options) -> Result<Self, Report> {
+        use alloc::string::ToString;
+
         let Some(sysroot) = options.sysroot.as_deref() else {
             return Err(Report::msg(
                 "unable to load packages from local registry: --sysroot was not provided",
@@ -107,6 +141,7 @@ impl HybridPackageRegistry {
                 Ok(_) => (),
                 // Ignore duplicates when initializing the registry
                 Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }) => (),
+                Err(err) => return Err(Report::msg(err.to_string())),
             }
         }
 
@@ -120,6 +155,16 @@ impl HybridPackageRegistry {
         use alloc::collections::btree_map::Entry as BTreeMapEntry;
 
         use hashbrown::hash_map::Entry;
+
+        #[cfg(any(test, feature = "std"))]
+        if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
+            package.write_masp_file(filesystem_cache).map_err(|err| {
+                InstallPackageError::FilesystemCacheInsertion {
+                    package: package.name.clone(),
+                    err,
+                }
+            })?;
+        }
 
         let version = miden_project::Version::new(package.version.clone(), package.digest());
         log::trace!(target: "package-registry", "preparing to install package {}@{version}", &package.name);

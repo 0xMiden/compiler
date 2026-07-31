@@ -27,6 +27,7 @@ version = "0.0.1"
 [lib]
 kind = "tx-script"
 namespace = "miden:base/transaction-script@1.0.0"
+path = "src/lib.rs"
 "#
     );
     let cargo_toml = format!(

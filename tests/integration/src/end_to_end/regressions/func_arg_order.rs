@@ -71,6 +71,6 @@ fn func_arg_order() {
         Felt::ZERO,
     ];
 
-    eval_package::<Felt, _, _>(&test.compile_package(), [], &args, &test.session, |_trace| Ok(()))
+    eval_package::<Felt, _, _>(test.compile_package(), [], &args, &test.session, |_trace| Ok(()))
         .unwrap();
 }

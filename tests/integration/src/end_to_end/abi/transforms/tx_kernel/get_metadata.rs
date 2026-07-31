@@ -1,6 +1,6 @@
 use miden_debug::Executor;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_session::{STDLIB, diagnostics::Report};
+use midenc_session::diagnostics::Report;
 
 use crate::CompilerTestBuilder;
 
@@ -50,10 +50,8 @@ end
     let package = test.compile_package();
 
     let mut exec = Executor::new(vec![]);
-    let std_library = (*STDLIB).clone();
-    exec.dependency_resolver_mut().insert(*std_library.digest(), std_library);
-    exec.with_dependencies(package.manifest.dependencies())?;
+    exec.with_package(miden_core_lib::CoreLibrary::default().package()).unwrap();
 
-    let _ = exec.execute(&package.unwrap_program(), test.session.source_manager.clone());
+    let _ = exec.execute(package, test.session.source_manager.clone());
     Ok(())
 }

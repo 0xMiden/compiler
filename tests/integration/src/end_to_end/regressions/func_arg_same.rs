@@ -33,7 +33,7 @@ fn func_arg_same() {
 
     // Test 1: addr1 is passed as x and should be returned
     let args1 = [Felt::from(addr1), Felt::from(addr2)];
-    eval_package::<i32, _, _>(&package, [], &args1, &test.session, |trace| {
+    eval_package::<i32, _, _>(package.clone(), [], &args1, &test.session, |trace| {
         let result: u32 = trace.parse_result().unwrap();
         assert_eq!(result, addr1);
         Ok(())
@@ -42,7 +42,7 @@ fn func_arg_same() {
 
     // Test 1: addr2 is passed as x and should be returned
     let args2 = [Felt::from(addr2), Felt::from(addr1)];
-    eval_package::<i32, _, _>(&package, [], &args2, &test.session, |trace| {
+    eval_package::<i32, _, _>(package.clone(), [], &args2, &test.session, |trace| {
         let result: u32 = trace.parse_result().unwrap();
         assert_eq!(result, addr2);
         Ok(())

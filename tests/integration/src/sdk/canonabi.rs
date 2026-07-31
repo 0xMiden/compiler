@@ -2,9 +2,6 @@
 
 use std::{fs, path::Path};
 
-use miden_core::program::Program;
-use miden_mast_package::Package;
-use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::{
     CompilerTest, CompilerTestBuilder, Project, cargo_proj::project, compiler_test::sdk_crate_path,
@@ -95,6 +92,7 @@ version = "0.1.0"
 [lib]
 kind = "account-component"
 namespace = "miden:{account_slug}/canonabi-component@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
@@ -169,6 +167,7 @@ version = "0.1.0"
 [lib]
 kind = "note"
 namespace = "miden:{note_slug}/miden-{note_slug}@0.1.0"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
@@ -223,13 +222,6 @@ fn build_generated_test(root: impl AsRef<Path>) -> CompilerTest {
     builder.build()
 }
 
-/// Rebuilds an executable program from a compiled note-script package.
-fn note_script_program(package: &Package) -> Program {
-    let note_script =
-        NoteScript::from_package(package).expect("compiled package should contain a note script");
-    Program::new(note_script.mast(), note_script.entrypoint())
-}
-
 /// Reads the single generated WIT file emitted by the account project.
 fn read_generated_wit(project: &Project) -> String {
     let generated_wit_dir = project.root().join("target/generated-wit");
@@ -268,13 +260,10 @@ fn run_canonabi_case(
     let note_package = note_test.compile_package();
     assert!(note_package.is_library());
 
-    let program = note_script_program(note_package.as_ref());
-    let mut exec = executor_with_std(vec![], None);
-    exec.dependency_resolver_mut()
-        .insert(*account_package.mast.digest(), account_package.mast.clone());
-    exec.with_dependencies(note_package.manifest.dependencies())
-        .expect("failed to add generated note dependencies");
-    let _trace = exec.execute(&program, note_test.session.source_manager.clone());
+    let program = super::note_script_program(note_package);
+    let mut exec = executor_with_std(vec![]);
+    exec.with_package(account_package).expect("failed to add account package");
+    let _trace = exec.execute(program, note_test.session.source_manager.clone());
 }
 
 /// Indents every line of `source` by `spaces`.

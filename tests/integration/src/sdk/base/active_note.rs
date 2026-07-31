@@ -24,6 +24,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
@@ -154,11 +155,11 @@ fn active_note_get_storage_binding() {
 }
 
 #[test]
-fn active_note_get_assets_binding() {
+fn active_note_get_initial_assets_binding() {
     run_active_note_binding_test(
-        "active_note_get_assets_binding",
+        "active_note_get_initial_assets_binding",
         "pub fn binding(&self) -> Felt {
-        let assets = active_note::get_assets();
+        let assets = active_note::get_initial_assets();
         Felt::new(assets.len() as u64).unwrap()
     }",
     );

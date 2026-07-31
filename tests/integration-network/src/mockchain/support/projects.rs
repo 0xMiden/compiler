@@ -25,6 +25,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
@@ -108,6 +109,7 @@ version = "0.0.1"
 [lib]
 kind = "note"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
@@ -121,21 +123,15 @@ miden-protocol = "*"
 /// Returns the generated note `Cargo.toml` with one Miden dependency.
 pub(crate) fn note_cargo_toml_for_dependency(
     note_name: &str,
-    note_package: &str,
     dependency_package: &str,
     dependency_root: &Path,
 ) -> String {
-    note_cargo_toml_for_dependencies(
-        note_name,
-        note_package,
-        &[(dependency_package, dependency_root)],
-    )
+    note_cargo_toml_for_dependencies(note_name, &[(dependency_package, dependency_root)])
 }
 
 /// Returns the generated note `Cargo.toml` with the given Miden dependencies.
 pub(crate) fn note_cargo_toml_for_dependencies(
     note_name: &str,
-    note_package: &str,
     dependencies: &[(&str, &Path)],
 ) -> String {
     let sdk_path = sdk_crate_path();
@@ -154,12 +150,6 @@ crate-type = ["cdylib"]
 [dependencies]
 miden = {{ path = "{sdk_path}", features = ["internal-wit-emit"] }}
 
-[package.metadata.miden]
-project-kind = "note-script"
-
-[package.metadata.component]
-package = "{note_package}"
-
 [profile.release]
 opt-level = "z"
 panic = "abort"
@@ -174,7 +164,6 @@ debug = false
 "#,
         sdk_path = sdk_path.display(),
         note_name = note_name,
-        note_package = note_package,
     );
     append_cargo_dependency_metadata(&mut manifest, dependencies);
     manifest

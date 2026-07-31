@@ -24,6 +24,7 @@ version = "0.0.1"
 [lib]
 kind = "account-component"
 namespace = "{namespace}"
+path = "src/lib.rs"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
@@ -72,22 +73,22 @@ trim-paths = ["diagnostics", "object"]
 }
 
 #[test]
-fn input_note_get_assets_info_binding() {
+fn input_note_get_initial_assets_info_binding() {
     run_input_note_binding_test(
-        "input_note_get_assets_info_binding",
+        "input_note_get_initial_assets_info_binding",
         "pub fn binding(&self) -> Felt {
-        let info = input_note::get_assets_info(NoteIdx { inner: Felt::new(0).unwrap() });
+        let info = input_note::get_initial_assets_info(NoteIdx { inner: Felt::new(0).unwrap() });
         info.num_assets
     }",
     );
 }
 
 #[test]
-fn input_note_get_assets_binding() {
+fn input_note_get_initial_assets_binding() {
     run_input_note_binding_test(
-        "input_note_get_assets_binding",
+        "input_note_get_initial_assets_binding",
         "pub fn binding(&self) -> Felt {
-        let assets = input_note::get_assets(NoteIdx { inner: Felt::new(0).unwrap() });
+        let assets = input_note::get_initial_assets(NoteIdx { inner: Felt::new(0).unwrap() });
         Felt::new(assets.len() as u64).unwrap()
     }",
     );

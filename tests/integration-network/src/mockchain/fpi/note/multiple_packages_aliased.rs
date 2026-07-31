@@ -138,6 +138,7 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the stored counter value.
+    #[account_procedure]
     fn get_count(&self) -> Felt;
 }
 

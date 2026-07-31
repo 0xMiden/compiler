@@ -13,11 +13,11 @@ const MAX_ATTACHMENT_WORDS: usize = 256;
 #[allow(improper_ctypes)]
 unsafe extern "C" {
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::input_note::get_assets_info"]
-    fn extern_input_note_get_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
+    #[link_name = "miden::protocol::input_note::get_initial_assets_info"]
+    fn extern_input_note_get_initial_assets_info(note_index: Felt, ptr: *mut (Word, Felt));
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
-    #[link_name = "miden::protocol::input_note::get_assets"]
-    fn extern_input_note_get_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
+    #[link_name = "miden::protocol::input_note::get_initial_assets"]
+    fn extern_input_note_get_initial_assets(dest_ptr: *mut Felt, note_index: Felt) -> usize;
     #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
     #[link_name = "miden::protocol::input_note::get_recipient"]
     fn extern_input_note_get_recipient(note_index: Felt, ptr: *mut Recipient);
@@ -80,11 +80,13 @@ pub struct InputNoteStorageInfo {
     pub num_storage_items: Felt,
 }
 
-/// Returns the assets commitment and asset count for the input note at `note_index`.
-pub fn get_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
+/// Returns the initial assets commitment and asset count for the input note at `note_index`.
+///
+/// These describe the note's assets at creation time, unaffected by in-transaction removal.
+pub fn get_initial_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
     unsafe {
         let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<(Word, Felt)>::uninit());
-        extern_input_note_get_assets_info(note_index.inner, ret_area.as_mut_ptr());
+        extern_input_note_get_initial_assets_info(note_index.inner, ret_area.as_mut_ptr());
         let (commitment, num_assets) = ret_area.into_inner().assume_init();
         InputNoteAssetsInfo {
             commitment,
@@ -93,13 +95,15 @@ pub fn get_assets_info(note_index: NoteIdx) -> InputNoteAssetsInfo {
     }
 }
 
-/// Returns the assets contained in the input note at `note_index`.
-pub fn get_assets(note_index: NoteIdx) -> Vec<Asset> {
+/// Returns the initial assets contained in the input note at `note_index`.
+///
+/// These are the note's assets at creation time, unaffected by in-transaction removal.
+pub fn get_initial_assets(note_index: NoteIdx) -> Vec<Asset> {
     const MAX_ASSETS: usize = 256;
     let mut assets: Vec<Asset> = Vec::with_capacity(MAX_ASSETS);
     let num_assets = unsafe {
         let ptr = (assets.as_mut_ptr() as usize) / 4;
-        extern_input_note_get_assets(ptr as *mut Felt, note_index.inner)
+        extern_input_note_get_initial_assets(ptr as *mut Felt, note_index.inner)
     };
     unsafe {
         assets.set_len(num_assets);

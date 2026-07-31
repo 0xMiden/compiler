@@ -27,11 +27,10 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     }
 
     let examples = workspace_root().join("examples");
-    let basic_wallet_dir = examples.join("basic-wallet");
     let p2id_note_dir = examples.join("p2id-note");
 
     // The materialized dependency package we expect `cargo miden build` to produce on disk.
-    let dep_release_dir = basic_wallet_dir.join("target").join("miden").join("release");
+    let dep_release_dir = p2id_note_dir.join("target").join("miden").join("packages");
     let dep_package = dep_release_dir.join("basic-wallet.masp");
 
     // Make sure the basic-wallet dependency package is not already materialized on disk, so that we

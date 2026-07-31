@@ -18,8 +18,7 @@ mod stack;
 
 pub mod masm {
     pub use miden_assembly_syntax::{
-        KernelLibrary, Library, Path as LibraryPathRef, PathBuf as LibraryPath,
-        PathComponent as LibraryPathComponent,
+        Path as LibraryPathRef, PathBuf as LibraryPath, PathComponent as LibraryPathComponent,
         ast::*,
         debuginfo::{SourceSpan, Span, Spanned},
         parser::{IntValue, PushValue},
@@ -40,7 +39,7 @@ use midenc_hir::{
 pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
-    events::{TRACE_FRAME_END, TRACE_FRAME_START, TRACE_PRINT_LN, TraceEvent},
+    events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
     legalization::{LegalizeForMasm, masm_legalization_target, populate_masm_legalization_target},
     lower::{NativePtr, ToMasmComponent},
     stack::{Constraint, Operand, OperandStack},

@@ -107,7 +107,7 @@ fn test_felt_reader() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_word: [TestFelt; 4] = trace
             .read_from_rust_memory(out_byte_addr)
             .expect("Failed to read result from memory");
@@ -179,7 +179,7 @@ fn test_two_felts_struct_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 2);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TwoFelts::from_felt_repr(&mut reader).unwrap();
@@ -255,7 +255,7 @@ fn test_five_felts_struct_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 5);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = FiveFelts::from_felt_repr(&mut reader).unwrap();
@@ -341,7 +341,7 @@ fn test_minimal_u64_bug() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 6);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = MinimalU64Bug::from_felt_repr(&mut reader).unwrap();
@@ -426,7 +426,7 @@ fn test_mixed_types_no_u64_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 6);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = MixedTypesNoU64::from_felt_repr(&mut reader).unwrap();
@@ -528,7 +528,7 @@ fn test_nested_struct_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 7);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = Outer::from_felt_repr(&mut reader).unwrap();
@@ -605,7 +605,7 @@ fn test_enum_unit_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 2);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = Wrapper::from_felt_repr(&mut reader).unwrap();
@@ -667,7 +667,7 @@ fn test_enum_tuple_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 3);
         let mut reader = FeltReader::new(&result_felts);
         let result_enum = MixedEnum::from_felt_repr(&mut reader).unwrap();
@@ -762,7 +762,7 @@ fn test_struct_with_enum_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 6);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = Outer::from_felt_repr(&mut reader).unwrap();
@@ -852,7 +852,7 @@ fn test_enum_nested_with_struct_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 7);
         let mut reader = FeltReader::new(&result_felts);
         let result_enum = Top::from_felt_repr(&mut reader).unwrap();
@@ -928,28 +928,30 @@ fn test_struct_with_option_round_trip() {
         miden_core::Felt::new_unchecked(out_byte_addr as u64),
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_felts = read_vec_felts(trace, out_byte_addr, serialized_none.len());
-        let mut reader = FeltReader::new(&result_felts);
-        let result_struct = WithOption::from_felt_repr(&mut reader).unwrap();
-        assert_eq!(result_struct, original_none, "Option round-trip (None) failed");
-        Ok(())
-    })
-    .unwrap();
+    let _: miden_core::Felt =
+        eval_package(package.clone(), initializers, &args, &test.session, |trace| {
+            let result_felts = read_vec_felts(trace, out_byte_addr, serialized_none.len());
+            let mut reader = FeltReader::new(&result_felts);
+            let result_struct = WithOption::from_felt_repr(&mut reader).unwrap();
+            assert_eq!(result_struct, original_none, "Option round-trip (None) failed");
+            Ok(())
+        })
+        .unwrap();
 
     // Case 2: Some
     let initializers = [Initializer::MemoryFelts {
         addr: in_elem_addr,
         felts: Cow::from(to_core_felts(&serialized_some)),
     }];
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
-        let result_felts = read_vec_felts(trace, out_byte_addr, serialized_some.len());
-        let mut reader = FeltReader::new(&result_felts);
-        let result_struct = WithOption::from_felt_repr(&mut reader).unwrap();
-        assert_eq!(result_struct, original_some, "Option round-trip (Some) failed");
-        Ok(())
-    })
-    .unwrap();
+    let _: miden_core::Felt =
+        eval_package(package.clone(), initializers, &args, &test.session, |trace| {
+            let result_felts = read_vec_felts(trace, out_byte_addr, serialized_some.len());
+            let mut reader = FeltReader::new(&result_felts);
+            let result_struct = WithOption::from_felt_repr(&mut reader).unwrap();
+            assert_eq!(result_struct, original_some, "Option round-trip (Some) failed");
+            Ok(())
+        })
+        .unwrap();
 }
 
 /// Test struct containing a `Vec` field for on-chain/off-chain round-trip tests.
@@ -1005,7 +1007,7 @@ fn test_struct_with_vec_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 6);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = WithVec::from_felt_repr(&mut reader).unwrap();
@@ -1063,7 +1065,7 @@ fn test_tuple_struct_round_trip() {
         miden_core::Felt::new_unchecked(in_byte_addr as u64),
     ];
 
-    let _: miden_core::Felt = eval_package(&package, initializers, &args, &test.session, |trace| {
+    let _: miden_core::Felt = eval_package(package, initializers, &args, &test.session, |trace| {
         let result_felts = read_vec_felts(trace, out_byte_addr, 3);
         let mut reader = FeltReader::new(&result_felts);
         let result_struct = TupleStruct::from_felt_repr(&mut reader).unwrap();

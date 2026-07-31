@@ -94,6 +94,23 @@ pub struct Component {
 }
 
 impl OpPrinter for Component {
+    /// TODO(hir): what this prints does not parse back.
+    ///
+    /// A [ComponentId] renders as `<namespace>:<name>@<version>`, which is **one** symbol-path
+    /// component — the `:` and the `@` are part of the name, and `ComponentId::try_from` splits
+    /// them back out itself. `print_symbol_name` emits it bare, so a printed component reads
+    /// `@hir_ns:test@1.0.0`, while [`Component`]'s parser requires the quoted form
+    /// `@"hir_ns:test@1.0.0"` and rejects the bare one with "invalid component id: missing
+    /// namespace identifier".
+    ///
+    /// The consequence is concrete: `midenc --emit=hir` output for anything holding a component
+    /// cannot be fed back to `midenc`, which is the one thing the `.hir` input route exists for.
+    /// A world of plain modules round-trips; a world holding a component does not, for this
+    /// reason alone. See the fixture notes on `WORLD` in
+    /// `midenc-compile/src/pipeline/frontends/hir.rs`, which is hand-quoted because of this.
+    ///
+    /// Fixing it means quoting here when the id is not a bare identifier — not relaxing the
+    /// parser, which is right to insist the name be one component.
     fn print(&self, printer: &mut AsmPrinter<'_>) {
         use alloc::string::ToString;
 

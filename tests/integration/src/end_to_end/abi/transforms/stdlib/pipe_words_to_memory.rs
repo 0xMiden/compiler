@@ -86,7 +86,7 @@ fn pipe_words_to_memory() {
             ];
 
             eval_package_with_advice_stack::<Felt, _, _, _>(
-                &package,
+                package.clone(),
                 [],
                 advice_stack,
                 &args,

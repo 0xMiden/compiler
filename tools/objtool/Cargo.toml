@@ -24,7 +24,6 @@ test = false
 bench = false
 
 [dependencies]
-anyhow.workspace = true
 clap.workspace = true
 miden-assembly-syntax = { workspace = true, features = ["std"] }
 miden-core.workspace = true

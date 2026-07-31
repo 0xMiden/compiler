@@ -40,6 +40,10 @@ const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
 /// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
 const AUTH_SCRIPT_MARKER_ATTR: &str = "miden_auth_script_requires_component";
+/// Attribute name used to mark an account-interface procedure on a component method.
+const ACCOUNT_PROCEDURE_ATTR: &str = "account_procedure";
+/// Helper attribute preserved by `#[account_procedure]` so `#[component]` can recognize the method.
+const ACCOUNT_PROCEDURE_MARKER_ATTR: &str = "miden_account_procedure_requires_component";
 /// Name of the hidden associated constant injected into `#[component]` traits.
 ///
 /// The trait implementation expansion references this constant through the implemented trait (see
@@ -259,6 +263,80 @@ pub fn expand_auth_script(
     quote!(#item_fn).into()
 }
 
+/// Expands `#[account_procedure]`.
+///
+/// This attribute must be applied to a method inside a `trait` annotated with `#[component]`. It
+/// acts as a marker for `#[component]` so the macro can emit frontend metadata marking the
+/// annotated export as part of the account interface without rewriting its user-defined name.
+pub fn expand_account_procedure(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    if !attr.is_empty() {
+        return syn::Error::new(
+            Span2::call_site(),
+            "#[account_procedure] does not accept arguments",
+        )
+        .into_compile_error()
+        .into();
+    }
+
+    let item_tokens: TokenStream2 = item.clone().into();
+    let mut item_fn: TraitItemFn = match syn::parse2(item_tokens.clone()) {
+        Ok(item_fn) => item_fn,
+        Err(_) => {
+            if let Ok(item_fn) = syn::parse2::<ImplItemFn>(item_tokens.clone()) {
+                return syn::Error::new(
+                    item_fn.sig.span(),
+                    "`#[account_procedure]` must be applied to a method inside a `#[component]` \
+                     `trait`, not the implementation block",
+                )
+                .into_compile_error()
+                .into();
+            }
+
+            if let Ok(item_fn) = syn::parse2::<syn::ItemFn>(item_tokens.clone()) {
+                return syn::Error::new(
+                    item_fn.sig.span(),
+                    "`#[account_procedure]` must be applied to a method inside a `#[component]` \
+                     `trait`",
+                )
+                .into_compile_error()
+                .into();
+            }
+
+            return syn::Error::new(
+                Span2::call_site(),
+                "`#[account_procedure]` must be applied to a method inside a `#[component]` \
+                 `trait`",
+            )
+            .into_compile_error()
+            .into();
+        }
+    };
+
+    // `TraitItemFn` parses any visibility-less method with a body (the body reads as a default),
+    // which is exactly what new-style impl blocks contain — so the dedicated `ImplItemFn` branch
+    // above is unreachable for them. A body is never valid on an `#[account_procedure]` declaration
+    // (component traits reject default bodies), so reject it here with the placement guidance.
+    if item_fn.default.is_some() {
+        return syn::Error::new(
+            item_fn.sig.span(),
+            "`#[account_procedure]` must be applied to a method inside a `#[component]` `trait`, \
+             not the implementation block",
+        )
+        .into_compile_error()
+        .into();
+    }
+
+    // Preserve a helper attribute for `#[component]` to consume. If the surrounding trait forgets
+    // `#[component]`, rustc rejects this unknown helper attribute instead of silently compiling a
+    // method that emits no account-procedure metadata.
+    let marker_attr = format_ident!("{}", ACCOUNT_PROCEDURE_MARKER_ATTR);
+    item_fn.attrs.push(syn::parse_quote!(#[#marker_attr]));
+    quote!(#item_fn).into()
+}
+
 /// Expands the `#[component_storage]` attribute applied to a struct by wiring storage metadata and
 /// link section exports.
 fn expand_component_storage(
@@ -388,6 +466,7 @@ fn expand_component_trait(
     validate_namespace_matches_interface(&metadata, &package_name, &interface_name, &trait_ident)?;
 
     let mut auth_method_idents = Vec::new();
+    let mut account_procedure_idents = Vec::new();
     let mut method_count = 0usize;
 
     for item in &mut input_trait.items {
@@ -407,8 +486,11 @@ fn expand_component_trait(
         }
 
         let is_auth_script = has_auth_script_marker_attr(&method.attrs);
-        // Strip the marker so the re-emitted trait does not carry the helper attribute.
-        method.attrs.retain(|attr| !is_auth_script_marker_attr(attr));
+        let is_account_procedure = has_account_procedure_marker_attr(&method.attrs);
+        // Strip the markers so the re-emitted trait does not carry the helper attributes.
+        method.attrs.retain(|attr| {
+            !is_auth_script_marker_attr(attr) && !is_account_procedure_marker_attr(attr)
+        });
 
         // Structural validation only: custom types may not be registered yet when the trait
         // expands, so type mapping is deferred to the implementation expansion.
@@ -416,6 +498,9 @@ fn expand_component_trait(
         if is_auth_script {
             validate_auth_script_signature(&method.sig, &args)?;
             auth_method_idents.push(method.sig.ident.clone());
+        }
+        if is_account_procedure {
+            account_procedure_idents.push(method.sig.ident.clone());
         }
         method_count += 1;
     }
@@ -427,6 +512,20 @@ fn expand_component_trait(
         ));
     }
 
+    // `#[auth_script]` and `#[account_procedure]` belong to different project kinds and cannot be
+    // combined in one component: an authentication component's `#[auth_script]` method is its
+    // account interface implicitly, whereas a regular account component marks its interface
+    // procedures with `#[account_procedure]`.
+    if !auth_method_idents.is_empty() && !account_procedure_idents.is_empty() {
+        return Err(syn::Error::new(
+            trait_ident.span(),
+            "a component cannot combine `#[auth_script]` and `#[account_procedure]`: \
+             `#[auth_script]` is the interface of an authentication component (its auth method is \
+             the account interface implicitly), while `#[account_procedure]` marks the interface \
+             procedures of a regular account component",
+        ));
+    }
+
     validate_auth_script_count(
         metadata.target.ty,
         metadata.requires_auth_script(),
@@ -434,19 +533,26 @@ fn expand_component_trait(
         input_trait.span(),
     )?;
 
-    // `#[auth_script]` lives on the trait method because auth-ness is part of the component's
-    // contract, not its behavior — the API reader should see which method is the auth entrypoint.
-    // That placement forces the metadata to be emitted here: the impl expansion cannot know which
-    // method is the auth entrypoint without trait→impl state, which this design deliberately has
-    // none of. This is the one API-derived artifact the trait expansion emits; everything derived
-    // from the implementation (WIT, bindings, exports) is generated at the impl expansion.
-    let frontend_link_section = auth_method_idents.first().map_or_else(
-        || quote! {},
-        |auth_ident| {
-            let metadata = auth_script_frontend_metadata(&trait_ident, auth_ident);
-            generate_frontend_link_section(&metadata)
-        },
-    );
+    // `#[auth_script]` and `#[account_procedure]` live on the trait methods because account-
+    // interface membership is part of the component's contract, not its behavior — the API reader
+    // should see which methods are account procedures. That placement forces the metadata to be
+    // emitted here: the impl expansion cannot know which methods are marked without trait→impl
+    // state, which this design deliberately has none of. This is the one API-derived artifact the
+    // trait expansion emits; everything derived from the implementation (WIT, bindings, exports) is
+    // generated at the impl expansion.
+    let mut frontend_metadata_entries = Vec::new();
+    if let Some(auth_ident) = auth_method_idents.first() {
+        frontend_metadata_entries.push(auth_script_frontend_metadata(&trait_ident, auth_ident));
+    }
+    for account_ident in &account_procedure_idents {
+        frontend_metadata_entries
+            .push(account_procedure_frontend_metadata(&trait_ident, account_ident));
+    }
+    let frontend_link_section = if frontend_metadata_entries.is_empty() {
+        quote! {}
+    } else {
+        generate_frontend_link_section(&frontend_metadata_entries)
+    };
 
     // Inject the hidden handshake constant consumed by the implementation expansion (see
     // `render_trait_marker_check`).
@@ -541,14 +647,21 @@ fn expand_component_trait_impl(
         let ImplItem::Fn(method) = item else {
             continue;
         };
-        // This outer `#[component]` expansion sees the raw `#[auth_script]` tokens before the
-        // standalone attribute macro would run, so stripping the marker here would silently
-        // discard a misplaced annotation; reject it with the same guidance instead.
+        // This outer `#[component]` expansion sees the raw `#[auth_script]` / `#[account_procedure]`
+        // tokens before the standalone attribute macros would run, so stripping the markers here
+        // would silently discard a misplaced annotation; reject it with the same guidance instead.
         if has_auth_script_marker_attr(&method.attrs) {
             return Err(syn::Error::new(
                 method.sig.ident.span(),
                 "`#[auth_script]` must be applied to a method inside a `#[component]` `trait`, \
                  not the implementation block",
+            ));
+        }
+        if has_account_procedure_marker_attr(&method.attrs) {
+            return Err(syn::Error::new(
+                method.sig.ident.span(),
+                "`#[account_procedure]` must be applied to a method inside a `#[component]` \
+                 `trait`, not the implementation block",
             ));
         }
         let (parsed_method, imports) =
@@ -1264,6 +1377,20 @@ fn auth_script_frontend_metadata(
     }
 }
 
+/// Builds frontend metadata for a single `#[account_procedure]` method exported by a component.
+///
+/// `method_path` is diagnostic-only (used in error messages), so the trait-qualified path is
+/// sufficient; `export_name` is the WIT export name matched against the lifted component export.
+fn account_procedure_frontend_metadata(
+    trait_ident: &syn::Ident,
+    account_method_ident: &syn::Ident,
+) -> FrontendMetadata {
+    FrontendMetadata::AccountProcedure {
+        method_path: format!("{trait_ident}::{account_method_ident}"),
+        export_name: to_kebab_case(&account_method_ident.to_string()),
+    }
+}
+
 /// Emits the static metadata blob inside the `rodata,miden_account` link section.
 fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
     let link_section_bytes_len = metadata_bytes.len();
@@ -1284,6 +1411,17 @@ fn generate_link_section(metadata_bytes: &[u8]) -> proc_macro2::TokenStream {
 /// Returns true if any authentication marker attribute is present.
 fn has_auth_script_marker_attr(attrs: &[Attribute]) -> bool {
     attrs.iter().any(is_auth_script_marker_attr)
+}
+
+/// Returns true if any account-procedure marker attribute is present.
+fn has_account_procedure_marker_attr(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(is_account_procedure_marker_attr)
+}
+
+/// Returns true if an attribute marks a method as an account-interface procedure.
+fn is_account_procedure_marker_attr(attr: &Attribute) -> bool {
+    is_attr_named(attr, ACCOUNT_PROCEDURE_ATTR)
+        || is_attr_named(attr, ACCOUNT_PROCEDURE_MARKER_ATTR)
 }
 
 fn is_attr_named(attr: &Attribute, name: &str) -> bool {
@@ -1472,7 +1610,7 @@ mod tests {
         let trait_ident = format_ident!("AuthComponent");
         let method_ident = format_ident!("whatever_name");
         let metadata = auth_script_frontend_metadata(&trait_ident, &method_ident);
-        let tokens = generate_frontend_link_section(&metadata).to_string();
+        let tokens = generate_frontend_link_section(&[metadata]).to_string();
 
         assert!(tokens.contains(crate::util::FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL));
     }
@@ -1490,6 +1628,31 @@ mod tests {
                 export_name: "whatever-name".into(),
             }
         );
+    }
+
+    #[test]
+    fn account_procedure_frontend_metadata_stores_method_path() {
+        let trait_ident = format_ident!("BasicWallet");
+        let method_ident = format_ident!("receive_asset");
+        let metadata = account_procedure_frontend_metadata(&trait_ident, &method_ident);
+
+        assert_eq!(
+            metadata,
+            FrontendMetadata::AccountProcedure {
+                method_path: "BasicWallet::receive_asset".into(),
+                export_name: "receive-asset".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn account_procedure_marker_accepts_helper_attribute() {
+        let method: TraitItemFn = parse_quote! {
+            #[miden_account_procedure_requires_component]
+            fn receive_asset(&mut self, asset: Asset);
+        };
+
+        assert!(has_account_procedure_marker_attr(&method.attrs));
     }
 
     #[test]

@@ -31,7 +31,6 @@ miden-debug = { workspace = true, features = ["proptest", "tui"] }
 midenc-expect-test.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-hir = { workspace = true, features = ["logging"] }
-midenc-codegen-masm.workspace = true
 midenc-session.workspace = true
 midenc-compile.workspace = true
 proptest.workspace = true

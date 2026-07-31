@@ -59,7 +59,7 @@ fn i32_extend8_s() {
         assert_eq!(((input as i8) as i32) as u32, expected_out, "invalid test case");
 
         eval_package::<u32, _, _>(
-            &package,
+            package.clone(),
             None,
             &[Felt::from(input)],
             context.session(),

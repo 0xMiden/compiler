@@ -23,7 +23,7 @@ fn println_static() {
     log::set_max_level(log::LevelFilter::Info);
 
     let args = [];
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _>(package, [], &args, &test.session, |trace| {
         let result: Felt = trace.parse_result().unwrap();
         assert_eq!(result, Felt::from(0u32));
         Ok(())

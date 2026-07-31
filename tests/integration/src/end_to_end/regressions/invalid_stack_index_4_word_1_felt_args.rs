@@ -93,7 +93,7 @@ fn invalid_stack_index_4_word_1_felt_args() {
     // - main adds `post` (w0[0] + 1 == 2)
     let expected = (1u32..=16u32).fold(Felt::ZERO, |acc, x| acc + Felt::from(x)) + Felt::from(4u32);
 
-    eval_package::<Felt, _, _>(&package, [], &args, &test.session, |trace| {
+    eval_package::<Felt, _, _>(package, [], &args, &test.session, |trace| {
         let res: Felt = trace.parse_result().unwrap();
         assert_eq!(res, expected);
         Ok(())

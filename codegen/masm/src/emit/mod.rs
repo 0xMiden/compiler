@@ -102,7 +102,7 @@ use midenc_hir::{Context, Immediate, Operation, SourceSpan, Type, ValueRef};
 
 use super::{Operand, OperandStack};
 use crate::{
-    TraceEvent,
+    Event,
     masm::{self as masm, Op},
 };
 
@@ -279,11 +279,12 @@ impl<'a> OpEmitter<'a> {
         let module = masm::LibraryPath::new(module_name).unwrap();
         let qualified = masm::QualifiedProcedureName::new(module.as_path(), name);
         let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
         self.emit(masm::Instruction::Exec(target), span);
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
     /// Emit `op` to the current block

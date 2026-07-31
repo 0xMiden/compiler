@@ -154,8 +154,10 @@ struct CounterContractStorage {
 #[component]
 trait CounterContract {
     /// Returns the counter value stored under the provided key.
+    #[account_procedure]
     fn get_count(&self, key: Word) -> Felt;
     /// Increments the counter value stored under the provided key, returning the new value.
+    #[account_procedure]
     fn increment_count(&mut self, key: Word) -> Felt;
 }
 
@@ -202,6 +204,7 @@ struct CallerAccountStorage;
 #[component(sibling_and_fpi_counter_account::CounterContract)]
 trait CallerAccount: NativeAccount + CounterContract {
     /// Increments the local sibling counter, then reads the remote account's counter via FPI.
+    #[account_procedure]
     fn bump_local_read_remote(&mut self, remote_account_id: AccountId) -> Felt;
 }
 

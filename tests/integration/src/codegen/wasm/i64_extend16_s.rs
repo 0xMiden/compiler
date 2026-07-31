@@ -61,7 +61,7 @@ fn i64_extend16_s() {
         let mut args = Vec::new();
         input.push_to_operand_stack(&mut args);
 
-        eval_package::<u64, _, _>(&package, None, &args, context.session(), |trace| {
+        eval_package::<u64, _, _>(package.clone(), None, &args, context.session(), |trace| {
             let out = trace.parse_result::<u64>().unwrap();
             assert_eq!(out, expected_out);
             Ok(())
