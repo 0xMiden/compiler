@@ -5,6 +5,7 @@
 pub mod candidate;
 pub mod closure;
 pub mod config;
+pub mod executor;
 pub mod intent;
 pub mod lint;
 pub mod order;

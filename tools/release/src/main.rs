@@ -6,7 +6,7 @@ use midenc_release::{
     candidate::{Candidate, UnitDeclaration, render_tag},
     closure,
     config::{Config, Unit, VersionSource},
-    intent, lint, order, plan as release_plan,
+    executor, intent, lint, order, plan as release_plan,
     reconcile::{self, Disposition, Planned},
     registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
     version,
@@ -127,6 +127,25 @@ enum Command {
         /// different content is reported as a conflict rather than skipped.
         #[arg(long)]
         plan: Option<PathBuf>,
+    },
+    /// Publish a sealed plan.
+    ///
+    /// Stages run in order and each is verified before the next begins.
+    /// Reconciliation runs first, so this is the same operation on a first
+    /// attempt and on a resume.
+    Publish {
+        /// The sealed plan to publish.
+        #[arg(long)]
+        plan: PathBuf,
+        /// Publish to a rehearsal registry instead of crates.io.
+        #[arg(long)]
+        rehearsal_index: Option<String>,
+        /// Report what would be published and stop.
+        #[arg(long)]
+        dry_run: bool,
+        /// Write the journal here.
+        #[arg(long)]
+        journal: Option<PathBuf>,
     },
     /// Run the rehearsal registry until interrupted.
     ///
@@ -419,6 +438,46 @@ fn main() -> Result<()> {
             let args: Vec<String> =
                 result.to_publish.iter().flat_map(|n| ["-p".to_string(), n.clone()]).collect();
             println!("  {}", args.join(" "));
+            Ok(())
+        }
+        Command::Publish {
+            plan,
+            rehearsal_index,
+            dry_run,
+            journal,
+        } => {
+            let plan = release_plan::Plan::load(&plan)?;
+            let (target, index_url) = match &rehearsal_index {
+                Some(url) => (
+                    executor::Target::Rehearsal {
+                        index_url: url.clone(),
+                        token: "rehearsal".to_string(),
+                    },
+                    url.clone(),
+                ),
+                None => (executor::Target::CratesIo, "sparse+https://index.crates.io/".to_string()),
+            };
+
+            println!("publishing plan {} to {target}", plan.digest());
+            if dry_run {
+                println!("(dry run: nothing will be published)");
+            }
+
+            let index = midenc_release::registry::client::SparseIndex::new(index_url);
+            let options = executor::Options {
+                dry_run,
+                cargo_home: ws.root.join("target/release-publish/cargo-home"),
+            };
+            std::fs::create_dir_all(&options.cargo_home)?;
+
+            let record = executor::execute(&ws, &plan, &index, &target, &options)?;
+            for entry in &record.entries {
+                println!("  [{}] {}: {}", entry.stage, entry.action, entry.detail);
+            }
+            if let Some(path) = journal {
+                std::fs::write(&path, format!("{}\n", record.to_json()))?;
+                println!("journal written to {}", path.display());
+            }
             Ok(())
         }
         Command::FakeRegistry { .. } => unreachable!("handled before config loading"),
