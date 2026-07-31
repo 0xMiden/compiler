@@ -269,6 +269,7 @@ fn reconciliation_after_a_partial_publish_yields_only_what_remains() {
                     name.to_string(),
                     Package {
                         version: "0.1.0".into(),
+                        manifest_path: workspace_dir.join("Cargo.toml"),
                         local_deps: deps
                             .into_iter()
                             .map(|d: &str| (d.to_string(), EdgeKind::Required))

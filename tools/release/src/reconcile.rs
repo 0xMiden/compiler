@@ -161,6 +161,7 @@ mod tests {
                         name.to_string(),
                         Package {
                             version: "1.0.0".into(),
+                            manifest_path: std::path::PathBuf::from("/tmp/Cargo.toml"),
                             local_deps: deps
                                 .into_iter()
                                 .map(|d: &str| (d.to_string(), EdgeKind::Required))

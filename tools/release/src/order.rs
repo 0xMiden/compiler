@@ -99,6 +99,7 @@ mod tests {
                         name.to_string(),
                         Package {
                             version: "0.1.0".into(),
+                            manifest_path: std::path::PathBuf::from("/tmp/Cargo.toml"),
                             local_deps: deps
                                 .iter()
                                 .map(|d| (d.to_string(), EdgeKind::Required))

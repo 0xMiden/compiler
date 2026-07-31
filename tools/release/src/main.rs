@@ -3,10 +3,11 @@ use std::{collections::BTreeSet, path::PathBuf};
 use anyhow::{Result, bail};
 use clap::{Parser, Subcommand};
 use midenc_release::{
-    config::{Config, Unit},
+    config::{Config, Unit, VersionSource},
     lint, order,
     reconcile::{self, Disposition, Planned},
     registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
+    version,
     workspace::Workspace,
 };
 
@@ -42,6 +43,20 @@ enum Command {
         /// Emit the order as `-p NAME` arguments ready to pass to Cargo.
         #[arg(long)]
         cargo_args: bool,
+    },
+    /// Move a version domain, updating every requirement that names it.
+    ///
+    /// Compiler crates inherit the workspace version; SDK crates carry their
+    /// own but move together. Defaults to the next minor.
+    SetVersion {
+        /// Which domain to move.
+        #[arg(long)]
+        unit: UnitArg,
+        /// The new version. Defaults to the next minor.
+        version: Option<semver::Version>,
+        /// Print the edits without writing them.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Report what still needs publishing, against live registry state.
     ///
@@ -143,6 +158,27 @@ fn main() -> Result<()> {
                     println!("{name}");
                 }
             }
+            Ok(())
+        }
+        Command::SetVersion {
+            unit,
+            version: requested,
+            dry_run,
+        } => {
+            let domain = match unit {
+                UnitArg::Compiler => VersionSource::Workspace,
+                UnitArg::Sdk => VersionSource::Sdk,
+            };
+            let plan = version::plan(&ws, &config, domain, requested)?;
+            print!("{}", plan.summary());
+
+            if dry_run {
+                println!("\ndry run: nothing written");
+                return Ok(());
+            }
+            version::apply(&ws, &config, &plan)?;
+            println!("\nupdated {} manifest edit(s) and refreshed Cargo.lock", plan.edits.len());
+            println!("review the diff, then record the release candidate in .release/release.toml");
             Ok(())
         }
         Command::Reconcile { index, unit } => {

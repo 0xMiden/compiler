@@ -7,4 +7,5 @@ pub mod lint;
 pub mod order;
 pub mod reconcile;
 pub mod registry;
+pub mod version;
 pub mod workspace;
