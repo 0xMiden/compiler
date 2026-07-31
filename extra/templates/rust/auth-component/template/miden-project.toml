@@ -1,0 +1,14 @@
+[package]
+name = "{{crate_name | replace: "_", "-" }}"
+version = "0.1.0"
+
+[lib]
+kind = "account-component"
+namespace = "miden:{{crate_name | replace: "_", "-" }}/auth-component@0.1.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]

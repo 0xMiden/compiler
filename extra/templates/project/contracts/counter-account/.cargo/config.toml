@@ -1,0 +1,6 @@
+[build]
+target = "wasm32-wasip2"
+
+[target.wasm32-wasip2]
+# Force-enable `cfg(miden)` for Miden-VM-targeted builds (including editor/LSP workflows).
+rustflags = ["--cfg", "miden"]

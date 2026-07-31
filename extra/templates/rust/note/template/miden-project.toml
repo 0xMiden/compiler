@@ -1,0 +1,17 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:{{crate_name | replace: "_", "-" }}/miden-{{crate_name | replace: "_", "-" }}@0.1.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+# TODO: Add your account contract dependencies here
+add-contract = { path = "../add-contract" }
+
+[package.metadata.miden.dependencies]
+# TODO: Add your account contract WIT dependencies here
+add-contract = { wit = "../add-contract/target/generated-wit/" }

@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "integration"
+]
+exclude = [
+    "contracts/",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+
+[workspace.dependencies]
