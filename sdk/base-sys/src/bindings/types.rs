@@ -551,8 +551,19 @@ pub struct BlockNumber {
 
 impl BlockNumber {
     /// Returns the block number as a `u32` value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the wrapped felt exceeds the maximum block height (possible only for values
+    /// that bypassed validation, e.g. a WIT record lifted from a raw felt).
     #[inline]
     pub fn as_u32(&self) -> u32 {
+        // Compared in the felt domain: felt comparisons lower to VM intrinsics, which is much
+        // cheaper than u64 comparison libcalls.
+        assert!(
+            self.inner <= Felt::from_u32(u32::MAX),
+            "block number exceeds the maximum block height"
+        );
         self.inner.as_canonical_u64() as u32
     }
 
@@ -643,7 +654,8 @@ mod tests {
     use miden_stdlib_sys::{Felt, Word, felt};
 
     use super::{
-        Asset, AssetAmount, AssetAmountError, felt_from_padded_word, padded_word_from_felt,
+        Asset, AssetAmount, AssetAmountError, BlockNumber, felt_from_padded_word,
+        padded_word_from_felt,
     };
 
     /// Ensures `padded_word_from_felt` zero-pads the trailing three limbs.
@@ -900,5 +912,26 @@ mod tests {
         let excessive_amount = fungible_asset(Felt::new(AssetAmount::MAX_U64 + 1).unwrap());
 
         let _ = excessive_amount.amount();
+    }
+
+    /// Ensures block-number felts validate against the `u32` protocol bound.
+    #[test]
+    fn block_number_try_from_felt_bounds() {
+        let max = Felt::new(u32::MAX as u64).unwrap();
+
+        assert_eq!(BlockNumber::try_from(max).unwrap().as_u32(), u32::MAX);
+        assert!(BlockNumber::try_from(Felt::new(u32::MAX as u64 + 1).unwrap()).is_err());
+    }
+
+    /// Ensures `as_u32` refuses to truncate an out-of-range felt smuggled in through the public
+    /// WIT-record field.
+    #[test]
+    #[should_panic(expected = "block number exceeds the maximum block height")]
+    fn block_number_as_u32_panics_on_out_of_range_felt() {
+        let forged = BlockNumber {
+            inner: Felt::new(u32::MAX as u64 + 1).unwrap(),
+        };
+
+        let _ = forged.as_u32();
     }
 }
