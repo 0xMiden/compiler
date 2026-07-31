@@ -948,7 +948,10 @@ fn resolve_decl_file<R: gimli::Reader<Offset = usize>>(
 }
 
 fn render_dwarf_file_path(comp_dir: Option<&str>, directory: Option<&str>, file: &str) -> String {
-    let mut path = comp_dir.unwrap_or_default().to_owned();
+    let mut path = String::new();
+    if let Some(comp_dir) = comp_dir {
+        push_dwarf_path(&mut path, comp_dir);
+    }
     if let Some(directory) = directory {
         push_dwarf_path(&mut path, directory);
     }
@@ -957,6 +960,10 @@ fn render_dwarf_file_path(comp_dir: Option<&str>, directory: Option<&str>, file:
 }
 
 fn push_dwarf_path(path: &mut String, component: &str) {
+    if component == "." {
+        return;
+    }
+
     let has_forward_slash_root = component.starts_with('/') || component.get(1..3) == Some(":/");
     let has_backward_slash_root = component.starts_with('\\') || component.get(1..3) == Some(":\\");
     if has_forward_slash_root || has_backward_slash_root {
@@ -1055,6 +1062,10 @@ mod tests {
         assert_eq!(
             render_dwarf_file_path(None, Some("tests/lit/debugdump"), "locations-source-loc.rs"),
             "tests/lit/debugdump/locations-source-loc.rs"
+        );
+        assert_eq!(
+            render_dwarf_file_path(Some("."), None, "locations-source-loc.rs"),
+            "locations-source-loc.rs"
         );
     }
 
