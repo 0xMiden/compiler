@@ -930,8 +930,49 @@ fn resolve_decl_file<R: gimli::Reader<Offset = usize>>(
     let header = line_program.header();
     let file = header.file(file_index)?;
     let raw = dwarf.attr_string(unit, file.path_name()).ok()?;
-    let path = raw.to_string_lossy().ok()?;
-    Some(Symbol::intern(path.as_ref()))
+    let file_name = raw.to_string_lossy().ok()?;
+    let comp_dir = unit
+        .comp_dir
+        .as_ref()
+        .and_then(|raw| raw.to_string_lossy().ok())
+        .map(|path| path.into_owned());
+    let directory = if file.directory_index() == 0 {
+        None
+    } else {
+        file.directory(header)
+            .and_then(|value| dwarf.attr_string(unit, value).ok())
+            .and_then(|raw| raw.to_string_lossy().ok().map(|path| path.into_owned()))
+    };
+    let path = render_dwarf_file_path(comp_dir.as_deref(), directory.as_deref(), &file_name);
+    Some(Symbol::intern(path))
+}
+
+fn render_dwarf_file_path(comp_dir: Option<&str>, directory: Option<&str>, file: &str) -> String {
+    let mut path = comp_dir.unwrap_or_default().to_owned();
+    if let Some(directory) = directory {
+        push_dwarf_path(&mut path, directory);
+    }
+    push_dwarf_path(&mut path, file);
+    path
+}
+
+fn push_dwarf_path(path: &mut String, component: &str) {
+    let has_forward_slash_root = component.starts_with('/') || component.get(1..3) == Some(":/");
+    let has_backward_slash_root = component.starts_with('\\') || component.get(1..3) == Some(":\\");
+    if has_forward_slash_root || has_backward_slash_root {
+        *path = component.to_owned();
+        return;
+    }
+
+    let separator = if path.starts_with('\\') || path.get(1..3) == Some(":\\") {
+        '\\'
+    } else {
+        '/'
+    };
+    if !path.is_empty() && !path.ends_with(separator) {
+        path.push(separator);
+    }
+    path.push_str(component);
 }
 
 fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
@@ -1008,6 +1049,14 @@ fn func_local_index(func_index: FuncIndex, module: &Module) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dwarf_file_paths_include_the_line_program_directory() {
+        assert_eq!(
+            render_dwarf_file_path(None, Some("tests/lit/debugdump"), "locations-source-loc.rs"),
+            "tests/lit/debugdump/locations-source-loc.rs"
+        );
+    }
 
     #[test]
     fn contiguous_location_ranges_keep_the_intervening_kill() {
