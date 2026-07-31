@@ -5,6 +5,7 @@ use clap::{Parser, Subcommand};
 use midenc_release::{
     config::{Config, Unit},
     lint, order,
+    reconcile::{self, Disposition, Planned},
     registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
     workspace::Workspace,
 };
@@ -41,6 +42,19 @@ enum Command {
         /// Emit the order as `-p NAME` arguments ready to pass to Cargo.
         #[arg(long)]
         cargo_args: bool,
+    },
+    /// Report what still needs publishing, against live registry state.
+    ///
+    /// This runs identically on a first attempt and on a resume; the only
+    /// difference is what the registry already contains.
+    Reconcile {
+        /// Index to query. Defaults to crates.io; point it at a rehearsal
+        /// registry to reconcile against one.
+        #[arg(long, default_value = "sparse+https://index.crates.io/")]
+        index: String,
+        /// Which unit to reconcile. Omit for every publishable package.
+        #[arg(long)]
+        unit: Option<UnitArg>,
     },
     /// Run the rehearsal registry until interrupted.
     ///
@@ -129,6 +143,56 @@ fn main() -> Result<()> {
                     println!("{name}");
                 }
             }
+            Ok(())
+        }
+        Command::Reconcile { index, unit } => {
+            let selected: BTreeSet<String> = match unit {
+                Some(unit) => config.packages_in(unit.into()).map(|p| p.name.clone()).collect(),
+                None => {
+                    config.packages.iter().filter(|p| p.publish).map(|p| p.name.clone()).collect()
+                }
+            };
+
+            let planned: Vec<Planned> = order::topological(&ws, &selected)?
+                .into_iter()
+                .map(|name| {
+                    let version = ws.packages[&name].version.clone();
+                    Planned {
+                        name,
+                        version,
+                        // No sealed plan yet, so presence is taken as a match.
+                        expected_cksum: None,
+                    }
+                })
+                .collect();
+
+            let client = midenc_release::registry::client::SparseIndex::new(index);
+            let result = reconcile::reconcile(&ws, &client, &planned)?;
+
+            for outcome in &result.outcomes {
+                let label = match &outcome.disposition {
+                    Disposition::Publish => "publish".to_string(),
+                    Disposition::Skip => "skip   ".to_string(),
+                    Disposition::Conflict(conflict) => format!("CONFLICT {conflict}"),
+                };
+                println!("{label}  {} {}", outcome.name, outcome.version);
+            }
+
+            println!();
+            if !result.is_publishable() {
+                bail!(
+                    "{} conflict(s); resolve them or abandon the release before publishing",
+                    result.conflicts().count()
+                );
+            }
+            if result.is_complete() {
+                println!("nothing to publish: every planned version is already published");
+                return Ok(());
+            }
+            println!("{} crate(s) to publish, in order:", result.to_publish.len());
+            let args: Vec<String> =
+                result.to_publish.iter().flat_map(|n| ["-p".to_string(), n.clone()]).collect();
+            println!("  {}", args.join(" "));
             Ok(())
         }
         Command::FakeRegistry { .. } => unreachable!("handled before config loading"),

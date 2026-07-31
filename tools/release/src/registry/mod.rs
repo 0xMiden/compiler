@@ -10,6 +10,7 @@
 //! interesting behavior is the failure modes: delayed index visibility, rate
 //! limiting, and truncated responses all need to be produced deliberately.
 
+pub mod client;
 mod index;
 mod publish;
 mod upstream;

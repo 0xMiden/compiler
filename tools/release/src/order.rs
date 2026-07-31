@@ -98,6 +98,7 @@ mod tests {
                     (
                         name.to_string(),
                         Package {
+                            version: "0.1.0".into(),
                             local_deps: deps
                                 .iter()
                                 .map(|d| (d.to_string(), EdgeKind::Required))

@@ -216,3 +216,86 @@ fn http_get_status(host: &str, path: &str) -> u16 {
         .and_then(|code| code.parse().ok())
         .unwrap_or(0)
 }
+
+/// The property that makes a resume safe: after a partial publish, reconciling
+/// against live registry state yields exactly the crates that remain, in
+/// dependency order. This is the same code path a first attempt takes.
+#[test]
+fn reconciliation_after_a_partial_publish_yields_only_what_remains() {
+    use midenc_release::{
+        reconcile::{self, Disposition, Planned},
+        registry::client::SparseIndex,
+        workspace::{EdgeKind, Package, Workspace},
+    };
+
+    let registry = Registry::start(0, Faults::default(), Arc::new(NoUpstream)).unwrap();
+    let workspace_dir = temp_dir("reconcile");
+    fixture_workspace(&workspace_dir);
+
+    let cargo_home = workspace_dir.join(".cargo-home");
+    fs::create_dir_all(&cargo_home).unwrap();
+    fs::write(
+        cargo_home.join("config.toml"),
+        format!(
+            "[source.crates-io]\nreplace-with = \"rehearsal\"\n\n[source.rehearsal]\nregistry = \
+             \"{}\"\n",
+            registry.index_url()
+        ),
+    )
+    .unwrap();
+
+    // Simulate an attempt that published `leaf` and then died before `root`.
+    let published = cargo()
+        .current_dir(&workspace_dir)
+        .env("CARGO_HOME", &cargo_home)
+        .args(["publish", "--no-verify", "--allow-dirty"])
+        .args(["--index", &registry.index_url()])
+        .args(["--token", "rehearsal-token"])
+        .args(["-p", "rehearsal-leaf"])
+        .output()
+        .expect("cargo publish runs");
+    assert!(
+        published.status.success(),
+        "cargo publish failed:\n{}",
+        String::from_utf8_lossy(&published.stderr)
+    );
+
+    let ws = Workspace {
+        root: workspace_dir.clone(),
+        packages: [("rehearsal-leaf", vec![]), ("rehearsal-root", vec!["rehearsal-leaf"])]
+            .into_iter()
+            .map(|(name, deps)| {
+                (
+                    name.to_string(),
+                    Package {
+                        version: "0.1.0".into(),
+                        local_deps: deps
+                            .into_iter()
+                            .map(|d: &str| (d.to_string(), EdgeKind::Required))
+                            .collect(),
+                        publishable: true,
+                    },
+                )
+            })
+            .collect(),
+    };
+
+    let planned: Vec<Planned> = ["rehearsal-leaf", "rehearsal-root"]
+        .iter()
+        .map(|name| Planned {
+            name: name.to_string(),
+            version: "0.1.0".into(),
+            expected_cksum: None,
+        })
+        .collect();
+
+    let index = SparseIndex::new(registry.index_url());
+    let result = reconcile::reconcile(&ws, &index, &planned).unwrap();
+
+    assert!(result.is_publishable(), "no conflicts expected");
+    assert!(!result.is_complete(), "root has not been published yet");
+    assert_eq!(result.to_publish, ["rehearsal-root"]);
+
+    let leaf = result.outcomes.iter().find(|o| o.name == "rehearsal-leaf").unwrap();
+    assert_eq!(leaf.disposition, Disposition::Skip, "already-published crates are skipped");
+}

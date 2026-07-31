@@ -19,6 +19,7 @@ struct Metadata {
 #[derive(Debug, Deserialize)]
 struct MetadataPackage {
     name: String,
+    version: String,
     dependencies: Vec<MetadataDependency>,
     /// `Some([])` means `publish = false`; `None` means publishable anywhere.
     publish: Option<Vec<String>>,
@@ -44,6 +45,8 @@ pub enum EdgeKind {
 
 #[derive(Debug, Clone)]
 pub struct Package {
+    /// The version this package would be published at.
+    pub version: String,
     /// Edges to other workspace members only.
     pub local_deps: Vec<(String, EdgeKind)>,
     /// Whether Cargo considers this package publishable.
@@ -98,6 +101,7 @@ impl Workspace {
             packages.insert(
                 package.name.clone(),
                 Package {
+                    version: package.version.clone(),
                     local_deps,
                     publishable: package.publish.as_deref() != Some(&[]),
                 },

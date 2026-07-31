@@ -5,5 +5,6 @@
 pub mod config;
 pub mod lint;
 pub mod order;
+pub mod reconcile;
 pub mod registry;
 pub mod workspace;
