@@ -3291,6 +3291,7 @@ dependencies = [
  "miden-core",
  "miden-mast-package",
  "miden-thiserror",
+ "midenc-hir",
 ]
 
 [[package]]

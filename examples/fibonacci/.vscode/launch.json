@@ -9,7 +9,7 @@
       "programPath": "${workspaceFolder}/target/miden/debug/fibonacci.masp",
       "inputsPath": "${workspaceFolder}/inputs.toml",
       "linkLibraries": [
-        "${workspaceFolder}/../../target/debug/build/miden-core-lib-06b2e87178feb654/out/assets/miden-core.masp"
+        "${workspaceFolder}/target/miden/packages/miden-core.masp"
       ],
       "midenDebugPath": "${workspaceFolder}/../../../miden-debug/target/debug/miden-debug",
       "cwd": "${workspaceFolder}",

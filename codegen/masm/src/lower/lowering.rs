@@ -1625,7 +1625,7 @@ fn debug_var_location_from_expression(
 ) -> Option<masm::DebugVarLocation> {
     use masm::DebugVarLocation;
     use miden_core::{Felt, serde::Serializable};
-    use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
+    use midenc_hir::dialects::debuginfo::attributes::{ExpressionOp, FrameBase};
 
     // For `di.debug_value`, the SSA operand carries the variable's current value, so its live
     // position on the Miden operand stack is an accurate location. Returns `None` when there is
@@ -1649,26 +1649,24 @@ fn debug_var_location_from_expression(
                 // MasmFunctionBuilder::build() when num_locals is known.
                 i16::try_from(*idx).ok().map(DebugVarLocation::Local)
             }
-            ExpressionOp::FrameBase {
-                global_index,
-                byte_offset,
-            } => Some(DebugVarLocation::FrameBase {
-                global_index: *global_index,
-                byte_offset: *byte_offset,
-            }),
-            // Constants only lower to a Const location when they are canonical field elements;
-            // otherwise the felt would silently wrap modulo the field prime and the debugger
-            // would display a different value than the program's. Preserve such constants (and
-            // all negative ones) in serialized form instead.
-            ExpressionOp::ConstU64(val) => Felt::new(*val)
-                .ok()
-                .map(DebugVarLocation::Const)
-                .or_else(|| Some(DebugVarLocation::Expression(expr.to_bytes()))),
+            ExpressionOp::FrameBase { base, byte_offset } => match base {
+                FrameBase::Global(global_index) => Some(DebugVarLocation::FrameBase {
+                    global_index: *global_index,
+                    byte_offset: *byte_offset,
+                }),
+                FrameBase::Local(_) => Some(DebugVarLocation::Expression(expr.to_bytes())),
+            },
+            ExpressionOp::ResolvedFrameBase { .. } => {
+                Some(DebugVarLocation::Expression(expr.to_bytes()))
+            }
+            // Constants only lower when they are canonical field elements. The debugger's locked
+            // expression decoder cannot safely represent negative or non-canonical constants, so
+            // omit those locations rather than serializing an expression that can panic it.
+            ExpressionOp::ConstU64(val) => Felt::new(*val).ok().map(DebugVarLocation::Const),
             ExpressionOp::ConstS64(val) => u64::try_from(*val)
                 .ok()
                 .and_then(|val| Felt::new(val).ok())
-                .map(DebugVarLocation::Const)
-                .or_else(|| Some(DebugVarLocation::Expression(expr.to_bytes()))),
+                .map(DebugVarLocation::Const),
             // A DW_OP_WASM_stack index refers to the *Wasm* operand stack, which has no
             // correspondence to the Miden operand stack, and a Wasm global's runtime address is
             // not resolved here. When the SSA operand is live on the stack, its position is

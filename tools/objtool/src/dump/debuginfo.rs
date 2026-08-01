@@ -6,6 +6,7 @@ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use clap::Args;
 use miden_assembly_syntax::ast::DebugVarLocation;
+use miden_core::serde::Deserializable;
 use miden_mast_package::{
     MastForest, Package,
     debug_info::{
@@ -13,6 +14,7 @@ use miden_mast_package::{
         DebugTypeInfo, PackageDebugInfo,
     },
 };
+use midenc_hir::dialects::debuginfo::attributes::{Expression, ExpressionOp, ResolvedFrameBase};
 
 use super::{DumpError, Section};
 
@@ -97,31 +99,34 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
     Ok(())
 }
 
-const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
 const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
-
-fn decode_frame_base_local_offset(encoded: u32) -> Option<i16> {
-    if encoded & FRAME_BASE_LOCAL_MARKER == 0 {
-        return None;
-    }
-
-    let low_bits = (encoded & 0xffff) as u16;
-    Some(i16::from_le_bytes(low_bits.to_le_bytes()))
-}
 
 fn format_debug_var_location(location: &DebugVarLocation) -> String {
     if is_debug_var_kill_location(location) {
         "di.debug_kill".to_string()
-    } else if let DebugVarLocation::FrameBase {
-        global_index,
-        byte_offset,
-    } = location
-        && let Some(offset) = decode_frame_base_local_offset(*global_index)
+    } else if let DebugVarLocation::Expression(bytes) = location
+        && let Some(formatted) = format_resolved_frame_base(bytes)
     {
-        format!("frame_base(FMP{offset:+}){byte_offset:+}")
+        formatted
     } else {
         location.to_string()
     }
+}
+
+fn format_resolved_frame_base(bytes: &[u8]) -> Option<String> {
+    let expression = Expression::read_from_bytes_with_budget(bytes, bytes.len()).ok()?;
+    let [ExpressionOp::ResolvedFrameBase { base, byte_offset }] = expression.operations.as_slice()
+    else {
+        return None;
+    };
+    Some(match base {
+        ResolvedFrameBase::Local(offset) => {
+            format!("frame_base(FMP{offset:+}){byte_offset:+}")
+        }
+        ResolvedFrameBase::Global(address) => {
+            format!("frame_base(global[{address}]){byte_offset:+}")
+        }
+    })
 }
 
 fn is_debug_var_kill_location(location: &DebugVarLocation) -> bool {
@@ -698,5 +703,28 @@ mod tests {
         let location = DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec());
 
         assert_eq!(format_debug_var_location(&location), "di.debug_kill");
+    }
+
+    #[test]
+    fn formats_explicit_local_frame_base() {
+        use miden_core::serde::Serializable;
+
+        let expression = Expression::with_ops(vec![ExpressionOp::ResolvedFrameBase {
+            base: ResolvedFrameBase::Local(-7),
+            byte_offset: 28,
+        }]);
+        let location = DebugVarLocation::Expression(expression.to_bytes());
+
+        assert_eq!(format_debug_var_location(&location), "frame_base(FMP-7)+28");
+    }
+
+    #[test]
+    fn does_not_decode_high_bit_globals_as_locals() {
+        let location = DebugVarLocation::FrameBase {
+            global_index: 1 << 31,
+            byte_offset: 0,
+        };
+
+        assert_eq!(format_debug_var_location(&location), "global[2147483648]+0");
     }
 }

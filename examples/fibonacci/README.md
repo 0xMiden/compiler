@@ -19,3 +19,13 @@ cargo miden build --release
 midenc run target/miden/release/fibonacci.masp --inputs inputs.toml
 ```
 
+## Debug
+
+Build the debug package before using the checked-in VS Code or Zed launch configuration:
+
+```bash
+cargo miden build
+```
+
+The launch configurations link the stable project-local package at
+`target/miden/packages/miden-core.masp`.

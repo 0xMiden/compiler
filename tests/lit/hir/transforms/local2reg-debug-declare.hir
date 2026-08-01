@@ -37,8 +37,8 @@ builtin.function public extern("C") @l2r_transformed_declare(%0: i32) -> i32 {
 // CHECK-NEXT:     [[TRANSFORMED_LOAD:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
 // CHECK-NEXT:     builtin.ret [[TRANSFORMED_LOAD]] : (i32);
 
-// Multiple source variables may reuse one slot over disjoint ranges. Preserve the slot unless all
-// declarations can be attributed and rewritten safely.
+// Multiple source variables may reuse one slot. When every declaration is a direct local
+// reference, rewrite all of them before removing the slot.
 builtin.function public extern("C") @l2r_multiple_declares(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 20, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
@@ -48,11 +48,11 @@ builtin.function public extern("C") @l2r_multiple_declares(%0: i32) -> i32 {
 };
 
 // CHECK-LABEL: builtin.function public extern("C") @l2r_multiple_declares
-// CHECK-NEXT:     hir.store_local [[MULTIPLE_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x"
-// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "y"
-// CHECK-NEXT:     [[MULTIPLE_LOAD:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
-// CHECK-NEXT:     builtin.ret [[MULTIPLE_LOAD]] : (i32);
+// CHECK-NEXT:     di.debug_value [[MULTIPLE_ARG:%\d+]] <{ variable = #di.variable<{ name = "x"
+// CHECK-NEXT:     di.debug_value [[MULTIPLE_ARG]] <{ variable = #di.variable<{ name = "y"
+// CHECK-NEXT:     builtin.ret [[MULTIPLE_ARG]] : (i32);
+// CHECK-NOT: hir.store_local
+// CHECK-NOT: hir.load_local
 
 // The same safety rule applies to stores that appear dead to runtime liveness.
 builtin.function public extern("C") @l2r_dead_store_with_transformed_declare(%0: i32) -> i32 {

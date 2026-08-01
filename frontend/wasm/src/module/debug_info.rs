@@ -9,7 +9,7 @@ use log::debug;
 use midenc_hir::{
     FxHashMap, SourceSpan,
     dialects::debuginfo::attributes::{
-        CompileUnit, Expression, ExpressionOp, Subprogram, Variable, encode_frame_base_local_index,
+        CompileUnit, Expression, ExpressionOp, FrameBase, Subprogram, Variable,
     },
     interner::Symbol,
 };
@@ -39,11 +39,8 @@ pub enum VariableStorage {
     ConstU64(u64),
     /// Frame base + byte offset — from DW_OP_fbreg.
     ///
-    /// For Wasm-global frame bases, `global_index` is the Wasm global index.
-    /// For Wasm-local frame bases, it is encoded with
-    /// `encode_frame_base_local_index`.
     FrameBase {
-        global_index: u32,
+        base: FrameBase,
         byte_offset: i64,
     },
     Unsupported,
@@ -63,11 +60,8 @@ impl VariableStorage {
             VariableStorage::Global(idx) => ExpressionOp::WasmGlobal(*idx),
             VariableStorage::Stack(idx) => ExpressionOp::WasmStack(*idx),
             VariableStorage::ConstU64(val) => ExpressionOp::ConstU64(*val),
-            VariableStorage::FrameBase {
-                global_index,
-                byte_offset,
-            } => ExpressionOp::FrameBase {
-                global_index: *global_index,
+            VariableStorage::FrameBase { base, byte_offset } => ExpressionOp::FrameBase {
+                base: *base,
                 byte_offset: *byte_offset,
             },
             VariableStorage::Unsupported => {
@@ -504,7 +498,7 @@ fn collect_dwarf_local_data(
                     info.func_index,
                     info.low_pc,
                     info.high_pc,
-                    info.frame_base_global,
+                    info.frame_base,
                     &mut results,
                     &mut scheduled_results,
                 ) {
@@ -528,10 +522,8 @@ struct SubprogramInfo {
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    /// The encoded WASM location used as the frame base (from DW_AT_frame_base).
-    /// Plain values are Wasm globals; values encoded with
-    /// `encode_frame_base_local_index` are Wasm locals.
-    frame_base_global: Option<u32>,
+    /// The Wasm location used as the frame base (from DW_AT_frame_base).
+    frame_base: Option<FrameBase>,
 }
 
 fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
@@ -544,7 +536,7 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
     let mut maybe_name: Option<String> = None;
     let mut low_pc = None;
     let mut high_pc = None;
-    let mut frame_base_global = None;
+    let mut frame_base = None;
 
     for attr in entry.attrs() {
         match attr.name() {
@@ -586,10 +578,10 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
                     while let Ok(Some(op)) = ops.next() {
                         match op {
                             Operation::WasmLocal { index } => {
-                                frame_base_global = encode_frame_base_local_index(index);
+                                frame_base = Some(FrameBase::Local(index));
                             }
                             Operation::WasmGlobal { index } => {
-                                frame_base_global = Some(index);
+                                frame_base = Some(FrameBase::Global(index));
                             }
                             _ => {}
                         }
@@ -604,7 +596,7 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
         func_index,
         low_pc: lp,
         high_pc: hp,
-        frame_base_global,
+        frame_base,
     };
 
     if let Some(ref name) = maybe_name
@@ -629,7 +621,7 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
     results: &mut FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>>,
     scheduled_results: &mut FxHashMap<FuncIndex, Vec<DwarfLocalData>>,
 ) -> gimli::Result<()> {
@@ -645,7 +637,7 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
             func_index,
             low_pc,
             high_pc,
-            frame_base_global,
+            frame_base,
             results,
             scheduled_results,
             &mut param_counter,
@@ -662,7 +654,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
     results: &mut FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>>,
     scheduled_results: &mut FxHashMap<FuncIndex, Vec<DwarfLocalData>>,
     param_counter: &mut u32,
@@ -687,7 +679,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 entry,
                 low_pc,
                 high_pc,
-                frame_base_global,
+                frame_base,
                 fallback_index,
                 &mut scheduled_vars,
             )? {
@@ -717,7 +709,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
             func_index,
             low_pc,
             high_pc,
-            frame_base_global,
+            frame_base,
             results,
             scheduled_results,
             param_counter,
@@ -733,7 +725,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     entry: &gimli::DebuggingInformationEntry<R>,
     low_pc: u64,
     high_pc: Option<u64>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
     fallback_index: Option<u32>,
     scheduled_vars: &mut Vec<DwarfLocalData>,
 ) -> gimli::Result<Option<(u32, DwarfLocalData)>> {
@@ -780,7 +772,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
 
     match location_value {
         AttributeValue::Exprloc(ref expr) => {
-            let storage = decode_storage_from_expression(expr, unit, frame_base_global)?;
+            let storage = decode_storage_from_expression(expr, unit, frame_base)?;
             if let Some(storage) = storage {
                 // Determine the WASM local index for this variable.
                 // For WasmLocal storage, use the index directly.
@@ -835,7 +827,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
             while let Some(entry) = iter.next()? {
                 let storage_expr = entry.data;
                 if let Some(storage) =
-                    decode_storage_from_expression(&storage_expr, unit, frame_base_global)?
+                    decode_storage_from_expression(&storage_expr, unit, frame_base)?
                     && is_supported_location_expression(&storage)
                 {
                     // A range covering through the end of the subprogram means the variable is
@@ -903,6 +895,7 @@ fn is_supported_location_expression(storage: &Expression) -> bool {
             | ExpressionOp::ConstU64(_)
             | ExpressionOp::ConstS64(_)
             | ExpressionOp::FrameBase { .. }
+            | ExpressionOp::ResolvedFrameBase { .. }
             | ExpressionOp::Address { .. } => {
                 has_location = true;
             }
@@ -931,18 +924,21 @@ fn resolve_decl_file<R: gimli::Reader<Offset = usize>>(
     let file = header.file(file_index)?;
     let raw = dwarf.attr_string(unit, file.path_name()).ok()?;
     let file_name = raw.to_string_lossy().ok()?;
-    let comp_dir = unit
+    let mut comp_dir = unit
         .comp_dir
         .as_ref()
         .and_then(|raw| raw.to_string_lossy().ok())
         .map(|path| path.into_owned());
-    let directory = if file.directory_index() == 0 {
-        None
-    } else {
-        file.directory(header)
-            .and_then(|value| dwarf.attr_string(unit, value).ok())
-            .and_then(|raw| raw.to_string_lossy().ok().map(|path| path.into_owned()))
-    };
+    let directory = file
+        .directory(header)
+        .and_then(|value| dwarf.attr_string(unit, value).ok())
+        .and_then(|raw| raw.to_string_lossy().ok().map(|path| path.into_owned()));
+    if header.version() <= 4 && file.directory_index() == 0 {
+        // gimli resolves the implicit DWARF v2-v4 directory index 0 to the compilation directory,
+        // so avoid prepending the same path twice. In DWARF v5, index 0 is a real directory-table
+        // entry and must be preserved.
+        comp_dir = None;
+    }
     let path = render_dwarf_file_path(comp_dir.as_deref(), directory.as_deref(), &file_name);
     Some(Symbol::intern(path))
 }
@@ -985,7 +981,7 @@ fn push_dwarf_path(path: &mut String, component: &str) {
 fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
     expr: &gimli::Expression<R>,
     unit: &gimli::Unit<R>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
 ) -> gimli::Result<Option<Expression>> {
     let mut operations = expr.clone().operations(unit.encoding());
     let mut storage = vec![];
@@ -1008,10 +1004,9 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
             }
             Operation::FrameOffset { offset } => {
                 // DW_OP_fbreg(offset): variable is at frame_base + offset in WASM linear memory.
-                // The frame base is a WASM global (typically __stack_pointer = global 0).
-                if let Some(global_index) = frame_base_global {
+                if let Some(base) = frame_base {
                     storage.push(ExpressionOp::FrameBase {
-                        global_index,
+                        base,
                         byte_offset: offset,
                     });
                 }

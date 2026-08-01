@@ -14,7 +14,7 @@ builtin.function public extern("C") @debuginfo(%0: i32, %1: i32) -> i32 {
     di.debug_value %2 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 23 }>, expression = #di.expression<[DW_OP_constu(4), DW_OP_plus, DW_OP_stack_value]> }> : (i32);
     di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 22, ty = i32 }> }>;
     builtin.ret %2 : (i32);
-};
+} attributes { di.subprogram = #di.subprogram<{ name = "fib", file = "test.rs", line = 3, column = 5, linkage = "_ZN3fib", params = ["a", "b"], definition = true, local = true }> };
 
 // CHECK: builtin.function public extern("C") @debuginfo(%0: i32, %1: i32) -> i32 {
 // CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "a", file = "test.rs", line = 19, column = 7, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 2+8)]> }>;
@@ -25,4 +25,4 @@ builtin.function public extern("C") @debuginfo(%0: i32, %1: i32) -> i32 {
 // CHECK-NEXT:     di.debug_value %2 <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 23 }>, expression = #di.expression<[DW_OP_constu(4), DW_OP_plus, DW_OP_stack_value]> }> : (i32);
 // CHECK-NEXT:     di.debug_kill <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 22, ty = i32 }> }>;
 // CHECK-NEXT:     builtin.ret %2 : (i32);
-// CHECK-NEXT: };
+// CHECK-NEXT: } attributes { di.subprogram = #di.subprogram<{ name = "fib", file = "test.rs", line = 3, column = 5, linkage = "_ZN3fib", params = ["a", "b"], definition = true, local = true }> };

@@ -12,13 +12,14 @@ use miden_assembly_syntax::{
     ast::{Attribute, DebugVarLocation},
     parser::WordValue,
 };
+use miden_core::serde::{Deserializable, Serializable};
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{
         builtin,
         debuginfo::attributes::{
-            SubprogramAttr, decode_frame_base_local_index, encode_frame_base_local_offset,
+            Expression, ExpressionOp, FrameBase, ResolvedFrameBase, SubprogramAttr,
         },
     },
     interner,
@@ -1657,8 +1658,9 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
 /// `offset = idx - aligned_num_locals` (the FMP-relative offset, typically negative). This matches
 /// the assembler's `locaddr.N` formula, i.e. `FMP - aligned_num_locals + N`.
 ///
-/// Also resolves `FrameBase { global_index, byte_offset }` by replacing the WASM global index with
-/// the resolved Miden memory address of the stack pointer.
+/// Also resolves Wasm frame bases to explicitly tagged Miden local/global locations. Local frame
+/// bases, and global addresses that would collide with the legacy debugger's high-bit marker, are
+/// carried as expression locations rather than overloading the global address.
 fn patch_debug_var_locals_in_block(
     block: &mut masm::Block,
     aligned_num_locals: u16,
@@ -1668,36 +1670,14 @@ fn patch_debug_var_locals_in_block(
         match op {
             masm::Op::Inst(span_inst) => {
                 // Use DerefMut to get mutable access to the inner Instruction
-                if let masm::Instruction::DebugVar(info) = &mut **span_inst {
-                    if let DebugVarLocation::Local(idx) = info.value_location() {
-                        // Convert raw WASM local index to FMP offset
-                        let fmp_offset = *idx - (aligned_num_locals as i16);
-                        info.set_value_location(DebugVarLocation::Local(fmp_offset));
-                    } else if let DebugVarLocation::FrameBase {
-                        global_index,
-                        byte_offset,
-                    } = info.value_location()
-                    {
-                        let byte_offset = *byte_offset;
-                        if let Some(local_index) = decode_frame_base_local_index(*global_index) {
-                            if let Ok(local_index) = i16::try_from(local_index) {
-                                let local_offset = local_index - (aligned_num_locals as i16);
-                                info.set_value_location(DebugVarLocation::FrameBase {
-                                    global_index: encode_frame_base_local_offset(local_offset),
-                                    byte_offset,
-                                });
-                            }
-                        } else {
-                            // Resolve FrameBase: replace WASM global index with
-                            // the Miden memory address of the stack pointer global.
-                            if let Some(resolved_addr) = stack_pointer_addr {
-                                info.set_value_location(DebugVarLocation::FrameBase {
-                                    global_index: resolved_addr,
-                                    byte_offset,
-                                });
-                            }
-                        }
-                    }
+                if let masm::Instruction::DebugVar(info) = &mut **span_inst
+                    && let Some(location) = patch_debug_var_location(
+                        info.value_location(),
+                        aligned_num_locals,
+                        stack_pointer_addr,
+                    )
+                {
+                    info.set_value_location(location);
                 }
             }
             masm::Op::If {
@@ -1726,6 +1706,56 @@ fn patch_debug_var_locals_in_block(
                     stack_pointer_addr,
                 );
             }
+        }
+    }
+}
+
+fn patch_debug_var_location(
+    location: &DebugVarLocation,
+    aligned_num_locals: u16,
+    stack_pointer_addr: Option<u32>,
+) -> Option<DebugVarLocation> {
+    match location {
+        DebugVarLocation::Local(index) => {
+            let fmp_offset = *index - aligned_num_locals as i16;
+            Some(DebugVarLocation::Local(fmp_offset))
+        }
+        DebugVarLocation::FrameBase { byte_offset, .. } => {
+            let resolved_addr = stack_pointer_addr?;
+            if resolved_addr < (1 << 31) {
+                Some(DebugVarLocation::FrameBase {
+                    global_index: resolved_addr,
+                    byte_offset: *byte_offset,
+                })
+            } else {
+                let expression = Expression::with_ops(vec![ExpressionOp::ResolvedFrameBase {
+                    base: ResolvedFrameBase::Global(resolved_addr),
+                    byte_offset: *byte_offset,
+                }]);
+                Some(DebugVarLocation::Expression(expression.to_bytes()))
+            }
+        }
+        DebugVarLocation::Expression(bytes) => {
+            let expression = Expression::read_from_bytes_with_budget(bytes, bytes.len()).ok()?;
+            let [
+                ExpressionOp::FrameBase {
+                    base: FrameBase::Local(local_index),
+                    byte_offset,
+                },
+            ] = expression.operations.as_slice()
+            else {
+                return None;
+            };
+            let local_index = i16::try_from(*local_index).ok()?;
+            let local_offset = local_index - aligned_num_locals as i16;
+            let expression = Expression::with_ops(vec![ExpressionOp::ResolvedFrameBase {
+                base: ResolvedFrameBase::Local(local_offset),
+                byte_offset: *byte_offset,
+            }]);
+            Some(DebugVarLocation::Expression(expression.to_bytes()))
+        }
+        DebugVarLocation::Stack(_) | DebugVarLocation::Memory(_) | DebugVarLocation::Const(_) => {
+            None
         }
     }
 }

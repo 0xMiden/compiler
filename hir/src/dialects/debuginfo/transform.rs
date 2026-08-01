@@ -152,17 +152,25 @@ pub fn salvage_debug_info<B: ?Sized + Builder>(
 /// stale earlier location. If the transform can recover the source value from another live SSA
 /// value, use [`salvage_debug_info`] instead.
 pub fn erase_debug_info(old_value: &ValueRef) {
-    for mut debug_op in debug_value_users(old_value) {
-        let (context, variable, span) = {
-            let op = debug_op.borrow();
-            let dv = op.downcast_ref::<DebugValue>().unwrap();
-            (op.context_rc(), dv.variable().as_value().clone(), op.span())
-        };
-        let mut builder = OpBuilder::new(context);
-        builder.set_insertion_point(ProgramPoint::before(debug_op));
-        let _ = builder.debug_kill(variable, span);
-        debug_op.borrow_mut().erase();
+    for debug_op in debug_value_users(old_value) {
+        erase_debug_value(debug_op);
     }
+}
+
+/// Replace one `di.debug_value` with a `di.debug_kill` at the same program point.
+///
+/// This is used by region-level DCE, which visits the transparent debug operation before the dead
+/// producer whose value it references.
+pub fn erase_debug_value(mut debug_op: OperationRef) {
+    let (context, variable, span) = {
+        let op = debug_op.borrow();
+        let dv = op.downcast_ref::<DebugValue>().expect("expected di.debug_value");
+        (op.context_rc(), dv.variable().as_value().clone(), op.span())
+    };
+    let mut builder = OpBuilder::new(context);
+    builder.set_insertion_point(ProgramPoint::before(debug_op));
+    let _ = builder.debug_kill(variable, span);
+    debug_op.borrow_mut().erase();
 }
 
 /// Apply a salvage action to a single debug value operation.

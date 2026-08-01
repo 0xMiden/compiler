@@ -198,6 +198,7 @@ impl OpParser for Function {
         if let Some(body) = parser.parse_optional_region(&args, false)? {
             state.add_region(body);
         }
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
         Ok(())
     }
 }
@@ -235,6 +236,14 @@ impl OpPrinter for Function {
             }
             printer.print_space();
             printer.print_region(&body);
+        }
+        if self.op.has_attributes() {
+            printer.print_space();
+            printer.print_keyword("attributes");
+            printer.print_space();
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
         }
     }
 }

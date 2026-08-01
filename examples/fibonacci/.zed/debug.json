@@ -7,7 +7,7 @@
       "runtime": "debugger",
       "programPath": "target/miden/debug/fibonacci.masp",
       "midenDebugPath": "../../../miden-debug/target/debug/miden-debug",
-      "sysroot": "../../target/debug/build/miden-core-lib-06b2e87178feb654/out/assets",
+      "linkLibraries": ["target/miden/packages/miden-core.masp"],
       "programArgs": ["10"],
       "host": "127.0.0.1",
       "port": 4711
