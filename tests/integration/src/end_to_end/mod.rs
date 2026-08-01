@@ -1,5 +1,6 @@
 mod abi;
 mod arithmetic;
+mod batch_kernel;
 mod crypto;
 mod debuginfo;
 mod differential;
