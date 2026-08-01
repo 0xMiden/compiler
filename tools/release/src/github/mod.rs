@@ -20,6 +20,10 @@
 //! Tags cannot be deleted once the ruleset protects them, so a tag created at
 //! the wrong commit burns that version. Detection is all that is available.
 
+pub mod rest;
+#[cfg(test)]
+pub mod stub_server;
+
 use std::collections::BTreeMap;
 
 use anyhow::{Context, Result, bail};
@@ -277,6 +281,9 @@ impl GitHub for StubGitHub {
         Ok(existing.clone())
     }
 }
+
+#[cfg(test)]
+mod rest_tests;
 
 #[cfg(test)]
 mod tests {

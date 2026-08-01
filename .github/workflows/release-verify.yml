@@ -128,26 +128,11 @@ jobs:
           grep -rn -- '--token' .github/workflows/ | grep -v 'rehearsal' && \
             fail "a token is passed as a command-line argument" || true
 
-          # No long-lived registry secret in the new release path.
-          #
-          # `release-plz.yml` is exempt because it *is* the old path: it uses a
-          # long-lived token, which is one of the reasons it is being replaced.
-          # It stays until the new path has been rehearsed and used for a
-          # supervised release, and it must be disabled before the first
-          # production pilot -- two live publication paths is how a release gets
-          # published twice.
-          for wf in .github/workflows/*.yml; do
-            case "$(basename "$wf")" in
-              release-plz.yml) continue ;;
-            esac
-            grep -q 'secrets\.CARGO_REGISTRY_TOKEN' "$wf" && \
-              fail "$wf references a long-lived crates.io secret" || true
-          done
-
-          if [ -f .github/workflows/release-plz.yml ]; then
-            echo "workflow-policy: NOTE the legacy release-plz path is still present;" \
-                 "disable it before the first production release"
-          fi
+          # No long-lived registry secret anywhere. Publication authenticates
+          # through Trusted Publishing, which issues a short-lived token; a
+          # stored one would be a second, weaker way in.
+          grep -rn 'secrets\.CARGO_REGISTRY_TOKEN' .github/workflows/ && \
+            fail "a long-lived crates.io secret is referenced" || true
 
           echo "workflow-policy: ok"
 
