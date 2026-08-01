@@ -40,6 +40,7 @@ pub fn run(ws: &Workspace, config: &Config) -> Result<Findings> {
     check_private_versions(ws, config, &mut findings);
     check_private_dependencies(ws, config, &mut findings);
     check_active_patches(&ws.root, &mut findings)?;
+    check_embedded_bundle(&ws.root, &mut findings)?;
 
     Ok(findings)
 }
@@ -125,6 +126,36 @@ fn check_private_dependencies(ws: &Workspace, config: &Config, findings: &mut Fi
             }
         }
     }
+}
+
+/// The archive embedded in `cargo-miden` must match the template sources.
+///
+/// The archive is committed rather than generated at build time, because
+/// `cargo-miden` is published and a `.crate` cannot contain files from outside
+/// its own directory. A committed artifact drifts unless something checks it,
+/// and drift here is invisible: `cargo miden new` keeps working, from stale
+/// templates.
+fn check_embedded_bundle(root: &Path, findings: &mut Findings) -> Result<()> {
+    let templates = root.join("extra/templates");
+    let embedded = root.join("tools/cargo-miden/templates.tar.gz");
+    if !templates.join("bundle.toml").exists() || !embedded.exists() {
+        return Ok(());
+    }
+
+    let bundle = crate::bundle::Bundle::load(&templates.join("bundle.toml"))?;
+    let (_, expected) = crate::bundle::archive(&templates, &bundle)?;
+    let actual = crate::registry::sha256_hex(&std::fs::read(&embedded)?);
+
+    if actual != expected {
+        findings.error(format!(
+            "the embedded template bundle is stale: {} has sha256 {}, but the sources produce {}. \
+             Regenerate it with `release-tool bundle --output tools/cargo-miden/templates.tar.gz`",
+            embedded.display(),
+            &actual[..16],
+            &expected[..16]
+        ));
+    }
+    Ok(())
 }
 
 /// An active `[patch]` entry is the most likely way to publish a broken crate:

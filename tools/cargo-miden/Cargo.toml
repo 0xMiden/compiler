@@ -17,6 +17,16 @@ autotests = false                                         # disable autodiscover
 [lib]
 doctest = false
 
+include = [
+    "src/**/*",
+    "build.rs",
+    # The template bundle is embedded at compile time; without it the build
+    # script has nothing to read and `cargo miden new` has no offline fallback.
+    "templates.tar.gz",
+    "README.md",
+    "LICENSE*",
+]
+
 [[bin]]
 name = "cargo-miden"
 

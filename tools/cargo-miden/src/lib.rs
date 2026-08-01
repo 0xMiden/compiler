@@ -9,6 +9,7 @@ use clap::Parser;
 mod cli;
 mod commands;
 mod outputs;
+pub mod bundle;
 mod template;
 mod utils;
 
