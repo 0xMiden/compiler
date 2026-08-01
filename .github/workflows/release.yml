@@ -1,184 +1,213 @@
-# Our release workflow is as follows:
+# The production release workflow.
 #
-# 1. Merging to `main` will create a new release PR containing any unreleased changes
-# 2. The release PR gets merged to `main` when we are ready to publish the release
-# 3. The crates are published to crates.io, a new git tag is created, as well as a GitHub release
-# 4. A job is run to pre-build the executable for our supported targets and upload them to the
-#    release.
+# This is the only workflow that may enter the `release-production` environment,
+# and the only one configured as a crates.io Trusted Publisher. Its scope comes
+# entirely from the reviewed `.release/release.toml` at the commit being
+# released; there is deliberately no version, unit, or scope input, so a
+# dispatch cannot widen or narrow what was reviewed.
+#
+# The phases exist to put every reversible action before every irreversible one:
+#
+#   B  plan and validate      nothing has happened yet
+#   C  build, stage drafts    drafts can be deleted; no tag, no publication
+#   -- approval gate --       the point of no return
+#   D  tag and publish        irreversible from the first uploaded crate
+#   E  finalize               releases become immutable
 name: release
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      plan-digest:
+        description: >-
+          Resume or abandon an existing plan. Leave empty for a normal release.
+        required: false
+        type: string
+      mode:
+        description: What to do.
+        required: false
+        default: release
+        type: choice
+        options: [release, resume, abandon]
+
+permissions: {}
+
+# One release at a time, repository-wide. Note that this is a convenience, not
+# the guard: GitHub cancels a *pending* run when a newer one enters the group,
+# so correctness rests on the executor's own overlap check against live state.
+concurrency:
+  group: release-production
+  cancel-in-progress: false
 
 jobs:
-  publish:
-    name: publish any unpublished packages
+  # ---------------------------------------------------------------- Phase B --
+  plan:
+    name: plan
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == '0xMiden' }}
     permissions:
-      contents: write
-    env:
-      CARGO_TARGET_DIR: /tmp/cargo-target
+      contents: read
     outputs:
-      releases: ${{ steps.publish.outputs.releases }}
-      releases_created: ${{ steps.publish.outputs.releases_created }}
+      subject: ${{ steps.subject.outputs.sha }}
     steps:
-      - &checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/cleanup-runner
-      - &install-rust
-        name: Install Rust
+
+      - name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
-      - name: Publish
-        id: publish
-        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
-        with:
-          command: release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
-  upload-artifacts:
-    name: upload pre-built midenc executable artifacts
-    needs: publish
-    if: ${{ github.repository_owner == '0xMiden' && needs.publish.outputs.releases_created == 'true' }}
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest]
-        target: [aarch64-apple-darwin, x86_64-unknown-linux-gnu]
-        exclude:
-          - os: macos-latest
-            target: x86_64-unknown-linux-gnu
-          - os: ubuntu-latest
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    steps:
-      - *checkout
-      - uses: ./.github/actions/cleanup-runner
-      - *install-rust
-      - name: Determine midenc release tag
-        id: midenc-release
-        env:
-          RELEASES: ${{ needs.publish.outputs.releases }}
-        run: |
-          set -eo pipefail
-          echo "RELEASES:"
-          echo "=================="
-          echo "${RELEASES}" | jq -rM
-          echo "=================="
-          # `cargo-miden` owns the GitHub release/tag (see `release-plz.toml`), and it uses an
-          # unprefixed tag name like `v0.7.0`. Other crates may report prefixed tags (e.g.
-          # `midenc-v0.7.0`) which do not correspond to an actual GitHub release.
-          release_tag=$(echo "${RELEASES}" | jq -r '.[] | select(.package_name == "cargo-miden") | .tag' | head -n1)
-          if [ -z "${release_tag}" ] || [ "${release_tag}" = "null" ]; then
-            echo "cargo-miden crate was not released in this run. Skipping artifact upload."
-            echo "release_tag=" >> "${GITHUB_OUTPUT}"
-            exit 0
-          fi
-          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
-      - name: Add target
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        run: |
-          rustup target add ${{ matrix.target }}
-      - name: Install cargo-make
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        run: |
-          if ! cargo make --version 2>/dev/null; then
-            cargo install cargo-make --force
-          fi
-      - name: build binaries
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        run: |
-          set -e
-          cargo make --profile production midenc --release --target "${{ matrix.target }}"
-          cargo make --profile production cargo-miden --release --target "${{ matrix.target }}"
-      - name: prepare artifacts
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        run: |
-          set -e
-          mv bin/midenc midenc-${{ matrix.target }}
-          mv bin/cargo-miden cargo-miden-${{ matrix.target }}
-      - name: attest midenc
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: midenc-${{ matrix.target }}
-      - name: attest cargo-miden
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
-        with:
-          subject-path: cargo-miden-${{ matrix.target }}
-      - name: upload
-        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
-        env:
-          RELEASE_TAG: ${{ steps.midenc-release.outputs.release_tag }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          gh release upload "${RELEASE_TAG}" "midenc-${{ matrix.target }}"
-          gh release upload "${RELEASE_TAG}" "cargo-miden-${{ matrix.target }}"
+      - name: Build release-tool
+        run: cargo build -p midenc-release --release
 
-  release:
-    name: prepare the next release
+      # The subject is GITHUB_SHA -- the commit this run checked out -- and it
+      # must be main's tip. Attestations are built from the run's own claims, so
+      # defining the subject as anything else would attest the wrong commit.
+      - name: Validate the subject
+        id: subject
+        run: |
+          set -euo pipefail
+          tip=$(git rev-parse origin/main)
+          if [ "${GITHUB_SHA}" != "${tip}" ]; then
+            echo "subject ${GITHUB_SHA} is not main's tip (${tip}); refresh the candidate" >&2
+            exit 1
+          fi
+
+          # Nothing may have landed since the reviewed candidate. --first-parent
+          # asks the question that matters -- which commit on main changed this
+          # file -- rather than following into merged branches.
+          declared=$(git log --first-parent -1 --format=%H -- .release/release.toml)
+          if [ "${declared}" != "${GITHUB_SHA}" ]; then
+            echo "the release declaration was last changed in ${declared}, not ${GITHUB_SHA};" >&2
+            echo "something landed on main after the candidate merged" >&2
+            exit 1
+          fi
+          echo "sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
+
+      - name: Lint the candidate
+        run: ./target/release/release-tool lint
+
+      - name: Generate the intent
+        run: |
+          ./target/release/release-tool plan \
+            --subject "${GITHUB_SHA}" --output "${RUNNER_TEMP}/intent.json"
+          cat "${RUNNER_TEMP}/intent.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-intent
+          path: ${{ runner.temp }}/intent.json
+          if-no-files-found: error
+
+  verify:
+    name: verify
+    needs: plan
+    uses: ./.github/workflows/release-verify.yml
+    with:
+      ref: ${{ needs.plan.outputs.subject }}
+      full: true
+
+  # ---------------------------------------------------------------- Phase C --
+  stage:
+    name: seal and stage
+    needs: [plan, verify]
     runs-on: ubuntu-latest
-    needs: publish
-    # Only prepare the next release if we didn't just create a release.
-    # When a release PR is merged, the `publish` job will create tags/releases and publish to crates.io.
-    # Running `release-pr` in the same workflow run before publishing completes can create a duplicate
-    # release PR for the same version bump.
-    if: ${{ github.repository_owner == '0xMiden' && needs.publish.result == 'success' && needs.publish.outputs.releases_created != 'true' }}
     permissions:
-      contents: write
-      pull-requests: write
-      actions: write
-    concurrency:
-      group: release-plz-${{ github.ref }}
-      cancel-in-progress: false
+      contents: read
     steps:
-      - *checkout
-      - uses: ./.github/actions/cleanup-runner
-      - *install-rust
-      - name: Create release PR
-        id: release-pr
-        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          command: release-pr
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-      - name: Trigger CI for release PR
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+          ref: ${{ needs.plan.outputs.subject }}
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+
+      - name: Build release-tool
+        run: cargo build -p midenc-release --release
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const prOutputRaw = process.env.RELEASE_PLZ_PR;
-            if (!prOutputRaw) {
-              core.info('release-plz did not create or update a release PR; skipping CI trigger.');
-              return;
-            }
-            const releasePr = JSON.parse(prOutputRaw);
-            if (!releasePr?.head_branch) {
-              core.info('release-plz PR output missing head branch; skipping CI trigger.');
-              return;
-            }
-            const headRef = releasePr.head_branch;
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'ci.yml',
-              ref: headRef,
-            });
-            core.info(`Triggered CI workflow for ${headRef}.`);
+          name: release-intent
+          path: ${{ runner.temp }}
+
+      # Packages every selected crate and seals their digests into the plan.
+      # This job holds no credentials: packaging runs subject build scripts, and
+      # they must never run beside a token.
+      - name: Seal the plan
+        run: |
+          ./target/release/release-tool seal \
+            --intent "${RUNNER_TEMP}/intent.json" \
+            --output "${RUNNER_TEMP}/plan.json" \
+            --cache-dir "${RUNNER_TEMP}/index-cache"
+
+      - name: Build the template bundle
+        run: |
+          ./target/release/release-tool bundle \
+            --output "${RUNNER_TEMP}/templates.tar.gz"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-plan
+          path: |
+            ${{ runner.temp }}/plan.json
+            ${{ runner.temp }}/templates.tar.gz
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- Phase D --
+  publish:
+    name: publish
+    needs: [plan, stage]
+    runs-on: ubuntu-latest
+    # The approval gate. Everything before this is reversible; nothing after it
+    # is. Deployment is restricted to protected main by the environment itself.
+    environment: release-production
+    permissions:
+      contents: write # tag creation
+      id-token: write # Trusted Publishing
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.plan.outputs.subject }}
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+
+      - name: Build release-tool
+        run: cargo build -p midenc-release --release
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-plan
+          path: ${{ runner.temp }}
+
+      # Exchanged immediately before publication and revoked by the action's
+      # post-step, because the token lives 30 minutes and Cargo spends most of a
+      # stage waiting for index confirmation.
+      - name: Obtain a Trusted Publishing token
+        uses: rust-lang/crates-io-auth-action@e919bf6c2b0f6f587c2c9c138d5f19d2c624c3a9 # v1.0.3
+        id: auth
+
+      # The token is passed through the environment, never as an argument:
+      # process arguments are readable by every other process on the machine.
+      - name: Publish
         env:
-          RELEASE_PLZ_PR: ${{ steps.release-pr.outputs.pr }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: |
+          ./target/release/release-tool publish \
+            --plan "${RUNNER_TEMP}/plan.json" \
+            --journal "${RUNNER_TEMP}/journal.json"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: release-journal
+          path: ${{ runner.temp }}/journal.json
+          if-no-files-found: warn

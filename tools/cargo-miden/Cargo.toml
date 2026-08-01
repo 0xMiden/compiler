@@ -14,9 +14,6 @@ readme.workspace = true
 edition.workspace = true
 autotests = false                                         # disable autodiscovery of tests
 
-[lib]
-doctest = false
-
 include = [
     "src/**/*",
     "build.rs",
@@ -26,6 +23,9 @@ include = [
     "README.md",
     "LICENSE*",
 ]
+
+[lib]
+doctest = false
 
 [[bin]]
 name = "cargo-miden"

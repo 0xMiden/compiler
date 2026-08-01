@@ -1,0 +1,191 @@
+# LEGACY: the release-plz publication path.
+#
+# This is the release process in use today, kept working until the new
+# `release.yml` has been rehearsed and used for a supervised release. Two
+# publication paths must not both be live for a production release -- disable
+# this one before the first pilot, and delete it once the new path is proven.
+#
+# Our release workflow is as follows:
+#
+# 1. Merging to `main` will create a new release PR containing any unreleased changes
+# 2. The release PR gets merged to `main` when we are ready to publish the release
+# 3. The crates are published to crates.io, a new git tag is created, as well as a GitHub release
+# 4. A job is run to pre-build the executable for our supported targets and upload them to the
+#    release.
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  publish:
+    name: publish any unpublished packages
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == '0xMiden' }}
+    permissions:
+      contents: write
+    env:
+      CARGO_TARGET_DIR: /tmp/cargo-target
+    outputs:
+      releases: ${{ steps.publish.outputs.releases }}
+      releases_created: ${{ steps.publish.outputs.releases_created }}
+    steps:
+      - &checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - &install-rust
+        name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Publish
+        id: publish
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  upload-artifacts:
+    name: upload pre-built midenc executable artifacts
+    needs: publish
+    if: ${{ github.repository_owner == '0xMiden' && needs.publish.outputs.releases_created == 'true' }}
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        target: [aarch64-apple-darwin, x86_64-unknown-linux-gnu]
+        exclude:
+          - os: macos-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - *checkout
+      - uses: ./.github/actions/cleanup-runner
+      - *install-rust
+      - name: Determine midenc release tag
+        id: midenc-release
+        env:
+          RELEASES: ${{ needs.publish.outputs.releases }}
+        run: |
+          set -eo pipefail
+          echo "RELEASES:"
+          echo "=================="
+          echo "${RELEASES}" | jq -rM
+          echo "=================="
+          # `cargo-miden` owns the GitHub release/tag (see `release-plz.toml`), and it uses an
+          # unprefixed tag name like `v0.7.0`. Other crates may report prefixed tags (e.g.
+          # `midenc-v0.7.0`) which do not correspond to an actual GitHub release.
+          release_tag=$(echo "${RELEASES}" | jq -r '.[] | select(.package_name == "cargo-miden") | .tag' | head -n1)
+          if [ -z "${release_tag}" ] || [ "${release_tag}" = "null" ]; then
+            echo "cargo-miden crate was not released in this run. Skipping artifact upload."
+            echo "release_tag=" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+          echo "release_tag=${release_tag}" >> "${GITHUB_OUTPUT}"
+      - name: Add target
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        run: |
+          rustup target add ${{ matrix.target }}
+      - name: Install cargo-make
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      - name: build binaries
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        run: |
+          set -e
+          cargo make --profile production midenc --release --target "${{ matrix.target }}"
+          cargo make --profile production cargo-miden --release --target "${{ matrix.target }}"
+      - name: prepare artifacts
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        run: |
+          set -e
+          mv bin/midenc midenc-${{ matrix.target }}
+          mv bin/cargo-miden cargo-miden-${{ matrix.target }}
+      - name: attest midenc
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: midenc-${{ matrix.target }}
+      - name: attest cargo-miden
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: cargo-miden-${{ matrix.target }}
+      - name: upload
+        if: ${{ steps.midenc-release.outputs.release_tag != '' }}
+        env:
+          RELEASE_TAG: ${{ steps.midenc-release.outputs.release_tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release upload "${RELEASE_TAG}" "midenc-${{ matrix.target }}"
+          gh release upload "${RELEASE_TAG}" "cargo-miden-${{ matrix.target }}"
+
+  release:
+    name: prepare the next release
+    runs-on: ubuntu-latest
+    needs: publish
+    # Only prepare the next release if we didn't just create a release.
+    # When a release PR is merged, the `publish` job will create tags/releases and publish to crates.io.
+    # Running `release-pr` in the same workflow run before publishing completes can create a duplicate
+    # release PR for the same version bump.
+    if: ${{ github.repository_owner == '0xMiden' && needs.publish.result == 'success' && needs.publish.outputs.releases_created != 'true' }}
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - *checkout
+      - uses: ./.github/actions/cleanup-runner
+      - *install-rust
+      - name: Create release PR
+        id: release-pr
+        uses: release-plz/action@1528104d2ca23787631a1c1f022abb64b34c1e11 # v0.5.128
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Trigger CI for release PR
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const prOutputRaw = process.env.RELEASE_PLZ_PR;
+            if (!prOutputRaw) {
+              core.info('release-plz did not create or update a release PR; skipping CI trigger.');
+              return;
+            }
+            const releasePr = JSON.parse(prOutputRaw);
+            if (!releasePr?.head_branch) {
+              core.info('release-plz PR output missing head branch; skipping CI trigger.');
+              return;
+            }
+            const headRef = releasePr.head_branch;
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              ref: headRef,
+            });
+            core.info(`Triggered CI workflow for ${headRef}.`);
+        env:
+          RELEASE_PLZ_PR: ${{ steps.release-pr.outputs.pr }}
