@@ -158,10 +158,139 @@ jobs:
             ${{ runner.temp }}/templates.tar.gz
           if-no-files-found: error
 
+  # Build each executable on its own native runner. These jobs hold no
+  # credentials and no OIDC: they run subject build scripts, which must never
+  # happen beside a token or a token-minting capability.
+  artifacts:
+    name: build ${{ matrix.binary }} (${{ matrix.target }})
+    needs: [plan, verify]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Explicit runner labels rather than `*-latest`, so an image rotation
+        # does not silently change what the released bytes were built on.
+        include:
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: midenc }
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: cargo-miden }
+          - { runner: ubuntu-24.04, target: x86_64-unknown-linux-gnu, binary: miden-objtool }
+          - { runner: macos-15, target: aarch64-apple-darwin, binary: midenc }
+          - { runner: macos-15, target: aarch64-apple-darwin, binary: cargo-miden }
+          - { runner: macos-15, target: aarch64-apple-darwin, binary: miden-objtool }
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.plan.outputs.subject }}
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustup target add ${{ matrix.target }}
+          rustc --version
+
+      - name: Build
+        env:
+          # Incremental output is not reproducible and is pointless for a
+          # one-shot build.
+          CARGO_INCREMENTAL: "0"
+        run: cargo build --release --locked --target ${{ matrix.target }} -p ${{ matrix.binary }}
+
+      - name: Smoke test
+        # Only meaningful when the host can run what was built.
+        if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' || matrix.runner == 'macos-15' }}
+        run: ./target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+
+      - name: Archive
+        run: |
+          cargo build -p midenc-release --release
+          ./target/release/release-tool archive-binary \
+            --binary "target/${{ matrix.target }}/release/${{ matrix.binary }}" \
+            --name "${{ matrix.binary }}" \
+            --output "${RUNNER_TEMP}/${{ matrix.binary }}-${{ matrix.target }}.tar.gz"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: artifact-${{ matrix.binary }}-${{ matrix.target }}
+          path: ${{ runner.temp }}/${{ matrix.binary }}-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  # Attestation is separated from building on purpose: this job needs
+  # `id-token: write`, and it must not be a job that has executed subject code.
+  # It only downloads bytes and attests them.
+  attest:
+    name: attest artifacts
+    # Depends on the build, not on staging: attestation needs the bytes, and
+    # coupling it to draft creation would serialize two independent things.
+    needs: [artifacts]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: artifact-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/artifacts
+
+      - uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: ${{ runner.temp }}/artifacts/*.tar.gz
+
+  # Collect the artifacts and populate the drafts. Still reversible: the drafts
+  # can be deleted, no tag exists, and nothing has been published.
+  stage-artifacts:
+    name: stage drafts
+    needs: [plan, stage, artifacts]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # draft creation and asset upload
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.plan.outputs.subject }}
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+
+      - name: Build release-tool
+        run: cargo build -p midenc-release --release
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-plan
+          path: ${{ runner.temp }}
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: artifact-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/artifacts
+
+      - name: Collect the template bundle
+        run: cp "${RUNNER_TEMP}/templates.tar.gz" "${RUNNER_TEMP}/artifacts/"
+
+      # Uploads every asset and reads each one back, while the release is still
+      # a draft and a mismatch can still be fixed.
+      - name: Create and populate drafts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./target/release/release-tool stage \
+            --plan "${RUNNER_TEMP}/plan.json" \
+            --artifacts "${RUNNER_TEMP}/artifacts"
+
   # ---------------------------------------------------------------- Phase D --
   publish:
     name: publish
-    needs: [plan, stage]
+    needs: [plan, stage, stage-artifacts, attest]
     runs-on: ubuntu-latest
     # The approval gate. Everything before this is reversible; nothing after it
     # is. Deployment is restricted to protected main by the environment itself.

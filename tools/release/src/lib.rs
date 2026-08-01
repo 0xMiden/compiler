@@ -15,5 +15,6 @@ pub mod order;
 pub mod plan;
 pub mod reconcile;
 pub mod registry;
+pub mod staging;
 pub mod version;
 pub mod workspace;

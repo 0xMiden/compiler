@@ -6,10 +6,12 @@ use midenc_release::{
     candidate::{Candidate, UnitDeclaration, render_tag},
     closure,
     config::{Config, Unit, VersionSource},
-    executor, intent, lint, order, plan as release_plan,
+    executor,
+    github::rest::RestGitHub,
+    intent, lint, order, plan as release_plan,
     reconcile::{self, Disposition, Planned},
     registry::{CurlUpstream, Faults, NoUpstream, Registry, Upstream},
-    version,
+    staging, version,
     workspace::Workspace,
 };
 
@@ -156,6 +158,39 @@ enum Command {
         /// Write the archive here.
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Create and populate the draft releases for a sealed plan.
+    ///
+    /// The last reversible step: drafts can still be deleted, no tag exists,
+    /// and nothing is published.
+    Stage {
+        /// The sealed plan.
+        #[arg(long)]
+        plan: PathBuf,
+        /// Directory holding the artifacts to attach.
+        #[arg(long)]
+        artifacts: Option<PathBuf>,
+        /// GitHub API base; defaults to the real one via GITHUB_API_URL.
+        #[arg(long)]
+        api_base: Option<String>,
+    },
+    /// Delete the still-draft releases for a plan.
+    Discard {
+        #[arg(long)]
+        plan: PathBuf,
+        #[arg(long)]
+        api_base: Option<String>,
+    },
+    /// Package a built executable into a deterministic archive.
+    ArchiveBinary {
+        /// The executable to package.
+        #[arg(long)]
+        binary: PathBuf,
+        /// Its name inside the archive, and on `PATH` after extraction.
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Run the rehearsal registry until interrupted.
     ///
@@ -539,6 +574,74 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::Stage {
+            plan,
+            artifacts,
+            api_base,
+        } => {
+            let plan = release_plan::Plan::load(&plan)?;
+            let github = github_client(api_base)?;
+
+            // Artifacts are discovered by unit from the directory the build jobs
+            // populated, so the workflow decides what exists and this decides
+            // where it goes.
+            let mut payloads: std::collections::BTreeMap<String, staging::Payload> =
+                Default::default();
+            if let Some(dir) = artifacts {
+                for entry in std::fs::read_dir(&dir)? {
+                    let path = entry?.path();
+                    if !path.is_file() {
+                        continue;
+                    }
+                    let name =
+                        path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+                    let unit = if name.starts_with("templates") {
+                        "templates"
+                    } else {
+                        "compiler"
+                    };
+                    payloads.entry(unit.to_string()).or_default().add(name, path);
+                }
+            }
+
+            let staged = staging::stage(github.as_ref(), &plan, &payloads)?;
+            for entry in &staged {
+                println!(
+                    "{} draft {} ({} asset(s))",
+                    entry.tag,
+                    entry.release_id,
+                    entry.assets.len()
+                );
+                for asset in &entry.assets {
+                    println!("    {} {} bytes {}", asset.name, asset.size, &asset.digest[..16]);
+                }
+            }
+            Ok(())
+        }
+        Command::Discard { plan, api_base } => {
+            let plan = release_plan::Plan::load(&plan)?;
+            let github = github_client(api_base)?;
+            for tag in staging::discard(github.as_ref(), &plan)? {
+                println!("deleted draft {tag}");
+            }
+            Ok(())
+        }
+        Command::ArchiveBinary {
+            binary,
+            name,
+            output,
+        } => {
+            let archive = staging::archive_binary(&binary, &name)?;
+            std::fs::write(&output, &archive)?;
+            println!(
+                "{} -> {} ({} bytes, sha256 {})",
+                binary.display(),
+                output.display(),
+                archive.len(),
+                midenc_release::registry::sha256_hex(&archive)
+            );
+            Ok(())
+        }
         Command::FakeRegistry { .. } => unreachable!("handled before config loading"),
     }
 }
@@ -581,6 +684,18 @@ fn update_candidate(
     );
 
     candidate.save(path)
+}
+
+/// A GitHub client, pointed at a stub when a base URL is supplied.
+fn github_client(api_base: Option<String>) -> Result<Box<dyn midenc_release::github::GitHub>> {
+    Ok(match api_base {
+        Some(base) => {
+            let repo =
+                std::env::var("GITHUB_REPOSITORY").unwrap_or_else(|_| "owner/repo".to_string());
+            Box::new(RestGitHub::for_testing(base, repo))
+        }
+        None => Box::new(RestGitHub::from_env()?),
+    })
 }
 
 fn run_fake_registry(port: u16, cache_dir: Option<PathBuf>, offline: bool) -> Result<()> {
