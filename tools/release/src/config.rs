@@ -26,6 +26,9 @@ pub enum VersionSource {
 pub enum Unit {
     Compiler,
     Sdk,
+    /// The project template bundle. Releases an archive rather than crates, so
+    /// no package is ever assigned to it.
+    Templates,
     /// Repository infrastructure that is never published.
     Private,
 }
@@ -35,6 +38,7 @@ impl fmt::Display for Unit {
         let name = match self {
             Self::Compiler => "compiler",
             Self::Sdk => "sdk",
+            Self::Templates => "templates",
             Self::Private => "private",
         };
         f.write_str(name)

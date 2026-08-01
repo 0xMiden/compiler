@@ -91,6 +91,7 @@ clap = { version = "4.6", default-features = false, features = [
 cranelift-entity = "0.131"
 compact_str = { version = "0.9", default-features = false }
 darling = { version = "0.23", features = ["diagnostics"] }
+flate2 = "1.1"
 hashbrown = { version = "0.17", features = ["nightly"] }
 Inflector = "0.11"
 intrusive-collections = "0.10"

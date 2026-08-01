@@ -147,6 +147,16 @@ enum Command {
         #[arg(long)]
         journal: Option<PathBuf>,
     },
+    /// Build the template bundle archive.
+    ///
+    /// The archive is deterministic: its digest identifies the template
+    /// contents, which is what a compiler release checks its embedded copy
+    /// against.
+    Bundle {
+        /// Write the archive here.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Run the rehearsal registry until interrupted.
     ///
     /// Prints the configuration a rehearsal needs. Source replacement redirects
@@ -170,6 +180,9 @@ enum Command {
 enum UnitArg {
     Compiler,
     Sdk,
+    /// The template bundle. Publishes no crates; its version lives in
+    /// `extra/templates/bundle.toml`.
+    Templates,
 }
 
 impl From<UnitArg> for Unit {
@@ -177,6 +190,7 @@ impl From<UnitArg> for Unit {
         match arg {
             UnitArg::Compiler => Self::Compiler,
             UnitArg::Sdk => Self::Sdk,
+            UnitArg::Templates => Self::Templates,
         }
     }
 }
@@ -241,9 +255,30 @@ fn main() -> Result<()> {
             version: requested,
             dry_run,
         } => {
+            // Templates carry no crates, so their version lives in the bundle
+            // manifest rather than in a version domain of Cargo manifests.
+            if let UnitArg::Templates = unit {
+                let templates = ws.root.join("extra/templates");
+                let bundle = midenc_release::bundle::Bundle::load(&templates.join("bundle.toml"))?;
+                let new = requested.unwrap_or_else(|| version::next_minor(&bundle.version));
+                if new <= bundle.version {
+                    bail!("refusing to move {} to {new}: versions must increase", bundle.version);
+                }
+                println!("templates: {} -> {new}", bundle.version);
+                if dry_run {
+                    println!("\ndry run: nothing written");
+                    return Ok(());
+                }
+                midenc_release::bundle::set_version(&templates, &new)?;
+                update_candidate(&manifest_dir.join(".release/release.toml"), &config, unit, &new)?;
+                println!("recorded the candidate; review the diff");
+                return Ok(());
+            }
+
             let domain = match unit {
                 UnitArg::Compiler => VersionSource::Workspace,
                 UnitArg::Sdk => VersionSource::Sdk,
+                UnitArg::Templates => unreachable!("handled above"),
             };
             let plan = version::plan(&ws, &config, domain, requested)?;
             print!("{}", plan.summary());
@@ -380,6 +415,7 @@ fn main() -> Result<()> {
                         Some(unit) => plan.planned_for(match unit {
                             UnitArg::Compiler => "compiler",
                             UnitArg::Sdk => "sdk",
+                            UnitArg::Templates => "templates",
                         }),
                         None => plan.planned(),
                     }
@@ -480,6 +516,29 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
+        Command::Bundle { output } => {
+            let root = ws.root.join("extra/templates");
+            let bundle = midenc_release::bundle::Bundle::load(&root.join("bundle.toml"))?;
+
+            let problems = midenc_release::bundle::check_sdk_requirements(&root, &bundle)?;
+            if !problems.is_empty() {
+                for problem in &problems {
+                    eprintln!("error: {problem}");
+                }
+                bail!("the templates disagree with the bundle's declared SDK requirement");
+            }
+
+            let (bytes, digest) = midenc_release::bundle::archive(&root, &bundle)?;
+            let files = bundle.files(&root)?.len();
+            println!("templates {} — {files} files, {} bytes", bundle.version, bytes.len());
+            println!("sha256 {digest}");
+
+            if let Some(path) = output {
+                std::fs::write(&path, &bytes)?;
+                println!("wrote {}", path.display());
+            }
+            Ok(())
+        }
         Command::FakeRegistry { .. } => unreachable!("handled before config loading"),
     }
 }
@@ -495,6 +554,7 @@ fn update_candidate(
     let name = match unit {
         UnitArg::Compiler => "compiler",
         UnitArg::Sdk => "sdk",
+        UnitArg::Templates => "templates",
     };
     let unit_config = config
         .units

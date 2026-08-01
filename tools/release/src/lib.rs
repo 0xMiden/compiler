@@ -2,6 +2,7 @@
 //!
 //! The design this implements lives in `tasks/design/release-tooling.md`.
 
+pub mod archive;
 pub mod bundle;
 pub mod candidate;
 pub mod closure;

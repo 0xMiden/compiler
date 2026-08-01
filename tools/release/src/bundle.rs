@@ -107,6 +107,111 @@ fn collect(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Result<()
     Ok(())
 }
 
+/// Build the release archive for this bundle.
+///
+/// Returns the archive bytes and their digest. The digest is what a compiler
+/// release checks its embedded copy against, so it must depend on the template
+/// contents and nothing else -- which is why the archive is built through the
+/// deterministic writer rather than the system `tar`.
+pub fn archive(root: &Path, bundle: &Bundle) -> Result<(Vec<u8>, String)> {
+    let mut entries = Vec::new();
+    for relative in bundle.files(root)? {
+        let path = root.join(&relative);
+        let bytes =
+            std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
+        entries.push(crate::archive::Entry {
+            path: relative.to_string_lossy().replace('\\', "/"),
+            bytes,
+            // Nothing in a template bundle is executable; a template that needed
+            // a script would want it marked in the template itself.
+            executable: false,
+        });
+    }
+
+    let bytes = crate::archive::tar_gz(entries)?;
+    let digest = crate::registry::sha256_hex(&bytes);
+    Ok((bytes, digest))
+}
+
+/// The `miden` requirement templates should carry for a given SDK version.
+///
+/// Stable releases get a minor-level requirement, so a later SDK patch needs no
+/// template change. Prereleases get the exact version: a caret requirement never
+/// matches a prerelease, so `"0.14"` would leave a generated project unable to
+/// resolve the very SDK it was released alongside.
+pub fn requirement_for(version: &Version) -> String {
+    if version.pre.is_empty() {
+        format!("{}.{}", version.major, version.minor)
+    } else {
+        version.to_string()
+    }
+}
+
+/// Rewrite the bundle's declared requirement and every template manifest to
+/// match a new SDK version.
+pub fn set_sdk_requirement(root: &Path, requirement: &str) -> Result<Vec<PathBuf>> {
+    let bundle_path = root.join("bundle.toml");
+    let bundle = Bundle::load(&bundle_path)?;
+    let mut changed = Vec::new();
+
+    let text = std::fs::read_to_string(&bundle_path)?;
+    let mut document: toml_edit::DocumentMut = text.parse()?;
+    document["sdk-requirement"] = toml_edit::value(requirement);
+    std::fs::write(&bundle_path, document.to_string())?;
+    changed.push(bundle_path);
+
+    let old = format!("\"{}\"", bundle.sdk_requirement);
+    let new = format!("\"{requirement}\"");
+
+    for entry in bundle.templates.values() {
+        let mut manifests = Vec::new();
+        find_manifests(&root.join(&entry.path), &mut manifests)?;
+        for manifest in manifests {
+            let text = std::fs::read_to_string(&manifest)?;
+            let updated: String = text
+                .lines()
+                .map(|line| {
+                    let trimmed = line.trim();
+                    let is_miden_version = (trimmed.starts_with("miden ")
+                        || trimmed.starts_with("miden="))
+                        && !trimmed.contains("path")
+                        && !trimmed.contains("git")
+                        && trimmed.contains(&old);
+                    if is_miden_version {
+                        line.replace(&old, &new)
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let updated = if text.ends_with('\n') {
+                format!("{updated}\n")
+            } else {
+                updated
+            };
+
+            if updated != text {
+                std::fs::write(&manifest, updated)?;
+                changed.push(manifest);
+            }
+        }
+    }
+
+    changed.sort();
+    Ok(changed)
+}
+
+/// Move the bundle's own version.
+pub fn set_version(root: &Path, version: &Version) -> Result<()> {
+    let path = root.join("bundle.toml");
+    let text = std::fs::read_to_string(&path)?;
+    let mut document: toml_edit::DocumentMut = text.parse()?;
+    document["version"] = toml_edit::value(version.to_string());
+    std::fs::write(&path, document.to_string())?;
+    Ok(())
+}
+
 /// Check that every template's SDK requirement matches what the bundle declares.
 ///
 /// This is the drift that would otherwise be silent: after an SDK minor bump,

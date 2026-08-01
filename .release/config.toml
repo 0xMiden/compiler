@@ -16,6 +16,12 @@ changelog = "CHANGELOG.md"
 tag = "sdk/v{version}"
 changelog = "sdk/CHANGELOG.md"
 
+# Publishes an archive rather than crates, so no package is ever assigned to it.
+# Its version lives in `extra/templates/bundle.toml`.
+[units.templates]
+tag = "templates/v{version}"
+changelog = "extra/templates/CHANGELOG.md"
+
 # --- compiler unit ------------------------------------------------------------
 
 [[packages]]

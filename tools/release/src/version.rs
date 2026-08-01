@@ -163,6 +163,23 @@ pub fn apply(ws: &Workspace, config: &Config, plan: &VersionPlan) -> Result<()> 
         }
     }
 
+    // Templates hardcode an SDK requirement, so an SDK bump has to carry them
+    // along or generated projects stay pinned to the previous SDK. This is
+    // silent when missed: the templates still render and still build.
+    if plan.domain == VersionSource::Sdk {
+        let templates = ws.root.join("extra/templates");
+        if templates.join("bundle.toml").exists() {
+            let requirement = crate::bundle::requirement_for(&plan.new);
+            let changed = crate::bundle::set_sdk_requirement(&templates, &requirement)?;
+            if !changed.is_empty() {
+                println!(
+                    "updated the template SDK requirement to \"{requirement}\" in {} file(s)",
+                    changed.len()
+                );
+            }
+        }
+    }
+
     refresh_lockfile(&ws.root)
 }
 
