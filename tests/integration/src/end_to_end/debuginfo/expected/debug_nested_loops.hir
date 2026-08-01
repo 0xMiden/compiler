@@ -178,7 +178,7 @@ builtin.component private @root_ns:root@1.0.0 {
             %124 = hir.int_to_ptr %122 <{ ty = #builtin.type<ptr<i32, element>> }>;
             hir.store %124, %116 : (ptr<i32, element>, i32);
             cf.br ^block6;
-        };
+        } attributes { di.compile_unit = #di.compile_unit<{ language = "wasm", file = "test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1.rs", directory = "", producer = "midenc-frontend-wasm", optimized = false }>, di.subprogram = #di.subprogram<{ name = "entrypoint", file = "test_rust_0c3ae86ec9024ba37eabb5e0f732abe49b77e739f7696fe0d9cb0b5d1f72d1c1.rs", line = 18, definition = true, local = false }> };
         builtin.global_variable private @__stack_pointer : i32 {
             builtin.ret_imm 1048576 : i32;
         };

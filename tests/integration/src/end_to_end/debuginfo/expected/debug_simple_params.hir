@@ -37,7 +37,7 @@ builtin.component private @root_ns:root@1.0.0 {
             builtin.ret %30 : (i32);
         ^block5(%2: i32):
 
-        };
+        } attributes { di.compile_unit = #di.compile_unit<{ language = "wasm", file = "test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537.rs", directory = "", producer = "midenc-frontend-wasm", optimized = false }>, di.subprogram = #di.subprogram<{ name = "entrypoint", file = "test_rust_f87bb1f3934b1e6844c1c9b6ceccb97d68349d13274693606c56673a28b6e537.rs", line = 18, definition = true, local = false }> };
         builtin.global_variable private @__stack_pointer : i32 {
             builtin.ret_imm 1048576 : i32;
         };
