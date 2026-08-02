@@ -147,13 +147,33 @@ fn check_embedded_bundle(root: &Path, findings: &mut Findings) -> Result<()> {
     let actual = crate::registry::sha256_hex(&std::fs::read(&embedded)?);
 
     if actual != expected {
-        findings.error(format!(
+        let mut message = format!(
             "the embedded template bundle is stale: {} has sha256 {}, but the sources produce {}. \
              Regenerate it with `release-tool bundle --output tools/cargo-miden/templates.tar.gz`",
             embedded.display(),
             &actual[..16],
             &expected[..16]
-        ));
+        );
+
+        // The bundle is built from tracked files, so an untracked one in a
+        // template directory is the likeliest reason two checkouts of the same
+        // commit disagree -- and the reason is invisible from the digests
+        // alone. This turns "it differs in CI" into an answer.
+        let strays = crate::bundle::untracked(&bundle, &templates)?;
+        if !strays.is_empty() {
+            let list: Vec<String> = strays
+                .iter()
+                .map(|path| format!("extra/templates/{}", path.display()))
+                .collect();
+            message.push_str(&format!(
+                ".\nNote: these files sit in a template directory but are not tracked by git, so \
+                 they are not in the bundle and never reach a generated project: {}. Commit them \
+                 (`git add -f` if something is ignoring them) or remove them",
+                list.join(", ")
+            ));
+        }
+
+        findings.error(message);
     }
     Ok(())
 }

@@ -131,6 +131,13 @@ pub fn verify(workspace_root: &Path, options: &Options) -> Result<Closure> {
     };
     let registry = Registry::start(0, Faults::default(), upstream)?;
 
+    // The registry -- not crates.io -- is the authority on the crates under
+    // test. Between releases the workspace sits at an already-published
+    // version, and without this the proxy serves that released copy: Cargo
+    // then refuses to publish over it, and the check fails for a reason that
+    // has nothing to do with whether the archives are sound.
+    registry.own(options.packages.clone());
+
     // An isolated CARGO_HOME with source replacement. Replacement redirects
     // dependency *resolution* so interdependent unpublished crates resolve
     // against each other; `--index` redirects the *upload target*. Neither

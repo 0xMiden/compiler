@@ -563,6 +563,15 @@ fn main() -> Result<()> {
                 bail!("the templates disagree with the bundle's declared SDK requirement");
             }
 
+            // The archive is built from tracked files, so anything else in a
+            // template directory is silently absent. Say so before writing it.
+            for stray in midenc_release::bundle::untracked(&bundle, &root)? {
+                eprintln!(
+                    "warning: extra/templates/{} is not tracked by git and is not in the bundle",
+                    stray.display()
+                );
+            }
+
             let (bytes, digest) = midenc_release::bundle::archive(&root, &bundle)?;
             let files = bundle.files(&root)?.len();
             println!("templates {} — {files} files, {} bytes", bundle.version, bytes.len());

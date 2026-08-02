@@ -104,6 +104,15 @@ pub struct Stats {
 }
 
 struct State {
+    /// Crate names this registry is authoritative for.
+    ///
+    /// Upstream is never consulted for these, even before they are published
+    /// here. Without that, a crate whose current version is already on
+    /// crates.io -- which is every crate in the workspace between releases --
+    /// resolves to the *released* copy through the proxy, and Cargo refuses to
+    /// publish over it. The question being asked is "would these archives work
+    /// if published", so the local copies must be the only ones visible.
+    owned: BTreeSet<String>,
     /// Published index entries, keyed by crate name, in publication order.
     entries: BTreeMap<String, Vec<IndexEntry>>,
     /// Stored `.crate` archives, keyed by `<name>-<version>`.
@@ -135,6 +144,7 @@ impl Registry {
         let addr = listener.local_addr()?;
 
         let state = Arc::new(Mutex::new(State {
+            owned: BTreeSet::new(),
             entries: BTreeMap::new(),
             archives: BTreeMap::new(),
             withheld: BTreeMap::new(),
@@ -184,6 +194,21 @@ impl Registry {
         state.remaining_rate_limits = faults.rate_limit_uploads;
         state.remaining_transient = faults.transient_errors;
         state.faults = faults;
+    }
+
+    /// Declare the crates this registry is authoritative for.
+    ///
+    /// Call this before publishing anything: it is what stops an already
+    /// released version of a crate under test from reaching Cargo through the
+    /// upstream proxy. Until such a crate is published here it reads as absent,
+    /// which is the truth being tested.
+    pub fn own<I, S>(&self, names: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        let mut state = self.state.lock().expect("registry state is not poisoned");
+        state.owned.extend(names.into_iter().map(Into::into));
     }
 
     /// The versions published for a crate, in publication order.
@@ -350,10 +375,16 @@ impl Server {
 
     fn handle_download(&self, name: &str, version: &str) -> (u16, &'static str, Vec<u8>) {
         let key = format!("{name}-{version}");
-        if let Some(bytes) =
-            self.state.lock().expect("registry state is not poisoned").archives.get(&key)
         {
-            return (200, "application/octet-stream", bytes.clone());
+            let state = self.state.lock().expect("registry state is not poisoned");
+            if let Some(bytes) = state.archives.get(&key) {
+                return (200, "application/octet-stream", bytes.clone());
+            }
+            // Serving the released archive for a crate under test would build
+            // the consumer against code this run never packaged.
+            if state.owned.contains(name) {
+                return (404, "application/json", b"{\"errors\":[]}".to_vec());
+            }
         }
         match self.upstream.fetch_archive(name, version) {
             Some(bytes) => (200, "application/octet-stream", bytes),
@@ -378,6 +409,10 @@ impl Server {
                 self.stats.local_index_hits.fetch_add(1, Ordering::Relaxed);
                 let body: String = entries.iter().map(IndexEntry::to_line).collect();
                 return (200, "text/plain", body.into_bytes());
+            }
+            // Authoritative and unpublished means absent, not "ask crates.io".
+            if state.owned.contains(&name) {
+                return (404, "text/plain", Vec::new());
             }
         }
 

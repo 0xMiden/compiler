@@ -81,30 +81,92 @@ impl Bundle {
     }
 }
 
-/// Walk a template directory, skipping what should never ship.
+/// List a template directory's files as the *repository* defines them.
+///
+/// The enumeration comes from git rather than from a filesystem walk so that the
+/// archive is a function of the commit and nothing else. A walk asks "what is on
+/// this machine", and the answer varies: an ignored directory, a stray editor
+/// file, or -- the case that caught this -- a `.git/info/exclude` entry private
+/// to one clone silently changes the bundle's contents and therefore its digest.
+/// The archive built here has to be reproducible by anyone checking out the same
+/// commit, because `lint` compares it against the copy committed for
+/// `cargo-miden` to embed.
+///
+/// Files present on disk but unknown to git are reported by [`untracked`] rather
+/// than included.
 fn collect(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
-    for entry in std::fs::read_dir(directory)? {
-        let entry = entry?;
-        let path = entry.path();
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "-z", "--"])
+        .arg(directory)
+        .output()
+        .context("failed to run `git ls-files`; the bundle is built from a checkout")?;
 
-        // Build output and VCS metadata are never part of a template. `Cargo.lock`
-        // is excluded from the rendered templates for the same reason Cargo omits
-        // it from published libraries: the generated project should resolve fresh.
-        if matches!(name.as_ref(), "target" | ".git" | ".DS_Store") {
+    if !output.status.success() {
+        bail!(
+            "`git ls-files` failed for {}: {}",
+            directory.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+
+    for entry in output.stdout.split(|byte| *byte == 0) {
+        if entry.is_empty() {
             continue;
         }
-
-        if path.is_dir() {
-            collect(&path, root, files)?;
-        } else {
-            files.push(
-                path.strip_prefix(root).expect("walked paths are under the root").to_path_buf(),
-            );
+        let path = PathBuf::from(String::from_utf8_lossy(entry).into_owned());
+        // A tracked path that is gone from the working tree would otherwise
+        // fail later, when the archive tries to read it.
+        if !root.join(&path).is_file() {
+            continue;
         }
+        files.push(path);
     }
     Ok(())
+}
+
+/// Files sitting in a template directory that git does not track.
+///
+/// These are invisible to [`Bundle::files`] by design, but silently dropping
+/// them is how an archive comes to differ between two checkouts of the same
+/// commit. Callers surface them so the omission is a decision rather than an
+/// accident.
+pub fn untracked(bundle: &Bundle, root: &Path) -> Result<Vec<PathBuf>> {
+    let mut found = Vec::new();
+
+    for entry in bundle.templates.values() {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["ls-files", "-z", "--others", "--"])
+            .arg(root.join(&entry.path))
+            .output()
+            .context("failed to run `git ls-files --others`")?;
+        if !output.status.success() {
+            continue;
+        }
+        for path in output.stdout.split(|byte| *byte == 0) {
+            if path.is_empty() {
+                continue;
+            }
+            let path = PathBuf::from(String::from_utf8_lossy(path).into_owned());
+            if matches!(
+                path.file_name().and_then(|n| n.to_str()),
+                Some(".DS_Store") | Some("Cargo.lock")
+            ) {
+                continue;
+            }
+            if path.components().any(|c| c.as_os_str() == "target") {
+                continue;
+            }
+            found.push(path);
+        }
+    }
+
+    found.sort();
+    found.dedup();
+    Ok(found)
 }
 
 /// Build the release archive for this bundle.
@@ -312,7 +374,23 @@ account = { path = "rust/account" }
         write(&dir.join("README.md"), "not a template");
         write(&dir.join("rust/.github/workflows/ci.yml"), "name: CI");
         write(&dir.join("rust/tests/Cargo.toml"), "[package]\nname = \"tests\"\n");
+
+        // The file list comes from git, so the fixture has to be a repository.
+        git(&dir, &["init", "-q"]);
+        git(&dir, &["add", "-A"]);
         dir
+    }
+
+    fn git(dir: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .expect("git runs");
+        assert!(status.success(), "git {args:?} failed");
     }
 
     #[test]
@@ -329,6 +407,38 @@ account = { path = "rust/account" }
         assert!(!files.iter().any(|f| f.starts_with("rust/tests")), "{files:?}");
         assert!(!files.iter().any(|f| f.starts_with("rust/.github")), "{files:?}");
         assert!(!files.contains(&PathBuf::from("README.md")), "{files:?}");
+    }
+
+    /// The bug this guards against shipped a bundle nobody else could
+    /// reproduce: a `.git/info/exclude` entry private to one clone hid nine
+    /// files from git, so the archive built there contained them and the
+    /// archive built in CI did not. The bundle must depend on the commit, not
+    /// on whose machine it was built.
+    #[test]
+    fn a_file_git_does_not_track_stays_out_of_the_archive() {
+        let dir = fixture("untracked");
+        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let (before, digest_before) = archive(&dir, &bundle).unwrap();
+
+        write(&dir.join("rust/account/template/.claude/settings.json"), "{}");
+        let (after, digest_after) = archive(&dir, &bundle).unwrap();
+
+        assert_eq!(digest_before, digest_after, "an untracked file changed the bundle digest");
+        assert_eq!(before, after);
+
+        // ... but it is reported, so the omission is visible rather than silent.
+        let strays = untracked(&bundle, &dir).unwrap();
+        assert_eq!(
+            strays,
+            [PathBuf::from("rust/account/template/.claude/settings.json")],
+            "an untracked template file must be reported"
+        );
+
+        // Once committed it ships, which is the only way to add template content.
+        git(&dir, &["add", "-A"]);
+        let (_, digest_tracked) = archive(&dir, &bundle).unwrap();
+        assert_ne!(digest_before, digest_tracked);
+        assert!(untracked(&bundle, &dir).unwrap().is_empty());
     }
 
     #[test]

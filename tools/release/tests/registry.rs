@@ -197,6 +197,55 @@ fn unknown_crates_are_not_found_when_there_is_no_upstream() {
     assert_eq!(response, 404);
 }
 
+/// An owned crate is served from here or not at all.
+///
+/// This is the shape of the failure that broke closure verification in CI:
+/// every workspace crate sits at an already-published version between releases,
+/// so a proxied lookup returned the *released* copy and Cargo refused to publish
+/// over it. Owning a crate makes the local registry the only authority on it.
+#[test]
+fn an_owned_crate_is_never_resolved_upstream() {
+    /// An upstream that claims to have everything, which is what crates.io is
+    /// for a workspace whose current version has already shipped.
+    #[derive(Debug)]
+    struct EverythingUpstream;
+    impl midenc_release::registry::Upstream for EverythingUpstream {
+        fn fetch_index(&self, _path: &str) -> Option<Vec<u8>> {
+            Some(
+                br#"{"name":"rehearsal-leaf","vers":"0.1.0","deps":[],"cksum":"00","features":{},"yanked":false}
+"#
+                .to_vec(),
+            )
+        }
+
+        fn fetch_archive(&self, _name: &str, _version: &str) -> Option<Vec<u8>> {
+            Some(b"upstream archive".to_vec())
+        }
+    }
+
+    let registry = Registry::start(0, Faults::default(), Arc::new(EverythingUpstream)).unwrap();
+    let host = registry
+        .index_url()
+        .trim_start_matches("sparse+http://")
+        .trim_end_matches('/')
+        .to_string();
+
+    // Unowned: the proxy answers, which is what third-party dependencies need.
+    assert_eq!(http_get_status(&host, "/re/he/rehearsal-leaf"), 200);
+
+    registry.own(["rehearsal-leaf"]);
+    assert_eq!(
+        http_get_status(&host, "/re/he/rehearsal-leaf"),
+        404,
+        "an owned crate that has not been published here must read as absent"
+    );
+    assert_eq!(
+        http_get_status(&host, "/api/v1/crates/rehearsal-leaf/0.1.0/download"),
+        404,
+        "serving the released archive would build against code this run never packaged"
+    );
+}
+
 fn http_get(host: &str, path: &str) -> String {
     use std::io::{Read, Write};
     let mut stream = std::net::TcpStream::connect(host).unwrap();
