@@ -50,8 +50,17 @@ fn fixture_workspace(dir: &Path) {
     }
 }
 
-fn cargo() -> Command {
-    Command::new(std::env::var("CARGO").as_deref().unwrap_or("cargo"))
+/// Cargo, aimed at the fixture workspace and nowhere else.
+///
+/// The target directory is pinned explicitly because an ambient
+/// `CARGO_TARGET_DIR` -- which `Makefile.toml` sets for the whole repository --
+/// would otherwise redirect `cargo package` output away from the fixture, and
+/// would put both tests' `rehearsal-leaf-0.1.0.crate` in the same place while
+/// they run concurrently.
+fn cargo(workspace: &Path) -> Command {
+    let mut command = Command::new(std::env::var("CARGO").as_deref().unwrap_or("cargo"));
+    command.current_dir(workspace).env("CARGO_TARGET_DIR", workspace.join("target"));
+    command
 }
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -87,8 +96,7 @@ fn cargo_publishes_interdependent_crates_and_the_index_serves_them_back() {
     )
     .unwrap();
 
-    let output = cargo()
-        .current_dir(&workspace)
+    let output = cargo(&workspace)
         .env("CARGO_HOME", &cargo_home)
         .args(["publish", "--no-verify", "--allow-dirty"])
         .args(["--index", &registry.index_url()])
@@ -135,8 +143,7 @@ fn uploaded_bytes_match_locally_packaged_bytes() {
     .unwrap();
 
     // Package in production form first: no source replacement, no flags.
-    let packaged = cargo()
-        .current_dir(&workspace)
+    let packaged = cargo(&workspace)
         .args(["package", "--no-verify", "--allow-dirty", "-p", "rehearsal-leaf"])
         .output()
         .expect("cargo package runs");
@@ -147,8 +154,7 @@ fn uploaded_bytes_match_locally_packaged_bytes() {
     );
     let reference = fs::read(workspace.join("target/package/rehearsal-leaf-0.1.0.crate")).unwrap();
 
-    let published = cargo()
-        .current_dir(&workspace)
+    let published = cargo(&workspace)
         .env("CARGO_HOME", &cargo_home)
         .args(["publish", "--no-verify", "--allow-dirty"])
         .args(["--index", &registry.index_url()])
@@ -245,8 +251,7 @@ fn reconciliation_after_a_partial_publish_yields_only_what_remains() {
     .unwrap();
 
     // Simulate an attempt that published `leaf` and then died before `root`.
-    let published = cargo()
-        .current_dir(&workspace_dir)
+    let published = cargo(&workspace_dir)
         .env("CARGO_HOME", &cargo_home)
         .args(["publish", "--no-verify", "--allow-dirty"])
         .args(["--index", &registry.index_url()])

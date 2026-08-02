@@ -56,6 +56,13 @@ jobs:
   verify:
     name: verify
     needs: impact
+    # A called workflow can only *downgrade* the calling job's token, so this
+    # grant is the ceiling for every job in `release-verify.yml`. Without it the
+    # job inherits the top-level `{}` and the call is rejected as an escalation
+    # when the run graph is built -- which fails the whole run before any job
+    # starts, rather than failing this one.
+    permissions:
+      contents: read
     uses: ./.github/workflows/release-verify.yml
     with:
       ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -71,11 +78,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Aggregate
+        # Results arrive through the environment rather than by interpolation
+        # into the script, which is the rule regardless of whether a particular
+        # value could carry anything interesting.
+        env:
+          IMPACT: ${{ needs.impact.result }}
+          VERIFY: ${{ needs.verify.result }}
         run: |
           set -euo pipefail
-          echo "impact: ${{ needs.impact.result }}"
-          echo "verify: ${{ needs.verify.result }}"
-          for result in "${{ needs.impact.result }}" "${{ needs.verify.result }}"; do
+          echo "impact: ${IMPACT}"
+          echo "verify: ${VERIFY}"
+          for result in "${IMPACT}" "${VERIFY}"; do
             case "${result}" in
               success) ;;
               *) echo "a required release check did not succeed" >&2; exit 1 ;;

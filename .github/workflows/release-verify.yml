@@ -18,7 +18,12 @@ on:
         default: false
         type: boolean
 
-permissions: {}
+# Every job here checks out a commit and builds it; none of them write anything.
+# This is also the ceiling a caller must grant on the calling job -- a called
+# workflow can only downgrade the token it is handed, and asking for more than
+# it was given fails the entire run before any job starts.
+permissions:
+  contents: read
 
 jobs:
   lint:
