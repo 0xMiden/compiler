@@ -6,10 +6,10 @@
 use anyhow::Result;
 use clap::Parser;
 
+pub mod bundle;
 mod cli;
 mod commands;
 mod outputs;
-pub mod bundle;
 mod template;
 mod utils;
 

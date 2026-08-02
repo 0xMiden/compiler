@@ -43,11 +43,7 @@ pub fn extract(destination: &Path) -> Result<PathBuf> {
         .spawn()
         .and_then(|mut child| {
             use std::io::Write;
-            child
-                .stdin
-                .as_mut()
-                .expect("stdin was piped")
-                .write_all(ARCHIVE)?;
+            child.stdin.as_mut().expect("stdin was piped").write_all(ARCHIVE)?;
             child.wait_with_output()
         })
         .context("failed to extract the embedded template bundle")?;
