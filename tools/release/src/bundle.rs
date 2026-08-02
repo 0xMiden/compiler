@@ -61,7 +61,18 @@ impl Bundle {
     /// Every file the archive should contain, relative to the templates root,
     /// in a stable order.
     pub fn files(&self, root: &Path) -> Result<Vec<PathBuf>> {
-        let mut files = vec![PathBuf::from("bundle.toml")];
+        Ok(self.entries(root)?.into_iter().map(|(path, _)| path).collect())
+    }
+
+    /// Every file the archive should contain, paired with whether it is
+    /// executable, in a stable order.
+    ///
+    /// The executable flag comes from git's mode rather than the filesystem's:
+    /// git records exactly one bit (`100644` or `100755`), whereas an on-disk
+    /// mode varies with umask and platform and would put the archive's digest
+    /// back at the mercy of whoever built it.
+    pub fn entries(&self, root: &Path) -> Result<Vec<(PathBuf, bool)>> {
+        let mut files = vec![(PathBuf::from("bundle.toml"), false)];
 
         for (name, entry) in &self.templates {
             let directory = root.join(&entry.path);
@@ -94,11 +105,13 @@ impl Bundle {
 ///
 /// Files present on disk but unknown to git are reported by [`untracked`] rather
 /// than included.
-fn collect(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+fn collect(directory: &Path, root: &Path, files: &mut Vec<(PathBuf, bool)>) -> Result<()> {
+    // `-s` adds the staged mode, which is where the executable bit comes from.
+    // The record is `<mode> <object> <stage>\t<path>`, NUL-terminated.
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["ls-files", "-z", "--"])
+        .args(["ls-files", "-s", "-z", "--"])
         .arg(directory)
         .output()
         .context("failed to run `git ls-files`; the bundle is built from a checkout")?;
@@ -111,17 +124,29 @@ fn collect(directory: &Path, root: &Path, files: &mut Vec<PathBuf>) -> Result<()
         );
     }
 
-    for entry in output.stdout.split(|byte| *byte == 0) {
-        if entry.is_empty() {
+    for record in output.stdout.split(|byte| *byte == 0) {
+        if record.is_empty() {
             continue;
         }
-        let path = PathBuf::from(String::from_utf8_lossy(entry).into_owned());
+        let record = String::from_utf8_lossy(record);
+        let Some((metadata, path)) = record.split_once('\t') else {
+            bail!("unexpected `git ls-files -s` record: {record}");
+        };
+        let mode = metadata.split_whitespace().next().unwrap_or_default();
+
+        // Symlinks (120000) and gitlinks (160000) are not file content and have
+        // no meaning in an extracted template.
+        if !matches!(mode, "100644" | "100755") {
+            continue;
+        }
+
+        let path = PathBuf::from(path);
         // A tracked path that is gone from the working tree would otherwise
         // fail later, when the archive tries to read it.
         if !root.join(&path).is_file() {
             continue;
         }
-        files.push(path);
+        files.push((path, mode == "100755"));
     }
     Ok(())
 }
@@ -177,16 +202,17 @@ pub fn untracked(bundle: &Bundle, root: &Path) -> Result<Vec<PathBuf>> {
 /// deterministic writer rather than the system `tar`.
 pub fn archive(root: &Path, bundle: &Bundle) -> Result<(Vec<u8>, String)> {
     let mut entries = Vec::new();
-    for relative in bundle.files(root)? {
+    for (relative, executable) in bundle.entries(root)? {
         let path = root.join(&relative);
         let bytes =
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
         entries.push(crate::archive::Entry {
             path: relative.to_string_lossy().replace('\\', "/"),
             bytes,
-            // Nothing in a template bundle is executable; a template that needed
-            // a script would want it marked in the template itself.
-            executable: false,
+            // A template can ship a script -- the project scaffold has a hook
+            // that has to be runnable once generated -- so the bit is carried
+            // through rather than flattened.
+            executable,
         });
     }
 
@@ -439,6 +465,25 @@ account = { path = "rust/account" }
         let (_, digest_tracked) = archive(&dir, &bundle).unwrap();
         assert_ne!(digest_before, digest_tracked);
         assert!(untracked(&bundle, &dir).unwrap().is_empty());
+    }
+
+    /// The project scaffold ships a hook that has to be runnable in a generated
+    /// project. The bit comes from git's mode, not the filesystem's, so it does
+    /// not vary with umask.
+    #[test]
+    fn an_executable_template_file_stays_executable() {
+        let dir = fixture("exec");
+        let script = dir.join("rust/account/template/hook.sh");
+        write(&script, "#!/bin/sh\necho hi\n");
+        git(&dir, &["add", "-A"]);
+        git(&dir, &["update-index", "--chmod=+x", "rust/account/template/hook.sh"]);
+
+        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let entries = bundle.entries(&dir).unwrap();
+
+        let executable: Vec<&PathBuf> =
+            entries.iter().filter(|(_, exec)| *exec).map(|(path, _)| path).collect();
+        assert_eq!(executable, [&PathBuf::from("rust/account/template/hook.sh")], "{entries:?}");
     }
 
     #[test]
