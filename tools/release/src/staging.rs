@@ -21,6 +21,13 @@ use crate::{
     plan::Plan,
 };
 
+/// The checksum file staged beside a unit's payload.
+pub const SHA256SUMS: &str = "SHA256SUMS";
+
+/// Prefix of the asset carrying the sealed plan. The plan's digest is appended,
+/// so a draft names the run it belongs to.
+pub const PLAN_ASSET_PREFIX: &str = "release-plan-";
+
 /// What to attach to a unit's draft.
 #[derive(Debug, Default)]
 pub struct Payload {
@@ -86,13 +93,13 @@ pub fn stage(
         // A checksum file over the payload, so a consumer can verify a download
         // without consulting the release API.
         if !to_upload.is_empty() {
-            to_upload.push(("SHA256SUMS".to_string(), sha256sums(&to_upload).into_bytes()));
+            to_upload.push((SHA256SUMS.to_string(), sha256sums(&to_upload).into_bytes()));
         }
 
         // The sealed plan travels with every draft: it is the audit record and
         // the input a resume reads.
         to_upload.push((
-            format!("release-plan-{}.json", &plan.digest()[..16]),
+            format!("{PLAN_ASSET_PREFIX}{}.json", &plan.digest()[..16]),
             plan.to_canonical_json().into_bytes(),
         ));
 
@@ -264,7 +271,7 @@ mod tests {
         let github = StubGitHub::new();
         let plan = plan(&["sdk"]);
         let release = github.create_draft("sdk/v1.0.0", "abc123", false).unwrap();
-        github.publish_release(release.id).unwrap();
+        github.publish_release(release.id, false).unwrap();
 
         let err = stage(&github, &plan, &BTreeMap::new()).unwrap_err().to_string();
         assert!(err.contains("cannot be modified"), "{err}");
@@ -279,7 +286,7 @@ mod tests {
 
         // Publish one of them; only the other should be discardable.
         let published = github.release_by_tag("compiler/v1.0.0").unwrap().unwrap();
-        github.publish_release(published.id).unwrap();
+        github.publish_release(published.id, false).unwrap();
 
         let removed = discard(&github, &plan).unwrap();
         assert_eq!(removed, ["sdk/v1.0.0"]);

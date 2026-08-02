@@ -327,11 +327,17 @@ jobs:
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
         id: auth
 
-      # The token is passed through the environment, never as an argument:
-      # process arguments are readable by every other process on the machine.
-      - name: Publish
+      # Tokens are passed through the environment, never as arguments: process
+      # arguments are readable by every other process on the machine.
+      #
+      # GITHUB_TOKEN is here because each unit's tag is created immediately
+      # before that unit's crates are published -- not for all units up front,
+      # which would let a permanent failure in the SDK stage burn the compiler's
+      # tag as well.
+      - name: Tag and publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ./target/release/release-tool publish \
             --plan "${RUNNER_TEMP}/plan.json" \
@@ -343,3 +349,41 @@ jobs:
           name: release-journal
           path: ${{ runner.temp }}/journal.json
           if-no-files-found: warn
+
+  # ---------------------------------------------------------------- Phase E --
+  # Verify every staged draft and publish it. A published release is immutable,
+  # so this is the one step that cannot be undone even in principle -- every
+  # unit is verified before any unit is published.
+  #
+  # No crates.io credential and no OIDC: nothing here touches the registry.
+  finalize:
+    name: finalize
+    needs: [plan, publish]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # publishing a release
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ needs.plan.outputs.subject }}
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+
+      - name: Build release-tool
+        run: cargo build -p midenc-release --release
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-plan
+          path: ${{ runner.temp }}
+
+      - name: Verify and publish the drafts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./target/release/release-tool finalize --plan "${RUNNER_TEMP}/plan.json"

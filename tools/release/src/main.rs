@@ -148,6 +148,38 @@ enum Command {
         /// Write the journal here.
         #[arg(long)]
         journal: Option<PathBuf>,
+        /// Point at a different GitHub API, for tests.
+        #[arg(long)]
+        api_base: Option<String>,
+    },
+    /// Emit a prompt for writing a unit's changelog entries.
+    ///
+    /// It emits a prompt and nothing else: it never writes entries. What
+    /// changed and why it matters to a reader is a judgement, and prose
+    /// generated here would look reviewed without having been.
+    ChangelogPrompt {
+        /// The release unit to describe.
+        unit: String,
+        /// Override the revision range. Defaults to the unit's last release
+        /// tag through HEAD.
+        range: Option<String>,
+        /// The version being released, for the section heading. Omit for an
+        /// `[Unreleased]` section.
+        #[arg(long)]
+        version: Option<String>,
+    },
+    /// Verify every staged draft and publish it.
+    ///
+    /// Phase E, and the only irreversible step that cannot be undone even in
+    /// principle: a published release is immutable. Everything checkable is
+    /// checked for every unit before the first one is published.
+    Finalize {
+        /// The sealed plan.
+        #[arg(long)]
+        plan: PathBuf,
+        /// Point at a different GitHub API, for tests.
+        #[arg(long)]
+        api_base: Option<String>,
     },
     /// Build the template bundle archive.
     ///
@@ -516,6 +548,7 @@ fn main() -> Result<()> {
             rehearsal_index,
             dry_run,
             journal,
+            api_base,
         } => {
             let plan = release_plan::Plan::load(&plan)?;
             let (target, index_url) = match &rehearsal_index {
@@ -541,7 +574,10 @@ fn main() -> Result<()> {
             };
             std::fs::create_dir_all(&options.cargo_home)?;
 
-            let record = executor::execute(&ws, &plan, &index, &target, &options)?;
+            // Each unit's tag is created here, immediately before that unit's
+            // crates go out, so this needs a GitHub client as well as a registry.
+            let github = github_client(api_base)?;
+            let record = executor::execute(&ws, &plan, &index, github.as_ref(), &target, &options)?;
             for entry in &record.entries {
                 println!("  [{}] {}: {}", entry.stage, entry.action, entry.detail);
             }
@@ -625,6 +661,32 @@ fn main() -> Result<()> {
                     println!("    {} {} bytes {}", asset.name, asset.size, &asset.digest[..16]);
                 }
             }
+            Ok(())
+        }
+        Command::ChangelogPrompt {
+            unit,
+            range,
+            version,
+        } => {
+            let prompt = midenc_release::changelog::prepare(&ws, &config, &unit, range)?;
+            print!("{}", prompt.render(version.as_deref()));
+            Ok(())
+        }
+        Command::Finalize { plan, api_base } => {
+            let plan = release_plan::Plan::load(&plan)?;
+            let github = github_client(api_base)?;
+
+            let finalized = midenc_release::finalize::finalize(github.as_ref(), &plan)?;
+            for entry in &finalized {
+                let state = if entry.already_published {
+                    "already published"
+                } else {
+                    "published"
+                };
+                let latest = if entry.latest { ", latest" } else { "" };
+                println!("{} {state}{latest}", entry.tag);
+            }
+            println!("\n{} release(s) are final and immutable", finalized.len());
             Ok(())
         }
         Command::Discard { plan, api_base } => {

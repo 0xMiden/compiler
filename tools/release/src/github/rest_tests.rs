@@ -74,7 +74,7 @@ fn a_draft_carries_assets_and_publishes() {
     );
 
     assert_eq!(server.is_draft("v1.0.0"), Some(true));
-    let published = github.publish_release(release.id).unwrap();
+    let published = github.publish_release(release.id, false).unwrap();
     assert!(!published.draft);
     assert_eq!(server.is_draft("v1.0.0"), Some(false));
 }
@@ -110,7 +110,7 @@ fn a_draft_can_be_deleted_but_a_published_release_cannot() {
     assert!(github.release_by_tag("v1.0.0").unwrap().is_none());
 
     let published = github.create_draft("v2.0.0", "abc", false).unwrap();
-    github.publish_release(published.id).unwrap();
+    github.publish_release(published.id, false).unwrap();
     let err = github.delete_release(published.id).unwrap_err().to_string();
     assert!(err.contains("403"), "an immutable release must not be deletable: {err}");
 }

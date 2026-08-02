@@ -386,8 +386,15 @@ impl GitHub for RestGitHub {
         Ok(())
     }
 
-    fn publish_release(&self, release: u64) -> Result<Release> {
-        let payload = serde_json::json!({ "draft": false });
+    fn publish_release(&self, release: u64, make_latest: bool) -> Result<Release> {
+        // `make_latest` is a string in this API, not a boolean: "true", "false",
+        // or "legacy". Sending an actual boolean is accepted and ignored, which
+        // would silently hand the latest-release slot to whatever published
+        // last.
+        let payload = serde_json::json!({
+            "draft": false,
+            "make_latest": if make_latest { "true" } else { "false" },
+        });
         let (status, body) = self.request(
             "PATCH",
             &self.url(&format!("/releases/{release}")),

@@ -107,6 +107,22 @@ Performed by a maintainer, on a branch. Nothing here touches production.
    prompt; it does not write entries. Pass it to an agent if you like, then
    review and edit what comes back.
 
+   ```bash
+   cargo make changelog-prompt -- compiler --version 0.10.0
+   ```
+
+   The range defaults to the unit's last release tag through `HEAD`, and the
+   commits are filtered to the paths that unit publishes. Pass a range
+   explicitly to override it:
+
+   ```bash
+   cargo make changelog-prompt -- sdk v0.9.2..HEAD
+   ```
+
+   > The `sdk/v*` and `templates/v*` tag namespaces are new, so until each has
+   > been released once there is no baseline and the default range is the whole
+   > history. Pass a range for those first releases.
+
 4. **Open the release-candidate pull request** with the version, lockfile,
    changelog, and `.release/release.toml` changes.
 
@@ -163,9 +179,29 @@ deleted.
 
 ### Phase E — Finalize
 
-Automation runs consumer smoke tests against the still-draft releases, reverifies
-every asset and attestation, then publishes the drafts in order: SDK, templates,
-compiler. Publication makes them immutable.
+Automation verifies every staged draft and then publishes them, in order: SDK,
+templates, compiler. Publication makes a release immutable, so *all* units are
+verified before *any* unit is published.
+
+Per unit, before anything is published:
+
+- The tag exists and points at the subject commit. This is read from the tag
+  **ref**, not from the release's `target_commitish` — GitHub stops honouring
+  that field once the tag exists, so it reports what was requested rather than
+  what is true.
+- The draft carries this run's sealed plan, compared by bytes and not just by
+  name, so finalizing another run's draft is caught.
+- Every asset still hashes to what `SHA256SUMS` recorded at staging. Staging and
+  finalization are different jobs, an approval gate apart.
+- Nothing else is attached. An unplanned asset stops the release, because after
+  publication it can never be removed.
+
+Only a **stable compiler** release becomes the repository's "Latest release".
+The SDK, the template bundle, and every prerelease publish with
+`make_latest=false`.
+
+Finalizing again is a resume: an already-published release is recognised as such
+rather than treated as an error.
 
 12. **Review the final report.** Handle announcements and downstream
     coordination outside the tooling.
@@ -268,18 +304,45 @@ A prerelease is selected by giving a version with a prerelease identifier, e.g.
 
 ---
 
-## 6. Not yet implemented
+## 6. What is not yet exercised, and what is missing
 
-Stated plainly so this document is not read as describing more than exists:
+Stated plainly so this document is not read as describing more than exists.
 
-- GitHub draft creation, asset upload, and finalization are implemented as a
-  client with an in-memory test double. **The REST implementation against real
-  GitHub is unexercised** and the first rehearsal is what validates it.
-- Artifact building, archiving, and attestation.
-- Template bundle release.
-- `audit-publishers`, the changelog prompt, and the abandon command.
-- The workflows themselves.
+### The largest unvalidated risk
 
-The commands that do exist and are tested end to end: `lint`, `package-order`,
-`set-version`, `plan`, `verify-closure`, `seal`, `reconcile`, `publish`, and
-`fake-registry`.
+**Nothing here has run against real GitHub.** Tag creation, draft creation,
+asset upload and readback, and finalization are all exercised only against an
+in-memory double and a local stub HTTP server. The wire format has been tested;
+GitHub's acceptance of it has not. The first rehearsal is what validates this,
+and it should be treated as the point of the rehearsal rather than a formality.
+
+The same applies to crates.io: Trusted Publishing is configured, but no upload
+has been attempted through it.
+
+### Not implemented
+
+- **`audit-publishers`** (§1.4). Trusted Publishing configuration cannot be
+  preflighted any other way, so until this exists a missing publisher surfaces
+  as a failure partway through Phase D.
+- **The abandon command** (§3). The recovery path in §3 describes dispatching
+  `release.yml` in abandon mode; the mode is accepted as an input but does
+  nothing. Recovering from a stuck release today means deleting drafts by hand
+  with `release-tool discard`.
+- **Consumer smoke tests in Phase E.** The design calls for resolving
+  representative consumers from crates.io and building generated templates
+  against the just-published versions, before the drafts are published.
+  Finalization currently verifies assets, tags, and the plan, but does not
+  install anything. `verify-closure` covers the equivalent question before
+  publication, against packaged crates rather than published ones.
+- **A rehearsal workflow.** §4.2 describes one; rehearsal today means running
+  the commands locally against `fake-registry`.
+
+### Implemented and tested end to end
+
+`lint`, `package-order`, `set-version`, `changelog-prompt`, `plan`,
+`verify-closure`, `seal`, `reconcile`, `bundle`, `archive-binary`, `stage`,
+`discard`, `publish`, `finalize`, and `fake-registry` — plus the production
+workflow and the pull-request gate.
+
+"Tested" here means against the rehearsal registry and the GitHub double, which
+is as close to production as anything gets without publishing for real.

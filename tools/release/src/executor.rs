@@ -27,6 +27,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    github::{self, GitHub},
     plan::Plan,
     reconcile::{self, Disposition},
     registry::client::IndexClient,
@@ -105,6 +106,7 @@ pub fn execute(
     ws: &Workspace,
     plan: &Plan,
     index: &dyn IndexClient,
+    github: &dyn GitHub,
     target: &Target,
     options: &Options,
 ) -> Result<Journal> {
@@ -117,6 +119,15 @@ pub fn execute(
     configure_cargo_home(target, options)?;
 
     for stage in &plan.intent.stages {
+        // The unit's tag is created here, immediately before its own stage,
+        // rather than for every unit at the start of the phase. A permanent
+        // failure in the SDK stage would otherwise burn the compiler's tag too,
+        // and a tag cannot be moved once the release it names is finalized.
+        //
+        // A stage with no crates still gets its tag: templates publish nothing,
+        // so this is the only place their tag can come from.
+        tag_stage(plan, github, &stage.unit, options, &mut journal)?;
+
         let planned = plan.planned_for(&stage.unit);
         if planned.is_empty() {
             journal.record(&stage.unit, "skip", "stage publishes no crates");
@@ -186,6 +197,40 @@ pub fn execute(
     }
 
     Ok(journal)
+}
+
+/// Create a stage's tag at the subject commit.
+///
+/// Creation is fail-closed: an existing ref is only acceptable if it already
+/// points at the subject, which is what makes a resume safe and an unexpected
+/// tag an incident rather than something to overwrite.
+fn tag_stage(
+    plan: &Plan,
+    github: &dyn GitHub,
+    unit: &str,
+    options: &Options,
+    journal: &mut Journal,
+) -> Result<()> {
+    let Some(tag) = plan.intent.tags.iter().find(|tag| tag.unit == unit) else {
+        journal.record(unit, "no-tag", "the plan declares no tag for this unit");
+        return Ok(());
+    };
+
+    if options.dry_run {
+        journal.record(unit, "dry-run", format!("would create tag '{}'", tag.name));
+        return Ok(());
+    }
+
+    let outcome = github::create_tag_idempotent(github, &tag.name, &plan.intent.subject)
+        .with_context(|| format!("creating the tag for stage '{unit}'"))?;
+    let detail = match outcome {
+        github::TagOutcome::Created => format!("created '{}' at {}", tag.name, plan.intent.subject),
+        github::TagOutcome::AlreadyCorrect => {
+            format!("'{}' already points at {}", tag.name, plan.intent.subject)
+        }
+    };
+    journal.record(unit, "tag", detail);
+    Ok(())
 }
 
 /// Point the executor's Cargo home at the right source of truth.

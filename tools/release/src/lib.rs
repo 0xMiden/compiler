@@ -5,9 +5,11 @@
 pub mod archive;
 pub mod bundle;
 pub mod candidate;
+pub mod changelog;
 pub mod closure;
 pub mod config;
 pub mod executor;
+pub mod finalize;
 pub mod github;
 pub mod intent;
 pub mod lint;

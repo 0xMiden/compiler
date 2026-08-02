@@ -71,7 +71,12 @@ pub trait GitHub: Send + Sync {
     fn delete_release(&self, release: u64) -> Result<()>;
 
     /// Publish a draft. After this the release and its assets are immutable.
-    fn publish_release(&self, release: u64) -> Result<Release>;
+    ///
+    /// `make_latest` decides whether this becomes the repository's "Latest
+    /// release". Only a stable compiler release may claim it: an SDK, a
+    /// template bundle, or any prerelease taking that slot would point every
+    /// visitor and every "download the latest" script at the wrong artifact.
+    fn publish_release(&self, release: u64, make_latest: bool) -> Result<Release>;
 }
 
 /// Create a tag, treating an existing one as a hard failure unless it already
@@ -150,6 +155,8 @@ struct StubState {
     assets: BTreeMap<u64, BTreeMap<String, Vec<u8>>>,
     /// Assets that should come back corrupted, to exercise verification.
     corrupt: BTreeMap<String, Vec<u8>>,
+    /// Whether each published release claimed the "latest" slot.
+    latest: BTreeMap<u64, bool>,
 }
 
 impl StubGitHub {
@@ -175,6 +182,26 @@ impl StubGitHub {
 
     pub fn is_published(&self, tag: &str) -> bool {
         self.state.lock().unwrap().releases.values().any(|r| r.tag == tag && !r.draft)
+    }
+
+    /// Overwrite a stored asset's bytes without going through `upload_asset`.
+    ///
+    /// Models corruption *after* staging verified the upload — the window
+    /// finalization's re-verification exists to cover.
+    pub fn replace_asset_bytes(&self, name: &str, bytes: &[u8]) {
+        let mut state = self.state.lock().unwrap();
+        for assets in state.assets.values_mut() {
+            if let Some(slot) = assets.get_mut(name) {
+                *slot = bytes.to_vec();
+            }
+        }
+    }
+
+    /// Whether the release for a tag claimed the "latest" slot when published.
+    pub fn is_latest(&self, tag: &str) -> Option<bool> {
+        let state = self.state.lock().unwrap();
+        let id = state.releases.values().find(|r| r.tag == tag).map(|r| r.id)?;
+        state.latest.get(&id).copied()
     }
 }
 
@@ -272,13 +299,14 @@ impl GitHub for StubGitHub {
         }
     }
 
-    fn publish_release(&self, release: u64) -> Result<Release> {
+    fn publish_release(&self, release: u64, make_latest: bool) -> Result<Release> {
         let mut state = self.state.lock().unwrap();
         let Some(existing) = state.releases.get_mut(&release) else {
             bail!("no such release {release}");
         };
         existing.draft = false;
-        Ok(existing.clone())
+        state.latest.insert(release, make_latest);
+        Ok(state.releases[&release].clone())
     }
 }
 
@@ -345,7 +373,7 @@ mod tests {
     fn a_published_release_is_never_deleted() {
         let github = StubGitHub::new();
         let release = github.create_draft("v1.0.0", "abc", false).unwrap();
-        github.publish_release(release.id).unwrap();
+        github.publish_release(release.id, false).unwrap();
 
         let err = github.delete_release(release.id).unwrap_err().to_string();
         assert!(err.contains("published and will not be deleted"), "{err}");

@@ -689,3 +689,53 @@ echo "Emitted artifacts in ${OUT}:"
 ls -l "${OUT}" 2>/dev/null || true
 exit "${status}"
 ''']
+
+# Release tooling
+# ============================================================
+# Local, read-only or repository-local commands only. `publish` and `finalize`
+# are deliberately absent: they cross irreversible boundaries and belong to the
+# release workflow, where an approval gate and a short-lived token stand between
+# them and production. A convenient local shortcut for them would be a way to
+# skip that by accident.
+
+[tasks.release-lint]
+category = "Release"
+description = "Check release configuration: classification, private edges, patches, bundle drift"
+command = "cargo"
+args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "lint"]
+
+[tasks.package-order]
+category = "Release"
+description = "Print the topological publication order Cargo needs"
+command = "cargo"
+args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "package-order", "${@}"]
+
+[tasks.set-version]
+category = "Release"
+description = "Move a release unit's version, with every requirement and the lockfile"
+command = "cargo"
+args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "set-version", "${@}"]
+
+[tasks.changelog-prompt]
+category = "Release"
+description = "Emit a changelog-writing prompt for a unit; never writes entries"
+command = "cargo"
+args = [
+    "run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--",
+    "changelog-prompt", "${@}",
+]
+
+[tasks.release-bundle]
+category = "Release"
+description = "Build the deterministic template bundle archive"
+command = "cargo"
+args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "bundle", "${@}"]
+
+[tasks.verify-closure]
+category = "Release"
+description = "Package every selected crate and build a consumer that resolves only from a registry"
+command = "cargo"
+args = [
+    "run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--",
+    "verify-closure", "${@}",
+]

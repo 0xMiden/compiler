@@ -45,6 +45,22 @@ impl fmt::Display for Unit {
     }
 }
 
+impl std::str::FromStr for Unit {
+    type Err = anyhow::Error;
+
+    fn from_str(name: &str) -> Result<Self> {
+        match name {
+            "compiler" => Ok(Self::Compiler),
+            "sdk" => Ok(Self::Sdk),
+            "templates" => Ok(Self::Templates),
+            "private" => Ok(Self::Private),
+            other => anyhow::bail!(
+                "'{other}' is not a release unit; expected compiler, sdk, templates, or private"
+            ),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct PackageConfig {
