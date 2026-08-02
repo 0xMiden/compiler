@@ -121,7 +121,7 @@ jobs:
             case "$(basename "$wf")" in
               release.yml) ;;
               *)
-                if grep -Eq '^[[:space:]]+environment:[[:space:]]*release-production' "$wf"; then
+                if grep -Eq '^[[:space:]]+environment:[[:space:]]*release' "$wf"; then
                   fail "$wf enters the production environment"
                 fi ;;
             esac

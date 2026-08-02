@@ -25,7 +25,7 @@ access, and none of them can be performed by the tooling.
 
 | What | Detail |
 | --- | --- |
-| Trusted Publisher, per crate | Repository `0xMiden/compiler`, workflow `release.yml`, environment `release-production` |
+| Trusted Publisher, per crate | Repository `0xMiden/compiler`, workflow `release.yml`, environment `release` |
 | Trusted-Publishing-only mode | Enable per crate **after** its publisher is verified working |
 | New crates | crates.io cannot configure a publisher for a crate that does not exist. A brand-new crate must be bootstrapped once with a short-lived, narrowly scoped token, then switched to Trusted Publishing |
 | Long-lived tokens | Remove `CARGO_REGISTRY_TOKEN` from repository secrets once Trusted Publishing works |
@@ -44,7 +44,7 @@ Each needs its own publisher configuration.
 | What | Detail |
 | --- | --- |
 | Immutable releases | Enable for the repository |
-| Environment `release-production` | Required reviewers; self-review disabled; admin bypass disabled where supported; deployment restricted to protected `main` |
+| Environment `release` | Required reviewers; self-review disabled; admin bypass disabled where supported; deployment restricted to protected `main` |
 | Tag rulesets for `v*`, `sdk/v*`, `templates/v*` | **Restrict deletions and updates only. Do not restrict creations.** |
 | Required status check | `release / gate` |
 | CODEOWNERS | Release infrastructure paths reviewed by a release owner |
@@ -148,7 +148,7 @@ deleted.
 
 ### Phase D — Approve and publish
 
-10. **Approve the `release-production` environment.** This is the point of no
+10. **Approve the `release` environment.** This is the point of no
     return. Before approving, check the plan digest, the crate list, the asset
     list, and any warnings.
 

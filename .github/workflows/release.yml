@@ -1,6 +1,6 @@
 # The production release workflow.
 #
-# This is the only workflow that may enter the `release-production` environment,
+# This is the only workflow that may enter the `release` environment,
 # and the only one configured as a crates.io Trusted Publisher. Its scope comes
 # entirely from the reviewed `.release/release.toml` at the commit being
 # released; there is deliberately no version, unit, or scope input, so a
@@ -36,7 +36,7 @@ permissions: {}
 # the guard: GitHub cancels a *pending* run when a newer one enters the group,
 # so correctness rests on the executor's own overlap check against live state.
 concurrency:
-  group: release-production
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -297,7 +297,7 @@ jobs:
     runs-on: ubuntu-latest
     # The approval gate. Everything before this is reversible; nothing after it
     # is. Deployment is restricted to protected main by the environment itself.
-    environment: release-production
+    environment: release
     permissions:
       contents: write # tag creation
       id-token: write # Trusted Publishing
