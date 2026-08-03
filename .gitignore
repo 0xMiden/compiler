@@ -33,5 +33,6 @@ tests/**/Cargo.lock
 tools/fuzza-agent/scratch/*
 !tools/fuzza-agent/scratch/.gitkeep
 tools/fuzza-agent/__pycache__/
+__pycache__/
 
 *.lit_test_times.txt*

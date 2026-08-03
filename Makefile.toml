@@ -183,7 +183,7 @@ args = ["bloat", "${@}"]
 
 [tasks.bench]
 category = "Benchmarks"
-description = "Runs benchmarks written in Rust"
+description = "Benchmarks example package sizes and VM cycles, with SVG flamegraphs"
 command = "cargo"
 args = [
     "run",

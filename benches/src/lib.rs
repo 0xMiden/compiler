@@ -1,200 +1,371 @@
-//! Common benchmarking framework for Miden compiler programs
-//!
-//! This module provides utilities for compiling Rust programs to Miden assembly
-//! and measuring their execution performance in the Miden VM.
+//! End-to-end benchmarks for compiler example projects.
 
 use std::{
+    fs,
     path::{Path, PathBuf},
-    time::Instant,
+    process::{Command, Output},
+    sync::Arc,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow, bail, ensure};
+use miden_assembly::{DefaultSourceManager, SourceManager};
+use miden_core::serde::Serializable;
+use miden_debug::{ExecutionConfig, Executor, flamegraph::FlamegraphProfile};
+use miden_mast_package::Package;
+use serde::{Deserialize, Serialize};
 
-/// Execution statistics for a Miden program
-#[derive(Debug, Clone)]
-pub struct ExecutionStats {
-    /// Total VM cycles executed
-    pub vm_cycles: usize,
-    /// Compilation time in milliseconds
-    pub compile_time_ms: u128,
-    /// Execution time in milliseconds
-    pub execution_time_ms: u128,
+pub const RESULTS_FILE: &str = "results.json";
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+pub struct BenchmarkReport {
+    pub schema_version: u32,
+    pub commit: String,
+    pub benchmarks: Vec<BenchmarkResult>,
 }
 
-impl ExecutionStats {
-    /// Create execution stats from midenc output
-    pub fn from_midenc_output(
-        output: &str,
-        compile_time_ms: u128,
-        execution_time_ms: u128,
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+pub struct BenchmarkResult {
+    pub name: String,
+    pub mast_size: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cycles: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub flamegraph: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct BenchmarkCase {
+    name: String,
+    execute: bool,
+}
+
+pub struct BenchmarkRunner {
+    workspace_root: PathBuf,
+    output_dir: PathBuf,
+    build_dir: PathBuf,
+    cargo_miden: Option<PathBuf>,
+}
+
+impl BenchmarkRunner {
+    pub fn new(
+        workspace_root: impl Into<PathBuf>,
+        output_dir: impl Into<PathBuf>,
+        build_dir: impl Into<PathBuf>,
+        cargo_miden: Option<PathBuf>,
     ) -> Result<Self> {
-        // Parse the VM cycles from midenc output
-        let vm_cycles = Self::parse_vm_cycles(output)?;
+        let workspace_root = workspace_root
+            .into()
+            .canonicalize()
+            .context("failed to canonicalize the compiler workspace root")?;
+        let output_dir = absolute_path(output_dir.into())?;
+        let build_dir = absolute_path(build_dir.into())?;
+        let cargo_miden = cargo_miden
+            .map(|path| path.canonicalize().context("failed to locate cargo-miden"))
+            .transpose()?;
 
         Ok(Self {
-            vm_cycles,
-            compile_time_ms,
-            execution_time_ms,
+            workspace_root,
+            output_dir,
+            build_dir,
+            cargo_miden,
         })
     }
 
-    /// Parse VM cycles from midenc run output
-    fn parse_vm_cycles(output: &str) -> Result<usize> {
-        for line in output.lines() {
-            if line.contains("VM cycles:") {
-                // Look for pattern like "VM cycles: 805 extended to 1024 steps"
-                if let Some(cycles_part) = line.split("VM cycles:").nth(1)
-                    && let Some(cycles_str) = cycles_part.split_whitespace().next()
-                {
-                    return cycles_str
-                        .parse()
-                        .with_context(|| format!("Failed to parse VM cycles from: {cycles_str}"));
-                }
-            }
+    pub fn run(&self, commit: String) -> Result<BenchmarkReport> {
+        recreate_dir(&self.output_dir.join("packages"))?;
+        recreate_dir(&self.output_dir.join("flamegraphs"))?;
+
+        let cases = discover_cases(&self.workspace_root)?;
+        let mut benchmarks = Vec::with_capacity(cases.len());
+        for case in cases {
+            eprintln!("Benchmarking {}", case.name);
+            benchmarks.push(self.run_case(&case)?);
         }
-        Err(anyhow::anyhow!("Could not find VM cycles in output"))
+
+        let report = BenchmarkReport {
+            schema_version: 1,
+            commit,
+            benchmarks,
+        };
+        let output = self.output_dir.join(RESULTS_FILE);
+        let mut contents = serde_json::to_vec_pretty(&report)?;
+        contents.push(b'\n');
+        fs::write(&output, contents)
+            .with_context(|| format!("failed to write {}", output.display()))?;
+        Ok(report)
     }
 
-    /// Print formatted execution statistics
-    pub fn print(&self, program_name: &str) {
-        println!("===============================================================================");
-        println!("Benchmark results for: {program_name}");
-        println!("-------------------------------------------------------------------------------");
-        println!(
-            "VM cycles: {} extended to {} steps",
-            self.vm_cycles,
-            self.vm_cycles.next_power_of_two()
+    fn run_case(&self, case: &BenchmarkCase) -> Result<BenchmarkResult> {
+        let project_dir = self.workspace_root.join("examples").join(&case.name);
+        ensure!(
+            project_dir.join("miden-project.toml").is_file(),
+            "missing example {}",
+            case.name
         );
-        println!("Compilation time: {} ms", self.compile_time_ms);
-        println!("Execution time: {} ms", self.execution_time_ms);
-        println!("===============================================================================");
-    }
-}
 
-/// A benchmark runner for Miden programs
-pub struct BenchmarkRunner;
+        let optimized = self.compile(&project_dir, "none")?;
+        let saved_package = self.output_dir.join("packages").join(format!("{}.masp", case.name));
+        fs::copy(&optimized, &saved_package).with_context(|| {
+            format!(
+                "failed to copy optimized package from {} to {}",
+                optimized.display(),
+                saved_package.display()
+            )
+        })?;
+        let optimized_package = load_package(&saved_package)?;
+        let mast_size = serialized_mast_size(&optimized_package);
 
-impl BenchmarkRunner {
-    /// Create a new benchmark runner
-    pub fn new() -> Result<Self> {
-        Ok(Self)
-    }
+        let (cycles, flamegraph) = if case.execute {
+            let inputs = project_dir.join("inputs.toml");
+            let optimized_profile = self.profile(optimized_package, &inputs, &project_dir, None)?;
 
-    /// Compile a Rust source file to Miden assembly using cargo miden
-    pub fn compile_rust_to_masm(&self, source_path: &Path) -> Result<PathBuf> {
-        let compile_start = Instant::now();
+            let debuggable = self.compile(&project_dir, "full")?;
+            let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
+            let flamegraph_path = self.output_dir.join(&relative_flamegraph);
+            self.profile(
+                load_package(&debuggable)?,
+                &inputs,
+                &project_dir,
+                Some(&flamegraph_path),
+            )?;
 
-        // Convert to absolute path if relative
-        let abs_source_path = if source_path.is_absolute() {
-            source_path.to_path_buf()
+            (Some(optimized_profile.total_cycles()), Some(relative_flamegraph))
         } else {
-            std::env::current_dir()?.join(source_path)
+            (None, None)
         };
 
-        // Get the directory containing the source file
-        let project_dir = abs_source_path.parent()
-            .and_then(|p| p.parent()) // Go up from src/ to project root
-            .ok_or_else(|| anyhow::anyhow!("Could not determine project directory"))?;
+        Ok(BenchmarkResult {
+            name: case.name.clone(),
+            mast_size,
+            cycles,
+            flamegraph,
+        })
+    }
 
-        // Use cargo miden to build the project
-        let mut cmd = std::process::Command::new("cargo");
-        cmd.arg("miden")
+    fn compile(&self, project_dir: &Path, debug: &str) -> Result<PathBuf> {
+        let mut command = if let Some(cargo_miden) = self.cargo_miden.as_ref() {
+            let mut command = Command::new(cargo_miden);
+            command.arg("miden");
+            command
+        } else {
+            let mut command = Command::new("cargo");
+            command.arg("miden");
+            command
+        };
+        command
             .arg("build")
             .arg("--release")
             .arg("--manifest-path")
             .arg(project_dir.join("Cargo.toml"))
+            .arg("--target-dir")
+            .arg(self.build_dir.join("miden-target"))
+            .arg("--debug")
+            .arg(debug)
+            .arg("--optimize")
+            .arg("max")
+            .arg("--color")
+            .arg("never")
+            .env("CARGO_TARGET_DIR", self.build_dir.join("cargo-target"))
             .current_dir(project_dir);
 
-        let output = cmd.output().with_context(|| "Failed to execute cargo miden build")?;
-
+        let output = command
+            .output()
+            .with_context(|| format!("failed to compile {}", project_dir.display()))?;
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("cargo miden build failed: {stderr}"));
+            bail!("failed to compile {}:\n{}", project_dir.display(), command_output(&output));
         }
 
-        let compile_time = compile_start.elapsed();
-        println!("Compilation completed in {} ms", compile_time.as_millis());
-
-        // Find the generated .masp file
-        let target_dir = project_dir.join("target").join("miden").join("release");
-        let project_name = project_dir
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| anyhow::anyhow!("Could not determine project name"))?;
-
-        // Convert hyphens to underscores for the MASP filename
-        let masp_filename = project_name.replace('-', "_");
-        let masp_path = target_dir.join(format!("{masp_filename}.masp"));
-
-        if !masp_path.exists() {
-            return Err(anyhow::anyhow!("Expected MASP file not found: {}", masp_path.display()));
-        }
-
-        Ok(masp_path)
+        parse_compiled_package(&output, project_dir)
     }
 
-    /// Execute a Miden assembly program using midenc run and return execution statistics
-    pub fn execute_masm(&self, masm_path: &Path, inputs: &[u64]) -> Result<ExecutionStats> {
-        let execution_start = Instant::now();
-
-        // Create inputs file in TOML format
-        let inputs_content = format!(
-            r#"[inputs]
-stack = [{}]"#,
-            inputs.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ")
-        );
-
-        let inputs_file = masm_path.with_extension("inputs");
-        std::fs::write(&inputs_file, inputs_content)
-            .with_context(|| format!("Failed to write inputs file: {}", inputs_file.display()))?;
-
-        // Use midenc run to execute the program
-        let mut cmd = std::process::Command::new("midenc");
-        cmd.arg("run").arg(masm_path).arg("--inputs").arg(&inputs_file);
-
-        let output = cmd.output().with_context(|| "Failed to execute midenc run")?;
-
-        let execution_time = execution_start.elapsed();
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("midenc run failed: {stderr}"));
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        println!("Program executed successfully");
-        println!("{stdout}");
-
-        // Clean up inputs file
-        let _ = std::fs::remove_file(&inputs_file);
-
-        ExecutionStats::from_midenc_output(&stdout, 0, execution_time.as_millis())
-    }
-
-    /// Run a complete benchmark: compile Rust to MASM and execute
-    pub fn run_benchmark(
+    fn profile(
         &self,
-        source_path: &Path,
-        inputs: &[u64],
-        program_name: &str,
-    ) -> Result<ExecutionStats> {
-        println!("Running benchmark for: {program_name}");
+        package: Arc<Package>,
+        inputs_path: &Path,
+        project_dir: &Path,
+        flamegraph_path: Option<&Path>,
+    ) -> Result<FlamegraphProfile> {
+        ensure!(package.is_program(), "{} is not executable", package.name);
 
-        let compile_start = Instant::now();
-        let masm_path = self.compile_rust_to_masm(source_path)?;
-        let compile_time = compile_start.elapsed();
+        let config = ExecutionConfig::parse_file(inputs_path)
+            .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
+        let mut executor = Executor::from_config(config);
+        let packages_dir = project_dir.join("target/miden/packages");
+        let mut dependencies = fs::read_dir(&packages_dir)
+            .with_context(|| format!("failed to read {}", packages_dir.display()))?
+            .map(|entry| entry.map(|entry| entry.path()))
+            .collect::<std::io::Result<Vec<_>>>()?;
+        dependencies.retain(|path| path.extension().is_some_and(|ext| ext == "masp"));
+        dependencies.sort();
+        for dependency in dependencies {
+            executor
+                .with_package(load_package(&dependency)?)
+                .map_err(|err| anyhow!(err.to_string()))?;
+        }
 
-        let mut stats = self.execute_masm(&masm_path, inputs)?;
-        stats.compile_time_ms = compile_time.as_millis();
-
-        stats.print(program_name);
-
-        Ok(stats)
+        let source_manager: Arc<dyn SourceManager> = Arc::new(DefaultSourceManager::default());
+        let mut debug_executor = executor.into_debug(package, source_manager);
+        let profile = FlamegraphProfile::collect(&mut debug_executor)
+            .map_err(|err| anyhow!("execution failed at cycle {}: {err}", debug_executor.cycle))?;
+        if let Some(path) = flamegraph_path {
+            profile.write_svg(path).map_err(|err| anyhow!(err.to_string()))?;
+        }
+        Ok(profile)
     }
 }
 
-impl Default for BenchmarkRunner {
-    fn default() -> Self {
-        Self::new().expect("Failed to create benchmark runner")
+fn discover_cases(workspace_root: &Path) -> Result<Vec<BenchmarkCase>> {
+    let examples_dir = workspace_root.join("examples");
+    let mut cases = Vec::new();
+    for entry in fs::read_dir(&examples_dir)
+        .with_context(|| format!("failed to read {}", examples_dir.display()))?
+    {
+        let path = entry?.path();
+        if !path.join("miden-project.toml").is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| anyhow!("example path is not valid UTF-8: {}", path.display()))?
+            .to_string();
+        cases.push(BenchmarkCase {
+            name,
+            execute: path.join("inputs.toml").is_file(),
+        });
+    }
+    cases.sort_by(|left, right| left.name.cmp(&right.name));
+    ensure!(!cases.is_empty(), "no Miden example projects found");
+    Ok(cases)
+}
+
+pub fn git_commit(workspace_root: &Path) -> Result<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(workspace_root)
+        .output()
+        .context("failed to execute git rev-parse")?;
+    ensure!(output.status.success(), "git rev-parse failed: {}", command_output(&output));
+    Ok(String::from_utf8(output.stdout)?.trim().to_string())
+}
+
+fn absolute_path(path: PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(std::env::current_dir()?.join(path))
+    }
+}
+
+fn recreate_dir(path: &Path) -> Result<()> {
+    if path.exists() {
+        fs::remove_dir_all(path).with_context(|| format!("failed to remove {}", path.display()))?;
+    }
+    fs::create_dir_all(path).with_context(|| format!("failed to create {}", path.display()))
+}
+
+fn load_package(path: &Path) -> Result<Arc<Package>> {
+    let bytes = fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    Package::read_from_bytes_unchecked(&bytes)
+        .map(Arc::new)
+        .map_err(|err| anyhow!("failed to load {}: {err}", path.display()))
+}
+
+fn serialized_mast_size(package: &Package) -> u64 {
+    package
+        .mast_forest()
+        .to_bytes()
+        .len()
+        .try_into()
+        .expect("serialized MAST size exceeds u64::MAX")
+}
+
+fn parse_compiled_package(output: &Output, project_dir: &Path) -> Result<PathBuf> {
+    let text = command_output(output);
+    let path = text
+        .lines()
+        .rev()
+        .find_map(|line| line.trim().strip_prefix("Compiled "))
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow!("compiler did not report an output package:\n{text}"))?;
+    let path = if path.is_absolute() {
+        path
+    } else {
+        project_dir.join(path)
+    };
+    ensure!(path.is_file(), "compiled package does not exist: {}", path.display());
+    Ok(path)
+}
+
+fn command_output(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    format!("{stdout}\n{stderr}")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::ExitStatus;
+
+    use miden_assembly::Assembler;
+
+    use super::*;
+
+    #[cfg(unix)]
+    fn success() -> ExitStatus {
+        use std::os::unix::process::ExitStatusExt;
+        ExitStatus::from_raw(0)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn extracts_compiled_package_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let package = dir.path().join("example:example.masp");
+        fs::write(&package, []).unwrap();
+        let output = Output {
+            status: success(),
+            stdout: format!("Compiled {}\n", package.display()).into_bytes(),
+            stderr: Vec::new(),
+        };
+
+        assert_eq!(parse_compiled_package(&output, dir.path()).unwrap(), package);
+    }
+
+    #[test]
+    fn discovers_example_projects_in_name_order() {
+        let workspace = tempfile::tempdir().unwrap();
+        let examples = workspace.path().join("examples");
+        for name in ["zeta", "alpha"] {
+            let project = examples.join(name);
+            fs::create_dir_all(&project).unwrap();
+            fs::write(project.join("miden-project.toml"), []).unwrap();
+        }
+        fs::write(examples.join("zeta/inputs.toml"), []).unwrap();
+
+        assert_eq!(
+            discover_cases(workspace.path()).unwrap(),
+            vec![
+                BenchmarkCase {
+                    name: "alpha".to_string(),
+                    execute: false,
+                },
+                BenchmarkCase {
+                    name: "zeta".to_string(),
+                    execute: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn mast_size_excludes_package_metadata() {
+        let mut package = Assembler::default()
+            .assemble_program("benchmark-test", "begin\n    push.1\nend")
+            .unwrap();
+        let expected = serialized_mast_size(&package);
+        package.description = Some("metadata".repeat(1_000));
+
+        assert_eq!(serialized_mast_size(&package), expected);
     }
 }
