@@ -2413,7 +2413,10 @@ path = "missing.masm"
     .unwrap();
     let context = Rc::new(Context::default());
     let manifest_path = app_dir.join("miden-project.toml");
-    let project = Project::load(&manifest_path, &context.session().source_manager)?;
+    let registry = NoPackageStore;
+    let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+        .with_source_manager(context.session().source_manager.clone())
+        .build_from_path(&manifest_path)?;
     let app = parse_test_module_with_path(
         r#"
 pub proc entry() -> felt
@@ -2424,17 +2427,59 @@ end
         &context,
     )?;
     let output = disassemble_project_target_for_lint(
-        &project,
-        None,
-        Some(ProjectSourceInputs {
+        ProjectSourceInputs {
             root: app,
             support: vec![],
-        }),
+        },
+        &dependency_graph,
         &DisassemblerConfig::default(),
         context,
     )?;
 
     let _ = find_function(output.module, "entry");
+    assert!(output.skipped_procedures.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn lint_project_disassembly_with_preparsed_sources_uses_transitive_dependencies() -> Result<()> {
+    let (root, app_dir) =
+        write_transitive_source_dependency_project("midenc_frontend_masm_lint_transitive_dep");
+    let context = Rc::new(Context::default());
+    let registry = NoPackageStore;
+    let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+        .with_source_manager(context.session().source_manager.clone())
+        .build_from_path(app_dir.join("miden-project.toml"))?;
+    let app = parse_test_module_with_path(
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        "app",
+        &context,
+    )?;
+
+    let output = disassemble_project_target_for_lint(
+        ProjectSourceInputs {
+            root: app,
+            support: vec![],
+        },
+        &dependency_graph,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let entry = find_function(output.module, "entry");
+    assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(entry), 1);
+    let dep = find_world_module(output.world, "dep");
+    let callee = find_function(dep, "callee");
+    assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(callee), 1);
+    let transitive = find_world_module(output.world, "transitive");
+    let _ = find_function(transitive, "callee");
     assert!(output.skipped_procedures.is_empty());
 
     let _ = fs::remove_dir_all(root);
@@ -6248,6 +6293,89 @@ pub proc callee(a: Scalar) -> Scalar
 end
 "#,
     )
+}
+
+fn write_transitive_source_dependency_project(
+    prefix: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let dep_dir = root.join("dep");
+    let transitive_dir = root.join("transitive");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::create_dir_all(&dep_dir).unwrap();
+    fs::create_dir_all(&transitive_dir).unwrap();
+
+    fs::write(
+        transitive_dir.join("miden-project.toml"),
+        r#"[package]
+name = "transitive"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        transitive_dir.join("lib.masm"),
+        r#"
+pub proc callee(a: felt) -> felt
+    add.1
+end
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        dep_dir.join("miden-project.toml"),
+        r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+
+[dependencies]
+transitive = { path = "../transitive" }
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dep_dir.join("lib.masm"),
+        r#"
+pub proc callee(a: felt) -> felt
+    exec.::transitive::callee
+end
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep" }
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("main.masm"),
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+    )
+    .unwrap();
+
+    (root, app_dir)
 }
 
 fn write_source_dependency_project_with_content(

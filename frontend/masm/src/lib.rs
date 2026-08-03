@@ -268,20 +268,20 @@ pub fn disassemble_project_target_with_sources(
     lift::lift_project_target(inputs, &lift::LiftConfig::strict(config), context)
 }
 
-/// Disassemble a project target for linting, skipping procedures that cannot be lifted.
+/// Disassemble already-parsed project sources for linting, using the resolved dependency closure
+/// and skipping procedures that cannot be lifted.
 pub fn disassemble_project_target_for_lint(
-    project: &miden_project::Project,
-    target: Option<&str>,
-    sources: Option<ProjectSourceInputs>,
+    sources: ProjectSourceInputs,
+    dependency_graph: &miden_project::ProjectDependencyGraph,
     config: &DisassemblerConfig,
     context: Rc<Context>,
 ) -> Result<DisassembledWorld> {
-    let inputs = if let Some(sources) = sources {
-        let metadata = project::collect_dependency_metadata(project, &context)?;
-        project::ProjectTargetInput::new(sources, metadata)
-    } else {
-        project::resolve_project_target(project, target, &context)?
-    };
+    let metadata = project::collect_dependency_graph_metadata(
+        dependency_graph,
+        project::RegistryNodes::Skip,
+        &context,
+    )?;
+    let inputs = project::ProjectTargetInput::new(sources, metadata);
     lift::lift_project_target(inputs, &lift::LiftConfig::lint(config), context)
 }
 
