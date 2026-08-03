@@ -2,9 +2,9 @@ use alloc::{collections::VecDeque, format, rc::Rc};
 
 use midenc_hir::{
     BlockRef, Builder, Context, FxHashMap, OpBuilder, OpOperand, Operation, OperationRef,
-    ProgramPoint, Reachability, Region, RegionBranchOpInterface, RegionBranchPoint, RegionRef,
-    Report, Rewriter, SmallVec, SourceSpan, Spanned, StorableEntity, TraceTarget, Usable,
-    ValueRange, ValueRef,
+    ProgramPoint, Reachability, ReachabilityCache, Region, RegionBranchOpInterface,
+    RegionBranchPoint, RegionRef, Report, Rewriter, SmallVec, SourceSpan, Spanned, StorableEntity,
+    TraceTarget, Usable, ValueRange, ValueRef,
     adt::{SmallDenseMap, SmallSet},
     cfg::Graph,
     dominance::{DomTreeNode, DominanceFrontier, DominanceInfo},
@@ -871,30 +871,44 @@ fn rewrite_spill_pseudo_instructions(
 
     let mut builder = RewriterImpl::<TracingRewriterListener>::new(context)
         .with_listener(TracingRewriterListener);
+
+    // Index the live reloads by their spilled value once, so each spill only considers the
+    // reloads it can possibly cover. Spills and reloads are paired through the analysis's value
+    // bookkeeping rather than the spill op's current operand, which SSA reconstruction may
+    // rewrite (only reload operands are exempt). Liveness is snapshotted before any spills are
+    // erased, which errs toward keeping a spill whose reload only dies as part of the erasure
+    // cascade below.
+    let mut live_reloads = SmallDenseMap::<ValueRef, SmallVec<[OperationRef; 2]>, 8>::default();
+    for rinfo in analysis.reloads() {
+        let Some(reload_op) = rinfo.inst else {
+            continue;
+        };
+        let reload_used = {
+            let rop = reload_op.borrow();
+            let rl = rop
+                .as_trait::<dyn ReloadLike>()
+                .expect("expected materialized reload op to implement ReloadLike");
+            rl.reloaded().borrow().is_used()
+        };
+        if reload_used {
+            live_reloads.entry(rinfo.value).or_default().push(reload_op);
+        }
+    }
+
+    // One reachability cache is shared across all pairings: pruning only erases operations,
+    // never blocks, so the cached block-reachability stays valid throughout.
+    let mut reachability = ReachabilityCache::default();
     for spill in analysis.spills() {
         let operation = spill.inst.expect("expected spill to have been materialized");
-        // Only keep spills that can reach a live reload of their value. Spills and reloads are
-        // paired through the analysis's value bookkeeping rather than the spill op's current
-        // operand, which SSA reconstruction may rewrite (only reload operands are exempt).
+        // Only keep spills that can reach a live reload of their value
         let mut is_used = false;
-        for rinfo in analysis.reloads() {
-            if rinfo.value != spill.value {
-                continue;
-            }
-            let Some(reload_op) = rinfo.inst else {
-                continue;
-            };
-            let reload_used = {
-                let rop = reload_op.borrow();
-                let rl = rop
-                    .as_trait::<dyn ReloadLike>()
-                    .expect("expected materialized reload op to implement ReloadLike");
-                rl.reloaded().borrow().is_used()
-            };
-            if !reload_used {
-                continue;
-            }
-            match Operation::reachability(operation, reload_op) {
+        for reload_op in live_reloads
+            .get(&spill.value)
+            .map(|reloads| reloads.as_slice())
+            .unwrap_or_default()
+        {
+            let reload_op = *reload_op;
+            match Operation::reachability_cached(operation, reload_op, &mut reachability) {
                 Reachability::Guaranteed | Reachability::Maybe => {
                     is_used = true;
                     break;

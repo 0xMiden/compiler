@@ -65,7 +65,7 @@ pub use self::{
     },
     parse::{OpAsmParser, OpParser, ParseResult},
     print::{AttrPrinter, OpPrinter, OpPrintingFlags},
-    reachability::Reachability,
+    reachability::{Reachability, ReachabilityCache},
     region::{
         InvocationBounds, LoopLikeOpInterface, Region, RegionBranchOpInterface, RegionBranchPoint,
         RegionBranchTerminatorOpInterface, RegionCursor, RegionCursorMut, RegionKind,

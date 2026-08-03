@@ -1,6 +1,6 @@
 use crate::{
-    BlockRef, Operation, OperationRef, Region, RegionBranchOpInterface, RegionKindInterface,
-    RegionRef, SmallVec, adt::SmallSet, cfg::Graph,
+    BlockRef, FxHashMap, FxHashSet, Operation, OperationRef, Region, RegionBranchOpInterface,
+    RegionKindInterface, RegionRef, SmallVec, cfg::Graph,
 };
 
 /// The answer to a control-flow reachability query between two operations.
@@ -25,6 +25,41 @@ pub enum Reachability {
     Indeterminate,
 }
 
+/// A lazily-populated cache of forward block reachability, for callers issuing many
+/// [Operation::reachability_cached] queries over one body of IR.
+///
+/// The first query from a given block computes and stores that block's full forward closure;
+/// subsequent queries from the same block are set lookups. The cache assumes the block
+/// structure of the IR does not change between queries: discard it after splitting, erasing,
+/// or rewiring blocks.
+#[derive(Default)]
+pub struct ReachabilityCache {
+    forward: FxHashMap<BlockRef, FxHashSet<BlockRef>>,
+}
+
+impl ReachabilityCache {
+    /// Returns true if control leaving the end of `from` can reach the start of `to` by
+    /// following block successors.
+    ///
+    /// The walk is not reflexive: `from == to` returns true only when a cycle leads back into
+    /// the block, which is what [region_can_re_execute] relies on for cycle detection.
+    fn leads_to(&mut self, from: BlockRef, to: BlockRef) -> bool {
+        self.forward
+            .entry(from)
+            .or_insert_with(|| {
+                let mut reachable = FxHashSet::default();
+                let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(from));
+                while let Some(block) = worklist.pop() {
+                    if reachable.insert(block) {
+                        worklist.extend(BlockRef::children(block));
+                    }
+                }
+                reachable
+            })
+            .contains(&to)
+    }
+}
+
 /// Queries
 impl Operation {
     /// Computes whether some control-flow path from `from` can reach `to`.
@@ -41,6 +76,18 @@ impl Operation {
     /// [Reachability::MaybeInterprocedurally] and [Reachability::Indeterminate] respectively,
     /// leaving the interpretation of such queries to the caller.
     pub fn reachability(from: OperationRef, to: OperationRef) -> Reachability {
+        Self::reachability_cached(from, to, &mut ReachabilityCache::default())
+    }
+
+    /// Like [Operation::reachability], reusing `cache` across queries.
+    ///
+    /// Use this when issuing many queries over one body of IR (e.g. pairing spills with
+    /// reloads), so that block-reachability walks are shared between them.
+    pub fn reachability_cached(
+        from: OperationRef,
+        to: OperationRef,
+        cache: &mut ReachabilityCache,
+    ) -> Reachability {
         // One operation enclosing the other relates the two positions through the chain of
         // regions between them: control entering the enclosing op can reach the nested
         // position, and control leaving the nested position flows back through the enclosing
@@ -90,7 +137,7 @@ impl Operation {
         // one sub-region to a sibling is decided by the op's own region graph, or by the op
         // executing more than once.
         if from_ancestor == to_ancestor {
-            return sibling_region_reachability(from_ancestor, from, to);
+            return sibling_region_reachability(from_ancestor, from, to, cache);
         }
 
         let (Some(from_block), Some(to_block)) =
@@ -114,10 +161,10 @@ impl Operation {
         // A forward path may exist through block successors; earlier positions are only
         // reachable through a cycle, either via block successors, or by re-entry of the common
         // region itself.
-        if block_leads_to(from_block, to_block) {
+        if cache.leads_to(from_block, to_block) {
             return Reachability::Maybe;
         }
-        if region_can_re_execute(common_region_ref) {
+        if region_can_re_execute(common_region_ref, cache) {
             return Reachability::Maybe;
         }
 
@@ -183,6 +230,7 @@ fn sibling_region_reachability(
     owner: OperationRef,
     from: OperationRef,
     to: OperationRef,
+    cache: &mut ReachabilityCache,
 ) -> Reachability {
     if !owner.borrow().implements::<dyn RegionBranchOpInterface>() {
         // Unknown region semantics: conservatively treat transfer as possible.
@@ -197,7 +245,7 @@ fn sibling_region_reachability(
     if to_region.borrow().is_reachable_from(&from_region.borrow()) {
         return Reachability::Maybe;
     }
-    if op_can_re_execute(owner) {
+    if op_can_re_execute(owner, cache) {
         return Reachability::Maybe;
     }
     Reachability::Impossible
@@ -218,17 +266,17 @@ fn child_region_containing(owner: OperationRef, op: OperationRef) -> Option<Regi
 
 /// Returns true if `op` can execute more than once: its block lies on a CFG cycle, or the
 /// region containing it can re-execute.
-fn op_can_re_execute(op: OperationRef) -> bool {
+fn op_can_re_execute(op: OperationRef, cache: &mut ReachabilityCache) -> bool {
     let (block, region) = {
         let op = op.borrow();
         (op.parent(), op.parent_region())
     };
     if let Some(block) = block
-        && block_leads_to(block, block)
+        && cache.leads_to(block, block)
     {
         return true;
     }
-    region.is_some_and(region_can_re_execute)
+    region.is_some_and(|region| region_can_re_execute(region, cache))
 }
 
 /// Returns true if `region` requires SSA dominance, i.e. operation order within it defines
@@ -244,33 +292,13 @@ fn region_has_ssa_dominance(region: RegionRef) -> bool {
         .unwrap_or(true)
 }
 
-/// Returns true if control leaving the end of `from` can reach the start of `to` by following
-/// block successors.
-///
-/// The walk is not reflexive: `from == to` returns true only when a cycle leads back into the
-/// block, which is what [region_can_re_execute] relies on for cycle detection.
-fn block_leads_to(from: BlockRef, to: BlockRef) -> bool {
-    let mut visited = SmallSet::<BlockRef, 8>::default();
-    let mut worklist = SmallVec::<[BlockRef; 8]>::from_iter(BlockRef::children(from));
-    while let Some(block) = worklist.pop() {
-        if block == to {
-            return true;
-        }
-        if !visited.insert(block) {
-            continue;
-        }
-        worklist.extend(BlockRef::children(block));
-    }
-    false
-}
-
 /// Returns true if `region` can execute more than once within a single execution of the
 /// operation bounding control-flow reasoning about it (see [control_flow_scope]).
 ///
 /// That is the case when an enclosing region is repetitive (e.g. the regions of an `scf.while`,
 /// whose back edges are expressed in the region graph of the owning op rather than as block
 /// successors), or when an enclosing op itself sits on a CFG cycle in its parent region.
-fn region_can_re_execute(region: RegionRef) -> bool {
+fn region_can_re_execute(region: RegionRef, cache: &mut ReachabilityCache) -> bool {
     let mut current = Some(region);
     while let Some(r) = current {
         let Some(owner) = r.parent() else {
@@ -294,7 +322,7 @@ fn region_can_re_execute(region: RegionRef) -> bool {
         if r.borrow().is_repetitive_region() {
             return true;
         }
-        if block_leads_to(owner_block, owner_block) {
+        if cache.leads_to(owner_block, owner_block) {
             return true;
         }
         current = owner_op.parent_region();
