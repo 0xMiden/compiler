@@ -5309,6 +5309,44 @@ end
 }
 
 #[test]
+fn lint_disassembly_skips_unsupported_do_while_procedure() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good
+    push.1
+end
+
+pub proc bad
+    do
+        push.1
+        dup.0
+        neq.0
+    while
+        dup.0
+        lt.10
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert_ne!(skipped.span, SourceSpan::UNKNOWN);
+    assert!(skipped.reason.contains("do-while control flow is not supported"));
+
+    Ok(())
+}
+
+#[test]
 fn lint_disassembly_skips_known_signature_stack_shape_mismatch() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source_for_lint(

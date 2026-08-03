@@ -398,14 +398,7 @@ impl ModuleRegistry {
                                                 )));
                                             }
                                         }
-                                        if let Some((inst, span)) =
-                                            first_non_liftable_instruction(p.body())
-                                        {
-                                            return Err(Report::msg(format!(
-                                                "MASM instruction {inst:?} is not supported \
-                                                 during disassembly at {span:?}"
-                                            )));
-                                        }
+                                        validate_lint_liftability(p.body())?;
                                         let count = estimated_hir_operation_count(p.body());
                                         if count > LINT_ESTIMATED_HIR_OP_LIMIT {
                                             return Err(Report::msg(format!(
@@ -657,34 +650,37 @@ fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()
     Ok(())
 }
 
-fn first_non_liftable_instruction(block: &Block) -> Option<(&Instruction, SourceSpan)> {
+fn validate_lint_liftability(block: &Block) -> Result<()> {
     for op in block.iter() {
         match op {
             Op::Inst(inst)
                 if semantics::instruction_semantics(inst.inner())
                     != InstructionSemantics::LiftAndInfer =>
             {
-                return Some((inst.inner(), inst.span()));
+                return Err(Report::msg(format!(
+                    "MASM instruction {:?} is not supported during disassembly at {:?}",
+                    inst.inner(),
+                    inst.span()
+                )));
             }
             Op::Inst(_) => {}
             Op::If {
                 then_blk, else_blk, ..
             } => {
-                if let Some(unsupported) = first_non_liftable_instruction(then_blk) {
-                    return Some(unsupported);
-                }
-                if let Some(unsupported) = first_non_liftable_instruction(else_blk) {
-                    return Some(unsupported);
-                }
+                validate_lint_liftability(then_blk)?;
+                validate_lint_liftability(else_blk)?;
             }
-            Op::While { body, .. } | Op::DoWhile { body, .. } | Op::Repeat { body, .. } => {
-                if let Some(unsupported) = first_non_liftable_instruction(body) {
-                    return Some(unsupported);
-                }
+            Op::While { body, .. } | Op::Repeat { body, .. } => {
+                validate_lint_liftability(body)?;
+            }
+            Op::DoWhile { span, .. } => {
+                return Err(Report::msg(format!(
+                    "MASM do-while control flow is not supported during disassembly at {span:?}"
+                )));
             }
         }
     }
-    None
+    Ok(())
 }
 
 fn estimated_hir_operation_count(block: &Block) -> usize {
