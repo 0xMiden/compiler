@@ -19,8 +19,7 @@ pub struct LinkInfo {
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
     function_tables: FunctionTableLayout,
-    reserved_memory_pages: u32,
-    page_size: u32,
+    heap_base: u32,
 }
 
 impl LinkInfo {
@@ -31,8 +30,7 @@ impl LinkInfo {
             globals_layout: Default::default(),
             segment_layout: Default::default(),
             function_tables: Default::default(),
-            reserved_memory_pages: 0,
-            page_size: DEFAULT_PAGE_SIZE,
+            heap_base: 0,
         }
     }
 
@@ -75,32 +73,12 @@ impl LinkInfo {
     /// Get the address of the first page boundary past all statically-allocated memory (global
     /// variables and function tables), or the end of reserved memory if larger; this is where
     /// the dynamic heap starts when the program is executed.
+    ///
+    /// The address is computed and validated by [Linker::link], which fails with
+    /// [LinkerError::LayoutOverflow] when static memory leaves no representable heap base.
+    #[inline(always)]
     pub fn heap_base(&self) -> u32 {
-        let after_static = core::cmp::max(
-            self.globals_layout.next_page_boundary(),
-            self.function_tables
-                .end_offset()
-                .checked_next_multiple_of(self.page_size)
-                .expect("invalid memory layout: page rounding overflows the 32-bit address space"),
-        );
-        let heap_base = core::cmp::max(self.reserved_memory_bytes(), after_static as usize);
-        u32::try_from(heap_base)
-            .expect("unable to allocate dynamic heap: static memory layout too large")
-    }
-
-    #[inline(always)]
-    pub fn reserved_memory_pages(&self) -> u32 {
-        self.reserved_memory_pages
-    }
-
-    #[inline]
-    pub fn reserved_memory_bytes(&self) -> usize {
-        self.reserved_memory_pages() as usize * self.page_size() as usize
-    }
-
-    #[inline(always)]
-    pub fn page_size(&self) -> u32 {
-        self.page_size
+        self.heap_base
     }
 }
 
@@ -199,7 +177,7 @@ impl Linker {
                         if global.is_declaration() {
                             continue;
                         }
-                        self.globals_layout.insert(global);
+                        self.globals_layout.insert(global)?;
                         continue;
                     }
 
@@ -251,7 +229,7 @@ impl Linker {
             reserved_offset
                 .max(next_available_offset_with_headroom)
                 .max(declared_reserved_offset),
-        );
+        )?;
         log::debug!(target: "linker",
             "global_table_offset set to: {:#x}",
             self.globals_layout.global_table_offset()
@@ -262,7 +240,16 @@ impl Linker {
         // as `dynexec` requires, and each table's byte size is a word multiple, so subsequent
         // tables stay word-aligned too.
         let mut function_tables = FunctionTableLayout::default();
-        let mut next_table_offset = self.globals_layout.next_page_boundary();
+        let globals_boundary = self.globals_layout.next_page_boundary().ok_or_else(|| {
+            LinkerError::LayoutOverflow {
+                reason: alloc::format!(
+                    "global variables ending at {:#x} overflow the 32-bit address space when \
+                     rounded to the next page",
+                    self.globals_layout.next_offset
+                ),
+            }
+        })?;
+        let mut next_table_offset = globals_boundary;
         for table_ref in self.function_tables.drain(..) {
             let slots = *table_ref.borrow().get_num_slots();
             let size_in_bytes = slots
@@ -283,13 +270,36 @@ impl Linker {
             function_tables.end_offset = next_table_offset;
         }
 
+        // 5. Compute the dynamic heap base: the first page boundary past all
+        // statically-allocated memory (global variables and function tables), or the end of
+        // reserved memory if larger. Static memory that reaches the last page leaves no
+        // representable heap base, so that is a link failure rather than a panic in an accessor.
+        let after_tables = function_tables
+            .end_offset
+            .checked_next_multiple_of(self.page_size)
+            .ok_or_else(|| LinkerError::LayoutOverflow {
+                reason: alloc::format!(
+                    "function tables ending at {:#x} leave no room for the dynamic heap",
+                    function_tables.end_offset
+                ),
+            })?;
+        let after_static = globals_boundary.max(after_tables);
+        let reserved_bytes = self.reserved_memory_pages as u64 * self.page_size as u64;
+        let heap_base = u32::try_from((after_static as u64).max(reserved_bytes)).map_err(|_| {
+            LinkerError::LayoutOverflow {
+                reason: alloc::string::String::from(
+                    "static and reserved memory leave no room for the dynamic heap in the 32-bit \
+                     address space",
+                ),
+            }
+        })?;
+
         Ok(LinkInfo {
             component: id,
             globals_layout: core::mem::take(&mut self.globals_layout),
             segment_layout: core::mem::take(&mut self.segment_layout),
             function_tables,
-            reserved_memory_pages: self.reserved_memory_pages,
-            page_size: self.page_size,
+            heap_base,
         })
     }
 }
@@ -349,11 +359,10 @@ impl GlobalVariableLayout {
         self.stack_pointer
     }
 
-    /// Get the address/offset of the next page boundary following the last inserted global variable
-    pub fn next_page_boundary(&self) -> u32 {
-        self.next_offset
-            .checked_next_multiple_of(self.page_size)
-            .expect("invalid memory layout: page rounding overflows the 32-bit address space")
+    /// Get the address/offset of the next page boundary following the last inserted global
+    /// variable, or `None` if that boundary does not fit in the 32-bit address space.
+    pub fn next_page_boundary(&self) -> Option<u32> {
+        self.next_offset.checked_next_multiple_of(self.page_size)
     }
 
     /// Get the statically-allocated address at which the global variable `gv` is to be placed.
@@ -368,7 +377,11 @@ impl GlobalVariableLayout {
     /// This method should be used instead of directly modifying the `global_table_offset` field.
     /// If globals have already been inserted, their offsets will be adjusted to maintain
     /// their relative positions from the new base offset.
-    pub fn update_global_table_offset(&mut self, new_offset: u32) {
+    ///
+    /// Fails with [LinkerError::LayoutOverflow] when the move pushes a global variable outside
+    /// the 32-bit address space, which a large module memory reservation can cause with valid
+    /// input; the partially-rebased layout must then be discarded.
+    pub fn update_global_table_offset(&mut self, new_offset: u32) -> Result<(), LinkerError> {
         let old_offset = self.global_table_offset;
 
         // Update the base offset
@@ -376,27 +389,32 @@ impl GlobalVariableLayout {
 
         // If there are existing globals, we need to adjust their offsets
         if !self.offsets.is_empty() {
-            // Calculate the difference between old and new offset. The arithmetic is done in
-            // 64 bits with checked conversions back: `link` validates that all layout inputs fit
-            // the 32-bit address space, so a failure here indicates a corrupted layout rather
-            // than merely unusual input.
-            const OVERFLOW_MSG: &str =
-                "invalid memory layout: global variable offsets overflow the 32-bit address space";
+            // Calculate the difference between old and new offset; the arithmetic is done in
+            // 64 bits with checked conversions back to the 32-bit address space
             let offset_diff = new_offset as i64 - old_offset as i64;
+            let rebase = |offset: u32| {
+                u32::try_from(offset as i64 + offset_diff).map_err(|_| {
+                    LinkerError::LayoutOverflow {
+                        reason: alloc::format!(
+                            "moving the global variables to base {new_offset:#x} pushes offset \
+                             {offset:#x} outside the 32-bit address space"
+                        ),
+                    }
+                })
+            };
 
             // Update all existing global offsets
             for offset in self.offsets.values_mut() {
-                *offset = u32::try_from(*offset as i64 + offset_diff).expect(OVERFLOW_MSG);
+                *offset = rebase(*offset)?;
             }
 
             // Update the stack pointer offset if it exists
             if let Some(sp_offset) = self.stack_pointer.as_mut() {
-                *sp_offset = u32::try_from(*sp_offset as i64 + offset_diff).expect(OVERFLOW_MSG);
+                *sp_offset = rebase(*sp_offset)?;
             }
 
             // Update the next offset to maintain the same relative position
-            self.next_offset =
-                u32::try_from(self.next_offset as i64 + offset_diff).expect(OVERFLOW_MSG);
+            self.next_offset = rebase(self.next_offset)?;
         } else {
             // If no globals have been inserted yet, just update next_offset to match
             self.next_offset = new_offset;
@@ -405,25 +423,34 @@ impl GlobalVariableLayout {
         log::debug!(target: "linker",
             "GlobalVariableLayout: updated global_table_offset from {old_offset:#x} to {new_offset:#x}"
         );
+        Ok(())
     }
 
-    pub fn insert(&mut self, gv: &builtin::GlobalVariable) {
+    /// Allocate `gv` at the next suitably-aligned offset.
+    ///
+    /// Fails with [LinkerError::LayoutOverflow] when the placement does not fit in the 32-bit
+    /// address space.
+    pub fn insert(&mut self, gv: &builtin::GlobalVariable) -> Result<(), LinkerError> {
         let key = unsafe { builtin::GlobalVariableRef::from_raw(gv) };
 
         // Ensure the stack pointer is tracked and uses the same offset globally
         let is_stack_pointer = gv.get_name().as_symbol() == "__stack_pointer";
         if is_stack_pointer && let Some(offset) = self.stack_pointer {
             let _ = self.offsets.try_insert(key, offset);
-            return;
+            return Ok(());
         }
 
-        const OVERFLOW_MSG: &str =
-            "invalid memory layout: global variable placement overflows the 32-bit address space";
+        let layout_overflow = || LinkerError::LayoutOverflow {
+            reason: alloc::format!(
+                "global variable '{}' does not fit in the 32-bit address space",
+                gv.get_name().as_str()
+            ),
+        };
         let ty = gv.ty();
         let offset = self
             .next_offset
             .checked_next_multiple_of(ty.min_alignment() as u32)
-            .expect(OVERFLOW_MSG);
+            .ok_or_else(layout_overflow)?;
         if self.offsets.try_insert(key, offset).is_ok() {
             log::debug!(target: "linker",
                 "GlobalVariableLayout: allocated global '{}' at offset {:#x} (size: {} bytes)",
@@ -434,8 +461,10 @@ impl GlobalVariableLayout {
             if is_stack_pointer {
                 self.stack_pointer = Some(offset);
             }
-            self.next_offset = offset.checked_add(ty.size_in_bytes() as u32).expect(OVERFLOW_MSG);
+            self.next_offset =
+                offset.checked_add(ty.size_in_bytes() as u32).ok_or_else(layout_overflow)?;
         }
+        Ok(())
     }
 }
 
@@ -486,9 +515,74 @@ impl FunctionTableLayout {
     pub fn get_computed_addr(&self, table: builtin::FunctionTableRef) -> Option<u32> {
         self.tables.iter().find_map(|(t, offset)| (*t == table).then_some(*offset))
     }
+}
 
-    /// The first byte offset past the end of the last table, or 0 if there are none
-    pub fn end_offset(&self) -> u32 {
-        self.end_offset
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+
+    use midenc_hir::{
+        BuilderExt, Context, Ident, Op, Visibility,
+        dialects::builtin::{
+            self, ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::U64Attr,
+        },
+        version::Version,
+    };
+
+    use super::*;
+
+    /// Build a component holding one module that reserves `reserved_bytes` of memory and
+    /// declares one single-slot function table, then link it.
+    fn link_reserved_module_with_table(reserved_bytes: u64) -> Result<LinkInfo, LinkerError> {
+        let context = Rc::new(Context::default());
+        let world_ref =
+            context.clone().builder().create::<World, ()>(Default::default())().unwrap();
+        let mut world_builder = WorldBuilder::new(world_ref);
+        let component_ref = world_builder
+            .define_component(
+                Ident::from("test_ns"),
+                Ident::from("test"),
+                Version::parse("1.0.0").unwrap(),
+            )
+            .unwrap();
+        let mut component_builder = ComponentBuilder::new(component_ref);
+        let mut module_ref = component_builder.define_module(Ident::from("m")).unwrap();
+        if reserved_bytes > 0 {
+            let attr = context.create_attribute::<U64Attr, _>(reserved_bytes);
+            module_ref
+                .borrow_mut()
+                .as_operation_mut()
+                .set_attribute(builtin::Module::RESERVED_MEMORY_ATTR, attr);
+        }
+        let mut module_builder = ModuleBuilder::new(module_ref);
+        module_builder
+            .define_function_table(Ident::from("tbl"), Visibility::Private, 1)
+            .unwrap();
+
+        let component = component_ref.borrow();
+        Linker::default().link(None, component.as_operation())
+    }
+
+    /// A valid 65,535-page module memory plus one table must link without panicking, and report
+    /// that the rounded heap base does not fit the 32-bit address space.
+    #[test]
+    fn link_fails_when_static_memory_leaves_no_heap_base() {
+        let err = match link_reserved_module_with_table(0xffff_0000) {
+            Ok(_) => panic!("a heap base past the last page must be a link error"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(&err, LinkerError::LayoutOverflow { reason } if reason.contains("dynamic heap")),
+            "unexpected link failure: {err}"
+        );
+    }
+
+    /// The heap base is the first page boundary past the linked function tables.
+    #[test]
+    fn link_computes_heap_base_past_static_memory() {
+        let link_info = link_reserved_module_with_table(0).expect("layout should fit");
+        // The default reservation floor (17 pages) puts the table at 0x110000; its one 32-byte
+        // slot rounds up to the next page boundary
+        assert_eq!(link_info.heap_base(), 0x120000);
     }
 }
