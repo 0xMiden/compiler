@@ -98,7 +98,18 @@ impl DenseForwardDataFlowAnalysis for AdviceTaintStoragePropagation {
             }
             // External memory effects need summaries before we can model them conservatively.
             CallControlFlowAction::External => {
-                let state = storage_state_before_operation(call.as_operation(), dependent, solver);
+                let mut state =
+                    storage_state_before_operation(call.as_operation(), dependent, solver);
+                // A callee that cannot be resolved or enumerated (e.g. an indirect call through
+                // an unresolvable function table) executes in the caller's memory context, so
+                // any memory it may have written is conservatively treated as carrying
+                // unconstrained advice. Resolved external declarations model known procedures
+                // and keep the carried state untouched.
+                if call.resolve().is_none() {
+                    state.store_dynamic_memory(ContextualAdviceTaintValue::external_call(
+                        call.as_operation().span(),
+                    ));
+                }
                 midenc_hir_analysis::DenseLattice::join(after, &state);
             }
         }
@@ -355,4 +366,88 @@ fn memory_address(value: ValueRef) -> Option<u32> {
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_dialect_arith::ArithOpBuilder;
+    use midenc_hir::{
+        SourceSpan, Type, ValueRef,
+        dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, attributes::Signature},
+        testing::Test,
+    };
+
+    use super::super::test_support::{
+        define_table, felt_ptr, module_advice_taint_findings, sink_names,
+    };
+    use crate::HirOpBuilder;
+
+    /// The callee runs in the caller's memory context: raw advice it stores to memory is flagged
+    /// when the caller loads and sinks it.
+    #[test]
+    fn indirect_call_propagates_callee_memory_taint() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_memory_taint").in_module("m");
+
+        // The callee stores raw advice at a static memory address
+        let mem_writer = test.define_function("mem_writer", &[], &[]);
+        {
+            let mut builder = FunctionBuilder::new(mem_writer, test.builder_mut());
+            let advice = builder.advice_pop(span)?;
+            let ptr = felt_ptr(&mut builder, 64, span);
+            builder.store(ptr, advice, span)?;
+            builder.ret([], span)?;
+        }
+        let table = define_table(&mut test, &[(1, mem_writer, 1)]);
+
+        let signature = Signature::new(&test.context_rc(), [], []);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.exec_indirect(table, signature, 1, index, [], span)?;
+            let ptr = felt_ptr(&mut builder, 64, span);
+            let loaded = builder.load(ptr, span)?;
+            let cast = builder.unrealized_conversion_cast(loaded, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    /// An unanalyzable callee runs in the caller's memory context, so after the call every
+    /// memory load is conservatively treated as carrying unconstrained advice.
+    #[test]
+    fn indirect_call_with_unanalyzable_entry_taints_memory() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_unanalyzable_memory").in_module("m");
+
+        // A declaration: no body to analyze
+        let extern_writer = test.define_function("extern_writer", &[], &[]);
+        let table = define_table(&mut test, &[(1, extern_writer, 1)]);
+
+        let signature = Signature::new(&test.context_rc(), [], []);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            builder.exec_indirect(table, signature, 1, index, [], span)?;
+            let ptr = felt_ptr(&mut builder, 64, span);
+            let loaded = builder.load(ptr, span)?;
+            let cast = builder.unrealized_conversion_cast(loaded, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
 }

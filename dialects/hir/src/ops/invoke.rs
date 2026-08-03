@@ -3,7 +3,7 @@ use alloc::format;
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{
-        FunctionTable,
+        FunctionTable, FunctionTableEntry,
         attributes::{LocalVariableArrayAttr, SignatureAttr, U32Attr},
     },
     effects::*,
@@ -407,6 +407,45 @@ impl CallOpInterface for ExecIndirect {
     fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<SymbolRef> {
         None
     }
+
+    /// The possible callees are the table entries whose signature tag matches the tag this call
+    /// site expects: dispatch to any other slot traps on the runtime signature check before the
+    /// callee runs, so no other entry can observe the arguments or produce results. Later
+    /// entries overwrite earlier ones at the same slot, so only the last entry per slot is
+    /// dispatchable. Returns `None` (unknown) if the table or any dispatchable entry does not
+    /// resolve, so analyses cannot treat a partially-resolved set as complete.
+    fn possible_callees(&self) -> Option<SmallVec<[SymbolRef; 2]>> {
+        use alloc::collections::BTreeMap;
+
+        let symbol_table_op = self.as_operation().nearest_symbol_table()?;
+        let symbol_table_op = symbol_table_op.borrow();
+        let symbol_table = symbol_table_op.as_symbol_table()?;
+        let table = symbol_table.resolve(self.table().path())?;
+        let table = table.borrow();
+        let table = table.as_symbol_operation().downcast_ref::<FunctionTable>()?;
+
+        let mut live_slots = BTreeMap::new();
+        let entries = table.entries();
+        let entries = entries.entry();
+        for op in entries.body() {
+            let entry = op.downcast_ref::<FunctionTableEntry>()?;
+            live_slots
+                .insert(*entry.get_index(), (*entry.get_type_tag(), entry.callee().path().clone()));
+        }
+
+        let expected_tag = *self.get_type_tag();
+        let mut callees = SmallVec::new();
+        for (type_tag, callee_path) in live_slots.into_values() {
+            if type_tag != expected_tag {
+                continue;
+            }
+            let callee = symbol_table.resolve(&callee_path)?;
+            if !callees.contains(&callee) {
+                callees.push(callee);
+            }
+        }
+        Some(callees)
+    }
 }
 
 impl CallOpInterface for Exec {
@@ -677,6 +716,11 @@ impl CallOpInterface for Syscall {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{
+        format,
+        string::{String, ToString},
+    };
+
     use midenc_hir::{
         CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
         conversion::{
@@ -689,6 +733,7 @@ mod tests {
         testing::Test,
     };
 
+    use super::ExecIndirect;
     use crate::HirOpBuilder;
 
     #[test]
@@ -891,5 +936,111 @@ builtin.module public @test {
         assert_eq!(syscall.borrow().callee().path(), &replacement_path);
         assert_eq!(original.borrow().iter_uses().count(), 0);
         assert_eq!(replacement.borrow().iter_uses().count(), 1);
+    }
+
+    /// Parse `source`, which must contain exactly one `hir.exec_indirect`, and return the names
+    /// of its possible callees, or `None` if the set is unknown.
+    fn possible_callee_names(name: &str, source: &str) -> Option<alloc::vec::Vec<String>> {
+        let test = Test::default();
+        let parsed = parse::parse_any(ParserConfig::new(test.context_rc()), Uri::new(name), source)
+            .expect("test module should parse");
+        let mut sets = alloc::vec::Vec::new();
+        parsed.borrow().prewalk_all(|op| {
+            if let Some(call) = op.downcast_ref::<ExecIndirect>() {
+                sets.push(call.possible_callees().map(|callees| {
+                    callees
+                        .iter()
+                        .map(|callee| callee.borrow().name().to_string())
+                        .collect::<alloc::vec::Vec<_>>()
+                }));
+            }
+        });
+        assert_eq!(sets.len(), 1, "expected exactly one hir.exec_indirect in the test module");
+        sets.pop().unwrap()
+    }
+
+    /// Wrap `entries` (function-table entry lines) and a `call_tag` dispatch in a module with
+    /// three single-parameter callees `@a`, `@b`, and `@c`.
+    fn table_module(entries: &str, call_tag: u32) -> String {
+        format!(
+            r#"
+builtin.module public @test {{
+    builtin.function internal extern("C") @a(%x: i32) -> i32 {{
+        builtin.ret %x : (i32);
+    }};
+    builtin.function internal extern("C") @b(%x: i32) -> i32 {{
+        builtin.ret %x : (i32);
+    }};
+    builtin.function internal extern("C") @c(%x: i32) -> i32 {{
+        builtin.ret %x : (i32);
+    }};
+
+    builtin.function public extern("C") @dispatch(%idx: u32, %x: i32) -> i32 {{
+        %r = hir.exec_indirect @tbl[%idx](%x) : extern("C") (i32) -> (i32) tag {call_tag};
+        builtin.ret %r : (i32);
+    }};
+
+    builtin.function_table private @tbl : 4 {{
+{entries}
+    }};
+}};"#
+        )
+    }
+
+    /// Entries whose tag matches the call site are dispatchable; others are filtered, since they
+    /// can only trap on the runtime signature check.
+    #[test]
+    fn exec_indirect_possible_callees_filters_by_type_tag() {
+        let source = table_module(
+            "        builtin.function_table_entry 0 @a tag 1;\n        \
+             builtin.function_table_entry 1 @b tag 2;\n        builtin.function_table_entry 2 @c \
+             tag 1;",
+            1,
+        );
+        let callees = possible_callee_names("possible_callees_filter.hir", &source);
+        assert_eq!(callees, Some(alloc::vec!["a".to_string(), "c".to_string()]));
+    }
+
+    /// A later entry overwrites an earlier one at the same slot, so only the last entry is a
+    /// possible callee.
+    #[test]
+    fn exec_indirect_possible_callees_keeps_only_last_entry_per_slot() {
+        let source = table_module(
+            "        builtin.function_table_entry 0 @a tag 1;\n        \
+             builtin.function_table_entry 0 @b tag 1;",
+            1,
+        );
+        let callees = possible_callee_names("possible_callees_overwrite.hir", &source);
+        assert_eq!(callees, Some(alloc::vec!["b".to_string()]));
+    }
+
+    /// A callee referenced from several slots appears once in the possible-callee set.
+    #[test]
+    fn exec_indirect_possible_callees_dedups_repeated_callees() {
+        let source = table_module(
+            "        builtin.function_table_entry 0 @a tag 1;\n        \
+             builtin.function_table_entry 1 @a tag 1;",
+            1,
+        );
+        let callees = possible_callee_names("possible_callees_dedup.hir", &source);
+        assert_eq!(callees, Some(alloc::vec!["a".to_string()]));
+    }
+
+    /// When no entry matches the call site's tag, the possible-callee set is known and empty:
+    /// every dispatch traps.
+    #[test]
+    fn exec_indirect_possible_callees_empty_when_no_tag_matches() {
+        let source = table_module("        builtin.function_table_entry 0 @a tag 2;", 1);
+        let callees = possible_callee_names("possible_callees_empty.hir", &source);
+        assert_eq!(callees, Some(alloc::vec![]));
+    }
+
+    /// An entry whose callee does not resolve makes the whole set unknown, so analyses cannot
+    /// treat a partially-resolved set as complete.
+    #[test]
+    fn exec_indirect_possible_callees_unknown_when_entry_unresolvable() {
+        let source = table_module("        builtin.function_table_entry 0 @missing tag 1;", 1);
+        let callees = possible_callee_names("possible_callees_unresolvable.hir", &source);
+        assert_eq!(callees, None);
     }
 }

@@ -32,6 +32,17 @@ pub trait CallOpInterface: Op {
     /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
     /// if a valid callable was not resolved.
     fn resolve(&self) -> Option<SymbolRef>;
+    /// Enumerate every callable this operation may transfer control to, or `None` if the set of
+    /// possible callees is not statically known.
+    ///
+    /// Direct calls have exactly one possible callee, which the default implementation derives
+    /// from [Self::resolve]. Indirect calls whose dispatch set is statically known (e.g. calls
+    /// through a function table) override this to enumerate that set, which interprocedural
+    /// analyses join over; an empty set means the call can never transfer control (every
+    /// dispatch traps).
+    fn possible_callees(&self) -> Option<crate::SmallVec<[SymbolRef; 2]>> {
+        self.resolve().map(|callee| crate::smallvec![callee])
+    }
 }
 
 /// A callable operation is one who represents a potential function, and may be a target for a call-

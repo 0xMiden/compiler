@@ -4,6 +4,8 @@ mod layout;
 mod propagation;
 mod sinks;
 mod storage;
+#[cfg(test)]
+mod test_support;
 
 use alloc::{rc::Rc, vec::Vec};
 use core::any::Any;

@@ -712,7 +712,7 @@ impl DeadCodeAnalysis {
         log::debug!(target: self.debug_name(), "visiting call operation: {}", call.as_operation().name());
 
         // TODO: Update this when symbol table changes are complete, e.g. call.resolve_in_symbol_table(&self.symbol_table_collection)
-        let callable = call.resolve();
+        let targets = call.possible_callees();
 
         // A call to a externally-defined callable has unknown predecessors.
         let is_external_callable = |op: &Operation| -> bool {
@@ -728,8 +728,9 @@ impl DeadCodeAnalysis {
             }
         };
 
-        // If the callable is unresolvable, mark the call ops predecessors as overdefined/unknown
-        if callable.is_none() {
+        // If the possible-callee set is unknown, mark the call ops predecessors as
+        // overdefined/unknown
+        let Some(targets) = targets else {
             let mut predecessors = solver
                 .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));
             let change_result = predecessors.set_has_unknown_predecessors();
@@ -738,29 +739,37 @@ impl DeadCodeAnalysis {
                 call.as_operation()
             );
             return;
-        }
+        };
 
         // TODO: Add support for non-symbol callables when necessary.
         //
-        // If the callable has non-call uses we would mark as having reached pessimistic fixpoint,
-        // otherwise allow for propagating the return values out.
-        let callable = callable.unwrap();
-        let callable = callable.borrow();
-        // It the callable can have external callers we don't know about, we have to be conservative
-        // about the set of possible predecessors.
-        if !is_external_callable(callable.as_symbol_operation()) {
-            // Add the live callsite
-            let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
-                ProgramPoint::after(callable.as_symbol_operation()),
-            );
-            let change_result = callsites.change(|ps| {
-                ps.join_with_inputs(call.as_operation_ref(), call.arguments().as_value_range())
-            });
-            log::debug!(
-                target: self.debug_name(), "adding call-site {} to predecessor state for its callee: {change_result}",
-                call.as_operation()
-            );
-        } else {
+        // Register this call site with every possible callee that is defined in the analysis
+        // scope; the callees' return ops then register themselves back as predecessors of this
+        // call's return point. A callee outside the scope (or without a body) cannot be
+        // analyzed, so one such target makes the call's return conservatively unknown, even
+        // while arguments still flow into the analyzable targets. An empty target set means the
+        // call never transfers control (every dispatch traps), and registers nothing.
+        let mut has_external_target = false;
+        for callable in targets {
+            let callable = callable.borrow();
+            if !is_external_callable(callable.as_symbol_operation()) {
+                // Add the live callsite
+                let mut callsites = solver.get_or_create_mut::<PredecessorState, _>(
+                    ProgramPoint::after(callable.as_symbol_operation()),
+                );
+                let change_result = callsites.change(|ps| {
+                    ps.join_with_inputs(call.as_operation_ref(), call.arguments().as_value_range())
+                });
+                log::debug!(
+                    target: self.debug_name(), "adding call-site {} to predecessor state for callee '{}': {change_result}",
+                    call.as_operation(),
+                    callable.name(),
+                );
+            } else {
+                has_external_target = true;
+            }
+        }
+        if has_external_target {
             // Mark this call op's predecessors as overdefined
             let mut predecessors = solver
                 .get_or_create_mut::<PredecessorState, _>(ProgramPoint::after(call.as_operation()));

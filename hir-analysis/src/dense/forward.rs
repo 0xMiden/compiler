@@ -326,13 +326,7 @@ pub fn visit_call_operation<A>(
 {
     // Allow for customizing the behavior of calls to external symbols, including when the
     // analysis is explicitly marked as non-interprocedural.
-    let symbol = call.resolve();
-    let symbol = symbol.as_ref().map(|s| s.borrow());
-    let callable_op = symbol.as_ref().map(|s| s.as_symbol_operation());
-    let callable = callable_op.and_then(|op| op.as_trait::<dyn CallableOpInterface>());
-    if !solver.config().is_interprocedural()
-        || callable.is_some_and(|callable| callable.get_callable_region().is_none())
-    {
+    if !solver.config().is_interprocedural() || crate::analysis::is_external_call(call) {
         return analysis.visit_call_control_flow_transfer(
             call,
             CallControlFlowAction::External,
