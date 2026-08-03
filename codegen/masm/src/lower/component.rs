@@ -1035,6 +1035,14 @@ impl MasmComponentBuilder<'_> {
                         *table.get_num_slots()
                     )));
                 }
+                let type_tag = *entry.get_type_tag();
+                if type_tag == 0 {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: slot {slot} of table '{}' uses signature \
+                         tag 0, which is reserved for null slots",
+                        table.get_name().as_str(),
+                    )));
+                }
                 let Some(mut callee) =
                     entry.as_operation().nearest_symbol_table().and_then(|symbol_table| {
                         symbol_table
@@ -1067,14 +1075,22 @@ impl MasmComponentBuilder<'_> {
 
                 // `procref` pushes the callee's MAST root word (`root[0]` on top),
                 // `mem_storew_le` writes it to the slot's element address (leaving the word on
-                // the stack), and `dropw` cleans up. The base is word-aligned and each slot is
-                // exactly one word, so every slot address stays word-aligned as `dynexec`
+                // the stack), and `dropw` cleans up; the slot's signature tag is then stored in
+                // the element right after the digest. The base is word-aligned and each slot is
+                // exactly two words, so every slot address stays word-aligned as `dynexec`
                 // requires.
                 let slot_addr = base_addr + slot * FunctionTableLayout::SLOT_SIZE_ELEMENTS;
+                let tag_addr = slot_addr + FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS;
                 self.init_body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
                 self.init_body
                     .push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
                 self.init_body.push(Op::Inst(Span::new(span, Inst::DropW)));
+                self.init_body.push(Op::Inst(Span::new(
+                    span,
+                    Inst::Push(masm::Immediate::Value(Span::new(span, type_tag.into()))),
+                )));
+                self.init_body
+                    .push(Op::Inst(Span::new(span, Inst::MemStoreImm(tag_addr.into()))));
             }
         }
         Ok(())

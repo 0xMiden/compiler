@@ -4,7 +4,7 @@ use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{
         FunctionTable,
-        attributes::{LocalVariableArrayAttr, SignatureAttr},
+        attributes::{LocalVariableArrayAttr, SignatureAttr, U32Attr},
     },
     effects::*,
     interner::symbols,
@@ -223,9 +223,10 @@ impl InferTypeOpInterface for ExecFpi {
 /// to.
 ///
 /// `index` is the table slot to dispatch through; lowering bounds-checks it against the table
-/// size, computes the slot's memory address, and executes the procedure whose MAST root is
-/// stored there via `dynexec`. No runtime check that the callee matches `signature` is
-/// performed; only the bounds check traps deterministically.
+/// size, asserts that the slot's signature tag equals `type_tag`, computes the slot's memory
+/// address, and executes the procedure whose MAST root is stored there via `dynexec`. Both
+/// checks trap deterministically; the tag check also traps for null slots, whose tag is the
+/// reserved 0.
 #[operation(
     dialect = HirDialect,
     implements(
@@ -242,6 +243,10 @@ pub struct ExecIndirect {
     /// The signature the call site expects of the callee
     #[attr(hidden)]
     signature: SignatureAttr,
+    /// The signature tag the call site expects of the callee; dispatch traps if the slot's tag
+    /// differs (see [midenc_hir::dialects::builtin::FunctionTableEntry])
+    #[attr(hidden)]
+    type_tag: U32Attr,
     /// The table slot holding the callee's MAST root
     #[operand]
     index: UInt32,
@@ -283,6 +288,7 @@ impl OpPrinter for ExecIndirect {
         let callee_sig = self.signature();
         *printer += const_text(" : ");
         callee_sig.print(printer);
+        *printer += const_text(" tag ") + display(*self.get_type_tag());
         if self.op.has_attributes() {
             printer.print_space();
             *printer += const_text(" attributes ");
@@ -295,7 +301,7 @@ impl OpPrinter for ExecIndirect {
 
 impl OpParser for ExecIndirect {
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
-        use midenc_hir::parse::{ParserError, Token};
+        use midenc_hir::parse::{ParserError, ParserExt, Token};
 
         let table = parser.parse_symbol_ref()?;
         state.attrs.push(NamedAttribute::new("table", table.into_inner()));
@@ -339,6 +345,13 @@ impl OpParser for ExecIndirect {
                 num_types: signature.arity(),
             });
         }
+
+        parser.parse_custom_keyword("tag")?;
+        let type_tag = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute(
+            "type_tag",
+            parser.context_rc().create_attribute::<U32Attr, _>(type_tag),
+        );
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 

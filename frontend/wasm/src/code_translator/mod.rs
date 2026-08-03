@@ -35,7 +35,7 @@ use crate::{
         Module,
         func_translation_state::{ControlStackFrame, ElseData, FuncTranslationState},
         function_builder_ext::FunctionBuilderExt,
-        module_translation_state::ModuleTranslationState,
+        module_translation_state::{ModuleTranslationState, signature_type_tag},
         types::{
             BlockType, FuncIndex, GlobalIndex, ModuleTypesBuilder, TableIndex, TypeIndex,
             ir_func_type,
@@ -906,8 +906,10 @@ fn translate_call_indirect<B: ?Sized + Builder>(
     // Tables are lowered lazily on their first use by a `call_indirect`
     let table_ref = module_state.get_or_build_table(table_index, module, diagnostics)?;
 
-    // The expected callee signature per the instruction's type index
+    // The expected callee signature per the instruction's type index; its tag is what the
+    // runtime signature check compares against the dispatched slot's tag
     let sig_index = module.types[type_index].unwrap_function();
+    let type_tag = signature_type_tag(sig_index);
     let wasm_func_type = mod_types[sig_index].clone();
     let ir_func_type = ir_func_type(&wasm_func_type, diagnostics)?;
     let signature = sig_from_func_type(&ir_func_type, CallConv::C);
@@ -927,7 +929,8 @@ fn translate_call_indirect<B: ?Sized + Builder>(
     let index = func_state.pop1_bitcasted(U32, builder, span);
     let arity = signature.arity();
     let args = func_state.peekn(arity);
-    let exec = builder.exec_indirect(table_ref, signature, index, args.iter().copied(), span)?;
+    let exec =
+        builder.exec_indirect(table_ref, signature, type_tag, index, args.iter().copied(), span)?;
     let borrow = exec.borrow();
     let results = borrow.results();
     func_state.popn(arity);

@@ -121,7 +121,7 @@ fn module_reserved_memory_and_function_table_roundtrip() -> TestResult {
         };
 
         builtin.function_table private @tbl : 3 {
-            builtin.function_table_entry 1 @callee;
+            builtin.function_table_entry 1 @callee tag 4;
         };
     };";
 
@@ -161,7 +161,16 @@ fn module_reserved_memory_and_function_table_roundtrip() -> TestResult {
         .downcast_ref::<crate::dialects::builtin::FunctionTable>()
         .expect("expected 'tbl' to be a function table");
     assert_eq!(*table.get_num_slots(), 3);
-    assert_eq!(table.entries().entry().body().iter().count(), 1);
+    let entries = table.entries();
+    let entries = entries.entry();
+    let mut entries = entries.body().iter();
+    let entry = entries.next().expect("expected one table entry");
+    let entry = entry
+        .downcast_ref::<crate::dialects::builtin::FunctionTableEntry>()
+        .expect("expected a function table entry");
+    assert_eq!(*entry.get_index(), 1);
+    assert_eq!(*entry.get_type_tag(), 4, "signature tag lost in print/parse round-trip");
+    assert!(entries.next().is_none());
 
     Ok(())
 }

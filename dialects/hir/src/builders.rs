@@ -926,10 +926,14 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
 
     /// Execute the function whose MAST root is stored in slot `index` of `table`; a same-context
     /// indirect invocation (the lowering of Wasm `call_indirect`).
+    ///
+    /// `type_tag` is the signature tag the call site expects of the callee; dispatch traps if
+    /// the slot's tag differs. Tag 0 is reserved for null slots and is rejected here.
     fn exec_indirect<A>(
         &mut self,
         table: FunctionTableRef,
         signature: Signature,
+        type_tag: u32,
         index: ValueRef,
         args: A,
         span: SourceSpan,
@@ -937,8 +941,14 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     where
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::ExecIndirect, (_, _, _, A)>(span);
-        op_builder(table, signature, index, args)
+        if type_tag == 0 {
+            return Err(Report::msg(
+                "invalid hir.exec_indirect: signature tag 0 is reserved for null table slots",
+            ));
+        }
+        let op_builder =
+            self.builder_mut().create::<crate::ops::ExecIndirect, (_, _, _, _, A)>(span);
+        op_builder(table, signature, type_tag, index, args)
     }
 
     /// Invoke a foreign account procedure via the transaction kernel FPI executor.

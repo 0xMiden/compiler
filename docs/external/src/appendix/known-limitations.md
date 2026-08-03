@@ -52,31 +52,34 @@ closures.
 
 The compiler lowers each locally-defined Wasm `funcref` table through which a `call_indirect`
 dispatches (tables that are never dispatched through, which Wasm toolchains routinely emit, are
-ignored) to a word-aligned region of linear memory holding one word (the MAST root digest of the
-referenced function) per table slot. The
-region is populated at program startup by the component initialization procedure using `procref`,
-and `call_indirect` dispatches through it with `dynexec` (i.e. in the caller's memory context),
-after a bounds check on the table index which traps deterministically with a
-"indirect call: function table index out of bounds" assertion failure.
+ignored) to a word-aligned region of linear memory holding two words per table slot: the MAST
+root digest of the referenced function, paired with a tag that identifies the function's
+signature (an all-zero slot — zero digest, tag 0 — denotes a null entry). The region is
+populated at program startup by the component initialization procedure using `procref`, and
+`call_indirect` dispatches through it with `dynexec` (i.e. in the caller's memory context) after
+two deterministic runtime checks that mirror Wasm's `call_indirect` semantics:
+
+- a bounds check on the table index, which traps with an "indirect call: function table index
+  out of bounds" assertion failure;
+- a signature check comparing the slot's tag with the signature expected at the call site,
+  which traps with an "indirect call: callee signature mismatch or null function reference"
+  assertion failure. Null slots hold the reserved tag 0, so this check also produces Wasm's
+  uninitialized-element trap.
 
 The following limitations remain:
 
-- The Wasm-mandated runtime type-signature check is intentionally omitted, with no plans to add
-  it: an in-bounds call through a table slot whose function has a different signature than the
-  one expected at the call site executes that function anyway, instead of trapping with an
-  `indirect call type mismatch`. Safe Rust cannot produce such a call — it requires code that is
-  already undefined behavior — so the check would only add runtime cost to every indirect call.
-  Note that a corrupted or mismatched slot can never escape the program: `dynexec` resolves the
-  slot's word as a MAST root digest, so it either matches a procedure already compiled into the
-  program or fails execution.
-- Calling a null (uninitialized) table slot fails inside the VM when `dynexec` encounters an
-  all-zero MAST root, rather than with a Wasm-style "uninitialized element" trap.
+- The signature and null checks share one assertion message (see above), rather than trapping
+  with Wasm's distinct "indirect call type mismatch" and "uninitialized element" traps.
+- Unlike a Wasm table, which lives outside the program's addressable memory, the lowered table
+  is a region of ordinary linear memory: a wild out-of-bounds write (only possible through
+  code whose behavior is already undefined) can overwrite a slot and its tag, bypassing the
+  signature check. A corrupted slot can still never escape the program: `dynexec` resolves the
+  slot's first word as a MAST root digest, so it either matches a procedure already compiled
+  into the program or fails execution.
 - Imported tables, non-`funcref` tables, element segments with `global.get`-relative offsets, the
   table mutation ops (`table.set`, `table.get`, `table.grow`, etc.), `ref.func`/`ref.null` as
   function body instructions, and `return_call_indirect` are unsupported, and produce a
   compile-time error.
-- A `call_indirect` through a table with no statically-initialized entries compiles, and every
-  dispatch through it fails at runtime on the zero MAST root of a null slot.
 - The callee arguments plus the table index must fit in Miden's 16-element operand stack window,
   so indirect callee signatures are limited to 15 field elements worth of arguments.
 

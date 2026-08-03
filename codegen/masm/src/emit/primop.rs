@@ -329,8 +329,9 @@ impl OpEmitter<'_> {
     /// Execute the procedure whose MAST root is stored in slot `index` (stack top) of a function
     /// table with `num_slots` slots based at `base_elem_addr` (a word-aligned element address).
     ///
-    /// Traps with an assertion failure if `index >= num_slots`. The callee is invoked in the
-    /// same memory context as the caller (`dynexec`).
+    /// Traps with an assertion failure if `index >= num_slots`, or if the slot's signature tag
+    /// differs from `type_tag` — which also covers null slots, whose tag is the reserved 0. The
+    /// callee is invoked in the same memory context as the caller (`dynexec`).
     ///
     /// Expects `[index, args...]` on the operand stack, with the index on top. The index is
     /// rewritten in place to the slot's element address, which `dynexec` pops before
@@ -339,6 +340,7 @@ impl OpEmitter<'_> {
         &mut self,
         num_slots: u32,
         base_elem_addr: u32,
+        type_tag: u32,
         signature: &Signature,
         span: SourceSpan,
     ) {
@@ -370,6 +372,30 @@ impl OpEmitter<'_> {
         );
         self.emit(
             masm::Instruction::AddImm(Felt::new_unchecked(base_elem_addr as u64).into()),
+            span,
+        );
+
+        // Signature check: the tag stored next to the slot's digest must equal the tag the call
+        // site expects. A null slot keeps the zero tag that memory is initialized with, so it
+        // can never match and traps here too.
+        // [slot_addr, ..] -> [tag_addr, slot_addr, ..] -> [tag, slot_addr, ..] -> [slot_addr, ..]
+        self.emit(masm::Instruction::Dup0, span);
+        self.emit(
+            masm::Instruction::AddImm(
+                Felt::new_unchecked(
+                    crate::linker::FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS as u64,
+                )
+                .into(),
+            ),
+            span,
+        );
+        self.emit(masm::Instruction::MemLoad, span);
+        self.emit_push(type_tag, span);
+        self.emit(
+            Self::assert_eq_with_message_inst(
+                "indirect call: callee signature mismatch or null function reference",
+                span,
+            ),
             span,
         );
 
@@ -580,9 +606,10 @@ mod tests {
     }
 
     /// Pin the exact instruction sequence and stack effect of an indirect call: the bounds
-    /// check, the in-place index-to-address rewrite, and the frame-traced `dynexec`.
+    /// check, the in-place index-to-address rewrite, the signature-tag check, and the
+    /// frame-traced `dynexec`.
     #[test]
-    fn exec_indirect_emits_bounds_check_and_dynexec() {
+    fn exec_indirect_emits_bounds_check_tag_check_and_dynexec() {
         use midenc_hir::{CallConv, Felt};
 
         use crate::linker::FunctionTableLayout;
@@ -604,7 +631,8 @@ mod tests {
         let span = SourceSpan::default();
         let num_slots = 5u32;
         let base_elem_addr = 294912u32;
-        emitter.exec_indirect(num_slots, base_elem_addr, &signature, span);
+        let type_tag = 3u32;
+        emitter.exec_indirect(num_slots, base_elem_addr, type_tag, &signature, span);
 
         // The emulated stack holds exactly the call result
         assert_eq!(emitter.stack_len(), 1);
@@ -617,7 +645,7 @@ mod tests {
                 op => panic!("unexpected non-instruction op: {op:?}"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(insts.len(), 11);
+        assert_eq!(insts.len(), 16);
         // Bounds check: duplicate the index and assert it is in bounds
         assert_eq!(insts[0], masm::Instruction::Dup0);
         assert!(
@@ -642,12 +670,30 @@ mod tests {
             "expected add of the table base address, got {:?}",
             &insts[5]
         );
+        // Signature check: load the slot's tag and assert it matches the expected tag
+        assert_eq!(insts[6], masm::Instruction::Dup0);
+        assert!(
+            matches!(&insts[7], masm::Instruction::AddImm(masm::Immediate::Value(value)) if *value.inner() == Felt::new_unchecked(FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS as u64)),
+            "expected add of the tag offset, got {:?}",
+            &insts[7]
+        );
+        assert_eq!(insts[8], masm::Instruction::MemLoad);
+        assert!(
+            matches!(&insts[9], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == type_tag.into()),
+            "expected push of the expected signature tag, got {:?}",
+            &insts[9]
+        );
+        assert!(
+            matches!(&insts[10], masm::Instruction::AssertEqWithError(masm::Immediate::Value(msg)) if msg.inner().contains("callee signature mismatch")),
+            "expected signature-check assertion, got {:?}",
+            &insts[10]
+        );
         // Frame-traced dynexec, which itself pops the slot address
-        assert!(matches!(&insts[6], masm::Instruction::Trace(_)));
-        assert_eq!(insts[7], masm::Instruction::Nop);
-        assert_eq!(insts[8], masm::Instruction::DynExec);
-        assert!(matches!(&insts[9], masm::Instruction::Trace(_)));
-        assert_eq!(insts[10], masm::Instruction::Nop);
+        assert!(matches!(&insts[11], masm::Instruction::Trace(_)));
+        assert_eq!(insts[12], masm::Instruction::Nop);
+        assert_eq!(insts[13], masm::Instruction::DynExec);
+        assert!(matches!(&insts[14], masm::Instruction::Trace(_)));
+        assert_eq!(insts[15], masm::Instruction::Nop);
     }
 
     #[test]

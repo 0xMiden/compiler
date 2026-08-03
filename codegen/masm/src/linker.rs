@@ -257,9 +257,10 @@ impl Linker {
             self.globals_layout.global_table_offset()
         );
 
-        // 4. Lay out function tables in the page following the global table, one word per slot.
-        // Page alignment makes the first table word-aligned as `dynexec` requires, and each
-        // table's byte size is a word multiple, so subsequent tables stay word-aligned too.
+        // 4. Lay out function tables in the page following the global table, two words per slot
+        // (MAST root digest + signature tag). Page alignment makes the first table word-aligned
+        // as `dynexec` requires, and each table's byte size is a word multiple, so subsequent
+        // tables stay word-aligned too.
         let mut function_tables = FunctionTableLayout::default();
         let mut next_table_offset = self.globals_layout.next_page_boundary();
         for table_ref in self.function_tables.drain(..) {
@@ -440,8 +441,10 @@ impl GlobalVariableLayout {
 
 /// This struct contains data about the layout of function tables in linear memory.
 ///
-/// Each table occupies one word (16 bytes) of memory per slot, holding the MAST root of the
-/// referenced function, and its base address is word-aligned as required by `dynexec`.
+/// Each table occupies two words (32 bytes) of memory per slot: the first word holds the MAST
+/// root of the referenced function, and the first element of the second word holds the callee's
+/// signature tag (0 marks a null slot). The base address is word-aligned as required by
+/// `dynexec`.
 #[derive(Default, Clone)]
 pub struct FunctionTableLayout {
     /// Tables and their base addresses (byte offsets), in discovery order
@@ -451,10 +454,13 @@ pub struct FunctionTableLayout {
 }
 
 impl FunctionTableLayout {
-    /// The size in bytes of one function table slot (one word, holding a MAST root digest)
-    pub const SLOT_SIZE_BYTES: u32 = 16;
+    /// The size in bytes of one function table slot (two words: a MAST root digest, and a
+    /// signature tag in the first element of the second word)
+    pub const SLOT_SIZE_BYTES: u32 = 32;
     /// The size in field elements of one function table slot
-    pub const SLOT_SIZE_ELEMENTS: u32 = 4;
+    pub const SLOT_SIZE_ELEMENTS: u32 = 8;
+    /// The element offset of the signature tag within a slot
+    pub const TYPE_TAG_OFFSET_ELEMENTS: u32 = 4;
 
     /// Returns true if the layout has no function tables
     pub fn is_empty(&self) -> bool {

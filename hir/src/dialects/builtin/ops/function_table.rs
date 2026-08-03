@@ -19,10 +19,12 @@ pub type FunctionTableRef = UnsafeIntrusiveEntityRef<FunctionTable>;
 /// A [FunctionTable] declares a function-reference table in the shared memory of a
 /// [super::Component]; the Wasm frontend lowers `funcref` tables to it.
 ///
-/// The table occupies one word (4 field elements, 16 bytes) of linear memory per slot, holding
-/// the MAST root digest of the referenced function; an all-zero word denotes a null entry. The
-/// base address of the table is assigned by the linker (word-aligned), and initialized slots are
-/// filled at program startup by the component `init` procedure.
+/// The table occupies two words (8 field elements, 32 bytes) of linear memory per slot: the
+/// first word holds the MAST root digest of the referenced function, and the first element of
+/// the second word holds the callee's signature tag (see [FunctionTableEntry]). A null entry is
+/// all zeroes: the zero digest and the reserved tag 0. The base address of the table is assigned
+/// by the linker (word-aligned), and initialized slots are filled at program startup by the
+/// component `init` procedure.
 ///
 /// The `entries` region holds one [FunctionTableEntry] per initialized slot, in application
 /// order (later entries overwrite earlier ones at the same index).
@@ -183,6 +185,11 @@ pub struct FunctionTableEntry {
     /// The table slot to initialize
     #[attr]
     index: U32Attr,
+    /// An opaque tag identifying the callee's source-level signature; the indirect-call lowering
+    /// compares it against the tag the call site expects before it transfers control. Tags start
+    /// at 1, because 0 is reserved for null (uninitialized) slots.
+    #[attr]
+    type_tag: U32Attr,
     /// The function whose MAST root fills the slot
     #[symbol(callable)]
     callee: SymbolPath,
@@ -197,6 +204,7 @@ impl OpPrinter for FunctionTableEntry {
         printer.print_space();
         let callee = self.callee();
         printer.print_symbol_path(callee.path());
+        *printer += const_text(" tag ") + display(*self.get_type_tag());
     }
 }
 
@@ -210,6 +218,13 @@ impl OpParser for FunctionTableEntry {
 
         let callee = parser.parse_symbol_ref()?;
         state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
+
+        parser.parse_custom_keyword("tag")?;
+        let type_tag = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute(
+            "type_tag",
+            parser.context_rc().create_attribute::<U32Attr, _>(type_tag),
+        );
 
         Ok(())
     }

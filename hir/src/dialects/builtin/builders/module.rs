@@ -111,6 +111,7 @@ impl ModuleBuilder {
         &mut self,
         table: FunctionTableRef,
         index: u32,
+        type_tag: u32,
         callee: C,
         span: SourceSpan,
     ) -> Result<(), Report> {
@@ -119,6 +120,12 @@ impl ModuleBuilder {
             return Err(Report::msg(format!(
                 "invalid function table entry: slot {index} is out of bounds for a table with \
                  {num_slots} slots"
+            )));
+        }
+        if type_tag == 0 {
+            return Err(Report::msg(format!(
+                "invalid function table entry: signature tag 0 is reserved for null slots, but \
+                 slot {index} uses it"
             )));
         }
         let context = table.borrow().as_operation().context_rc();
@@ -138,8 +145,8 @@ impl ModuleBuilder {
                 op_builder.create_block(entries_region_ref, None, &[]);
             }
         }
-        let entry_builder = op_builder.create::<FunctionTableEntry, (_, C)>(span);
-        entry_builder(index, callee)?;
+        let entry_builder = op_builder.create::<FunctionTableEntry, (_, _, C)>(span);
+        entry_builder(index, type_tag, callee)?;
         Ok(())
     }
 

@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     callable::CallableFunction,
-    component::lower_imports::generate_import_lowering_function,
+    component::{SignatureIndex, lower_imports::generate_import_lowering_function},
     error::WasmResult,
     intrinsics::{Intrinsic, IntrinsicsConversionResult, attach_effects_to_function},
     translation_utils::sig_from_func_type,
@@ -28,10 +28,19 @@ use crate::{
 
 /// A practical bound on the number of slots in a lowered function table.
 ///
-/// Each slot occupies one word of linear memory, and each initialized slot materializes IR and
+/// Each slot occupies two words of linear memory, and each initialized slot materializes IR and
 /// startup code, so absurdly-sized tables (which no real program produces) are rejected up front
 /// rather than exhausting memory or overflowing the memory layout.
 const MAX_FUNCTION_TABLE_SLOTS: u32 = 1 << 20;
+
+/// Map an interned Wasm signature to the tag the runtime signature check compares.
+///
+/// [SignatureIndex] is structurally interned by [ModuleTypesBuilder], so structurally-equal
+/// signatures share one index — exactly the equivalence `call_indirect` checks. The shift keeps
+/// tag 0 reserved for null (uninitialized) table slots.
+pub(crate) fn signature_type_tag(sig_index: SignatureIndex) -> u32 {
+    sig_index.as_u32() + 1
+}
 
 pub struct ModuleTranslationState<'a> {
     /// Imported and local functions
@@ -203,11 +212,15 @@ impl<'a> ModuleTranslationState<'a> {
         span: SourceSpan,
         diagnostics: &DiagnosticsHandler,
     ) -> WasmResult<()> {
+        // The tag is derived from the function's Wasm-level signature, which is what the
+        // `call_indirect` type check compares — even for entries whose body the compiler
+        // replaces (intrinsics), the stub's declared signature is the checked one
+        let type_tag = signature_type_tag(module.functions[func_index].signature);
         match self.get_direct_func(func_index)? {
             CallableFunction::Function { function_ref, .. }
             | CallableFunction::Intrinsic { function_ref, .. } => self
                 .module_builder
-                .append_function_table_entry(table, index, function_ref, span),
+                .append_function_table_entry(table, index, type_tag, function_ref, span),
             CallableFunction::Instruction { .. } => {
                 unsupported_diag!(
                     diagnostics,

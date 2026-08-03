@@ -1038,12 +1038,14 @@ impl HirLowering for hir::ExecIndirect {
         let num_slots = *table.borrow().get_num_slots();
 
         let signature = self.get_signature().clone();
+        let type_tag = *self.get_type_tag();
 
         // The default operand schedule puts the index operand on top of the stack, followed by
         // the arguments in signature order — exactly the layout `exec_indirect` expects
         emitter.inst_emitter(self.as_operation()).exec_indirect(
             num_slots,
             base_addr,
+            type_tag,
             &signature,
             self.span(),
         );
