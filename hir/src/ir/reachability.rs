@@ -41,16 +41,17 @@ impl Operation {
     /// [Reachability::MaybeInterprocedurally] and [Reachability::Indeterminate] respectively,
     /// leaving the interpretation of such queries to the caller.
     pub fn reachability(from: OperationRef, to: OperationRef) -> Reachability {
-        // One operation enclosing the other is an intra-procedural relationship no matter where
-        // the encloser resides: control entering the enclosing op can reach the nested
+        // One operation enclosing the other relates the two positions through the chain of
+        // regions between them: control entering the enclosing op can reach the nested
         // position, and control leaving the nested position flows back through the enclosing
-        // op. This must precede the scope comparison, which would otherwise misclassify
-        // enclosure by an op residing in a graph-like region (e.g. a function op and an op in
-        // its body) as interprocedural.
-        if from.borrow().is_proper_ancestor_of(&to.borrow())
-            || to.borrow().is_proper_ancestor_of(&from.borrow())
+        // op — unless the chain crosses a graph-like region (e.g. a module enclosing a
+        // function), where no control-flow order is defined. This must precede the scope
+        // comparison, which would otherwise misclassify enclosure by an op residing in a
+        // graph-like region as interprocedural.
+        if let Some(result) =
+            enclosure_reachability(from, to).or_else(|| enclosure_reachability(to, from))
         {
-            return Reachability::Maybe;
+            return result;
         }
 
         // Intra-procedural reasoning is bounded by the nearest ancestor residing in a
@@ -84,12 +85,12 @@ impl Operation {
             return Reachability::Maybe;
         };
 
-        // Both operations normalize to the same ancestor op: either one op encloses the other
-        // (and control entering it can reach the nested position), or they sit in different
-        // sub-regions of that op, where transfer between the regions depends on the op's
-        // semantics (e.g. it can happen across loop iterations).
+        // Both operations normalize to the same ancestor op, i.e. they sit in different
+        // sub-regions of it (enclosure was handled above). Whether control can transfer from
+        // one sub-region to a sibling is decided by the op's own region graph, or by the op
+        // executing more than once.
         if from_ancestor == to_ancestor {
-            return Reachability::Maybe;
+            return sibling_region_reachability(from_ancestor, from, to);
         }
 
         let (Some(from_block), Some(to_block)) =
@@ -98,11 +99,12 @@ impl Operation {
             return Reachability::Maybe;
         };
 
-        // Within one block an earlier operation always flows into a later one; this is only a
-        // guarantee when neither position was normalized, since entering a sub-region of an
-        // ancestor op is generally conditional on that op's semantics.
+        // Within one block an earlier operation may flow into a later one, but control is only
+        // guaranteed to arrive when nothing lies between them: an intervening operation may
+        // loop indefinitely, return from the function, or abort. Positions that were
+        // normalized are likewise conditional on their ancestor op's semantics.
         if from_block == to_block && from_ancestor.borrow().is_before_in_block(&to_ancestor) {
-            return if from_ancestor == from && to_ancestor == to {
+            return if from_ancestor == from && to_ancestor == to && from.next() == Some(to) {
                 Reachability::Guaranteed
             } else {
                 Reachability::Maybe
@@ -139,6 +141,94 @@ fn control_flow_scope(op: OperationRef) -> Option<OperationRef> {
         current = ancestor.borrow().parent_op();
     }
     None
+}
+
+/// If `ancestor` properly encloses `descendant`, classifies the enclosure:
+/// [Reachability::Maybe] when every region crossed between them defines control flow, or
+/// [Reachability::Indeterminate] when the chain crosses a graph-like region (e.g. a module
+/// enclosing a function). Returns `None` when `ancestor` does not enclose `descendant`.
+fn enclosure_reachability(
+    ancestor: OperationRef,
+    descendant: OperationRef,
+) -> Option<Reachability> {
+    if !ancestor.borrow().is_proper_ancestor_of(&descendant.borrow()) {
+        return None;
+    }
+    // Walk the regions from `descendant` up to (and including) the region owned by `ancestor`.
+    let mut region = descendant.borrow().parent_region();
+    while let Some(r) = region {
+        if !region_has_ssa_dominance(r) {
+            return Some(Reachability::Indeterminate);
+        }
+        let Some(owner) = r.parent() else {
+            break;
+        };
+        if owner == ancestor {
+            return Some(Reachability::Maybe);
+        }
+        region = owner.borrow().parent_region();
+    }
+    // Unreachable given the ancestry check above; defensively report plain enclosure.
+    Some(Reachability::Maybe)
+}
+
+/// Classifies reachability between two positions in different sub-regions of one `owner` op.
+///
+/// The sibling region is reachable when the region graph of `owner` can transfer control from
+/// the region holding `from` to the region holding `to` within one execution of `owner` (e.g.
+/// from the `before` region of a while to its `after` region), or when `owner` itself can
+/// execute more than once (e.g. the arms of an if that an enclosing loop re-enters); otherwise
+/// it is provably unreachable (e.g. the arms of an if outside any loop).
+fn sibling_region_reachability(
+    owner: OperationRef,
+    from: OperationRef,
+    to: OperationRef,
+) -> Reachability {
+    if !owner.borrow().implements::<dyn RegionBranchOpInterface>() {
+        // Unknown region semantics: conservatively treat transfer as possible.
+        return Reachability::Maybe;
+    }
+    let (Some(from_region), Some(to_region)) =
+        (child_region_containing(owner, from), child_region_containing(owner, to))
+    else {
+        // Unreachable given the normalization above; defensively treat as reachable.
+        return Reachability::Maybe;
+    };
+    if to_region.borrow().is_reachable_from(&from_region.borrow()) {
+        return Reachability::Maybe;
+    }
+    if op_can_re_execute(owner) {
+        return Reachability::Maybe;
+    }
+    Reachability::Impossible
+}
+
+/// Returns the direct child region of `owner` that contains `op`.
+fn child_region_containing(owner: OperationRef, op: OperationRef) -> Option<RegionRef> {
+    let mut region = op.borrow().parent_region();
+    while let Some(r) = region {
+        let parent = r.parent()?;
+        if parent == owner {
+            return Some(r);
+        }
+        region = parent.borrow().parent_region();
+    }
+    None
+}
+
+/// Returns true if `op` can execute more than once: its block lies on a CFG cycle, or the
+/// region containing it can re-execute.
+fn op_can_re_execute(op: OperationRef) -> bool {
+    let (block, region) = {
+        let op = op.borrow();
+        (op.parent(), op.parent_region())
+    };
+    if let Some(block) = block
+        && block_leads_to(block, block)
+    {
+        return true;
+    }
+    region.is_some_and(region_can_re_execute)
 }
 
 /// Returns true if `region` requires SSA dominance, i.e. operation order within it defines

@@ -755,7 +755,12 @@ fn reachability_in_branching_cfg() -> TestResult<()> {
     assert_eq!(
         reach(entry_first, entry_second),
         Reachability::Guaranteed,
-        "an earlier op always flows into a later op in the same block"
+        "an earlier op always flows into the adjacent next op"
+    );
+    assert_eq!(
+        reach(op_at(entry, 0), entry_second),
+        Reachability::Maybe,
+        "an intervening op may diverge, so non-adjacent positions are only Maybe"
     );
     assert_eq!(
         reach(entry_second, entry_first),
@@ -863,8 +868,8 @@ fn reachability_across_nested_regions() -> TestResult<()> {
     );
     assert_eq!(
         reach(then_op, else_op),
-        Reachability::Maybe,
-        "sibling regions of one op conservatively reach each other"
+        Reachability::Impossible,
+        "mutually exclusive arms of an if outside any loop cannot reach each other"
     );
     assert_eq!(
         reach(if_op, then_op),
@@ -929,6 +934,17 @@ fn reachability_through_region_re_entry() -> TestResult<()> {
         Reachability::Impossible,
         "an op after the loop must not reach into it"
     );
+    let after_op = op_in_region(while_op, 1, 0);
+    assert_eq!(
+        reach(late_op, after_op),
+        Reachability::Maybe,
+        "the after region is reachable from the before region in the while region graph"
+    );
+    assert_eq!(
+        reach(after_op, early_op),
+        Reachability::Maybe,
+        "the before region is reachable from the after region through the loop"
+    );
     Ok(())
 }
 
@@ -977,6 +993,12 @@ fn reachability_through_cfg_cycle_re_entry() -> TestResult<()> {
         reach(ret_op, early_op),
         Reachability::Impossible,
         "an op after the loop must not reach into it"
+    );
+    let else_op = op_in_region(if_op, 1, 0);
+    assert_eq!(
+        reach(early_op, else_op),
+        Reachability::Maybe,
+        "sibling if arms stay reachable when an outer CFG cycle re-executes the if"
     );
     Ok(())
 }
@@ -1040,6 +1062,16 @@ fn reachability_across_functions_and_graph_regions() -> TestResult<()> {
         reach(in_first, first_fn),
         Reachability::Maybe,
         "enclosure is intra-procedural in both directions"
+    );
+    assert_eq!(
+        reach(module_op, first_fn),
+        Reachability::Indeterminate,
+        "enclosure crossing a graph-like region defines no control-flow order"
+    );
+    assert_eq!(
+        reach(in_first, module_op),
+        Reachability::Indeterminate,
+        "enclosure crossing a graph-like region is indeterminate in both directions"
     );
     Ok(())
 }
