@@ -27,7 +27,7 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
-#[cfg(feature = "std")]
+#[cfg(any(test, feature = "std"))]
 mod package_cache;
 pub mod path;
 pub mod registry;
@@ -81,7 +81,10 @@ pub struct Session {
     /// Statistics gathered from the current compiler session
     #[cfg(feature = "std")]
     pub statistics: Statistics,
-    /// The build-input fingerprint used to isolate this session's package cache
+    /// The build-input fingerprint used to isolate this session's package cache.
+    ///
+    /// Memoization assumes fingerprint-relevant [`Options`] are not mutated after the first cache
+    /// path request.
     #[cfg(feature = "std")]
     package_cache_fingerprint: std::sync::OnceLock<String>,
 }
@@ -368,13 +371,14 @@ impl Session {
 
     /// Where compiled dependency packages of this session's project are published and looked for.
     ///
-    /// `None` unless this session's input is a project locator: the cache lives under the
-    /// project's own `target/miden/packages/<fingerprint>/` directory, and a session compiling a
-    /// standalone source file has no project directory to put one under. The fingerprint covers
+    /// `None` unless this session's input is a project locator: with `std`, the cache lives under
+    /// the project's own `target/miden/packages/<fingerprint>/` directory, and a session compiling
+    /// a standalone source file has no project directory to put one under. The fingerprint covers
     /// the compiler identity, relevant build options, and the project's manifest closure. Both
     /// readers — this session's package registry and the nested `cargo` builds a Rust project's
     /// dependencies run through — must agree on the answer, which is why there is one derivation
-    /// of it.
+    /// of it. Without `std`, this returns the existing flat `target/miden/packages/` path without a
+    /// fingerprint component.
     ///
     /// Derived from the input locator rather than from a loaded manifest, which is what
     /// [`Session::new`] no longer has. That is also a repair: the manifest path was previously
@@ -398,10 +402,12 @@ impl Session {
         #[cfg(feature = "std")]
         {
             let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
+                let inherited_rustflags = std::env::var_os("RUSTFLAGS");
                 package_cache::fingerprint(
                     &self.options,
                     &project_dir,
                     self.source_manager.as_ref(),
+                    inherited_rustflags.as_deref(),
                     MIDENC_BUILD_VERSION,
                     MIDENC_BUILD_REV,
                 )
