@@ -1579,14 +1579,6 @@ fn resolve_dependency_package_path(dependency: &SelectedDependency) -> syn::Resu
     }
 
     let package_stems = dependency_package_stems(dependency);
-    let preferred_profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    let mut profiles = vec![preferred_profile.clone()];
-    if preferred_profile != "release" {
-        profiles.push("release".to_string());
-    }
-    if preferred_profile != "debug" {
-        profiles.push("debug".to_string());
-    }
     if let Some(filesystem_cache_dir) = std::env::var_os("MIDENC_PACKAGE_CACHE") {
         let filesystem_cache_dir = PathBuf::from(filesystem_cache_dir);
         if let Some(package) =
@@ -1597,14 +1589,21 @@ fn resolve_dependency_package_path(dependency: &SelectedDependency) -> syn::Resu
 
         Err(Error::new(
             Span::call_site(),
-            missing_dependency_package_message(
+            missing_cached_dependency_package_message(
                 dependency,
                 &package_stems,
-                &[filesystem_cache_dir],
-                &[],
+                &filesystem_cache_dir,
             ),
         ))
     } else {
+        let preferred_profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+        let mut profiles = vec![preferred_profile.clone()];
+        if preferred_profile != "release" {
+            profiles.push("release".to_string());
+        }
+        if preferred_profile != "debug" {
+            profiles.push("debug".to_string());
+        }
         let output_dirs = dependency_output_dirs(dependency, &profiles);
         for dir in &output_dirs {
             if let Some(package) = find_dependency_package_in_dir(dir, &package_stems)? {
@@ -1616,6 +1615,32 @@ fn resolve_dependency_package_path(dependency: &SelectedDependency) -> syn::Resu
             missing_dependency_package_message(dependency, &package_stems, &output_dirs, &profiles),
         ))
     }
+}
+
+/// Formats the diagnostic for a missing dependency in the build-owned package cache.
+fn missing_cached_dependency_package_message(
+    dependency: &SelectedDependency,
+    package_stems: &[String],
+    filesystem_cache_dir: &Path,
+) -> String {
+    let expected_files = package_stems
+        .iter()
+        .map(|stem| format!("'{stem}.masp'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    format!(
+        "miden::generate! could not find a built `.masp` package for FPI dependency '{}' (import \
+         '{}', root '{}'). FPI wrappers need the dependency package during Rust macro expansion \
+         to read procedure roots. Expected one of these package names: {expected_files}. Searched \
+         MIDENC_PACKAGE_CACHE directory '{}'. This cache is populated by the enclosing \
+         midenc-driven build; compile this crate as part of that build so its dependency packages \
+         are available during macro expansion.",
+        dependency.name,
+        dependency.import(),
+        dependency.root.display(),
+        filesystem_cache_dir.display(),
+    )
 }
 
 /// Formats the diagnostic emitted when FPI wrapper generation cannot load a dependency package.
@@ -2069,6 +2094,30 @@ interface api {
         assert!(message.contains(&temp_root.display().to_string()));
 
         std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn missing_cached_dependency_package_message_describes_the_cache_contract() {
+        let dependency = SelectedDependency {
+            name: "counter".to_string(),
+            root: PathBuf::from("/projects/counter"),
+            interface: DependencyInterface {
+                name: "counter".to_string(),
+                import: "miden:counter/counter@0.0.1".to_string(),
+                types: Vec::new(),
+            },
+        };
+        let stems = vec!["counter".to_string(), "counter_component".to_string()];
+        let cache_dir = Path::new("/target/miden/packages/0123456789abcdef");
+
+        let message = missing_cached_dependency_package_message(&dependency, &stems, cache_dir);
+
+        assert!(message.contains("'counter.masp'"));
+        assert!(message.contains("'counter_component.masp'"));
+        assert!(message.contains(&cache_dir.display().to_string()));
+        assert!(message.contains("populated by the enclosing midenc-driven build"));
+        assert!(!message.contains(" in release"));
+        assert!(!message.contains("target/miden/<profile>"));
     }
 
     #[test]

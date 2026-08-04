@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Rust SDK
+
+- The FPI macro diagnostic for a dependency package missing from a midenc-driven build now names
+  the searched `MIDENC_PACKAGE_CACHE` directory and the expected package file names, instead of
+  an empty candidate list and a `target/miden/<profile>` hint that the cache lookup never
+  consults #1302
+
 ## [0.10.0-rc.1]
 
 ### Compiler and `midenc`

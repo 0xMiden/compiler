@@ -44,30 +44,60 @@ pub(crate) fn current_dir_lock() -> CurrentDirGuard {
     }
 }
 
-/// Returns the single build-fingerprint directory inside a project's package cache.
+/// Returns the newest build-fingerprint directory containing `expected_package`.
 ///
-/// The package cache under `target/miden/packages` is uniqued by the build inputs, so a build
-/// materializes its dependency packages inside one fingerprint subdirectory whose name is not
-/// known up front.
-pub(crate) fn package_cache_fingerprint_dir(project_dir: &Path) -> PathBuf {
+/// Another live build may retain a different fingerprint directory, so the package itself rather
+/// than directory cardinality identifies the cache produced by the build under test.
+pub(crate) fn package_cache_fingerprint_dir(project_dir: &Path, expected_package: &str) -> PathBuf {
     let package_cache_dir = project_dir.join("target").join("miden").join("packages");
-    let fingerprint_dirs = fs::read_dir(&package_cache_dir)
+    let entries = fs::read_dir(&package_cache_dir)
         .unwrap_or_else(|err| {
             panic!(
                 "expected the package cache directory '{}' to exist after the build: {err}",
                 package_cache_dir.display()
             )
         })
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| path.is_dir())
         .collect::<Vec<_>>();
-    assert_eq!(
-        fingerprint_dirs.len(),
-        1,
-        "expected exactly one fingerprint directory in '{}', got {fingerprint_dirs:?}",
-        package_cache_dir.display()
-    );
-    fingerprint_dirs.into_iter().next().unwrap()
+
+    let mut listing = Vec::new();
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if !path.is_dir() {
+            listing.push(path.display().to_string());
+            continue;
+        }
+
+        let contents = fs::read_dir(&path)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|err| vec![format!("<unreadable: {err}>")]);
+        listing.push(format!("{}: {contents:?}", path.display()));
+
+        let expected = path.join(expected_package);
+        if let Ok(metadata) = expected.metadata() {
+            let modified = metadata.modified().unwrap_or(std::time::UNIX_EPOCH);
+            candidates.push((modified, path));
+        }
+    }
+
+    candidates
+        .into_iter()
+        .max_by_key(|(modified, _)| *modified)
+        .map(|(_, path)| path)
+        .unwrap_or_else(|| {
+            panic!(
+                "expected a fingerprint directory in '{}' containing '{expected_package}'; \
+                 entries:\n{}",
+                package_cache_dir.display(),
+                listing.join("\n")
+            )
+        })
 }
 
 pub(crate) fn project_template_arg(template: &str) -> String {

@@ -1,4 +1,4 @@
-use std::{env, fs};
+use std::env;
 
 use cargo_miden::run;
 
@@ -30,17 +30,6 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     let examples = workspace_root().join("examples");
     let p2id_note_dir = examples.join("p2id-note");
 
-    // The package cache directory we expect `cargo miden build` to populate on disk. The cache
-    // is uniqued by the build inputs, so the dependency package lands in a fingerprint
-    // subdirectory whose name is not known up front.
-    let package_cache_dir = p2id_note_dir.join("target").join("miden").join("packages");
-
-    // Make sure the basic-wallet dependency package is not already materialized on disk, so that we
-    // can attribute its presence after the build to the p2id-note build alone.
-    if package_cache_dir.exists() {
-        fs::remove_dir_all(&package_cache_dir).unwrap();
-    }
-
     // Build the p2id-note project, which pulls in basic-wallet as a Miden dependency.
     let restore_dir = env::current_dir().unwrap();
     env::set_current_dir(&p2id_note_dir).unwrap();
@@ -62,7 +51,8 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     // The build must have materialized the basic-wallet dependency package on disk, inside the
     // build's single fingerprint directory.
     let dep_package =
-        crate::utils::package_cache_fingerprint_dir(&p2id_note_dir).join("basic-wallet.masp");
+        crate::utils::package_cache_fingerprint_dir(&p2id_note_dir, "basic-wallet.masp")
+            .join("basic-wallet.masp");
     assert!(
         dep_package.exists(),
         "expected basic-wallet dependency package to be materialized at {}",
