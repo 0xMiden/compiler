@@ -50,7 +50,7 @@ use crate::{
 mod tests;
 
 /// The number of field elements addressable on the Miden VM operand stack.
-const OPERAND_STACK_WINDOW_FELTS: usize = 16;
+const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// Translates wasm operators into Miden IR instructions.
 #[allow(clippy::too_many_arguments)]
