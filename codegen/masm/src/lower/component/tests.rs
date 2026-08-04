@@ -100,10 +100,14 @@ builtin.module public @supporting {
 ///
 /// Written out rather than derived, because the call is what it exists for: it is the only
 /// fixture here with a cross-item invocation for the assembler's linker to resolve.
+///
+/// The `@test` module is `public` because its `main` is this component's whole interface: the
+/// assembled package surface is derived from the root's public submodules, so a private module
+/// here would leave the library with no exports at all.
 const WORLD_CALLING_ITS_SUPPORTING_SIBLING: &str = r#"
 builtin.world {
 builtin.component private @"hir_ns:test@1.0.0" {
-    builtin.module private @test {
+    builtin.module public @test {
         builtin.function public extern("C") @main() {
             hir.exec ::@supporting::@sibling() : extern("C") () -> ();
             builtin.ret;
@@ -1009,4 +1013,58 @@ fn type_expr_from_hir_pointer_conversion_preserves_address_space() {
         };
         assert_eq!(ptr.address_space(), addrspace);
     }
+}
+
+/// A component whose public interface is a component-level function, with its implementation in
+/// a private module beside it.
+///
+/// The module's `helper` must be a *public procedure* for the cross-module `exec` to resolve,
+/// which is exactly the combination the package surface must not leak: a public procedure of a
+/// private submodule.
+const WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("C") @entry() {
+        hir.exec ::@"hir_ns:test@1.0.0"::@test::@helper() : extern("C") () -> ();
+        builtin.ret;
+    };
+    builtin.module private @test {
+        builtin.function public extern("C") @helper() {
+            builtin.ret;
+        };
+    };
+};
+};
+"#;
+
+/// A private module's public procedures are callable within the package, but are not part of
+/// the assembled package's export surface: the surface is derived from the modules reachable
+/// through *public* submodule declarations, and a private HIR module is declared private.
+#[test]
+fn a_private_module_is_not_part_of_the_package_surface() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE);
+    let lowered = lower_world(world).expect("a component with a private module lowers");
+    let target = library_target("hir_ns:test@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+        .expect("a public interface calling into a private module assembles");
+
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        exports.iter().any(|export| export.ends_with("entry")),
+        "the component-level function is the public surface, got exports: {exports:?}"
+    );
+    assert!(
+        !exports.iter().any(|export| export.contains("helper")),
+        "a public procedure of a private module must not be exported, got exports: {exports:?}"
+    );
 }

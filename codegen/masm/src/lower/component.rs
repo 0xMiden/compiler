@@ -815,15 +815,31 @@ impl MasmComponentBuilder<'_> {
         let module_path = module_path.to_absolute().unwrap();
         let trace_target = TraceTarget::category("codegen");
         log::debug!(target: &trace_target, "defining module '{module_path}'");
-        /*
-        let visibility = match *module.get_visibility() {
-            midenc_hir::Visibility::Public => masm::Visibility::Public,
-            midenc_hir::Visibility::Internal | midenc_hir::Visibility::Private => {
-                masm::Visibility::Private
+        // The submodule declaration's visibility decides whether the module's public procedures
+        // belong to the public surface of the assembled package: the assembler derives that
+        // surface from the modules reachable from the root through *public* submodule
+        // declarations. Core modules are private in HIR, so their procedures — including ones
+        // promoted to public so cross-module `procref`/`exec` can reach them, such as function
+        // table callees — stay resolvable package-internally (a private submodule is visible to
+        // its parent and siblings) without becoming part of the package's interface.
+        //
+        // The synthetic wrapper the compiler creates around a bare core module is not a real
+        // component boundary, though: the wrapped module is the artifact's own interface (the
+        // entrypoint of an executable, or the exports of a bare library), and the generated
+        // executable `main` module lives outside the wrapper's module tree — so its submodules
+        // stay public, as does everything lowered without a component id (a bare world).
+        let is_synthetic_wrapper =
+            self.component.id.as_ref().is_none_or(|id| id.is_synthetic_wrapper());
+        let visibility = if is_synthetic_wrapper {
+            masm::Visibility::Public
+        } else {
+            match *module.get_visibility() {
+                midenc_hir::Visibility::Public => masm::Visibility::Public,
+                midenc_hir::Visibility::Internal | midenc_hir::Visibility::Private => {
+                    masm::Visibility::Private
+                }
             }
         };
-         */
-        let visibility = masm::Visibility::Public;
         let module_index = if let Some(rest) = module_path.strip_prefix(&self.component.root) {
             self.define_module_tree(rest, Some(0), visibility)?
         } else {

@@ -110,7 +110,10 @@ fn indirect_call_runtime_traps() {
     // Dispatching the one-argument `op_neg` from the two-argument call site trips the emitted
     // signature check instead of silently reinterpreting the operand stack
     let err = run(neg_idx, 5).expect_err("signature-mismatched dispatch should trap");
-    assert!(trap_matches(&err, SIGNATURE_TRAP), "unexpected signature-mismatch failure: {err}");
+    assert!(
+        trap_matches(&err, SIGNATURE_TRAP),
+        "unexpected signature-mismatch failure: {err}"
+    );
 
     // An out-of-bounds index trips the emitted bounds check deterministically
     let err = run(1000, 5).expect_err("out-of-bounds dispatch should trap");
