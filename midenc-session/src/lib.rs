@@ -27,6 +27,8 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
+#[cfg(feature = "std")]
+mod package_cache;
 pub mod path;
 pub mod registry;
 #[cfg(feature = "std")]
@@ -79,6 +81,9 @@ pub struct Session {
     /// Statistics gathered from the current compiler session
     #[cfg(feature = "std")]
     pub statistics: Statistics,
+    /// The build-input fingerprint used to isolate this session's package cache
+    #[cfg(feature = "std")]
+    package_cache_fingerprint: std::sync::OnceLock<String>,
 }
 
 impl fmt::Debug for Session {
@@ -311,6 +316,8 @@ impl Session {
             output_files,
             #[cfg(feature = "std")]
             statistics: Default::default(),
+            #[cfg(feature = "std")]
+            package_cache_fingerprint: Default::default(),
         }
     }
 
@@ -362,10 +369,12 @@ impl Session {
     /// Where compiled dependency packages of this session's project are published and looked for.
     ///
     /// `None` unless this session's input is a project locator: the cache lives under the
-    /// project's own `target/` directory, and a session compiling a standalone source file has no
-    /// project directory to put one under. Both readers — this session's package registry and the
-    /// nested `cargo` builds a Rust project's dependencies run through — must agree on the answer,
-    /// which is why there is one derivation of it.
+    /// project's own `target/miden/packages/<fingerprint>/` directory, and a session compiling a
+    /// standalone source file has no project directory to put one under. The fingerprint covers
+    /// the compiler identity, relevant build options, and the project's manifest closure. Both
+    /// readers — this session's package registry and the nested `cargo` builds a Rust project's
+    /// dependencies run through — must agree on the answer, which is why there is one derivation
+    /// of it.
     ///
     /// Derived from the input locator rather than from a loaded manifest, which is what
     /// [`Session::new`] no longer has. That is also a repair: the manifest path was previously
@@ -385,7 +394,24 @@ impl Session {
         let project_dir = project_dir.canonicalize().unwrap_or_else(|_| project_dir.to_path_buf());
         #[cfg(not(feature = "std"))]
         let project_dir = project_dir.to_path_buf();
-        Some(project_dir.join("target").join("miden").join("packages"))
+        let package_cache_dir = project_dir.join("target").join("miden").join("packages");
+        #[cfg(feature = "std")]
+        {
+            let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
+                package_cache::fingerprint(
+                    &self.options,
+                    &project_dir,
+                    self.source_manager.as_ref(),
+                    MIDENC_BUILD_VERSION,
+                    MIDENC_BUILD_REV,
+                )
+            });
+            Some(package_cache_dir.join(fingerprint))
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            Some(package_cache_dir)
+        }
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to

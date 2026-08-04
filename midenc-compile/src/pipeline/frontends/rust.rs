@@ -1607,9 +1607,11 @@ pub(crate) mod manifest {
     ///
     /// `MIDENC_PACKAGE_CACHE` is the whole reason `filesystem_cache_dir` is threaded down from
     /// the entry point: it tells the nested `midenc` invocations where to publish the packages
-    /// they compile and where to look for the ones their own dependencies already produced.
-    /// Absent a cache directory the variable is *unset* rather than set to an empty path, which
-    /// is what makes the nested build fall back to its own default.
+    /// they compile and where to look for the ones their own dependencies already produced. The
+    /// directory is fingerprinted by the root build's compiler, options, and manifest closure so
+    /// every participant in that build uses the same isolated cache. Absent a cache directory the
+    /// variable is *unset* rather than set to an empty path, which is what makes the nested build
+    /// fall back to its own default.
     ///
     /// Named — rather than left inline where it was — so that this can be asserted without
     /// spawning `cargo -Z build-std` against the SDK.

@@ -72,6 +72,10 @@ impl HybridPackageRegistry {
     ) -> Result<Self, Report> {
         use alloc::string::ToString;
 
+        if let Some(filesystem_cache) = filesystem_cache.as_deref() {
+            prepare_filesystem_cache(filesystem_cache);
+        }
+
         // Load system libraries
         let mut registry = if options.sysroot.is_some() {
             Self::from_local_registry(options)?
@@ -217,6 +221,95 @@ impl HybridPackageRegistry {
     }
 }
 
+/// Creates the current cache directory and removes stale cache entries owned by `midenc`.
+///
+/// Cleanup is best-effort because an inability to prune an old build must not obscure the
+/// diagnostic from the current build. Package writes still report their own failures normally.
+#[cfg(any(test, feature = "std"))]
+fn prepare_filesystem_cache(filesystem_cache: &std::path::Path) {
+    if let Err(err) = std::fs::create_dir_all(filesystem_cache) {
+        log::debug!(
+            target: "package-registry",
+            "failed to create filesystem package cache '{}': {err}",
+            filesystem_cache.display()
+        );
+    }
+
+    let Some(parent) = filesystem_cache.parent() else {
+        return;
+    };
+    let entries = match std::fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(err) => {
+            log::debug!(
+                target: "package-registry",
+                "failed to inspect filesystem package cache '{}': {err}",
+                parent.display()
+            );
+            return;
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                log::debug!(
+                    target: "package-registry",
+                    "failed to inspect an entry in filesystem package cache '{}': {err}",
+                    parent.display()
+                );
+                continue;
+            }
+        };
+        let path = entry.path();
+        if path == filesystem_cache {
+            continue;
+        }
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(err) => {
+                log::debug!(
+                    target: "package-registry",
+                    "failed to inspect filesystem package cache entry '{}': {err}",
+                    path.display()
+                );
+                continue;
+            }
+        };
+
+        let is_stale_fingerprint =
+            file_type.is_dir() && is_package_cache_fingerprint(&entry.file_name());
+        let is_legacy_package = file_type.is_file()
+            && path.extension().and_then(|extension| extension.to_str()) == Some("masp");
+        if !is_stale_fingerprint && !is_legacy_package {
+            continue;
+        }
+
+        let result = if is_stale_fingerprint {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(err) = result {
+            log::debug!(
+                target: "package-registry",
+                "failed to prune stale filesystem package cache entry '{}': {err}",
+                path.display()
+            );
+        }
+    }
+}
+
+/// Returns true when `name` has the cache fingerprint format owned by `midenc`.
+#[cfg(any(test, feature = "std"))]
+fn is_package_cache_fingerprint(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|name| {
+        name.len() == 16
+            && name.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    })
+}
+
 impl HybridPackageRegistry {
     fn insert_record(&mut self, id: PackageId, record: PackageRecord) {
         self.packages
@@ -286,5 +379,47 @@ impl PackageStore for HybridPackageRegistry {
         package: Arc<Package>,
     ) -> Result<miden_project::Version, Self::Error> {
         self.install_if_missing(package).map_err(Report::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn creating_a_filesystem_cache_prunes_only_stale_owned_entries() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("packages");
+        let current = parent.join("fedcba9876543210");
+        let stale = parent.join("0123456789abcdef");
+        let unrelated_directory = parent.join("not-a-midenc-cache");
+        let uppercase_directory = parent.join("ABCDEF0123456789");
+        let legacy_package = parent.join("legacy.masp");
+        let unrelated_file = parent.join("keep.txt");
+
+        for directory in [&current, &stale, &unrelated_directory, &uppercase_directory] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        let current_marker = current.join("keep");
+        std::fs::write(&current_marker, b"current").unwrap();
+        std::fs::write(stale.join("old.masp"), b"stale").unwrap();
+        std::fs::write(&legacy_package, b"legacy").unwrap();
+        std::fs::write(&unrelated_file, b"unrelated").unwrap();
+
+        let registry = HybridPackageRegistry::new_with_filesystem_cache(
+            &crate::Options::default(),
+            Some(current.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(registry.filesystem_cache_dir(), Some(current.as_path()));
+        assert!(current_marker.exists(), "the current cache must remain intact");
+        assert!(!stale.exists(), "a stale fingerprint directory must be removed");
+        assert!(!legacy_package.exists(), "a legacy flat package must be removed");
+        assert!(unrelated_directory.exists(), "unowned directories must be retained");
+        assert!(uppercase_directory.exists(), "non-lowercase directories must be retained");
+        assert!(unrelated_file.exists(), "unowned files must be retained");
     }
 }

@@ -51,3 +51,6 @@ smallvec.workspace = true
 parking_lot = { workspace = true, optional = true }
 termcolor = { version = "1.4.1", optional = true }
 thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
