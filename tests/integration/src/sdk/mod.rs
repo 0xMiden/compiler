@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{fs, path::Path, sync::Arc};
 
 use miden_assembly::ast::types::{FunctionType, Type};
 use miden_core::serde::Serializable;
@@ -134,6 +134,165 @@ fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Pa
         &signature.results[0],
         &["u64", compact_felt_struct, "u32", compact_felt_struct, "u8", "i1", "u16"],
     );
+}
+
+/// Creates a generated workspace containing the existing basic-wallet/swapp-note FPI pair.
+fn fpi_package_cache_regression_project() -> crate::Project {
+    let sdk_path = sdk_crate_path();
+    let workspace_manifest = r#"
+[workspace]
+members = ["basic-wallet", "swapp-note"]
+resolver = "3"
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+"#;
+    let basic_wallet_cargo = format!(
+        r#"
+cargo-features = ["trim-paths"]
+
+[package]
+name = "basic_wallet"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{}" }}
+"#,
+        sdk_path.display(),
+    );
+    let swapp_note_cargo = format!(
+        r#"
+cargo-features = ["trim-paths"]
+
+[package]
+name = "swapp-note"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{}" }}
+
+[package.metadata.miden]
+project-kind = "note-script"
+
+[package.metadata.component]
+package = "miden:swapp-note"
+
+[package.metadata.miden.dependencies]
+"miden:basic-wallet" = {{ path = "../basic-wallet" }}
+
+[package.metadata.component.target.dependencies]
+"miden:basic-wallet" = {{ path = "../basic-wallet/target/generated-wit/" }}
+"#,
+        sdk_path.display(),
+    );
+    let swapp_note_miden_manifest = r#"
+[package]
+name = "swapp-note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:swapp-note/miden-swapp-note@0.1.0"
+path = "src/lib.rs"
+
+[dependencies]
+basic-wallet = { path = "../basic-wallet" }
+
+[package.metadata.miden.dependencies]
+basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
+"#;
+    let swapp_note_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../fixtures/components/swapp-note/src/lib.rs"
+    ))
+    .replacen(
+        "        let offered_asset = &note_assets[0];",
+        "        let offered_asset = &note_assets[0];\n        let foreign_wallet = \
+         Wallet::new(self.creator);\n        foreign_wallet.receive_asset(*offered_asset);",
+        1,
+    );
+
+    project("fpi_package_cache_stale_root")
+        .file("Cargo.toml", workspace_manifest)
+        .file(
+            ".cargo/config.toml",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../examples/basic-wallet/.cargo/config.toml"
+            )),
+        )
+        .file("basic-wallet/Cargo.toml", &basic_wallet_cargo)
+        .file(
+            "basic-wallet/miden-project.toml",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../examples/basic-wallet/miden-project.toml"
+            )),
+        )
+        .file(
+            "basic-wallet/src/lib.rs",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../examples/basic-wallet/src/lib.rs"
+            )),
+        )
+        .file("swapp-note/Cargo.toml", &swapp_note_cargo)
+        .file("swapp-note/miden-project.toml", swapp_note_miden_manifest)
+        .file("swapp-note/src/lib.rs", &swapp_note_source)
+        .build()
+}
+
+/// Reads the named dependency package from a compiled consumer's filesystem cache.
+fn read_cached_dependency_package(
+    test: &CompilerTest,
+    package_name: &str,
+) -> miden_mast_package::Package {
+    let cache_dir = test
+        .session
+        .filesystem_package_cache_dir()
+        .expect("a Cargo Miden project must have a filesystem package cache");
+    let path = cache_dir.join(format!("{package_name}.masp"));
+    let bytes = fs::read(&path)
+        .unwrap_or_else(|err| panic!("failed to read cached package '{}': {err}", path.display()));
+    miden_mast_package::Package::read_from_bytes_unchecked(&bytes)
+        .unwrap_or_else(|err| panic!("failed to decode cached package '{}': {err}", path.display()))
+}
+
+/// Returns the canonical integer representation of a procedure digest's field elements.
+fn procedure_digest_felts(digest: &miden_core::Word) -> [u64; 4] {
+    let elements = digest.as_elements();
+    [
+        elements[0].as_canonical_u64(),
+        elements[1].as_canonical_u64(),
+        elements[2].as_canonical_u64(),
+        elements[3].as_canonical_u64(),
+    ]
+}
+
+/// Returns true when MASM reconstructs every felt in `digest` from its decimal `u32` limbs.
+fn masm_contains_procedure_digest(masm: &str, digest: &miden_core::Word) -> bool {
+    let pattern = procedure_digest_felts(digest)
+        .into_iter()
+        .rev()
+        .map(|felt| {
+            let low = felt as u32;
+            let high = (felt >> u32::BITS) as u32;
+            format!("push.{high} push.{low} swap.1 mul.4294967296 add")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let normalized_masm = masm.split_whitespace().collect::<Vec<_>>().join(" ");
+    normalized_masm.contains(&pattern)
 }
 
 fn component_namespace(name: &str) -> String {
@@ -410,6 +569,64 @@ fn rust_sdk_account_package_build_is_deterministic() {
             bytes.len(),
         );
     }
+}
+
+/// A dependency package rewrite must invalidate the FPI roots embedded by `include_bytes!`.
+#[test]
+fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
+    let project = fpi_package_cache_regression_project();
+    let consumer = project.root().join("swapp-note");
+    let dependency_source = project.root().join("basic-wallet/src/lib.rs");
+    let config = WasmTranslationConfig::default();
+
+    let mut first_build = CompilerTest::rust_source_cargo_miden(&consumer, config.clone(), []);
+    let first_masm = first_build.masm_src();
+    let first_cache = first_build.session.filesystem_package_cache_dir().unwrap();
+    let first_dependency = read_cached_dependency_package(&first_build, "basic-wallet");
+    let first_export =
+        find_manifest_procedure(&first_dependency, "basic-wallet receive-asset export", |path| {
+            path.ends_with("::\"receive-asset\"")
+        });
+    let first_root = first_export.digest;
+    assert!(
+        masm_contains_procedure_digest(&first_masm, &first_root),
+        "consumer MASM does not contain the first receive-asset root {:?}",
+        procedure_digest_felts(&first_root),
+    );
+
+    let original_source = fs::read_to_string(&dependency_source).unwrap();
+    let changed_source = original_source.replacen(
+        "        self.add_asset(asset);",
+        "        self.add_asset(asset);\n        self.remove_asset(asset);\n        \
+         self.add_asset(asset);",
+        1,
+    );
+    assert_ne!(original_source, changed_source, "fixture mutation must match exactly once");
+    fs::write(&dependency_source, changed_source).unwrap();
+
+    let mut second_build = CompilerTest::rust_source_cargo_miden(&consumer, config, []);
+    let second_masm = second_build.masm_src();
+    let second_cache = second_build.session.filesystem_package_cache_dir().unwrap();
+    let second_dependency = read_cached_dependency_package(&second_build, "basic-wallet");
+    let second_export =
+        find_manifest_procedure(&second_dependency, "basic-wallet receive-asset export", |path| {
+            path.ends_with("::\"receive-asset\"")
+        });
+    let second_root = second_export.digest;
+
+    assert_eq!(first_cache, second_cache, "both builds must exercise the same cache path");
+    assert_ne!(first_root, second_root, "the dependency implementation must change its root");
+    assert_ne!(first_masm, second_masm, "the consumer must be recompiled with the new root");
+    assert!(
+        !masm_contains_procedure_digest(&second_masm, &first_root),
+        "consumer MASM still contains the stale receive-asset root {:?}",
+        procedure_digest_felts(&first_root),
+    );
+    assert!(
+        masm_contains_procedure_digest(&second_masm, &second_root),
+        "consumer MASM does not contain the new receive-asset root {:?}",
+        procedure_digest_felts(&second_root),
+    );
 }
 
 #[test]

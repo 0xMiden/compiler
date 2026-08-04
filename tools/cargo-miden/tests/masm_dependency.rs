@@ -174,8 +174,9 @@ fn build_rust_project_with_masm_path_dependency() {
     // registry, or skipped. A materialized `.masp` for the dependency is produced only by
     // assembling it from its Miden Assembly sources. The package cache is uniqued by the build
     // inputs, so the package lives inside the build's fingerprint directory.
-    let dependency_package = crate::utils::package_cache_fingerprint_dir(&project_path)
-        .join(format!("{dependency_name}.masp"));
+    let dependency_package =
+        crate::utils::package_cache_fingerprint_dir(&project_path, "masm-dep.masp")
+            .join(format!("{dependency_name}.masp"));
     assert!(
         dependency_package.exists(),
         "expected the masm dependency to be assembled and materialized at {}",

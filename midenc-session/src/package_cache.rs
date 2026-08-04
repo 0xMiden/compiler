@@ -1,4 +1,15 @@
 //! Build-input fingerprints for the filesystem package cache.
+//!
+//! The fingerprint models inputs that change the *set and identity* of packages visible to a
+//! build. Source files and lockfiles are deliberately excluded: every resolved package is
+//! rewritten into the current cache before its consumers expand, and the generated
+//! `include_bytes!` reference makes Cargo re-expand when that package's contents change.
+//! Registry and git dependencies contribute declaration text only; in particular, a git branch
+//! moving without a manifest edit is outside this fingerprint by design.
+//!
+//! A workspace-root locator does not select a package, so `miden_project::Project::load` rejects
+//! it. Such a locator contributes its raw manifests plus a load-failure marker and does not walk
+//! workspace members; normal workspace compilation is expected to create per-member sessions.
 
 use alloc::{
     format,
@@ -7,6 +18,7 @@ use alloc::{
 };
 use std::{
     collections::BTreeSet,
+    ffi::OsStr,
     path::{Path, PathBuf},
 };
 
@@ -14,6 +26,15 @@ use miden_core::crypto::hash::Blake3_256;
 use miden_project::{Dependency, DependencyVersionScheme, Project};
 
 use crate::{DebugInfo, LinkLibrary, OptLevel, Options, SourceManager};
+
+/// The number of lowercase hexadecimal characters in a package-cache fingerprint.
+pub(crate) const FINGERPRINT_LEN: usize = 16;
+
+/// Returns true when `name` satisfies the package-cache fingerprint format.
+pub(crate) fn is_fingerprint(name: &str) -> bool {
+    name.len() == FINGERPRINT_LEN
+        && name.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
 
 /// Computes the filesystem package cache fingerprint for a project build.
 ///
@@ -24,23 +45,25 @@ pub(crate) fn fingerprint(
     options: &Options,
     project_dir: &Path,
     source_manager: &dyn SourceManager,
+    inherited_rustflags: Option<&OsStr>,
     compiler_version: &str,
     compiler_revision: &str,
 ) -> String {
     let mut transcript = Transcript::new();
     transcript.field("compiler.version", compiler_version.as_bytes());
     transcript.field("compiler.revision", compiler_revision.as_bytes());
-    record_options(&mut transcript, options);
+    record_options(&mut transcript, options, inherited_rustflags);
 
     let mut manifests = ManifestClosure::new(&mut transcript, source_manager);
     manifests.visit_project(project_dir, None);
 
     let digest = Blake3_256::hash(transcript.as_bytes());
-    let mut fingerprint = String::with_capacity(16);
-    for byte in &digest.as_bytes()[..8] {
-        use core::fmt::Write;
-        write!(&mut fingerprint, "{byte:02x}").expect("writing to a string cannot fail");
-    }
+    let fingerprint = miden_core::utils::to_hex(&digest.as_bytes()[..FINGERPRINT_LEN / 2]);
+    log::debug!(
+        target: "package-cache",
+        "filesystem package cache fingerprint for '{}': {fingerprint}",
+        project_dir.display()
+    );
     fingerprint
 }
 
@@ -67,10 +90,15 @@ impl Transcript {
 
     /// Appends an optional named field to this transcript.
     fn optional_field(&mut self, name: &str, value: Option<&str>) {
+        self.optional_bytes_field(name, value.map(str::as_bytes));
+    }
+
+    /// Appends an optional named byte field to this transcript.
+    fn optional_bytes_field(&mut self, name: &str, value: Option<&[u8]>) {
         match value {
             Some(value) => {
                 self.field(&format!("{name}.state"), b"present");
-                self.field(name, value.as_bytes());
+                self.field(name, value);
             }
             None => self.field(&format!("{name}.state"), b"missing"),
         }
@@ -83,40 +111,97 @@ impl Transcript {
 }
 
 /// Records the build configuration which can affect package identity or selection.
-fn record_options(transcript: &mut Transcript, options: &Options) {
-    transcript.field("options.profile", options.profile.as_bytes());
-    transcript.field("options.optimize", opt_level_name(options.optimize).as_bytes());
-    transcript.field("options.debug", debug_info_name(options.debug).as_bytes());
-    transcript.optional_field("options.target", options.target.as_deref());
+fn record_options(
+    transcript: &mut Transcript,
+    options: &Options,
+    inherited_rustflags: Option<&OsStr>,
+) {
+    let Options {
+        manifest_path: _,
+        name: _,
+        entrypoint: _,
+        profile,
+        workspace,
+        packages,
+        target,
+        target_type,
+        optimize,
+        debug,
+        output_types: _,
+        search_paths: _,
+        link_libraries,
+        link_modules: _,
+        sysroot,
+        midenup_home: _,
+        toolchain,
+        color: _,
+        diagnostics: _,
+        current_dir: _,
+        target_dir: _,
+        output_dir: _,
+        output_file: _,
+        remap_path_prefixes: _,
+        print_hir_source_locations: _,
+        stop_after: _,
+        parse_only: _,
+        analyze_only: _,
+        link_only: _,
+        no_link: _,
+        lint: _,
+        print_cfg_after_all: _,
+        print_cfg_after_pass: _,
+        print_ir_before_stage: _,
+        print_ir_after_all: _,
+        print_ir_after_pass: _,
+        print_ir_after_modified: _,
+        print_ir_filters: _,
+        save_temps: _,
+        rustflags,
+        cargo_frontmatter: _,
+        flags: _,
+    } = options;
 
-    let target_type = options.target_type.map(|target_type| target_type.to_string());
+    // Deliberate exclusions are classified here so adding an `Options` field forces a choice.
+    // Output paths, naming, diagnostics, printing, and stop flags do not select dependency
+    // packages. Search paths, link modules, remapped paths, custom flags, and similar
+    // content-affecting controls self-heal through the in-run package rewrite; the package-name
+    // set itself is driven by the manifest closure recorded below.
+    transcript.field("options.profile", profile.as_bytes());
+    transcript.field("options.optimize", opt_level_name(*optimize).as_bytes());
+    transcript.field("options.debug", debug_info_name(*debug).as_bytes());
+    transcript.optional_field("options.target", target.as_deref());
+
+    let target_type = target_type.map(|target_type| target_type.to_string());
     transcript.optional_field("options.target_type", target_type.as_deref());
 
-    let mut packages = options.packages.clone();
+    let mut packages = packages.clone();
     packages.sort();
     transcript.field("options.packages.count", &(packages.len() as u64).to_le_bytes());
     for package in packages {
         transcript.field("options.package", package.as_bytes());
     }
 
-    transcript.field("options.workspace", &[u8::from(options.workspace)]);
-    transcript.optional_field("options.rustflags", options.rustflags.as_deref());
-    transcript.optional_field("options.toolchain", options.toolchain.as_deref());
+    transcript.field("options.workspace", &[u8::from(*workspace)]);
+    transcript.optional_field("options.rustflags", rustflags.as_deref());
+    transcript.optional_bytes_field(
+        "options.inherited_rustflags",
+        inherited_rustflags.map(OsStr::as_encoded_bytes),
+    );
+    transcript.optional_field("options.toolchain", toolchain.as_deref());
 
-    let mut link_libraries = options
-        .link_libraries
-        .iter()
-        .map(|library| link_library_input(library, options))
-        .collect::<Vec<_>>();
+    let mut link_libraries = link_libraries.iter().map(link_library_input).collect::<Vec<_>>();
     link_libraries.sort();
     transcript.field("options.link_libraries.count", &(link_libraries.len() as u64).to_le_bytes());
-    for (name, version) in link_libraries {
+    for (name, path, linkage) in link_libraries {
         transcript.field("options.link_library.name", name.as_bytes());
-        transcript.optional_field("options.link_library.version", version.as_deref());
+        transcript.optional_bytes_field("options.link_library.path", path.as_deref());
+        transcript.field("options.link_library.linkage", linkage.as_bytes());
     }
 
-    let sysroot = options.sysroot.as_deref().map(path_string);
-    transcript.optional_field("options.sysroot", sysroot.as_deref());
+    transcript.optional_bytes_field(
+        "options.sysroot",
+        sysroot.as_deref().map(|path| path.as_os_str().as_encoded_bytes()),
+    );
 }
 
 /// Returns the stable transcript name for an optimization level.
@@ -140,10 +225,15 @@ fn debug_info_name(level: DebugInfo) -> &'static str {
     }
 }
 
-/// Resolves the name and package version of a requested link library.
-fn link_library_input(library: &LinkLibrary, options: &Options) -> (String, Option<String>) {
-    let version = library.load(options).ok().map(|package| package.version.to_string());
-    (library.name.to_string(), version)
+/// Returns the I/O-free identity of a requested link library.
+///
+/// Built-in library versions are already pinned by the compiler build version.
+fn link_library_input(library: &LinkLibrary) -> (String, Option<Vec<u8>>, &'static str) {
+    (
+        library.name.to_string(),
+        library.path.as_deref().map(|path| path.as_os_str().as_encoded_bytes().to_vec()),
+        library.linkage.as_str(),
+    )
 }
 
 /// Walks and records the manifest closure of one project.
@@ -152,6 +242,7 @@ struct ManifestClosure<'a> {
     source_manager: &'a dyn SourceManager,
     visited_projects: BTreeSet<PathBuf>,
     visited_packages: BTreeSet<PathBuf>,
+    visited_workspace_roots: BTreeSet<PathBuf>,
 }
 
 impl<'a> ManifestClosure<'a> {
@@ -162,6 +253,7 @@ impl<'a> ManifestClosure<'a> {
             source_manager,
             visited_projects: BTreeSet::new(),
             visited_packages: BTreeSet::new(),
+            visited_workspace_roots: BTreeSet::new(),
         }
     }
 
@@ -176,7 +268,7 @@ impl<'a> ManifestClosure<'a> {
             .ok()
             .and_then(|project| project.package().manifest_path().map(Path::to_path_buf))
             .and_then(|manifest| manifest.parent().map(Path::to_path_buf))
-            .unwrap_or_else(|| project_dir(locator));
+            .unwrap_or_else(|| locator_project_dir(locator));
         let project_key = canonical_or_original(&project_dir);
         if !self.visited_projects.insert(project_key) {
             return;
@@ -186,27 +278,40 @@ impl<'a> ManifestClosure<'a> {
         self.record_manifest(&project_dir.join("miden-project.toml"));
         self.record_manifest(&project_dir.join("Cargo.toml"));
 
-        let Ok(project) = loaded else {
-            self.transcript.field("project.load", b"failed");
-            self.transcript.field("project", b"end");
-            return;
+        let project = match loaded {
+            Ok(project) => project,
+            Err(err) => {
+                log::debug!(
+                    target: "package-cache",
+                    "failed to load project '{}' while fingerprinting its manifest closure: {err}",
+                    locator.display()
+                );
+                self.transcript.field("project.load", b"failed");
+                self.transcript.field("project", b"end");
+                return;
+            }
         };
         self.transcript.field("project.load", b"succeeded");
 
         let package = project.package();
-        let manifest_dir =
-            package.manifest_path().and_then(Path::parent).unwrap_or(project_dir.as_path());
         let workspace_root = match &project {
             Project::WorkspacePackage { workspace, .. } => workspace.workspace_root(),
             Project::Package(_) => None,
         };
+        if let Some(workspace_root) = workspace_root {
+            let workspace_key = canonical_or_original(workspace_root);
+            if self.visited_workspace_roots.insert(workspace_key) {
+                self.record_manifest(&workspace_root.join("miden-project.toml"));
+                self.record_manifest(&workspace_root.join("Cargo.toml"));
+            }
+        }
 
         let mut dependencies = package.dependencies().iter().collect::<Vec<_>>();
         dependencies.sort_by_cached_key(|dependency| dependency_sort_key(dependency));
         self.transcript
             .field("project.dependencies.count", &(dependencies.len() as u64).to_le_bytes());
         for dependency in dependencies {
-            self.visit_dependency(dependency, manifest_dir, workspace_root);
+            self.visit_dependency(dependency, project_dir.as_path(), workspace_root);
         }
         self.transcript.field("project", b"end");
     }
@@ -220,7 +325,14 @@ impl<'a> ManifestClosure<'a> {
                 self.transcript.field("manifest.state", b"present");
                 self.transcript.field("manifest.bytes", &bytes);
             }
-            Err(_) => self.transcript.field("manifest.state", b"missing"),
+            Err(err) => {
+                log::debug!(
+                    target: "package-cache",
+                    "unable to read manifest '{}' while fingerprinting: {err}; recording a missing marker",
+                    path.display()
+                );
+                self.transcript.field("manifest.state", b"missing");
+            }
         }
     }
 
@@ -245,13 +357,25 @@ impl<'a> ManifestClosure<'a> {
                 if let Some(workspace_root) = workspace_root {
                     self.visit_path_dependency(dependency, workspace_root, path.inner());
                 } else {
+                    log::debug!(
+                        target: "package-cache",
+                        "cannot resolve workspace path dependency '{}' while fingerprinting outside a workspace",
+                        dependency.name()
+                    );
                     self.transcript.field("dependency.path", b"unresolved-workspace");
                 }
             }
             DependencyVersionScheme::Workspace { member, .. } => {
                 if let Some(workspace_root) = workspace_root {
+                    // Unlike the canonical resolver, the shared helper below extension-classifies
+                    // a workspace member even though `Workspace` always denotes source there.
                     self.visit_path_dependency(dependency, workspace_root, member.inner());
                 } else {
+                    log::debug!(
+                        target: "package-cache",
+                        "cannot resolve workspace member dependency '{}' while fingerprinting outside a workspace",
+                        dependency.name()
+                    );
                     self.transcript.field("dependency.path", b"unresolved-workspace");
                 }
             }
@@ -272,10 +396,19 @@ impl<'a> ManifestClosure<'a> {
         uri: &miden_project::Uri,
     ) {
         if uri.scheme().is_some_and(|scheme| scheme != "file") {
+            log::debug!(
+                target: "package-cache",
+                "unsupported URI '{}' for path dependency '{}' while fingerprinting",
+                uri.as_str(),
+                dependency.name()
+            );
             self.transcript.field("dependency.path", b"unsupported-uri");
             return;
         }
 
+        // This mirrors `miden-project`'s `dependencies/graph.rs::resolve_dependency`; keep the
+        // two in sync. The fingerprint walk checks the extension before canonicalization, so a
+        // symlink to a `.masp` is classified as a project unlike the canonical resolver.
         let relative = Path::new(uri.path());
         let path = if relative.is_absolute() {
             relative.to_path_buf()
@@ -303,7 +436,14 @@ impl<'a> ManifestClosure<'a> {
                 let digest = Blake3_256::hash(&bytes);
                 self.transcript.field("package.file.digest", digest.as_bytes());
             }
-            Err(_) => self.transcript.field("package.file.state", b"missing"),
+            Err(err) => {
+                log::debug!(
+                    target: "package-cache",
+                    "unable to read preassembled package '{}' while fingerprinting: {err}; recording a missing marker",
+                    path.display()
+                );
+                self.transcript.field("package.file.state", b"missing");
+            }
         }
         self.transcript.field("package.file", b"end");
     }
@@ -348,7 +488,7 @@ fn optional_display(value: Option<&impl core::fmt::Display>) -> String {
 }
 
 /// Returns the directory whose sibling project manifests describe a locator.
-fn project_dir(locator: &Path) -> PathBuf {
+fn locator_project_dir(locator: &Path) -> PathBuf {
     if locator.file_name().is_some_and(|name| {
         name.eq_ignore_ascii_case("miden-project.toml") || name.eq_ignore_ascii_case("Cargo.toml")
     }) {
@@ -361,11 +501,6 @@ fn project_dir(locator: &Path) -> PathBuf {
 /// Canonicalizes a path for cycle detection, retaining the original spelling on failure.
 fn canonical_or_original(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-/// Converts a path into the stable string representation used in the transcript.
-fn path_string(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
 }
 
 #[cfg(test)]
@@ -395,7 +530,7 @@ mod tests {
 
     /// Computes a test fingerprint with a fresh source manager.
     fn test_fingerprint(options: &Options, project_dir: &Path, version: &str, rev: &str) -> String {
-        fingerprint(options, project_dir, &DefaultSourceManager::default(), version, rev)
+        fingerprint(options, project_dir, &DefaultSourceManager::default(), None, version, rev)
     }
 
     #[test]
@@ -408,8 +543,7 @@ mod tests {
         let second = test_fingerprint(&options, temp.path(), "1.2.3", "abc123");
 
         assert_eq!(first, second);
-        assert_eq!(first.len(), 16);
-        assert!(first.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)));
+        assert!(is_fingerprint(&first));
     }
 
     #[test]
@@ -437,6 +571,64 @@ mod tests {
     }
 
     #[test]
+    fn fingerprint_walk_terminates_on_dependency_cycles() {
+        let temp = TempDir::new().unwrap();
+        let first_project = temp.path().join("first");
+        let second_project = temp.path().join("second");
+        write_project(
+            &first_project,
+            "first",
+            "\n[dependencies]\nsecond = { path = \"../second\" }\n",
+        );
+        write_project(
+            &second_project,
+            "second",
+            "\n[dependencies]\nfirst = { path = \"../first\" }\n",
+        );
+        let options = Options::default();
+
+        let first = test_fingerprint(&options, &first_project, "1.2.3", "abc123");
+        let second = test_fingerprint(&options, &first_project, "1.2.3", "abc123");
+
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_preassembled_package_content() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("root");
+        let package = temp.path().join("dependency.masp");
+        write_project(
+            &root,
+            "root",
+            "\n[dependencies]\ndependency = { path = \"../dependency.masp\" }\n",
+        );
+        std::fs::write(&package, b"first package").unwrap();
+        let options = Options::default();
+        let before = test_fingerprint(&options, &root, "1.2.3", "abc123");
+
+        std::fs::write(&package, b"different package").unwrap();
+        let after = test_fingerprint(&options, &root, "1.2.3", "abc123");
+
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn project_load_failure_marker_is_stable_and_distinct() {
+        let temp = TempDir::new().unwrap();
+        let options = Options::default();
+
+        let first = test_fingerprint(&options, temp.path(), "1.2.3", "abc123");
+        let second = test_fingerprint(&options, temp.path(), "1.2.3", "abc123");
+        assert_eq!(first, second);
+
+        write_project(temp.path(), "root", "");
+        let loadable = test_fingerprint(&options, temp.path(), "1.2.3", "abc123");
+
+        assert_ne!(first, loadable);
+    }
+
+    #[test]
     fn fingerprint_changes_with_build_options() {
         let temp = TempDir::new().unwrap();
         write_project(temp.path(), "root", "");
@@ -450,6 +642,57 @@ mod tests {
         let mut optimized = options.clone();
         optimized.optimize = OptLevel::Max;
         assert_ne!(baseline, test_fingerprint(&optimized, temp.path(), "1.2.3", "abc123"));
+    }
+
+    #[test]
+    fn fingerprint_changes_with_inherited_rustflags() {
+        let temp = TempDir::new().unwrap();
+        write_project(temp.path(), "root", "");
+        let options = Options::default();
+
+        let missing = fingerprint(
+            &options,
+            temp.path(),
+            &DefaultSourceManager::default(),
+            None,
+            "1.2.3",
+            "abc123",
+        );
+        let present = fingerprint(
+            &options,
+            temp.path(),
+            &DefaultSourceManager::default(),
+            Some(OsStr::new("-C target-feature=+bulk-memory")),
+            "1.2.3",
+            "abc123",
+        );
+
+        assert_ne!(missing, present);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_workspace_manifests() {
+        let temp = TempDir::new().unwrap();
+        let member = temp.path().join("member");
+        write_project(&member, "member", "");
+        std::fs::write(
+            temp.path().join("miden-project.toml"),
+            "[workspace]\nmembers = [\"member\"]\n",
+        )
+        .unwrap();
+        std::fs::write(temp.path().join("Cargo.toml"), "[workspace]\nmembers = [\"member\"]\n")
+            .unwrap();
+        let options = Options::default();
+        let before = test_fingerprint(&options, &member, "1.2.3", "abc123");
+
+        std::fs::write(
+            temp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"member\"]\nresolver = \"3\"\n",
+        )
+        .unwrap();
+        let after = test_fingerprint(&options, &member, "1.2.3", "abc123");
+
+        assert_ne!(before, after);
     }
 
     #[test]
