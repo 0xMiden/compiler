@@ -137,6 +137,37 @@ fn call_indirect() {
     )
 }
 
+/// Symbol names in a Wasm module are producer-controlled, so a user function may be named
+/// exactly like the compiler's generated table symbol; the generated name must be bumped until
+/// it is free instead of colliding with the user's function.
+#[test]
+fn call_indirect_table_name_collides_with_user_function() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref)
+            (elem (i32.const 1) func $__indirect_function_table_0 $mul)
+            (memory (;0;) 16384)
+            (func $__indirect_function_table_0 (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_table_name_collision.hir"],
+    )
+}
+
 /// The final table image must honor Wasm initialization order: the whole-table `(ref.func ..)`
 /// default is overwritten by later element segments, and an explicit `ref.null` entry clears a
 /// previously initialized slot (so dispatching through it traps instead of calling a stale

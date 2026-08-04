@@ -1,7 +1,7 @@
 use cranelift_entity::packed_option::ReservedValue;
 use midenc_hir::{
-    CallConv, FunctionType, FxHashMap, Ident, SourceSpan, SymbolNameComponent, SymbolPath,
-    Visibility,
+    CallConv, FunctionType, FxHashMap, Ident, SourceSpan, SymbolName, SymbolNameComponent,
+    SymbolPath, SymbolTable, Visibility,
     diagnostics::WrapErr,
     dialects::builtin::{
         FunctionRef, FunctionTableRef, ModuleBuilder, WorldBuilder, attributes::Signature,
@@ -179,9 +179,19 @@ impl<'a> ModuleTranslationState<'a> {
         // the zero MAST root of a null slot, matching Wasm's uninitialized-element trap
         let image = collect_table_image(table_index, defined_idx, module, diagnostics)?;
 
-        // The table symbol is internal to the compiler, so use a hygienic generated name; a Wasm
-        // export name is an arbitrary string that could collide with other module symbols
-        let name = format!("__indirect_function_table_{}", table_index.as_u32());
+        // The table symbol is internal to the compiler, but every symbol name in the module is a
+        // producer-controlled string, so no fixed name can avoid collisions (a user function can
+        // be named `__indirect_function_table_0`); probe the symbol table and bump a counter
+        // until the generated name is free. The collision set is complete at this point: tables
+        // are built lazily during body translation, and all functions and global variables are
+        // declared before any body is translated.
+        let base = format!("__indirect_function_table_{}", table_index.as_u32());
+        let mut name = base.clone();
+        let mut bump = 0u32;
+        while self.module_builder.module.borrow().get(SymbolName::intern(&name)).is_some() {
+            bump += 1;
+            name = format!("{base}_{bump}");
+        }
         let table_ref = self
             .module_builder
             .define_function_table(Ident::from(name.as_str()), Visibility::Private, table.minimum)
