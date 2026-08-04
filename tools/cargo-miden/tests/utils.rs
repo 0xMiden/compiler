@@ -44,6 +44,32 @@ pub(crate) fn current_dir_lock() -> CurrentDirGuard {
     }
 }
 
+/// Returns the single build-fingerprint directory inside a project's package cache.
+///
+/// The package cache under `target/miden/packages` is uniqued by the build inputs, so a build
+/// materializes its dependency packages inside one fingerprint subdirectory whose name is not
+/// known up front.
+pub(crate) fn package_cache_fingerprint_dir(project_dir: &Path) -> PathBuf {
+    let package_cache_dir = project_dir.join("target").join("miden").join("packages");
+    let fingerprint_dirs = fs::read_dir(&package_cache_dir)
+        .unwrap_or_else(|err| {
+            panic!(
+                "expected the package cache directory '{}' to exist after the build: {err}",
+                package_cache_dir.display()
+            )
+        })
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fingerprint_dirs.len(),
+        1,
+        "expected exactly one fingerprint directory in '{}', got {fingerprint_dirs:?}",
+        package_cache_dir.display()
+    );
+    fingerprint_dirs.into_iter().next().unwrap()
+}
+
 pub(crate) fn project_template_arg(template: &str) -> String {
     let template = template.trim_start_matches("--");
     let templates_path = match env::var("TEST_LOCAL_TEMPLATES_PATH") {

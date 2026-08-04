@@ -172,11 +172,9 @@ fn build_rust_project_with_masm_path_dependency() {
     // The root's own package building is not by itself evidence that the dependency was built
     // through a source provider: it would also hold if the dependency had been resolved from a
     // registry, or skipped. A materialized `.masp` for the dependency is produced only by
-    // assembling it from its Miden Assembly sources.
-    let dependency_package = project_path
-        .join("target")
-        .join("miden")
-        .join("packages")
+    // assembling it from its Miden Assembly sources. The package cache is uniqued by the build
+    // inputs, so the package lives inside the build's fingerprint directory.
+    let dependency_package = crate::utils::package_cache_fingerprint_dir(&project_path)
         .join(format!("{dependency_name}.masp"));
     assert!(
         dependency_package.exists(),
