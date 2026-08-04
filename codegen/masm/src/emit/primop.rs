@@ -422,11 +422,12 @@ impl OpEmitter<'_> {
         }
 
         // `dynexec` pops the element address and reads the callee MAST root word at it
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameStart.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
         self.emit(masm::Instruction::DynExec, span);
-        self.emit(masm::Instruction::Trace(TraceEvent::FrameEnd.as_u32().into()), span);
-        self.emit(masm::Instruction::Nop, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
     /// Execute the given procedure in a new context.
@@ -645,7 +646,7 @@ mod tests {
                 op => panic!("unexpected non-instruction op: {op:?}"),
             })
             .collect::<Vec<_>>();
-        assert_eq!(insts.len(), 16);
+        assert_eq!(insts.len(), 14);
         // Bounds check: duplicate the index and assert it is in bounds
         assert_eq!(insts[0], masm::Instruction::Dup0);
         assert!(
@@ -689,11 +690,9 @@ mod tests {
             &insts[10]
         );
         // Frame-traced dynexec, which itself pops the slot address
-        assert!(matches!(&insts[11], masm::Instruction::Trace(_)));
-        assert_eq!(insts[12], masm::Instruction::Nop);
-        assert_eq!(insts[13], masm::Instruction::DynExec);
-        assert!(matches!(&insts[14], masm::Instruction::Trace(_)));
-        assert_eq!(insts[15], masm::Instruction::Nop);
+        assert!(matches!(&insts[11], masm::Instruction::EmitImm(_)));
+        assert_eq!(insts[12], masm::Instruction::DynExec);
+        assert!(matches!(&insts[13], masm::Instruction::EmitImm(_)));
     }
 
     #[test]

@@ -68,11 +68,11 @@ fn indirect_call_runtime_traps() {
         let package = package.clone();
         let source_manager = source_manager.clone();
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-            let exec = executor_with_std(
-                vec![Felt::new_unchecked(index as u64), Felt::new_unchecked(input2 as u64)],
-                Some(&package),
-            );
-            exec.execute_into::<u32>(&package.unwrap_program(), source_manager)
+            let exec = executor_with_std(vec![
+                Felt::new_unchecked(index as u64),
+                Felt::new_unchecked(input2 as u64),
+            ]);
+            exec.execute_into::<u32>(package, source_manager)
         }))
         .map_err(|panic| {
             panic
@@ -85,6 +85,15 @@ fn indirect_call_runtime_traps() {
 
     const SIGNATURE_TRAP: &str =
         "indirect call: callee signature mismatch or null function reference";
+    const BOUNDS_TRAP: &str = "indirect call: function table index out of bounds";
+
+    // The VM derives a hash-based error code from an assertion message, and reports only the
+    // code when the executed forest carries no code-to-message table; match either form, with
+    // the code tying the failure to the exact message text.
+    let trap_matches = |err: &str, message: &str| -> bool {
+        err.contains(message)
+            || err.contains(&miden_core::mast::error_code_from_msg(message).to_string())
+    };
 
     // Discover which slot holds the differently-signed `op_neg`; the two-argument ops occupy
     // the remaining live slots
@@ -101,17 +110,14 @@ fn indirect_call_runtime_traps() {
     // Dispatching the one-argument `op_neg` from the two-argument call site trips the emitted
     // signature check instead of silently reinterpreting the operand stack
     let err = run(neg_idx, 5).expect_err("signature-mismatched dispatch should trap");
-    assert!(err.contains(SIGNATURE_TRAP), "unexpected signature-mismatch failure: {err}");
+    assert!(trap_matches(&err, SIGNATURE_TRAP), "unexpected signature-mismatch failure: {err}");
 
     // An out-of-bounds index trips the emitted bounds check deterministically
     let err = run(1000, 5).expect_err("out-of-bounds dispatch should trap");
-    assert!(
-        err.contains("indirect call: function table index out of bounds"),
-        "unexpected out-of-bounds failure: {err}"
-    );
+    assert!(trap_matches(&err, BOUNDS_TRAP), "unexpected out-of-bounds failure: {err}");
 
     // Slot 0 is the null function pointer: its slot keeps the reserved signature tag 0, which
     // can never match a call site's tag, so the signature check doubles as the null check
     let err = run(0, 5).expect_err("null-slot dispatch should trap");
-    assert!(err.contains(SIGNATURE_TRAP), "unexpected null-slot failure: {err}");
+    assert!(trap_matches(&err, SIGNATURE_TRAP), "unexpected null-slot failure: {err}");
 }
