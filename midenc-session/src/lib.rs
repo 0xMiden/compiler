@@ -391,23 +391,27 @@ impl Session {
             return None;
         }
         let project_dir = input.as_path()?.parent()?;
+        let project_dir = if project_dir.is_absolute() {
+            project_dir.to_path_buf()
+        } else {
+            self.options.current_dir.join(project_dir)
+        };
         // Canonicalized because the loaded manifest path this replaces was: the cache directory
         // is compared by path across nested builds, so `.`-relative and symlinked spellings of
         // one directory must not resolve to two caches.
         #[cfg(feature = "std")]
-        let project_dir = project_dir.canonicalize().unwrap_or_else(|_| project_dir.to_path_buf());
-        #[cfg(not(feature = "std"))]
-        let project_dir = project_dir.to_path_buf();
+        let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
         let package_cache_dir = project_dir.join("target").join("miden").join("packages");
         #[cfg(feature = "std")]
         {
             let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
                 let inherited_rustflags = std::env::var_os("RUSTFLAGS");
+                let inherited_rustup_toolchain = std::env::var_os("RUSTUP_TOOLCHAIN");
                 package_cache::fingerprint(
                     &self.options,
                     &project_dir,
-                    self.source_manager.as_ref(),
                     inherited_rustflags.as_deref(),
+                    inherited_rustup_toolchain.as_deref(),
                     MIDENC_BUILD_VERSION,
                     MIDENC_BUILD_REV,
                 )
@@ -756,3 +760,34 @@ fn create_target_dir(path: &Path) {
 
 #[cfg(not(feature = "std"))]
 fn create_target_dir(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use alloc::sync::Arc;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn relative_manifest_locator_uses_the_configured_current_directory() {
+        let temp = TempDir::new().unwrap();
+        let options = Options {
+            current_dir: temp.path().to_path_buf(),
+            target_dir: temp.path().join("target"),
+            ..Options::default()
+        };
+        let input = InputFile::new(FileType::Toml, InputType::Real("Cargo.toml".into()));
+        let session = Session::new_project(
+            "relative-manifest".into(),
+            Some(input),
+            Box::new(options),
+            None,
+            Arc::new(diagnostics::DefaultSourceManager::default()),
+        );
+
+        let cache_dir = session.filesystem_package_cache_dir().unwrap();
+        let expected_parent = temp.path().canonicalize().unwrap().join("target/miden/packages");
+        assert_eq!(cache_dir.parent(), Some(expected_parent.as_path()));
+    }
+}
