@@ -216,7 +216,10 @@ impl Prompt {
             "- Do not invent entries, and do not describe commits you cannot explain in \
              user-facing terms; list those separately as needing review.\n",
         );
-        out.push_str("- Keep the existing file's style and Keep a Changelog structure.\n\n");
+        out.push_str(
+            "- Keep the existing file's style and \
+            [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) structure.\n\n"
+        );
 
         match &self.baseline {
             Some(tag) => out.push_str(&format!(
@@ -228,10 +231,9 @@ impl Prompt {
             // entire history. That is the truth, but it is rarely the useful
             // question, so say how to narrow it.
             None => out.push_str(&format!(
-                "Range: {} — this unit has no previous release tag, so this is its whole history. \
-                 If that is not the range you mean, pass one explicitly: `release-tool \
-                 changelog-prompt {} <range>`.\n",
-                self.range, self.unit
+                "Range: {} — this unit has no previous release tag, so this is its whole \
+                 history.\n",
+                self.range
             )),
         }
         out.push_str(&format!("Paths: {}\n\n", self.paths.join(", ")));

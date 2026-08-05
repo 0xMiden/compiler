@@ -200,7 +200,20 @@ jobs:
       - name: Smoke test
         # Only meaningful when the host can run what was built.
         if: ${{ matrix.target == 'x86_64-unknown-linux-gnu' || matrix.runner == 'macos-15' }}
-        run: ./target/${{ matrix.target }}/release/${{ matrix.binary }} --version
+        env:
+          BINARY: ${{ matrix.binary }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          # `cargo-miden` is a cargo subcommand, not a standalone program: it
+          # looks for a literal `miden` token in argv and panics without one, so
+          # `cargo-miden --version` is not a valid invocation of it. Everything
+          # else here is an ordinary executable.
+          if [ "${BINARY}" = "cargo-miden" ]; then
+            "./target/${TARGET}/release/${BINARY}" miden --version
+          else
+            "./target/${TARGET}/release/${BINARY}" --version
+          fi
 
       - name: Archive
         run: |
