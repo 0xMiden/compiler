@@ -410,18 +410,19 @@ impl Session {
         // one directory must not resolve to two caches.
         #[cfg(feature = "std")]
         let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+        #[cfg(feature = "std")]
+        let package_cache_dir = package_cache::package_cache_parent(&project_dir);
+        #[cfg(not(feature = "std"))]
         let package_cache_dir = project_dir.join("target").join("miden").join("packages");
         #[cfg(feature = "std")]
         {
             let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
                 let inherited_rustflags = std::env::var_os("RUSTFLAGS");
-                let inherited_cargo_encoded_rustflags = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
                 let inherited_rustup_toolchain = std::env::var_os("RUSTUP_TOOLCHAIN");
                 package_cache::fingerprint(
                     &self.options,
                     &project_dir,
                     inherited_rustflags.as_deref(),
-                    inherited_cargo_encoded_rustflags.as_deref(),
                     inherited_rustup_toolchain.as_deref(),
                     MIDENC_BUILD_VERSION,
                     MIDENC_BUILD_REV,
@@ -800,5 +801,11 @@ mod tests {
         let cache_dir = session.filesystem_package_cache_dir().unwrap();
         let expected_parent = temp.path().canonicalize().unwrap().join("target/miden/packages");
         assert_eq!(cache_dir.parent(), Some(expected_parent.as_path()));
+        assert!(
+            package_cache::is_owned_filesystem_cache_path(&cache_dir),
+            "the derived cache path must satisfy the owned-layout check, or locking and pruning \
+             silently degrade: {}",
+            cache_dir.display()
+        );
     }
 }
