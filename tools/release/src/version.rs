@@ -72,12 +72,52 @@ pub fn next_minor(current: &Version) -> Version {
     Version::new(current.major, current.minor + 1, 0)
 }
 
+/// Whether a version may move to something not greater than the current one.
+///
+/// Moving backwards is normally a mistake, but it is legitimate while a
+/// candidate is still being prepared: a maintainer who has already bumped to
+/// `0.32.0` and then decides to release `0.32.0-rc.1` first is correcting the
+/// candidate, not rewriting history. Nothing has been published at that point.
+/// The alternative -- discarding the branch and starting over -- is worse, and
+/// it is what pushes people into hand-editing manifests, which is how a
+/// candidate ends up inconsistent in ways the tooling would have prevented.
+///
+/// This is safe only while the target version is unpublished. Once a version is
+/// on crates.io it can never be reused, and no flag here changes that; the
+/// publish path reconciles against the registry and refuses regardless.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Force {
+    No,
+    /// Permit a move that does not increase the version.
+    Yes,
+}
+
+impl From<bool> for Force {
+    fn from(force: bool) -> Self {
+        if force { Self::Yes } else { Self::No }
+    }
+}
+
+/// Check a requested move, returning an explanation when it is refused.
+pub fn check_direction(old: &Version, new: &Version, force: Force) -> Result<()> {
+    if new > old || force == Force::Yes {
+        return Ok(());
+    }
+    bail!(
+        "refusing to move {old} to {new}: versions must increase.\nIf you are correcting a \
+         candidate that has not been published -- moving {old} to a prerelease of it, say -- pass \
+         `--force`. A version that has already been published can never be reused, with or \
+         without the flag."
+    )
+}
+
 /// Compute the edits a bump requires, without writing anything.
 pub fn plan(
     ws: &Workspace,
     config: &Config,
     domain: VersionSource,
     requested: Option<Version>,
+    force: Force,
 ) -> Result<VersionPlan> {
     let packages: BTreeSet<String> = config
         .packages
@@ -114,9 +154,7 @@ pub fn plan(
         .context("current version is not valid SemVer")?;
     let new = requested.unwrap_or_else(|| next_minor(&old));
 
-    if new <= old {
-        bail!("refusing to move {old} to {new}: versions must increase");
-    }
+    check_direction(&old, &new, force)?;
 
     let mut edits = Vec::new();
     for manifest in manifests(ws) {
@@ -316,6 +354,53 @@ fn refresh_lockfile(root: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+
+    /// Correcting a candidate in progress is a real situation: an already
+    /// bumped `0.32.0` that should ship as `0.32.0-rc.1` first. Without an
+    /// escape hatch the alternatives are discarding the branch or hand-editing
+    /// manifests, and hand-editing is what skips the template rewrite and
+    /// leaves a candidate whose templates cannot resolve their own SDK.
+    mod direction {
+        use super::*;
+
+        fn v(s: &str) -> Version {
+            Version::parse(s).unwrap()
+        }
+
+        #[test]
+        fn moving_forward_needs_no_force() {
+            check_direction(&v("0.9.2"), &v("0.10.0"), Force::No).unwrap();
+        }
+
+        #[test]
+        fn moving_backwards_is_refused_by_default() {
+            let err = check_direction(&v("0.32.0"), &v("0.32.0-rc.1"), Force::No)
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("versions must increase"), "{err}");
+            assert!(err.contains("--force"), "the message must name the way out: {err}");
+        }
+
+        #[test]
+        fn a_prerelease_of_the_current_version_is_backwards() {
+            // SemVer orders a prerelease *below* its release, which is exactly
+            // why this needs forcing and why it is nonetheless legitimate.
+            assert!(v("0.32.0-rc.1") < v("0.32.0"));
+        }
+
+        #[test]
+        fn force_permits_a_backwards_move() {
+            check_direction(&v("0.32.0"), &v("0.32.0-rc.1"), Force::Yes).unwrap();
+        }
+
+        #[test]
+        fn force_permits_reapplying_the_same_version() {
+            // Re-running to repair a hand-edited candidate: the version does not
+            // move, but the template requirements it drives still need writing.
+            check_direction(&v("0.14.0-rc.1"), &v("0.14.0-rc.1"), Force::No).unwrap_err();
+            check_direction(&v("0.14.0-rc.1"), &v("0.14.0-rc.1"), Force::Yes).unwrap();
+        }
+    }
     use super::*;
 
     #[test]

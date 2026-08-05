@@ -157,6 +157,20 @@ Omit the version to automatically bump to the next minor. Add `--dry-run` first 
 `Cargo.lock`, `.release/release.toml`, and — for an SDK bump — the template
 manifests and `extra/templates/bundle.toml`.
 
+> **Always use `set-version`; never hand-edit versions.** An SDK bump has to
+> rewrite the `miden` requirement in `bundle.toml` and in every template
+> manifest, and it has to pick the *right form* of that requirement: a minor
+> requirement for a stable release, the exact version for a prerelease, because
+> a caret requirement never matches a prerelease. Editing manifests by hand
+> skips all of it and produces templates that cannot resolve the SDK they ship
+> beside ([T14](#t14-the-templates-cannot-resolve-the-sdk-being-released)).
+>
+> To change your mind about a version you have already bumped — releasing
+> `0.32.0-rc.1` after bumping to `0.32.0`, say — re-run it with `--force`.
+> SemVer orders a prerelease *below* its release, so this is a backwards move
+> and refused by default. Forcing is safe while nothing has been published;
+> once a version is on crates.io it can never be reused, flag or no flag.
+
 *If it fails:* [T1](#t1-set-version-reports-disagreeing-versions).
 
 ---
@@ -732,6 +746,34 @@ the local registry proxies crates.io for anything it has not been told it owns.
 
 **Remedy:** rehearse with unpublished versions — run A5 first so the workspace
 carries the versions you intend to release.
+
+---
+
+### T14: The templates cannot resolve the SDK being released
+
+**Symptom:** lint reports `the templates require \`miden = "X"\`, which cannot
+resolve the SDK version this release publishes (Y)`.
+
+**Cause:** the templates' `miden` requirement cannot match the SDK version in
+`.release/release.toml`. Almost always a hand-edited version: a prerelease needs
+the exact version, because `"0.14"` never matches `0.14.0-rc.1`, and a stable
+release wants the minor so a later patch needs no template change.
+
+**Why it matters:** nothing else catches it. `bundle.toml` and the template
+manifests agree with each other, so they look consistent — but a project
+generated from those templates cannot resolve `miden` at all, and if the SDK
+version is a prerelease with no stable counterpart, it will not build.
+
+**Remedy:** re-run the bump rather than editing by hand, then regenerate the
+bundle because its contents changed:
+
+```bash
+cargo make release set-version --unit sdk 0.14.0-rc.1 --force
+cargo make release bundle --output tools/cargo-miden/templates.tar.gz
+```
+
+`--force` is needed when the version is not moving forward, which includes
+re-applying the version already in place.
 
 ---
 

@@ -156,7 +156,8 @@ fn setup(label: &str) -> (std::path::PathBuf, Workspace, Config) {
 fn bumping_the_compiler_domain_moves_the_workspace_version_and_its_requirements() {
     let (dir, ws, config) = setup("compiler");
 
-    let plan = version::plan(&ws, &config, VersionSource::Workspace, None).unwrap();
+    let plan =
+        version::plan(&ws, &config, VersionSource::Workspace, None, version::Force::No).unwrap();
     assert_eq!(plan.old.to_string(), "0.9.2");
     assert_eq!(plan.new.to_string(), "0.10.0", "default bump is the next minor");
 
@@ -184,7 +185,7 @@ fn bumping_the_compiler_domain_moves_the_workspace_version_and_its_requirements(
 fn bumping_the_sdk_domain_rewrites_the_compiler_side_requirement() {
     let (dir, ws, config) = setup("sdk");
 
-    let plan = version::plan(&ws, &config, VersionSource::Sdk, None).unwrap();
+    let plan = version::plan(&ws, &config, VersionSource::Sdk, None, version::Force::No).unwrap();
     assert_eq!(plan.old.to_string(), "0.13.1");
     assert_eq!(plan.new.to_string(), "0.14.0");
 
@@ -219,7 +220,9 @@ fn bumping_the_sdk_domain_rewrites_the_compiler_side_requirement() {
 fn an_explicit_version_overrides_the_default_bump() {
     let (_dir, ws, config) = setup("explicit");
     let requested = semver::Version::parse("1.0.0-rc.1").unwrap();
-    let plan = version::plan(&ws, &config, VersionSource::Workspace, Some(requested)).unwrap();
+    let plan =
+        version::plan(&ws, &config, VersionSource::Workspace, Some(requested), version::Force::No)
+            .unwrap();
     assert_eq!(plan.new.to_string(), "1.0.0-rc.1", "prereleases are selectable");
 }
 
@@ -227,17 +230,34 @@ fn an_explicit_version_overrides_the_default_bump() {
 fn downgrades_are_refused() {
     let (_dir, ws, config) = setup("downgrade");
     let older = semver::Version::parse("0.9.1").unwrap();
-    let err = version::plan(&ws, &config, VersionSource::Workspace, Some(older))
-        .unwrap_err()
-        .to_string();
+    let err =
+        version::plan(&ws, &config, VersionSource::Workspace, Some(older), version::Force::No)
+            .unwrap_err()
+            .to_string();
     assert!(err.contains("must increase"), "{err}");
+}
+
+/// The escape hatch for correcting a candidate in progress. Nothing is
+/// published while a candidate is being prepared, so moving 0.9.2 back to a
+/// prerelease of a version already bumped to is a legitimate correction --
+/// and the alternative is hand-editing manifests, which skips the template
+/// requirement rewrite that a bump exists to perform.
+#[test]
+fn force_permits_a_downgrade_and_rewrites_everything() {
+    let (_dir, ws, config) = setup("forced");
+    let older = semver::Version::parse("0.9.1").unwrap();
+    let plan =
+        version::plan(&ws, &config, VersionSource::Workspace, Some(older), version::Force::Yes)
+            .unwrap();
+    assert_eq!(plan.new.to_string(), "0.9.1");
+    assert!(!plan.edits.is_empty(), "a forced move still rewrites the manifests");
 }
 
 #[test]
 fn republishing_the_same_version_is_refused() {
     let (_dir, ws, config) = setup("same");
     let same = semver::Version::parse("0.9.2").unwrap();
-    let err = version::plan(&ws, &config, VersionSource::Workspace, Some(same))
+    let err = version::plan(&ws, &config, VersionSource::Workspace, Some(same), version::Force::No)
         .unwrap_err()
         .to_string();
     assert!(err.contains("must increase"), "{err}");
@@ -253,7 +273,9 @@ fn a_domain_whose_packages_disagree_is_rejected() {
     fs::write(&manifest, text).unwrap();
 
     let ws = Workspace::load(&dir).unwrap();
-    let err = version::plan(&ws, &config, VersionSource::Sdk, None).unwrap_err().to_string();
+    let err = version::plan(&ws, &config, VersionSource::Sdk, None, version::Force::No)
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("disagree"), "{err}");
     assert!(err.contains("fixture-shared"), "the offending package is named: {err}");
 }
@@ -263,7 +285,8 @@ fn planning_writes_nothing() {
     let (dir, ws, config) = setup("dry-run");
     let before = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
 
-    let plan = version::plan(&ws, &config, VersionSource::Workspace, None).unwrap();
+    let plan =
+        version::plan(&ws, &config, VersionSource::Workspace, None, version::Force::No).unwrap();
     assert!(!plan.edits.is_empty(), "the plan should describe real edits");
 
     let after = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
@@ -274,7 +297,7 @@ fn planning_writes_nothing() {
 fn private_packages_are_left_at_their_own_version() {
     let (dir, ws, config) = setup("private");
 
-    let plan = version::plan(&ws, &config, VersionSource::Sdk, None).unwrap();
+    let plan = version::plan(&ws, &config, VersionSource::Sdk, None, version::Force::No).unwrap();
     version::apply(&ws, &config, &plan).unwrap();
 
     let private = fs::read_to_string(dir.join("shared-tests/Cargo.toml")).unwrap();

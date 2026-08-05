@@ -61,6 +61,13 @@ enum Command {
         /// Print the edits without writing them.
         #[arg(long)]
         dry_run: bool,
+        /// Allow a move that does not increase the version.
+        ///
+        /// For correcting a candidate in progress — swapping an already-bumped
+        /// `0.32.0` for `0.32.0-rc.1`, say. Safe only while the target version
+        /// is unpublished; a published version can never be reused.
+        #[arg(long)]
+        force: bool,
     },
     /// Generate the release intent from the committed candidate.
     ///
@@ -321,16 +328,17 @@ fn main() -> Result<()> {
             unit,
             version: requested,
             dry_run,
+            force,
         } => {
+            let force = version::Force::from(force);
+
             // Templates carry no crates, so their version lives in the bundle
             // manifest rather than in a version domain of Cargo manifests.
             if let UnitArg::Templates = unit {
                 let templates = ws.root.join("extra/templates");
                 let bundle = midenc_release::bundle::Bundle::load(&templates.join("bundle.toml"))?;
                 let new = requested.unwrap_or_else(|| version::next_minor(&bundle.version));
-                if new <= bundle.version {
-                    bail!("refusing to move {} to {new}: versions must increase", bundle.version);
-                }
+                version::check_direction(&bundle.version, &new, force)?;
                 println!("templates: {} -> {new}", bundle.version);
                 if dry_run {
                     println!("\ndry run: nothing written");
@@ -347,7 +355,7 @@ fn main() -> Result<()> {
                 UnitArg::Sdk => VersionSource::Sdk,
                 UnitArg::Templates => unreachable!("handled above"),
             };
-            let plan = version::plan(&ws, &config, domain, requested)?;
+            let plan = version::plan(&ws, &config, domain, requested, force)?;
             print!("{}", plan.summary());
 
             if dry_run {
