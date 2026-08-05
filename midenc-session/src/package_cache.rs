@@ -4,12 +4,21 @@
 //! build. Source files and lockfiles are deliberately excluded: every resolved package is
 //! rewritten into the current cache before its consumers expand, and the generated
 //! `include_bytes!` reference makes Cargo re-expand when that package's contents change.
+//! Expansions also record `MIDENC_PACKAGE_CACHE`, so rotating the fingerprinted path re-expands
+//! consumers even if best-effort stale-directory pruning does not complete.
 //! Registry and git dependencies contribute declaration text only; in particular, a git branch
-//! moving without a manifest edit is outside this fingerprint by design.
+//! moving without a manifest edit is outside this fingerprint by design, as are a git package's
+//! transitive dependencies. Pinning a revision or deleting the cache directory recovers from a
+//! moved unpinned revision. The current fingerprint directory is never emptied before packages
+//! are rewritten, so names dropped from the dependency set can linger until another fingerprinted
+//! input rotates the directory.
 //!
 //! A workspace-root locator does not select a package, so `miden_project::Project::load` rejects
 //! it. Such a locator contributes its raw manifests plus a load-failure marker and does not walk
 //! workspace members; normal workspace compilation is expected to create per-member sessions.
+//! Similarly, a Cargo-only project with no sibling `miden-project.toml` contributes both root
+//! manifest slots and a load-failure marker, but its dependencies cannot be discovered and are
+//! not recursed. That degraded case is reported at debug level while fingerprinting.
 
 use alloc::{
     format,
@@ -23,9 +32,11 @@ use std::{
 };
 
 use miden_core::crypto::hash::Blake3_256;
+use miden_debug_types::{DefaultSourceManager, SourceManager};
+use miden_mast_package::Package;
 use miden_project::{Dependency, DependencyVersionScheme, Project};
 
-use crate::{DebugInfo, LinkLibrary, OptLevel, Options, SourceManager};
+use crate::{DebugInfo, LinkLibrary, OptLevel, Options};
 
 /// The number of lowercase hexadecimal characters in a package-cache fingerprint.
 pub(crate) const FINGERPRINT_LEN: usize = 16;
@@ -40,21 +51,23 @@ pub(crate) fn is_fingerprint(name: &str) -> bool {
 ///
 /// Failures while reading or loading manifests are recorded as markers instead of being
 /// returned. The normal project-loading path will diagnose those failures later with its full
-/// context.
+/// context. A private source manager keeps fingerprinting from interning manifests in the
+/// compilation session's source manager as a side effect.
 pub(crate) fn fingerprint(
     options: &Options,
     project_dir: &Path,
-    source_manager: &dyn SourceManager,
     inherited_rustflags: Option<&OsStr>,
+    inherited_rustup_toolchain: Option<&OsStr>,
     compiler_version: &str,
     compiler_revision: &str,
 ) -> String {
     let mut transcript = Transcript::new();
     transcript.field("compiler.version", compiler_version.as_bytes());
     transcript.field("compiler.revision", compiler_revision.as_bytes());
-    record_options(&mut transcript, options, inherited_rustflags);
+    record_options(&mut transcript, options, inherited_rustflags, inherited_rustup_toolchain);
 
-    let mut manifests = ManifestClosure::new(&mut transcript, source_manager);
+    let source_manager = DefaultSourceManager::default();
+    let mut manifests = ManifestClosure::new(&mut transcript, &source_manager);
     manifests.visit_project(project_dir, None);
 
     let digest = Blake3_256::hash(transcript.as_bytes());
@@ -115,6 +128,7 @@ fn record_options(
     transcript: &mut Transcript,
     options: &Options,
     inherited_rustflags: Option<&OsStr>,
+    inherited_rustup_toolchain: Option<&OsStr>,
 ) {
     let Options {
         manifest_path: _,
@@ -186,6 +200,10 @@ fn record_options(
     transcript.optional_bytes_field(
         "options.inherited_rustflags",
         inherited_rustflags.map(OsStr::as_encoded_bytes),
+    );
+    transcript.optional_bytes_field(
+        "options.inherited_rustup_toolchain",
+        inherited_rustup_toolchain.map(OsStr::as_encoded_bytes),
     );
     transcript.optional_field("options.toolchain", toolchain.as_deref());
 
@@ -275,8 +293,17 @@ impl<'a> ManifestClosure<'a> {
         }
 
         self.transcript.field("project", b"begin");
-        self.record_manifest(&project_dir.join("miden-project.toml"));
-        self.record_manifest(&project_dir.join("Cargo.toml"));
+        let miden_manifest = project_dir.join("miden-project.toml");
+        let cargo_manifest = project_dir.join("Cargo.toml");
+        self.record_manifest(&miden_manifest);
+        self.record_manifest(&cargo_manifest);
+        if cargo_manifest.is_file() && !miden_manifest.is_file() {
+            log::debug!(
+                target: "package-cache",
+                "Cargo-only project '{}' has no sibling miden-project.toml; fingerprinting records its root manifests but cannot recurse dependencies",
+                project_dir.display()
+            );
+        }
 
         let project = match loaded {
             Ok(project) => project,
@@ -294,10 +321,11 @@ impl<'a> ManifestClosure<'a> {
         self.transcript.field("project.load", b"succeeded");
 
         let package = project.package();
-        let workspace_root = match &project {
-            Project::WorkspacePackage { workspace, .. } => workspace.workspace_root(),
+        let workspace = match &project {
+            Project::WorkspacePackage { workspace, .. } => Some(workspace.as_ref()),
             Project::Package(_) => None,
         };
+        let workspace_root = workspace.and_then(miden_project::Workspace::workspace_root);
         if let Some(workspace_root) = workspace_root {
             let workspace_key = canonical_or_original(workspace_root);
             if self.visited_workspace_roots.insert(workspace_key) {
@@ -311,7 +339,7 @@ impl<'a> ManifestClosure<'a> {
         self.transcript
             .field("project.dependencies.count", &(dependencies.len() as u64).to_le_bytes());
         for dependency in dependencies {
-            self.visit_dependency(dependency, project_dir.as_path(), workspace_root);
+            self.visit_dependency(dependency, project_dir.as_path(), workspace);
         }
         self.transcript.field("project", b"end");
     }
@@ -341,8 +369,13 @@ impl<'a> ManifestClosure<'a> {
         &mut self,
         dependency: &Dependency,
         manifest_dir: &Path,
-        workspace_root: Option<&Path>,
+        workspace: Option<&miden_project::Workspace>,
     ) {
+        // Keep scheme handling aligned with
+        // `frontend/masm/src/project.rs::collect_dependency_metadata_for_scheme`. The fingerprint
+        // walk intentionally differs from resolution in only two ways: path dependencies are
+        // extension-classified before canonicalization, so a symlink to a `.masp` is treated as
+        // source; and git declarations are recorded but their checkouts are never recursed.
         self.transcript.field("dependency", b"begin");
         self.transcript.field("dependency.name", dependency.name().as_bytes());
         self.transcript
@@ -354,7 +387,9 @@ impl<'a> ManifestClosure<'a> {
                 self.visit_path_dependency(dependency, manifest_dir, path.inner());
             }
             DependencyVersionScheme::WorkspacePath { path, .. } => {
-                if let Some(workspace_root) = workspace_root {
+                if let Some(workspace_root) =
+                    workspace.and_then(miden_project::Workspace::workspace_root)
+                {
                     self.visit_path_dependency(dependency, workspace_root, path.inner());
                 } else {
                     log::debug!(
@@ -366,15 +401,19 @@ impl<'a> ManifestClosure<'a> {
                 }
             }
             DependencyVersionScheme::Workspace { member, .. } => {
-                if let Some(workspace_root) = workspace_root {
-                    // Unlike the canonical resolver, the shared helper below extension-classifies
-                    // a workspace member even though `Workspace` always denotes source there.
-                    self.visit_path_dependency(dependency, workspace_root, member.inner());
+                if let Some(manifest_path) = workspace
+                    .and_then(|workspace| {
+                        workspace.get_member_by_relative_path(member.inner().path())
+                    })
+                    .and_then(|package| package.manifest_path().map(Path::to_path_buf))
+                {
+                    self.visit_project(&manifest_path, Some(dependency.name().as_ref()));
                 } else {
                     log::debug!(
                         target: "package-cache",
-                        "cannot resolve workspace member dependency '{}' while fingerprinting outside a workspace",
-                        dependency.name()
+                        "cannot resolve workspace member dependency '{}' at '{}' while fingerprinting",
+                        dependency.name(),
+                        member.inner().path()
                     );
                     self.transcript.field("dependency.path", b"unresolved-workspace");
                 }
@@ -406,16 +445,16 @@ impl<'a> ManifestClosure<'a> {
             return;
         }
 
-        // This mirrors `miden-project`'s `dependencies/graph.rs::resolve_dependency`; keep the
-        // two in sync. The fingerprint walk checks the extension before canonicalization, so a
-        // symlink to a `.masp` is classified as a project unlike the canonical resolver.
         let relative = Path::new(uri.path());
         let path = if relative.is_absolute() {
             relative.to_path_buf()
         } else {
             base_dir.join(relative)
         };
-        if path.extension().is_some_and(|extension| extension == "masp") {
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION))
+        {
             self.record_package_file(&path);
         } else {
             self.visit_project(&path, Some(dependency.name().as_ref()));
@@ -505,7 +544,6 @@ fn canonical_or_original(path: &Path) -> PathBuf {
 
 #[cfg(test)]
 mod tests {
-    use miden_debug_types::DefaultSourceManager;
     use tempfile::TempDir;
 
     use super::*;
@@ -530,7 +568,7 @@ mod tests {
 
     /// Computes a test fingerprint with a fresh source manager.
     fn test_fingerprint(options: &Options, project_dir: &Path, version: &str, rev: &str) -> String {
-        fingerprint(options, project_dir, &DefaultSourceManager::default(), None, version, rev)
+        fingerprint(options, project_dir, None, None, version, rev)
     }
 
     #[test]
@@ -650,24 +688,67 @@ mod tests {
         write_project(temp.path(), "root", "");
         let options = Options::default();
 
-        let missing = fingerprint(
-            &options,
-            temp.path(),
-            &DefaultSourceManager::default(),
-            None,
-            "1.2.3",
-            "abc123",
-        );
+        let missing = fingerprint(&options, temp.path(), None, None, "1.2.3", "abc123");
         let present = fingerprint(
             &options,
             temp.path(),
-            &DefaultSourceManager::default(),
             Some(OsStr::new("-C target-feature=+bulk-memory")),
+            None,
             "1.2.3",
             "abc123",
         );
 
         assert_ne!(missing, present);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_inherited_rustup_toolchain() {
+        let temp = TempDir::new().unwrap();
+        write_project(temp.path(), "root", "");
+        let options = Options::default();
+
+        let missing = fingerprint(&options, temp.path(), None, None, "1.2.3", "abc123");
+        let present = fingerprint(
+            &options,
+            temp.path(),
+            None,
+            Some(OsStr::new("nightly-2026-08-05")),
+            "1.2.3",
+            "abc123",
+        );
+
+        assert_ne!(missing, present);
+    }
+
+    #[test]
+    fn fingerprint_resolves_workspace_members_before_classifying_paths() {
+        let temp = TempDir::new().unwrap();
+        let dependency = temp.path().join("dep.masp");
+        let application = temp.path().join("app");
+        write_project(&dependency, "dep", "");
+        write_project(&application, "app", "\n[dependencies]\ndep.workspace = true\n");
+        std::fs::write(
+            temp.path().join("miden-project.toml"),
+            "[workspace]\nmembers = [\"dep.masp\", \"app\"]\n\n[workspace.dependencies]\ndep = { \
+             path = \"dep.masp\" }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            temp.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"dep.masp\", \"app\"]\n",
+        )
+        .unwrap();
+        let options = Options::default();
+        let before = test_fingerprint(&options, &application, "1.2.3", "abc123");
+
+        std::fs::write(
+            dependency.join("Cargo.toml"),
+            "[package]\nname = \"dep\"\nversion = \"2.0.0\"\n",
+        )
+        .unwrap();
+        let after = test_fingerprint(&options, &application, "1.2.3", "abc123");
+
+        assert_ne!(before, after);
     }
 
     #[test]
