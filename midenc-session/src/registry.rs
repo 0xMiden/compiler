@@ -235,10 +235,12 @@ const BUILD_LOCK_FILENAME: &str = ".build-lock";
 /// Creates and locks the current cache directory, then removes dead stale entries owned by
 /// `midenc`.
 ///
-/// Deletion is correctness-critical rather than housekeeping. The FPI macro leaves an
-/// `include_bytes!` reference to the package path in its expansion; if an old target survives,
-/// Cargo can reuse that expansion and preserve stale procedure roots. Removing the old target
-/// forces re-expansion.
+/// Deletion is defense in depth. The primary invalidation is in the FPI expansion itself: it
+/// records `option_env!("MIDENC_PACKAGE_CACHE")`, whose value carries the fingerprinted cache
+/// path, so Cargo re-expands consumers whenever the fingerprint rotates — even when a stale
+/// directory survives here. Pruning still removes the `include_bytes!` targets of expansions
+/// made by pre-fingerprint macro versions (the legacy flat files), keeps the parent directory
+/// bounded, and takes dead caches out of circulation promptly.
 ///
 /// Each build tries to hold an exclusive [BUILD_LOCK_FILENAME] lock for its registry's lifetime.
 /// A sibling fingerprint is dead when its lock file is absent or can be locked, and live when the
