@@ -13,9 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the searched `MIDENC_PACKAGE_CACHE` directory and the expected package file names, instead of
   an empty candidate list and a `target/miden/<profile>` hint that the cache lookup never
   consults #1302
-
 - The FPI dependency package lookup matches the `.masp` extension case-insensitively, aligning
   the macro-side reader with the compiler's cache writers on case-insensitive filesystems #1302
+- FPI expansions record `option_env!("MIDENC_PACKAGE_CACHE")`, so a consumer crate recompiles —
+  and re-reads its dependency procedure roots — whenever the compiler's fingerprinted package
+  cache path rotates, even if a stale cache directory survives on disk #1302
 
 ## [0.10.0-rc.1]
 
