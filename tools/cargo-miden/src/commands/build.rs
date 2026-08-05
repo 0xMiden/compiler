@@ -35,6 +35,9 @@ impl BuildCommand {
             None => cwd.join("Cargo.toml"),
         };
         let input = InputFile::from_path(&manifest_path).unwrap();
+        // This root session is expected to name one selected package. Package-cache closure
+        // fingerprinting relies on workspace builds reaching this point once per selected member;
+        // an unselected workspace-root manifest is rejected during project preparation.
         let session = Rc::new(
             compiler_opts
                 .into_session(input, None, None)
