@@ -1785,7 +1785,10 @@ fn find_dependency_package_in_dir(
         })?
         .into_iter()
         .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "masp"))
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION))
+        })
         .collect::<Vec<_>>();
     packages.sort();
 
