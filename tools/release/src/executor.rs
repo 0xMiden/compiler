@@ -126,7 +126,7 @@ pub fn execute(
         //
         // A stage with no crates still gets its tag: templates publish nothing,
         // so this is the only place their tag can come from.
-        tag_stage(plan, github, &stage.unit, options, &mut journal)?;
+        tag_stage(plan, github, target, &stage.unit, options, &mut journal)?;
 
         let planned = plan.planned_for(&stage.unit);
         if planned.is_empty() {
@@ -207,10 +207,21 @@ pub fn execute(
 fn tag_stage(
     plan: &Plan,
     github: &dyn GitHub,
+    target: &Target,
     unit: &str,
     options: &Options,
     journal: &mut Journal,
 ) -> Result<()> {
+    // A rehearsal publishes to a throwaway registry, but there is no throwaway
+    // GitHub: a tag created here would be a real, permanent tag on the real
+    // repository, naming a version that was never released. Rehearsals do not
+    // tag, and the tagging path is therefore the one part of Phase D a
+    // rehearsal cannot exercise.
+    if !target.is_production() {
+        journal.record(unit, "skip-tag", "rehearsals do not create tags");
+        return Ok(());
+    }
+
     let Some(tag) = plan.intent.tags.iter().find(|tag| tag.unit == unit) else {
         journal.record(unit, "no-tag", "the plan declares no tag for this unit");
         return Ok(());
@@ -333,6 +344,129 @@ fn publish(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tagging is exercised directly rather than through `execute`: the
+    /// production target is the only one that tags, and driving `execute` with
+    /// it would publish to crates.io for real.
+    mod tagging {
+        use super::*;
+        use crate::{
+            github::StubGitHub,
+            intent::{Intent, Stage, Tag},
+            plan::SealedPackage,
+        };
+
+        const SUBJECT: &str = "abc123";
+
+        fn plan() -> Plan {
+            Plan {
+                schema_version: 1,
+                intent: Intent {
+                    schema_version: 1,
+                    subject: SUBJECT.into(),
+                    candidate_digest: "cand".into(),
+                    stages: vec![Stage {
+                        unit: "sdk".into(),
+                        version: "1.0.0".into(),
+                        prerelease: false,
+                        packages: vec![],
+                    }],
+                    tags: vec![Tag {
+                        unit: "sdk".into(),
+                        name: "sdk/v1.0.0".into(),
+                    }],
+                },
+                packages: vec![SealedPackage {
+                    name: "a".into(),
+                    version: "1.0.0".into(),
+                    digest: "d".into(),
+                    size: 1,
+                }],
+            }
+        }
+
+        fn options(dry_run: bool) -> Options {
+            Options {
+                dry_run,
+                cargo_home: std::env::temp_dir(),
+            }
+        }
+
+        fn rehearsal() -> Target {
+            Target::Rehearsal {
+                index_url: "sparse+http://127.0.0.1:1/".into(),
+                token: "rehearsal".into(),
+            }
+        }
+
+        #[test]
+        fn production_tags_the_stage_at_the_subject() {
+            let github = StubGitHub::new();
+            let mut journal = Journal::default();
+            tag_stage(&plan(), &github, &Target::CratesIo, "sdk", &options(false), &mut journal)
+                .unwrap();
+
+            assert_eq!(github.tag_commit("sdk/v1.0.0").unwrap(), Some(SUBJECT.to_string()));
+            assert_eq!(journal.entries[0].action, "tag");
+        }
+
+        #[test]
+        fn a_rehearsal_does_not_tag() {
+            let github = StubGitHub::new();
+            let mut journal = Journal::default();
+            tag_stage(&plan(), &github, &rehearsal(), "sdk", &options(false), &mut journal)
+                .unwrap();
+
+            assert_eq!(
+                github.tag_commit("sdk/v1.0.0").unwrap(),
+                None,
+                "a rehearsal must not create a real tag"
+            );
+            assert_eq!(journal.entries[0].action, "skip-tag");
+        }
+
+        #[test]
+        fn a_dry_run_does_not_tag() {
+            let github = StubGitHub::new();
+            let mut journal = Journal::default();
+            tag_stage(&plan(), &github, &Target::CratesIo, "sdk", &options(true), &mut journal)
+                .unwrap();
+
+            assert_eq!(github.tag_commit("sdk/v1.0.0").unwrap(), None);
+            assert_eq!(journal.entries[0].action, "dry-run");
+        }
+
+        /// A tag left at the right commit is a resume; at any other commit the
+        /// version is burnt, because the tag can be neither moved nor deleted.
+        #[test]
+        fn an_existing_tag_at_the_subject_is_a_resume() {
+            let github = StubGitHub::new().with_tag("sdk/v1.0.0", SUBJECT);
+            let mut journal = Journal::default();
+            tag_stage(&plan(), &github, &Target::CratesIo, "sdk", &options(false), &mut journal)
+                .unwrap();
+            assert!(journal.entries[0].detail.contains("already points at"));
+        }
+
+        #[test]
+        fn an_existing_tag_elsewhere_stops_the_stage() {
+            let github = StubGitHub::new().with_tag("sdk/v1.0.0", "someone-elses-commit");
+            let mut journal = Journal::default();
+            let err = format!(
+                "{:#}",
+                tag_stage(
+                    &plan(),
+                    &github,
+                    &Target::CratesIo,
+                    "sdk",
+                    &options(false),
+                    &mut journal
+                )
+                .unwrap_err()
+            );
+            assert!(err.contains("already exists"), "{err}");
+            assert!(err.contains("abandoned"), "the version is burnt; say so: {err}");
+        }
+    }
 
     #[test]
     fn a_subject_cargo_config_blocks_production_publication() {

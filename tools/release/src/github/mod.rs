@@ -141,6 +141,62 @@ pub fn upload_and_verify(
     Ok(uploaded)
 }
 
+/// A GitHub that refuses every call.
+///
+/// Used where reaching GitHub would be a bug rather than a feature — a
+/// rehearsal, which must never create a real tag or release. The executor
+/// already skips tagging for a rehearsal; this makes a mistake there loud
+/// instead of letting it reach the real repository.
+#[derive(Debug, Default)]
+pub struct NoGitHub;
+
+impl NoGitHub {
+    fn refuse<T>(operation: &str) -> Result<T> {
+        bail!(
+            "this run must not touch GitHub, but tried to {operation}; a rehearsal creates no \
+             tags and no releases"
+        )
+    }
+}
+
+impl GitHub for NoGitHub {
+    fn create_tag(&self, _tag: &str, _commit: &str) -> Result<()> {
+        Self::refuse("create a tag")
+    }
+
+    fn tag_commit(&self, _tag: &str) -> Result<Option<String>> {
+        Self::refuse("read a tag")
+    }
+
+    fn create_draft(&self, _tag: &str, _commit: &str, _prerelease: bool) -> Result<Release> {
+        Self::refuse("create a release")
+    }
+
+    fn release_by_tag(&self, _tag: &str) -> Result<Option<Release>> {
+        Self::refuse("read a release")
+    }
+
+    fn upload_asset(&self, _release: u64, _name: &str, _bytes: &[u8]) -> Result<Asset> {
+        Self::refuse("upload an asset")
+    }
+
+    fn assets(&self, _release: u64) -> Result<Vec<Asset>> {
+        Self::refuse("list assets")
+    }
+
+    fn download_asset(&self, _release: u64, _name: &str) -> Result<Vec<u8>> {
+        Self::refuse("download an asset")
+    }
+
+    fn delete_release(&self, _release: u64) -> Result<()> {
+        Self::refuse("delete a release")
+    }
+
+    fn publish_release(&self, _release: u64, _make_latest: bool) -> Result<Release> {
+        Self::refuse("publish a release")
+    }
+}
+
 /// An in-memory GitHub, for tests.
 #[derive(Debug, Default)]
 pub struct StubGitHub {

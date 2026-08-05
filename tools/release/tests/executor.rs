@@ -11,7 +11,7 @@ use std::{fs, path::Path, sync::Arc};
 use midenc_release::{
     closure,
     executor::{self, Options, Target},
-    github::{GitHub, StubGitHub},
+    github::NoGitHub,
     intent::{Intent, Stage, Tag},
     plan::{self, Plan},
     registry::{Faults, NoUpstream, Registry, client::SparseIndex},
@@ -161,7 +161,7 @@ fn a_plan_publishes_stage_by_stage_and_verifies_each() {
         &workspace(&dir),
         &plan,
         &index,
-        &StubGitHub::new(),
+        &NoGitHub,
         &rehearsal(&registry),
         &options(&dir, false),
     )
@@ -184,90 +184,35 @@ fn a_plan_publishes_stage_by_stage_and_verifies_each() {
     );
 }
 
-/// Each unit's tag is created immediately before that unit's crates go out,
-/// not for every unit up front: a permanent failure in the SDK stage would
-/// otherwise burn the compiler's tag, and a tag cannot be moved or deleted once
-/// a ruleset protects it.
+/// A rehearsal publishes to a throwaway registry, but there is no throwaway
+/// GitHub: a tag created during one would be a real, permanent tag on the real
+/// repository, naming a version that was never released. Tagging is therefore
+/// the one part of Phase D a rehearsal cannot exercise, and `NoGitHub` proves
+/// it -- every method on it fails, so reaching for GitHub here errors rather
+/// than succeeding quietly.
 #[test]
-fn each_stage_is_tagged_before_its_own_crates_are_published() {
-    let dir = temp_dir("tags");
+fn a_rehearsal_creates_no_tags() {
+    let dir = temp_dir("rehearsaltags");
     fixture(&dir);
     let plan = sealed_plan(&dir);
-    let subject = plan.intent.subject.clone();
 
     let registry = Registry::start(0, Faults::default(), Arc::new(NoUpstream)).unwrap();
     let index = SparseIndex::new(registry.index_url());
-    let github = StubGitHub::new();
     let journal = executor::execute(
         &workspace(&dir),
         &plan,
         &index,
-        &github,
+        &NoGitHub,
         &rehearsal(&registry),
         &options(&dir, false),
     )
     .unwrap();
 
-    for tag in &plan.intent.tags {
-        assert_eq!(
-            github.tag_commit(&tag.name).unwrap(),
-            Some(subject.clone()),
-            "'{}' must exist at the subject commit",
-            tag.name
-        );
-    }
-
-    // Within a stage, the tag precedes the publish.
-    let actions: Vec<(&str, &str)> = journal
-        .entries
-        .iter()
-        .filter(|e| e.action == "tag" || e.action == "publish")
-        .map(|e| (e.stage.as_str(), e.action.as_str()))
-        .collect();
-    assert_eq!(
-        actions,
-        [("sdk", "tag"), ("sdk", "publish"), ("compiler", "tag"), ("compiler", "publish")],
-        "each stage tags before it publishes, and stages do not interleave"
-    );
-}
-
-/// A tag left at a different commit cannot be moved, so it is an incident
-/// rather than something to work around -- and it must stop the release before
-/// any crate is published.
-#[test]
-fn a_tag_at_the_wrong_commit_stops_the_stage_before_publishing() {
-    let dir = temp_dir("badtag");
-    fixture(&dir);
-    let plan = sealed_plan(&dir);
-    let tag = plan.intent.tags[0].name.clone();
-
-    let registry = Registry::start(0, Faults::default(), Arc::new(NoUpstream)).unwrap();
-    let index = SparseIndex::new(registry.index_url());
-    let github = StubGitHub::new().with_tag(&tag, "somebody-elses-commit");
-
-    // `{:#}` rather than `to_string()`: the reason lives in the source chain,
-    // and the top frame is only the context that names the stage.
-    let err = format!(
-        "{:#}",
-        executor::execute(
-            &workspace(&dir),
-            &plan,
-            &index,
-            &github,
-            &rehearsal(&registry),
-            &options(&dir, false),
-        )
-        .unwrap_err()
-    );
-
-    assert!(err.contains("already exists"), "{err}");
+    assert_eq!(registry.published_versions("exec-sdk"), ["0.1.0"], "crates still publish");
     assert!(
-        err.contains("abandoned"),
-        "the operator needs to know the version is burnt: {err}"
-    );
-    assert!(
-        registry.published_versions("exec-sdk").is_empty(),
-        "nothing may be published once the tag is known to be wrong"
+        journal.entries.iter().all(|e| e.action != "tag"),
+        "a rehearsal must create no tags: {:?}",
+        journal.entries
     );
 }
 
@@ -283,7 +228,7 @@ fn a_dry_run_publishes_nothing() {
         &workspace(&dir),
         &plan,
         &index,
-        &StubGitHub::new(),
+        &NoGitHub,
         &rehearsal(&registry),
         &options(&dir, true),
     )
@@ -308,7 +253,7 @@ fn a_run_that_dies_in_the_second_stage_resumes_without_republishing_the_first() 
         &workspace(&dir),
         &plan,
         &index,
-        &StubGitHub::new(),
+        &NoGitHub,
         &rehearsal(&registry),
         &options(&dir, false),
     )
@@ -325,7 +270,7 @@ fn a_run_that_dies_in_the_second_stage_resumes_without_republishing_the_first() 
         &workspace(&dir),
         &plan,
         &index,
-        &StubGitHub::new(),
+        &NoGitHub,
         &rehearsal(&registry),
         &options(&dir, false),
     )
@@ -363,7 +308,7 @@ fn a_checksum_conflict_stops_the_release_before_publishing() {
         &workspace(&dir),
         &plan,
         &foreign,
-        &StubGitHub::new(),
+        &NoGitHub,
         &rehearsal(&registry),
         &options(&dir, false),
     )

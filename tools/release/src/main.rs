@@ -575,8 +575,14 @@ fn main() -> Result<()> {
             std::fs::create_dir_all(&options.cargo_home)?;
 
             // Each unit's tag is created here, immediately before that unit's
-            // crates go out, so this needs a GitHub client as well as a registry.
-            let github = github_client(api_base)?;
+            // crates go out, so production needs a GitHub client as well as a
+            // registry. A rehearsal gets one that refuses everything: there is
+            // no throwaway GitHub, so a tag created during a rehearsal would be
+            // a real, permanent tag for a version that was never released.
+            let github: Box<dyn midenc_release::github::GitHub> = match &target {
+                executor::Target::CratesIo => github_client(api_base)?,
+                executor::Target::Rehearsal { .. } => Box::new(midenc_release::github::NoGitHub),
+            };
             let record = executor::execute(&ws, &plan, &index, github.as_ref(), &target, &options)?;
             for entry in &record.entries {
                 println!("  [{}] {}: {}", entry.stage, entry.action, entry.detail);

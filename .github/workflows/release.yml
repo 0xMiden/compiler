@@ -15,20 +15,16 @@
 #   E  finalize               releases become immutable
 name: release
 
+# No inputs, deliberately. The scope comes from the reviewed
+# `.release/release.toml` at the commit being released, so a dispatch cannot
+# widen or narrow what was reviewed.
+#
+# There is no "resume" input either: resuming *is* re-dispatching. Every attempt
+# reconciles against live registry and release state first and does only what is
+# missing, so a first attempt and a resume are the same run. An input offering a
+# mode that behaves no differently would be a control that does nothing.
 on:
   workflow_dispatch:
-    inputs:
-      plan-digest:
-        description: >-
-          Resume or abandon an existing plan. Leave empty for a normal release.
-        required: false
-        type: string
-      mode:
-        description: What to do.
-        required: false
-        default: release
-        type: choice
-        options: [release, resume, abandon]
 
 permissions: {}
 
