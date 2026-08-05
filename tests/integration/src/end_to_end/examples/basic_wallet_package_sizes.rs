@@ -1,7 +1,6 @@
 use midenc_expect_test::expect;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use super::persist_cargo_miden_dependency;
 use crate::{CompilerTest, testing::stripped_mast_size_str};
 
 fn no_debug_flags() -> [String; 2] {
@@ -19,7 +18,6 @@ fn basic_wallet_and_p2id() {
     let account_package = account_test.compile_package();
     assert!(account_package.is_library(), "expected library");
     expect!["14277"].assert_eq(stripped_mast_size_str(&account_package).as_str());
-    persist_cargo_miden_dependency("../../examples/basic-wallet", account_package.as_ref());
 
     let mut tx_script_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/basic-wallet-tx-script",
