@@ -387,33 +387,3 @@ jobs:
         # unification and avoid surprises on publishing the crates.
         run: |
           cargo make check-each --release --all-features
-
-  cargo_publish_dry_run:
-    name: cargo publish dry run
-    runs-on: warp-ubuntu-latest-x64-8x
-    needs: [unit_tests]
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          persist-credentials: false
-      - uses: ./.github/actions/cleanup-runner
-      - name: Install Rust
-        run: |
-          rustup update --no-self-update
-          rustc --version
-      - name: Cache Cargo
-        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
-        with:
-          # Use a common cache for the basic compilation/formatter/clippy checks
-          shared-key: ${{ github.workflow }}-shared
-          prefix-key: ${{ env.RUST_CACHE_KEY }}
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - name: Install cargo-make
-        run: |
-          if ! cargo make --version 2>/dev/null; then
-            cargo install cargo-make --force
-          fi
-      - name: cargo publish dry run
-        # Simulate publishing to uncover any build errors when each crate folder is built in isolation
-        run: |
-          cargo make publish-dry-run

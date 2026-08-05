@@ -18,5 +18,5 @@ miden = { git = "https://github.com/0xMiden/compiler", branch = "{{ compiler_bra
 {% elsif compiler_rev %}
 miden = { git = "https://github.com/0xMiden/compiler", rev = "{{ compiler_rev }}" }
 {% else %}
-miden = { version = "0.13" }
+miden = { version = "0.14.0-rc.1" }
 {% endif %}

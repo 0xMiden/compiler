@@ -7,7 +7,7 @@ schema-version = 1
 
 # The bundle version. Moved by `release-tool set-version --unit templates`, and
 # released as `templates/vX.Y.Z`.
-version = "0.1.0"
+version = "0.32.0-rc.1"
 
 # The `miden` requirement every template's generated project carries.
 #
@@ -18,7 +18,7 @@ version = "0.1.0"
 #
 # `release-tool set-version --unit sdk` rewrites this and every template
 # requirement together, and `release-tool lint` fails if they drift apart.
-sdk-requirement = "0.13"
+sdk-requirement = "0.14.0-rc.1"
 
 # What goes into the released archive.
 #
