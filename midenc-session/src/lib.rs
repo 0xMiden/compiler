@@ -84,7 +84,7 @@ pub struct Session {
     /// The build-input fingerprint used to isolate this session's package cache.
     ///
     /// Memoization assumes fingerprint-relevant [`Options`] are not mutated after the first cache
-    /// path request.
+    /// path request. Cloning the session copies the memoized value when present.
     #[cfg(feature = "std")]
     package_cache_fingerprint: std::sync::OnceLock<String>,
 }
@@ -380,6 +380,15 @@ impl Session {
     /// of it. Without `std`, this returns the existing flat `target/miden/packages/` path without a
     /// fingerprint component.
     ///
+    /// Only the root compilation session derives this path. Nested dependency sessions receive
+    /// the root value threaded through their build environment, rather than deriving paths from
+    /// their own locators. The root is intentionally tied to the project directory and ignores
+    /// `--target-dir`, so every participant in one build agrees on the cache location.
+    ///
+    /// [`Session`] is [`Clone`]. Once this method has initialized the fingerprint, a clone keeps
+    /// that memoized value even if its public options are later changed; callers must mutate
+    /// fingerprint-relevant options before the first path request.
+    ///
     /// Derived from the input locator rather than from a loaded manifest, which is what
     /// [`Session::new`] no longer has. That is also a repair: the manifest path was previously
     /// taken from a package that `fixup_cargo_target` had rebuilt for every executable
@@ -406,11 +415,13 @@ impl Session {
         {
             let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
                 let inherited_rustflags = std::env::var_os("RUSTFLAGS");
+                let inherited_cargo_encoded_rustflags = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
                 let inherited_rustup_toolchain = std::env::var_os("RUSTUP_TOOLCHAIN");
                 package_cache::fingerprint(
                     &self.options,
                     &project_dir,
                     inherited_rustflags.as_deref(),
+                    inherited_cargo_encoded_rustflags.as_deref(),
                     inherited_rustup_toolchain.as_deref(),
                     MIDENC_BUILD_VERSION,
                     MIDENC_BUILD_REV,
