@@ -33,20 +33,6 @@ pub(crate) fn note_script_program(
         .unwrap()
 }
 
-/// Writes a compiled package to the legacy fallback used by `miden::generate!` only when
-/// `MIDENC_PACKAGE_CACHE` is unset.
-///
-/// When that variable is set, the macro searches only the fingerprinted cache populated by the
-/// enclosing compiler-driven build and does not consult `target/miden/release`.
-fn persist_cargo_miden_dependency(
-    project_path: impl AsRef<Path>,
-    package: &miden_mast_package::Package,
-) {
-    package
-        .write_masp_file(project_path.as_ref().join("target").join("miden").join("release"))
-        .expect("failed to persist compiled Miden dependency package");
-}
-
 fn find_manifest_procedure<'a>(
     package: &'a miden_mast_package::Package,
     description: &str,
@@ -484,10 +470,6 @@ fn rust_sdk_cross_ctx_account_and_note() {
         [],
     );
     let account_package = test.compile_package();
-    persist_cargo_miden_dependency(
-        "../fixtures/components/cross-ctx-account",
-        account_package.as_ref(),
-    );
     assert!(account_package.is_library());
     let exports = account_package
         .manifest
@@ -541,10 +523,6 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
         [],
     );
     let account_package = test.compile_package();
-    persist_cargo_miden_dependency(
-        "../fixtures/components/cross-ctx-account-word",
-        account_package.as_ref(),
-    );
     assert!(account_package.is_library());
     assert_component_export_signatures_match_wit(account_package.as_ref());
     let expected_module_prefix = "::\"miden:cross-ctx-account-word/";
@@ -852,11 +830,6 @@ fn rust_sdk_cross_ctx_word_arg_account_and_note() {
         [],
     );
     let account_package = test.compile_package();
-    persist_cargo_miden_dependency(
-        "../fixtures/components/cross-ctx-account-word-arg",
-        account_package.as_ref(),
-    );
-
     assert!(account_package.is_library());
     let expected_module_prefix = "::\"miden:cross-ctx-account-word-arg/";
     let expected_function_suffix = "\"process-word\"";
