@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, time::SystemTime};
 
 use cargo_miden::run;
 
@@ -33,6 +33,7 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     // Build the p2id-note project, which pulls in basic-wallet as a Miden dependency.
     let restore_dir = env::current_dir().unwrap();
     env::set_current_dir(&p2id_note_dir).unwrap();
+    let build_started_at = SystemTime::now();
     let result = run(["cargo", "miden", "build", "--release"].into_iter().map(|s| s.to_string()));
     env::set_current_dir(&restore_dir).unwrap();
 
@@ -56,6 +57,13 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     assert!(
         dep_package.exists(),
         "expected basic-wallet dependency package to be materialized at {}",
+        dep_package.display()
+    );
+    let modified = dep_package.metadata().unwrap().modified().unwrap();
+    assert!(
+        modified >= build_started_at,
+        "expected this build to rewrite {}, but its modification time {modified:?} predates the \
+         build start {build_started_at:?}",
         dep_package.display()
     );
 }
