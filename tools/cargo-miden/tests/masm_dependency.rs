@@ -11,7 +11,7 @@
 //! to derive a per-target role across package boundaries: the Rust root is
 //! `TargetRole::Root`, the MASM library is a `TargetRole::Dependency`.
 
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, time::SystemTime};
 
 use cargo_miden::run;
 
@@ -155,6 +155,7 @@ fn build_rust_project_with_masm_path_dependency() {
     write_library_manifest(&project_path, project_name, dependency_name, "../masm_dep");
 
     env::set_current_dir(&project_path).unwrap();
+    let build_started_at = SystemTime::now();
     let result = run(["cargo", "miden", "build"].into_iter().map(|s| s.to_string()));
     env::set_current_dir(&restore_dir).unwrap();
 
@@ -174,12 +175,21 @@ fn build_rust_project_with_masm_path_dependency() {
     // registry, or skipped. A materialized `.masp` for the dependency is produced only by
     // assembling it from its Miden Assembly sources. The package cache is uniqued by the build
     // inputs, so the package lives inside the build's fingerprint directory.
+    let dependency_package_name =
+        format!("{dependency_name}.{}", miden_mast_package::Package::EXTENSION);
     let dependency_package =
-        crate::utils::package_cache_fingerprint_dir(&project_path, "masm-dep.masp")
-            .join(format!("{dependency_name}.masp"));
+        crate::utils::package_cache_fingerprint_dir(&project_path, &dependency_package_name)
+            .join(dependency_package_name);
     assert!(
         dependency_package.exists(),
         "expected the masm dependency to be assembled and materialized at {}",
+        dependency_package.display()
+    );
+    let modified = dependency_package.metadata().unwrap().modified().unwrap();
+    assert!(
+        modified >= build_started_at,
+        "expected this build to rewrite {}, but its modification time {modified:?} predates the \
+         build start {build_started_at:?}",
         dependency_package.display()
     );
 

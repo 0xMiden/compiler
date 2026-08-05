@@ -11,6 +11,10 @@ mod fibonacci;
 mod is_prime;
 mod storage_metadata;
 
+/// Writes a dependency package to the legacy lookup directory used only when
+/// `MIDENC_PACKAGE_CACHE` is unset.
+///
+/// Compiler-driven builds set that variable and use their fingerprinted cache exclusively.
 fn persist_cargo_miden_dependency(
     project_path: impl AsRef<Path>,
     package: &miden_mast_package::Package,

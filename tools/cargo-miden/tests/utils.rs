@@ -68,6 +68,16 @@ pub(crate) fn package_cache_fingerprint_dir(project_dir: &Path, expected_package
             listing.push(path.display().to_string());
             continue;
         }
+        // Only compiler-owned fingerprint directories are candidates; unrelated directories may
+        // coexist under the cache parent and must not attribute an old package to this build.
+        let is_fingerprint = path.file_name().and_then(|name| name.to_str()).is_some_and(|name| {
+            name.len() == 16
+                && name.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        });
+        if !is_fingerprint {
+            listing.push(path.display().to_string());
+            continue;
+        }
 
         let contents = fs::read_dir(&path)
             .map(|entries| {

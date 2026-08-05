@@ -32,7 +32,11 @@ pub(crate) fn note_script_program(
         .unwrap()
 }
 
-/// Writes a compiled package where `miden::generate!` expects Cargo Miden dependency artifacts.
+/// Writes a compiled package to the legacy fallback used by `miden::generate!` only when
+/// `MIDENC_PACKAGE_CACHE` is unset.
+///
+/// When that variable is set, the macro searches only the fingerprinted cache populated by the
+/// enclosing compiler-driven build and does not consult `target/miden/release`.
 fn persist_cargo_miden_dependency(
     project_path: impl AsRef<Path>,
     package: &miden_mast_package::Package,
@@ -210,12 +214,18 @@ basic-wallet = { path = "../basic-wallet" }
 [package.metadata.miden.dependencies]
 basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
 "#;
-    let swapp_note_source = include_str!(concat!(
+    let original_swapp_note_source = include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../fixtures/components/swapp-note/src/lib.rs"
-    ))
-    .replacen(
-        "        let offered_asset = &note_assets[0];",
+    ));
+    let swapp_note_mutation = "        let offered_asset = &note_assets[0];";
+    assert_eq!(
+        original_swapp_note_source.matches(swapp_note_mutation).count(),
+        1,
+        "the swapp-note fixture mutation must match exactly once"
+    );
+    let swapp_note_source = original_swapp_note_source.replacen(
+        swapp_note_mutation,
         "        let offered_asset = &note_assets[0];\n        let foreign_wallet = \
          Wallet::new(self.creator);\n        foreign_wallet.receive_asset(*offered_asset);",
         1,
@@ -279,6 +289,10 @@ fn procedure_digest_felts(digest: &miden_core::Word) -> [u64; 4] {
 }
 
 /// Returns true when MASM reconstructs every felt in `digest` from its decimal `u32` limbs.
+///
+/// This intentionally follows the current lowering shape for `u64` immediates. If codegen changes
+/// that sequence, this helper can report a stale-root failure even when the embedded digest is
+/// current, so update the recognizer alongside such a lowering change.
 fn masm_contains_procedure_digest(masm: &str, digest: &miden_core::Word) -> bool {
     let pattern = procedure_digest_felts(digest)
         .into_iter()
@@ -576,6 +590,8 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     let project = fpi_package_cache_regression_project();
     let consumer = project.root().join("swapp-note");
     let dependency_source = project.root().join("basic-wallet/src/lib.rs");
+    let dependency_cargo_manifest = project.root().join("basic-wallet/Cargo.toml");
+    let dependency_miden_manifest = project.root().join("basic-wallet/miden-project.toml");
     let config = WasmTranslationConfig::default();
 
     let mut first_build = CompilerTest::rust_source_cargo_miden(&consumer, config.clone(), []);
@@ -594,16 +610,20 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
     );
 
     let original_source = fs::read_to_string(&dependency_source).unwrap();
+    assert_eq!(
+        original_source.matches("        self.add_asset(asset);").count(),
+        1,
+        "fixture mutation must match exactly once"
+    );
     let changed_source = original_source.replacen(
         "        self.add_asset(asset);",
         "        self.add_asset(asset);\n        self.remove_asset(asset);\n        \
          self.add_asset(asset);",
         1,
     );
-    assert_ne!(original_source, changed_source, "fixture mutation must match exactly once");
     fs::write(&dependency_source, changed_source).unwrap();
 
-    let mut second_build = CompilerTest::rust_source_cargo_miden(&consumer, config, []);
+    let mut second_build = CompilerTest::rust_source_cargo_miden(&consumer, config.clone(), []);
     let second_masm = second_build.masm_src();
     let second_cache = second_build.session.filesystem_package_cache_dir().unwrap();
     let second_dependency = read_cached_dependency_package(&second_build, "basic-wallet");
@@ -625,6 +645,59 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
         masm_contains_procedure_digest(&second_masm, &second_root),
         "consumer MASM does not contain the new receive-asset root {:?}",
         procedure_digest_felts(&second_root),
+    );
+
+    for manifest_path in [&dependency_cargo_manifest, &dependency_miden_manifest] {
+        let original_manifest = fs::read_to_string(manifest_path).unwrap();
+        assert_eq!(
+            original_manifest.matches("version = \"0.1.0\"").count(),
+            1,
+            "expected exactly one package-version field in {}",
+            manifest_path.display()
+        );
+        let mut changed_manifest =
+            original_manifest.replacen("version = \"0.1.0\"", "version = \"0.1.1\"", 1);
+        if manifest_path == &dependency_miden_manifest {
+            assert_eq!(
+                changed_manifest.matches("@0.1.0").count(),
+                1,
+                "expected exactly one namespace version in {}",
+                manifest_path.display()
+            );
+            changed_manifest = changed_manifest.replacen("@0.1.0", "@0.1.1", 1);
+        }
+        fs::write(manifest_path, changed_manifest).unwrap();
+    }
+
+    let mut third_build = CompilerTest::rust_source_cargo_miden(&consumer, config, []);
+    let third_masm = third_build.masm_src();
+    let third_cache = third_build.session.filesystem_package_cache_dir().unwrap();
+    let third_dependency = read_cached_dependency_package(&third_build, "basic-wallet");
+    let third_export =
+        find_manifest_procedure(&third_dependency, "basic-wallet receive-asset export", |path| {
+            path.ends_with("::\"receive-asset\"")
+        });
+    let third_root = third_export.digest;
+
+    assert_ne!(second_cache, third_cache, "manifest changes must rotate the cache path");
+    assert!(
+        !second_cache.exists(),
+        "the obsolete fingerprint directory must be pruned after rotation: {}",
+        second_cache.display()
+    );
+    for stale_root in [first_root, second_root] {
+        if stale_root != third_root {
+            assert!(
+                !masm_contains_procedure_digest(&third_masm, &stale_root),
+                "consumer MASM still contains stale receive-asset root {:?}",
+                procedure_digest_felts(&stale_root),
+            );
+        }
+    }
+    assert!(
+        masm_contains_procedure_digest(&third_masm, &third_root),
+        "consumer MASM does not contain the post-rotation receive-asset root {:?}",
+        procedure_digest_felts(&third_root),
     );
 }
 
