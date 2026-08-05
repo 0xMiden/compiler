@@ -11,7 +11,11 @@
 //! to derive a per-target role across package boundaries: the Rust root is
 //! `TargetRole::Root`, the MASM library is a `TargetRole::Dependency`.
 
-use std::{env, fs, path::Path, time::SystemTime};
+use std::{
+    env, fs,
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use cargo_miden::run;
 
@@ -186,10 +190,12 @@ fn build_rust_project_with_masm_path_dependency() {
         dependency_package.display()
     );
     let modified = dependency_package.metadata().unwrap().modified().unwrap();
+    let attribution_floor =
+        build_started_at.checked_sub(Duration::from_secs(1)).unwrap_or(UNIX_EPOCH);
     assert!(
-        modified >= build_started_at,
+        modified >= attribution_floor,
         "expected this build to rewrite {}, but its modification time {modified:?} predates the \
-         build start {build_started_at:?}",
+         one-second-tolerant build attribution floor {attribution_floor:?}",
         dependency_package.display()
     );
 

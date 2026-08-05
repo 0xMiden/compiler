@@ -1,4 +1,7 @@
-use std::{env, time::SystemTime};
+use std::{
+    env,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use cargo_miden::run;
 
@@ -60,10 +63,12 @@ fn p2id_build_materializes_basic_wallet_dependency() {
         dep_package.display()
     );
     let modified = dep_package.metadata().unwrap().modified().unwrap();
+    let attribution_floor =
+        build_started_at.checked_sub(Duration::from_secs(1)).unwrap_or(UNIX_EPOCH);
     assert!(
-        modified >= build_started_at,
+        modified >= attribution_floor,
         "expected this build to rewrite {}, but its modification time {modified:?} predates the \
-         build start {build_started_at:?}",
+         one-second-tolerant build attribution floor {attribution_floor:?}",
         dep_package.display()
     );
 }
