@@ -1612,20 +1612,27 @@ pub(crate) mod manifest {
     /// variable is *unset* rather than set to an empty path, which is what makes the nested build
     /// fall back to its own default.
     ///
+    /// The composed rust flags are emitted twice: as `RUSTFLAGS` and, authoritatively, as
+    /// `CARGO_ENCODED_RUSTFLAGS`. Cargo prefers the encoded variable, so an inherited value from
+    /// the caller's environment would otherwise silently replace every mandatory Miden flag —
+    /// `--cfg miden`, the target features, the panic strategy. Setting it explicitly makes the
+    /// inherited value inert; the encoding splits on whitespace, which is exactly how cargo
+    /// itself interprets the plain variable.
+    ///
     /// Named — rather than left inline where it was — so that this can be asserted without
     /// spawning `cargo -Z build-std` against the SDK.
     pub(super) fn cargo_env(
         filesystem_cache_dir: Option<&Path>,
         extra_rust_flags: String,
     ) -> Vec<(&'static str, String)> {
+        let encoded_rust_flags =
+            extra_rust_flags.split_whitespace().collect::<Vec<_>>().join("\x1f");
+        let mut env =
+            vec![("RUSTFLAGS", extra_rust_flags), ("CARGO_ENCODED_RUSTFLAGS", encoded_rust_flags)];
         if let Some(filesystem_cache_dir) = filesystem_cache_dir {
-            vec![
-                ("RUSTFLAGS", extra_rust_flags),
-                ("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()),
-            ]
-        } else {
-            vec![("RUSTFLAGS", extra_rust_flags)]
+            env.push(("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()));
         }
+        env
     }
 
     /// Returns the Cargo profile value for a compiler optimization level.
@@ -3175,6 +3182,20 @@ path = "lib.rs"
             without.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
             "and the rust flags are handed over either way: {without:?}"
         );
+    }
+
+    #[test]
+    fn the_encoded_rustflags_override_inherited_values_with_the_same_flags() {
+        let rustflags = String::from("-C target-feature=+bulk-memory --cfg miden");
+
+        let env = manifest::cargo_env(None, rustflags);
+        let (_, encoded) = env
+            .iter()
+            .find(|(key, _)| *key == "CARGO_ENCODED_RUSTFLAGS")
+            .expect("the encoded variable must be set so an inherited value cannot override it");
+        // 0x1f-separated units, one per whitespace-separated flag — cargo's own split rule for
+        // the plain variable.
+        assert_eq!(*encoded, "-C\x1ftarget-feature=+bulk-memory\x1f--cfg\x1fmiden");
     }
 
     /// A WebAssembly module with a body, for the lowering half of the entry point.
