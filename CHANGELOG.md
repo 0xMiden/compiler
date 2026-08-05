@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an empty candidate list and a `target/miden/<profile>` hint that the cache lookup never
   consults #1302
 
+- The FPI dependency package lookup matches the `.masp` extension case-insensitively, aligning
+  the macro-side reader with the compiler's cache writers on case-insensitive filesystems #1302
+
 ## [0.10.0-rc.1]
 
 ### Compiler and `midenc`
