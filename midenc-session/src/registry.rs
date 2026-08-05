@@ -69,10 +69,14 @@ impl HybridPackageRegistry {
     /// Get a new instance of the registry, using the current compiler options and an optional
     /// filesystem cache directory.
     ///
-    /// A cache path whose final component is a `midenc` fingerprint is created and locked for the
-    /// registry's lifetime. During construction, dead sibling fingerprint directories and legacy
-    /// flat `.masp` entries are pruned. A path that does not satisfy the fingerprint format is
-    /// created but deliberately neither locked nor used to sweep its parent.
+    /// A cache path in the owned `miden/packages/<fingerprint>` layout is created and locked for
+    /// the registry's lifetime. During construction, dead sibling fingerprint directories and
+    /// legacy flat `.masp` entries are pruned as defense in depth; FPI expansions track the cache
+    /// path themselves for correctness. Any other path is created but deliberately neither locked
+    /// nor used to sweep its parent.
+    ///
+    /// Cleanup is best-effort and its failures are reported only through the `package-registry`
+    /// log target. Package insertion failures are still returned to the caller.
     #[cfg(any(test, feature = "std"))]
     pub fn new_with_filesystem_cache(
         options: &crate::Options,
@@ -143,7 +147,7 @@ impl HybridPackageRegistry {
                 continue;
             };
             let path = entry.path();
-            if path.extension().is_none_or(|ext| !ext.eq_ignore_ascii_case("masp")) {
+            if path.extension().is_none_or(|ext| !ext.eq_ignore_ascii_case(Package::EXTENSION)) {
                 continue;
             }
 
@@ -163,9 +167,22 @@ impl HybridPackageRegistry {
         &mut self,
         package: Arc<Package>,
     ) -> Result<miden_project::Version, InstallPackageError> {
-        use alloc::collections::btree_map::Entry as BTreeMapEntry;
-
-        use hashbrown::hash_map::Entry;
+        let version = miden_project::Version::new(package.version.clone(), package.digest());
+        log::trace!(target: "package-registry", "preparing to install package {}@{version}", &package.name);
+        if let Some(previous_digest) = self
+            .packages
+            .get(&package.name)
+            .and_then(|versions| versions.get(&package.version))
+            .and_then(PackageRecord::digest)
+            .copied()
+            && previous_digest != package.digest()
+        {
+            log::trace!(target: "package-registry", "package already installed: {}@{version}", &package.name);
+            return Err(InstallPackageError::AlreadyInstalledWithDifferentDigest {
+                package: package.name.clone(),
+                version,
+            });
+        }
 
         #[cfg(any(test, feature = "std"))]
         if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
@@ -177,8 +194,6 @@ impl HybridPackageRegistry {
             })?;
         }
 
-        let version = miden_project::Version::new(package.version.clone(), package.digest());
-        log::trace!(target: "package-registry", "preparing to install package {}@{version}", &package.name);
         let record = PackageRecord::new(
             version.clone(),
             package.manifest.dependencies().map(|dep| {
@@ -191,31 +206,10 @@ impl HybridPackageRegistry {
                 )
             }),
         );
-        match self.packages.entry(package.name.clone()) {
-            Entry::Occupied(mut entry) => {
-                let versions = entry.get_mut();
-                match versions.entry(package.version.clone()) {
-                    BTreeMapEntry::Occupied(mut prev) => {
-                        let prev_digest = prev.get().digest().copied();
-                        if prev_digest.is_none_or(|prev_digest| prev_digest == package.digest()) {
-                            prev.insert(record);
-                        } else {
-                            log::trace!(target: "package-registry", "package already installed: {}@{version}", &package.name);
-                            return Err(InstallPackageError::AlreadyInstalledWithDifferentDigest {
-                                package: package.name.clone(),
-                                version,
-                            });
-                        }
-                    }
-                    BTreeMapEntry::Vacant(entry) => {
-                        entry.insert(record);
-                    }
-                }
-            }
-            Entry::Vacant(entry) => {
-                entry.insert([(package.version.clone(), record)].into_iter().collect());
-            }
-        }
+        self.packages
+            .entry(package.name.clone())
+            .or_default()
+            .insert(package.version.clone(), record);
 
         log::trace!(target: "package-registry", "installed {}@{version}", &package.name);
 
@@ -228,9 +222,9 @@ impl HybridPackageRegistry {
     }
 }
 
-/// The filename used to keep a fingerprint directory live while its build registry exists.
+/// The extension of a sibling lock file that keeps a fingerprint directory live.
 #[cfg(any(test, feature = "std"))]
-const BUILD_LOCK_FILENAME: &str = ".build-lock";
+const BUILD_LOCK_EXTENSION: &str = "lock";
 
 /// Creates and locks the current cache directory, then removes dead stale entries owned by
 /// `midenc`.
@@ -242,35 +236,59 @@ const BUILD_LOCK_FILENAME: &str = ".build-lock";
 /// made by pre-fingerprint macro versions (the legacy flat files), keeps the parent directory
 /// bounded, and takes dead caches out of circulation promptly.
 ///
-/// Each build tries to hold an exclusive [BUILD_LOCK_FILENAME] lock for its registry's lifetime.
-/// A sibling fingerprint is dead when its lock file is absent or can be locked, and live when the
-/// lock would block. The acquired stale lock is closed before deletion for Windows compatibility,
-/// leaving a microscopic accepted race in which another process can re-lock the file before
-/// `remove_dir_all`. Legacy flat `.masp` files have no lock and retain the accepted one-time race
-/// with a pre-fingerprint compiler. Cleanup remains best-effort so it cannot obscure the current
-/// build's own diagnostics; package writes still report their failures normally.
+/// A build holds a shared `packages/<fingerprint>.lock` lock for its registry's lifetime. Pruning
+/// requires the corresponding exclusive lock and holds it while deleting the sibling fingerprint
+/// directory, so every live same-input build protects that directory. The lock lives outside the
+/// deletable directory and is acquired before that directory is created, closing both prior
+/// create-before-lock and unlock-before-delete windows.
+///
+/// After deletion the pruner closes and removes the now-orphaned lock file. A builder can acquire
+/// that file between close and unlink; this residual unlink race is accepted because pruning is
+/// hygiene-level defense in depth, while `option_env!("MIDENC_PACKAGE_CACHE")` in FPI expansions
+/// provides the correctness boundary. Legacy flat `.masp` files have no lock and retain the
+/// accepted one-time race with a pre-fingerprint compiler. Cleanup remains best-effort so it
+/// cannot obscure the current build's own diagnostics; package writes still report their failures
+/// normally.
 #[cfg(any(test, feature = "std"))]
 fn prepare_filesystem_cache(filesystem_cache: &std::path::Path) -> Option<std::fs::File> {
-    if let Err(err) = std::fs::create_dir_all(filesystem_cache) {
+    if !is_owned_filesystem_cache_path(filesystem_cache) {
+        if let Err(err) = std::fs::create_dir_all(filesystem_cache) {
+            log::warn!(
+                target: "package-registry",
+                "failed to create filesystem package cache '{}': {err}; skipping cache preparation",
+                filesystem_cache.display()
+            );
+            return None;
+        }
         log::debug!(
             target: "package-registry",
-            "failed to create filesystem package cache '{}': {err}",
-            filesystem_cache.display()
-        );
-    }
-    if !filesystem_cache.file_name().is_some_and(is_package_cache_fingerprint) {
-        log::debug!(
-            target: "package-registry",
-            "filesystem package cache '{}' is not fingerprint-named; skipping locking and parent pruning",
+            "filesystem package cache '{}' is outside the owned miden/packages/<fingerprint> layout; skipping locking and parent pruning",
             filesystem_cache.display()
         );
         return None;
     }
-    let filesystem_cache_lock = acquire_filesystem_cache_lock(filesystem_cache);
 
-    let Some(parent) = filesystem_cache.parent() else {
-        return filesystem_cache_lock;
-    };
+    let parent = filesystem_cache
+        .parent()
+        .expect("an owned filesystem cache path always has a packages parent");
+    if let Err(err) = std::fs::create_dir_all(parent) {
+        log::warn!(
+            target: "package-registry",
+            "failed to create filesystem package cache parent '{}': {err}; skipping cache preparation",
+            parent.display()
+        );
+        return None;
+    }
+    let filesystem_cache_lock = acquire_filesystem_cache_lock(filesystem_cache)?;
+    if let Err(err) = std::fs::create_dir_all(filesystem_cache) {
+        log::warn!(
+            target: "package-registry",
+            "failed to create filesystem package cache '{}': {err}; skipping cache preparation",
+            filesystem_cache.display()
+        );
+        return None;
+    }
+
     let entries = match std::fs::read_dir(parent) {
         Ok(entries) => entries,
         Err(err) => {
@@ -279,9 +297,10 @@ fn prepare_filesystem_cache(filesystem_cache: &std::path::Path) -> Option<std::f
                 "failed to inspect filesystem package cache '{}': {err}",
                 parent.display()
             );
-            return filesystem_cache_lock;
+            return Some(filesystem_cache_lock);
         }
     };
+    let current_lock_path = filesystem_cache_lock_path(filesystem_cache);
 
     for entry in entries {
         let entry = match entry {
@@ -296,7 +315,7 @@ fn prepare_filesystem_cache(filesystem_cache: &std::path::Path) -> Option<std::f
             }
         };
         let path = entry.path();
-        if path == filesystem_cache {
+        if path == filesystem_cache || path == current_lock_path {
             continue;
         }
         let file_type = match entry.file_type() {
@@ -314,37 +333,32 @@ fn prepare_filesystem_cache(filesystem_cache: &std::path::Path) -> Option<std::f
         let is_stale_fingerprint =
             file_type.is_dir() && is_package_cache_fingerprint(&entry.file_name());
         let is_legacy_package = file_type.is_file()
-            && path.extension().and_then(|extension| extension.to_str()) == Some("masp");
-        if !is_stale_fingerprint && !is_legacy_package {
-            continue;
-        }
-
-        let result = if is_stale_fingerprint {
-            if !stale_fingerprint_can_be_pruned(&path) {
-                continue;
+            && path
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION));
+        if is_stale_fingerprint {
+            prune_stale_fingerprint(&path, parent);
+        } else if is_legacy_package {
+            if let Err(err) = std::fs::remove_file(&path) {
+                warn_prune_failure(&path, parent, &err);
             }
-            std::fs::remove_dir_all(&path)
-        } else {
-            std::fs::remove_file(&path)
-        };
-        if let Err(err) = result {
-            log::warn!(
-                target: "package-registry",
-                "failed to prune stale filesystem package cache entry '{}': {err}; stale macro expansions may survive; delete target/miden/packages manually",
-                path.display()
-            );
+        } else if file_type.is_file()
+            && let Some(fingerprint) = package_cache_fingerprint_from_lock(&entry.file_name())
+            && !parent.join(fingerprint).is_dir()
+        {
+            prune_orphaned_fingerprint_lock(&path, parent);
         }
     }
 
-    filesystem_cache_lock
+    Some(filesystem_cache_lock)
 }
 
-/// Opens the current fingerprint's lock file and tries to hold it for the registry lifetime.
+/// Opens the current fingerprint's sibling lock file and tries to hold a shared builder lock.
 #[cfg(any(test, feature = "std"))]
 fn acquire_filesystem_cache_lock(filesystem_cache: &std::path::Path) -> Option<std::fs::File> {
     use std::fs::{OpenOptions, TryLockError};
 
-    let lock_path = filesystem_cache.join(BUILD_LOCK_FILENAME);
+    let lock_path = filesystem_cache_lock_path(filesystem_cache);
     let lock = match OpenOptions::new()
         .read(true)
         .write(true)
@@ -363,12 +377,12 @@ fn acquire_filesystem_cache_lock(filesystem_cache: &std::path::Path) -> Option<s
         }
     };
 
-    match lock.try_lock() {
+    match lock.try_lock_shared() {
         Ok(()) => Some(lock),
         Err(TryLockError::WouldBlock) => {
             log::debug!(
                 target: "package-registry",
-                "filesystem package cache '{}' is already protected by an identical-input build",
+                "filesystem package cache '{}' is being pruned; skipping cache preparation",
                 filesystem_cache.display()
             );
             None
@@ -384,57 +398,154 @@ fn acquire_filesystem_cache_lock(filesystem_cache: &std::path::Path) -> Option<s
     }
 }
 
-/// Returns true when a stale fingerprint directory is not protected by a live build.
+/// Deletes a stale fingerprint directory while holding its exclusive sibling lock.
 #[cfg(any(test, feature = "std"))]
-fn stale_fingerprint_can_be_pruned(fingerprint_dir: &std::path::Path) -> bool {
-    use std::{
-        fs::{File, TryLockError},
-        io::ErrorKind,
-    };
+fn prune_stale_fingerprint(fingerprint_dir: &std::path::Path, parent: &std::path::Path) {
+    use std::fs::{OpenOptions, TryLockError};
 
-    let lock_path = fingerprint_dir.join(BUILD_LOCK_FILENAME);
-    let lock = match File::open(&lock_path) {
+    let lock_path = filesystem_cache_lock_path(fingerprint_dir);
+    let lock = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+    {
         Ok(lock) => lock,
-        Err(err) if err.kind() == ErrorKind::NotFound => return true,
         Err(err) => {
             log::warn!(
                 target: "package-registry",
                 "cannot verify liveness of stale filesystem package cache '{}': {err}; skipping deletion",
                 fingerprint_dir.display()
             );
-            return false;
+            return;
         }
     };
 
     match lock.try_lock() {
         Ok(()) => {
-            if let Err(err) = lock.unlock() {
-                log::debug!(
-                    target: "package-registry",
-                    "failed to explicitly unlock stale filesystem package cache '{}': {err}; closing the lock file",
-                    fingerprint_dir.display()
-                );
+            if let Err(err) = std::fs::remove_dir_all(fingerprint_dir) {
+                warn_prune_failure(fingerprint_dir, parent, &err);
+                return;
             }
             drop(lock);
-            true
+            remove_orphaned_lock_file(&lock_path, fingerprint_dir, parent);
         }
         Err(TryLockError::WouldBlock) => {
             log::debug!(
                 target: "package-registry",
                 "skipping live filesystem package cache '{}' during stale-cache pruning",
                 fingerprint_dir.display()
-            );
-            false
+            )
         }
         Err(TryLockError::Error(err)) => {
             log::warn!(
                 target: "package-registry",
                 "cannot verify liveness of stale filesystem package cache '{}': {err}; skipping deletion",
                 fingerprint_dir.display()
-            );
-            false
+            )
         }
     }
+}
+
+/// Deletes an orphaned sibling lock after verifying that no builder holds it.
+#[cfg(any(test, feature = "std"))]
+fn prune_orphaned_fingerprint_lock(lock_path: &std::path::Path, parent: &std::path::Path) {
+    use std::{fs::TryLockError, io::ErrorKind};
+
+    let lock = match std::fs::File::open(lock_path) {
+        Ok(lock) => lock,
+        Err(err) if err.kind() == ErrorKind::NotFound => return,
+        Err(err) => {
+            log::warn!(
+                target: "package-registry",
+                "cannot verify liveness of orphaned filesystem package cache lock '{}': {err}; skipping deletion",
+                lock_path.display()
+            );
+            return;
+        }
+    };
+    match lock.try_lock() {
+        Ok(()) => {
+            drop(lock);
+            let fingerprint_dir = lock_path.with_extension("");
+            remove_orphaned_lock_file(lock_path, &fingerprint_dir, parent);
+        }
+        Err(TryLockError::WouldBlock) => {
+            log::debug!(
+                target: "package-registry",
+                "skipping live filesystem package cache lock '{}' during orphan cleanup",
+                lock_path.display()
+            )
+        }
+        Err(TryLockError::Error(err)) => {
+            log::warn!(
+                target: "package-registry",
+                "cannot verify liveness of orphaned filesystem package cache lock '{}': {err}; skipping deletion",
+                lock_path.display()
+            )
+        }
+    }
+}
+
+/// Removes an unlocked lock file if its fingerprint directory remains absent.
+#[cfg(any(test, feature = "std"))]
+fn remove_orphaned_lock_file(
+    lock_path: &std::path::Path,
+    fingerprint_dir: &std::path::Path,
+    parent: &std::path::Path,
+) {
+    use std::io::ErrorKind;
+
+    if fingerprint_dir.exists() {
+        return;
+    }
+    if let Err(err) = std::fs::remove_file(lock_path)
+        && err.kind() != ErrorKind::NotFound
+    {
+        warn_prune_failure(lock_path, parent, &err);
+    }
+}
+
+/// Logs a best-effort cleanup failure with the exact directory a user can remove.
+#[cfg(any(test, feature = "std"))]
+fn warn_prune_failure(path: &std::path::Path, parent: &std::path::Path, err: &std::io::Error) {
+    log::warn!(
+        target: "package-registry",
+        "failed to prune stale filesystem package cache entry '{}': {err}; stale cache entries may survive; delete '{}' manually",
+        path.display(),
+        parent.display()
+    );
+}
+
+/// Returns the sibling lock path associated with a fingerprint directory.
+#[cfg(any(test, feature = "std"))]
+fn filesystem_cache_lock_path(filesystem_cache: &std::path::Path) -> std::path::PathBuf {
+    filesystem_cache.with_extension(BUILD_LOCK_EXTENSION)
+}
+
+/// Returns true when a path is owned by the `miden/packages/<fingerprint>` cache layout.
+#[cfg(any(test, feature = "std"))]
+fn is_owned_filesystem_cache_path(filesystem_cache: &std::path::Path) -> bool {
+    use std::ffi::OsStr;
+
+    filesystem_cache.file_name().is_some_and(is_package_cache_fingerprint)
+        && filesystem_cache
+            .parent()
+            .and_then(std::path::Path::file_name)
+            .is_some_and(|name| name == OsStr::new("packages"))
+        && filesystem_cache
+            .parent()
+            .and_then(std::path::Path::parent)
+            .and_then(std::path::Path::file_name)
+            .is_some_and(|name| name == OsStr::new("miden"))
+}
+
+/// Extracts a fingerprint from an owned sibling `<fingerprint>.lock` filename.
+#[cfg(any(test, feature = "std"))]
+fn package_cache_fingerprint_from_lock(name: &std::ffi::OsStr) -> Option<&str> {
+    let fingerprint = name.to_str()?.strip_suffix(".lock")?;
+    crate::package_cache::is_fingerprint(fingerprint).then_some(fingerprint)
 }
 
 /// Returns true when `name` has the cache fingerprint format owned by `midenc`.
@@ -524,14 +635,56 @@ mod tests {
     use super::*;
 
     #[test]
+    fn install_checks_conflicts_before_writing_and_rewrites_accepted_packages() {
+        let temp = TempDir::new().unwrap();
+        let cache = temp.path().join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+
+        let options = crate::Options::default();
+        let package = crate::LinkLibrary::core().load(&options).unwrap();
+        let package_name: &str = &package.name;
+        let cached_package = cache.join(package_name).with_extension(Package::EXTENSION);
+        let mut registry = HybridPackageRegistry::empty();
+        registry.filesystem_cache = Some(cache);
+
+        registry.install_if_missing(Arc::clone(&package)).unwrap();
+        std::fs::write(&cached_package, b"damaged").unwrap();
+        registry.install_if_missing(Arc::clone(&package)).unwrap();
+        assert_ne!(
+            std::fs::read(&cached_package).unwrap(),
+            b"damaged",
+            "an accepted same-digest install must repair the cached package"
+        );
+
+        let mut conflict = (*crate::LinkLibrary::tx_kernel().load(&options).unwrap()).clone();
+        conflict.name = package.name.clone();
+        conflict.version = package.version.clone();
+        assert_ne!(conflict.digest(), package.digest());
+        std::fs::write(&cached_package, b"keep-on-conflict").unwrap();
+
+        assert!(matches!(
+            registry.install_if_missing(Arc::new(conflict)),
+            Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. })
+        ));
+        assert_eq!(
+            std::fs::read(cached_package).unwrap(),
+            b"keep-on-conflict",
+            "a rejected install must not touch the cached package"
+        );
+    }
+
+    #[test]
     fn creating_a_filesystem_cache_prunes_only_stale_owned_entries() {
         let temp = TempDir::new().unwrap();
-        let parent = temp.path().join("packages");
+        let parent = temp.path().join("miden").join("packages");
         let current = parent.join("fedcba9876543210");
         let stale = parent.join("0123456789abcdef");
         let unrelated_directory = parent.join("not-a-midenc-cache");
         let uppercase_directory = parent.join("ABCDEF0123456789");
         let legacy_package = parent.join("legacy.masp");
+        let uppercase_legacy_package = parent.join("uppercase.MASP");
+        let orphan_lock = parent.join("1111111111111111.lock");
+        let live_precreation_lock_path = parent.join("2222222222222222.lock");
         let unrelated_file = parent.join("keep.txt");
 
         for directory in [&current, &stale, &unrelated_directory, &uppercase_directory] {
@@ -541,6 +694,16 @@ mod tests {
         std::fs::write(&current_marker, b"current").unwrap();
         std::fs::write(stale.join("old.masp"), b"stale").unwrap();
         std::fs::write(&legacy_package, b"legacy").unwrap();
+        std::fs::write(&uppercase_legacy_package, b"legacy").unwrap();
+        std::fs::write(&orphan_lock, b"").unwrap();
+        let live_precreation_lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(&live_precreation_lock_path)
+            .unwrap();
+        live_precreation_lock.try_lock_shared().unwrap();
         std::fs::write(&unrelated_file, b"unrelated").unwrap();
 
         let current_lock =
@@ -548,18 +711,29 @@ mod tests {
 
         assert!(current_marker.exists(), "the current cache must remain intact");
         assert!(!stale.exists(), "a stale fingerprint directory must be removed");
+        assert!(!filesystem_cache_lock_path(&stale).exists(), "the stale lock must be removed");
         assert!(!legacy_package.exists(), "a legacy flat package must be removed");
+        assert!(
+            !uppercase_legacy_package.exists(),
+            "legacy package extensions must be matched case-insensitively"
+        );
+        assert!(!orphan_lock.exists(), "an unlocked orphan fingerprint lock must be removed");
+        assert!(
+            live_precreation_lock_path.exists(),
+            "a lock held before its directory is created must survive orphan cleanup"
+        );
         assert!(unrelated_directory.exists(), "unowned directories must be retained");
         assert!(uppercase_directory.exists(), "non-lowercase directories must be retained");
         assert!(unrelated_file.exists(), "unowned files must be retained");
 
+        drop(live_precreation_lock);
         drop(current_lock);
     }
 
     #[test]
     fn constructor_prepares_and_locks_the_filesystem_cache() {
         let temp = TempDir::new().unwrap();
-        let current = temp.path().join("packages").join("fedcba9876543210");
+        let current = temp.path().join("miden").join("packages").join("fedcba9876543210");
 
         let registry = HybridPackageRegistry::new_with_filesystem_cache(
             &crate::Options::default(),
@@ -573,20 +747,26 @@ mod tests {
         let contender = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(current.join(BUILD_LOCK_FILENAME))
+            .open(filesystem_cache_lock_path(&current))
             .unwrap();
-        assert!(matches!(contender.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+        contender.try_lock_shared().unwrap();
+        let stale_checker = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(filesystem_cache_lock_path(&current))
+            .unwrap();
+        assert!(matches!(stale_checker.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
     }
 
     #[test]
     fn live_stale_fingerprint_survives_until_its_lock_is_released() {
         let temp = TempDir::new().unwrap();
-        let parent = temp.path().join("packages");
+        let parent = temp.path().join("miden").join("packages");
         let current = parent.join("fedcba9876543210");
         let stale = parent.join("0123456789abcdef");
         std::fs::create_dir_all(&stale).unwrap();
 
-        let stale_lock_path = stale.join(BUILD_LOCK_FILENAME);
+        let stale_lock_path = filesystem_cache_lock_path(&stale);
         let stale_lock = OpenOptions::new()
             .read(true)
             .write(true)
@@ -594,25 +774,63 @@ mod tests {
             .truncate(false)
             .open(&stale_lock_path)
             .unwrap();
-        stale_lock.try_lock().unwrap();
+        stale_lock.try_lock_shared().unwrap();
 
         let current_lock =
             prepare_filesystem_cache(&current).expect("current cache must be locked");
-        assert!(current.join(BUILD_LOCK_FILENAME).exists());
+        assert!(filesystem_cache_lock_path(&current).exists());
         let current_contender = OpenOptions::new()
             .read(true)
             .write(true)
-            .open(current.join(BUILD_LOCK_FILENAME))
+            .open(filesystem_cache_lock_path(&current))
             .unwrap();
-        assert!(matches!(current_contender.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+        current_contender.try_lock_shared().unwrap();
         assert!(stale.exists(), "a live sibling cache must not be pruned");
 
         drop(stale_lock);
-        let second_lock = prepare_filesystem_cache(&current);
-        assert!(second_lock.is_none(), "the first current-cache lock is still held");
+        let second_lock =
+            prepare_filesystem_cache(&current).expect("same-input builders share the lock");
         assert!(!stale.exists(), "the stale cache must be pruned after its build exits");
+        assert!(!stale_lock_path.exists(), "the stale sibling lock must be removed");
 
+        drop(second_lock);
         drop(current_lock);
+    }
+
+    #[test]
+    fn same_fingerprint_contender_remains_live_after_first_builder_exits() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("miden").join("packages");
+        let shared = parent.join("fedcba9876543210");
+        let different = parent.join("0123456789abcdef");
+
+        let first = prepare_filesystem_cache(&shared).expect("first builder must lock the cache");
+        let contender =
+            prepare_filesystem_cache(&shared).expect("same-input contender must share the lock");
+        drop(first);
+
+        let different_lock = prepare_filesystem_cache(&different)
+            .expect("different-input builder must lock its cache");
+
+        assert!(shared.exists(), "the live contender's cache must not be pruned");
+
+        drop(different_lock);
+        drop(contender);
+    }
+
+    #[test]
+    fn cache_creation_failure_does_not_sweep_siblings() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("miden").join("packages");
+        let current = parent.join("fedcba9876543210");
+        let stale = parent.join("0123456789abcdef");
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::write(&current, b"not a directory").unwrap();
+
+        let lock = prepare_filesystem_cache(&current);
+
+        assert!(lock.is_none());
+        assert!(stale.exists(), "siblings must survive when the current cache cannot be created");
     }
 
     #[test]
@@ -629,7 +847,26 @@ mod tests {
 
         assert!(lock.is_none());
         assert!(current.is_dir(), "an arbitrary cache path is still created");
-        assert!(!current.join(BUILD_LOCK_FILENAME).exists());
+        assert!(!filesystem_cache_lock_path(&current).exists());
+        assert!(fingerprint_sibling.exists());
+        assert!(package_sibling.exists());
+    }
+
+    #[test]
+    fn fingerprint_name_outside_owned_layout_cannot_sweep_its_parent() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("shared");
+        let current = parent.join("fedcba9876543210");
+        let fingerprint_sibling = parent.join("0123456789abcdef");
+        let package_sibling = parent.join("unrelated.masp");
+        std::fs::create_dir_all(&fingerprint_sibling).unwrap();
+        std::fs::write(&package_sibling, b"unrelated").unwrap();
+
+        let lock = prepare_filesystem_cache(&current);
+
+        assert!(lock.is_none());
+        assert!(current.is_dir(), "an out-of-layout cache path is still created");
+        assert!(!filesystem_cache_lock_path(&current).exists());
         assert!(fingerprint_sibling.exists());
         assert!(package_sibling.exists());
     }
