@@ -96,6 +96,8 @@ pub(crate) fn package_cache_fingerprint_dir(project_dir: &Path, expected_package
         }
     }
 
+    // `read_dir` order is unspecified, so equal mtimes at the filesystem's precision leave this
+    // diagnostic attribution tie nondeterministic. No production behavior depends on the choice.
     candidates
         .into_iter()
         .max_by_key(|(modified, _)| *modified)

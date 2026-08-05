@@ -2,7 +2,7 @@ use std::{fs, path::Path, sync::Arc};
 
 use miden_assembly::ast::types::{FunctionType, Type};
 use miden_core::serde::Serializable;
-use miden_mast_package::{PackageExport, ProcedureExport, QualifiedProcedureName};
+use miden_mast_package::{Package, PackageExport, ProcedureExport, QualifiedProcedureName};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
@@ -140,6 +140,7 @@ fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Pa
 }
 
 /// Creates a generated workspace containing the existing basic-wallet/swapp-note FPI pair.
+#[track_caller]
 fn fpi_package_cache_regression_project() -> crate::Project {
     let sdk_path = sdk_crate_path();
     let workspace_manifest = r#"
@@ -262,18 +263,28 @@ basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
 }
 
 /// Reads the named dependency package from a compiled consumer's filesystem cache.
-fn read_cached_dependency_package(
-    test: &CompilerTest,
-    package_name: &str,
-) -> miden_mast_package::Package {
+fn read_cached_dependency_package(test: &CompilerTest, package_name: &str) -> Package {
     let cache_dir = test
         .session
         .filesystem_package_cache_dir()
         .expect("a Cargo Miden project must have a filesystem package cache");
-    let path = cache_dir.join(format!("{package_name}.masp"));
+    let path = fs::read_dir(&cache_dir)
+        .unwrap_or_else(|err| {
+            panic!("failed to read package cache '{}': {err}", cache_dir.display())
+        })
+        .map(|entry| entry.expect("failed to read an entry from the package cache").path())
+        .find(|path| {
+            path.file_stem().is_some_and(|stem| stem == package_name)
+                && path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION))
+        })
+        .unwrap_or_else(|| {
+            panic!("failed to find package '{package_name}' in cache '{}'", cache_dir.display())
+        });
     let bytes = fs::read(&path)
         .unwrap_or_else(|err| panic!("failed to read cached package '{}': {err}", path.display()));
-    miden_mast_package::Package::read_from_bytes_unchecked(&bytes)
+    Package::read_from_bytes_unchecked(&bytes)
         .unwrap_or_else(|err| panic!("failed to decode cached package '{}': {err}", path.display()))
 }
 
@@ -306,6 +317,50 @@ fn masm_contains_procedure_digest(masm: &str, digest: &miden_core::Word) -> bool
         .join(" ");
     let normalized_masm = masm.split_whitespace().collect::<Vec<_>>().join(" ");
     normalized_masm.contains(&pattern)
+}
+
+/// Returns true when Wasm constructs every felt of `digest` for an FPI call.
+///
+/// The four root elements remain consecutive among the module's `i64.const` instructions even
+/// when checked felt construction inserts control flow between them.
+fn wat_contains_procedure_digest(wat: &str, digest: &miden_core::Word) -> bool {
+    let tokens = wat.split_whitespace().collect::<Vec<_>>();
+    let constants = tokens
+        .windows(2)
+        .filter(|tokens| tokens[0].trim_matches(['(', ')']) == "i64.const")
+        .filter_map(|tokens| tokens[1].trim_matches(['(', ')']).parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    let expected = procedure_digest_felts(digest).map(|felt| felt as i64);
+    constants.windows(expected.len()).any(|window| window == expected)
+}
+
+/// Builds `consumer` directly with one prepopulated package cache and returns its Wasm as WAT.
+fn build_consumer_wat_with_package_cache(
+    consumer: &Path,
+    cargo_target_dir: &Path,
+    package_cache_dir: &Path,
+) -> String {
+    let output = std::process::Command::new("cargo")
+        .args(["build", "--release", "--locked", "--manifest-path"])
+        .arg(consumer.join("Cargo.toml"))
+        .env("CARGO_TARGET_DIR", cargo_target_dir)
+        .env("MIDENC_PACKAGE_CACHE", package_cache_dir)
+        .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .current_dir(consumer)
+        .output()
+        .expect("failed to spawn Cargo for the option_env isolation fixture");
+    assert!(
+        output.status.success(),
+        "option_env isolation fixture failed to build:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let wasm_path = cargo_target_dir.join("wasm32-wasip2/release/swapp_note.wasm");
+    let wasm = fs::read(&wasm_path).unwrap_or_else(|err| {
+        panic!("failed to read fixture Wasm '{}': {err}", wasm_path.display())
+    });
+    midenc_frontend_wasm::wasm_to_wat(&wasm).expect("failed to print fixture Wasm")
 }
 
 fn component_namespace(name: &str) -> String {
@@ -698,6 +753,92 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
         masm_contains_procedure_digest(&third_masm, &third_root),
         "consumer MASM does not contain the post-rotation receive-asset root {:?}",
         procedure_digest_felts(&third_root),
+    );
+}
+
+/// Changing only `MIDENC_PACKAGE_CACHE` must re-expand FPI roots in an unchanged consumer.
+#[test]
+fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
+    let project = fpi_package_cache_regression_project();
+    let dependency = project.root().join("basic-wallet");
+    let consumer = project.root().join("swapp-note");
+    let dependency_source = dependency.join("src/lib.rs");
+    let config = WasmTranslationConfig::default();
+
+    let mut first_dependency_build =
+        CompilerTest::rust_source_cargo_miden(&dependency, config.clone(), []);
+    let first_package = first_dependency_build.compile_package();
+    let first_root = find_manifest_procedure(
+        &first_package,
+        "original basic-wallet receive-asset export",
+        |path| path.ends_with("::\"receive-asset\""),
+    )
+    .digest;
+
+    let original_source = fs::read_to_string(&dependency_source).unwrap();
+    assert_eq!(
+        original_source.matches("        self.add_asset(asset);").count(),
+        1,
+        "fixture mutation must match exactly once"
+    );
+    let changed_source = original_source.replacen(
+        "        self.add_asset(asset);",
+        "        self.add_asset(asset);\n        self.remove_asset(asset);\n        \
+         self.add_asset(asset);",
+        1,
+    );
+    fs::write(&dependency_source, changed_source).unwrap();
+
+    let mut second_dependency_build =
+        CompilerTest::rust_source_cargo_miden(&dependency, config, []);
+    let second_package = second_dependency_build.compile_package();
+    let second_root = find_manifest_procedure(
+        &second_package,
+        "changed basic-wallet receive-asset export",
+        |path| path.ends_with("::\"receive-asset\""),
+    )
+    .digest;
+    assert_ne!(first_root, second_root, "the prepopulated packages must embed different roots");
+
+    let first_cache = project.root().join("option-env-cache-a");
+    let second_cache = project.root().join("option-env-cache-b");
+    for cache in [&first_cache, &second_cache] {
+        fs::create_dir_all(cache).unwrap();
+    }
+    first_package
+        .write_masp_file(&first_cache)
+        .expect("failed to prepopulate the first package cache");
+    second_package
+        .write_masp_file(&second_cache)
+        .expect("failed to prepopulate the second package cache");
+
+    let cargo_target_dir = project.root().join("option-env-cargo-target");
+    if cargo_target_dir.exists() {
+        fs::remove_dir_all(&cargo_target_dir).unwrap();
+    }
+
+    // Both Cargo invocations have identical arguments, sources, manifests, generated WIT, target
+    // directory, and flags. The cache environment value is the sole changed build input.
+    let first_wat =
+        build_consumer_wat_with_package_cache(&consumer, &cargo_target_dir, &first_cache);
+    let second_wat =
+        build_consumer_wat_with_package_cache(&consumer, &cargo_target_dir, &second_cache);
+
+    assert!(
+        wat_contains_procedure_digest(&first_wat, &first_root),
+        "the first consumer build did not embed its cache's receive-asset root"
+    );
+    assert!(
+        !wat_contains_procedure_digest(&first_wat, &second_root),
+        "the first consumer build unexpectedly embedded the second cache's root"
+    );
+    assert!(
+        wat_contains_procedure_digest(&second_wat, &second_root),
+        "changing MIDENC_PACKAGE_CACHE did not re-expand the consumer with the second root"
+    );
+    assert!(
+        !wat_contains_procedure_digest(&second_wat, &first_root),
+        "the second consumer build retained the stale root from the first cache"
     );
 }
 
