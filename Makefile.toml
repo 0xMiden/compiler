@@ -698,44 +698,27 @@ exit "${status}"
 # them and production. A convenient local shortcut for them would be a way to
 # skip that by accident.
 
-[tasks.release-lint]
-category = "Release"
-description = "Check release configuration: classification, private edges, patches, bundle drift"
-command = "cargo"
-args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "lint"]
-
-[tasks.package-order]
-category = "Release"
-description = "Print the topological publication order Cargo needs"
-command = "cargo"
-args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "package-order", "${@}"]
-
-[tasks.set-version]
-category = "Release"
-description = "Move a release unit's version, with every requirement and the lockfile"
-command = "cargo"
-args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "set-version", "${@}"]
-
-[tasks.changelog-prompt]
-category = "Release"
-description = "Emit a changelog-writing prompt for a unit; never writes entries"
+[tasks.release-tool]
+category = "Build"
+description = "Builds release-tool and installs it to the bin folder"
 command = "cargo"
 args = [
-    "run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--",
-    "changelog-prompt", "${@}",
+    "-Z",
+    "unstable-options",
+    "build",
+    "-p",
+    "midenc-release",
+    "--bin",
+    "release-tool",
+    "--artifact-dir",
+    "${MIDENC_BIN_DIR}",
 ]
 
-[tasks.release-bundle]
+[tasks.release]
 category = "Release"
-description = "Build the deterministic template bundle archive"
-command = "cargo"
-args = ["run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--", "bundle", "${@}"]
-
-[tasks.verify-closure]
-category = "Release"
-description = "Package every selected crate and build a consumer that resolves only from a registry"
-command = "cargo"
+command = "${MIDENC_BIN_DIR}/release-tool"
+description = "Invoke a `release-tool` command"
 args = [
-    "run", "-q", "-p", "midenc-release", "--bin", "release-tool", "--",
-    "verify-closure", "${@}",
+    "${@}"
 ]
+dependencies = ["release-tool"]

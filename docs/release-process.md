@@ -1,9 +1,7 @@
 # Release Process
 
 The operational guide for releasing the compiler, the Rust SDK, and the project
-templates. Follow the checklist for the kind of release you are doing. You do
-not need to understand the release machinery; everything you need is here. The
-design behind it is `tasks/design/release-tooling.md`.
+templates. Follow the checklist for the kind of release you wish to perform.
 
 Three things are true throughout and explain most of the procedure:
 
@@ -61,8 +59,7 @@ can be performed by the tooling.
 | New crates | crates.io cannot configure a publisher for a crate that does not exist. A brand-new crate must be bootstrapped once with a short-lived, narrowly scoped token, then switched to Trusted Publishing |
 | Long-lived tokens | Remove `CARGO_REGISTRY_TOKEN` from repository secrets once Trusted Publishing works |
 
-There are **33 publishable crates** (`cargo make package-order` lists them).
-Each needs its own publisher configuration.
+There are currently **33 publishable crates** (`cargo make package-order` lists them). Each needs its own publisher configuration.
 
 > **Known limitation.** A crate whose publisher is missing or misconfigured
 > cannot be detected in advance: the token crates.io issues carries no list of
@@ -90,7 +87,7 @@ Each needs its own publisher configuration.
 ### 2.3 Repository state
 
 - Every workspace package classified in `.release/config.toml`
-  (`cargo make release-lint` enforces this).
+  (`cargo make release lint` enforces this).
 - No active `[patch]` entries in the root manifest.
 - All first-party external dependencies (miden-vm, protocol, and related
   repositories) published at the versions the workspace requires.
@@ -99,7 +96,7 @@ Each needs its own publisher configuration.
 
 ## 3. Production release
 
-### Phase A — Prepare the candidate
+### Phase A - Prepare the candidate
 
 Everything in Phase A happens on a branch and in pull requests. Nothing here
 touches crates.io, creates a tag, or publishes anything.
@@ -150,12 +147,11 @@ the templates must be released with it.
 **A5. Move the versions.** Once per unit being released:
 
 ```bash
-cargo make set-version -- --unit sdk 0.14.0
-cargo make set-version -- --unit compiler 0.10.0
+cargo make release set-version --unit sdk 0.14.0
+cargo make release set-version --unit compiler 0.10.0
 ```
 
-Omit the version to take the next minor. Add `--dry-run` first to review the
-edits.
+Omit the version to automatically bump to the next minor. Add `--dry-run` first to review the edits.
 
 *Expect:* modifications to the crate manifests, every requirement naming them,
 `Cargo.lock`, `.release/release.toml`, and — for an SDK bump — the template
@@ -168,7 +164,7 @@ manifests and `extra/templates/bundle.toml`.
 **A6. Write the changelog.**
 
 ```bash
-cargo make changelog-prompt -- compiler --version 0.10.0
+cargo make release changelog-prompt compiler --version 0.10.0
 ```
 
 This emits a *prompt*; it never writes entries. Pass it to an agent if you like,
@@ -185,7 +181,7 @@ The range defaults to the unit's last release tag through `HEAD`, filtered to
 the paths that unit publishes. Override it with a second argument:
 
 ```bash
-cargo make changelog-prompt -- sdk v0.9.2..HEAD
+cargo make release changelog-prompt sdk v0.9.2..HEAD
 ```
 
 > **First SDK and template releases.** The `sdk/v*` and `templates/v*` tag
@@ -199,7 +195,7 @@ cargo make changelog-prompt -- sdk v0.9.2..HEAD
 or any template file changed:
 
 ```bash
-cargo make release-bundle -- --output tools/cargo-miden/templates.tar.gz
+cargo make release bundle --output tools/cargo-miden/templates.tar.gz
 ```
 
 *If it fails, or if the gate later reports bundle drift:*
@@ -210,7 +206,7 @@ cargo make release-bundle -- --output tools/cargo-miden/templates.tar.gz
 **A8. Check it locally before pushing.**
 
 ```bash
-cargo make release-lint
+cargo make release lint
 ```
 
 *Expect:* `release lint: N packages classified, no findings`.
@@ -353,7 +349,7 @@ result from the registry.
 
 ---
 
-### Phase E — Finalize
+### Phase E - Finalize
 
 **E1. Finalization runs.** Automation verifies every staged draft and then
 publishes them, in order: SDK, templates, compiler. Publication makes a release
@@ -382,9 +378,7 @@ The SDK, the template bundle, and every prerelease publish with
 
 **E2. Review the final report.**
 
-Open the run → the **finalize** job → the **Verify and publish the drafts**
-step. It lists each tag, whether it was newly published or already published,
-and which one claimed the "latest" slot, ending with a count.
+Open the run -> go to the **finalize** job -> go to the **Verify and publish the drafts** step. It lists each tag, whether it was newly published or already published, and which one claimed the "latest" slot, ending with a count.
 
 Then confirm, outside the tooling:
 
@@ -413,8 +407,7 @@ republish it. Do this on a candidate branch after A5.
 # 1. Start the local registry. Leave this running in its own terminal.
 #    --cache-dir keeps upstream index lookups between runs; without it, every
 #    rehearsal re-fetches the third-party closure.
-cargo run -q -p midenc-release --bin release-tool -- \
-    fake-registry --port 8732 --cache-dir /tmp/rehearsal-cache
+cargo make release fake-registry --port 8732 --cache-dir /tmp/rehearsal-cache
 ```
 
 In a second terminal, from the candidate workspace:
@@ -425,22 +418,21 @@ In a second terminal, from the candidate workspace:
 #    ONLY through that registry -- which is what proves the archives contain
 #    everything they need. Production publishes with --no-verify, so this is
 #    the only thing that checks it. Takes several minutes.
-cargo make verify-closure
+cargo make release verify-closure
 
 # 3. Generate the intent: what would be released, at what versions, with what
 #    tags. Reads .release/release.toml; writes intent.json.
-cargo run -q -p midenc-release --bin release-tool -- \
-    plan --subject "$(git rev-parse HEAD)" --output intent.json
+cargo make release plan --subject "$(git rev-parse HEAD)" --output intent.json
 
 # 4. Seal the intent: package every crate and record its exact digest and size
 #    into the plan, so what gets published is pinned to what was inspected.
-cargo run -q -p midenc-release --bin release-tool -- \
-    seal --intent intent.json --output plan.json --cache-dir /tmp/rehearsal-cache
+cargo make release seal --intent intent.json --output plan.json \
+    --cache-dir /tmp/rehearsal-cache
 
 # 5. Publish the sealed plan to the local registry, stage by stage, reconciling
 #    and verifying each stage from the registry before starting the next.
-cargo run -q -p midenc-release --bin release-tool -- \
-    publish --plan plan.json --rehearsal-index sparse+http://127.0.0.1:8732/
+cargo make release publish --plan plan.json \
+    --rehearsal-index sparse+http://127.0.0.1:8732/
 ```
 
 Step 2 is separate on purpose: `seal` packages the crates but does not build a
@@ -508,8 +500,7 @@ drafts. Either delete each draft in the **Releases** UI, or:
 
 ```bash
 # Download the sealed plan from the run's artifacts, then:
-GITHUB_TOKEN=$(gh auth token) \
-cargo run -q -p midenc-release --bin release-tool -- discard --plan plan.json
+GITHUB_TOKEN=$(gh auth token) cargo make release discard --plan plan.json
 ```
 
 `discard` deletes only *still-draft* releases and never touches a published one.
@@ -563,7 +554,7 @@ sources under `extra/templates`.
 **Remedy:**
 
 ```bash
-cargo make release-bundle -- --output tools/cargo-miden/templates.tar.gz
+cargo make release bundle --output tools/cargo-miden/templates.tar.gz
 ```
 
 Commit the result.
@@ -745,8 +736,6 @@ carries the versions you intend to release.
 ---
 
 ## 8. What is not yet exercised, and what is missing
-
-Stated plainly so this document is not read as describing more than exists.
 
 ### The largest unvalidated risk
 
