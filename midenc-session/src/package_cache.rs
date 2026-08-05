@@ -81,9 +81,11 @@ const BUILD_LOCK_EXTENSION: &str = "lock";
 /// lock lives outside that directory and is acquired before the directory is created, closing the
 /// create-before-lock, unlock-before-delete, and unlink/recreate inode-ABA windows.
 ///
-/// `None` means locking was skipped for an unowned path or preparation degraded after an error.
-/// The caller deliberately keeps the cache configured so package publication can report the
-/// concrete filesystem failure.
+/// `Some` means the shared liveness lock is held, even when a later preparation step degraded.
+/// `None` means locking was skipped: the path is unowned, or opening/locking the lock file
+/// failed. Every leg keeps the cache configured and the cache directory created when possible,
+/// so package publication proceeds against the expected path and reports any concrete
+/// filesystem failure itself.
 pub(crate) fn prepare_and_lock_filesystem_cache(filesystem_cache: &Path) -> Option<File> {
     if !is_owned_filesystem_cache_path(filesystem_cache) {
         prepare_unowned_filesystem_cache(filesystem_cache);
@@ -96,9 +98,19 @@ pub(crate) fn prepare_and_lock_filesystem_cache(filesystem_cache: &Path) -> Opti
     if !create_filesystem_cache_parent(parent) {
         return None;
     }
-    let filesystem_cache_lock = acquire_filesystem_cache_lock(filesystem_cache)?;
-    if !create_current_filesystem_cache(filesystem_cache) {
+    let Some(filesystem_cache_lock) = acquire_filesystem_cache_lock(filesystem_cache) else {
+        // No lock could be held, but the build still runs against this path: create the
+        // directory now rather than leaving it to the first publication, so the failure mode
+        // is only "unprotected and unswept", not "missing".
+        create_current_filesystem_cache(filesystem_cache);
         return None;
+    };
+    if !create_current_filesystem_cache(filesystem_cache) {
+        // The shared lock is already held — keep it. A later publication may still recreate
+        // the directory (its writer creates parent directories), and the lock is what stops a
+        // concurrent pruner from classifying that recreated cache as dead. Only the sweep is
+        // skipped in this degraded mode.
+        return Some(filesystem_cache_lock);
     }
     sweep_stale_filesystem_cache_entries(filesystem_cache, parent);
     Some(filesystem_cache_lock)
@@ -300,7 +312,17 @@ fn filesystem_cache_lock_path(filesystem_cache: &Path) -> PathBuf {
 }
 
 /// Returns true when a path is lexically owned by the `miden/packages/<fingerprint>` layout.
-fn is_owned_filesystem_cache_path(filesystem_cache: &Path) -> bool {
+/// Returns the package-cache parent directory for a project directory.
+///
+/// This is the producer half of the owned-layout contract: the path it builds must satisfy
+/// [`is_owned_filesystem_cache_path`] once a fingerprint component is appended, or the locking
+/// and pruning protocol silently degrades to a debug log. `Session::filesystem_package_cache_dir`
+/// derives through here, and its unit test asserts the coupling.
+pub(crate) fn package_cache_parent(project_dir: &Path) -> PathBuf {
+    project_dir.join("target").join("miden").join("packages")
+}
+
+pub(crate) fn is_owned_filesystem_cache_path(filesystem_cache: &Path) -> bool {
     filesystem_cache.file_name().is_some_and(is_package_cache_fingerprint)
         && filesystem_cache
             .parent()
@@ -328,7 +350,6 @@ pub(crate) fn fingerprint(
     options: &Options,
     project_dir: &Path,
     inherited_rustflags: Option<&OsStr>,
-    inherited_cargo_encoded_rustflags: Option<&OsStr>,
     inherited_rustup_toolchain: Option<&OsStr>,
     compiler_version: &str,
     compiler_revision: &str,
@@ -336,13 +357,7 @@ pub(crate) fn fingerprint(
     let mut transcript = Transcript::new();
     transcript.field("compiler.version", compiler_version.as_bytes());
     transcript.field("compiler.revision", compiler_revision.as_bytes());
-    record_options(
-        &mut transcript,
-        options,
-        inherited_rustflags,
-        inherited_cargo_encoded_rustflags,
-        inherited_rustup_toolchain,
-    );
+    record_options(&mut transcript, options, inherited_rustflags, inherited_rustup_toolchain);
 
     let source_manager = DefaultSourceManager::default();
     let mut manifests = ManifestClosure::new(&mut transcript, &source_manager);
@@ -406,7 +421,6 @@ fn record_options(
     transcript: &mut Transcript,
     options: &Options,
     inherited_rustflags: Option<&OsStr>,
-    inherited_cargo_encoded_rustflags: Option<&OsStr>,
     inherited_rustup_toolchain: Option<&OsStr>,
 ) {
     let Options {
@@ -482,10 +496,9 @@ fn record_options(
         "options.inherited_rustflags",
         inherited_rustflags.map(OsStr::as_encoded_bytes),
     );
-    transcript.optional_bytes_field(
-        "options.inherited_cargo_encoded_rustflags",
-        inherited_cargo_encoded_rustflags.map(OsStr::as_encoded_bytes),
-    );
+    // Inherited `CARGO_ENCODED_RUSTFLAGS` is deliberately NOT fingerprinted: `cargo_env` sets
+    // the variable authoritatively for every nested build, so the inherited value has no effect
+    // on what gets built.
     transcript.optional_bytes_field(
         "options.inherited_rustup_toolchain",
         inherited_rustup_toolchain.map(OsStr::as_encoded_bytes),
@@ -942,6 +955,49 @@ mod tests {
     }
 
     #[test]
+    fn cache_create_failure_keeps_the_acquired_liveness_lock_and_skips_the_sweep() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("miden").join("packages");
+        let current = parent.join("fedcba9876543210");
+        let stale = parent.join("0123456789abcdef");
+        std::fs::create_dir_all(&stale).unwrap();
+        // A regular file at the fingerprint path makes `create_dir_all` fail after the shared
+        // lock is already held.
+        std::fs::write(&current, b"not a directory").unwrap();
+
+        let lock = prepare_and_lock_filesystem_cache(&current);
+
+        assert!(lock.is_some(), "the acquired liveness lock must survive a create failure");
+        let contender = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(filesystem_cache_lock_path(&current))
+            .unwrap();
+        assert!(
+            matches!(contender.try_lock(), Err(TryLockError::WouldBlock)),
+            "the shared lock must still protect the cache path"
+        );
+        assert!(stale.exists(), "the sweep must be skipped in the degraded mode");
+    }
+
+    #[test]
+    fn lock_open_failure_still_creates_the_cache_directory() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("miden").join("packages");
+        let current = parent.join("fedcba9876543210");
+        // A directory at the lock path makes the lock file unopenable.
+        std::fs::create_dir_all(filesystem_cache_lock_path(&current)).unwrap();
+
+        let lock = prepare_and_lock_filesystem_cache(&current);
+
+        assert!(lock.is_none(), "no lock can be held when its file cannot be opened");
+        assert!(
+            current.is_dir(),
+            "the cache directory must be created so the build runs against the expected path"
+        );
+    }
+
+    #[test]
     fn live_stale_fingerprint_survives_until_its_lock_is_released() {
         let temp = TempDir::new().unwrap();
         let parent = temp.path().join("miden").join("packages");
@@ -1003,21 +1059,6 @@ mod tests {
     }
 
     #[test]
-    fn cache_creation_failure_does_not_sweep_siblings() {
-        let temp = TempDir::new().unwrap();
-        let parent = temp.path().join("miden").join("packages");
-        let current = parent.join("fedcba9876543210");
-        let stale = parent.join("0123456789abcdef");
-        fs::create_dir_all(&stale).unwrap();
-        fs::write(&current, b"not a directory").unwrap();
-
-        let lock = prepare_and_lock_filesystem_cache(&current);
-
-        assert!(lock.is_none());
-        assert!(stale.exists(), "siblings must survive when the current cache cannot be created");
-    }
-
-    #[test]
     fn arbitrary_cache_path_cannot_sweep_its_parent() {
         let temp = TempDir::new().unwrap();
         let parent = temp.path().join("arbitrary-parent");
@@ -1075,7 +1116,7 @@ mod tests {
 
     /// Computes a test fingerprint with a fresh source manager.
     fn test_fingerprint(options: &Options, project_dir: &Path, version: &str, rev: &str) -> String {
-        fingerprint(options, project_dir, None, None, None, version, rev)
+        fingerprint(options, project_dir, None, None, version, rev)
     }
 
     #[test]
@@ -1195,32 +1236,11 @@ mod tests {
         write_project(temp.path(), "root", "");
         let options = Options::default();
 
-        let missing = fingerprint(&options, temp.path(), None, None, None, "1.2.3", "abc123");
+        let missing = fingerprint(&options, temp.path(), None, None, "1.2.3", "abc123");
         let present = fingerprint(
             &options,
             temp.path(),
             Some(OsStr::new("-C target-feature=+bulk-memory")),
-            None,
-            None,
-            "1.2.3",
-            "abc123",
-        );
-
-        assert_ne!(missing, present);
-    }
-
-    #[test]
-    fn fingerprint_changes_with_inherited_cargo_encoded_rustflags() {
-        let temp = TempDir::new().unwrap();
-        write_project(temp.path(), "root", "");
-        let options = Options::default();
-
-        let missing = fingerprint(&options, temp.path(), None, None, None, "1.2.3", "abc123");
-        let present = fingerprint(
-            &options,
-            temp.path(),
-            None,
-            Some(OsStr::new("-Ctarget-feature=+bulk-memory\u{1f}--cfg=fixture")),
             None,
             "1.2.3",
             "abc123",
@@ -1235,11 +1255,10 @@ mod tests {
         write_project(temp.path(), "root", "");
         let options = Options::default();
 
-        let missing = fingerprint(&options, temp.path(), None, None, None, "1.2.3", "abc123");
+        let missing = fingerprint(&options, temp.path(), None, None, "1.2.3", "abc123");
         let present = fingerprint(
             &options,
             temp.path(),
-            None,
             None,
             Some(OsStr::new("nightly-2026-08-05")),
             "1.2.3",
