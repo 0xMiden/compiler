@@ -1,0 +1,22 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+# Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
+# and transaction kernel API for the Miden rollup
+{% if compiler_path %}
+miden = { path = "{{ compiler_path }}/sdk/sdk" }
+{% elsif compiler_branch %}
+miden = { git = "https://github.com/0xMiden/compiler", branch = "{{ compiler_branch }}" }
+{% elsif compiler_rev %}
+miden = { git = "https://github.com/0xMiden/compiler", rev = "{{ compiler_rev }}" }
+{% else %}
+miden = { version = "0.13" }
+{% endif %}

@@ -689,3 +689,36 @@ echo "Emitted artifacts in ${OUT}:"
 ls -l "${OUT}" 2>/dev/null || true
 exit "${status}"
 ''']
+
+# Release tooling
+# ============================================================
+# Local, read-only or repository-local commands only. `publish` and `finalize`
+# are deliberately absent: they cross irreversible boundaries and belong to the
+# release workflow, where an approval gate and a short-lived token stand between
+# them and production. A convenient local shortcut for them would be a way to
+# skip that by accident.
+
+[tasks.release-tool]
+category = "Build"
+description = "Builds release-tool and installs it to the bin folder"
+command = "cargo"
+args = [
+    "-Z",
+    "unstable-options",
+    "build",
+    "-p",
+    "midenc-release",
+    "--bin",
+    "release-tool",
+    "--artifact-dir",
+    "${MIDENC_BIN_DIR}",
+]
+
+[tasks.release]
+category = "Release"
+command = "${MIDENC_BIN_DIR}/release-tool"
+description = "Invoke a `release-tool` command"
+args = [
+    "${@}"
+]
+dependencies = ["release-tool"]

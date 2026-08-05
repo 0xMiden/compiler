@@ -1,0 +1,22 @@
+//! Release tooling for the Miden compiler repository.
+//!
+//! The design this implements lives in `tasks/design/release-tooling.md`.
+
+pub mod archive;
+pub mod bundle;
+pub mod candidate;
+pub mod changelog;
+pub mod closure;
+pub mod config;
+pub mod executor;
+pub mod finalize;
+pub mod github;
+pub mod intent;
+pub mod lint;
+pub mod order;
+pub mod plan;
+pub mod reconcile;
+pub mod registry;
+pub mod staging;
+pub mod version;
+pub mod workspace;

@@ -1,0 +1,19 @@
+[package]
+name = "template-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+# `cargo-miden` statically links the Miden compiler, so this branch determines
+# both the compiler used to build the generated projects and (via
+# `--compiler-branch`) the `miden` SDK they depend on.
+#
+# Keep this branch in sync with `COMPILER_BRANCH` in `src/lib.rs`.
+cargo-miden = { path = "../../../../tools/cargo-miden" }
+
+# Standalone crate: do not search parent directories for a workspace.
+[workspace]

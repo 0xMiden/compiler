@@ -1,0 +1,73 @@
+# Miden Project Cursor Rules
+
+This is a Miden smart contract project using the Rust SDK and compiler.
+
+## Project Layout
+
+- `contracts/`: Miden smart contracts. Each contract is a separate crate and is excluded from the workspace.
+- `integration/`: Workspace member for integration tests, helper code, and binaries used to interact with compiled contracts.
+- `.claude/skills/`: Detailed Miden development references. Use these files for deeper patterns even when working outside Claude Code.
+
+## Build And Test Commands
+
+Do not use `cargo build` to build contracts. Build contracts with `cargo miden build`:
+
+```sh
+cargo miden build --manifest-path contracts/<name>/Cargo.toml --release
+```
+
+Run integration tests from the workspace root:
+
+```sh
+cargo test -p integration --release
+```
+
+Useful integration commands:
+
+```sh
+cargo build -p integration --bin <name> --release
+cargo clean -p integration
+```
+
+Always build changed contracts before running tests. Tests compile contracts through `build_project_in_dir()`.
+
+## Contract Constraints
+
+- Contract crates must use `#![no_std]` and `#![feature(alloc_error_handler)]`.
+- Use `extern crate alloc;` and `BumpAlloc` when heap allocation is needed.
+- Standard account components should stay MASM-only unless there is a clear reason to use another path.
+- Keep contract crates independent. The root workspace should only include the integration crate unless the project structure is intentionally extended.
+
+## Felt Arithmetic
+
+`Felt` arithmetic is modular. Subtraction wraps around the field modulus, so validate quantity logic before subtracting:
+
+```rust
+assert!(
+    current.as_canonical_u64() >= amount.as_canonical_u64(),
+    "Insufficient balance"
+);
+let result = current - amount;
+```
+
+Do not use direct `Felt` comparisons for balances, amounts, counters, or other natural-number quantities. Convert to canonical integers first:
+
+```rust
+a.as_canonical_u64() < b.as_canonical_u64()
+```
+
+## Reference Files
+
+- `CLAUDE.md`: Primary project guidance for AI agents.
+- `.claude/skills/rust-sdk-patterns/SKILL.md`: Rust SDK patterns for contracts and notes.
+- `.claude/skills/rust-sdk-pitfalls/SKILL.md`: Common safety and correctness pitfalls.
+- `.claude/skills/rust-sdk-testing-patterns/SKILL.md`: Integration testing patterns.
+- `.claude/skills/rust-sdk-source-guide/SKILL.md`: Source exploration workflow for complex work.
+- `.claude/skills/local-node-validation/SKILL.md`: Local node validation workflow.
+
+## Workflow
+
+- Prefer existing examples in `contracts/counter-account`, `contracts/increment-note`, and `integration/tests/counter_test.rs`.
+- Add or update tests when changing contract behavior.
+- For complex app design, inspect the relevant Miden source repos and plan before editing.
+- Keep generated or compiled artifacts out of commits.

@@ -1,0 +1,43 @@
+# Project template bundle.
+#
+# This is the version source for the `templates` release unit, and the record of
+# which SDK the templates target. `release-tool` reads it; nothing else should.
+
+schema-version = 1
+
+# The bundle version. Moved by `release-tool set-version --unit templates`, and
+# released as `templates/vX.Y.Z`.
+version = "0.1.0"
+
+# The `miden` requirement every template's generated project carries.
+#
+# This is the coupling that makes template releases necessary: the templates
+# hardcode an SDK requirement, so an SDK *minor* release leaves generated
+# projects pinned to the previous SDK unless the templates move with it. A patch
+# release does not, because the requirement is minor-level.
+#
+# `release-tool set-version --unit sdk` rewrites this and every template
+# requirement together, and `release-tool lint` fails if they drift apart.
+sdk-requirement = "0.13"
+
+# What goes into the released archive.
+#
+# Only the templates themselves: the directories a generated project is rendered
+# from. Everything else under `extra/templates/rust` -- the README, LICENSE,
+# .gitignore, rust-toolchain, and the .github workflows inherited from the
+# imported repository -- is repository furniture, not template content.
+#
+# `tests` is excluded too. It contains a Cargo.toml, but it exists to test the
+# templates rather than to be shipped as one, and it depends on `cargo-miden` by
+# path, which would not resolve for anyone else.
+[templates]
+# Rendered by `cargo miden new` with no `--template` flag.
+project = { path = "project" }
+
+# Rendered by `cargo miden new --template <name>`. Each has a `template/`
+# subdirectory that cargo-generate uses as the render root.
+account = { path = "rust/account" }
+note = { path = "rust/note" }
+auth-component = { path = "rust/auth-component" }
+program = { path = "rust/program" }
+tx-script = { path = "rust/tx-script" }

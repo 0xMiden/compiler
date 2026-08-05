@@ -1,11 +1,21 @@
 [workspace]
 resolver = "2"
+# NOTE: Workspace members are listed explicitly rather than with globs. Globs allow
+# stray directories (e.g. leftover build output from another branch) to break every
+# Cargo command, and they let a new package join the release surface without an
+# explicit decision. See `.release/config.toml` for package classification.
 members = [
     "benches",
-    "codegen/*",
-    "dialects/*",
+    "codegen/masm",
+    "dialects/arith",
+    "dialects/cf",
+    "dialects/hir",
+    "dialects/scf",
+    "dialects/ub",
+    "dialects/wasm",
     "eval",
-    "frontend/*",
+    "frontend/masm",
+    "frontend/wasm",
     "hir",
     "hir-analysis",
     "hir-macros",
@@ -16,7 +26,9 @@ members = [
     "midenc-driver",
     "midenc-log",
     "midenc-session",
-    "sdk/field-repr/*",
+    "sdk/field-repr/derive",
+    "sdk/field-repr/repr",
+    "sdk/field-repr/tests",
     "sdk/alloc",
     "sdk/base",
     "sdk/base-macros",
@@ -24,12 +36,20 @@ members = [
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/wasm-metadata",
-    "tools/*",
+    "tools/cargo-miden",
+    "tools/expect-test",
+    "tools/hir-opt",
+    "tools/objtool",
+    "tools/release",
     "tests/support",
     "tests/integration",
     "tests/integration-network",
 ]
 exclude = [
+    # Template sources. These contain manifests with Liquid placeholders such as
+    # `name = "{{crate_name}}"`, and a nested workspace, neither of which Cargo
+    # should ever try to interpret as part of this workspace.
+    "extra",
     "sdk/.cargo",
     "tests/",
     "examples",
@@ -71,6 +91,7 @@ clap = { version = "4.6", default-features = false, features = [
 cranelift-entity = "0.131"
 compact_str = { version = "0.9", default-features = false }
 darling = { version = "0.23", features = ["diagnostics"] }
+flate2 = "1.1"
 hashbrown = { version = "0.17", features = ["nightly"] }
 Inflector = "0.11"
 intrusive-collections = "0.10"

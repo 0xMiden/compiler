@@ -1,0 +1,35 @@
+[package]
+name = "midenc-release"
+description = "Release tooling for the Miden compiler repository"
+# Never published; this version is deliberately frozen and meaningless.
+version = "0.1.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+# This tool is repository infrastructure and is never published.
+publish = false
+
+[lib]
+name = "midenc_release"
+path = "src/lib.rs"
+
+[[bin]]
+name = "release-tool"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+flate2.workspace = true
+semver = { workspace = true, features = ["std", "serde"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+toml.workspace = true
+toml_edit.workspace = true

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches:
+    - main
+    paths-ignore:
+    - '*.md'
+  pull_request:
+    paths-ignore:
+    - '*.md'
+
+permissions:
+  contents: read
+
+jobs:
+  test_templates:
+    # Scaffold a new project from every template with `cargo-miden` and build it.
+    name: Build all templates with cargo-miden
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Rust toolchain
+      # Keep in sync with the `rust-toolchain` file and the templates'
+      # `rust-toolchain.toml`.
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: nightly-2026-04-30
+        components: rust-src, llvm-tools, rustfmt
+        targets: wasm32-wasip2
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: tests
+    - name: Build and run template integration tests
+      run: cargo test --manifest-path tests/Cargo.toml -- --nocapture

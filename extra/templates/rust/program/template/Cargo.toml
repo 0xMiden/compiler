@@ -1,0 +1,14 @@
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+# A Miden program only needs `miden-core` (declared in miden-project.toml).
+# If your program needs the Miden SDK, add it here, e.g.:
+#   miden = { git = "https://github.com/0xMiden/compiler", branch = "next" }

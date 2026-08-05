@@ -6,6 +6,7 @@
 use anyhow::Result;
 use clap::Parser;
 
+pub mod bundle;
 mod cli;
 mod commands;
 mod outputs;

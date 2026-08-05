@@ -1,0 +1,257 @@
+# Authoritative release policy for this repository.
+#
+# Every workspace package must appear here exactly once. Classification is
+# explicit rather than inferred from directory layout, so that adding a package
+# forces a deliberate decision about whether it is published.
+#
+# See tasks/design/release-tooling.md for the full design.
+
+schema-version = 1
+
+[units.compiler]
+tag = "v{version}"
+changelog = "CHANGELOG.md"
+
+[units.sdk]
+tag = "sdk/v{version}"
+changelog = "sdk/CHANGELOG.md"
+
+# Publishes an archive rather than crates, so no package is ever assigned to it.
+# Its version lives in `extra/templates/bundle.toml`.
+[units.templates]
+tag = "templates/v{version}"
+changelog = "extra/templates/CHANGELOG.md"
+
+# --- compiler unit ------------------------------------------------------------
+
+[[packages]]
+name = "cargo-miden"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "miden-objtool"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-codegen-masm"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-compile"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-dialect-arith"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-dialect-cf"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-dialect-hir"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-dialect-scf"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-dialect-ub"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-dialect-wasm"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-driver"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-expect-test"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-frontend-masm"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-frontend-wasm"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir-analysis"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir-eval"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir-macros"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir-opt"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir-symbol"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-hir-transform"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-log"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+[[packages]]
+name = "midenc-session"
+unit = "compiler"
+publish = true
+version-source = "workspace"
+
+# --- sdk unit ----------------------------------------------------------------
+
+[[packages]]
+name = "miden"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-base"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-base-macros"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-base-sys"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-field-repr"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-field-repr-derive"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-sdk-alloc"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "miden-stdlib-sys"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
+name = "midenc-frontend-wasm-metadata"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+# --- private: repository infrastructure, never published ----------------------
+
+[[packages]]
+name = "midenc-release"
+unit = "private"
+publish = false
+
+[[packages]]
+name = "miden-field-repr-tests"
+unit = "private"
+publish = false
+
+[[packages]]
+name = "midenc-benchmark-runner"
+unit = "private"
+publish = false
+
+[[packages]]
+name = "midenc-integration-network-tests"
+unit = "private"
+publish = false
+
+[[packages]]
+name = "midenc-integration-test-support"
+unit = "private"
+publish = false
+
+[[packages]]
+name = "midenc-integration-tests"
+unit = "private"
+publish = false
