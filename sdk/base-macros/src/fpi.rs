@@ -1188,6 +1188,11 @@ pub(crate) fn augment_foreign_account_bindings(
         #(#trait_items)*
         #active_account_item
         #(#package_includes)*
+        // Record the package cache location in the consumer's dep-info. The value carries the
+        // build-input fingerprint, so Cargo re-expands this macro whenever the fingerprint
+        // rotates — even when a stale cache directory survives on disk. The `include_bytes!`
+        // constants above cover content changes at an unchanged path.
+        const _: Option<&str> = option_env!("MIDENC_PACKAGE_CACHE");
     })
 }
 
