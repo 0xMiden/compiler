@@ -480,6 +480,49 @@ mod tests {
         Ok(())
     }
 
+    /// An indirect call whose dispatchable entry resolves to a bodyless declaration is an
+    /// external call: raw advice passed to its range-constrained `u32` parameter must produce
+    /// the same finding a direct call to that declaration would.
+    #[test]
+    fn indirect_calls_to_declarations_report_argument_findings() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_external_argument").in_module("m");
+        let raw = define_raw_advice_source(&mut test);
+
+        // A declaration: no body, so the analysis cannot see what it does with its argument
+        let extern_sink = test.define_function("extern_sink", &[Type::U32], &[Type::U32]);
+        let table = define_table(&mut test, &[(0, extern_sink, 7)]);
+
+        let source_signature = Signature::new(&test.context_rc(), [], [Type::U32]);
+        let call_signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let tainted = builder.exec(raw, source_signature, [], span)?;
+            let tainted = {
+                let tainted = tainted.borrow();
+                tainted.results().iter().next().unwrap().borrow().as_value_ref()
+            };
+            let call = builder.exec_indirect(table, call_signature, 7, index, [tainted], span)?;
+            let result = {
+                let call = call.borrow();
+                call.results().iter().next().unwrap().borrow().as_value_ref()
+            };
+            builder.ret([result], span)?;
+        }
+
+        let analysis_manager = AnalysisManager::new(test.module().as_operation_ref(), None);
+        let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+        assert_eq!(
+            analysis.external_call_findings().len(),
+            1,
+            "raw advice reaching a declaration through a table must be reported"
+        );
+
+        Ok(())
+    }
+
     fn advice_taint_findings(test: &Test) -> Result<Vec<AdviceTaintFinding>, midenc_hir::Report> {
         let analysis_manager = AnalysisManager::new(test.function().as_operation_ref(), None);
         let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;

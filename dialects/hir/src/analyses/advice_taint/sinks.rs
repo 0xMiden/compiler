@@ -10,43 +10,53 @@ use midenc_hir::{
 };
 
 pub(super) fn is_external_call(call: &dyn CallOpInterface) -> bool {
-    let Some(callee) = call.resolve() else {
+    // Unknown targets are external by definition; a known set is external if any member has no
+    // body to analyze, since the analysis cannot see what that member does with the arguments.
+    let Some(targets) = call.possible_callees() else {
         return true;
     };
-    let callee = callee.borrow();
-    callee
-        .as_symbol_operation()
-        .downcast_ref::<builtin::Function>()
-        .is_some_and(Symbol::is_declaration)
+    if targets.is_empty() {
+        return false;
+    }
+    targets.iter().any(|target| {
+        let target = target.borrow();
+        target
+            .as_symbol_operation()
+            .downcast_ref::<builtin::Function>()
+            .is_none_or(Symbol::is_declaration)
+    })
 }
 
 pub(super) fn external_call_param_types(call: &dyn CallOpInterface) -> Option<Vec<Type>> {
-    let callee = call.resolve()?;
-    let callee = callee.borrow();
-    let function = callee.as_symbol_operation().downcast_ref::<builtin::Function>()?;
-    Some(function.get_signature().params().iter().map(|param| param.ty.clone()).collect())
+    // An indirect call has no single callee to read parameter types from, but its own signature
+    // is the contract its arguments are passed under, and the verifier requires every
+    // dispatchable entry to agree with it.
+    let signature = call.callee_signature()?;
+    Some(signature.params().iter().map(|param| param.ty.clone()).collect())
 }
 
 pub(super) fn external_call_result_has_unconstrained_advice_effect(
     call: &dyn CallOpInterface,
     result_index: usize,
 ) -> bool {
-    let Some(callee) = call.resolve() else {
+    let Some(targets) = call.possible_callees() else {
         return false;
     };
-    let callee = callee.borrow();
-    let Some(function) = callee.as_symbol_operation().downcast_ref::<builtin::Function>() else {
-        return false;
-    };
-    if !function.is_declaration() {
-        return false;
-    }
-
-    function.advice_effects().as_value().iter().any(|effect| {
-        effect.effect == AdviceEffect::Read
-            && effect
-                .result
-                .is_none_or(|effect_result| usize::from(effect_result) == result_index)
+    targets.iter().any(|target| {
+        let target = target.borrow();
+        let Some(function) = target.as_symbol_operation().downcast_ref::<builtin::Function>()
+        else {
+            return false;
+        };
+        if !function.is_declaration() {
+            return false;
+        }
+        function.advice_effects().as_value().iter().any(|effect| {
+            effect.effect == AdviceEffect::Read
+                && effect
+                    .result
+                    .is_none_or(|effect_result| usize::from(effect_result) == result_index)
+        })
     })
 }
 

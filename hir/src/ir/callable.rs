@@ -43,6 +43,18 @@ pub trait CallOpInterface: Op {
     fn possible_callees(&self) -> Option<crate::SmallVec<[SymbolRef; 2]>> {
         self.resolve().map(|callee| crate::smallvec![callee])
     }
+    /// The signature this call site expects of its callee, if one is known.
+    ///
+    /// The default derives it from the resolved callee, which is what a direct call wants. An
+    /// indirect call has no single callee to derive it from but does carry the signature it
+    /// dispatches with, and overrides this to return it — so consumers reasoning about a call's
+    /// parameter types (taint analysis' external-call sinks, for one) work for both.
+    fn callee_signature(&self) -> Option<Signature> {
+        let callee = self.resolve()?;
+        let callee = callee.borrow();
+        let callable = callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>()?;
+        Some(callable.signature())
+    }
 }
 
 /// A callable operation is one who represents a potential function, and may be a target for a call-

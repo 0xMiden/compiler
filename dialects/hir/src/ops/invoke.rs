@@ -408,6 +408,13 @@ impl CallOpInterface for ExecIndirect {
         None
     }
 
+    /// The signature is the contract the lowering emits against — the stack shape pushed before
+    /// `dynexec` and popped after — so it is the call site's answer even though no single
+    /// callee is known.
+    fn callee_signature(&self) -> Option<midenc_hir::dialects::builtin::attributes::Signature> {
+        Some(self.get_signature().clone())
+    }
+
     /// The possible callees are the table entries whose signature tag matches the tag this call
     /// site expects: dispatch to any other slot traps on the runtime signature check before the
     /// callee runs, so no other entry can observe the arguments or produce results. Later
