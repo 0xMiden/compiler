@@ -1189,7 +1189,8 @@ fn a_nested_module_is_lowered_at_its_own_path() {
 /// Derived from the shared fixture rather than written out, because the inner module's
 /// visibility is the only thing that differs, and it is the only thing this asks about.
 fn world_with_a_private_nested_module() -> String {
-    WORLD_WITH_A_NESTED_MODULE.replace("builtin.module public @inner", "builtin.module private @inner")
+    WORLD_WITH_A_NESTED_MODULE
+        .replace("builtin.module public @inner", "builtin.module private @inner")
 }
 
 /// Nesting does not widen the surface. A private module's public procedures stay off the
@@ -1375,7 +1376,9 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
         .modules
         .iter()
         .filter(|module| {
-            module.procedures().any(|proc| proc.name().as_str() == super::FUNCTION_TABLE_INIT_PROC)
+            module
+                .procedures()
+                .any(|proc| proc.name().as_str() == super::FUNCTION_TABLE_INIT_PROC)
         })
         .map(|module| module.path().to_string())
         .collect::<Vec<_>>();

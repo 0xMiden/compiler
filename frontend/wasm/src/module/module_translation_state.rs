@@ -256,14 +256,19 @@ impl<'a> ModuleTranslationState<'a> {
                 if callee_signature != signature {
                     unsupported_diag!(
                         diagnostics,
-                        "unsupported function table element: '{}' is an intrinsic whose \
-                         signature '{callee_signature}' differs from the Wasm signature \
-                         '{signature}' its table entry is typed by",
+                        "unsupported function table element: '{}' is an intrinsic whose signature \
+                         '{callee_signature}' differs from the Wasm signature '{signature}' its \
+                         table entry is typed by",
                         module.func_name(func_index)
                     );
                 }
-                self.module_builder
-                    .append_function_table_entry(table, index, type_tag, function_ref, span)
+                self.module_builder.append_function_table_entry(
+                    table,
+                    index,
+                    type_tag,
+                    function_ref,
+                    span,
+                )
             }
             CallableFunction::Instruction { .. } => {
                 unsupported_diag!(
