@@ -246,6 +246,57 @@ fn call_indirect_rejects_oversized_table() {
     )
 }
 
+/// The linker stub for an intrinsic the compiler lowers to an inlined operation (such as
+/// `intrinsics::felt::add`, whose Wasm body is a single `unreachable`) is erased from the module,
+/// so there is no procedure body whose MAST root a table slot could hold. Taking such a
+/// function's address must be rejected at compile time rather than lowered to a null slot.
+#[test]
+fn call_indirect_rejects_inlined_intrinsic_table_entry() {
+    check_module_err(
+        r#"
+        (module
+            (type $binop (func (param f32 f32) (result f32)))
+            (table 1 1 funcref)
+            (elem (i32.const 0) func $intrinsics::felt::add)
+            (memory (;0;) 16384)
+            (func $intrinsics::felt::add (type $binop)
+                unreachable)
+            (func $dispatch (param i32 f32 f32) (result f32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        "is an inlined intrinsic without a procedure body",
+    )
+}
+
+/// A stub for an intrinsic lowered to a MASM procedure keeps its own body (an `exec` of the
+/// intrinsic) and therefore its Wasm signature, which is exactly the one the entry's type tag
+/// denotes. Such an entry is well-formed and must keep lowering.
+#[test]
+fn call_indirect_accepts_masm_procedure_intrinsic_table_entry() {
+    check_module(
+        r#"
+        (module
+            (type $hmerge (func (param i32 i32)))
+            (table 1 1 funcref)
+            (elem (i32.const 0) func $intrinsics::crypto::hmerge)
+            (memory (;0;) 16384)
+            (func $intrinsics::crypto::hmerge (type $hmerge)
+                unreachable)
+            (func $dispatch (param i32 i32 i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $hmerge))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_intrinsic_stub.hir"],
+    )
+}
+
 #[test]
 fn memory_grow() {
     check_op(

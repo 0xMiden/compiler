@@ -82,6 +82,13 @@ The following limitations remain:
   compile-time error.
 - The callee arguments plus the table index must fit in Miden's 16-element operand stack window,
   so indirect callee signatures are limited to 15 field elements worth of arguments.
+- A `funcref` table entry naming a function the compiler lowers to an inlined operation — the
+  linker stubs for intrinsics such as `intrinsics::felt::add`, whose Wasm body is a single
+  `unreachable` — is rejected: the stub has no procedure body whose MAST root a slot could
+  hold. Calling such a function directly is supported; only taking its address is not.
+- A `funcref` table entry naming an intrinsic the compiler lowers to a MASM procedure is
+  rejected when that procedure's signature differs from the Wasm signature the entry's type tag
+  denotes, since dispatch would transfer control with a mismatched stack contract.
 
 ### Miden SDK
 

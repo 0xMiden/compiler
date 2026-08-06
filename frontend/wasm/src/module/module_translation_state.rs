@@ -227,10 +227,32 @@ impl<'a> ModuleTranslationState<'a> {
         // replaces (intrinsics), the stub's declared signature is the checked one
         let type_tag = signature_type_tag(module.functions[func_index].signature);
         match self.get_direct_func(func_index)? {
-            CallableFunction::Function { function_ref, .. }
-            | CallableFunction::Intrinsic { function_ref, .. } => self
+            CallableFunction::Function { function_ref, .. } => self
                 .module_builder
                 .append_function_table_entry(table, index, type_tag, function_ref, span),
+            CallableFunction::Intrinsic {
+                function_ref,
+                signature,
+                ..
+            } => {
+                // The tag denotes the Wasm signature, but an intrinsic's callee carries the
+                // intrinsic's own — `(felt, felt) -> felt` where the stub says
+                // `(f32, f32) -> f32`, for instance. Dispatching through such an entry would
+                // push and pop per the call site while the callee consumes per the intrinsic,
+                // which the tag check cannot catch: the tags match, only the contracts do not.
+                let callee_signature = function_ref.borrow().get_signature().clone();
+                if callee_signature != signature {
+                    unsupported_diag!(
+                        diagnostics,
+                        "unsupported function table element: '{}' is an intrinsic whose \
+                         signature '{callee_signature}' differs from the Wasm signature \
+                         '{signature}' its table entry is typed by",
+                        module.func_name(func_index)
+                    );
+                }
+                self.module_builder
+                    .append_function_table_entry(table, index, type_tag, function_ref, span)
+            }
             CallableFunction::Instruction { .. } => {
                 unsupported_diag!(
                     diagnostics,
