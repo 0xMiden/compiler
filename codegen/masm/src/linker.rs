@@ -138,58 +138,7 @@ impl Linker {
         let body = body.entry();
         for item in body.body() {
             if let Some(module) = item.downcast_ref::<builtin::Module>() {
-                if let Some(reserved) = module
-                    .as_operation()
-                    .get_typed_attribute::<U64Attr>(builtin::Module::RESERVED_MEMORY_ATTR)
-                {
-                    declared_reserved_memory = declared_reserved_memory.max(**reserved.borrow());
-                }
-
-                let module_body = module.body();
-                if module_body.is_empty() {
-                    continue;
-                }
-
-                let module_body = module_body.entry();
-                for item in module_body.body() {
-                    if let Some(segment) = item.downcast_ref::<builtin::Segment>() {
-                        log::debug!(target: "linker",
-                            "inserting segment at offset {:#x}, size: {} bytes",
-                            *segment.get_offset(),
-                            segment.size_in_bytes()
-                        );
-                        self.segment_layout
-                            .insert(unsafe { SegmentRef::from_raw(segment) })
-                            .map_err(|err| {
-                                if let Some(id) = id.as_ref() {
-                                    LinkerError::InvalidComponentDataSegment {
-                                        id: id.clone(),
-                                        err,
-                                    }
-                                } else {
-                                    LinkerError::InvalidDataSegment { err }
-                                }
-                            })?;
-                        continue;
-                    }
-
-                    if let Some(global) = item.downcast_ref::<builtin::GlobalVariable>() {
-                        if global.is_declaration() {
-                            continue;
-                        }
-                        self.globals_layout.insert(global)?;
-                        continue;
-                    }
-
-                    if let Some(table) = item.downcast_ref::<builtin::FunctionTable>() {
-                        log::debug!(target: "linker",
-                            "discovered function table '{}' with {} slots",
-                            table.get_name().as_str(),
-                            *table.get_num_slots()
-                        );
-                        self.function_tables.push(table.as_function_table_ref());
-                    }
-                }
+                self.visit_module(module, &mut declared_reserved_memory, id.as_ref())?;
             }
         }
 
@@ -309,6 +258,77 @@ impl Linker {
             function_tables,
             heap_base,
         })
+    }
+
+    /// Discover the memory-owning items of `module` and of any module nested within it.
+    ///
+    /// Nesting is explicitly permitted by `builtin.Module`, and a nested module's items are as
+    /// much a part of the component's memory as a top-level module's: a table the layout never
+    /// visits has no address, and the dispatch reaching it would read a MAST root from nowhere.
+    fn visit_module(
+        &mut self,
+        module: &builtin::Module,
+        declared_reserved_memory: &mut u64,
+        id: Option<&builtin::ComponentId>,
+    ) -> Result<(), LinkerError> {
+        if let Some(reserved) = module
+            .as_operation()
+            .get_typed_attribute::<U64Attr>(builtin::Module::RESERVED_MEMORY_ATTR)
+        {
+            *declared_reserved_memory = (*declared_reserved_memory).max(**reserved.borrow());
+        }
+
+        let module_body = module.body();
+        if module_body.is_empty() {
+            return Ok(());
+        }
+
+        for item in module_body.entry().body() {
+            if let Some(nested) = item.downcast_ref::<builtin::Module>() {
+                self.visit_module(nested, declared_reserved_memory, id)?;
+                continue;
+            }
+
+            if let Some(segment) = item.downcast_ref::<builtin::Segment>() {
+                log::debug!(target: "linker",
+                    "inserting segment at offset {:#x}, size: {} bytes",
+                    *segment.get_offset(),
+                    segment.size_in_bytes()
+                );
+                self.segment_layout.insert(unsafe { SegmentRef::from_raw(segment) }).map_err(
+                    |err| {
+                        if let Some(id) = id {
+                            LinkerError::InvalidComponentDataSegment {
+                                id: id.clone(),
+                                err,
+                            }
+                        } else {
+                            LinkerError::InvalidDataSegment { err }
+                        }
+                    },
+                )?;
+                continue;
+            }
+
+            if let Some(global) = item.downcast_ref::<builtin::GlobalVariable>() {
+                if global.is_declaration() {
+                    continue;
+                }
+                self.globals_layout.insert(global)?;
+                continue;
+            }
+
+            if let Some(table) = item.downcast_ref::<builtin::FunctionTable>() {
+                log::debug!(target: "linker",
+                    "discovered function table '{}' with {} slots",
+                    table.get_name().as_str(),
+                    *table.get_num_slots()
+                );
+                self.function_tables.push(table.as_function_table_ref());
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -622,6 +642,39 @@ mod tests {
         assert!(
             matches!(&err, LinkerError::LayoutOverflow { .. }),
             "unexpected link failure: {err}"
+        );
+    }
+
+    /// `builtin.Module` permits nesting, so a table in a nested module is legal IR. The layout
+    /// must find it: an undiscovered table has no address, and the dispatch that reaches it
+    /// would have nowhere to read a MAST root from.
+    #[test]
+    fn link_discovers_tables_in_nested_modules() {
+        let context = Rc::new(Context::default());
+        let world_ref =
+            context.clone().builder().create::<World, ()>(Default::default())().unwrap();
+        let mut world_builder = WorldBuilder::new(world_ref);
+        let component_ref = world_builder
+            .define_component(
+                Ident::from("test_ns"),
+                Ident::from("test"),
+                Version::parse("1.0.0").unwrap(),
+            )
+            .unwrap();
+        let mut component_builder = ComponentBuilder::new(component_ref);
+        let outer = component_builder.define_module(Ident::from("outer")).unwrap();
+        let inner = ModuleBuilder::new(outer).declare_module(Ident::from("inner")).unwrap();
+        let table = ModuleBuilder::new(inner)
+            .define_function_table(Ident::from("tbl"), Visibility::Private, 1)
+            .unwrap();
+
+        let component = component_ref.borrow();
+        let link_info = Linker::default()
+            .link(None, component.as_operation())
+            .expect("a nested table must lay out");
+        assert!(
+            link_info.function_tables().get_computed_addr(table).is_some(),
+            "the nested table must have an address in the computed layout"
         );
     }
 
