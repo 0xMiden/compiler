@@ -90,8 +90,9 @@ The following limitations remain:
   declared Wasm signature is taken at face value: it is what calls are emitted from and what the
   stub's table entries are tagged with, and it is never checked against the signature the
   intrinsic actually has. Declaring such a stub with the wrong signature is a program error the
-  compiler does not diagnose; it produces a mismatched stack contract at run time rather than a
-  compile-time error.
+  compiler does not diagnose: a wrong parameter or result type produces a mismatched stack
+  contract at run time, and a wrong number of parameters fails late in compilation rather than
+  as a diagnostic.
 
 ### Miden SDK
 
