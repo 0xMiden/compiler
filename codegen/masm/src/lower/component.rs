@@ -1,7 +1,11 @@
 #[cfg(test)]
 mod tests;
 
-use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    vec::Vec,
+};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{
@@ -31,6 +35,16 @@ use crate::{
     linker::{FunctionTableLayout, LinkInfo, Linker},
     masm,
 };
+
+/// The generated procedure each module uses to fill the function-table slots whose callees it
+/// defines.
+///
+/// One procedure per module, rather than one for the component, because `procref` on a private
+/// procedure is only legal within its defining module — and a callee's visibility is its
+/// author's decision, not something initialization gets to widen. A module's procedure also
+/// invokes the procedures of the modules nested within it, so the component's `init` only has
+/// to reach the top-level ones; that is the shape a single component-global table would want.
+const FUNCTION_TABLE_INIT_PROC: &str = "__init_function_table";
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
 pub trait ToMasmComponent {
@@ -724,10 +738,10 @@ impl MasmComponentBuilder<'_> {
             )));
 
             // Data segment initialization
+            //
+            // Function table initialization is *not* emitted here: it is attached to the modules
+            // defining the callees, which do not exist yet. See below.
             self.emit_data_segment_initialization();
-
-            // Function table initialization
-            self.emit_function_table_initialization()?;
         }
 
         // Translate component body
@@ -762,6 +776,87 @@ impl MasmComponentBuilder<'_> {
 
         // Finalize the component-level init, if required
         if self.component.init.is_some() {
+            // Function tables are initialized from the modules that define their callees, so this
+            // has to run after those modules exist — which is why it is here rather than beside
+            // the heap and data segment initialization above. Each fragment invokes the fragments
+            // of the modules nested within it; `init` only reaches the outermost ones.
+            let fragments = self.build_function_table_fragments()?;
+            let owners = fragments.keys().cloned().collect::<Vec<_>>();
+            let mut child_calls: BTreeMap<masm::PathBuf, Vec<masm::PathBuf>> = BTreeMap::new();
+            let mut roots: Vec<masm::PathBuf> = Vec::new();
+            for owner in owners.iter() {
+                // The nearest fragment-bearing ancestor, if any: a module's fragment is reached
+                // from its closest enclosing one, and only the modules with no such enclosing
+                // fragment are reached from `init`. `Path::starts_with_exactly` matches
+                // component-wise, so `::a::bc` is not an ancestor's descendant merely because
+                // the text of `::a::b` is a prefix of it.
+                match owners
+                    .iter()
+                    .filter(|candidate| {
+                        *candidate != owner
+                            && owner.as_path().starts_with_exactly(candidate.as_path())
+                    })
+                    .max_by_key(|candidate| candidate.as_path().components().count())
+                {
+                    Some(parent) => {
+                        child_calls.entry(parent.clone()).or_default().push(owner.clone())
+                    }
+                    None => roots.push(owner.clone()),
+                }
+            }
+
+            let span = SourceSpan::default();
+            let proc_name = masm::ProcedureName::new(FUNCTION_TABLE_INIT_PROC).unwrap();
+            for (owner, (mut body, mut invoked)) in fragments {
+                for child in child_calls.remove(&owner).unwrap_or_default() {
+                    let qualified =
+                        masm::QualifiedProcedureName::new(child.as_path(), proc_name.clone());
+                    let target =
+                        masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
+                    invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
+                    body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
+                }
+
+                let index = self
+                    .component
+                    .modules
+                    .iter()
+                    .position(|module| module.path() == owner.as_path())
+                    .expect("a table callee's module must have been lowered");
+                let module = Arc::get_mut(&mut self.component.modules[index])
+                    .expect("expected unique reference");
+                let mut procedure = masm::Procedure::new(
+                    span,
+                    // Public so the parent module's fragment (or `init`) can reach it; this is
+                    // the only symbol table initialization contributes to a module's surface,
+                    // and it is the compiler's own, never the author's
+                    masm::Visibility::Public,
+                    proc_name.clone(),
+                    0,
+                    masm::Block::new(span, body),
+                )
+                .with_signature(masm::FunctionType::new(
+                    midenc_hir::CallConv::Fast,
+                    vec![],
+                    vec![],
+                ));
+                procedure.extend_invoked(invoked);
+                module
+                    .define_procedure(procedure, self.source_manager.clone())
+                    .into_diagnostic()
+                    .wrap_err("failed to define a function table initializer")?;
+            }
+
+            for root in roots {
+                let qualified =
+                    masm::QualifiedProcedureName::new(root.as_path(), proc_name.clone());
+                let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
+                self.invoked_from_init
+                    .insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
+                self.init_body
+                    .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
+            }
+
             let module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
 
@@ -1031,17 +1126,25 @@ impl MasmComponentBuilder<'_> {
         }
     }
 
-    /// Populate the function tables of this component with the MAST roots of their entries.
+    /// Build the slot-initialization code for every function table in the component, grouped by
+    /// the module that *defines the callee* whose MAST root fills each slot.
+    ///
+    /// Grouping by callee rather than by table is what keeps every `procref` intra-module: a
+    /// table in one module may name a callee in another, and it is the `procref` — not the
+    /// store — that the assembler resolves against visibility.
     ///
     /// Uninitialized (null) slots are left as the zero word, since VM memory is
     /// zero-initialized; `dynexec` on such a slot fails at runtime. The referenced procedures
     /// are registered as `procref` invocations so the assembler's linker treats them as
     /// reachable and resolves their MAST roots.
-    fn emit_function_table_initialization(&mut self) -> Result<(), Report> {
+    fn build_function_table_fragments(
+        &self,
+    ) -> Result<BTreeMap<masm::PathBuf, (Vec<masm::Op>, BTreeSet<masm::Invoke>)>, Report> {
         use masm::{Instruction as Inst, Op};
-        use midenc_hir::Visibility;
 
         let span = SourceSpan::default();
+        let mut fragments: BTreeMap<masm::PathBuf, (Vec<Op>, BTreeSet<masm::Invoke>)> =
+            BTreeMap::new();
         let layout = self.link_info.function_tables();
         for (table_ref, _) in layout.iter() {
             let base_addr = layout
@@ -1077,27 +1180,22 @@ impl MasmComponentBuilder<'_> {
                         table.get_name().as_str(),
                     )));
                 }
-                let Some(mut callee) = entry.resolve_callee() else {
+                let Some(callee) = entry.resolve_callee() else {
                     return Err(Report::msg(format!(
                         "invalid function table entry: unable to resolve callee '{}'",
                         entry.callee().path()
                     )));
                 };
-                // This init procedure lives in the root component module and takes the callee's
-                // MAST root with a cross-module `procref`, which the assembler rejects for
-                // private procedures; since that is a codegen constraint, the required
-                // visibility promotion is applied here rather than expected of IR producers
-                {
-                    let mut callee = callee.borrow_mut();
-                    if callee.visibility() == Visibility::Private {
-                        callee.set_visibility(Visibility::Internal);
-                    }
-                }
                 let callee_path = callee.borrow().path();
                 let target =
                     super::lowering::invocation_target_from_symbol_path(&callee_path, span);
-                self.invoked_from_init
-                    .insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
+
+                // The fragment belongs to the module defining the callee: `procref` there needs
+                // no visibility beyond what the callee already has
+                let owner = callee_path.without_leaf().to_library_path();
+                let owner = owner.to_absolute().unwrap().into_owned();
+                let (body, invoked) = fragments.entry(owner).or_default();
+                invoked.insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
 
                 // `procref` pushes the callee's MAST root word (`root[0]` on top),
                 // `mem_storew_le` writes it to the slot's element address (leaving the word on
@@ -1107,19 +1205,18 @@ impl MasmComponentBuilder<'_> {
                 // requires.
                 let slot_addr = base_addr + slot * FunctionTableLayout::SLOT_SIZE_ELEMENTS;
                 let tag_addr = slot_addr + FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS;
-                self.init_body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
-                self.init_body
-                    .push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
-                self.init_body.push(Op::Inst(Span::new(span, Inst::DropW)));
-                self.init_body.push(Op::Inst(Span::new(
+                body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
+                body.push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
+                body.push(Op::Inst(Span::new(span, Inst::DropW)));
+                body.push(Op::Inst(Span::new(
                     span,
                     Inst::Push(masm::Immediate::Value(Span::new(span, type_tag.into()))),
                 )));
-                self.init_body
-                    .push(Op::Inst(Span::new(span, Inst::MemStoreImm(tag_addr.into()))));
+                body.push(Op::Inst(Span::new(span, Inst::MemStoreImm(tag_addr.into()))));
             }
         }
-        Ok(())
+
+        Ok(fragments)
     }
 }
 
@@ -1153,8 +1250,9 @@ impl MasmModuleBuilder<'_> {
             } else if op.is::<builtin::Segment>() {
                 continue;
             } else if op.is::<builtin::FunctionTable>() {
-                // Laid out by the linker; slots are filled by the component-level init code
-                // emitted in `emit_function_table_initialization`
+                // Laid out by the linker; slots are filled by the `__init_function_table`
+                // procedures `MasmComponentBuilder::build` attaches to the modules defining the
+                // callees, from fragments `build_function_table_fragments` produces
                 continue;
             } else {
                 panic!(
