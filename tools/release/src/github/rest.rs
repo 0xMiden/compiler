@@ -21,6 +21,12 @@ use serde::Deserialize;
 
 use super::{Asset, GitHub, Release};
 
+const RELEASES_PER_PAGE: usize = 100;
+
+/// Enough pages to cover every release this repository will plausibly have.
+/// Bounded rather than unbounded so a paging bug cannot loop forever.
+const MAX_RELEASE_PAGES: usize = 20;
+
 pub struct RestGitHub {
     api_base: String,
     /// `owner/repo`.
@@ -238,6 +244,30 @@ impl RestGitHub {
             .with_context(|| format!("release {release} has no asset '{name}'"))
     }
 
+    /// Delete an asset already attached to a release, if one exists by that name.
+    ///
+    /// Only ever called on a draft: published releases are immutable, and
+    /// nothing in the flow uploads to one.
+    fn remove_asset_if_present(&self, release: u64, name: &str) -> Result<()> {
+        let Some(existing) =
+            self.asset_responses(release)?.into_iter().find(|asset| asset.name == name)
+        else {
+            return Ok(());
+        };
+
+        let (status, body) =
+            self.request("DELETE", &self.url(&format!("/releases/assets/{}", existing.id)), None)?;
+        // 204 is success; 404 means someone else removed it, which is the state
+        // we wanted anyway.
+        if status != 204 && status != 404 {
+            bail!(
+                "failed to replace the existing asset '{name}': HTTP {status}: {}",
+                String::from_utf8_lossy(&body).trim()
+            );
+        }
+        Ok(())
+    }
+
     fn asset_responses(&self, release: u64) -> Result<Vec<AssetResponse>> {
         let (status, body) =
             self.request("GET", &self.url(&format!("/releases/{release}/assets")), None)?;
@@ -300,22 +330,60 @@ impl GitHub for RestGitHub {
         Ok(parsed.into())
     }
 
+    /// Find a release by tag, **including drafts**.
+    ///
+    /// `GET /releases/tags/{tag}` cannot be used here: it returns only published
+    /// releases and 404s for a draft, even when the tag itself exists. A draft
+    /// is exactly what this needs to find — it is what staging creates, what a
+    /// resume must reuse rather than duplicate, what `discard` deletes, and what
+    /// finalization publishes. Using that endpoint meant every run created a
+    /// second draft for the same tag, `discard` silently deleted nothing, and
+    /// finalization reported that staging had not completed.
+    ///
+    /// Listing is therefore the only correct source. A published release wins
+    /// over a draft for the same tag, so staging still refuses to modify one.
     fn release_by_tag(&self, tag: &str) -> Result<Option<Release>> {
-        let (status, body) =
-            self.request("GET", &self.url(&format!("/releases/tags/{tag}")), None)?;
-        match status {
-            200 => {
-                let parsed: ReleaseResponse = serde_json::from_slice(&body)?;
-                Ok(Some(parsed.into()))
+        let mut candidates: Vec<Release> = Vec::new();
+
+        for page in 1..=MAX_RELEASE_PAGES {
+            let (status, body) = self.request(
+                "GET",
+                &self.url(&format!("/releases?per_page={RELEASES_PER_PAGE}&page={page}")),
+                None,
+            )?;
+            if status != 200 {
+                bail!("failed to list releases while looking for '{tag}': HTTP {status}");
             }
-            404 => Ok(None),
-            _ => bail!("failed to read the release for '{tag}': HTTP {status}"),
+            let parsed: Vec<ReleaseResponse> = serde_json::from_slice(&body)?;
+            let count = parsed.len();
+
+            candidates
+                .extend(parsed.into_iter().map(Release::from).filter(|release| release.tag == tag));
+
+            // A short page is the last page.
+            if count < RELEASES_PER_PAGE {
+                break;
+            }
         }
+
+        // A published release is authoritative: staging must see it and refuse,
+        // rather than finding a leftover draft beside it and populating that.
+        candidates.sort_by_key(|release| release.draft);
+        Ok(candidates.into_iter().next())
     }
 
     fn upload_asset(&self, release: u64, name: &str, bytes: &[u8]) -> Result<Asset> {
         let response = self.release(release)?;
         let url = self.upload_url(&response, name);
+
+        // An asset name is unique within a release, and uploading over one is
+        // rejected rather than replaced. A resume re-stages the same draft with
+        // freshly built bytes -- binary builds are not required to be
+        // bit-for-bit reproducible -- so the existing asset is removed first.
+        // Doing this only on conflict would leave the first attempt's bytes in
+        // place whenever they happen to match by name.
+        self.remove_asset_if_present(release, name)?;
+
         let (status, body) = self.request("POST", &url, Some(Body::Binary(bytes)))?;
         if status != 201 {
             bail!(

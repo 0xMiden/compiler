@@ -207,12 +207,41 @@ fn dispatch(
             (201, release_json(&record, addr).into_bytes())
         }
 
+        // Published releases only. GitHub 404s here for a draft even when the
+        // tag exists, because a draft is not reachable by tag name -- which is
+        // why nothing in the release flow may use this endpoint to find one.
         ("GET", ["releases", "tags", ..]) => {
             let tag = rest[2..].join("/");
-            match state.releases.values().find(|r| r.tag == tag) {
+            match state.releases.values().find(|r| r.tag == tag && !r.draft) {
                 Some(record) => (200, release_json(record, addr).into_bytes()),
                 None => (404, json_error("Not Found")),
             }
+        }
+
+        // Listing is the only way to see drafts. Paginated, like the real API.
+        ("GET", ["releases"]) => {
+            let param = |key: &str| -> Option<usize> {
+                query
+                    .split('&')
+                    .find_map(|pair| pair.strip_prefix(&format!("{key}=")))
+                    .and_then(|value| value.parse().ok())
+            };
+            let per_page = param("per_page").unwrap_or(30).clamp(1, 100);
+            let page = param("page").unwrap_or(1).max(1);
+
+            // Newest first, as GitHub orders them.
+            let mut all: Vec<&ReleaseRecord> = state.releases.values().collect();
+            all.sort_by_key(|record| std::cmp::Reverse(record.id));
+
+            let body: Vec<serde_json::Value> = all
+                .into_iter()
+                .skip((page - 1) * per_page)
+                .take(per_page)
+                .map(|record| {
+                    serde_json::from_str(&release_json(record, addr)).expect("valid release json")
+                })
+                .collect();
+            (200, serde_json::to_vec(&body).expect("serializable"))
         }
 
         ("GET", ["releases", id]) => {
@@ -266,6 +295,12 @@ fn dispatch(
                 .unwrap_or("unnamed")
                 .to_string();
 
+            // Asset names are unique within a release, and GitHub rejects a
+            // second upload rather than replacing the first.
+            if state.assets.get(&id).is_some_and(|assets| assets.contains_key(&name)) {
+                return (422, json_error("Validation Failed: already_exists"));
+            }
+
             state.next_id += 1;
             let asset_id = state.next_id;
             let size = body.len();
@@ -312,6 +347,21 @@ fn dispatch(
                     if *id == wanted {
                         return (200, bytes.clone());
                     }
+                }
+            }
+            (404, json_error("Not Found"))
+        }
+
+        ("DELETE", ["releases", "assets", asset_id]) => {
+            let Some(wanted) = asset_id.parse::<u64>().ok() else {
+                return (404, json_error("Not Found"));
+            };
+            for assets in state.assets.values_mut() {
+                if let Some(name) =
+                    assets.iter().find(|(_, (id, _))| *id == wanted).map(|(name, _)| name.clone())
+                {
+                    assets.remove(&name);
+                    return (204, Vec::new());
                 }
             }
             (404, json_error("Not Found"))
