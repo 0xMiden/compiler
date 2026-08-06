@@ -335,8 +335,8 @@ impl fmt::Display for Signature {
             .key(&"results")
             .value_with(|f| {
                 let mut builder = f.debug_list();
-                for param in self.params.iter() {
-                    builder.entry(&format_args!("{param}"));
+                for result in self.results.iter() {
+                    builder.entry(&format_args!("{result}"));
                 }
                 builder.finish()
             })
@@ -470,5 +470,32 @@ impl AttrParser for SignatureAttr {
         let signature = Signature::with_convention(&context, cc, ty.params, ty.results);
         let attr = context.create_attribute::<SignatureAttr, _>(signature);
         Ok(attr)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use super::*;
+
+    /// A signature's `Display` output must render its results, not a second copy of its params.
+    #[test]
+    fn display_renders_params_and_results_separately() {
+        let signature = Signature {
+            params: alloc::vec![AbiParam::new(Type::U32)],
+            results: alloc::vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::default(),
+        };
+
+        let rendered = format!("{signature}");
+        let (params, results) = rendered
+            .split_once("\"results\"")
+            .unwrap_or_else(|| panic!("expected a 'results' key in {rendered}"));
+
+        assert!(params.contains("u32"), "expected 'u32' under params in {rendered}");
+        assert!(!params.contains("felt"), "unexpected 'felt' under params in {rendered}");
+        assert!(results.contains("felt"), "expected 'felt' under results in {rendered}");
+        assert!(!results.contains("u32"), "unexpected 'u32' under results in {rendered}");
     }
 }
