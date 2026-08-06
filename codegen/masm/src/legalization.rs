@@ -130,18 +130,48 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             }
         })
         .add_dynamically_legal_op::<builtin::FunctionTableEntry, _>(|op| {
-            let inside_table = op
-                .parent_op()
-                .is_some_and(|parent| parent.borrow().is::<builtin::FunctionTable>());
-            if inside_table {
-                DynamicLegalityResult::legal()
-            } else {
-                DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            let entry = op
+                .downcast_ref::<builtin::FunctionTableEntry>()
+                .expect("this legality rule is registered for builtin.function_table_entry");
+            let Some(parent) = op.parent_op() else {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
                     "operation '{}' is only permitted in the entries region of a \
                      'builtin.function_table'",
                     op.name()
-                )))
+                )));
+            };
+            let parent = parent.borrow();
+            let Some(table) = parent.downcast_ref::<builtin::FunctionTable>() else {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' is only permitted in the entries region of a \
+                     'builtin.function_table'",
+                    op.name()
+                )));
+            };
+            let slot = *entry.get_index();
+            let num_slots = *table.get_num_slots();
+            if slot >= num_slots {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' initializes slot {slot}, which is out of bounds for table \
+                     '{}' with {num_slots} slots",
+                    op.name(),
+                    table.get_name().as_str()
+                )));
             }
+            if *entry.get_type_tag() == 0 {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' uses signature tag 0, which is reserved for null slots",
+                    op.name()
+                )));
+            }
+            if entry.resolve_callee().is_none() {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' names callee '{}', which does not resolve",
+                    op.name(),
+                    entry.callee().path()
+                )));
+            }
+            DynamicLegalityResult::legal()
         })
         .add_dynamically_legal_op::<hir::ExecIndirect, _>(|op| {
             let exec = op
@@ -215,7 +245,7 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
+    use alloc::{boxed::Box, format};
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_hir::HirOpBuilder;
@@ -296,6 +326,53 @@ mod tests {
         let message = format!("{err}");
         assert!(message.contains("builtin.function_table"), "{message}");
         assert!(message.contains("body of a 'builtin.module'"), "{message}");
+    }
+
+    /// Run `LegalizeForMasm` over `test`'s module.
+    ///
+    /// `Test::apply_pass` anchors the pass on the test's primary function, which never reaches a
+    /// function table: tables live in the module body, as they do under the
+    /// `PassManager::on::<builtin::World>` the backend pipeline uses.
+    fn legalize_module(test: &Test) -> Result<(), Report> {
+        use midenc_hir::pass::{Nesting, PassManager};
+
+        let mut pm = PassManager::on::<builtin::Module>(test.context_rc(), Nesting::Implicit);
+        pm.add_pass(Box::new(LegalizeForMasm));
+        pm.enable_verifier(false);
+        pm.run(test.module().as_operation_ref())
+    }
+
+    /// A slot past the end of its table has no address in the linker's layout, so codegen
+    /// cannot emit an initializer for it; legalization is where that is decided.
+    #[test]
+    fn out_of_bounds_function_table_entries_fail_legalization() {
+        let mut test = Test::named("out_of_bounds_entry").in_module("m");
+        test.with_function("dispatch", &[], &[]);
+        let table = ModuleBuilder::new(test.module())
+            .define_function_table(Ident::from("tbl"), Visibility::Private, 1)
+            .unwrap();
+        ModuleBuilder::new(test.module())
+            .append_function_table_entry(table, 0, 1, test.function(), SourceSpan::UNKNOWN)
+            .unwrap();
+        // The builder rejects an out-of-bounds slot up front, so rewrite the index afterwards to
+        // build the IR a producer that did not go through the builder could hand codegen
+        {
+            let mut entry_op = {
+                let table = table.borrow();
+                let entries = table.entries();
+                entries.entry().body().into_iter().next().unwrap().as_operation_ref()
+            };
+            let mut entry_op = entry_op.borrow_mut();
+            entry_op
+                .downcast_mut::<builtin::FunctionTableEntry>()
+                .expect("a function table's entries region holds only entries")
+                .set_index(9u32);
+        }
+
+        let err = legalize_module(&test).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("builtin.function_table_entry"), "{message}");
+        assert!(message.contains("out of bounds"), "{message}");
     }
 
     /// Build a module hosting a two-slot table and a `dispatch` function whose
