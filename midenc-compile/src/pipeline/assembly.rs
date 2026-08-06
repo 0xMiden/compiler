@@ -2,7 +2,8 @@
 //!
 //! [`prepare_assembler`] runs before assembly, applying the session's link inputs;
 //! [`post_process_package`] runs after it, attaching to the assembled package the sections
-//! and advice-map entries that codegen produced but the assembler knows nothing about.
+//! and advice-map entries that codegen produced but the assembler knows nothing about. It also
+//! builds and attaches an author codec declared by project metadata.
 //!
 //! Both are shared: the [`Pipeline`](super::Pipeline) driver prepares its own assembler
 //! through the first, and every frontend that lowers HIR post-processes through the second —
@@ -16,6 +17,7 @@
 
 use alloc::vec::Vec;
 
+use miden_assembly::TargetAssemblyContext;
 use miden_mast_package::Package;
 use midenc_codegen_masm::{MasmComponent, intrinsics};
 use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
@@ -64,8 +66,7 @@ pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
     sections: &midenc_frontend_wasm_metadata::PackageSections,
-    target: &midenc_session::miden_project::Target,
-    registry: &dyn miden_package_registry::PackageRegistryAndProvider,
+    context: &TargetAssemblyContext<'_>,
 ) -> Result<(), Report> {
     use miden_assembly::serde::Serializable;
     use miden_mast_package::{Section, SectionId};
@@ -77,7 +78,7 @@ pub(crate) fn post_process_package(
     extend_rodata_advice_map(package, &component.rodata);
 
     // Embed the kernel in note/transaction script packages, if not already embedded
-    if matches!(target.ty, TargetType::Note | TargetType::TransactionScript)
+    if matches!(context.target.ty, TargetType::Note | TargetType::TransactionScript)
         && !package.sections.iter().any(|section| section.id == SectionId::KERNEL)
         && let Ok(Some(kernel_dep)) = package.kernel_runtime_dependency()
     {
@@ -85,12 +86,38 @@ pub(crate) fn post_process_package(
             kernel_dep.version().clone(),
             kernel_dep.digest,
         );
-        let kernel_package = registry.load_package(kernel_dep.id(), &version)?;
+        let kernel_package = context.package_registry.load_package(kernel_dep.id(), &version)?;
         package
             .sections
             .push(Section::new(SectionId::KERNEL, kernel_package.to_bytes()));
     }
 
+    attach_note_codec(package, context)?;
+
+    Ok(())
+}
+
+/// Build and attach the note codec declared by the current project package.
+fn attach_note_codec(
+    package: &mut Package,
+    context: &TargetAssemblyContext<'_>,
+) -> Result<(), Report> {
+    let Some(component) = crate::cargo::build_project_note_codec(
+        context.package.as_ref(),
+        context.manifest_path,
+        context.project_root.as_ref(),
+        package,
+    )?
+    else {
+        return Ok(());
+    };
+
+    use miden_mast_package::{Section, SectionId};
+    let section_id =
+        SectionId::custom(midenc_frontend_wasm_metadata::PACKAGE_NOTE_CODEC_SECTION_ID).map_err(
+            |error| Report::msg(format!("the note codec package section id is invalid: {error}")),
+        )?;
+    package.sections.push(Section::new(section_id, component));
     Ok(())
 }
 

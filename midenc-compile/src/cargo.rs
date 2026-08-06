@@ -1,7 +1,9 @@
 use core::str::FromStr;
 use std::{
     boxed::Box,
+    env, fs,
     path::{Path, PathBuf},
+    process::Command,
     rc::Rc,
     string::{String, ToString},
     sync::Arc,
@@ -9,10 +11,22 @@ use std::{
 };
 
 use miden_assembly::SourceManager;
+use miden_mast_package::Package as MastPackage;
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
+use wit_component::{ComponentEncoder, DecodedWasm};
+use wit_parser::WorldItem;
 
 use crate::{CodegenOutput, CompilerResult};
+
+/// Metadata table that points to an author-side note codec crate.
+const NOTE_CODEC_CRATE_METADATA: &str = "note-codec-crate";
+
+/// Metadata field that contains the codec crate directory.
+const NOTE_CODEC_CRATE_PATH: &str = "path";
+
+/// Rust target used for zero-import note codec components.
+const NOTE_CODEC_TARGET: &str = "wasm32-unknown-unknown";
 
 /// Cargo-specific options extracted from the `Compiler` struct.
 ///
@@ -309,6 +323,300 @@ pub fn write_package_atomic(
             out_dir.display()
         ))
     })
+}
+
+/// Builds the optional note codec component declared by a project package.
+pub(crate) fn build_project_note_codec(
+    project_package: &miden_project::Package,
+    project_manifest_path: &Path,
+    note_project_dir: &Path,
+    note_package: &MastPackage,
+) -> CompilerResult<Option<Vec<u8>>> {
+    let Some(codec_crate_dir) =
+        note_codec_crate_dir(project_package.metadata(), project_manifest_path, note_project_dir)?
+    else {
+        return Ok(None);
+    };
+
+    build_note_codec_component(&codec_crate_dir, note_project_dir, note_package).map(Some)
+}
+
+/// Reads the optional codec crate path from Miden project metadata.
+fn note_codec_crate_dir(
+    metadata: &miden_project::MetadataSet,
+    project_manifest_path: &Path,
+    project_dir: &Path,
+) -> CompilerResult<Option<PathBuf>> {
+    let Some(codec_metadata) = metadata.get(NOTE_CODEC_CRATE_METADATA) else {
+        return Ok(None);
+    };
+    let path = codec_metadata
+        .get(NOTE_CODEC_CRATE_PATH)
+        .ok_or_else(|| {
+            Report::msg(format!(
+                "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}]` in '{}' must define a string \
+                 `{NOTE_CODEC_CRATE_PATH}`",
+                project_manifest_path.display()
+            ))
+        })?
+        .inner()
+        .as_str()
+        .ok_or_else(|| {
+            Report::msg(format!(
+                "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}].{NOTE_CODEC_CRATE_PATH}` in '{}' \
+                 must be a string",
+                project_manifest_path.display()
+            ))
+        })?;
+    if path.is_empty() {
+        return Err(Report::msg(format!(
+            "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}].{NOTE_CODEC_CRATE_PATH}` in '{}' \
+             must not be empty",
+            project_manifest_path.display()
+        )));
+    }
+
+    let codec_crate_dir = project_dir.join(path);
+    let codec_crate_dir = codec_crate_dir.canonicalize().map_err(|error| {
+        Report::msg(format!(
+            "note codec crate '{}' does not exist; update \
+             `[package.metadata.{NOTE_CODEC_CRATE_METADATA}].{NOTE_CODEC_CRATE_PATH}` in '{}': \
+             {error}",
+            codec_crate_dir.display(),
+            project_manifest_path.display()
+        ))
+    })?;
+    if !codec_crate_dir.is_dir() {
+        return Err(Report::msg(format!(
+            "note codec crate path '{}' is not a directory",
+            codec_crate_dir.display()
+        )));
+    }
+    Ok(Some(codec_crate_dir))
+}
+
+/// Builds and componentizes one author-side note codec crate.
+fn build_note_codec_component(
+    codec_crate_dir: &Path,
+    note_project_dir: &Path,
+    note_package: &MastPackage,
+) -> CompilerResult<Vec<u8>> {
+    let _staged_package = stage_note_package(note_project_dir, note_package)?;
+    let manifest_path = codec_crate_dir.join("Cargo.toml");
+    let artifact_name = codec_artifact_name(&manifest_path)?;
+    let target_dir = codec_crate_dir.join("target");
+    let wasm_path = target_dir
+        .join(NOTE_CODEC_TARGET)
+        .join("release")
+        .join(artifact_name)
+        .with_extension("wasm");
+    // Cargo does not track a package file that a procedural macro reads. Remove the final output
+    // so the codec crate expands against the package staged above.
+    match fs::remove_file(&wasm_path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(Report::msg(format!(
+                "failed to prepare note codec output '{}': {error}",
+                wasm_path.display()
+            )));
+        }
+    }
+    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = Command::new(cargo)
+        .current_dir(codec_crate_dir)
+        .args([
+            "build",
+            "--manifest-path",
+            manifest_path.to_str().ok_or_else(|| {
+                Report::msg(format!(
+                    "codec manifest path '{}' is not UTF-8",
+                    manifest_path.display()
+                ))
+            })?,
+            "--lib",
+            "--release",
+            "--target",
+            NOTE_CODEC_TARGET,
+            "--target-dir",
+            target_dir.to_str().ok_or_else(|| {
+                Report::msg(format!("codec target path '{}' is not UTF-8", target_dir.display()))
+            })?,
+        ])
+        .env_remove("CARGO_BUILD_TARGET")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTFLAGS")
+        .output()
+        .map_err(|error| {
+            Report::msg(format!(
+                "failed to start `cargo build` for note codec crate '{}': {error}",
+                codec_crate_dir.display()
+            ))
+        })?;
+    if !output.status.success() {
+        return Err(Report::msg(format!(
+            "failed to build note codec crate '{}' for {NOTE_CODEC_TARGET} in release mode \
+             (install the target with `rustup target add {NOTE_CODEC_TARGET}` if \
+             needed)\nstdout:\n{}\nstderr:\n{}",
+            codec_crate_dir.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        )));
+    }
+
+    let module = fs::read(&wasm_path).map_err(|error| {
+        Report::msg(format!(
+            "note codec build succeeded but did not produce the expected cdylib '{}': {error}",
+            wasm_path.display()
+        ))
+    })?;
+    let component = ComponentEncoder::default()
+        .module(&module)
+        .map_err(|error| {
+            Report::msg(format!(
+                "note codec module '{}' is not component-ready: {error}",
+                wasm_path.display()
+            ))
+        })?
+        .validate(true)
+        .encode()
+        .map_err(|error| {
+            Report::msg(format!(
+                "failed to encode note codec module '{}' as a component: {error}",
+                wasm_path.display()
+            ))
+        })?;
+    validate_note_codec_component(&component).map_err(|error| {
+        Report::msg(format!(
+            "note codec crate '{}' produced an invalid component: {error}",
+            codec_crate_dir.display()
+        ))
+    })?;
+    Ok(component)
+}
+
+/// Stages the current in-memory note package for `from_project!` during the codec build.
+fn stage_note_package(
+    note_project_dir: &Path,
+    note_package: &MastPackage,
+) -> CompilerResult<tempfile::TempDir> {
+    let profiles_dir = note_project_dir.join("target/miden");
+    fs::create_dir_all(&profiles_dir).map_err(|error| {
+        Report::msg(format!(
+            "failed to create note package staging root '{}': {error}",
+            profiles_dir.display()
+        ))
+    })?;
+    let staging_dir = tempfile::Builder::new()
+        .prefix("zz-note-codec-input-")
+        .tempdir_in(&profiles_dir)
+        .map_err(|error| {
+            Report::msg(format!(
+                "failed to create note package staging directory in '{}': {error}",
+                profiles_dir.display()
+            ))
+        })?;
+    note_package.write_masp_file(staging_dir.path()).map_err(|error| {
+        Report::msg(format!(
+            "failed to stage note package {}@{} for codec generation: {error}",
+            note_package.name, note_package.version
+        ))
+    })?;
+    Ok(staging_dir)
+}
+
+/// Returns the expected Wasm artifact name and checks the cdylib configuration.
+fn codec_artifact_name(manifest_path: &Path) -> CompilerResult<String> {
+    let source = fs::read_to_string(manifest_path).map_err(|error| {
+        Report::msg(format!(
+            "note codec crate has no readable manifest at '{}': {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let manifest = source.parse::<toml_edit::DocumentMut>().map_err(|error| {
+        Report::msg(format!(
+            "failed to parse note codec manifest '{}': {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let package =
+        manifest
+            .get("package")
+            .and_then(toml_edit::Item::as_table_like)
+            .ok_or_else(|| {
+                Report::msg(format!(
+                    "codec manifest '{}' has no `[package]` table",
+                    manifest_path.display()
+                ))
+            })?;
+    let package_name = package.get("name").and_then(toml_edit::Item::as_str).ok_or_else(|| {
+        Report::msg(format!("codec manifest '{}' has no package name", manifest_path.display()))
+    })?;
+    let lib = manifest.get("lib").and_then(toml_edit::Item::as_table_like).ok_or_else(|| {
+        Report::msg(format!("codec manifest '{}' has no `[lib]` table", manifest_path.display()))
+    })?;
+    let is_cdylib =
+        lib.get("crate-type")
+            .and_then(toml_edit::Item::as_array)
+            .is_some_and(|crate_types| {
+                crate_types.iter().any(|crate_type| crate_type.as_str() == Some("cdylib"))
+            });
+    if !is_cdylib {
+        return Err(Report::msg(format!(
+            "note codec manifest '{}' must set `[lib] crate-type = [\"cdylib\"]`",
+            manifest_path.display()
+        )));
+    }
+    let lib_name = lib.get("name").and_then(toml_edit::Item::as_str).unwrap_or(package_name);
+    Ok(lib_name.replace('-', "_"))
+}
+
+/// Verifies the component sandbox and the versioned codec interface export.
+fn validate_note_codec_component(component: &[u8]) -> CompilerResult<()> {
+    let DecodedWasm::Component(resolve, world_id) =
+        wit_component::decode(component).map_err(|error| {
+            Report::msg(format!("failed to decode the encoded note codec component: {error}"))
+        })?
+    else {
+        return Err(Report::msg("note codec output is not a component"));
+    };
+    let world = &resolve.worlds[world_id];
+    if !world.imports.is_empty() {
+        return Err(Report::msg(format!(
+            "note codec component must have zero imports, found: {:#?}",
+            world.imports
+        )));
+    }
+    if world.exports.len() != 1 {
+        return Err(Report::msg(format!(
+            "note codec component must export only `miden:note-codec/codec@1.0.0`, found: {:#?}",
+            world.exports
+        )));
+    }
+
+    let interface = world.exports.values().find_map(|item| {
+        let WorldItem::Interface { id, .. } = item else {
+            return None;
+        };
+        let interface = &resolve.interfaces[*id];
+        let package_id = interface.package?;
+        let package = &resolve.packages[package_id].name;
+        (interface.name.as_deref() == Some("codec")
+            && package.namespace == "miden"
+            && package.name == "note-codec"
+            && package.version.as_ref().is_some_and(|version| version.to_string() == "1.0.0"))
+        .then_some(interface)
+    });
+    let interface = interface
+        .ok_or_else(|| Report::msg("component does not export `miden:note-codec/codec@1.0.0`"))?;
+    for function in ["supported-types", "parse", "display", "validate"] {
+        if !interface.functions.contains_key(function) {
+            return Err(Report::msg(format!(
+                "`miden:note-codec/codec@1.0.0` is missing `{function}`"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Parse `cargo -Zscript`-style frontmatter from a given input string, if present.

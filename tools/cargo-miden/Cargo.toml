@@ -41,9 +41,7 @@ flate2.workspace = true
 
 [dependencies]
 miden-mast-package = { workspace = true, features = ["std"] }
-miden-project = { workspace = true, features = ["std", "serde"] }
 midenc-compile = { workspace = true, features = ["std"] }
-midenc-frontend-wasm-metadata.workspace = true
 midenc-hir = { workspace = true, features = ["std"] }
 midenc-session.workspace = true
 midenc-log.workspace = true
@@ -60,5 +58,8 @@ walkdir = "2.5"
 serde_json.workspace = true
 # Verifies a downloaded template bundle against the digest GitHub reports.
 sha2.workspace = true
+
+[dev-dependencies]
+midenc-frontend-wasm-metadata.workspace = true
 wit-component.workspace = true
 wit-parser.workspace = true
