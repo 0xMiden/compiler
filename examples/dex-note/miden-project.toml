@@ -1,0 +1,20 @@
+[package]
+name = "dex-note"
+version = "0.1.0"
+
+[lib]
+kind = "note"
+namespace = "miden:dex-note/miden-dex-note@0.1.0"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+basic-wallet = { path = "../basic-wallet" }
+
+[package.metadata.miden.dependencies]
+basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
+
+# MetadataSet represents each named metadata entry as a table.
+[package.metadata.note-codec-crate]
+path = "../dex-note-codec"

@@ -34,6 +34,11 @@ members = [
     "sdk/base-macros",
     "sdk/base-sys",
     "sdk/build-script-support",
+    "sdk/note-bindings",
+    "sdk/note-codec",
+    "sdk/note-codec/macros",
+    "sdk/note-schema",
+    "sdk/note-schema/codegen",
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/tx-script-args",
@@ -166,6 +171,12 @@ wasmparser = { version = "^0.248", default-features = false, features = [
     "simd",
 ] }
 wit-component = "0.247"
+wit-parser = "0.247"
+wasmtime = { version = "34.0.0", default-features = false, features = [
+    "component-model",
+    "cranelift",
+    "runtime",
+] }
 
 # Workspace crates
 midenc-codegen-masm = { version = "0.10.0", path = "codegen/masm" }
@@ -192,6 +203,10 @@ midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-base-sys = { version = "0.14.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.14.0", path = "sdk/field-repr/repr" }
+miden-note-codec = { version = "0.14.0", path = "sdk/note-codec" }
+miden-note-codec-macros = { version = "0.14.0", path = "sdk/note-codec/macros" }
+miden-note-schema = { version = "0.14.0", path = "sdk/note-schema" }
+miden-note-schema-codegen = { version = "0.14.0", path = "sdk/note-schema/codegen" }
 miden-stdlib-sys = { version = "0.14.0", path = "sdk/stdlib-sys" }
 miden-tx-script-args = { version = "0.14.0", path = "sdk/tx-script-args" }
 

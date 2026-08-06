@@ -253,7 +253,7 @@ pub(crate) fn cargo_build(
     /*
     let CodegenOutput {
         component,
-        account_component_metadata_bytes,
+        sections,
     } = crate::pipeline::frontends::rust::compile_manifest(&manifest_path, None, context.clone())?
     else {
         panic!(
@@ -264,7 +264,7 @@ pub(crate) fn cargo_build(
 
     Ok(CodegenOutput {
         component,
-        account_component_metadata_bytes,
+        sections,
     })
      */
 
