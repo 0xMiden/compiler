@@ -2,7 +2,7 @@ use alloc::{collections::VecDeque, sync::Arc};
 use core::fmt;
 
 use crate::{
-    Alignable, OpPrinter, UnsafeIntrusiveEntityRef,
+    OpPrinter, UnsafeIntrusiveEntityRef,
     constants::ConstantData,
     derive::{OpParser, OpPrinter, operation},
     diagnostics::{Diagnostic, miette},
@@ -153,41 +153,53 @@ impl DataSegmentLayout {
         self.segments.len()
     }
 
-    /// Returns the offset in linear memory where the last data segment ends
-    pub fn next_available_offset(&self) -> u32 {
-        if let Some(last_segment) = self.segments.back() {
-            let last_segment = last_segment.borrow();
-            let next_offset = *last_segment.get_offset() + last_segment.size_in_bytes() as u32;
-            // Ensure the start of the next segment is word-aligned
-            next_offset.align_up(32)
-        } else {
-            0
-        }
+    /// Returns the offset in linear memory where the last data segment ends, or `None` if that
+    /// offset — or the word alignment applied to it — leaves the 32-bit address space.
+    ///
+    /// A segment ending exactly at 2^32 is legal; it is the *layout* that has nowhere left to
+    /// put anything after it, which is the caller's error to report.
+    pub fn next_available_offset(&self) -> Option<u32> {
+        let Some(last_segment) = self.segments.back() else {
+            return Some(0);
+        };
+        let last_segment = last_segment.borrow();
+        let size = u32::try_from(last_segment.size_in_bytes()).ok()?;
+        let next_offset = (*last_segment.get_offset()).checked_add(size)?;
+        // Ensure the start of the next segment is word-aligned
+        next_offset.checked_next_multiple_of(32)
     }
 
     /// Insert a [Segment] into the layout, while preserving the order of the segments.
     ///
     /// This will fail if the segment is invalid, or overlaps/conflicts with an existing segment.
     pub fn insert(&mut self, segment_ref: SegmentRef) -> Result<(), DataSegmentError> {
+        let segment = segment_ref.borrow();
+        let offset = *segment.get_offset();
+        let size = u32::try_from(segment.size_in_bytes())
+            .map_err(|_| DataSegmentError::InitTooLarge(offset))?;
+        // Computed in u64: a segment may end exactly at 2^32, which is the last address of
+        // linear memory plus one, and is legal. Only a segment extending past it is invalid.
+        // The first segment took an early return before this check existed, which is how a
+        // module whose only segment fills the end of memory reached the layout arithmetic.
+        let end = u64::from(offset) + u64::from(size);
+        if end > u64::from(u32::MAX) + 1 {
+            return Err(DataSegmentError::OutOfBounds { offset, size });
+        }
+
         if self.is_empty() {
             self.segments.push_back(segment_ref);
             return Ok(());
         }
 
-        let segment = segment_ref.borrow();
-        let offset = *segment.get_offset();
-        let size = u32::try_from(segment.size_in_bytes())
-            .map_err(|_| DataSegmentError::InitTooLarge(offset))?;
-        let end = offset + size;
         for (index, current_segment_ref) in self.segments.iter().enumerate() {
             let current_segment = current_segment_ref.borrow();
             let current_offset = *current_segment.get_offset();
             let current_size = current_segment.size_in_bytes() as u32;
-            let segment_end = current_offset + current_size;
+            let segment_end = u64::from(current_offset) + u64::from(current_size);
 
             // If this segment starts after the segment we're declaring, we do not need to continue
             // searching for conflicts, and can go a head and perform the insert
-            if current_offset >= end {
+            if u64::from(current_offset) >= end {
                 self.segments.insert(index, segment_ref);
                 return Ok(());
             }
@@ -209,7 +221,7 @@ impl DataSegmentLayout {
 
             // This segment starts before the segment we're declaring, make sure that this segment
             // ends before our segment starts
-            if segment_end > offset {
+            if segment_end > u64::from(offset) {
                 return Err(DataSegmentError::OverlappingSegments {
                     offset1: offset,
                     size1: size,

@@ -194,7 +194,15 @@ impl Linker {
         }
 
         // 3. Layout global variables past all memory claimed by the modules themselves
-        let next_available_offset = self.segment_layout.next_available_offset();
+        let next_available_offset =
+            self.segment_layout.next_available_offset().ok_or_else(|| {
+                LinkerError::LayoutOverflow {
+                    reason: alloc::string::String::from(
+                        "the data segments reach the end of the 32-bit address space, leaving no \
+                         room for compiler-managed memory",
+                    ),
+                }
+            })?;
         let reserved_offset = (self.reserved_memory_pages * self.page_size).next_multiple_of(4);
         // We add a page after the data segments as headroom for producer-placed data that
         // occupies address space without being visible as data segments (e.g. zero-initialized
@@ -522,7 +530,7 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        BuilderExt, Context, Ident, Op, Visibility,
+        BuilderExt, Context, Ident, Op, SourceSpan, Visibility,
         dialects::builtin::{
             self, ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::U64Attr,
         },
@@ -573,6 +581,46 @@ mod tests {
         };
         assert!(
             matches!(&err, LinkerError::LayoutOverflow { reason } if reason.contains("dynamic heap")),
+            "unexpected link failure: {err}"
+        );
+    }
+
+    /// A data segment may occupy the last bytes of the address space — `(memory 65536)` with a
+    /// segment at `-16` is valid Wasm, and `wasm-tools validate` accepts it. Nothing can be laid
+    /// out after it, so linking must report `LayoutOverflow` rather than overflowing a `u32`
+    /// (a debug panic, and a wrapped address in release).
+    #[test]
+    fn link_fails_when_data_segments_fill_the_address_space() {
+        let context = Rc::new(Context::default());
+        let world_ref =
+            context.clone().builder().create::<World, ()>(Default::default())().unwrap();
+        let mut world_builder = WorldBuilder::new(world_ref);
+        let component_ref = world_builder
+            .define_component(
+                Ident::from("test_ns"),
+                Ident::from("test"),
+                Version::parse("1.0.0").unwrap(),
+            )
+            .unwrap();
+        let mut component_builder = ComponentBuilder::new(component_ref);
+        let module_ref = component_builder.define_module(Ident::from("m")).unwrap();
+        let mut module_builder = ModuleBuilder::new(module_ref);
+        module_builder
+            .define_data_segment(
+                0xffff_fff0,
+                [0u8; 16],
+                /*readonly=*/ true,
+                SourceSpan::default(),
+            )
+            .expect("a segment ending at the last byte of memory is valid");
+
+        let component = component_ref.borrow();
+        let err = match Linker::default().link(None, component.as_operation()) {
+            Ok(_) => panic!("a full address space must be a link error"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(&err, LinkerError::LayoutOverflow { .. }),
             "unexpected link failure: {err}"
         );
     }
