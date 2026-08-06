@@ -722,3 +722,4 @@ args = [
     "${@}"
 ]
 dependencies = ["release-tool"]
+env = { "GITHUB_REPOSITORY" = "0xMiden/compiler" }

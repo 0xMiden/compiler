@@ -20,7 +20,7 @@ Three things are true throughout and explain most of the procedure:
 | --- | --- | --- |
 | Release for real | [§3 Production release](#3-production-release) | Yes, after the approval gate |
 | Try the publish path with no risk, on my machine | [§4 Local rehearsal](#4-local-rehearsal) | No |
-| Try the real workflow on real runners before committing | [§5 Hosted rehearsal](#5-hosted-rehearsal) | No crates, no tags — but real drafts and real attestations |
+| Try the real workflow on real runners before committing | [§5 Hosted rehearsal](#5-hosted-rehearsal) | No crates, no tags - but real drafts and real attestations |
 | Ship something consumers cannot accidentally pick up | [§6 Prereleases](#6-prereleases) | Yes, but invisible to default requirements |
 
 Every step below says what to expect and what to do if it fails. Failure modes
@@ -37,7 +37,7 @@ link to [§7 Troubleshooting](#7-troubleshooting).
 
 Releases happen from `main`, and `main` lags `next`. A release therefore starts
 by promoting `next` into `main`, and the release candidate is then branched from
-and merged into **`main`** — not `next`.
+and merged into **`main`** - not `next`.
 
 The release workflow enforces this and will refuse to run otherwise: the commit
 it releases must be `main`'s tip *and* must be the most recent commit to have
@@ -64,7 +64,7 @@ There are currently **33 publishable crates** (`cargo make package-order` lists 
 > **Known limitation.** A crate whose publisher is missing or misconfigured
 > cannot be detected in advance: the token crates.io issues carries no list of
 > the crates it authorizes. The failure surfaces mid-publication as a 403. It is
-> survivable — see [T7](#t7-403-from-cratesio-during-publication).
+> survivable - see [T7](#t7-403-from-cratesio-during-publication).
 
 ### 2.2 GitHub repository settings
 
@@ -77,7 +77,7 @@ There are currently **33 publishable crates** (`cargo make package-order` lists 
 | CODEOWNERS | Release infrastructure paths reviewed by a release owner |
 
 > **Why creations are not restricted.** Ruleset bypass actors are roles, teams,
-> apps, and deploy keys — there is no workflow-level actor. `GITHUB_TOKEN` acts
+> apps, and deploy keys - there is no workflow-level actor. `GITHUB_TOKEN` acts
 > as the repository-wide GitHub Actions app, so a creation bypass would grant
 > *every* workflow the ability to create release tags, which is worse than not
 > restricting creation at all. The property that matters is that a published tag
@@ -112,7 +112,7 @@ release.
 *Expect:* `main` contains everything going into this release. Nothing else will
 be allowed to land until the release finishes.
 
-*If it fails:* ordinary CI failure — fix on `next` and repeat.
+*If it fails:* ordinary CI failure - fix on `next` and repeat.
 
 ---
 
@@ -154,7 +154,7 @@ cargo make release set-version --unit compiler 0.10.0
 Omit the version to automatically bump to the next minor. Add `--dry-run` first to review the edits.
 
 *Expect:* modifications to the crate manifests, every requirement naming them,
-`Cargo.lock`, `.release/release.toml`, and — for an SDK bump — the template
+`Cargo.lock`, `.release/release.toml`, and - for an SDK bump - the template
 manifests and `extra/templates/bundle.toml`.
 
 > **Always use `set-version`; never hand-edit versions.** An SDK bump has to
@@ -165,8 +165,8 @@ manifests and `extra/templates/bundle.toml`.
 > skips all of it and produces templates that cannot resolve the SDK they ship
 > beside ([T14](#t14-the-templates-cannot-resolve-the-sdk-being-released)).
 >
-> To change your mind about a version you have already bumped — releasing
-> `0.32.0-rc.1` after bumping to `0.32.0`, say — re-run it with `--force`.
+> To change your mind about a version you have already bumped - releasing
+> `0.32.0-rc.1` after bumping to `0.32.0`, say - re-run it with `--force`.
 > SemVer orders a prerelease *below* its release, so this is a backwards move
 > and refused by default. Forcing is safe while nothing has been published;
 > once a version is on crates.io it can never be reused, flag or no flag.
@@ -200,12 +200,12 @@ cargo make release changelog-prompt sdk v0.9.2..HEAD
 
 > **First SDK and template releases.** The `sdk/v*` and `templates/v*` tag
 > namespaces are new, so until each has been released once there is no baseline
-> and the default range is the unit's entire history — hundreds of commits.
+> and the default range is the unit's entire history - hundreds of commits.
 > Pass a range explicitly for those.
 
 ---
 
-**A7. Regenerate the template bundle** — only if this release includes templates
+**A7. Regenerate the template bundle** - only if this release includes templates
 or any template file changed:
 
 ```bash
@@ -255,7 +255,7 @@ commit to have touched `.release/release.toml`. The workflow checks both.
 
 ---
 
-### Phase B — Plan
+### Phase B - Plan
 
 **B1. Dispatch the release workflow from `main`.**
 
@@ -265,8 +265,8 @@ From the CLI:
 gh workflow run release.yml --ref main
 ```
 
-Or in the browser: **Actions** → **release** (left sidebar) → **Run workflow** →
-set *Use workflow from* to **main** → **Run workflow**. There are no inputs; the
+Or in the browser: **Actions** -> **release** (left sidebar) -> **Run workflow** ->
+set *Use workflow from* to **main** -> **Run workflow**. There are no inputs; the
 scope comes from the reviewed `.release/release.toml` and nothing else.
 
 *Expect:* a new run appears under Actions within a few seconds. Watch it with:
@@ -283,7 +283,7 @@ gh run watch "$(gh run list --workflow=release.yml --limit 1 --json databaseId -
 
 **B2. Review the intent.**
 
-Open the run → the **plan** job → the **Generate the intent** step. It prints
+Open the run -> the **plan** job -> the **Generate the intent** step. It prints
 the full intent: the units being released, their versions, whether each is a
 prerelease, the crates in each stage, and the tags that will be created. The
 same content is attached to the run as the `release-intent` artifact.
@@ -295,7 +295,7 @@ Fix it in a new candidate and start again from A3.
 
 ---
 
-### Phase C — Build and stage
+### Phase C - Build and stage
 
 Fully automated. Nothing to do but watch. Automation verifies the release
 configuration and package closure, seals the plan, builds and attests the six
@@ -304,15 +304,15 @@ asset, and reads each one back.
 
 *Expect:* the `verify`, `stage`, `artifacts`, `attest`, and `stage-artifacts`
 jobs succeed, and draft releases appear under **Releases** in the repository.
-They are drafts — not visible to anyone without write access, and deletable.
+They are drafts - not visible to anyone without write access, and deletable.
 
 *Still reversible here:* no tag exists, no crate is published, and every draft
 can be deleted.
 
 > **One exception: attestations are permanent.** They are recorded in a public
 > transparency log during this phase, so a cancelled release leaves provenance
-> for artifacts that were never released. This is harmless — nothing consumes an
-> attestation for an artifact with no release — but it cannot be undone.
+> for artifacts that were never released. This is harmless - nothing consumes an
+> attestation for an artifact with no release - but it cannot be undone.
 
 *If a job fails:* [T8](#t8-an-asset-does-not-match-what-was-uploaded), or treat
 it as an ordinary build failure. Either way, nothing is published; fix it in a
@@ -320,7 +320,7 @@ new candidate.
 
 ---
 
-### Phase D — Approve and publish
+### Phase D - Approve and publish
 
 **D1. Approve the deployment.** This is the point of no return.
 
@@ -334,7 +334,7 @@ Before approving, check on the run page:
 - the draft releases exist and carry the expected assets,
 - no earlier job reported a warning you have not read.
 
-Then: **Review deployments** → tick **release** → **Approve and deploy**.
+Then: **Review deployments** -> tick **release** -> **Approve and deploy**.
 
 > You cannot approve your own deployment if self-review is disabled, which it
 > should be. Another maintainer with the reviewer role must click it.
@@ -345,7 +345,7 @@ published.
 
 ---
 
-**D2. Publication runs.** Per unit, in dependency order (SDK → templates →
+**D2. Publication runs.** Per unit, in dependency order (SDK -> templates ->
 compiler): create that unit's tag, obtain a short-lived Trusted Publishing
 token, reconcile against crates.io, publish only what is absent, and verify the
 result from the registry.
@@ -354,7 +354,7 @@ result from the registry.
 `release-journal` artifact records every decision.
 
 > **The token lives 30 minutes.** Cargo publishes in dependency waves and waits
-> for index confirmation between them — roughly a dozen waves for 33 crates.
+> for index confirmation between them - roughly a dozen waves for 33 crates.
 
 *If it fails:* [T7](#t7-403-from-cratesio-during-publication),
 [T9](#t9-a-tag-already-exists-at-a-different-commit),
@@ -372,7 +372,7 @@ immutable, so *all* units are verified before *any* is published.
 Per unit, before anything is published:
 
 - The tag exists and points at the released commit. Read from the tag **ref**,
-  not the release's `target_commitish` — GitHub stops honouring that field once
+  not the release's `target_commitish` - GitHub stops honouring that field once
   the tag exists, so it reports what was requested rather than what is true.
 - The draft carries this run's sealed plan, compared by bytes, so finalizing
   another run's draft is caught.
@@ -476,15 +476,15 @@ before the gate, so every step up to it *is* the rehearsal:
 
 | Phase | Runs in a hosted rehearsal? | Reversible? |
 | --- | --- | --- |
-| A — candidate | Yes | Yes |
-| B — plan | Yes | Yes |
-| C — build, attest, stage drafts | Yes | Yes, except attestations |
-| **approval gate** | **You do not approve** | — |
-| D — tag and publish | No | — |
-| E — finalize | No | — |
+| A - candidate | Yes | Yes |
+| B - plan | Yes | Yes |
+| C - build, attest, stage drafts | Yes | Yes, except attestations |
+| **approval gate** | **You do not approve** | - |
+| D - tag and publish | No | - |
+| E - finalize | No | - |
 
-This is the only way to exercise the real GitHub path — draft creation, asset
-upload and readback, real runners, real artifacts — which has never run against
+This is the only way to exercise the real GitHub path - draft creation, asset
+upload and readback, real runners, real artifacts - which has never run against
 real GitHub. Treat that as the point of the exercise.
 
 ### 5.2 Doing it
@@ -536,7 +536,7 @@ Follow §3 unchanged. The differences are automatic:
 - GitHub releases are marked prerelease and never become "Latest".
 - **Templates can be part of a prerelease**, and must be when a compiler change
   requires a template change. The bundle takes a prerelease version and stable
-  clients never see it — template resolution selects the highest *stable*
+  clients never see it - template resolution selects the highest *stable*
   compatible release, so a prerelease bundle is reachable only from a prerelease
   `cargo-miden` or an explicit `--template-version`.
 
@@ -549,7 +549,7 @@ Follow §3 unchanged. The differences are automatic:
 **Symptom:** `set-version` refuses, reporting that packages in a version domain
 are not all at the same version.
 
-**Cause:** every crate in a unit shares one version, and one has drifted —
+**Cause:** every crate in a unit shares one version, and one has drifted -
 usually hand-edited.
 
 **Remedy:** set every crate in that unit to the same version manually, then
@@ -601,7 +601,7 @@ the commit and not on your checkout.
 **Symptom:** the `package closure` job fails, reporting either a packaging
 failure or `the packaged crates do not build when resolved from a registry`.
 
-**Cause:** a packaged crate is missing something it needs — a file excluded from
+**Cause:** a packaged crate is missing something it needs - a file excluded from
 the archive, a dependency that only resolves by workspace path, or an active
 `[patch]`. Production publishes with `--no-verify`, so this check is the only
 thing standing between that and a broken published crate.
@@ -621,8 +621,8 @@ the candidate`.
 **Cause:** something merged to `main` after your candidate.
 
 **Remedy:** you cannot release this commit. Rebase or re-land the candidate so
-it is `main`'s tip again — in practice, open a fresh candidate from the current
-`main` (A3) — and re-dispatch. Ensure the freeze from A2 is actually being
+it is `main`'s tip again - in practice, open a fresh candidate from the current
+`main` (A3) - and re-dispatch. Ensure the freeze from A2 is actually being
 observed.
 
 ---
@@ -648,7 +648,7 @@ crate.
 
 **Cause:** that crate has no Trusted Publisher configured, or its configuration
 does not match this repository, workflow, and the `release` environment. This
-cannot be detected in advance — the token carries no list of the crates it
+cannot be detected in advance - the token carries no list of the crates it
 authorizes.
 
 **Remedy:**
@@ -703,7 +703,7 @@ or has been yanked. A yanked version can never be republished.
 
 **Remedy:** the affected versions cannot be published as planned. Open a new
 candidate with new versions. If you need to yank something as part of an
-incident, finish or abandon the in-flight release first — yanking a planned
+incident, finish or abandon the in-flight release first - yanking a planned
 version mid-release strands it, because versions cannot change during a resume.
 
 ---
@@ -718,7 +718,7 @@ dependency waves and waits for index confirmation between them.
 
 **Remedy:** re-dispatch (B1). A fresh token is obtained per stage, and
 reconciliation resumes from what is already published. If a single stage
-repeatedly cannot finish inside the budget, it needs splitting — raise it rather
+repeatedly cannot finish inside the budget, it needs splitting - raise it rather
 than retrying indefinitely.
 
 ---
@@ -730,7 +730,7 @@ than retrying indefinitely.
 **Cause:** something was attached to a draft that the release plan does not
 account for.
 
-**Remedy:** do not publish — after publication an asset can never be removed.
+**Remedy:** do not publish - after publication an asset can never be removed.
 Establish where it came from. If it was attached by hand, remove it from the
 draft and re-dispatch. If you cannot account for it, treat it as an intrusion
 and stop.
@@ -744,7 +744,7 @@ and stop.
 **Cause:** the version you are rehearsing is already published on crates.io, and
 the local registry proxies crates.io for anything it has not been told it owns.
 
-**Remedy:** rehearse with unpublished versions — run A5 first so the workspace
+**Remedy:** rehearse with unpublished versions - run A5 first so the workspace
 carries the versions you intend to release.
 
 ---
@@ -760,7 +760,7 @@ the exact version, because `"0.14"` never matches `0.14.0-rc.1`, and a stable
 release wants the minor so a later patch needs no template change.
 
 **Why it matters:** nothing else catches it. `bundle.toml` and the template
-manifests agree with each other, so they look consistent — but a project
+manifests agree with each other, so they look consistent - but a project
 generated from those templates cannot resolve `miden` at all, and if the SDK
 version is a prerelease with no stable counterpart, it will not build.
 
@@ -810,7 +810,7 @@ has been attempted through it.
 
 `lint`, `package-order`, `set-version`, `changelog-prompt`, `plan`,
 `verify-closure`, `seal`, `reconcile`, `bundle`, `archive-binary`, `stage`,
-`discard`, `publish`, `finalize`, and `fake-registry` — plus the production
+`discard`, `publish`, `finalize`, and `fake-registry` - plus the production
 workflow and the pull-request gate.
 
 "Tested" means against the rehearsal registry and the GitHub double, which is as
