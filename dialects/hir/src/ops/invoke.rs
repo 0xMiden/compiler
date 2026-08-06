@@ -415,8 +415,6 @@ impl CallOpInterface for ExecIndirect {
     /// dispatchable. Returns `None` (unknown) if the table or any dispatchable entry does not
     /// resolve, so analyses cannot treat a partially-resolved set as complete.
     fn possible_callees(&self) -> Option<SmallVec<[SymbolRef; 2]>> {
-        use alloc::collections::BTreeMap;
-
         let symbol_table_op = self.as_operation().nearest_symbol_table()?;
         let symbol_table_op = symbol_table_op.borrow();
         let symbol_table = symbol_table_op.as_symbol_table()?;
@@ -424,17 +422,13 @@ impl CallOpInterface for ExecIndirect {
         let table = table.borrow();
         let table = table.as_symbol_operation().downcast_ref::<FunctionTable>()?;
 
-        let mut live_slots = BTreeMap::new();
-        let entries = table.entries();
-        let entries = entries.entry();
-        for op in entries.body() {
-            let entry = op.downcast_ref::<FunctionTableEntry>()?;
-            live_slots.insert(*entry.get_index(), (*entry.get_type_tag(), entry.resolve_callee()));
-        }
+        // A malformed body is not something this analysis can answer for; the
+        // `hir.exec_indirect` verifier is where it is reported.
+        let live_slots = live_table_slots(table).ok()?;
 
         let expected_tag = *self.get_type_tag();
         let mut callees = SmallVec::new();
-        for (type_tag, callee) in live_slots.into_values() {
+        for (_slot, (type_tag, _callee_path, callee)) in live_slots {
             if type_tag != expected_tag {
                 continue;
             }
@@ -450,6 +444,39 @@ impl CallOpInterface for ExecIndirect {
         }
         Some(callees)
     }
+}
+
+/// The dispatchable entries of `table`, keyed by slot index: the tag the runtime check compares,
+/// the path the entry names, and that path resolved, if it resolves.
+///
+/// A later entry at the same index overwrites an earlier one, so only the last entry per slot can
+/// ever be reached — hence the map rather than a list.
+///
+/// Both the `hir.exec_indirect` verifier and `possible_callees` are built on this, and it is
+/// important that they stay built on the *same* thing. The verifier's guarantee is that no
+/// dispatchable entry disagrees with the call's signature; the analysis's guarantee is that the
+/// set it returns contains every entry that can be reached. If one of them computed a narrower
+/// set than the other, the verifier would silently stop covering entries the analysis (and
+/// codegen's dispatch) still consider live.
+///
+/// Returns `Err` with the name of the offending operation if the table body holds anything other
+/// than `builtin.function_table_entry`; the two callers report that differently.
+fn live_table_slots(
+    table: &FunctionTable,
+) -> Result<alloc::collections::BTreeMap<u32, (u32, SymbolPath, Option<SymbolRef>)>, OperationName>
+{
+    let mut live_slots = alloc::collections::BTreeMap::new();
+    let entries = table.entries();
+    for op in entries.entry().body() {
+        let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
+            return Err(op.name());
+        };
+        live_slots.insert(
+            *entry.get_index(),
+            (*entry.get_type_tag(), entry.callee().path().clone(), entry.resolve_callee()),
+        );
+    }
+    Ok(live_slots)
 }
 
 /// `hir.exec_indirect` carries its callee's signature as an attribute rather than deriving it
@@ -520,22 +547,14 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
             )));
         };
 
-        // Later entries overwrite earlier ones at the same slot, so only the last entry per
-        // slot is dispatchable.
-        let mut live_slots = alloc::collections::BTreeMap::new();
-        let entries = table.entries();
-        for op in entries.entry().body() {
-            let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
-                return Err(Report::msg(format!(
-                    "invalid function table entry: '{}' is not supported in a function table body",
-                    op.name()
-                )));
-            };
-            live_slots.insert(
-                *entry.get_index(),
-                (*entry.get_type_tag(), entry.callee().path().clone(), entry.resolve_callee()),
-            );
-        }
+        // Only the last entry per slot is dispatchable; see `live_table_slots`.
+        let live_slots = live_table_slots(table).map_err(|op_name| {
+            Report::msg(format!(
+                "invalid hir.exec_indirect: this call dispatches through '{table_path}', whose \
+                 body holds a '{op_name}' — only 'builtin.function_table_entry' is supported in a \
+                 function table body"
+            ))
+        })?;
 
         for (slot, (type_tag, callee_path, callee)) in live_slots {
             if type_tag != expected_tag {
@@ -1433,5 +1452,100 @@ builtin.module public @m {
             source,
         )
         .expect("an indirect call naming its table by absolute path must parse and verify");
+    }
+
+    /// Only the last entry at a slot can be reached, so a dead entry disagreeing with the call
+    /// must not be checked — otherwise valid IR is rejected for an entry no dispatch can hit.
+    #[test]
+    fn exec_indirect_ignores_an_overwritten_mismatched_entry() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function private extern("C") @nullary() {
+        builtin.ret;
+    };
+
+    builtin.function private extern("C") @unary(%a: u32) {
+        builtin.ret;
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @nullary tag 1;
+        builtin.function_table_entry 0 @unary tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32, %arg: u32) {
+        hir.exec_indirect @tbl[%index](%arg) : extern("C") (u32) -> () tag 1;
+        builtin.ret;
+    };
+};
+};"#;
+
+        verify_world("overwritten_mismatched_entry.hir", source).expect(
+            "an entry overwritten at the same slot is not dispatchable, so it must not be checked",
+        );
+    }
+
+    /// The mirror of the above: overwriting an agreeing entry with a disagreeing one at the same
+    /// slot makes the disagreeing one the dispatchable one, so the call must be rejected.
+    #[test]
+    fn exec_indirect_checks_the_entry_that_overwrote_a_matching_one() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function private extern("C") @nullary() {
+        builtin.ret;
+    };
+
+    builtin.function private extern("C") @unary(%a: u32) {
+        builtin.ret;
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @unary tag 1;
+        builtin.function_table_entry 0 @nullary tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32, %arg: u32) {
+        hir.exec_indirect @tbl[%index](%arg) : extern("C") (u32) -> () tag 1;
+        builtin.ret;
+    };
+};
+};"#;
+
+        let err = verify_world("overwriting_mismatched_entry.hir", source)
+            .expect_err("the entry that overwrote the matching one is the dispatchable one");
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("nullary"), "{message}");
+    }
+
+    /// Tag 0 marks a null table slot, so a call claiming it would dispatch to an empty slot: the
+    /// runtime check compares integers and cannot tell the difference.
+    #[test]
+    fn exec_indirect_with_the_reserved_tag_zero_fails_verification() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function private extern("C") @nullary() {
+        builtin.ret;
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @nullary tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32) {
+        hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 0;
+        builtin.ret;
+    };
+};
+};"#;
+
+        let err = verify_world("reserved_tag_zero.hir", source)
+            .expect_err("tag 0 is reserved for null table slots and must be rejected");
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("reserved for null table slots"), "{message}");
     }
 }
