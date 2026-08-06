@@ -179,11 +179,14 @@ fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
 /// than *silently mistranslated*:
 ///
 /// - **Anything unrecognized counts as owning memory.** A module body is only ever legal here if
-///   it holds functions, global variables and segments — `MasmModuleBuilder::build` panics on
-///   anything else — so an item this does not recognize is one that cannot be translated anyway,
-///   including a nested `builtin::Module`. Treating it as owning memory is therefore also what
+///   it holds functions, global variables, segments, function tables and nested modules —
+///   `MasmModuleBuilder::build` panics on anything else — so an item this does not recognize is
+///   one that cannot be translated anyway. Treating it as owning memory is therefore also what
 ///   makes the answer right *at any depth*: the only container that could hold a global or a
-///   segment deeper down is one of those, and none of them get past this.
+///   segment deeper down is a nested `builtin::Module`, which is not recognized here and so does
+///   not get past this. That is deliberately stricter than lowering now requires — a nested module
+///   can be lowered, but a top-level sibling holding one still has no parent component to own
+///   whatever memory that nesting hides, and this predicate cannot see that far.
 /// - **A declared global counts, not just a defined one.** [`Linker::link`] skips declarations
 ///   when building the layout, so this is strictly stricter than the overlay hazard requires. It
 ///   is the right side to err on: a declaration whose definition is elsewhere is absent from the
@@ -196,9 +199,9 @@ fn module_owns_memory(module: &builtin::Module) -> bool {
         if item.is::<builtin::GlobalVariable>() || item.is::<builtin::Segment>() {
             return true;
         }
-        // Plus anything this cannot place. The only other item a module body may legally hold is
-        // a function — `MasmModuleBuilder::build` panics on the rest — so this arm is the
-        // conservative one, not a third case.
+        // Plus anything this cannot place, which includes a nested `builtin::Module` — the only
+        // item that could hide a global or a segment deeper down — so this arm is the conservative
+        // one, not a third case.
         !item.is::<builtin::Function>()
     })
 }
@@ -856,7 +859,10 @@ impl MasmComponentBuilder<'_> {
             init_body: &mut self.init_body,
             invoked_from_init: &mut self.invoked_from_init,
         };
-        builder.build(module)?;
+        let nested = builder.build(module)?;
+        for nested_module in nested {
+            self.define_module(&nested_module.borrow())?;
+        }
 
         Ok(())
     }
@@ -1115,7 +1121,14 @@ struct MasmModuleBuilder<'a> {
 }
 
 impl MasmModuleBuilder<'_> {
-    pub fn build(mut self, module: &builtin::Module) -> Result<(), Report> {
+    /// Lower `module`'s body, returning any modules nested within it.
+    ///
+    /// A nested module is not lowered here: MASM's module set is flat and keyed by path, and
+    /// [`MasmComponentBuilder::define_module`] is what turns a fully-qualified HIR module path
+    /// into that set's entry. Returning them lets the component builder recurse without this
+    /// builder having to know how modules are rooted.
+    pub fn build(mut self, module: &builtin::Module) -> Result<Vec<builtin::ModuleRef>, Report> {
+        let mut nested = Vec::new();
         let region = module.body();
         let block = region.entry();
         for op in block.body() {
@@ -1123,6 +1136,8 @@ impl MasmModuleBuilder<'_> {
                 self.define_function(function)?;
             } else if let Some(gv) = op.downcast_ref::<builtin::GlobalVariable>() {
                 self.emit_global_variable_initializer(gv)?;
+            } else if let Some(nested_module) = op.downcast_ref::<builtin::Module>() {
+                nested.push(nested_module.as_module_ref());
             } else if op.is::<builtin::Segment>() {
                 continue;
             } else if op.is::<builtin::FunctionTable>() {
@@ -1137,7 +1152,7 @@ impl MasmModuleBuilder<'_> {
             }
         }
 
-        Ok(())
+        Ok(nested)
     }
 
     pub fn build_from_interface(mut self, interface: &builtin::Interface) -> Result<(), Report> {

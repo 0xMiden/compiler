@@ -1068,3 +1068,41 @@ fn a_private_module_is_not_part_of_the_package_surface() {
         "a public procedure of a private module must not be exported, got exports: {exports:?}"
     );
 }
+
+/// `builtin.Module` permits nesting, and a nested module's procedures belong to the component
+/// as much as a top-level module's. Lowering must place them at their own path rather than
+/// panicking on a module it did not expect to find in a module body.
+const WORLD_WITH_A_NESTED_MODULE: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @outer {
+        builtin.function public extern("C") @entry() {
+            builtin.ret;
+        };
+
+        builtin.module public @inner {
+            builtin.function public extern("C") @nested() {
+                builtin.ret;
+            };
+        };
+    };
+};
+};
+"#;
+
+#[test]
+fn a_nested_module_is_lowered_at_its_own_path() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_NESTED_MODULE);
+    let lowered = lower_world(world).expect("a component with a nested module lowers");
+
+    let paths = lowered
+        .modules
+        .iter()
+        .map(|module| module.path().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        paths.iter().any(|path| path.ends_with("outer::inner")),
+        "the nested module must be lowered at its own path, got: {paths:?}"
+    );
+}
