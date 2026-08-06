@@ -35,6 +35,15 @@ pub fn package_wit_section_id() -> miden_mast_package::SectionId {
         .expect("the WIT section id must be a valid custom section id")
 }
 
+/// Name of the Wasm custom section that stores a note storage schema.
+pub const WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME: &str = "rodata,miden_note_schema";
+
+/// Name of the Miden package section that stores a note storage schema.
+pub const PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID: &str = "note_storage_schema";
+
+/// Name of the Miden package section that stores a note codec.
+pub const PACKAGE_NOTE_CODEC_SECTION_ID: &str = "note_codec";
+
 /// The filesystem package-cache exchange contract.
 ///
 /// The compiler publishes compiled dependency packages — and its recorded dependency
@@ -250,6 +259,8 @@ pub struct PackageSections {
     pub account_component_metadata: Option<Vec<u8>>,
     /// The component's public WIT source emitted by the `#[component]` macro.
     pub component_wit: Option<Vec<u8>>,
+    /// The note storage schema.
+    pub note_storage_schema: Option<Vec<u8>>,
 }
 
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.

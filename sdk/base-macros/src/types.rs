@@ -7,7 +7,7 @@ static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 
 use heck::ToKebabCase;
 use proc_macro2::Span;
-use syn::{ItemStruct, Type, spanned::Spanned};
+use syn::{Attribute, ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
 use crate::manifest_paths::SDK_WIT_SOURCE;
@@ -39,12 +39,14 @@ impl TypeRef {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedField {
+    pub(crate) docs: Vec<String>,
     pub(crate) name: String,
     pub(crate) ty: TypeRef,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedVariant {
+    pub(crate) docs: Vec<String>,
     pub(crate) wit_name: String,
     pub(crate) payload: Option<TypeRef>,
 }
@@ -57,9 +59,32 @@ pub(crate) enum ExportedTypeKind {
 
 #[derive(Clone, Debug)]
 pub(crate) struct ExportedTypeDef {
+    pub(crate) docs: Vec<String>,
     pub(crate) rust_name: String,
     pub(crate) wit_name: String,
     pub(crate) kind: ExportedTypeKind,
+}
+
+/// Returns the text stored in `#[doc = "..."]` attributes.
+pub(crate) fn doc_comments(attrs: &[Attribute]) -> Vec<String> {
+    attrs
+        .iter()
+        .filter_map(|attr| {
+            if !attr.path().is_ident("doc") {
+                return None;
+            }
+            let syn::Meta::NameValue(meta) = &attr.meta else {
+                return None;
+            };
+            let syn::Expr::Lit(expr) = &meta.value else {
+                return None;
+            };
+            let syn::Lit::Str(value) = &expr.lit else {
+                return None;
+            };
+            Some(value.value())
+        })
+        .collect()
 }
 
 /// Represents the types that can be used as storage fields.
@@ -367,18 +392,21 @@ pub(crate) fn exported_type_from_struct(
                 })?;
                 let field_ty = map_type_to_type_ref(&field.ty, &known_exported)?;
                 fields.push(ExportedField {
+                    docs: doc_comments(&field.attrs),
                     name: field_ident.to_string(),
                     ty: field_ty,
                 });
             }
 
             Ok(ExportedTypeDef {
+                docs: doc_comments(&item_struct.attrs),
                 rust_name: item_struct.ident.to_string(),
                 wit_name: item_struct.ident.to_string().to_kebab_case(),
                 kind: ExportedTypeKind::Record { fields },
             })
         }
         syn::Fields::Unit => Ok(ExportedTypeDef {
+            docs: doc_comments(&item_struct.attrs),
             rust_name: item_struct.ident.to_string(),
             wit_name: item_struct.ident.to_string().to_kebab_case(),
             kind: ExportedTypeKind::Record { fields: Vec::new() },
@@ -421,10 +449,15 @@ pub(crate) fn exported_type_from_enum(
             }
         };
 
-        variants.push(ExportedVariant { wit_name, payload });
+        variants.push(ExportedVariant {
+            docs: doc_comments(&variant.attrs),
+            wit_name,
+            payload,
+        });
     }
 
     Ok(ExportedTypeDef {
+        docs: doc_comments(&item_enum.attrs),
         rust_name: item_enum.ident.to_string(),
         wit_name: item_enum.ident.to_string().to_kebab_case(),
         kind: ExportedTypeKind::Variant { variants },

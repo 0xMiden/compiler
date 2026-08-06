@@ -6,7 +6,7 @@ use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{
     FrontendMetadata, PackageSections, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
     WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
-    count_top_level_wit_packages, decode_section,
+    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, count_top_level_wit_packages, decode_section,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
@@ -96,6 +96,8 @@ pub struct ParsedModule<'data> {
     pub account_component_metadata_bytes: Option<&'data [u8]>,
     /// The component's public WIT source emitted by the `#[component]` macro.
     pub component_wit_bytes: Option<&'data [u8]>,
+    /// The note storage schema emitted by the `#[note]` macro.
+    pub note_storage_schema_bytes: Option<&'data [u8]>,
     /// Frontend-only component metadata entries emitted by SDK macros (empty when none present).
     pub component_frontend_metadata: Vec<FrontendMetadata>,
 }
@@ -149,6 +151,7 @@ pub(crate) fn collect_package_sections<'a, 'data: 'a>(
 ) -> WasmResult<PackageSections> {
     let mut account_component_metadata = None;
     let mut component_wit = None;
+    let mut note_storage_schema = None;
     for module in modules {
         merge_section_payload(
             &mut account_component_metadata,
@@ -162,10 +165,17 @@ pub(crate) fn collect_package_sections<'a, 'data: 'a>(
             WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
             diagnostics,
         )?;
+        merge_section_payload(
+            &mut note_storage_schema,
+            module.note_storage_schema_bytes,
+            WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+            diagnostics,
+        )?;
     }
     Ok(PackageSections {
         account_component_metadata: account_component_metadata.map(<[u8]>::to_vec),
         component_wit: component_wit.map(<[u8]>::to_vec),
+        note_storage_schema: note_storage_schema.map(<[u8]>::to_vec),
     })
 }
 
@@ -446,6 +456,27 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                         .diagnostic(Severity::Error)
                         .with_message(format!(
                             "wasm error: multiple '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' \
+                             custom sections were found; only one is allowed per core Wasm module"
+                        ))
+                        .into_report());
+                }
+            }
+            Payload::CustomSection(s)
+                if s.name() == WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME =>
+            {
+                core::str::from_utf8(trim_trailing_nuls(s.data())).map_err(|err| {
+                    diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "failed to parse note storage schema section as UTF-8: {err}"
+                        ))
+                        .into_report()
+                })?;
+                if self.result.note_storage_schema_bytes.replace(s.data()).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "wasm error: multiple '{WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}' \
                              custom sections were found; only one is allowed per core Wasm module"
                         ))
                         .into_report());
@@ -1092,4 +1123,10 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         }
         Ok(())
     }
+}
+
+/// Removes the zero padding from a metadata section payload.
+fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
+    let len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
+    &bytes[..len]
 }

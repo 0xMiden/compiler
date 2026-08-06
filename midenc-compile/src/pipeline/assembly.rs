@@ -18,6 +18,7 @@ use alloc::vec::Vec;
 
 use miden_mast_package::Package;
 use midenc_codegen_masm::{MasmComponent, intrinsics};
+use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
 use midenc_session::{Session, diagnostics::Report};
 
 /// Apply the session's link inputs to `assembler` before a project is assembled with it.
@@ -72,6 +73,7 @@ pub(crate) fn post_process_package(
 
     attach_account_component_metadata(package, sections.account_component_metadata.as_deref());
     attach_component_wit(package, sections.component_wit.as_deref());
+    attach_note_storage_schema(package, sections.note_storage_schema.as_deref())?;
     extend_rodata_advice_map(package, &component.rodata);
 
     // Embed the kernel in note/transaction script packages, if not already embedded
@@ -89,6 +91,21 @@ pub(crate) fn post_process_package(
             .push(Section::new(SectionId::KERNEL, kernel_package.to_bytes()));
     }
 
+    Ok(())
+}
+
+/// Attach the note storage schema to the assembled package.
+fn attach_note_storage_schema(
+    package: &mut Package,
+    note_storage_schema: Option<&[u8]>,
+) -> Result<(), Report> {
+    use miden_mast_package::{Section, SectionId};
+
+    if let Some(bytes) = note_storage_schema {
+        let section_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID)
+            .map_err(|err| Report::msg(format!("invalid note storage schema section id: {err}")))?;
+        package.sections.push(Section::new(section_id, bytes.to_vec()));
+    }
     Ok(())
 }
 

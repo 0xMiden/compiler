@@ -17,6 +17,7 @@ use miden_client::{
 use miden_core::Felt;
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 use miden_mast_package::{Package, TargetType};
+use miden_note_schema::NoteStorageSchema;
 use miden_protocol::{
     account::{
         Account, AccountBuilder, AccountComponent, AccountId, AccountStorage, AccountType,
@@ -288,10 +289,18 @@ pub(crate) fn build_asset_transfer_tx(
     let faucet_id = asset.faucet_id();
 
     let asset: Asset = asset.into();
+    let schema = NoteStorageSchema::from_package(&p2id_note_package)
+        .expect("p2id note package should contain a storage schema");
+    let note_storage = schema
+        .builder()
+        .set("target-account-id", recipient_id.to_hex())
+        .expect("recipient account ID should match the p2id schema")
+        .build()
+        .expect("p2id schema should produce valid note storage");
     let output_note = NoteBuilder::new(sender_id, rng)
         .serial_number(serial_num)
         .package((*p2id_note_package).clone())
-        .note_storage(to_core_felts(&recipient_id))
+        .note_storage(note_storage.to_elements())
         .unwrap()
         .add_assets([asset])
         .tag(0)

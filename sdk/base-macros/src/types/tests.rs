@@ -114,6 +114,38 @@ fn struct_fields_allow_wit_primitive_types() {
 }
 
 #[test]
+fn exported_types_capture_doc_attributes() {
+    reset_export_type_registry_for_tests();
+    let item_struct: syn::ItemStruct = parse_quote! {
+        /// Record documentation.
+        struct DocumentedRecord {
+            /// Field documentation.
+            value: Felt,
+        }
+    };
+    let record = exported_type_from_struct(&item_struct).expect("record definition should parse");
+    assert_eq!(record.docs, vec![" Record documentation."]);
+    let ExportedTypeKind::Record { fields } = record.kind else {
+        panic!("expected record kind");
+    };
+    assert_eq!(fields[0].docs, vec![" Field documentation."]);
+
+    let item_enum: syn::ItemEnum = parse_quote! {
+        /// Variant documentation.
+        enum DocumentedVariant {
+            /// Case documentation.
+            Case,
+        }
+    };
+    let variant = exported_type_from_enum(&item_enum).expect("variant definition should parse");
+    assert_eq!(variant.docs, vec![" Variant documentation."]);
+    let ExportedTypeKind::Variant { variants } = variant.kind else {
+        panic!("expected variant kind");
+    };
+    assert_eq!(variants[0].docs, vec![" Case documentation."]);
+}
+
+#[test]
 fn maps_rust_primitive_types_to_wit_types() {
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();

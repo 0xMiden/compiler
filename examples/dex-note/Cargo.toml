@@ -1,0 +1,19 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "dex-note"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../sdk/sdk" }
+miden-field-repr = { path = "../../sdk/field-repr/repr" }
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]

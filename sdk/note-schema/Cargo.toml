@@ -1,0 +1,38 @@
+[package]
+name = "miden-note-schema"
+description = "Host-side reader and codec registry for Miden note storage schemas"
+version = "0.14.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[features]
+default = []
+codec-component = ["dep:wasmtime"]
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-field.workspace = true
+miden-field-repr.workspace = true
+miden-mast-package = { workspace = true, features = ["std"] }
+miden-protocol = { workspace = true, features = ["std"] }
+midenc-frontend-wasm-metadata.workspace = true
+wit-parser.workspace = true
+wasmtime = { workspace = true, optional = true }
+
+[dev-dependencies]
+miden-core.workspace = true
+midenc-frontend-wasm.workspace = true
+midenc-integration-test-support.workspace = true
+tempfile.workspace = true
+wit-component.workspace = true

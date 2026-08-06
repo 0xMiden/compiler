@@ -1527,6 +1527,7 @@ mod tests {
     #[test]
     fn build_custom_with_entries_prefers_custom_paths() {
         let exported_types = vec![ExportedTypeDef {
+            docs: Vec::new(),
             rust_name: "StructA".into(),
             wit_name: "struct-a".into(),
             kind: ExportedTypeKind::Record { fields: Vec::new() },

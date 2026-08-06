@@ -51,7 +51,8 @@ use crate::{CodegenOutput, CompilerResult, MidenComponent};
 ///   asks the advice provider for the data behind it, so a package assembled without the
 ///   advice map fails at run time, in the VM, with nothing in the build to point at.
 /// - [`sections`](LoweredTarget::sections) carries the out-of-band payloads — the serialized
-///   account-component metadata and the component's public WIT — that become package sections.
+///   account-component metadata, the component's public WIT, and the note storage schema — that
+///   become package sections.
 /// - [`source_provenance`](LoweredTarget::source_provenance) is what the assembler hashes to
 ///   decide whether a cached build of this target is still current.
 ///
