@@ -452,6 +452,44 @@ impl CallOpInterface for ExecIndirect {
     }
 }
 
+/// `hir.exec_indirect` carries its callee's signature as an attribute rather than deriving it
+/// from a resolved callee, so nothing but this verifier ties the operands to it. The emitter
+/// consumes one operand per parameter and asserts each type, and its lowering cannot recover
+/// from a mismatch — an under-supplied call pops an empty stack.
+impl Verify<dyn CallOpInterface> for ExecIndirect {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        let signature = self.get_signature().clone();
+        let arguments = self
+            .arguments()
+            .iter()
+            .map(|operand| operand.borrow().as_value_ref())
+            .collect::<SmallVec<[_; 4]>>();
+
+        if arguments.len() != signature.params.len() {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_indirect: the call signature declares {} parameter(s), but {} \
+                 argument(s) were given",
+                signature.params.len(),
+                arguments.len()
+            )));
+        }
+
+        for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate()
+        {
+            let argument_ty = argument.borrow().ty().clone();
+            if argument_ty != param.ty {
+                return Err(Report::msg(format!(
+                    "invalid hir.exec_indirect: parameter {index} has type '{}', but the argument \
+                     given has type '{argument_ty}'",
+                    &param.ty
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl CallOpInterface for Exec {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
@@ -725,6 +763,7 @@ mod tests {
         string::{String, ToString},
     };
 
+    use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
         CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type, Usable,
         conversion::{
@@ -739,6 +778,63 @@ mod tests {
 
     use super::ExecIndirect;
     use crate::HirOpBuilder;
+
+    /// Build a module with a one-slot table and a `dispatch` function whose `hir.exec_indirect`
+    /// declares `signature_params` but passes `argument_count` `u32` constants, then verify it.
+    ///
+    /// Every argument is a `u32` constant, so a `signature_params` entry of any other type is
+    /// how the mistyped case is built — no other constant builder is needed.
+    fn verify_exec_indirect_with(
+        signature_params: &[Type],
+        argument_count: usize,
+    ) -> Result<(), midenc_hir::Report> {
+        use midenc_hir::{
+            Ident, Op, ValueRef, Visibility,
+            dialects::builtin::{ModuleBuilder, attributes::Signature},
+        };
+
+        let mut test = Test::named("verify_exec_indirect").in_module("m");
+        test.with_function("dispatch", &[Type::U32], &[]);
+        let table = ModuleBuilder::new(test.module())
+            .define_function_table(Ident::from("tbl"), Visibility::Private, 1)
+            .unwrap();
+        let signature = Signature::new(&test.context_rc(), signature_params.to_vec(), []);
+        {
+            let mut builder = test.function_builder();
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let args = (0..argument_count)
+                .map(|_| builder.u32(0, SourceSpan::UNKNOWN))
+                .collect::<alloc::vec::Vec<_>>();
+            builder
+                .exec_indirect(table, signature, 1, index, args, SourceSpan::UNKNOWN)
+                .unwrap();
+            builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+        }
+
+        test.module().borrow().as_operation().recursively_verify()
+    }
+
+    /// A signature declaring a parameter the call does not pass would pop an empty operand
+    /// stack in the emitter; verification must reject it first.
+    #[test]
+    fn exec_indirect_with_too_few_arguments_fails_verification() {
+        let err = verify_exec_indirect_with(&[Type::U32], 0)
+            .expect_err("a missing argument must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("1 parameter"), "{message}");
+    }
+
+    /// An argument whose type differs from its parameter reaches an `assert_eq!` in the
+    /// emitter; verification must reject it first.
+    #[test]
+    fn exec_indirect_with_mistyped_argument_fails_verification() {
+        let err = verify_exec_indirect_with(&[Type::I32], 1)
+            .expect_err("a mistyped argument must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("parameter 0"), "{message}");
+    }
 
     #[test]
     fn exec_parser_resolves_operand_types_from_signature_params() {
