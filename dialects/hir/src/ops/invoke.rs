@@ -486,6 +486,86 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
             }
         }
 
+        // The tag is what the runtime check compares, and it is a producer-supplied integer:
+        // nothing else ties it to a signature. If a table entry claims this call's tag while
+        // its callee expects a different stack contract, the runtime check passes and
+        // `dynexec` transfers control anyway — the type confusion the check exists to prevent.
+        let expected_tag = *self.get_type_tag();
+        if expected_tag == 0 {
+            return Err(Report::msg(
+                "invalid hir.exec_indirect: signature tag 0 is reserved for null table slots",
+            ));
+        }
+
+        let table_path = self.table().path().clone();
+        let Some(symbol_table_op) = self.as_operation().nearest_symbol_table() else {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_indirect: '{table_path}' cannot be resolved outside a symbol \
+                 table"
+            )));
+        };
+        let symbol_table_op = symbol_table_op.borrow();
+        let Some(table) = symbol_table_op
+            .as_symbol_table()
+            .and_then(|symbols| symbols.resolve(&table_path))
+        else {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_indirect: unable to resolve function table '{table_path}'"
+            )));
+        };
+        let table = table.borrow();
+        let Some(table) = table.as_symbol_operation().downcast_ref::<FunctionTable>() else {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_indirect: '{table_path}' is not a 'builtin.function_table'"
+            )));
+        };
+
+        // Later entries overwrite earlier ones at the same slot, so only the last entry per
+        // slot is dispatchable.
+        let mut live_slots = alloc::collections::BTreeMap::new();
+        let entries = table.entries();
+        for op in entries.entry().body() {
+            let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
+                return Err(Report::msg(format!(
+                    "invalid function table entry: '{}' is not supported in a function table body",
+                    op.name()
+                )));
+            };
+            live_slots.insert(
+                *entry.get_index(),
+                (*entry.get_type_tag(), entry.callee().path().clone(), entry.resolve_callee()),
+            );
+        }
+
+        for (slot, (type_tag, callee_path, callee)) in live_slots {
+            if type_tag != expected_tag {
+                continue;
+            }
+            let Some(callee) = callee else {
+                return Err(Report::msg(format!(
+                    "invalid hir.exec_indirect: slot {slot} of '{table_path}' matches tag \
+                     {expected_tag}, but its callee '{callee_path}' does not resolve"
+                )));
+            };
+            let callee = callee.borrow();
+            let Some(callable) = callee.as_symbol_operation().as_trait::<dyn CallableOpInterface>()
+            else {
+                return Err(Report::msg(format!(
+                    "invalid hir.exec_indirect: slot {slot} of '{table_path}' names \
+                     '{callee_path}', which is not callable"
+                )));
+            };
+            let callee_signature = callable.signature();
+            if callee_signature != signature {
+                return Err(Report::msg(format!(
+                    "invalid hir.exec_indirect: this call dispatches through '{table_path}' with \
+                     tag {expected_tag} and signature '{signature}', but slot {slot} holds \
+                     '{callee_path}' with signature '{callee_signature}' — the runtime tag check \
+                     would pass and transfer control with a mismatched stack contract"
+                )));
+            }
+        }
+
         Ok(())
     }
 }
@@ -1040,10 +1120,19 @@ builtin.module public @test {
 
     /// Parse `source`, which must contain exactly one `hir.exec_indirect`, and return the names
     /// of its possible callees, or `None` if the set is unknown.
+    ///
+    /// Verification is off because `possible_callees` is what is under test, and one fixture
+    /// below is deliberately malformed: the `hir.exec_indirect` verifier rejects a call whose
+    /// tag-matching entry does not resolve, which is exactly the case `possible_callees` answers
+    /// `None` for. Verifying would reject that fixture before the analysis ever ran.
     fn possible_callee_names(name: &str, source: &str) -> Option<alloc::vec::Vec<String>> {
         let test = Test::default();
-        let parsed = parse::parse_any(ParserConfig::new(test.context_rc()), Uri::new(name), source)
-            .expect("test module should parse");
+        let parsed = parse::parse_any(
+            ParserConfig::new(test.context_rc()).verify_after_parse(false),
+            Uri::new(name),
+            source,
+        )
+        .expect("test module should parse");
         let mut sets = alloc::vec::Vec::new();
         parsed.borrow().prewalk_all(|op| {
             if let Some(call) = op.downcast_ref::<ExecIndirect>() {
@@ -1165,12 +1254,23 @@ builtin.module public @b {
 };
 };"#;
 
+        // Verification is deferred until after parsing, not skipped: `parse_anchored_source`
+        // runs the parser's verification pass while the parsed `builtin.world` is still nested
+        // inside the synthetic wrapper `World` it detaches immediately afterwards. Absolute
+        // paths resolve from the root, so during that window `::@b::@tbl` is a grandchild of
+        // the root rather than a child, and the `hir.exec_indirect` verifier cannot resolve it.
+        // The explicit `recursively_verify` below is the assertion that this world is valid
+        // once detached — see the task 3 report for the parser defect this documents.
         let world = parse::parse_any(
-            ParserConfig::new(test.context_rc()),
+            ParserConfig::new(test.context_rc()).verify_after_parse(false),
             Uri::new("possible_callees_resolves_entries_from_their_own_symbol_table.hir"),
             source,
         )
         .expect("world should parse");
+        world
+            .borrow()
+            .recursively_verify()
+            .expect("a cross-module indirect call agreeing with its table must verify");
 
         let mut resolved = String::new();
         world.borrow().prewalk_all(|op: &Operation| {
@@ -1194,5 +1294,93 @@ builtin.module public @b {
         let source = table_module("        builtin.function_table_entry 0 @missing tag 1;", 1);
         let callees = possible_callee_names("possible_callees_unresolvable.hir", &source);
         assert_eq!(callees, None);
+    }
+
+    /// Verify the parsed world in `source`, returning the verification result.
+    fn verify_world(name: &str, source: &str) -> Result<(), midenc_hir::Report> {
+        let test = Test::default();
+        let world = parse::parse_any(ParserConfig::new(test.context_rc()), Uri::new(name), source)?;
+        world.borrow().recursively_verify()
+    }
+
+    /// The runtime check compares integers only, so a tag that claims a signature the callee
+    /// does not have would dispatch with a mismatched stack contract. The tag/signature mapping
+    /// must therefore be verified, not trusted.
+    #[test]
+    fn exec_indirect_with_a_forged_signature_tag_fails_verification() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function private extern("C") @nullary() {
+        builtin.ret;
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @nullary tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32, %arg: u32) {
+        hir.exec_indirect @tbl[%index](%arg) : extern("C") (u32) -> () tag 1;
+        builtin.ret;
+    };
+};
+};"#;
+
+        let err = verify_world("forged_signature_tag.hir", source)
+            .expect_err("a tag claiming a signature its callee does not have must be rejected");
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("tag 1"), "{message}");
+        assert!(message.contains("nullary"), "{message}");
+    }
+
+    /// The agreeing case must keep verifying: this is the shape the Wasm frontend emits.
+    #[test]
+    fn exec_indirect_agreeing_with_its_table_verifies() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function private extern("C") @unary(%a: u32) {
+        builtin.ret;
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @unary tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32, %arg: u32) {
+        hir.exec_indirect @tbl[%index](%arg) : extern("C") (u32) -> () tag 1;
+        builtin.ret;
+    };
+};
+};"#;
+
+        verify_world("agreeing_signature_tag.hir", source)
+            .expect("a call whose tag matches its entry's callee signature must verify");
+    }
+
+    /// A tag-matching entry whose callee does not resolve makes the dispatchable set unknowable;
+    /// `possible_callees` answers `None` for it, so analyses would silently lose the call.
+    #[test]
+    fn exec_indirect_with_an_unresolvable_entry_fails_verification() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @missing tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32) {
+        hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+        builtin.ret;
+    };
+};
+};"#;
+
+        let err = verify_world("unresolvable_entry.hir", source)
+            .expect_err("an unresolvable tag-matching entry must be rejected");
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("missing"), "{message}");
     }
 }
