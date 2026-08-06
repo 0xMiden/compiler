@@ -1393,3 +1393,29 @@ fn globals() {
         expect_file!("./expected/globals.hir"),
     )
 }
+
+/// A data segment may occupy the last bytes of linear memory: `wasm-tools validate` accepts
+/// this module, so the frontend must translate it to a segment at `0xfffffff0` and leave the
+/// address-space arithmetic to the linker, which reports `LayoutOverflow` for it.
+#[test]
+fn translates_a_data_segment_at_the_end_of_memory() {
+    let wat = r#"
+        (module
+            (memory 65536)
+            (data (i32.const -16) "0123456789abcdef")
+        )"#;
+    let wasm = wat::parse_str(wat).unwrap();
+    let context = Rc::new(midenc_hir::Context::default());
+    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+        .expect("a segment at the end of memory is valid Wasm");
+
+    let mut segments = Vec::new();
+    let component = output.component.borrow();
+    component.as_operation().prewalk_all(|op: &Operation| {
+        if let Some(segment) = op.downcast_ref::<builtin::Segment>() {
+            segments.push((*segment.get_offset(), segment.size_in_bytes()));
+        }
+    });
+
+    assert_eq!(segments, vec![(0xffff_fff0u32, 16usize)]);
+}
