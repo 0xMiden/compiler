@@ -446,6 +446,13 @@ impl CallOpInterface for ExecIndirect {
     }
 }
 
+/// The entry that wins at a function table slot: the tag the runtime check compares, the path the
+/// entry names, and that path resolved, if it resolves.
+type LiveTableSlot = (u32, SymbolPath, Option<SymbolRef>);
+
+/// The dispatchable entries of a function table, keyed by slot index.
+type LiveTableSlots = alloc::collections::BTreeMap<u32, LiveTableSlot>;
+
 /// The dispatchable entries of `table`, keyed by slot index: the tag the runtime check compares,
 /// the path the entry names, and that path resolved, if it resolves.
 ///
@@ -461,11 +468,8 @@ impl CallOpInterface for ExecIndirect {
 ///
 /// Returns `Err` with the name of the offending operation if the table body holds anything other
 /// than `builtin.function_table_entry`; the two callers report that differently.
-fn live_table_slots(
-    table: &FunctionTable,
-) -> Result<alloc::collections::BTreeMap<u32, (u32, SymbolPath, Option<SymbolRef>)>, OperationName>
-{
-    let mut live_slots = alloc::collections::BTreeMap::new();
+fn live_table_slots(table: &FunctionTable) -> Result<LiveTableSlots, OperationName> {
+    let mut live_slots = LiveTableSlots::new();
     let entries = table.entries();
     for op in entries.entry().body() {
         let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
