@@ -429,17 +429,21 @@ impl CallOpInterface for ExecIndirect {
         let entries = entries.entry();
         for op in entries.body() {
             let entry = op.downcast_ref::<FunctionTableEntry>()?;
-            live_slots
-                .insert(*entry.get_index(), (*entry.get_type_tag(), entry.callee().path().clone()));
+            live_slots.insert(*entry.get_index(), (*entry.get_type_tag(), entry.resolve_callee()));
         }
 
         let expected_tag = *self.get_type_tag();
         let mut callees = SmallVec::new();
-        for (type_tag, callee_path) in live_slots.into_values() {
+        for (type_tag, callee) in live_slots.into_values() {
             if type_tag != expected_tag {
                 continue;
             }
-            let callee = symbol_table.resolve(&callee_path)?;
+            // One unresolved dispatchable entry makes the whole set unknown: a partially
+            // resolved set would be indistinguishable from a complete one to callers, and
+            // would understate the call's effects. Valid IR cannot reach this — the
+            // `hir.exec_indirect` verifier rejects a call whose tag-matching entry does not
+            // resolve — so this is the malformed-IR path only.
+            let callee = callee?;
             if !callees.contains(&callee) {
                 callees.push(callee);
             }
@@ -722,7 +726,7 @@ mod tests {
     };
 
     use midenc_hir::{
-        CallOpInterface, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type, Usable,
         conversion::{
             TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
             verify_call_signature_operands_and_results,
@@ -1033,6 +1037,58 @@ builtin.module public @test {{
         let source = table_module("        builtin.function_table_entry 0 @a tag 2;", 1);
         let callees = possible_callee_names("possible_callees_empty.hir", &source);
         assert_eq!(callees, Some(alloc::vec![]));
+    }
+
+    /// An entry's callee path belongs to the entry, so a relative path must resolve from the
+    /// module holding the *table*, not the module holding the call. Both modules here define a
+    /// `@target`, and only the one beside the table is dispatchable.
+    #[test]
+    fn possible_callees_resolves_entries_from_their_own_symbol_table() {
+        let test = Test::default();
+        let source = r#"
+builtin.world {
+builtin.module public @a {
+    builtin.function internal extern("C") @target(%x: i32) -> i32 {
+        builtin.ret %x : (i32);
+    };
+
+    builtin.function public extern("C") @dispatch(%idx: u32, %x: i32) -> i32 {
+        %r = hir.exec_indirect ::@b::@tbl[%idx](%x) : extern("C") (i32) -> (i32) tag 1;
+        builtin.ret %r : (i32);
+    };
+};
+
+builtin.module public @b {
+    builtin.function internal extern("C") @target(%x: i32) -> i32 {
+        builtin.ret %x : (i32);
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 @target tag 1;
+    };
+};
+};"#;
+
+        let world = parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("possible_callees_resolves_entries_from_their_own_symbol_table.hir"),
+            source,
+        )
+        .expect("world should parse");
+
+        let mut resolved = String::new();
+        world.borrow().prewalk_all(|op: &Operation| {
+            if let Some(call) = op.downcast_ref::<ExecIndirect>() {
+                let callees = call.possible_callees().expect("targets should be known");
+                assert_eq!(callees.len(), 1, "one entry matches the call's tag");
+                resolved = callees[0].borrow().path().to_string();
+            }
+        });
+
+        assert_eq!(
+            resolved, "b/target",
+            "the entry's relative path must resolve beside the table, not beside the call"
+        );
     }
 
     /// An entry whose callee does not resolve makes the whole set unknown, so analyses cannot

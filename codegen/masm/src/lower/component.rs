@@ -1059,15 +1059,7 @@ impl MasmComponentBuilder<'_> {
                         table.get_name().as_str(),
                     )));
                 }
-                let Some(mut callee) =
-                    entry.as_operation().nearest_symbol_table().and_then(|symbol_table| {
-                        symbol_table
-                            .borrow()
-                            .as_symbol_table()
-                            .unwrap()
-                            .resolve(entry.callee().path())
-                    })
-                else {
+                let Some(mut callee) = entry.resolve_callee() else {
                     return Err(Report::msg(format!(
                         "invalid function table entry: unable to resolve callee '{}'",
                         entry.callee().path()

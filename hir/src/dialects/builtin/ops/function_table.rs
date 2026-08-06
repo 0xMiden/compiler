@@ -1,6 +1,7 @@
 use crate::{
-    AsSymbolRef, NamedAttribute, OpParser, OpPrinter, Operation, RegionKind, RegionKindInterface,
-    Symbol, SymbolName, SymbolRef, SymbolUseList, UnsafeIntrusiveEntityRef, Usable, Visibility,
+    AsSymbolRef, NamedAttribute, Op, OpParser, OpPrinter, Operation, RegionKind,
+    RegionKindInterface, Symbol, SymbolName, SymbolRef, SymbolUseList, UnsafeIntrusiveEntityRef,
+    Usable, Visibility,
     derive::operation,
     dialects::builtin::{
         BuiltinDialect,
@@ -205,6 +206,23 @@ impl OpPrinter for FunctionTableEntry {
         let callee = self.callee();
         printer.print_symbol_path(callee.path());
         *printer += const_text(" tag ") + display(*self.get_type_tag());
+    }
+}
+
+impl FunctionTableEntry {
+    /// Resolve this entry's callee, starting from the symbol table that contains the entry.
+    ///
+    /// The path is the *entry's*, not the call site's: a table in module `b` may hold the
+    /// relative entry `@target` while the `hir.exec_indirect` reaching it lives in module `a`,
+    /// which may define a different `@target`. Resolving from the call site would silently
+    /// dispatch to one function while every analysis reasoned about another.
+    ///
+    /// `FunctionTableEntry` sits in a table's `entries` region rather than a symbol table, so
+    /// the nearest symbol table is the module enclosing the table.
+    pub fn resolve_callee(&self) -> Option<SymbolRef> {
+        let symbol_table = self.as_operation().nearest_symbol_table()?;
+        let symbol_table = symbol_table.borrow();
+        symbol_table.as_symbol_table()?.resolve(self.callee().path())
     }
 }
 
