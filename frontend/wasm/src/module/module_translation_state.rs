@@ -240,6 +240,18 @@ impl<'a> ModuleTranslationState<'a> {
                 // `(f32, f32) -> f32`, for instance. Dispatching through such an entry would
                 // push and pop per the call site while the callee consumes per the intrinsic,
                 // which the tag check cannot catch: the tags match, only the contracts do not.
+                //
+                // NOTE: no input reaches this arm today. `register_linker_stub` is the only
+                // constructor of `CallableFunction::Intrinsic`, and its sole caller in
+                // `build_ir.rs` skips every intrinsic that is not `conv.is_operation()`, so it
+                // only ever produces the `Instruction` variant. The check is kept as a guard in
+                // case the variant becomes constructible again.
+                //
+                // Should that happen, note that the two sides are built by different helpers:
+                // `sig_from_func_type` uses `AbiParam::new`, while `Signature::new` goes through
+                // `AbiParam::from_type_with_default_extension`, so they can disagree on parameter
+                // extension attributes for I1/U8/U16/I8/I16 and reject an entry whose stack
+                // contract is actually fine.
                 let callee_signature = function_ref.borrow().get_signature().clone();
                 if callee_signature != signature {
                     unsupported_diag!(

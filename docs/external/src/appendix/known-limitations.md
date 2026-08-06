@@ -86,9 +86,12 @@ The following limitations remain:
   linker stubs for intrinsics such as `intrinsics::felt::add`, whose Wasm body is a single
   `unreachable` — is rejected: the stub has no procedure body whose MAST root a slot could
   hold. Calling such a function directly is supported; only taking its address is not.
-- A `funcref` table entry naming an intrinsic the compiler lowers to a MASM procedure is
-  rejected when that procedure's signature differs from the Wasm signature the entry's type tag
-  denotes, since dispatch would transfer control with a mismatched stack contract.
+- For a linker stub naming an intrinsic the compiler lowers to a MASM procedure, the stub's
+  declared Wasm signature is taken at face value: it is what calls are emitted from and what the
+  stub's table entries are tagged with, and it is never checked against the signature the
+  intrinsic actually has. Declaring such a stub with the wrong signature is a program error the
+  compiler does not diagnose; it produces a mismatched stack contract at run time rather than a
+  compile-time error.
 
 ### Miden SDK
 
