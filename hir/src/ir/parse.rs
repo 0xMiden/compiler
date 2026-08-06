@@ -321,10 +321,20 @@ pub fn parse_file_anchored(
 /// `--emit=hir` output impossible to feed back to `midenc`.
 ///
 /// So when the parsed operation is itself a [World], it is detached from the anchor and returned
-/// as the root. The detach happens *after* `finalize`, because finalize resolves deferred
-/// locations and runs verification by walking down from the anchor; detaching first would skip
-/// both for everything the file declared. The now-empty anchor is left to the context's arena,
-/// which is how every other discarded entity is disposed of.
+/// as the root. The now-empty anchor is left to the context's arena, which is how every other
+/// discarded entity is disposed of.
+///
+/// # Why verification runs after the detach, not inside `finalize`
+///
+/// `finalize` resolves deferred locations and records symbol uses by walking down from the
+/// anchor, so it must run while the parsed operation is still attached. Verification must not:
+/// symbol resolution is rooted at the *root* operation, so while the parsed world is still
+/// nested, an absolute path like `::@ns:pkg@1.0.0::@m::@tbl` names a grandchild of the root
+/// rather than a child, and any verifier resolving one — `hir.exec_indirect`'s, for instance —
+/// fails on IR that is perfectly valid once detached. That is why this function calls
+/// [`operation::OperationParser::finalize_without_verifying`] and verifies the root it is about
+/// to return, rather than letting `finalize` do it. Failures are still reported as
+/// [`ParserError::Report`] carrying the source, exactly as when `finalize` verified.
 ///
 /// **Note that [`parse_source_generic`] does none of this.** The generic-format entry points —
 /// [`parse_generic`] and [`parse_file_generic`] — go through `TopLevelOperationParser` instead,
@@ -333,7 +343,7 @@ pub fn parse_file_anchored(
 /// callers outside this module's tests, and the one test covering them is `#[ignore]`d. If the
 /// generic format is ever revived, it needs the same treatment.
 fn parse_anchored_source(
-    anchor: Option<OperationName>,
+    anchor_name: Option<OperationName>,
     config: ParserConfig,
     source_file: Arc<SourceFile>,
 ) -> Result<OperationRef, Report> {
@@ -342,12 +352,14 @@ fn parse_anchored_source(
     let source = source_file.as_str();
     let scanner = Scanner::new(source);
     let token_stream = TokenStream::new(source_file.id(), scanner);
+    let should_verify = config.should_verify_after_parse();
     let mut parser = DefaultParser::new(ParserState::new(config, token_stream));
     let span = parser.current_location();
     let world = parser.builder_mut().create::<World, ()>(span)()?;
+    let anchor = world.as_operation_ref();
     let mut asm_state = Box::<AsmParserState>::default();
     {
-        asm_state.initialize(world.as_operation_ref());
+        asm_state.initialize(anchor);
         parser.state_mut().asm_state = Some(asm_state);
     }
     let mut operation_parser = operation::OperationParser::new(parser, world);
@@ -355,7 +367,7 @@ fn parse_anchored_source(
         .parse_operation()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
     operation_parser
-        .finalize()
+        .finalize_without_verifying()
         .map_err(|err| Report::from(err).with_source_code(source_file.clone()))?;
 
     // See the note above: a parsed world is the root, not something to be rooted.
@@ -368,12 +380,26 @@ fn parse_anchored_source(
     // second borrow is taken. If `World` ever gains `Symbol`, this line becomes a runtime
     // aliasing panic with no compile error to warn you, and it would need to drop the borrow
     // first.
-    if op.borrow().is::<World>() {
+    let root = if op.borrow().is::<World>() {
         let mut parsed_world = op;
         parsed_world.borrow_mut().remove();
+        op
+    } else {
+        // The parsed operation is still rooted at the anchor, and the anchor is what a verifier
+        // resolving an absolute path will see, so it is the anchor that must be verified.
+        anchor
+    };
+
+    // Verification is the parser's, so its failures must look like the parser's: the same
+    // `ParserError::Report` wrapper, carrying the same source code, that `finalize` produced when
+    // it ran this pass itself.
+    if should_verify {
+        root.borrow().recursively_verify().map_err(|err| {
+            Report::from(ParserError::from(err)).with_source_code(source_file.clone())
+        })?;
     }
 
-    match anchor {
+    match anchor_name {
         None => Ok(op),
         Some(anchor) => {
             let operation = op.borrow();

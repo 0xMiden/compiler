@@ -1121,11 +1121,27 @@ builtin.module public @test {
     /// Parse `source`, which must contain exactly one `hir.exec_indirect`, and return the names
     /// of its possible callees, or `None` if the set is unknown.
     ///
-    /// Verification is off because `possible_callees` is what is under test, and one fixture
-    /// below is deliberately malformed: the `hir.exec_indirect` verifier rejects a call whose
-    /// tag-matching entry does not resolve, which is exactly the case `possible_callees` answers
-    /// `None` for. Verifying would reject that fixture before the analysis ever ran.
+    /// The fixtures reaching this helper are all valid IR, so parsing verifies them: an analysis
+    /// answering for IR the verifier would reject proves nothing about what analyses actually
+    /// see. The one deliberately malformed fixture goes through
+    /// [`possible_callee_names_unverified`] instead.
     fn possible_callee_names(name: &str, source: &str) -> Option<alloc::vec::Vec<String>> {
+        let test = Test::default();
+        let parsed = parse::parse_any(ParserConfig::new(test.context_rc()), Uri::new(name), source)
+            .expect("test module should parse and verify");
+        possible_callee_names_of(parsed)
+    }
+
+    /// Like [`possible_callee_names`], but parses without verifying.
+    ///
+    /// This exists for the single fixture whose table entry does not resolve: that is precisely
+    /// what the `hir.exec_indirect` verifier rejects (see
+    /// `exec_indirect_with_an_unresolvable_entry_fails_verification`), so verifying would reject
+    /// it before `possible_callees` ever ran. Every other fixture must verify.
+    fn possible_callee_names_unverified(
+        name: &str,
+        source: &str,
+    ) -> Option<alloc::vec::Vec<String>> {
         let test = Test::default();
         let parsed = parse::parse_any(
             ParserConfig::new(test.context_rc()).verify_after_parse(false),
@@ -1133,6 +1149,12 @@ builtin.module public @test {
             source,
         )
         .expect("test module should parse");
+        possible_callee_names_of(parsed)
+    }
+
+    fn possible_callee_names_of(
+        parsed: midenc_hir::OperationRef,
+    ) -> Option<alloc::vec::Vec<String>> {
         let mut sets = alloc::vec::Vec::new();
         parsed.borrow().prewalk_all(|op| {
             if let Some(call) = op.downcast_ref::<ExecIndirect>() {
@@ -1254,23 +1276,14 @@ builtin.module public @b {
 };
 };"#;
 
-        // Verification is deferred until after parsing, not skipped: `parse_anchored_source`
-        // runs the parser's verification pass while the parsed `builtin.world` is still nested
-        // inside the synthetic wrapper `World` it detaches immediately afterwards. Absolute
-        // paths resolve from the root, so during that window `::@b::@tbl` is a grandchild of
-        // the root rather than a child, and the `hir.exec_indirect` verifier cannot resolve it.
-        // The explicit `recursively_verify` below is the assertion that this world is valid
-        // once detached — see the task 3 report for the parser defect this documents.
+        // Parsing verifies, so this also asserts that a cross-module indirect call agreeing with
+        // its table is valid IR.
         let world = parse::parse_any(
-            ParserConfig::new(test.context_rc()).verify_after_parse(false),
+            ParserConfig::new(test.context_rc()),
             Uri::new("possible_callees_resolves_entries_from_their_own_symbol_table.hir"),
             source,
         )
-        .expect("world should parse");
-        world
-            .borrow()
-            .recursively_verify()
-            .expect("a cross-module indirect call agreeing with its table must verify");
+        .expect("a cross-module indirect call agreeing with its table must parse and verify");
 
         let mut resolved = String::new();
         world.borrow().prewalk_all(|op: &Operation| {
@@ -1292,7 +1305,8 @@ builtin.module public @b {
     #[test]
     fn exec_indirect_possible_callees_unknown_when_entry_unresolvable() {
         let source = table_module("        builtin.function_table_entry 0 @missing tag 1;", 1);
-        let callees = possible_callee_names("possible_callees_unresolvable.hir", &source);
+        let callees =
+            possible_callee_names_unverified("possible_callees_unresolvable.hir", &source);
         assert_eq!(callees, None);
     }
 
@@ -1382,5 +1396,42 @@ builtin.module public @m {
         let message = format!("{err}");
         assert!(message.contains("hir.exec_indirect"), "{message}");
         assert!(message.contains("missing"), "{message}");
+    }
+
+    /// Absolute symbol paths resolve from the root, so a verifier that resolves one only sees the
+    /// right answer once the parsed world is the root. `parse_anchored_source` parses into a
+    /// synthetic anchor world and detaches the parsed world from it, and it used to verify while
+    /// the parsed world was still nested — under which `::@m::@tbl` names a grandchild of the
+    /// root rather than a child, and this verifier rejected it.
+    ///
+    /// This is the shape the Wasm frontend prints, so it is also the shape `midenc compile
+    /// --emit hir | midenc compile` has to be able to read back.
+    #[test]
+    fn exec_indirect_naming_its_table_by_absolute_path_parses_and_verifies() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function private extern("C") @unary(%a: u32) {
+        builtin.ret;
+    };
+
+    builtin.function_table private @tbl : 2 {
+        builtin.function_table_entry 0 ::@m::@unary tag 1;
+    };
+
+    builtin.function public extern("C") @dispatch(%index: u32, %arg: u32) {
+        hir.exec_indirect ::@m::@tbl[%index](%arg) : extern("C") (u32) -> () tag 1;
+        builtin.ret;
+    };
+};
+};"#;
+
+        let test = Test::default();
+        parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("exec_indirect_absolute_table_path.hir"),
+            source,
+        )
+        .expect("an indirect call naming its table by absolute path must parse and verify");
     }
 }
