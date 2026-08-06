@@ -482,6 +482,9 @@ fn world_body_to_masm_component(
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
     let mut masm_component = MasmComponent {
         id: None,
+        // A world declaring no component is not the compiler's wrapper around one: it has no
+        // component boundary at all.
+        synthetic_wrapper: false,
         root,
         init,
         entrypoint,
@@ -535,6 +538,11 @@ fn component_to_masm_component(
     // Get the current compiler context
     let context = component.as_operation().context_rc();
 
+    // Whether this component is one the compiler invented to wrap a bare core module, which it
+    // says by carrying a marker the frontend set rather than by its id — see
+    // `builtin::Component::SYNTHETIC_WRAPPER_ATTR`.
+    let synthetic_wrapper = component.is_synthetic_wrapper();
+
     // Run the linker for this component in order to compute its data layout
     let id = component.id();
     let link_info = Linker::default()
@@ -569,8 +577,7 @@ fn component_to_masm_component(
             // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
             // cannot currently do so because we do not have sufficient Cargo metadata yet in
             // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-            let is_wrapper = id.is_synthetic_wrapper();
-            let path = if is_wrapper {
+            let path = if synthetic_wrapper {
                 component_path.join(entry_id.module.as_str())
             } else {
                 // We're compiling a Wasm component and the component id is included
@@ -614,6 +621,7 @@ fn component_to_masm_component(
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
     let mut masm_component = MasmComponent {
         id: Some(id),
+        synthetic_wrapper,
         root,
         init,
         entrypoint,
@@ -826,14 +834,18 @@ impl MasmComponentBuilder<'_> {
         // table callees — stay resolvable package-internally (a private submodule is visible to
         // its parent and siblings) without becoming part of the package's interface.
         //
-        // The synthetic wrapper the compiler creates around a bare core module is not a real
-        // component boundary, though: the wrapped module is the artifact's own interface (the
-        // entrypoint of an executable, or the exports of a bare library), and the generated
-        // executable `main` module lives outside the wrapper's module tree — so its submodules
-        // stay public, as does everything lowered without a component id (a bare world).
-        let is_synthetic_wrapper =
-            self.component.id.as_ref().is_none_or(|id| id.is_synthetic_wrapper());
-        let visibility = if is_synthetic_wrapper {
+        // Two of the shapes reaching here have no component boundary to speak of, and in both
+        // the modules *are* the artifact's interface, so they keep public submodules. A world
+        // lowered without a component id is one. The other is the wrapper the compiler invents
+        // around a bare core module, which is not a real boundary either: the wrapped module is
+        // the artifact's own interface (the entrypoint of an executable, or the exports of a
+        // bare library), and the generated executable `main` module lives outside the wrapper's
+        // module tree. That the wrapper is the compiler's is something it *says* — the frontend
+        // marks it (`builtin::Component::SYNTHETIC_WRAPPER_ATTR`) — rather than something read
+        // off its id, which is a name an author may write. An authored component is the
+        // complement, and keeps the visibility its author declared.
+        let is_artifact_interface = self.component.id.is_none() || self.component.synthetic_wrapper;
+        let visibility = if is_artifact_interface {
             masm::Visibility::Public
         } else {
             match *module.get_visibility() {

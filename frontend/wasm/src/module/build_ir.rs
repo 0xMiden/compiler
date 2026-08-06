@@ -7,7 +7,7 @@ use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
-        attributes::U64Attr,
+        attributes::{BoolAttr, U64Attr},
     },
     version::Version,
 };
@@ -67,7 +67,18 @@ pub fn translate_module_as_component(
     let ns = Ident::from("root_ns");
     let name = Ident::from("root");
     let ver = Version::parse("1.0.0").unwrap();
-    let component_ref = world_builder.define_component(ns, name, ver)?;
+    let mut component_ref = world_builder.define_component(ns, name, ver)?;
+
+    // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
+    // comparing the id, which an author may legitimately use.
+    {
+        let attr = context.create_attribute::<BoolAttr, _>(true);
+        component_ref
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(builtin::Component::SYNTHETIC_WRAPPER_ATTR, attr);
+    }
+
     let mut cb = ComponentBuilder::new(component_ref);
     let module_name = parsed_module.module.name().as_str();
     let module_ref = cb.define_module(Ident::from(module_name)).unwrap();

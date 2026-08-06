@@ -149,9 +149,37 @@ fn world_with_a_sibling_declaring_a_global() -> String {
 }
 
 /// [`WORLD_WITH_SUPPORTING_SIBLING`] with the identity `frontend/wasm` gives the component it
-/// wraps around a core Wasm module, which is the one component id that gets re-rooted.
+/// wraps around a core Wasm module.
+///
+/// The id alone does not make it the wrapper — see [`mark_as_synthetic_wrapper`], which is what
+/// a fixture standing in for the wrapper has to be put through as well.
 fn wrapper_world_with_a_supporting_sibling() -> String {
     WORLD_WITH_SUPPORTING_SIBLING.replace("hir_ns:test@1.0.0", "root_ns:root@1.0.0")
+}
+
+/// Mark `world`'s component as one the compiler invented, the way `frontend/wasm` marks the
+/// wrapper it builds around a bare core Wasm module.
+///
+/// This cannot be written into a fixture: `builtin.component`'s textual form carries no
+/// attributes, so the marker has to be set on the parsed IR — which is where the frontend sets
+/// it too, rather than on any text.
+fn mark_as_synthetic_wrapper(context: &Rc<Context>, world: builtin::WorldRef) {
+    let mut component = {
+        let world = world.borrow();
+        let body = world.body();
+        let component = body
+            .entry()
+            .body()
+            .iter()
+            .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Component>().ok());
+        component.expect("the fixture must declare a component to mark")
+    };
+    let attr =
+        context.create_attribute::<midenc_hir::dialects::builtin::attributes::BoolAttr, _>(true);
+    component
+        .borrow_mut()
+        .as_operation_mut()
+        .set_attribute(builtin::Component::SYNTHETIC_WRAPPER_ATTR, attr);
 }
 
 /// [`WORLD_WITH_SUPPORTING_SIBLING`] whose supporting module also holds a function with **no
@@ -667,6 +695,7 @@ fn a_sibling_module_declaring_a_data_segment_is_diagnosed() {
 fn a_supporting_sibling_does_not_move_when_the_component_is_re_rooted() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, &wrapper_world_with_a_supporting_sibling());
+    mark_as_synthetic_wrapper(&context, world);
     let lowered = lower_world(world).expect("a wrapper world with a sibling lowers");
     assert_eq!(
         lowered.root.to_string(),
@@ -1066,6 +1095,54 @@ fn a_private_module_is_not_part_of_the_package_surface() {
     assert!(
         !exports.iter().any(|export| export.contains("helper")),
         "a public procedure of a private module must not be exported, got exports: {exports:?}"
+    );
+}
+
+/// [`WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE`] carrying the id `frontend/wasm` gives
+/// the wrapper it invents around a bare core module — written by an author here, rather than
+/// invented, which is the whole point: nothing marks this component synthetic.
+///
+/// Derived from the shared fixture rather than written out, so the component id is the only
+/// thing that differs from the case beside it.
+fn world_with_an_authored_root_id() -> String {
+    WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE
+        .replace("hir_ns:test@1.0.0", "root_ns:root@1.0.0")
+}
+
+/// The compiler's wrapper around a bare core module is recognized by a marker the frontend
+/// sets, not by its id: an author may legitimately name a component `root_ns:root@1.0.0`, and
+/// theirs keeps the module visibility they declared.
+///
+/// The discriminating half of [`a_private_module_is_not_part_of_the_package_surface`]: the same
+/// fixture and the same assertion, with only the id changed. Recognizing the wrapper by
+/// comparing the id forces this component's modules public, which puts `helper` — a procedure
+/// its author put behind a private module — on the assembled package's export surface.
+#[test]
+fn an_authored_component_named_like_the_wrapper_keeps_private_modules_private() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, &world_with_an_authored_root_id());
+    let lowered = lower_world(world).expect("an authored root-named component lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("it assembles");
+
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        exports.iter().any(|export| export.ends_with("entry")),
+        "the component-level function is still the public surface, got exports: {exports:?}"
+    );
+    assert!(
+        !exports.iter().any(|export| export.contains("helper")),
+        "a private module of an authored component must not be exported, got: {exports:?}"
     );
 }
 

@@ -289,9 +289,26 @@ impl SymbolTable for Component {
 }
 
 impl Component {
+    /// Name of the optional operation attribute (a `BoolAttr`) marking a component the compiler
+    /// invented to wrap a bare core module, rather than one an author wrote.
+    ///
+    /// This is a marker rather than an id comparison because the id is not the compiler's to
+    /// reserve: `root_ns:root@1.0.0` is a name an author may write, and a component carrying it
+    /// is theirs, with the module visibility they declared.
+    pub const SYNTHETIC_WRAPPER_ATTR: &'static str = "synthetic_wrapper";
+
     #[inline]
     pub fn id(&self) -> ComponentId {
         ComponentId::from(self)
+    }
+
+    /// Returns true if this component is the compiler's wrapper around a bare core module.
+    pub fn is_synthetic_wrapper(&self) -> bool {
+        self.as_operation()
+            .get_typed_attribute::<crate::dialects::builtin::attributes::BoolAttr>(
+                Self::SYNTHETIC_WRAPPER_ATTR,
+            )
+            .is_some_and(|attr| **attr.borrow())
     }
 
     #[inline(always)]

@@ -2123,6 +2123,7 @@ mod tests {
         CodegenOutput {
             component: Arc::new(MasmComponent {
                 id: None,
+                synthetic_wrapper: false,
                 root,
                 init: None,
                 entrypoint: None,
