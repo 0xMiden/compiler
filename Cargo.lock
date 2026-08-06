@@ -834,7 +834,6 @@ dependencies = [
  "liquid-core",
  "log",
  "miden-mast-package",
- "miden-project",
  "midenc-compile",
  "midenc-driver",
  "midenc-frontend-wasm-metadata",
@@ -4221,6 +4220,8 @@ dependencies = [
  "midenc-session",
  "toml_edit",
  "wat",
+ "wit-component",
+ "wit-parser 0.247.0",
 ]
 
 [[package]]

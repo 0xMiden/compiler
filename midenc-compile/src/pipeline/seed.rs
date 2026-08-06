@@ -438,8 +438,7 @@ impl Frontend for SeedFrontend {
             package,
             &found.component,
             &found.sections,
-            cx.assembly().target,
-            cx.assembly().package_registry,
+            cx.assembly(),
         )
     }
 
@@ -605,8 +604,7 @@ mod tests {
                 package,
                 &found.component,
                 &found.sections,
-                cx.assembly().target,
-                cx.assembly().package_registry,
+                cx.assembly(),
             )
         }
 
