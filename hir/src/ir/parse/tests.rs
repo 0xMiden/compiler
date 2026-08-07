@@ -348,6 +348,43 @@ fn parsing_a_module_still_wraps_it_in_a_world() -> TestResult {
     Ok(())
 }
 
+/// Well-formed as text, ill-formed as IR: `builtin.function` carries the `SingleRegion` trait, so
+/// a function with no region at all parses (it is how a declaration is written) and then fails
+/// verification with "requires exactly one region, but got 0".
+const UNVERIFIABLE_SOURCE: &str = "\
+builtin.module public @lib {
+    builtin.function public extern(\"C\") @main();
+};";
+
+#[test]
+fn parsing_verifies_what_it_parsed() {
+    let test = ParserTest::default();
+
+    // Verification used to run inside `OperationParser::finalize`, and moving it out to
+    // `parse_anchored_source` left nothing pinning that it still runs at all: the tests that
+    // exercise invalid IR reach the verifier by calling `recursively_verify` themselves, and the
+    // one fixture that is deliberately malformed is parsed with verification turned off. Deleting
+    // the call would have kept every one of them green. This is the test that would not be.
+    let result = test.parse_any("parse_unverifiable.hir", UNVERIFIABLE_SOURCE);
+
+    let err = result.err().map(|err| err.to_string()).unwrap_or_else(|| {
+        panic!(
+            "the default parser configuration verifies, so ill-formed IR must not parse \
+             successfully"
+        )
+    });
+
+    // And the failure has to be the *verifier's*: the same source parses when verification is
+    // turned off, so nothing about the text itself is what rejected it.
+    test.parse_any_unverified("parse_unverifiable_unverified.hir", UNVERIFIABLE_SOURCE)
+        .expect("the source is well-formed as text — only verification rejects it");
+
+    assert!(
+        err.contains("invalid operation builtin.function"),
+        "expected the verifier's rejection of the region-less function, got: {err}"
+    );
+}
+
 #[derive(Default)]
 struct ParserTest {
     test: Test,
@@ -385,6 +422,11 @@ impl ParserTest {
 
     pub fn parse_any(&self, name: &str, source: &str) -> TestResult<OperationRef> {
         let config = ParserConfig::new(self.test.context_rc());
+        parse::parse_any(config, Uri::new(name), source)
+    }
+
+    pub fn parse_any_unverified(&self, name: &str, source: &str) -> TestResult<OperationRef> {
+        let config = ParserConfig::new(self.test.context_rc()).verify_after_parse(false);
         parse::parse_any(config, Uri::new(name), source)
     }
 }

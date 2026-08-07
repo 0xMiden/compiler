@@ -302,6 +302,21 @@ impl Component {
         ComponentId::from(self)
     }
 
+    /// Mark this component as the compiler's wrapper around a bare core module.
+    ///
+    /// The marker is a plain attribute, but setting it by hand is three lines of attribute
+    /// plumbing that say nothing about what is being asserted, and it is asserted from the
+    /// frontend that invents the wrapper and from every test standing in for that frontend. This
+    /// is the counterpart of [`Component::is_synthetic_wrapper`], and the two belong together:
+    /// whatever the marker's representation is, both ends of it should change at once.
+    pub fn mark_synthetic_wrapper(&mut self) {
+        let marker = self
+            .as_operation()
+            .context_rc()
+            .create_attribute::<crate::dialects::builtin::attributes::BoolAttr, _>(true);
+        self.as_operation_mut().set_attribute(Self::SYNTHETIC_WRAPPER_ATTR, marker);
+    }
+
     /// Returns true if this component is the compiler's wrapper around a bare core module.
     pub fn is_synthetic_wrapper(&self) -> bool {
         self.as_operation()

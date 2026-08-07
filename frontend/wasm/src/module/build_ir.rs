@@ -7,7 +7,7 @@ use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
-        attributes::{BoolAttr, U64Attr},
+        attributes::U64Attr,
     },
     version::Version,
 };
@@ -71,13 +71,7 @@ pub fn translate_module_as_component(
 
     // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
     // comparing the id, which an author may legitimately use.
-    {
-        let attr = context.create_attribute::<BoolAttr, _>(true);
-        component_ref
-            .borrow_mut()
-            .as_operation_mut()
-            .set_attribute(builtin::Component::SYNTHETIC_WRAPPER_ATTR, attr);
-    }
+    component_ref.borrow_mut().mark_synthetic_wrapper();
 
     let mut cb = ComponentBuilder::new(component_ref);
     let module_name = parsed_module.module.name().as_str();

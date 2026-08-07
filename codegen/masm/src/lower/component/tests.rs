@@ -163,7 +163,7 @@ fn wrapper_world_with_a_supporting_sibling() -> String {
 /// This cannot be written into a fixture: `builtin.component`'s textual form carries no
 /// attributes, so the marker has to be set on the parsed IR — which is where the frontend sets
 /// it too, rather than on any text.
-fn mark_as_synthetic_wrapper(context: &Rc<Context>, world: builtin::WorldRef) {
+fn mark_as_synthetic_wrapper(world: builtin::WorldRef) {
     let mut component = {
         let world = world.borrow();
         let body = world.body();
@@ -174,12 +174,7 @@ fn mark_as_synthetic_wrapper(context: &Rc<Context>, world: builtin::WorldRef) {
             .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Component>().ok());
         component.expect("the fixture must declare a component to mark")
     };
-    let attr =
-        context.create_attribute::<midenc_hir::dialects::builtin::attributes::BoolAttr, _>(true);
-    component
-        .borrow_mut()
-        .as_operation_mut()
-        .set_attribute(builtin::Component::SYNTHETIC_WRAPPER_ATTR, attr);
+    component.borrow_mut().mark_synthetic_wrapper();
 }
 
 /// [`WORLD_WITH_SUPPORTING_SIBLING`] whose supporting module also holds a function with **no
@@ -695,7 +690,7 @@ fn a_sibling_module_declaring_a_data_segment_is_diagnosed() {
 fn a_supporting_sibling_does_not_move_when_the_component_is_re_rooted() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, &wrapper_world_with_a_supporting_sibling());
-    mark_as_synthetic_wrapper(&context, world);
+    mark_as_synthetic_wrapper(world);
     let lowered = lower_world(world).expect("a wrapper world with a sibling lowers");
     assert_eq!(
         lowered.root.to_string(),
@@ -1281,18 +1276,27 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
         .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
         .expect("a table initialized from its callee's own module assembles");
 
-    let exports = package
+    let mut exports = package
         .manifest
         .exports()
         .map(|export| export.path().as_ref().as_str().to_string())
         .collect::<Vec<_>>();
-    assert!(
-        exports.iter().any(|export| export.ends_with("dispatch")),
-        "the public procedure is the surface, got: {exports:?}"
-    );
-    assert!(
-        !exports.iter().any(|export| export.contains("private_callee")),
-        "an address-taken private function must not be exported, got: {exports:?}"
+    exports.sort();
+
+    // The whole set, not just the two memberships this is named for. Initializing a table trades
+    // one symbol off the manifest for another: `@private_callee` stays the author's, while
+    // `__init_function_table` — the compiler's own, and public only so `init` can reach it —
+    // joins the surface. That trade is the design, so it is asserted rather than tolerated, and
+    // any *third* symbol arriving on the public surface should be a test failure and not a
+    // discovery made downstream.
+    assert_eq!(
+        exports,
+        vec![
+            "::\"root_ns:root@1.0.0\"::init",
+            "::\"root_ns:root@1.0.0\"::wasm::__init_function_table",
+            "::\"root_ns:root@1.0.0\"::wasm::dispatch",
+        ],
+        "the public surface is the author's `dispatch` plus the compiler's own initializers"
     );
 }
 

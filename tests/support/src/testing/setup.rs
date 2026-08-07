@@ -81,11 +81,7 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
     let mut component = world_builder
         .define_component(ns_name, name, Version::new(1, 0, 0))
         .unwrap_or_else(|err| panic!("failed to define component:\n{}", format_report(err)));
-    let synthetic = context.create_attribute::<builtin::attributes::BoolAttr, _>(true);
-    component
-        .borrow_mut()
-        .as_operation_mut()
-        .set_attribute(builtin::Component::SYNTHETIC_WRAPPER_ATTR, synthetic);
+    component.borrow_mut().mark_synthetic_wrapper();
 
     MidenComponent {
         world,
