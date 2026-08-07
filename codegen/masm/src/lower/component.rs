@@ -790,6 +790,17 @@ impl MasmComponentBuilder<'_> {
                 // fragment are reached from `init`. `Path::starts_with_exactly` matches
                 // component-wise, so `::a::bc` is not an ancestor's descendant merely because
                 // the text of `::a::b` is a prefix of it.
+                //
+                // A root is only reachable if `init`, which lives in the component root, may
+                // `exec` into it — so a *private* nested module whose parent defines no table
+                // callee is a root `init` cannot reach: MASM visibility lets a module reach its
+                // own children and its siblings, not a private grandchild. Nothing produces that
+                // shape today (the Wasm frontend puts every core callee in one module, and a
+                // private nested module reached from the component root would be unreachable for
+                // ordinary calls too), and it fails loudly at assembly time rather than silently
+                // leaving the slots zeroed, so it is recorded here rather than worked around. The
+                // fix, if it ever arises, is to give the parent an empty fragment to relay
+                // through rather than to promote anyone's visibility.
                 match owners
                     .iter()
                     .filter(|candidate| {
@@ -807,7 +818,15 @@ impl MasmComponentBuilder<'_> {
 
             let span = SourceSpan::default();
             let proc_name = masm::ProcedureName::new(FUNCTION_TABLE_INIT_PROC).unwrap();
-            for (owner, (mut body, mut invoked)) in fragments {
+            for (
+                owner,
+                FunctionTableFragment {
+                    mut body,
+                    mut invoked,
+                    a_callee,
+                },
+            ) in fragments
+            {
                 for child in child_calls.remove(&owner).unwrap_or_default() {
                     let qualified =
                         masm::QualifiedProcedureName::new(child.as_path(), proc_name.clone());
@@ -817,12 +836,26 @@ impl MasmComponentBuilder<'_> {
                     body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
                 }
 
-                let index = self
+                // A module holding nothing but declarations is skipped by `classify_siblings` and
+                // never lowered, but a table entry may still name a function in it: the entry
+                // resolves and the function has a signature, so both the `hir.exec_indirect`
+                // verifier and legalization accept the IR. There is no module here to attach the
+                // slot-filling code to, and no MAST root to fill the slot with, so it is invalid
+                // input rather than a compiler bug — and reported like the rest of the invalid
+                // input this function rejects.
+                let Some(index) = self
                     .component
                     .modules
                     .iter()
                     .position(|module| module.path() == owner.as_path())
-                    .expect("a table callee's module must have been lowered");
+                else {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: callee '{a_callee}' is defined in module \
+                         '{owner}', which was not lowered because it holds only declarations — a \
+                         function table cannot name a callee that has no definition to take the \
+                         address of"
+                    )));
+                };
                 let module = Arc::get_mut(&mut self.component.modules[index])
                     .expect("expected unique reference");
                 let mut procedure = masm::Procedure::new(
@@ -862,7 +895,7 @@ impl MasmComponentBuilder<'_> {
 
             let init_name = masm::ProcedureName::new("init").unwrap();
             let init_body = core::mem::take(&mut self.init_body);
-            let init = masm::Procedure::new(
+            let mut init = masm::Procedure::new(
                 Default::default(),
                 masm::Visibility::Public,
                 init_name,
@@ -874,6 +907,14 @@ impl MasmComponentBuilder<'_> {
                 vec![],
                 vec![],
             ));
+            // What `init` invokes is what the assembler's linker builds its call graph from, and
+            // until now nothing attached this set to anything — every invocation recorded while
+            // building `init`'s body, by the fragment roots just above and by global variable
+            // initializers before them, was written and then dropped. The linker resolves an
+            // `exec` from the instruction as well, which is why the omission never showed; an
+            // accurate call graph is still what the set is for, and `init` was the one procedure
+            // in the component reporting none of its callees.
+            init.extend_invoked(core::mem::take(&mut self.invoked_from_init));
 
             module
                 .define_procedure(init, self.source_manager.clone())
@@ -1142,17 +1183,20 @@ impl MasmComponentBuilder<'_> {
     /// pick the entry the verifier looked at.
     ///
     /// Uninitialized (null) slots are left as the zero word, since VM memory is
-    /// zero-initialized; `dynexec` on such a slot fails at runtime. The referenced procedures
-    /// are registered as `procref` invocations so the assembler's linker treats them as
-    /// reachable and resolves their MAST roots.
+    /// zero-initialized; `dynexec` on such a slot fails at runtime.
+    ///
+    /// Each fragment carries the `procref`s its stores consume, which its procedure declares as
+    /// invocations: that set is what the assembler's linker reads to build its call graph. It is
+    /// a declaration of the dependency, not what creates it — the linker also resolves an
+    /// invocation target from the instruction itself, so an omission here is a call graph missing
+    /// an edge rather than an unresolved symbol.
     fn build_function_table_fragments(
         &self,
-    ) -> Result<BTreeMap<masm::PathBuf, (Vec<masm::Op>, BTreeSet<masm::Invoke>)>, Report> {
+    ) -> Result<BTreeMap<masm::PathBuf, FunctionTableFragment>, Report> {
         use masm::{Instruction as Inst, Op};
 
         let span = SourceSpan::default();
-        let mut fragments: BTreeMap<masm::PathBuf, (Vec<Op>, BTreeSet<masm::Invoke>)> =
-            BTreeMap::new();
+        let mut fragments: BTreeMap<masm::PathBuf, FunctionTableFragment> = BTreeMap::new();
         let layout = self.link_info.function_tables();
         for (table_ref, _) in layout.iter() {
             let base_addr = layout
@@ -1202,7 +1246,12 @@ impl MasmComponentBuilder<'_> {
                 // no visibility beyond what the callee already has
                 let owner = callee_path.without_leaf().to_library_path();
                 let owner = owner.to_absolute().unwrap().into_owned();
-                let (body, invoked) = fragments.entry(owner).or_default();
+                let fragment = fragments.entry(owner).or_insert_with(|| FunctionTableFragment {
+                    body: Default::default(),
+                    invoked: Default::default(),
+                    a_callee: callee_path.to_string(),
+                });
+                let FunctionTableFragment { body, invoked, .. } = fragment;
                 invoked.insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
 
                 // `procref` pushes the callee's MAST root word (`root[0]` on top),
@@ -1226,6 +1275,18 @@ impl MasmComponentBuilder<'_> {
 
         Ok(fragments)
     }
+}
+
+/// The slot-initialization code one module contributes, for the callees *it* defines.
+struct FunctionTableFragment {
+    /// The stores that fill those slots.
+    body: Vec<masm::Op>,
+    /// The `procref`s those stores consume, for the assembler's linker.
+    invoked: BTreeSet<masm::Invoke>,
+    /// One of the callees that put this fragment here, for diagnostics. Any of them identifies
+    /// the module as well as another, and reporting one is more use than reporting the module
+    /// path alone.
+    a_callee: String,
 }
 
 struct MasmModuleBuilder<'a> {
