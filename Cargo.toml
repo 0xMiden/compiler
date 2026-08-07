@@ -44,6 +44,7 @@ members = [
     "tests/support",
     "tests/integration",
     "tests/integration-network",
+    "tests/templates",
 ]
 exclude = [
     # Template sources. These contain manifests with Liquid placeholders such as

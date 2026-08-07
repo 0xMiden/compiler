@@ -165,7 +165,7 @@ jobs:
           cargo make check --tests
       - name: Test
         run: |
-          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
+          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests))'
 
   release_profile_tests:
     name: midenc release-profile tests
@@ -348,10 +348,13 @@ jobs:
           if ! cargo make --version 2>/dev/null; then
             cargo install cargo-make --force
           fi
-      # Scaffolds a project from each of the five templates and builds it for
-      # both profiles. This is what proves the templates still work against the
-      # compiler and SDK in this commit -- they are outside the workspace, so
-      # nothing else compiles them.
+      # Scaffolds a project from each of the five `rust/` templates and builds
+      # it for both profiles. This is what proves the templates still work
+      # against the compiler and SDK in this commit; every other test that
+      # touches templates passes `--template-path` or renders without building.
+      #
+      # Excluded from the general test job because each case builds a real
+      # project, so it runs here on its own.
       - name: Test templates
         run: |
           cargo make test-templates

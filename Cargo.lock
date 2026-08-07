@@ -4082,6 +4082,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-template-tests"
+version = "0.1.0"
+dependencies = [
+ "cargo-miden",
+]
+
+[[package]]
 name = "miette"
 version = "7.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -1,7 +1,7 @@
 [package]
-name = "template-tests"
-version = "0.0.0"
-edition = "2021"
+name = "midenc-template-tests"
+version = "0.1.0"
+edition.workspace = true
 publish = false
 
 [lib]
@@ -12,7 +12,5 @@ doctest = false
 # is what makes the tests build the templates with the compiler from this
 # checkout rather than a published one. The generated projects depend on the
 # SDK from the same checkout, via the `--compiler-path` these tests pass.
-cargo-miden = { path = "../../../../tools/cargo-miden" }
+cargo-miden = { path = "../../tools/cargo-miden" }
 
-# Standalone crate: do not search parent directories for a workspace.
-[workspace]

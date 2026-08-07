@@ -27,9 +27,10 @@ sdk-requirement = "0.14.0-rc.1"
 # .gitignore, rust-toolchain, and the .github workflows inherited from the
 # imported repository -- is repository furniture, not template content.
 #
-# `tests` is excluded too. It contains a Cargo.toml, but it exists to test the
-# templates rather than to be shipped as one, and it depends on `cargo-miden` by
-# path, which would not resolve for anyone else.
+# The tests that build these templates live at `tests/templates`, as an ordinary
+# workspace member, rather than beside the templates themselves -- a crate here
+# would be picked up as template content and could never resolve its
+# `cargo-miden` path dependency for anyone outside this repository.
 [templates]
 # Rendered by `cargo miden new` with no `--template` flag.
 project = { path = "project" }

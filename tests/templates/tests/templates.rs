@@ -5,7 +5,7 @@
 //! The bundle declares a sixth, `project`, which is the default scaffold rather
 //! than a single contract and is not covered here.
 
-use template_tests::build_new_project_from_template;
+use midenc_template_tests::build_new_project_from_template;
 
 #[test]
 fn account() {
