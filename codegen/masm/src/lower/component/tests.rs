@@ -1515,7 +1515,7 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
         let module = lowered
             .modules
             .iter()
-            .find(|module| module.path().to_string() == module_path)
+            .find(|module| module.path() == module_path)
             .unwrap_or_else(|| panic!("no module lowered at '{module_path}'"));
         let procedure = module
             .procedures()
