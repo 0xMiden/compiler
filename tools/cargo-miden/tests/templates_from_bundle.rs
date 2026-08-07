@@ -24,32 +24,67 @@ fn scratch(label: &str) -> std::path::PathBuf {
     dir
 }
 
-/// Runs with `TEST` unset, restoring it afterwards.
+/// Sets or clears process-wide environment variables, restoring every one of
+/// them when dropped.
 ///
-/// `cargo miden new` injects a `--compiler-path` pointing at this checkout when
-/// `TEST` is set, which rewrites the generated manifest's SDK dependency into a
-/// path dependency. Other tests in this binary set `TEST` and never clear it, so
-/// whether these tests see a version requirement or a path depends on execution
-/// order. They are about what a *user* gets, so the variable is cleared for
-/// their duration. Callers must already hold the current-directory lock, which
-/// is what makes this safe.
-struct WithoutTestEnv(Option<String>);
+/// A `Drop` guard rather than a pair of statements, because restoring on the
+/// *success* path only is worse than useless here. These variables are read by
+/// every `cargo` and `git` subprocess the rest of this binary spawns, so a
+/// panic that leaves `http_proxy` pointing at a dead port turns one failing
+/// test into a cascade of unrelated network failures in the tests that follow
+/// it — precisely when a legible failure matters most.
+///
+/// Previous values are saved and put back, rather than simply cleared: a
+/// developer or runner behind a corporate proxy already has these set, and
+/// deleting them would break everything downstream just as effectively.
+///
+/// Safety: these tests all hold the current-directory lock, so they do not race
+/// each other. That is not a proof of soundness — `set_var` is unsafe because
+/// of threads anywhere in the process, which a lock between tests cannot
+/// constrain — but it is the same bargain the rest of this test binary makes.
+struct EnvGuard(Vec<(String, Option<String>)>);
 
-impl WithoutTestEnv {
-    fn enter() -> Self {
-        let previous = std::env::var("TEST").ok();
-        // Safety: serialised by the current-directory lock the caller holds.
-        unsafe { std::env::remove_var("TEST") };
-        Self(previous)
+impl EnvGuard {
+    fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    fn set(mut self, name: &str, value: &str) -> Self {
+        self.remember(name);
+        unsafe { std::env::set_var(name, value) };
+        self
+    }
+
+    fn unset(mut self, name: &str) -> Self {
+        self.remember(name);
+        unsafe { std::env::remove_var(name) };
+        self
+    }
+
+    fn remember(&mut self, name: &str) {
+        self.0.push((name.to_string(), std::env::var(name).ok()));
     }
 }
 
-impl Drop for WithoutTestEnv {
+impl Drop for EnvGuard {
     fn drop(&mut self) {
-        if let Some(previous) = self.0.take() {
-            unsafe { std::env::set_var("TEST", previous) };
+        // Reverse order, so a variable touched twice ends at its original value.
+        for (name, previous) in self.0.drain(..).rev() {
+            match previous {
+                Some(value) => unsafe { std::env::set_var(&name, value) },
+                None => unsafe { std::env::remove_var(&name) },
+            }
         }
     }
+}
+
+/// `cargo miden new` injects a `--compiler-path` pointing at this checkout when
+/// `TEST` is set, rewriting the generated manifest's SDK dependency into a path
+/// dependency. Other tests in this binary set `TEST` and never clear it, so
+/// whether these tests observe a version requirement or a path would otherwise
+/// depend on execution order. They are about what a *user* gets.
+fn without_test_env() -> EnvGuard {
+    EnvGuard::new().unset("TEST")
 }
 
 /// The `miden` requirement the embedded bundle declares its templates carry.
@@ -143,7 +178,7 @@ fn new_without_a_template_path_renders_the_bundle_project() {
     );
 
     let _guard = current_dir_lock();
-    let _clean_env = WithoutTestEnv::enter();
+    let _clean_env = without_test_env();
     let project = dir.join("scaffold");
     run([
         "cargo".to_string(),
@@ -185,7 +220,7 @@ fn new_without_a_template_path_renders_the_bundle_project() {
 fn new_with_a_named_template_renders_it_from_the_bundle() {
     let dir = scratch("account");
     let _guard = current_dir_lock();
-    let _clean_env = WithoutTestEnv::enter();
+    let _clean_env = without_test_env();
     let project = dir.join("acct");
 
     run([
@@ -217,6 +252,37 @@ fn new_with_a_named_template_renders_it_from_the_bundle() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// The guard has to survive a panic, which is the entire reason it is a guard:
+/// these variables are read by every `cargo` and `git` subprocess the rest of
+/// this binary spawns, so leaking one turns a single failure into a cascade.
+#[test]
+fn the_environment_guard_restores_on_panic() {
+    let _lock = current_dir_lock();
+
+    // A pre-existing value must come back, not just be cleared.
+    let sentinel = "cargo-miden-guard-probe";
+    unsafe { std::env::set_var(sentinel, "original") };
+
+    // Silence the deliberate panic, so a passing run does not print a backtrace
+    // that reads like a real failure.
+    let hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let panicked = std::panic::catch_unwind(|| {
+        let _guard = EnvGuard::new().set(sentinel, "overridden").unset("TEST");
+        assert_eq!(std::env::var(sentinel).as_deref(), Ok("overridden"));
+        panic!("as a test would");
+    });
+    std::panic::set_hook(hook);
+    assert!(panicked.is_err(), "the probe must actually panic");
+
+    assert_eq!(
+        std::env::var(sentinel).as_deref(),
+        Ok("original"),
+        "the guard must restore the previous value while unwinding"
+    );
+    unsafe { std::env::remove_var(sentinel) };
+}
+
 /// The embedded bundle is the floor: with no network, project creation still
 /// works. Enforced by pointing the resolver at a dead proxy rather than by
 /// trusting that CI happens to be offline.
@@ -226,24 +292,20 @@ fn new_works_without_network_access() {
     let _guard = current_dir_lock();
     let project = dir.join("offline-project");
 
-    // Safety: the guard serialises the tests that touch process-wide state.
-    unsafe {
-        std::env::set_var("https_proxy", "http://127.0.0.1:9");
-        std::env::set_var("http_proxy", "http://127.0.0.1:9");
-    }
-    let result = run([
+    // Held across the call, so the proxy is restored even if `run` panics --
+    // it can, via the `expect`s in extraction and rendering.
+    let _no_network = EnvGuard::new()
+        .set("https_proxy", "http://127.0.0.1:9")
+        .set("http_proxy", "http://127.0.0.1:9");
+
+    run([
         "cargo".to_string(),
         "miden".to_string(),
         "new".to_string(),
         project.display().to_string(),
     ]
-    .into_iter());
-    unsafe {
-        std::env::remove_var("https_proxy");
-        std::env::remove_var("http_proxy");
-    }
-
-    result.expect("`cargo miden new` must fall back to the embedded bundle when GitHub is absent");
+    .into_iter())
+    .expect("`cargo miden new` must fall back to the embedded bundle when GitHub is absent");
     assert!(project.join("Cargo.toml").is_file());
 
     let _ = fs::remove_dir_all(&dir);
