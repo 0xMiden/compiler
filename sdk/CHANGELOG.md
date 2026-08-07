@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ScriptArgs::decode` returns `Result<_, ScriptArgsError>`: the generated entrypoint wrapper
   panics on decode errors (failing the transaction), while off-chain code handles them as
   values. On the basic-wallet example script, typed decoding costs about 790 VM cycles and
-  4.6 KB of package size over the previous hand-rolled advice decode. See the
+  4.4 KB of package size over the previous hand-rolled advice decode. See the
   [migration guide](./sdk/MIGRATION.md) for adopting typed arguments #1291
 - `FromFeltRepr` gained a `FIXED_LEN: Option<usize>` associated constant — the statically known
   encoded length in felts, used by `ScriptArgs` to pick the transport mode at compile time. It
