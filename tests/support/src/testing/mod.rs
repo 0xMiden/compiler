@@ -31,8 +31,9 @@ pub fn executor_with_std(args: Vec<Felt>) -> Executor {
 
     // Register the standard library so dependencies can be resolved at runtime.
     let core_library = miden_core_lib::CoreLibrary::default();
-    exec.with_package(core_library.package())
-        .expect("failed to register core package");
+    for package in core_library.packages() {
+        exec.with_package(package).expect("failed to register core package");
+    }
     // The debug executor path does not automatically install core-library event handlers, but
     // integration tests execute core helpers such as `u64::div` through the VM.
     for (event, handler) in core_library.handlers() {

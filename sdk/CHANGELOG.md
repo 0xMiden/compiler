@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- [BREAKING] The SDK and compiler now target Miden protocol `0.16.0-rc.3` and Miden VM `0.29`
+  #1310. Compiled packages link against the updated transaction kernel and core library, so
+  their commitments change. Hosts that execute or test the compiled packages must use matching
+  protocol `0.16.0-rc.3` crates (for example `miden-testing 0.16.0-rc.3`). Guest code compiles
+  unchanged: the SDK API did not change.
+
 ### Added
 
 - `println!` supports format arguments; formatted output requires `extern crate alloc` and a

@@ -27,7 +27,7 @@ use miden_protocol::{
     transaction::{TransactionMeasurements, TransactionScript},
 };
 use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
-use miden_testing::{MockChain, TransactionContextBuilder};
+use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
 use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::CompilerTestBuilder;
@@ -147,7 +147,7 @@ pub(crate) fn transaction_script_from_package(package: &Package) -> TransactionS
         "expected a transaction-script package"
     );
 
-    TransactionScript::from_library(package).expect("invalid transaction-script package")
+    TransactionScript::from_package(package).expect("invalid transaction-script package")
 }
 
 /// Builds a transaction script from a compiled transaction-script package, linking in the MAST
@@ -224,42 +224,40 @@ pub(crate) fn build_send_notes_script(
     SendNotesTransactionScript::new(&account.code_interface(), &partial_notes).unwrap()
 }
 
-/// Applies encoded transaction-script arguments to a transaction context.
+/// Applies encoded transaction-script arguments to a mock transaction builder.
 ///
 /// Word-mode arguments pass through the script-args word directly; commitment-mode arguments
 /// hash the preimage into the script-args word and register the matching advice-map entry.
-pub(crate) fn apply_script_args(
-    builder: TransactionContextBuilder,
+pub(crate) fn apply_script_args<'a>(
+    builder: MockTransactionBuilder<'a>,
     args: &impl ScriptArgs,
-) -> TransactionContextBuilder {
+) -> MockTransactionBuilder<'a> {
     match args.encode() {
         EncodedScriptArgs::Word(word) => builder.tx_script_args(from_field_word(word)),
         EncodedScriptArgs::Preimage(felts) => {
             let preimage = from_field_felts(&felts);
             let args_word: Word = miden_core::crypto::hash::Poseidon2::hash_elements(&preimage);
-            builder.tx_script_args(args_word).extend_advice_map([(args_word, preimage)])
+            builder.tx_script_args(args_word).add_advice_map_entry(args_word, preimage)
         }
     }
 }
 
-/// Executes a transaction context and expects the execution to fail, returning the error message.
-pub(crate) fn execute_tx_expect_failure(tx_context_builder: TransactionContextBuilder) -> String {
-    let tx_context = tx_context_builder.build().unwrap();
-    match block_on(tx_context.execute()) {
+/// Executes a mock transaction and expects the execution to fail, returning the error message.
+pub(crate) fn execute_tx_expect_failure(mock_tx: MockTransaction) -> String {
+    match block_on(mock_tx.execute()) {
         Ok(_) => panic!("expected transaction execution to fail"),
         Err(err) => err.to_string(),
     }
 }
 
-/// Executes a transaction context against the chain and commits it in the next block.
+/// Executes a mock transaction against the chain and commits it in the next block.
 ///
 /// Returns the transaction measurements captured during execution.
 pub(crate) fn execute_tx(
     chain: &mut MockChain,
-    tx_context_builder: TransactionContextBuilder,
+    mock_tx: MockTransaction,
 ) -> TransactionMeasurements {
-    let tx_context = tx_context_builder.build().unwrap();
-    let executed_tx = block_on(tx_context.execute()).unwrap_or_else(|err| panic!("{err}"));
+    let executed_tx = block_on(mock_tx.execute()).unwrap_or_else(|err| panic!("{err}"));
 
     let measurements = executed_tx.measurements().clone();
 
@@ -269,10 +267,10 @@ pub(crate) fn execute_tx(
     measurements
 }
 
-/// Builds a transaction context which transfers an asset from `sender_id` to `recipient_id` using
+/// Builds a mock transaction which transfers an asset from `sender_id` to `recipient_id` using
 /// the custom transaction script package.
 ///
-/// Builds the transaction context by constructing the same advice-map + script-arg commitment
+/// Builds the mock transaction by constructing the same advice-map + script-arg commitment
 /// expected by the tx script, without requiring a `miden_client::Client`.
 ///
 /// The caller provides an RNG used to generate a unique note serial number, to avoid accidental
@@ -285,7 +283,7 @@ pub(crate) fn build_asset_transfer_tx(
     p2id_note_package: Arc<Package>,
     tx_script_package: Arc<Package>,
     rng: &mut impl FeltRng,
-) -> (TransactionContextBuilder, Note) {
+) -> (MockTransaction, Note) {
     let tx_script = transaction_script_from_package(&tx_script_package);
 
     let serial_num = rng.draw_word();
@@ -316,15 +314,16 @@ pub(crate) fn build_asset_transfer_tx(
         asset_value: to_field_word(asset_value),
     };
 
-    let tx_context_builder = chain
-        .build_tx_context(sender_id, &[], &[])
-        .unwrap()
+    let mock_tx_builder = chain
+        .build_transaction(sender_id)
         .foreign_accounts(vec![chain.get_foreign_account_inputs(faucet_id).unwrap()])
         .tx_script(tx_script);
-    let tx_context_builder = apply_script_args(tx_context_builder, &script_args)
-        .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())]);
+    let mock_tx = apply_script_args(mock_tx_builder, &script_args)
+        .expected_output_notes(vec![RawOutputNote::Full(output_note.clone())])
+        .build()
+        .unwrap();
 
-    (tx_context_builder, output_note)
+    (mock_tx, output_note)
 }
 
 // COUNTER CONTRACT HELPERS
@@ -403,7 +402,7 @@ pub(crate) fn build_existing_counter_account_builder_with_auth_package(
 
     AccountBuilder::new(seed)
         .account_type(AccountType::Public)
-        .with_auth_component(auth_component)
+        .with_component(auth_component)
         .with_component(BasicWallet)
         .with_component(counter_component)
 }

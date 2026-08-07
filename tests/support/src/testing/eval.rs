@@ -165,8 +165,9 @@ where
 
     // Register the standard library so dependencies can be resolved at runtime.
     let core_library = CoreLibrary::default();
-    exec.with_package(core_library.package())
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
+    for package in core_library.packages() {
+        exec.with_package(package).map_err(|err| TestCaseError::fail(err.to_string()))?;
+    }
     // The debug executor path does not automatically install core-library event handlers, but
     // integration tests execute core helpers such as `u64::div` through the VM.
     for (event, handler) in core_library.handlers() {
@@ -188,7 +189,7 @@ where
     exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
         .map_err(|err| TestCaseError::fail(err.to_string()))?;
 
-    exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack));
+    exec.with_advice_inputs(AdviceInputs::default().with_advice_stack(advice_stack.into()));
 
     let trace = exec.execute(package, session.source_manager.clone());
     verify_trace(&trace)?;

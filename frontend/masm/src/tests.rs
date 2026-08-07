@@ -272,7 +272,7 @@ fn supported_instruction_matrix_lifts() {
         instruction_case("horner_eval_base", &felt_types(16), &felt_types(16), "horner_eval_base"),
         instruction_case("horner_eval_ext", &felt_types(16), &felt_types(16), "horner_eval_ext"),
         instruction_case("eval_circuit", &felt_types(3), &felt_types(3), "eval_circuit"),
-        instruction_case("log_precompile", &felt_types(12), &felt_types(12), "log_precompile"),
+        instruction_case("log_deferred", &felt_types(12), &felt_types(12), "log_deferred"),
         instruction_case_with_locals("loc_load", 1, &[], &["felt"], "loc_load.0"),
         instruction_case_with_locals(
             "locaddr",
@@ -917,8 +917,8 @@ pub proc eval_circuit_case({params3}) -> ({results3})
     eval_circuit
 end
 
-pub proc log_precompile_case({params12}) -> ({results12})
-    log_precompile
+pub proc log_deferred_case({params12}) -> ({results12})
+    log_deferred
 end
 "#
     );
@@ -941,10 +941,7 @@ end
         1
     );
     assert_eq!(
-        top_level_op_count::<hir::LogPrecompile>(find_function(
-            output.module,
-            "log_precompile_case"
-        )),
+        top_level_op_count::<hir::LogDeferred>(find_function(output.module, "log_deferred_case")),
         1
     );
     Ok(())
@@ -1360,8 +1357,8 @@ pub proc eval_circuit_case
     eval_circuit
 end
 
-pub proc log_precompile_case
-    log_precompile
+pub proc log_deferred_case
+    log_deferred
 end
 "#,
         "test",
@@ -1376,7 +1373,7 @@ end
         ("horner_base", 16, 16),
         ("horner_ext", 16, 16),
         ("eval_circuit_case", 3, 3),
-        ("log_precompile_case", 12, 12),
+        ("log_deferred_case", 12, 12),
     ] {
         let signature = find_function(output.module, name).borrow().get_signature().clone();
         assert_eq!(signature.params().len(), params);

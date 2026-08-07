@@ -162,12 +162,11 @@ pub fn word_mode_args() {
     );
 
     // Positive: the encoded args word decodes in the guest, no advice map involved.
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx_builder = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package));
-    let tx_context_builder = apply_script_args(tx_context_builder, &args);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
+    execute_tx(&mut chain, mock_tx);
 
     // Negative: a non-zero felt in the unused padding must fail the guest-side decode.
     let EncodedScriptArgs::Word(args_word) = args.encode() else {
@@ -175,12 +174,13 @@ pub fn word_mode_args() {
     };
     let mut tampered = from_field_word(args_word);
     tampered[3] = Felt::new_unchecked(5);
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package))
-        .tx_script_args(tampered);
-    let err = execute_tx_expect_failure(tx_context_builder);
+        .tx_script_args(tampered)
+        .build()
+        .unwrap();
+    let err = execute_tx_expect_failure(mock_tx);
     assert_failure_contains(&err, DECODE_PANIC_CODE);
 }
 
@@ -218,12 +218,11 @@ pub fn commitment_mode_args() {
     let args_word = miden_core::crypto::hash::Poseidon2::hash_elements(&preimage);
 
     // Positive: the preimage travels through the advice map keyed by its hash.
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx_builder = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package));
-    let tx_context_builder = apply_script_args(tx_context_builder, &args);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = apply_script_args(mock_tx_builder, &args).build().unwrap();
+    execute_tx(&mut chain, mock_tx);
 
     // Isolates the hash verification: a *valid* preimage registered under a wrong args word.
     // Everything else about the transaction is well-formed, so without the in-VM hash check the
@@ -231,13 +230,14 @@ pub fn commitment_mode_args() {
     let mut wrong_word_source = preimage.clone();
     wrong_word_source[0] = Felt::new_unchecked(999);
     let wrong_word = miden_core::crypto::hash::Poseidon2::hash_elements(&wrong_word_source);
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(wrong_word)
-        .extend_advice_map([(wrong_word, preimage.clone())]);
-    let err = execute_tx_expect_failure(tx_context_builder);
+        .add_advice_map_entry(wrong_word, preimage.clone())
+        .build()
+        .unwrap();
+    let err = execute_tx_expect_failure(mock_tx);
     assert_failure_contains(&err, "assertion failed with error code: 0");
 
     // Tampering with a felt the script never reads (`extra[2]`) is caught only by the hash
@@ -245,13 +245,14 @@ pub fn commitment_mode_args() {
     let mut tampered = preimage.clone();
     let extra_2 = tampered.len() - 3;
     tampered[extra_2] = Felt::new_unchecked(tampered[extra_2].as_canonical_u64() + 1);
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(args_word)
-        .extend_advice_map([(args_word, tampered)]);
-    let err = execute_tx_expect_failure(tx_context_builder);
+        .add_advice_map_entry(args_word, tampered)
+        .build()
+        .unwrap();
+    let err = execute_tx_expect_failure(mock_tx);
     assert_failure_contains(&err, "assertion failed with error code: 0");
 
     // Canonicality: a *self-consistent* preimage (args word = its real hash) with a non-zero
@@ -259,13 +260,14 @@ pub fn commitment_mode_args() {
     let mut nonzero_padding = preimage.clone();
     *nonzero_padding.last_mut().unwrap() = Felt::new_unchecked(1);
     let bad_word = miden_core::crypto::hash::Poseidon2::hash_elements(&nonzero_padding);
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(bad_word)
-        .extend_advice_map([(bad_word, nonzero_padding)]);
-    let err = execute_tx_expect_failure(tx_context_builder);
+        .add_advice_map_entry(bad_word, nonzero_padding)
+        .build()
+        .unwrap();
+    let err = execute_tx_expect_failure(mock_tx);
     assert_failure_contains(&err, DECODE_PANIC_CODE);
 
     // Canonicality: a self-consistent preimage with a whole extra all-zero word must be rejected
@@ -273,25 +275,27 @@ pub fn commitment_mode_args() {
     let mut extra_word = preimage.clone();
     extra_word.extend([Felt::ZERO; 4]);
     let bad_word = miden_core::crypto::hash::Poseidon2::hash_elements(&extra_word);
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(bad_word)
-        .extend_advice_map([(bad_word, extra_word)]);
-    let err = execute_tx_expect_failure(tx_context_builder);
+        .add_advice_map_entry(bad_word, extra_word)
+        .build()
+        .unwrap();
+    let err = execute_tx_expect_failure(mock_tx);
     assert_failure_contains(&err, DECODE_PANIC_CODE);
 
     // Canonicality: an advice value that is not a whole number of words fails before the decode.
     let mut non_word_multiple = preimage.clone();
     non_word_multiple.push(Felt::ZERO);
     let bad_word = miden_core::crypto::hash::Poseidon2::hash_elements(&non_word_multiple);
-    let tx_context_builder = chain
-        .build_tx_context(account_id, &[], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(account_id)
         .tx_script(transaction_script_from_package(&tx_script_package))
         .tx_script_args(bad_word)
-        .extend_advice_map([(bad_word, non_word_multiple)]);
-    let err = execute_tx_expect_failure(tx_context_builder);
+        .add_advice_map_entry(bad_word, non_word_multiple)
+        .build()
+        .unwrap();
+    let err = execute_tx_expect_failure(mock_tx);
     assert_failure_contains(&err, DECODE_PANIC_CODE);
 }

@@ -219,22 +219,23 @@ fn asset_amount_api_matches_kernel_balances() {
 
     let faucet_account = chain.committed_account(faucet_id).unwrap().clone();
     let mint_tx_script = build_send_notes_script(&faucet_account, &notes);
-    let mint_tx_context_builder = chain
-        .build_tx_context(faucet_id, &[], &[])
-        .unwrap()
-        .tx_script(mint_tx_script.into())
-        .extend_expected_output_notes(
-            notes.iter().cloned().map(RawOutputNote::Full).collect::<Vec<_>>(),
-        );
-    execute_tx(&mut chain, mint_tx_context_builder);
+    let mint_tx = chain
+        .build_transaction(faucet_id)
+        .send_notes_script(&mint_tx_script)
+        .expected_output_notes(notes.iter().cloned().map(RawOutputNote::Full).collect::<Vec<_>>())
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mint_tx);
 
     eprintln!("\n=== Step 2: Alice consumes both notes; the scripts assert the amount API ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
-    let consume_tx_context_builder = chain
-        .build_tx_context(alice_id, &[notes[0].id(), notes[1].id()], &[])
-        .unwrap()
-        .foreign_accounts(vec![faucet_inputs]);
-    execute_tx(&mut chain, consume_tx_context_builder);
+    let consume_tx = chain
+        .build_transaction(alice_id)
+        .authenticated_input_notes([notes[0].id(), notes[1].id()])
+        .foreign_accounts(vec![faucet_inputs])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, consume_tx);
 
     eprintln!("\n=== Step 3: Checking Alice's committed vault holds the checked sum ===");
     let alice_account = chain.committed_account(alice_id).unwrap();

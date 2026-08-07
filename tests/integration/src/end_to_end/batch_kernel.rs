@@ -207,7 +207,7 @@ fn build_advice_inputs(transactions: &[MockTransaction]) -> AdviceInputs {
         stack.extend_from_slice(&[Felt::new_unchecked(0); 3]);
     }
 
-    AdviceInputs::default().with_map(map).with_stack(stack)
+    AdviceInputs::default().with_map(map).with_advice_stack(stack.into())
 }
 
 /// Returns the operand stack arguments for the kernel entrypoint:
@@ -326,7 +326,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["31591"].assert_eq(&cycles.to_string());
+        expect!["31361"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -378,7 +378,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note.
-        expect!["27738"].assert_eq(&cycles.to_string());
+        expect!["27547"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");

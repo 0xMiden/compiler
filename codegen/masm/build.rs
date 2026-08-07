@@ -31,9 +31,11 @@ fn main() -> Result<(), Report> {
         midenc_session::Options::new(None, None, cwd, target_dir.clone(), None, toolchain_dir);
 
     let mut registry = midenc_session::registry::HybridPackageRegistry::new(&options)?;
-    // Extend the registry with the built-in core library, in case the midenup toolchain is not
-    // available
-    registry.cache_package(CoreLibrary::default().package())?;
+    // Extend the registry with the built-in core library packages (miden-core and its
+    // miden-precompiles dependency), in case the midenup toolchain is not available
+    for package in CoreLibrary::default().packages() {
+        registry.cache_package(package)?;
+    }
 
     let assembler = Assembler::default();
     let mut project_assembler =

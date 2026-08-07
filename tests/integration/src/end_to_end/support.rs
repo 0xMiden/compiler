@@ -29,9 +29,11 @@ pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
     let source_manager = Arc::new(DefaultSourceManager::default());
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    assembler
-        .link_package(core_library.package(), miden_assembly::Linkage::Dynamic)
-        .expect("failed to add core library");
+    for package in core_library.packages() {
+        assembler
+            .link_package(package, miden_assembly::Linkage::Dynamic)
+            .expect("failed to add core library");
+    }
 
     // Parse the intrinsics
     assembler
@@ -79,6 +81,8 @@ pub(super) fn default_host_with_core_lib() -> DefaultHost {
     lib.handlers.extend(core_library.handlers());
     let mut host = DefaultHost::default();
     host.load_library(lib).expect("failed to load core library into host");
+    host.load_library(core_library.precompiles_package())
+        .expect("failed to load precompiles library into host");
     host
 }
 

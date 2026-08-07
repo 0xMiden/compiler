@@ -378,18 +378,18 @@ pub struct EvalCircuit {
 
 infer_felt_outputs!(EvalCircuit, "hir.eval_circuit", 3, 3);
 
-/// Log a precompile event into the VM precompile transcript.
+/// Log a deferred precompile computation request.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]
-pub struct LogPrecompile {
+pub struct LogDeferred {
     #[operands]
     stack: IntFelt,
     #[results]
     outputs: IntFelt,
 }
 
-infer_felt_outputs!(LogPrecompile, "hir.log_precompile", 12, 12);
+infer_felt_outputs!(LogDeferred, "hir.log_deferred", 12, 12);
