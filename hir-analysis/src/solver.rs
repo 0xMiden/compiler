@@ -618,14 +618,11 @@ fn summarize_queued_program_point_owners<'a>(
 fn summarize_top_counts(
     items: impl IntoIterator<Item = alloc::string::String>,
 ) -> alloc::string::String {
-    let mut counts = Vec::<(alloc::string::String, usize)>::new();
+    let mut counts = FxHashMap::<alloc::string::String, usize>::default();
     for item in items {
-        if let Some((_, count)) = counts.iter_mut().find(|(existing, _)| *existing == item) {
-            *count += 1;
-        } else {
-            counts.push((item, 1));
-        }
+        *counts.entry(item).or_insert(0) += 1;
     }
+    let mut counts = counts.into_iter().collect::<Vec<_>>();
     counts.sort_by(|(lhs_name, lhs_count), (rhs_name, rhs_count)| {
         rhs_count.cmp(lhs_count).then_with(|| lhs_name.cmp(rhs_name))
     });
@@ -635,6 +632,39 @@ fn summarize_top_counts(
         .map(|(name, count)| format!("{name}={count}"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{format, string::ToString};
+
+    use super::summarize_top_counts;
+
+    #[test]
+    fn summarize_top_counts_handles_empty_input_duplicates_and_ties() {
+        assert_eq!(summarize_top_counts(core::iter::empty()), "");
+
+        let summary = summarize_top_counts(
+            ["beta", "alpha", "gamma", "beta", "alpha"].into_iter().map(ToString::to_string),
+        );
+        assert_eq!(summary, "alpha=2, beta=2, gamma=1");
+    }
+
+    #[test]
+    fn summarize_top_counts_breaks_the_fifth_place_tie_by_name() {
+        let summary = summarize_top_counts(
+            ["zeta", "gamma", "epsilon", "delta", "beta", "alpha", "zeta"]
+                .into_iter()
+                .map(ToString::to_string),
+        );
+        assert_eq!(summary, "zeta=2, alpha=1, beta=1, delta=1, epsilon=1");
+    }
+
+    #[test]
+    fn summarize_top_counts_handles_many_unique_names() {
+        let summary = summarize_top_counts((0..4096).rev().map(|index| format!("item{index:04}")));
+        assert_eq!(summary, "item0000=1, item0001=1, item0002=1, item0003=1, item0004=1");
+    }
 }
 
 /// Represents an analysis that has derived facts at a specific program point from the state of
