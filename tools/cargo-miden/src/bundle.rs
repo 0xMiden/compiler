@@ -1,13 +1,17 @@
 //! The embedded project template bundle.
 //!
-//! This is the offline fallback: templates that ship inside the binary, so
-//! `cargo miden new` works with no network and always has templates matching
-//! the `cargo-miden` that generated them.
+//! **Nothing consumes this yet.** It is the intended offline fallback for
+//! `cargo miden new`, but template resolution still clones the external
+//! `rust-templates` and `project-template` repositories at hardcoded tags (see
+//! `commands/new_project.rs`), so these bytes are carried and verified but
+//! never rendered. Until the resolver in the design's §12 exists, the released
+//! `templates/v*` bundle has no client.
 //!
-//! The digest is what makes the bundle verifiable. A compiler release proves
-//! its embedded copy is byte-identical to the released `templates/v*` archive
-//! by comparing [`SHA256`], and `release-tool lint` proves the committed
-//! archive still matches the template sources.
+//! What does work: the archive is embedded with its digest, a compiler release
+//! proves its embedded copy is byte-identical to the released `templates/v*`
+//! archive by comparing [`SHA256`], and `release-tool lint` proves the
+//! committed archive still matches the template sources. The producer half is
+//! sound; the consumer half is unbuilt.
 
 use std::path::{Path, PathBuf};
 

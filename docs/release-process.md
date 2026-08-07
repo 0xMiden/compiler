@@ -535,10 +535,14 @@ Follow §3 unchanged. The differences are automatic:
 
 - GitHub releases are marked prerelease and never become "Latest".
 - **Templates can be part of a prerelease**, and must be when a compiler change
-  requires a template change. The bundle takes a prerelease version and stable
-  clients never see it - template resolution selects the highest *stable*
-  compatible release, so a prerelease bundle is reachable only from a prerelease
-  `cargo-miden` or an explicit `--template-version`.
+  requires a template change. The bundle takes a prerelease version and is
+  released beside the rest.
+
+  > **The released bundle currently has no client.** `cargo miden new` still
+  > clones the external `rust-templates` and `project-template` repositories at
+  > tags hardcoded in `cargo-miden`, so releasing a template bundle changes
+  > nothing for anyone generating a project. Template changes still reach users
+  > only by moving those external tags. See §8.
 
 ---
 
@@ -793,6 +797,17 @@ has been attempted through it.
 
 ### Not implemented
 
+- **Template resolution in `cargo-miden` — the whole consumer half.** The
+  release side is complete: the bundle is built deterministically from
+  `extra/templates`, released as `templates/v*`, and embedded in `cargo-miden`
+  with a verified digest. **Nothing reads any of it.** `cargo miden new` still
+  clones `0xMiden/rust-templates` and `0xMiden/project-template` at tags
+  hardcoded in `commands/new_project.rs`, exactly as before, and
+  `cargo_miden::bundle` has no callers. Until the resolver in the design's §12
+  exists — ref discovery, digest verification, caching, the deny list,
+  `--template-version` and `--offline`, and fallback to the embedded copy — a
+  template release produces an artifact nobody consumes, and template changes
+  still reach users only by moving the external tags.
 - **`audit-publishers`.** Trusted Publishing configuration cannot be
   preflighted, so a missing publisher surfaces mid-publication as
   [T7](#t7-403-from-cratesio-during-publication).
