@@ -34,6 +34,7 @@ fn main() {
     });
 
     let digest = sha256_hex(&bytes);
+    let version = bundle_version(&bytes);
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR is set by cargo"));
     fs::write(
         out.join("template_bundle.rs"),
@@ -41,11 +42,76 @@ fn main() {
             "/// SHA-256 of the embedded template bundle.\n///\n/// A compiler release checks \
              this against the digest of the\n/// `templates/v*` archive it is released \
              beside.\npub const TEMPLATE_BUNDLE_SHA256: &str = \"{digest}\";\n\n/// Size of the \
-             embedded bundle, in bytes.\npub const TEMPLATE_BUNDLE_LEN: usize = {};\n",
+             embedded bundle, in bytes.\npub const TEMPLATE_BUNDLE_LEN: usize = {};\n\n/// \
+             Version of the embedded bundle, read out of its own `bundle.toml`.\n///\n/// Read \
+             from the archive rather than duplicated in source, so there is no second\n/// place \
+             to forget to update. It is what decides which released bundles\n/// this build will \
+             accept.\npub const TEMPLATE_BUNDLE_VERSION: &str = \"{version}\";\n",
             bytes.len()
         ),
     )
     .expect("failed to write the generated bundle constants");
+}
+
+/// Read `version` out of the `bundle.toml` inside the archive.
+///
+/// The manifest is inside the gzipped tar, which is the only copy this crate
+/// has: `extra/templates/bundle.toml` lives outside the package directory and
+/// is unreadable when building from a published `.crate`.
+fn bundle_version(archive: &[u8]) -> String {
+    use std::io::Read;
+
+    let mut tar = Vec::new();
+    flate2::read::GzDecoder::new(archive)
+        .read_to_end(&mut tar)
+        .expect("the embedded bundle is a gzip stream");
+
+    let manifest = tar_entry(&tar, "bundle.toml")
+        .expect("the embedded bundle contains bundle.toml at its root");
+    let text = String::from_utf8(manifest).expect("bundle.toml is UTF-8");
+
+    for line in text.lines() {
+        let line = line.trim();
+        // The first bare `version = "..."`; `schema-version` does not match.
+        if let Some(value) = line
+            .strip_prefix("version")
+            .and_then(|rest| rest.trim_start().strip_prefix('='))
+        {
+            return value.trim().trim_matches('"').to_string();
+        }
+    }
+    panic!("bundle.toml declares no version");
+}
+
+/// Find one file in an uncompressed tar stream.
+///
+/// Hand-rolled for the same reason the archive writer is: the format is a
+/// sequence of 512-byte headers and this needs exactly one field from one of
+/// them.
+fn tar_entry(tar: &[u8], wanted: &str) -> Option<Vec<u8>> {
+    let mut offset = 0usize;
+    while offset + 512 <= tar.len() {
+        let header = &tar[offset..offset + 512];
+        // Two zero blocks terminate the archive.
+        if header.iter().all(|byte| *byte == 0) {
+            return None;
+        }
+
+        let name_end = header[..100].iter().position(|byte| *byte == 0).unwrap_or(100);
+        let name = String::from_utf8_lossy(&header[..name_end]).to_string();
+
+        let size_field = String::from_utf8_lossy(&header[124..136]);
+        let size = usize::from_str_radix(size_field.trim().trim_end_matches('\0').trim(), 8)
+            .expect("tar size field is octal");
+
+        let body = offset + 512;
+        if name == wanted {
+            return Some(tar[body..body + size].to_vec());
+        }
+        // Entries are padded to a 512-byte boundary.
+        offset = body + size.div_ceil(512) * 512;
+    }
+    None
 }
 
 /// SHA-256, inline to keep the build script dependency-free.

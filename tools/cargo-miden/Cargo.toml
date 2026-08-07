@@ -34,6 +34,11 @@ name = "cargo-miden"
 name = "integration"
 path = "tests/mod.rs"
 
+[build-dependencies]
+# Reads the bundle manifest out of the embedded archive, so the accepted
+# template version has exactly one source of truth.
+flate2.workspace = true
+
 [dependencies]
 miden-mast-package = { workspace = true, features = ["std"] }
 midenc-compile = { workspace = true, features = ["std"] }
@@ -50,3 +55,6 @@ liquid = "0.26"
 liquid-core = "0.26"
 tempfile.workspace = true
 walkdir = "2.5"
+serde_json.workspace = true
+# Verifies a downloaded template bundle against the digest GitHub reports.
+sha2 = "0.10"

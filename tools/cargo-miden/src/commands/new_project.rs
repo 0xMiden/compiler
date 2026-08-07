@@ -9,18 +9,6 @@ use toml_edit::{DocumentMut, Item, Value};
 
 use crate::template::{GenerateArgs, TemplatePath, generate};
 
-/// The tag used in checkout of the new contract project template (`cargo miden new --account <NAME>`, `--note`, etc) .
-///
-/// Before changing it make sure the new tag exists in the rust-templates repo and points to the
-/// desired commit.
-const PROJECT_TEMPLATES_REPO_TAG: &str = "v0.31.0";
-
-/// The tag used in checkout of the new Miden project template (`cargo miden new <NAME>`)
-///
-/// Before changing it make sure the new tag exists in the rust-templates repo and points to the
-/// desired commit.
-const MIDEN_PROJECT_TEMPLATE_REPO_TAG: &str = "v0.13";
-
 // This should have been an enum but I could not bend `clap` to expose variants as flags
 /// Project template
 #[derive(Clone, Debug, Args)]
@@ -190,16 +178,17 @@ impl NewCommand {
                 path: Some(template_path.display().to_string()),
                 ..Default::default()
             },
+            // Both come from the template bundle: released `templates/v*` when
+            // one is reachable, and the copy embedded in this binary otherwise.
+            // The layout inside the bundle is `project/` for the full scaffold
+            // and `rust/<name>/` for the individual contract templates.
             None => match self.template.as_ref() {
                 Some(project_template) => TemplatePath {
-                    git: Some("https://github.com/0xMiden/rust-templates".into()),
-                    tag: Some(PROJECT_TEMPLATES_REPO_TAG.into()),
-                    auto_path: Some(project_template.to_string()),
+                    auto_path: Some(format!("rust/{project_template}")),
                     ..Default::default()
                 },
                 None => TemplatePath {
-                    git: Some("https://github.com/0xMiden/project-template".into()),
-                    tag: Some(MIDEN_PROJECT_TEMPLATE_REPO_TAG.into()),
+                    auto_path: Some("project".into()),
                     ..Default::default()
                 },
             },

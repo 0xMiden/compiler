@@ -310,11 +310,20 @@ fn prepare_template(template_path: &TemplatePath) -> Result<TemplateSource> {
         });
     }
 
-    let repo = template_path
-        .git
-        .as_ref()
-        .context("Template source must specify either `path` or `git`")?;
     let temp_dir = TempDir::new().context("Failed to create temporary directory for template")?;
+
+    // No explicit source means the Miden template bundle: the newest released
+    // `templates/v*` in this build's minor series, or the copy compiled in.
+    let Some(repo) = template_path.git.as_ref() else {
+        let resolved = crate::bundle::resolve(temp_dir.path())?;
+        if let crate::bundle::Source::Released { version } = &resolved.source {
+            log::info!("using templates {version}");
+        }
+        return Ok(TemplateSource {
+            root: resolved.root,
+            _keepalive: Some(temp_dir),
+        });
+    };
 
     clone_repository(repo, template_path, temp_dir.path())?;
 

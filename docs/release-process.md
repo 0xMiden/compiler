@@ -535,14 +535,9 @@ Follow §3 unchanged. The differences are automatic:
 
 - GitHub releases are marked prerelease and never become "Latest".
 - **Templates can be part of a prerelease**, and must be when a compiler change
-  requires a template change. The bundle takes a prerelease version and is
-  released beside the rest.
-
-  > **The released bundle currently has no client.** `cargo miden new` still
-  > clones the external `rust-templates` and `project-template` repositories at
-  > tags hardcoded in `cargo-miden`, so releasing a template bundle changes
-  > nothing for anyone generating a project. Template changes still reach users
-  > only by moving those external tags. See §8.
+  requires a template change. The bundle takes a prerelease version, and only a
+  prerelease `cargo-miden` will resolve it — a stable build accepts only stable
+  bundles in its own minor series, so stable users never see it.
 
 ---
 
@@ -797,17 +792,14 @@ has been attempted through it.
 
 ### Not implemented
 
-- **Template resolution in `cargo-miden` — the whole consumer half.** The
-  release side is complete: the bundle is built deterministically from
-  `extra/templates`, released as `templates/v*`, and embedded in `cargo-miden`
-  with a verified digest. **Nothing reads any of it.** `cargo miden new` still
-  clones `0xMiden/rust-templates` and `0xMiden/project-template` at tags
-  hardcoded in `commands/new_project.rs`, exactly as before, and
-  `cargo_miden::bundle` has no callers. Until the resolver in the design's §12
-  exists — ref discovery, digest verification, caching, the deny list,
-  `--template-version` and `--offline`, and fallback to the embedded copy — a
-  template release produces an artifact nobody consumes, and template changes
-  still reach users only by moving the external tags.
+- **Template resolution robustness** (design §12.3–12.4). `cargo miden new`
+  resolves the bundle at runtime and falls back to the embedded copy, but makes
+  a *single* attempt with no caching, so every invocation queries GitHub, and it
+  does not walk down to an older candidate when the newest tag has no release
+  behind it — which happens routinely, since tags are created before a release
+  is finalized. Also absent: `--template-version`, `--offline`, and the
+  `deny.json` retraction list, so withdrawing a bad template bundle currently
+  means releasing a newer one.
 - **`audit-publishers`.** Trusted Publishing configuration cannot be
   preflighted, so a missing publisher surfaces mid-publication as
   [T7](#t7-403-from-cratesio-during-publication).

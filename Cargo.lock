@@ -565,6 +565,7 @@ version = "0.10.0-rc.1"
 dependencies = [
  "anyhow",
  "clap",
+ "flate2",
  "heck",
  "liquid",
  "liquid-core",
@@ -575,6 +576,8 @@ dependencies = [
  "midenc-log",
  "midenc-session",
  "path-absolutize",
+ "serde_json",
+ "sha2 0.10.9",
  "tempfile",
  "toml_edit",
  "walkdir",
