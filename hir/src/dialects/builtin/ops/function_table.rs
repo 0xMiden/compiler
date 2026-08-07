@@ -1,5 +1,7 @@
+use alloc::collections::BTreeMap;
+
 use crate::{
-    AsSymbolRef, NamedAttribute, Op, OpParser, OpPrinter, Operation, RegionKind,
+    AsSymbolRef, NamedAttribute, Op, OpParser, OpPrinter, Operation, OperationName, RegionKind,
     RegionKindInterface, Symbol, SymbolName, SymbolRef, SymbolUseList, UnsafeIntrusiveEntityRef,
     Usable, Visibility,
     derive::operation,
@@ -16,6 +18,7 @@ use crate::{
 };
 
 pub type FunctionTableRef = UnsafeIntrusiveEntityRef<FunctionTable>;
+pub type FunctionTableEntryRef = UnsafeIntrusiveEntityRef<FunctionTableEntry>;
 
 /// A [FunctionTable] declares a function-reference table in the shared memory of a
 /// [super::Component]; the Wasm frontend lowers `funcref` tables to it.
@@ -60,6 +63,43 @@ impl FunctionTable {
     #[inline(always)]
     pub fn as_function_table_ref(&self) -> FunctionTableRef {
         unsafe { FunctionTableRef::from_raw(self) }
+    }
+
+    /// The entries of this table that can actually be reached, keyed by slot index.
+    ///
+    /// A later entry at the same index overwrites an earlier one, so only the last entry per slot
+    /// can ever be dispatched to — hence the map rather than a list, and hence the name: every
+    /// other entry is dead, and treating it as live is a soundness bug, not a missed optimization.
+    ///
+    /// Every consumer of the dispatchability rule is built on this, and it is important that they
+    /// stay built on the *same* thing. The `hir.exec_indirect` verifier's guarantee is that no
+    /// dispatchable entry disagrees with the call's signature; `possible_callees`' guarantee is
+    /// that the set it returns contains every entry that can be reached; code generation's job is
+    /// to fill each slot with exactly the entry those two reasoned about. If one of them computed
+    /// a different set than the others, the verifier would silently stop covering entries the
+    /// analysis still considers live, or codegen would write a MAST root the verifier never
+    /// checked a signature for.
+    ///
+    /// The entries are returned unresolved, and deliberately so: the verifier resolves only the
+    /// entries whose tag matches its call site, which on a table with `1 << 20` slots is very much
+    /// not all of them, while codegen resolves every one. Resolving here would make each pay the
+    /// other's cost.
+    ///
+    /// Returns `Err` with the name of the offending operation if the table body holds anything
+    /// other than [`FunctionTableEntry`]; each caller reports that in its own terms.
+    pub fn live_entries(&self) -> Result<BTreeMap<u32, FunctionTableEntryRef>, OperationName> {
+        let mut live = BTreeMap::new();
+        let entries = self.entries();
+        if entries.is_empty() {
+            return Ok(live);
+        }
+        for op in entries.entry().body() {
+            let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
+                return Err(op.name());
+            };
+            live.insert(*entry.get_index(), entry.as_function_table_entry_ref());
+        }
+        Ok(live)
     }
 }
 
@@ -178,6 +218,8 @@ impl OpParser for FunctionTable {
 /// startup, slot `index` is filled with the MAST root digest of `callee`.
 ///
 /// This operation type is only permitted in the `entries` region of a [FunctionTable].
+///
+/// An entry is only *live* if no later entry names the same slot; see [FunctionTable::live_entries].
 #[operation(
     dialect = BuiltinDialect,
     implements(OpPrinter)
@@ -210,6 +252,11 @@ impl OpPrinter for FunctionTableEntry {
 }
 
 impl FunctionTableEntry {
+    #[inline(always)]
+    pub fn as_function_table_entry_ref(&self) -> FunctionTableEntryRef {
+        unsafe { FunctionTableEntryRef::from_raw(self) }
+    }
+
     /// Resolve this entry's callee, starting from the symbol table that contains the entry.
     ///
     /// The path is the *entry's*, not the call site's: a table in module `b` may hold the

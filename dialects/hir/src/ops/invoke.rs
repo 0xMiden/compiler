@@ -3,7 +3,7 @@ use alloc::format;
 use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{
-        FunctionTable, FunctionTableEntry,
+        FunctionTable,
         attributes::{LocalVariableArrayAttr, SignatureAttr, U32Attr},
     },
     effects::*,
@@ -431,12 +431,16 @@ impl CallOpInterface for ExecIndirect {
 
         // A malformed body is not something this analysis can answer for; the
         // `hir.exec_indirect` verifier is where it is reported.
-        let live_slots = live_table_slots(table).ok()?;
+        let live_entries = table.live_entries().ok()?;
 
         let expected_tag = *self.get_type_tag();
         let mut callees = SmallVec::new();
-        for (_slot, (type_tag, _callee_path, callee)) in live_slots {
-            if type_tag != expected_tag {
+        for entry in live_entries.into_values() {
+            let entry = entry.borrow();
+            // The tag filter comes before resolution on purpose: an entry the runtime check
+            // would reject cannot contribute a callee, so resolving it would be pure cost — and
+            // tables are large enough (up to `1 << 20` slots) for that cost to matter.
+            if *entry.get_type_tag() != expected_tag {
                 continue;
             }
             // One unresolved dispatchable entry makes the whole set unknown: a partially
@@ -444,7 +448,7 @@ impl CallOpInterface for ExecIndirect {
             // would understate the call's effects. Valid IR cannot reach this — the
             // `hir.exec_indirect` verifier rejects a call whose tag-matching entry does not
             // resolve — so this is the malformed-IR path only.
-            let callee = callee?;
+            let callee = entry.resolve_callee()?;
             if !callees.contains(&callee) {
                 callees.push(callee);
             }
@@ -453,50 +457,13 @@ impl CallOpInterface for ExecIndirect {
     }
 }
 
-/// The entry that wins at a function table slot: the tag the runtime check compares, the path the
-/// entry names, and that path resolved, if it resolves.
-type LiveTableSlot = (u32, SymbolPath, Option<SymbolRef>);
-
-/// The dispatchable entries of a function table, keyed by slot index.
-type LiveTableSlots = alloc::collections::BTreeMap<u32, LiveTableSlot>;
-
-/// The dispatchable entries of `table`, keyed by slot index: the tag the runtime check compares,
-/// the path the entry names, and that path resolved, if it resolves.
-///
-/// A later entry at the same index overwrites an earlier one, so only the last entry per slot can
-/// ever be reached — hence the map rather than a list.
-///
-/// Both the `hir.exec_indirect` verifier and `possible_callees` are built on this, and it is
-/// important that they stay built on the *same* thing. The verifier's guarantee is that no
-/// dispatchable entry disagrees with the call's signature; the analysis's guarantee is that the
-/// set it returns contains every entry that can be reached. If one of them computed a narrower
-/// set than the other, the verifier would silently stop covering entries the analysis (and
-/// codegen's dispatch) still consider live.
-///
-/// Returns `Err` with the name of the offending operation if the table body holds anything other
-/// than `builtin.function_table_entry`; the two callers report that differently.
-fn live_table_slots(table: &FunctionTable) -> Result<LiveTableSlots, OperationName> {
-    let mut live_slots = LiveTableSlots::new();
-    let entries = table.entries();
-    for op in entries.entry().body() {
-        let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
-            return Err(op.name());
-        };
-        live_slots.insert(
-            *entry.get_index(),
-            (*entry.get_type_tag(), entry.callee().path().clone(), entry.resolve_callee()),
-        );
-    }
-    Ok(live_slots)
-}
-
 /// `hir.exec_indirect` carries its callee's signature as an attribute rather than deriving it
 /// from a resolved callee, so nothing but this verifier ties the operands to it. The emitter
 /// consumes one operand per parameter and asserts each type, and its lowering cannot recover
 /// from a mismatch — an under-supplied call pops an empty stack.
 impl Verify<dyn CallOpInterface> for ExecIndirect {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
-        let signature = self.get_signature().clone();
+        let signature = self.get_signature();
         let arguments = self
             .arguments()
             .iter()
@@ -558,8 +525,8 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
             )));
         };
 
-        // Only the last entry per slot is dispatchable; see `live_table_slots`.
-        let live_slots = live_table_slots(table).map_err(|op_name| {
+        // Only the last entry per slot is dispatchable; see `builtin::FunctionTable::live_entries`.
+        let live_entries = table.live_entries().map_err(|op_name| {
             Report::msg(format!(
                 "invalid hir.exec_indirect: this call dispatches through '{table_path}', whose \
                  body holds a '{op_name}' — only 'builtin.function_table_entry' is supported in a \
@@ -567,11 +534,19 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
             ))
         })?;
 
-        for (slot, (type_tag, callee_path, callee)) in live_slots {
-            if type_tag != expected_tag {
+        for (slot, entry) in live_entries {
+            let entry = entry.borrow();
+            // Everything below resolves a symbol or clones a path, and this verifier runs once
+            // per pass per call site over a table that may hold `1 << 20` entries — so the tag
+            // filter, which is a pair of integer comparisons, goes first. An entry whose tag
+            // differs cannot reach this call site: the runtime check traps before control
+            // transfers, which is precisely why it is not this verifier's business.
+            if *entry.get_type_tag() != expected_tag {
                 continue;
             }
-            let Some(callee) = callee else {
+            let callee_ref = entry.callee();
+            let callee_path = callee_ref.path();
+            let Some(callee) = entry.resolve_callee() else {
                 return Err(Report::msg(format!(
                     "invalid hir.exec_indirect: slot {slot} of '{table_path}' matches tag \
                      {expected_tag}, but its callee '{callee_path}' does not resolve"
@@ -586,7 +561,7 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
                 )));
             };
             let callee_signature = callable.signature();
-            if callee_signature != signature {
+            if callee_signature != *signature {
                 return Err(Report::msg(format!(
                     "invalid hir.exec_indirect: this call dispatches through '{table_path}' with \
                      tag {expected_tag} and signature '{signature}', but slot {slot} holds \

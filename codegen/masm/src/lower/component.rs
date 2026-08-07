@@ -1133,6 +1133,14 @@ impl MasmComponentBuilder<'_> {
     /// table in one module may name a callee in another, and it is the `procref` — not the
     /// store — that the assembler resolves against visibility.
     ///
+    /// Only the entries [`builtin::FunctionTable::live_entries`] considers live are written: a
+    /// later entry at the same index overwrites an earlier one, so the earlier one is dead. That
+    /// is a soundness requirement rather than a saving. The `hir.exec_indirect` verifier compares
+    /// signatures only for the entry that wins a slot, so a dead entry's callee has never been
+    /// checked against any call site's stack contract — and grouping by owning module means store
+    /// order no longer follows the entries' textual order, so "the last store wins" would not even
+    /// pick the entry the verifier looked at.
+    ///
     /// Uninitialized (null) slots are left as the zero word, since VM memory is
     /// zero-initialized; `dynexec` on such a slot fails at runtime. The referenced procedures
     /// are registered as `procref` invocations so the assembler's linker treats them as
@@ -1151,19 +1159,19 @@ impl MasmComponentBuilder<'_> {
                 .element_addr_of(table_ref)
                 .expect("link error: missing function table in computed layout");
             let table = table_ref.borrow();
-            let entries = table.entries();
-            if entries.is_empty() {
-                continue;
-            }
-            for op in entries.entry().body() {
-                let Some(entry) = op.downcast_ref::<builtin::FunctionTableEntry>() else {
-                    return Err(Report::msg(format!(
-                        "invalid function table entry: '{}' is not supported in a function table \
-                         body",
-                        op.name()
-                    )));
-                };
-                let slot = *entry.get_index();
+            // Dead entries are skipped, not merely overwritten; see this function's doc comment.
+            // A dead entry is therefore also unvalidated, which costs nothing for the bounds check
+            // below — an overwritten entry shares its slot index with the entry that overwrote it,
+            // so an out-of-bounds slot is still reported — and is if anything the right answer for
+            // the tag: a slot explicitly nulled and then reassigned is not an error.
+            let live_entries = table.live_entries().map_err(|op_name| {
+                Report::msg(format!(
+                    "invalid function table entry: '{op_name}' is not supported in a function \
+                     table body"
+                ))
+            })?;
+            for (slot, entry) in live_entries {
+                let entry = entry.borrow();
                 if slot >= *table.get_num_slots() {
                     return Err(Report::msg(format!(
                         "invalid function table entry: slot {slot} is out of bounds for table \

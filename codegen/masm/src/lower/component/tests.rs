@@ -1338,6 +1338,105 @@ builtin.component private @"hir_ns:test@1.0.0" {
 };
 "#;
 
+/// A table whose only slot is written twice: a dead entry naming a callee in `@z`, then the live
+/// entry naming `@live` in `@a`.
+///
+/// The table's documented rule is last-entry-per-slot-wins, so slot 0 holds `@live` and nothing
+/// else. The module names are what make this discriminating: slot-filling code is grouped by the
+/// callee's defining module and those groups run in path order, so `@a` runs before `@z` and a
+/// codegen that emitted *both* stores would leave `@dead`'s MAST root in the slot — the entry the
+/// `hir.exec_indirect` verifier never looked at, with a signature it never checked.
+const WORLD_WITH_AN_OVERWRITTEN_TABLE_SLOT: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @a {
+        builtin.function private extern("C") @live() {
+            builtin.ret;
+        };
+
+        builtin.function_table private @tbl : 1 {
+            builtin.function_table_entry 0 ::@"hir_ns:test@1.0.0"::@z::@dead tag 1;
+            builtin.function_table_entry 0 @live tag 1;
+        };
+
+        builtin.function public extern("C") @dispatch(%index: u32) {
+            hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+            builtin.ret;
+        };
+    };
+
+    builtin.module public @z {
+        builtin.function private extern("C") @dead(%v: u32) {
+            builtin.ret;
+        };
+    };
+};
+};
+"#;
+
+/// The target of every `procref` in `body`, in order.
+fn procrefs_in(body: &masm::Block) -> Vec<String> {
+    body.iter()
+        .filter_map(|op| match op {
+            masm::Op::Inst(inst) => match inst.inner() {
+                masm::Instruction::ProcRef(masm::InvocationTarget::Path(path)) => {
+                    Some(path.inner().as_str().to_string())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// An entry a later entry overwrites is dead, and dead entries are not written to their slot.
+///
+/// This is a soundness property, not a size optimization. The `hir.exec_indirect` verifier checks
+/// only the entry that wins a slot, so a dead entry's signature is never compared against the call
+/// site's — writing its MAST root into the slot anyway would let a callee with a different stack
+/// contract run behind a tag the runtime check accepts, which is exactly the type confusion the
+/// tag exists to prevent.
+#[test]
+fn a_dead_table_entry_is_not_written_to_its_slot() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_AN_OVERWRITTEN_TABLE_SLOT);
+    let lowered = lower_world(world).expect("a component with an overwritten table slot lowers");
+
+    let mut procrefs = Vec::new();
+    for module in lowered.modules.iter() {
+        for procedure in module.procedures() {
+            if procedure.name().as_str() == super::FUNCTION_TABLE_INIT_PROC {
+                procrefs.extend(procrefs_in(procedure.body()));
+            }
+        }
+    }
+    procrefs.sort();
+
+    assert_eq!(
+        procrefs,
+        vec!["::\"hir_ns:test@1.0.0\"::a::live"],
+        "only the entry that wins the slot may be written to it"
+    );
+
+    // The dead entry was the sole reason `@z` would have carried an initializer at all, so its
+    // absence is the same fact stated where a reader will notice it first.
+    let owners = lowered
+        .modules
+        .iter()
+        .filter(|module| {
+            module
+                .procedures()
+                .any(|proc| proc.name().as_str() == super::FUNCTION_TABLE_INIT_PROC)
+        })
+        .map(|module| module.path().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        owners,
+        vec!["::\"hir_ns:test@1.0.0\"::a"],
+        "a module whose only table entry is dead defines no initializer"
+    );
+}
+
 /// The path of the module whose `__init_function_table` each `exec` in `body` names, in order.
 ///
 /// Only the generated initializers are of interest, so anything else `body` invokes — the heap
