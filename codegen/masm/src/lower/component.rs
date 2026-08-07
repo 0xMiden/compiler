@@ -12,15 +12,13 @@ use miden_assembly_syntax::{
     ast::{Attribute, DebugVarLocation},
     parser::WordValue,
 };
-use miden_core::serde::{Deserializable, Serializable};
+use miden_core::serde::Deserializable;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{
         builtin,
-        debuginfo::attributes::{
-            Expression, ExpressionOp, FrameBase, ResolvedFrameBase, SubprogramAttr,
-        },
+        debuginfo::attributes::{Expression, ExpressionOp, FrameBase, SubprogramAttr},
     },
     interner,
     pass::AnalysisManager,
@@ -1728,11 +1726,7 @@ fn patch_debug_var_location(
                     byte_offset: *byte_offset,
                 })
             } else {
-                let expression = Expression::with_ops(vec![ExpressionOp::ResolvedFrameBase {
-                    base: ResolvedFrameBase::Global(resolved_addr),
-                    byte_offset: *byte_offset,
-                }]);
-                Some(DebugVarLocation::Expression(expression.to_bytes()))
+                None
             }
         }
         DebugVarLocation::Expression(bytes) => {
@@ -1748,14 +1742,19 @@ fn patch_debug_var_location(
             };
             let local_index = i16::try_from(*local_index).ok()?;
             let local_offset = local_index - aligned_num_locals as i16;
-            let expression = Expression::with_ops(vec![ExpressionOp::ResolvedFrameBase {
-                base: ResolvedFrameBase::Local(local_offset),
+            Some(DebugVarLocation::FrameBase {
+                global_index: encode_frame_base_local_offset(local_offset),
                 byte_offset: *byte_offset,
-            }]);
-            Some(DebugVarLocation::Expression(expression.to_bytes()))
+            })
         }
         DebugVarLocation::Stack(_) | DebugVarLocation::Memory(_) | DebugVarLocation::Const(_) => {
             None
         }
     }
+}
+
+const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
+
+fn encode_frame_base_local_offset(local_offset: i16) -> u32 {
+    FRAME_BASE_LOCAL_MARKER | u32::from(u16::from_le_bytes(local_offset.to_le_bytes()))
 }

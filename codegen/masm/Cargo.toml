@@ -51,6 +51,7 @@ thiserror.workspace = true
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 itertools = "0.14.0"
+miden-debug = { version = "=0.9.2", default-features = false, features = ["std"] }
 midenc-expect-test = { path = "../../tools/expect-test" }
 midenc-hir = { path = "../../hir", features = ["logging"] }
 proptest.workspace = true

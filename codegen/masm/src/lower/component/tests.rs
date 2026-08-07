@@ -1596,9 +1596,10 @@ fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
         );
     }
 }
+
 #[test]
-fn frame_base_locals_are_resolved_without_address_tagging() {
-    use miden_core::serde::{Deserializable, Serializable};
+fn frame_base_locals_use_the_locked_debugger_encoding() {
+    use miden_core::{Felt, serde::Serializable};
 
     let expression = Expression::with_ops(vec![ExpressionOp::FrameBase {
         base: FrameBase::Local(2),
@@ -1607,39 +1608,41 @@ fn frame_base_locals_are_resolved_without_address_tagging() {
     let location = DebugVarLocation::Expression(expression.to_bytes());
 
     let patched = patch_debug_var_location(&location, 8, None).expect("location should resolve");
-    let DebugVarLocation::Expression(bytes) = patched else {
-        panic!("local frame bases must remain explicitly tagged expressions");
+    let DebugVarLocation::FrameBase {
+        global_index,
+        byte_offset,
+    } = patched
+    else {
+        panic!("local frame bases must use the debugger-supported location variant");
     };
-    let expression = Expression::read_from_bytes(&bytes).unwrap();
     assert_eq!(
-        expression.operations,
-        vec![ExpressionOp::ResolvedFrameBase {
-            base: ResolvedFrameBase::Local(-6),
-            byte_offset: 28,
-        }]
+        global_index,
+        FRAME_BASE_LOCAL_MARKER | u32::from(u16::from_le_bytes((-6i16).to_le_bytes()))
     );
+    assert_eq!(byte_offset, 28);
+
+    let value = miden_debug::resolve_variable_value(
+        &DebugVarLocation::FrameBase {
+            global_index,
+            byte_offset,
+        },
+        &[],
+        |address| (address == 32).then_some(Felt::new(13).unwrap()),
+        |offset| (offset == -6).then_some(Felt::new(100).unwrap()),
+    );
+    assert_eq!(value, Some(Felt::new(13).unwrap()));
 }
 
 #[test]
-fn high_bit_global_addresses_are_not_reinterpreted_as_locals() {
-    use miden_core::serde::Deserializable;
-
+fn high_bit_global_addresses_are_not_misencoded_as_locals() {
     let location = DebugVarLocation::FrameBase {
         global_index: 0,
         byte_offset: -4,
     };
     let address = 1 << 31;
-    let patched = patch_debug_var_location(&location, 0, Some(address))
-        .expect("global frame base should resolve");
-    let DebugVarLocation::Expression(bytes) = patched else {
-        panic!("high-bit globals must use an explicitly tagged expression");
-    };
-    let expression = Expression::read_from_bytes(&bytes).unwrap();
     assert_eq!(
-        expression.operations,
-        vec![ExpressionOp::ResolvedFrameBase {
-            base: ResolvedFrameBase::Global(address),
-            byte_offset: -4,
-        }]
+        patch_debug_var_location(&location, 0, Some(address)),
+        None,
+        "the locked debugger reserves the high bit for locals, so omit rather than misdecode this"
     );
 }

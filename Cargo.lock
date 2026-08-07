@@ -3623,6 +3623,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-core-lib",
+ "miden-debug",
  "miden-mast-package",
  "miden-processor",
  "miden-thiserror",

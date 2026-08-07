@@ -1656,9 +1656,7 @@ fn debug_var_location_from_expression(
                 }),
                 FrameBase::Local(_) => Some(DebugVarLocation::Expression(expr.to_bytes())),
             },
-            ExpressionOp::ResolvedFrameBase { .. } => {
-                Some(DebugVarLocation::Expression(expr.to_bytes()))
-            }
+            ExpressionOp::ResolvedFrameBase { .. } => None,
             // Constants only lower when they are canonical field elements. The debugger's locked
             // expression decoder cannot safely represent negative or non-canonical constants, so
             // omit those locations rather than serializing an expression that can panic it.
@@ -1674,7 +1672,9 @@ fn debug_var_location_from_expression(
             ExpressionOp::WasmStack(_) | ExpressionOp::WasmGlobal(_) => stack_position(),
             // A self-contained location we cannot map to a first-class variant; preserve it in
             // serialized form
-            ExpressionOp::Address { .. } => Some(DebugVarLocation::Expression(expr.to_bytes())),
+            ExpressionOp::Address { address } => {
+                Felt::new(*address).ok().map(|_| DebugVarLocation::Expression(expr.to_bytes()))
+            }
             // These transform the operand (e.g. the variable's value is *behind* a pointer held
             // by the operand). Reporting the operand's own stack slot would present the
             // untransformed value as the variable, and no DebugVarLocation variant can encode
@@ -1688,7 +1688,63 @@ fn debug_var_location_from_expression(
             | ExpressionOp::BitPiece { .. }
             | ExpressionOp::Unsupported(_) => None,
         },
-        _ => Some(DebugVarLocation::Expression(expr.to_bytes())),
+        _ if debugger_can_safely_evaluate_expression(expr) => {
+            Some(DebugVarLocation::Expression(expr.to_bytes()))
+        }
+        _ => None,
+    }
+}
+
+fn debugger_can_safely_evaluate_expression(
+    expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
+) -> bool {
+    use miden_core::Felt;
+    use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
+
+    expr.operations.iter().all(|op| match op {
+        ExpressionOp::ConstU64(value) | ExpressionOp::Address { address: value } => {
+            Felt::new(*value).is_ok()
+        }
+        ExpressionOp::ConstS64(value) => {
+            u64::try_from(*value).ok().is_some_and(|value| Felt::new(value).is_ok())
+        }
+        ExpressionOp::PlusUConst(_) | ExpressionOp::Minus | ExpressionOp::Plus => false,
+        ExpressionOp::FrameBase { .. } | ExpressionOp::ResolvedFrameBase { .. } => false,
+        ExpressionOp::Unsupported(_) => false,
+        ExpressionOp::WasmLocal(_)
+        | ExpressionOp::WasmGlobal(_)
+        | ExpressionOp::WasmStack(_)
+        | ExpressionOp::Deref
+        | ExpressionOp::StackValue
+        | ExpressionOp::Piece(_)
+        | ExpressionOp::BitPiece { .. } => true,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::dialects::debuginfo::attributes::{Expression, ExpressionOp};
+
+    use super::debugger_can_safely_evaluate_expression;
+
+    #[test]
+    fn validates_every_constant_before_serializing_debug_expressions() {
+        assert!(debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::ConstU64(7),
+            ExpressionOp::StackValue,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::ConstS64(-1),
+            ExpressionOp::PlusUConst(1),
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::ConstU64(u64::MAX),
+            ExpressionOp::StackValue,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::WasmLocal(0),
+            ExpressionOp::PlusUConst(1),
+        ])));
     }
 }
 
