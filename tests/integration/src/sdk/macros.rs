@@ -8,6 +8,9 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
         .arg("--target")
         .arg("wasm32-wasip2")
         .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
+        // The macros read dependency packages only from this directory, the way a driven build
+        // or the contract build script exposes it.
+        .env("MIDENC_PACKAGE_CACHE", project.root().join("package-cache"))
         .current_dir(project.root())
         .output()
         .expect("failed to spawn `cargo check` for the component macro regression test")
@@ -636,9 +639,9 @@ world test-sibling-world {
 
 /// Builds an account component project with one sibling component dependency named `test-sibling`.
 ///
-/// The sibling exists only as a synthesized `.masp` package (under `dep/target/miden/debug`)
-/// embedding its component WIT, which is all the macros need: sibling calls resolve at link time
-/// and read no procedure roots during expansion.
+/// The sibling exists only as a synthesized `.masp` package in the project's `package-cache`
+/// directory embedding its component WIT, which is all the macros need: sibling calls resolve at
+/// link time and read no procedure roots during expansion.
 fn account_component_project_with_sibling_dep(
     name: &str,
     lib_rs: &str,
@@ -732,7 +735,7 @@ supported-types = ["RegularAccountUpdatableCode"]
         .build()
 }
 
-/// Synthesizes the sibling dependency `.masp` package under `dep/target/miden/debug`.
+/// Synthesizes the sibling dependency `.masp` package into the project's `package-cache`.
 fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&str>) {
     use miden_assembly::{Assembler, DefaultSourceManager, ModuleParser, ast::ModuleKind};
     use miden_core::serde::Serializable;
@@ -759,7 +762,7 @@ fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&s
             .push(miden_mast_package::Section::new(wit_section_id, wit.as_bytes().to_vec()));
     }
 
-    let package_dir = cargo_proj.root().join("dep/target/miden/debug");
+    let package_dir = cargo_proj.root().join("package-cache");
     std::fs::create_dir_all(&package_dir).expect("sibling package directory must be created");
     std::fs::write(package_dir.join("test_sibling.masp"), package.to_bytes())
         .expect("sibling package fixture must be written");

@@ -44,6 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   embeds WIT is an error, and packages built by older Miden toolchains are rejected unless the
   key supplies their WIT. See the [migration guide](./sdk/sdk/MIGRATION.md) for the manifest
   edits and rebuild steps #1248
+- BREAKING: The SDK macros now read dependency packages only from the `MIDENC_PACKAGE_CACHE`
+  directory (or from a manifest path that names a `.masp` file directly). The previous search
+  of `target/miden/<profile>` output directories — the dependency's own, surrounding
+  workspaces', and ambient (`CARGO_TARGET_DIR`, `OUT_DIR`, working-directory) targets — was
+  removed, along with its freshest-first selection and macro-side package id and version
+  checks; the fingerprinted cache is rewritten by every build and its contents are trusted.
+  Builds driven by `cargo miden build` export the variable already; plain `cargo build`,
+  `cargo check`, and IDE analysis need the contract `build.rs`. An expansion without a
+  configured cache now fails with instructions instead of searching the filesystem #1298
 
 ## [0.10.0-rc.1]
 

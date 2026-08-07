@@ -24,10 +24,14 @@ nested `cargo miden build --release` when the project has source dependencies, a
 `MIDENC_PACKAGE_CACHE` to the crate's macro expansion. Inside a midenc-driven build the script
 does nothing.
 
-Adoption is optional but recommended for existing projects: copy `build.rs` from a freshly
-generated template contract (for example `cargo miden new --account demo`) or from any example
-in the compiler repository (for example `examples/p2id-note/build.rs`) into each contract
-crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PATH`; set the
+The build script is now required for plain cargo builds of crates with Miden source
+dependencies. The SDK macros read dependency packages only from the `MIDENC_PACKAGE_CACHE`
+directory (or from a manifest path naming a `.masp` file directly); they no longer search
+`target/miden/<profile>` output directories, so a plain `cargo check` without the script fails
+with instructions instead of finding previously built artifacts. Copy `build.rs` from a
+freshly generated template contract (for example `cargo miden new --account demo`) or from any
+example in the compiler repository (for example `examples/p2id-note/build.rs`) into each
+contract crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PATH`; set the
 `CARGO_MIDEN` environment variable to use a specific `cargo-miden` binary instead. A missing
 tool fails the build script with an install hint.
 

@@ -585,19 +585,29 @@ world basic-wallet-world {
         crate::test_support::write_masp_fixture(package_path, "wit-world-fixture-dep", wit);
     }
 
-    /// Creates a dependency project root with a compiled package under `target/miden/debug`.
-    ///
-    /// The dependency and its artifact carry fixture-unique names: the package search consults
-    /// ambient directories (`CARGO_TARGET_DIR`, cwd targets), so a name shared with a real
-    /// workspace artifact could make these tests observe it instead of the fixture.
+    /// Creates a dependency project root with a compiled package in the fixture package cache.
     fn dependency_fixture_root() -> PathBuf {
         let unique = unique_fixture_suffix();
         let root = std::env::temp_dir().join(format!("miden-base-macros-wit-world-{unique}"));
         write_masp_fixture(
-            &root.join("target/miden/debug/wit_world_fixture_dep.masp"),
+            &root.join("package-cache/wit_world_fixture_dep.masp"),
             Some(BASIC_WALLET_GENERATED_WIT),
         );
         root
+    }
+
+    /// Collects dependencies with the fixture's `package-cache` directory active.
+    ///
+    /// The macros read dependency packages only from the `MIDENC_PACKAGE_CACHE` directory; the
+    /// thread-local test override stands in for the process environment.
+    fn collect_with_cache(
+        fixture_root: &Path,
+        package: &miden_project::Package,
+    ) -> Result<Vec<crate::wit_world::MidenDependency>, syn::Error> {
+        crate::dependency_package::with_test_package_cache_dir(
+            Some(&fixture_root.join("package-cache")),
+            || collect_miden_dependencies(fixture_root, package, proc_macro2::Span::call_site()),
+        )
     }
 
     fn empty_fixture_root() -> PathBuf {
@@ -829,9 +839,7 @@ world empty-export-world {
 
         let package = package_with_dependency(dependency_root.clone());
 
-        let dependencies =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);
@@ -840,7 +848,7 @@ world empty-export-world {
         assert!(
             dependencies[0]
                 .package_path
-                .ends_with("target/miden/debug/wit_world_fixture_dep.masp"),
+                .ends_with("package-cache/wit_world_fixture_dep.masp"),
             "unexpected package path: {}",
             dependencies[0].package_path.display()
         );
@@ -858,9 +866,7 @@ world empty-export-world {
 
         let package = package_with_dependency(package_path.clone());
 
-        let dependencies =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
         let package_path =
             fs::canonicalize(package_path).expect("package path fixture must canonicalize");
 
@@ -879,9 +885,8 @@ world empty-export-world {
         fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
         let package = package_with_dependency(dependency_root);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("dependency without a compiled package must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("dependency without a compiled package must fail metadata load");
         let message = error.to_string();
 
         assert!(
@@ -902,15 +907,12 @@ world empty-export-world {
     fn package_without_wit_section_reports_rebuild_error() {
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
-        write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
-            None,
-        );
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let package = package_with_dependency(dependency_root);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("package without an embedded WIT section must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("package without an embedded WIT section must fail metadata load");
         let message = error.to_string();
 
         assert!(message.contains("does not embed component WIT"), "unexpected error: {message}");
@@ -931,10 +933,8 @@ world empty-export-world {
         // named by the dependency's `wit` key in miden-project.toml.
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
-        write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
-            None,
-        );
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let override_path = fixture_root.join("overrides/basic-wallet.wit");
         fs::create_dir_all(override_path.parent().unwrap())
             .expect("override fixture directory must be created");
@@ -942,9 +942,7 @@ world empty-export-world {
             .expect("override fixture must be written");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_path);
 
-        let dependencies =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);
@@ -958,19 +956,15 @@ world empty-export-world {
         // The `wit` key may name a directory holding exactly one top-level `.wit` file.
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
-        write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
-            None,
-        );
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let override_dir = fixture_root.join("overrides");
         fs::create_dir_all(&override_dir).expect("override fixture directory must be created");
         fs::write(override_dir.join("basic-wallet.wit"), BASIC_WALLET_GENERATED_WIT)
             .expect("override fixture must be written");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_dir);
 
-        let dependencies =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);
@@ -984,16 +978,16 @@ world empty-export-world {
         // even before the key's path is inspected (the path here does not exist).
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
         write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
+            &fixture_root.join("package-cache/wit_world_fixture_dep.masp"),
             Some(BASIC_WALLET_GENERATED_WIT),
         );
         let override_path = fixture_root.join("overrides/does-not-exist.wit");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_path);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("a wit key alongside embedded WIT must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("a wit key alongside embedded WIT must fail metadata load");
         let message = error.to_string();
 
         assert!(message.contains("embeds component WIT"), "unexpected error: {message}");
@@ -1006,16 +1000,13 @@ world empty-export-world {
     fn wit_override_with_missing_path_reports_error() {
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
-        write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
-            None,
-        );
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let override_path = fixture_root.join("overrides/does-not-exist.wit");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_path);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("a wit key pointing at a missing path must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("a wit key pointing at a missing path must fail metadata load");
         let message = error.to_string();
 
         assert!(
@@ -1034,10 +1025,8 @@ world empty-export-world {
     fn wit_override_directory_with_multiple_wit_files_reports_error() {
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
-        write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
-            None,
-        );
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let override_dir = fixture_root.join("overrides");
         fs::create_dir_all(&override_dir).expect("override fixture directory must be created");
         fs::write(override_dir.join("first.wit"), BASIC_WALLET_GENERATED_WIT)
@@ -1046,9 +1035,8 @@ world empty-export-world {
             .expect("override fixture must be written");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_dir);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("an override directory with two .wit files must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("an override directory with two .wit files must fail metadata load");
         let message = error.to_string();
 
         assert!(message.contains("contains 2 `.wit` files"), "unexpected error: {message}");
@@ -1071,19 +1059,16 @@ world importer {
 "#;
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
-        write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
-            None,
-        );
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let override_path = fixture_root.join("overrides/importing.wit");
         fs::create_dir_all(override_path.parent().unwrap())
             .expect("override fixture directory must be created");
         fs::write(&override_path, importing_wit).expect("override fixture must be written");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_path);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("an override referencing a foreign package must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("an override referencing a foreign package must fail metadata load");
         let message = error.to_string();
 
         assert!(message.contains("invalid WIT override"), "unexpected error: {message}");
@@ -1104,15 +1089,15 @@ world importer {
 "#;
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
         write_masp_fixture(
-            &dependency_root.join("target/miden/debug/wit_world_fixture_dep.masp"),
+            &fixture_root.join("package-cache/wit_world_fixture_dep.masp"),
             Some(importing_wit),
         );
         let package = package_with_dependency(dependency_root);
 
-        let error =
-            collect_miden_dependencies(&fixture_root, &package, proc_macro2::Span::call_site())
-                .expect_err("embedded WIT referencing a foreign package must fail metadata load");
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("embedded WIT referencing a foreign package must fail metadata load");
         let message = error.to_string();
 
         assert!(

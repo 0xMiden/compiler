@@ -2,6 +2,13 @@
 //!
 //! A Miden path dependency is consumed through its compiled package: the `.masp` carries both the
 //! dependency's embedded component WIT (read here) and its procedure roots (read by [`crate::fpi`]).
+//!
+//! Every dependency package comes from the build-owned package cache named by
+//! `MIDENC_PACKAGE_CACHE`. A midenc-driven build compiles the dependencies, publishes them into
+//! the fingerprinted cache, and exports the variable to its nested cargo builds; the contract
+//! `build.rs` does the same for plain `cargo build`/`cargo check` and IDE analysis. The macros
+//! never search the filesystem for packages themselves — the one exception is a dependency whose
+//! manifest path names a `.masp` file directly, which is read from that explicit location.
 
 use std::{
     env, fs,
@@ -45,7 +52,7 @@ pub(crate) fn collect_dependency_wit_sources(
 
     for dependency in package.dependencies() {
         match dependency.scheme() {
-            miden_project::DependencyVersionScheme::Path { path, version } => {
+            miden_project::DependencyVersionScheme::Path { path, .. } => {
                 let absolute_path = manifest_dir.join(path.path());
                 let dependency_root = fs::canonicalize(&absolute_path).map_err(|err| {
                     Error::new(
@@ -57,11 +64,8 @@ pub(crate) fn collect_dependency_wit_sources(
                         ),
                     )
                 })?;
-                let resolved = resolve_dependency_package(
-                    dependency.name().as_ref(),
-                    &dependency_root,
-                    version.as_ref(),
-                )?;
+                let resolved =
+                    resolve_dependency_package(dependency.name().as_ref(), &dependency_root)?;
                 let wit_override = dependency_wit_override(package, dependency.name().as_ref())?;
                 let wit = match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
                     (Some(_), Some(_)) => {
@@ -324,15 +328,16 @@ impl core::fmt::Debug for ResolvedDependencyPackage {
 
 /// Finds and reads the `.masp` package artifact for the dependency named `name` rooted at `root`.
 ///
-/// Every candidate located by searching is deserialized and accepted only when its package id
-/// matches the dependency's name — and, when the manifest pins a version, when its version
-/// satisfies the pin — so a renamed, unrelated, or outdated artifact is never adopted. A `root`
-/// that is itself a `.masp` file is the manifest's explicit choice and is read without those
-/// checks (the manifest key need not equal the prebuilt package's id).
+/// A `root` that is itself a `.masp` file is the manifest's explicit choice and is read from
+/// that location (the manifest key need not equal the prebuilt package's id). Every other
+/// dependency package is read from the `MIDENC_PACKAGE_CACHE` directory under its package name,
+/// trying the hyphen/underscore stem spellings the cache writers use. The cache is fingerprinted
+/// by the build inputs and rewritten by every build, so the package found under the dependency's
+/// name is trusted as-is; id, version, and digest verification belong to the compiler's project
+/// resolution. Without a configured cache the dependency cannot be resolved at all.
 pub(crate) fn resolve_dependency_package(
     name: &str,
     root: &Path,
-    version: Option<&miden_project::VersionRequirement>,
 ) -> Result<ResolvedDependencyPackage, Error> {
     if root.is_file() {
         return Ok(ResolvedDependencyPackage {
@@ -341,111 +346,67 @@ pub(crate) fn resolve_dependency_package(
         });
     }
 
-    let preferred_profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    let mut profiles = vec![preferred_profile.clone()];
-    if preferred_profile != "release" {
-        profiles.push("release".to_string());
-    }
-    if preferred_profile != "debug" {
-        profiles.push("debug".to_string());
-    }
+    let Some(filesystem_cache_dir) = package_cache_dir() else {
+        return Err(Error::new(Span::call_site(), missing_package_cache_message(name, root)));
+    };
 
     let package_stems = dependency_package_stems(name, root);
-
-    // When midenc communicates its package cache, compiled dependency packages live there and
-    // nowhere else; searching the conventional output directories would find stale artifacts.
-    if let Some(filesystem_cache_dir) = env::var_os("MIDENC_PACKAGE_CACHE") {
-        let filesystem_cache_dir = PathBuf::from(filesystem_cache_dir);
-        let candidates =
-            sort_by_freshness(stem_matches_in_dir(&filesystem_cache_dir, &package_stems)?);
-
-        let mut id_mismatches = Vec::new();
-        for candidate in candidates {
-            let package = read_package(&candidate)?;
-            if package_id_matches(&package, &package_stems) {
-                return Ok(ResolvedDependencyPackage {
-                    path: candidate,
-                    package,
-                });
-            }
-            id_mismatches.push((candidate, package.name.to_string()));
+    for stem in &package_stems {
+        let candidate = filesystem_cache_dir.join(format!("{stem}.{}", Package::EXTENSION));
+        if candidate.is_file() {
+            return Ok(ResolvedDependencyPackage {
+                package: read_package(&candidate)?,
+                path: candidate,
+            });
         }
-
-        return Err(Error::new(
-            Span::call_site(),
-            missing_cached_dependency_package_message(
-                name,
-                root,
-                &package_stems,
-                &filesystem_cache_dir,
-                &id_mismatches,
-            ),
-        ));
-    }
-
-    let output_dirs = dependency_output_dirs(root, &profiles);
-
-    // Candidates in preference order. Name matches are ordered freshest-first within each
-    // directory class: `PROFILE` is never set for proc macros, so profile order alone would let
-    // a stale debug package shadow a fresh release build.
-    let mut candidates = Vec::new();
-
-    let mut own_matches = Vec::new();
-    for dir in output_dirs.private.iter().chain(output_dirs.shared.iter()) {
-        own_matches.extend(stem_matches_in_dir(dir, &package_stems)?);
-    }
-    candidates.extend(sort_by_freshness(own_matches));
-
-    // A solitary `.masp` is considered only in the dependency's private `<root>/target`
-    // directories: a shared workspace or ambient target directory may hold a package of an
-    // unrelated project.
-    for dir in &output_dirs.private {
-        candidates.extend(find_solitary_package_in_dir(dir)?);
-    }
-
-    let mut ambient_matches = Vec::new();
-    for dir in &output_dirs.ambient {
-        ambient_matches.extend(stem_matches_in_dir(dir, &package_stems)?);
-    }
-    candidates.extend(sort_by_freshness(ambient_matches));
-
-    let mut rejected = Vec::new();
-    let mut seen = Vec::new();
-    for candidate in candidates {
-        if seen.contains(&candidate) {
-            continue;
-        }
-        seen.push(candidate.clone());
-
-        let package = read_package(&candidate)?;
-        if !package_id_matches(&package, &package_stems) {
-            rejected.push((candidate, format!("package id '{}'", package.name)));
-            continue;
-        }
-        if !package_version_matches(&package, version) {
-            rejected.push((
-                candidate,
-                format!("version {} does not satisfy the manifest requirement", package.version),
-            ));
-            continue;
-        }
-        return Ok(ResolvedDependencyPackage {
-            path: candidate,
-            package,
-        });
     }
 
     Err(Error::new(
         Span::call_site(),
-        missing_dependency_package_message(
+        missing_cached_dependency_package_message(
             name,
             root,
             &package_stems,
-            &output_dirs,
-            &profiles,
-            &rejected,
+            &filesystem_cache_dir,
         ),
     ))
+}
+
+/// Returns the package cache directory of this expansion, when one is configured.
+fn package_cache_dir() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(overridden) = TEST_PACKAGE_CACHE_DIR.with(|dir| dir.borrow().clone()) {
+        return overridden;
+    }
+    env::var_os("MIDENC_PACKAGE_CACHE").map(PathBuf::from)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test override for the package cache directory.
+    ///
+    /// The process environment is global, so parallel unit tests cannot use it to point each
+    /// expansion at its own fixture cache. `Some(None)` simulates an unset variable.
+    static TEST_PACKAGE_CACHE_DIR: core::cell::RefCell<Option<Option<PathBuf>>> =
+        const { core::cell::RefCell::new(None) };
+}
+
+/// Runs `run` with the package cache directory overridden for the current thread.
+///
+/// `None` simulates a build without a configured cache.
+#[cfg(test)]
+pub(crate) fn with_test_package_cache_dir<R>(
+    cache_dir: Option<&Path>,
+    run: impl FnOnce() -> R,
+) -> R {
+    TEST_PACKAGE_CACHE_DIR.with(|dir| {
+        *dir.borrow_mut() = Some(cache_dir.map(Path::to_path_buf));
+    });
+    let result = run();
+    TEST_PACKAGE_CACHE_DIR.with(|dir| {
+        *dir.borrow_mut() = None;
+    });
+    result
 }
 
 /// Formats the diagnostic for a dependency package missing from the build-owned package cache.
@@ -454,269 +415,35 @@ fn missing_cached_dependency_package_message(
     root: &Path,
     package_stems: &[String],
     filesystem_cache_dir: &Path,
-    id_mismatches: &[(PathBuf, String)],
 ) -> String {
     let expected_files = package_stems
         .iter()
         .map(|stem| format!("'{stem}.masp'"))
         .collect::<Vec<_>>()
         .join(", ");
-    let rejected = if id_mismatches.is_empty() {
-        String::new()
-    } else {
-        let rejected = id_mismatches
-            .iter()
-            .map(|(path, id)| format!("'{}' (package id '{id}')", path.display()))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(" Rejected candidates whose package id does not match: {rejected}.")
-    };
 
     format!(
         "could not find a built `.masp` package for Miden dependency '{name}' (root '{}'). The \
          SDK macros need the dependency package during Rust macro expansion to read its embedded \
          WIT and procedure roots. Expected one of these package names: {expected_files}. Searched \
-         MIDENC_PACKAGE_CACHE directory '{}'.{rejected} This cache is populated by the enclosing \
-         midenc-driven build; compile this crate as part of that build so its dependency packages \
-         are available during macro expansion.",
+         MIDENC_PACKAGE_CACHE directory '{}'. The cache is populated by a midenc-driven build \
+         (`cargo miden build`), and by the contract `build.rs` for plain cargo builds; rebuild \
+         through either so the dependency package is available during macro expansion.",
         root.display(),
         filesystem_cache_dir.display(),
     )
 }
 
-/// Returns true when the package's id matches one of the dependency's name stems.
-///
-/// Hyphens and underscores are interchangeable between manifest keys, Cargo package names, and
-/// Miden package ids, so the comparison normalizes them.
-fn package_id_matches(package: &Package, package_stems: &[String]) -> bool {
-    let package_id = package.name.to_string().replace('-', "_");
-    package_stems.iter().any(|stem| stem.replace('-', "_") == package_id)
-}
-
-/// Returns true when the package's version satisfies the manifest's version pin, if any.
-///
-/// Digest pins are enforced by the assembler at link time; checking them here would require
-/// computing content digests during macro expansion, so they are accepted as-is.
-fn package_version_matches(
-    package: &Package,
-    version: Option<&miden_project::VersionRequirement>,
-) -> bool {
-    match version {
-        Some(miden_project::VersionRequirement::Semantic(requirement)) => {
-            requirement.inner().matches(&package.version)
-        }
-        Some(miden_project::VersionRequirement::Exact(exact)) => exact.version == package.version,
-        Some(miden_project::VersionRequirement::Digest(_)) | None => true,
-    }
-}
-
-/// Sorts package paths by modification time, freshest first.
-///
-/// Ties (including unreadable timestamps, which sort last) preserve the input order, i.e. the
-/// most precise search directory.
-fn sort_by_freshness(packages: Vec<PathBuf>) -> Vec<PathBuf> {
-    let mut packages_with_mtime = packages
-        .into_iter()
-        .map(|path| {
-            let mtime = fs::metadata(&path).and_then(|metadata| metadata.modified()).ok();
-            (path, mtime)
-        })
-        .collect::<Vec<_>>();
-    packages_with_mtime.sort_by_key(|(_, mtime)| core::cmp::Reverse(*mtime));
-    packages_with_mtime.into_iter().map(|(path, _)| path).collect()
-}
-
-/// Formats the diagnostic emitted when a dependency's compiled package cannot be located.
-fn missing_dependency_package_message(
-    name: &str,
-    root: &Path,
-    package_stems: &[String],
-    output_dirs: &DependencyOutputDirs,
-    profiles: &[String],
-    rejected: &[(PathBuf, String)],
-) -> String {
-    let searched = output_dirs
-        .private
-        .iter()
-        .chain(output_dirs.shared.iter())
-        .chain(output_dirs.ambient.iter())
-        .map(|dir| format!("'{}'", dir.display()))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let expected_files = package_stems
-        .iter()
-        .flat_map(|stem| profiles.iter().map(move |profile| format!("{stem}.masp in {profile}")))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let rejected = if rejected.is_empty() {
-        String::new()
-    } else {
-        let rejected = rejected
-            .iter()
-            .map(|(path, reason)| format!("'{}' ({reason})", path.display()))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!(" Rejected candidates that do not match the dependency: {rejected}.")
-    };
-    let build_hint = dependency_build_hint(root);
-
+/// Formats the diagnostic for an expansion without a configured package cache.
+fn missing_package_cache_message(name: &str, root: &Path) -> String {
     format!(
-        "could not find a built `.masp` package for Miden dependency '{name}' (root '{}'). The \
-         SDK macros need the dependency package during Rust macro expansion to read its embedded \
-         WIT and procedure roots. Expected one of: {expected_files}. Searched: \
-         {searched}.{rejected} {build_hint}",
+        "the Miden package cache is not configured (MIDENC_PACKAGE_CACHE is not set), so the \
+         compiled package for Miden dependency '{name}' (root '{}') cannot be resolved during \
+         Rust macro expansion. Build through `cargo miden build`, which exports the variable to \
+         its nested builds, or add the contract `build.rs` from a generated template so plain \
+         `cargo build`/`cargo check` and IDE analysis populate and export the cache.",
         root.display(),
     )
-}
-
-/// Returns a command hint for building a dependency package before expanding dependent macros.
-fn dependency_build_hint(root: &Path) -> String {
-    let manifest_path = root.join("Cargo.toml");
-    if manifest_path.is_file() {
-        format!(
-            "Build the dependency first with `cargo miden build --manifest-path {} --release`, or \
-             persist the compiled package to '{}/target/miden/<profile>' before compiling this \
-             crate.",
-            manifest_path.display(),
-            root.display(),
-        )
-    } else {
-        format!(
-            "Build the dependency first with `cargo miden build`, or persist the compiled package \
-             to '{}/target/miden/<profile>' before compiling this crate.",
-            root.display(),
-        )
-    }
-}
-
-/// Candidate output directories where a dependency `.masp` may have been written.
-struct DependencyOutputDirs {
-    /// The dependency's own `<root>/target` directories; a package found here belongs to it.
-    private: Vec<PathBuf>,
-    /// Target directories of the dependency root's ancestors — a surrounding workspace's target
-    /// holds packages of all its members, so a package here needs a name/id match.
-    shared: Vec<PathBuf>,
-    /// Ambient directories (`CARGO_TARGET_DIR`, `OUT_DIR`, cwd targets) that may hold packages
-    /// of entirely unrelated projects.
-    ambient: Vec<PathBuf>,
-}
-
-/// Returns candidate output directories where a dependency `.masp` may have been written.
-fn dependency_output_dirs(root: &Path, profiles: &[String]) -> DependencyOutputDirs {
-    // The dependency root is the most precise location for path dependencies. Prefer it over
-    // shared and ambient target directories so restored or previously built artifacts cannot
-    // shadow the package that belongs to the dependency being wrapped.
-    let mut private = Vec::new();
-    push_profile_dirs(&mut private, root.join("target"), profiles);
-
-    let mut shared = Vec::new();
-    push_manifest_ancestor_target_profile_dirs(&mut shared, root, profiles);
-    push_ancestor_target_profile_dirs(&mut shared, root, profiles);
-    // The ancestor walks start at the root itself, re-discovering the private dirs.
-    shared.retain(|dir| !private.contains(dir));
-
-    let mut ambient = Vec::new();
-    if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
-        push_profile_dirs(&mut ambient, PathBuf::from(target_dir), profiles);
-    }
-
-    if let Ok(out_dir) = env::var("OUT_DIR") {
-        for ancestor in Path::new(&out_dir).ancestors() {
-            push_profile_dirs(&mut ambient, ancestor.to_path_buf(), profiles);
-        }
-    }
-
-    if let Ok(current_dir) = env::current_dir() {
-        push_profile_dirs(&mut ambient, current_dir.join("target"), profiles);
-        push_manifest_ancestor_target_profile_dirs(&mut ambient, &current_dir, profiles);
-        push_ancestor_target_profile_dirs(&mut ambient, &current_dir, profiles);
-    }
-
-    DependencyOutputDirs {
-        private,
-        shared,
-        ambient,
-    }
-}
-
-/// Adds `target/miden/<profile>` directories while preserving insertion order.
-fn push_profile_dirs(dirs: &mut Vec<PathBuf>, target_root: PathBuf, profiles: &[String]) {
-    for profile in profiles {
-        let dir = target_root.join("miden").join(profile);
-        if !dirs.iter().any(|existing| existing == &dir) {
-            dirs.push(dir);
-        }
-    }
-}
-
-/// Adds `target/miden/<profile>` directories found in ancestors of `path`.
-fn push_ancestor_target_profile_dirs(dirs: &mut Vec<PathBuf>, path: &Path, profiles: &[String]) {
-    for ancestor in path.ancestors() {
-        if ancestor.file_name().is_some_and(|name| name == "target") {
-            push_profile_dirs(dirs, ancestor.to_path_buf(), profiles);
-        }
-    }
-}
-
-/// Adds `target/miden/<profile>` directories for Cargo manifest ancestors.
-fn push_manifest_ancestor_target_profile_dirs(
-    dirs: &mut Vec<PathBuf>,
-    path: &Path,
-    profiles: &[String],
-) {
-    for ancestor in path.ancestors() {
-        if ancestor.join("Cargo.toml").is_file() || ancestor.join("Cargo.lock").is_file() {
-            push_profile_dirs(dirs, ancestor.join("target"), profiles);
-        }
-    }
-}
-
-/// Lists the `.masp` packages in `dir`, sorted by path.
-fn packages_in_dir(dir: &Path) -> Result<Vec<PathBuf>, Error> {
-    if !dir.is_dir() {
-        return Ok(Vec::new());
-    }
-
-    let mut packages = fs::read_dir(dir)
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to read dependency output directory '{}': {err}", dir.display()),
-            )
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to iterate dependency output directory '{}': {err}", dir.display()),
-            )
-        })?
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION))
-        })
-        .collect::<Vec<_>>();
-    packages.sort();
-    Ok(packages)
-}
-
-/// Returns all packages in `dir` whose filename matches one of the dependency's name stems.
-fn stem_matches_in_dir(dir: &Path, package_stems: &[String]) -> Result<Vec<PathBuf>, Error> {
-    let mut packages = packages_in_dir(dir)?;
-    packages.retain(|path| {
-        path.file_stem()
-            .and_then(|value| value.to_str())
-            .is_some_and(|file_stem| package_stems.iter().any(|stem| stem == file_stem))
-    });
-    Ok(packages)
-}
-
-/// Returns the package in `dir` when it is the directory's only one, regardless of its name.
-fn find_solitary_package_in_dir(dir: &Path) -> Result<Option<PathBuf>, Error> {
-    let mut packages = packages_in_dir(dir)?;
-    Ok((packages.len() == 1).then(|| packages.remove(0)))
 }
 
 /// Returns likely `.masp` filename stems for a dependency.
@@ -766,26 +493,14 @@ fn push_dependency_stem(stems: &mut Vec<String>, name: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::write_masp_fixture;
 
-    #[test]
-    fn missing_cached_dependency_package_message_describes_the_cache_contract() {
-        let stems = vec!["counter".to_string(), "counter_component".to_string()];
-        let cache_dir = Path::new("/target/miden/packages/0123456789abcdef");
-
-        let message = missing_cached_dependency_package_message(
-            "counter",
-            Path::new("/projects/counter"),
-            &stems,
-            cache_dir,
-            &[],
-        );
-
-        assert!(message.contains("'counter.masp'"));
-        assert!(message.contains("'counter_component.masp'"));
-        assert!(message.contains(&cache_dir.display().to_string()));
-        assert!(message.contains("populated by the enclosing midenc-driven build"));
-        assert!(!message.contains(" in release"));
-        assert!(!message.contains("target/miden/<profile>"));
+    /// Creates a unique fixture root under the temp dir.
+    fn fixture_root(name: &str) -> PathBuf {
+        let root =
+            env::temp_dir().join(format!("midenc-dep-package-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        root
     }
 
     #[test]
@@ -798,95 +513,19 @@ mod tests {
     }
 
     #[test]
-    fn dependency_output_dirs_include_manifest_ancestor_targets() {
-        let temp_root = fixture_root("output-dirs");
-        let workspace_root = temp_root.join("workspace");
-        let dependency_root = workspace_root.join("tests/fixtures/dependency");
+    fn resolves_the_dependency_package_from_the_cache_by_stem() {
+        let temp_root = fixture_root("cache-hit");
+        let cache_dir = temp_root.join("package-cache");
+        let dependency_root = temp_root.join("dep-fixture");
         std::fs::create_dir_all(&dependency_root).unwrap();
-        std::fs::write(workspace_root.join("Cargo.lock"), "").unwrap();
-        std::fs::write(dependency_root.join("Cargo.toml"), "").unwrap();
-
-        let mut dirs = Vec::new();
-        push_manifest_ancestor_target_profile_dirs(
-            &mut dirs,
-            &dependency_root,
-            &[String::from("release")],
-        );
-
-        assert_eq!(dirs[0], dependency_root.join("target/miden/release"));
-        assert!(
-            dirs.contains(&workspace_root.join("target/miden/release")),
-            "expected workspace target in {dirs:?}"
-        );
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    use crate::test_support::write_masp_fixture;
-
-    /// Creates a unique fixture root under the temp dir.
-    fn fixture_root(name: &str) -> PathBuf {
-        let root =
-            env::temp_dir().join(format!("midenc-dep-package-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-        root
-    }
-
-    /// Backdates a package file so a sibling artifact is strictly fresher.
-    fn backdate(path: &Path) {
-        let stale = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
-        std::fs::File::options()
-            .write(true)
-            .open(path)
-            .unwrap()
-            .set_modified(stale)
-            .unwrap();
-    }
-
-    #[test]
-    fn prefers_the_freshest_stem_match_across_profile_dirs() {
-        let temp_root = fixture_root("freshest");
-        let debug_path = temp_root.join("target/miden/debug/dep_fixture.masp");
-        let release_path = temp_root.join("target/miden/release/dep_fixture.masp");
-        write_masp_fixture(&debug_path, "dep-fixture", None);
-        write_masp_fixture(&release_path, "dep-fixture", None);
-        // `PROFILE` is unset for proc macros, so the debug dir is searched first; only the
-        // freshest-match rule makes the newer release artifact win.
-        backdate(&debug_path);
-
-        let resolved = resolve_dependency_package("dep-fixture", &temp_root, None).unwrap();
-
-        assert_eq!(resolved.path, release_path);
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    #[test]
-    fn prefers_the_freshest_match_across_stem_aliases_in_one_dir() {
-        // The Cargo-name (underscore) and package-id (hyphen) naming schemes have both been used
-        // for `.masp` artifacts; a stale artifact under one alias must not shadow a fresh one
-        // under the other.
-        let temp_root = fixture_root("stem-aliases");
-        let stale_path = temp_root.join("target/miden/debug/dep_fixture.masp");
-        let fresh_path = temp_root.join("target/miden/debug/dep-fixture.masp");
-        write_masp_fixture(&stale_path, "dep-fixture", None);
-        write_masp_fixture(&fresh_path, "dep-fixture", None);
-        backdate(&stale_path);
-
-        let resolved = resolve_dependency_package("dep-fixture", &temp_root, None).unwrap();
-
-        assert_eq!(resolved.path, fresh_path);
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    #[test]
-    fn accepts_a_solitary_package_in_the_dependency_private_dirs() {
-        let temp_root = fixture_root("solitary");
-        let package_path = temp_root.join("target/miden/debug/oddly_named.masp");
+        // The underscore spelling exercises the stem aliases: the hyphen probe misses first.
+        let package_path = cache_dir.join("dep_fixture.masp");
         write_masp_fixture(&package_path, "dep-fixture", None);
 
-        let resolved = resolve_dependency_package("dep-fixture", &temp_root, None).unwrap();
+        let resolved = with_test_package_cache_dir(Some(&cache_dir), || {
+            resolve_dependency_package("dep-fixture", &dependency_root)
+        })
+        .unwrap();
 
         assert_eq!(resolved.path, package_path);
 
@@ -894,77 +533,70 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_solitary_package_with_a_mismatched_id() {
-        let temp_root = fixture_root("solitary-mismatch");
-        let package_path = temp_root.join("target/miden/debug/oddly_named.masp");
-        write_masp_fixture(&package_path, "other-package", None);
-
-        let error = resolve_dependency_package("dep-fixture", &temp_root, None)
-            .expect_err("a solitary package with a foreign id must not be adopted");
-        let message = error.to_string();
-
-        assert!(
-            message.contains("could not find a built `.masp` package"),
-            "unexpected error: {message}"
-        );
-        assert!(message.contains("package id 'other-package'"), "unexpected error: {message}");
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    #[test]
-    fn does_not_adopt_a_solitary_package_from_a_shared_workspace_target() {
-        // The workspace-level target dir holds packages of all members; a solitary unrelated
-        // package there must not be adopted for a member that was never built.
-        let temp_root = fixture_root("workspace-solitary");
-        let workspace_root = temp_root.join("workspace");
-        let dependency_root = workspace_root.join("dep");
-        std::fs::create_dir_all(&dependency_root).unwrap();
-        std::fs::write(workspace_root.join("Cargo.lock"), "").unwrap();
-        write_masp_fixture(
-            &workspace_root.join("target/miden/debug/unrelated.masp"),
-            "unrelated",
-            None,
-        );
-
-        let error = resolve_dependency_package("dep-fixture", &dependency_root, None)
-            .expect_err("an unrelated solitary package in the workspace target must be ignored");
-        let message = error.to_string();
-
-        assert!(
-            message.contains("could not find a built `.masp` package"),
-            "unexpected error: {message}"
-        );
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    #[test]
-    fn verifies_a_manifest_version_pin() {
-        // The test fixture package carries version 0.1.0.
-        let temp_root = fixture_root("version-pin");
-        let package_path = temp_root.join("target/miden/debug/dep_fixture.masp");
+    fn explicit_package_file_dependency_bypasses_the_cache() {
+        let temp_root = fixture_root("explicit-file");
+        let package_path = temp_root.join("prebuilt/renamed.masp");
         write_masp_fixture(&package_path, "dep-fixture", None);
 
-        let satisfied = miden_project::VersionRequirement::Semantic(
-            miden_assembly_syntax::debuginfo::Span::unknown("^0.1".parse().unwrap()),
-        );
-        let resolved =
-            resolve_dependency_package("dep-fixture", &temp_root, Some(&satisfied)).unwrap();
+        let resolved = with_test_package_cache_dir(None, || {
+            resolve_dependency_package("dep-fixture", &package_path)
+        })
+        .unwrap();
+
         assert_eq!(resolved.path, package_path);
 
-        let unsatisfied = miden_project::VersionRequirement::Semantic(
-            miden_assembly_syntax::debuginfo::Span::unknown("^2.0".parse().unwrap()),
-        );
-        let error = resolve_dependency_package("dep-fixture", &temp_root, Some(&unsatisfied))
-            .expect_err("a version outside the manifest pin must reject the candidate");
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn missing_package_cache_reports_actionable_error() {
+        let temp_root = fixture_root("no-cache");
+        let dependency_root = temp_root.join("dep-fixture");
+        std::fs::create_dir_all(&dependency_root).unwrap();
+
+        let error = with_test_package_cache_dir(None, || {
+            resolve_dependency_package("dep-fixture", &dependency_root)
+        })
+        .expect_err("resolution without a configured cache must fail");
         let message = error.to_string();
 
         assert!(
-            message.contains("does not satisfy the manifest requirement"),
+            message.contains("MIDENC_PACKAGE_CACHE is not set"),
             "unexpected error: {message}"
         );
-        assert!(message.contains("0.1.0"), "unexpected error: {message}");
+        assert!(message.contains("cargo miden build"), "unexpected error: {message}");
+        assert!(message.contains("build.rs"), "unexpected error: {message}");
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn missing_cached_dependency_package_reports_the_cache_contract() {
+        let temp_root = fixture_root("cache-miss");
+        let cache_dir = temp_root.join("package-cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let dependency_root = temp_root.join("dep-fixture");
+        std::fs::create_dir_all(&dependency_root).unwrap();
+
+        let error = with_test_package_cache_dir(Some(&cache_dir), || {
+            resolve_dependency_package("dep-fixture", &dependency_root)
+        })
+        .expect_err("an empty cache must fail resolution");
+        let message = error.to_string();
+
+        assert!(
+            message.contains("could not find a built `.masp` package"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("'dep-fixture.masp'"), "unexpected error: {message}");
+        assert!(message.contains("'dep_fixture.masp'"), "unexpected error: {message}");
+        assert!(
+            message.contains(&cache_dir.display().to_string()),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("cargo miden build"), "unexpected error: {message}");
+        assert!(message.contains("build.rs"), "unexpected error: {message}");
+        assert!(!message.contains("target/miden/<profile>"), "unexpected error: {message}");
 
         std::fs::remove_dir_all(temp_root).unwrap();
     }
@@ -972,12 +604,16 @@ mod tests {
     #[test]
     fn corrupt_dependency_package_reports_rebuild_hint() {
         let temp_root = fixture_root("corrupt");
-        let package_path = temp_root.join("target/miden/debug/dep_fixture.masp");
-        std::fs::create_dir_all(package_path.parent().unwrap()).unwrap();
-        std::fs::write(&package_path, b"garbage").unwrap();
+        let cache_dir = temp_root.join("package-cache");
+        std::fs::create_dir_all(&cache_dir).unwrap();
+        let dependency_root = temp_root.join("dep-fixture");
+        std::fs::create_dir_all(&dependency_root).unwrap();
+        std::fs::write(cache_dir.join("dep-fixture.masp"), b"garbage").unwrap();
 
-        let error = resolve_dependency_package("dep-fixture", &temp_root, None)
-            .expect_err("a corrupt dependency package must fail resolution");
+        let error = with_test_package_cache_dir(Some(&cache_dir), || {
+            resolve_dependency_package("dep-fixture", &dependency_root)
+        })
+        .expect_err("a corrupt dependency package must fail resolution");
         let message = error.to_string();
 
         assert!(message.contains("failed to deserialize"), "unexpected error: {message}");
@@ -986,47 +622,6 @@ mod tests {
             "unexpected error: {message}"
         );
         assert!(message.contains("cargo miden build"), "unexpected error: {message}");
-
-        std::fs::remove_dir_all(temp_root).unwrap();
-    }
-
-    #[test]
-    fn missing_dependency_package_message_explains_macro_time_requirement() {
-        let temp_root = fixture_root("missing-message");
-        std::fs::write(temp_root.join("Cargo.toml"), "[package]\nname = \"counter\"\n").unwrap();
-
-        let profiles = vec!["release".to_string(), "debug".to_string()];
-        let stems = vec!["counter".to_string(), "counter_component".to_string()];
-        let output_dirs = DependencyOutputDirs {
-            private: vec![
-                temp_root.join("target/miden/release"),
-                temp_root.join("target/miden/debug"),
-            ],
-            shared: Vec::new(),
-            ambient: Vec::new(),
-        };
-        let rejected = vec![(
-            temp_root.join("target/miden/debug/stray.masp"),
-            "package id 'stray'".to_string(),
-        )];
-
-        let message = missing_dependency_package_message(
-            "counter",
-            &temp_root,
-            &stems,
-            &output_dirs,
-            &profiles,
-            &rejected,
-        );
-
-        assert!(message.contains("could not find a built `.masp` package"));
-        assert!(message.contains("during Rust macro expansion"));
-        assert!(message.contains("embedded WIT and procedure roots"));
-        assert!(message.contains("counter.masp in release"));
-        assert!(message.contains("counter_component.masp in debug"));
-        assert!(message.contains("package id 'stray'"));
-        assert!(message.contains("cargo miden build --manifest-path"));
-        assert!(message.contains(&temp_root.display().to_string()));
 
         std::fs::remove_dir_all(temp_root).unwrap();
     }
