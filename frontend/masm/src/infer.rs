@@ -678,7 +678,7 @@ impl<'a> InferState<'a> {
             }
             HornerBase | HornerExt => self.constrain_top_n(16, Type::Felt, span),
             EvalCircuit => self.constrain_top_n(3, Type::Felt, span),
-            LogPrecompile => self.constrain_top_n(12, Type::Felt, span),
+            LogDeferred => self.constrain_top_n(12, Type::Felt, span),
             Exec(target) | Call(target) | SysCall(target) => self.invoke(target, span),
             DebugVar(_) => Ok(()),
             _ => unsupported_instruction(inst, span),

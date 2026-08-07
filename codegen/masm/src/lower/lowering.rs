@@ -1252,7 +1252,7 @@ impl_simple_hir_lowering!(hir::FriExt2Fold4 => fri_ext2fold4);
 impl_simple_hir_lowering!(hir::HornerBase => horner_base);
 impl_simple_hir_lowering!(hir::HornerExt => horner_ext);
 impl_simple_hir_lowering!(hir::EvalCircuit => eval_circuit);
-impl_simple_hir_lowering!(hir::LogPrecompile => log_precompile);
+impl_simple_hir_lowering!(hir::LogDeferred => log_deferred);
 impl_simple_hir_lowering!(hir::MemStream => mem_stream);
 impl_simple_hir_lowering!(hir::AdvicePipe => advice_pipe);
 

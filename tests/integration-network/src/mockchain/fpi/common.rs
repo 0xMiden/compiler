@@ -323,7 +323,7 @@ pub(super) fn execute_counter_caller_note(
     let mut builder = MockChain::builder();
     let counter_account = AccountBuilder::new([0_u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(counter_component)
         .build_existing()
@@ -366,11 +366,13 @@ pub(super) fn execute_counter_caller_note(
         expected_count,
     );
 
-    let tx_context_builder = chain
-        .build_tx_context(caller_account.clone(), &[caller_note.id()], &[])
-        .unwrap()
-        .foreign_accounts([chain.get_foreign_account_inputs(counter_account.id()).unwrap()]);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = chain
+        .build_transaction(caller_account.clone())
+        .authenticated_input_note(caller_note.id())
+        .foreign_accounts([chain.get_foreign_account_inputs(counter_account.id()).unwrap()])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mock_tx);
 
     assert_counter_storage_at_key(
         chain.committed_account(counter_account.id()).unwrap().storage(),

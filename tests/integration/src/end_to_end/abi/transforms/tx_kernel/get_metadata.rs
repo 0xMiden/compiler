@@ -50,7 +50,9 @@ end
     let package = test.compile_package();
 
     let mut exec = Executor::new(vec![]);
-    exec.with_package(miden_core_lib::CoreLibrary::default().package()).unwrap();
+    for package in miden_core_lib::CoreLibrary::default().packages() {
+        exec.with_package(package).unwrap();
+    }
 
     let _ = exec.execute(package, test.session.source_manager.clone());
     Ok(())

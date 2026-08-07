@@ -1,6 +1,6 @@
 use core::panic;
 
-use miden_core::advice::AdviceStackBuilder;
+use miden_core::advice::AdviceStack;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{
@@ -56,8 +56,8 @@ fn pipe_double_words_to_memory() {
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
             let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
-            let mut advice_builder = AdviceStackBuilder::new();
-            advice_builder.push_for_adv_pipe(&flat_felts);
+            let mut advice_builder = AdviceStack::new();
+            advice_builder.append_for_adv_pipe(&flat_felts);
             let advice_stack = advice_builder.into_elements();
 
             let args = [

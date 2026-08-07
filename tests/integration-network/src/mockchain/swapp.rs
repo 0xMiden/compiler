@@ -31,7 +31,7 @@ use miden_standards::{
     note::{P2idNote, P2idNoteStorage},
     testing::note::NoteBuilder,
 };
-use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder, TransactionContextBuilder};
+use miden_testing::{AccountState, Auth, MockChain, MockChainBuilder, MockTransaction};
 use midenc_expect_test::expect;
 use midenc_integration_test_support::testing::stripped_mast_size_str;
 
@@ -228,14 +228,10 @@ fn predict_remainder_note(
     Note::with_attachments(assets, metadata, recipient, aux_attachments(offered_out_aux))
 }
 
-/// Executes a transaction context, commits it in the next block, and returns the executed
+/// Executes a mock transaction, commits it in the next block, and returns the executed
 /// transaction for inspection.
-fn execute_and_commit(
-    chain: &mut MockChain,
-    tx_context_builder: TransactionContextBuilder,
-) -> ExecutedTransaction {
-    let tx_context = tx_context_builder.build().unwrap();
-    let executed_tx = block_on(tx_context.execute()).unwrap_or_else(|err| panic!("{err}"));
+fn execute_and_commit(chain: &mut MockChain, mock_tx: MockTransaction) -> ExecutedTransaction {
+    let executed_tx = block_on(mock_tx.execute()).unwrap_or_else(|err| panic!("{err}"));
 
     chain.add_pending_executed_transaction(&executed_tx).unwrap();
     chain.prove_next_block().unwrap();
@@ -313,10 +309,12 @@ fn swapp_note_full_fill_transfers_assets() {
     // Bob fills the swap completely with 25 ETH.
     let p2id_note = predict_routing_p2id_note(&swap_note, bob.id(), &terms, 25);
     let consume_builder = chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])
-        .unwrap()
+        .build_transaction(bob.id())
+        .authenticated_input_note(swap_note.id())
         .extend_note_args(BTreeMap::from([(swap_note.id(), swapp_note_args(25, 0))]))
-        .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())]);
+        .expected_output_notes(vec![RawOutputNote::Full(p2id_note.clone())])
+        .build()
+        .unwrap();
     let executed_tx = execute_and_commit(&mut chain, consume_builder);
 
     assert_eq!(
@@ -324,14 +322,18 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    expect!["11972"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["12042"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
     assert_no_fungible_asset(bob_account, eth_faucet.id());
 
     // Alice consumes the routing P2ID note and receives the requested 25 ETH.
-    let claim_builder = chain.build_tx_context(alice.id(), &[p2id_note.id()], &[]).unwrap();
+    let claim_builder = chain
+        .build_transaction(alice.id())
+        .authenticated_input_note(p2id_note.id())
+        .build()
+        .unwrap();
     execute_and_commit(&mut chain, claim_builder);
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
@@ -391,13 +393,15 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     );
 
     let consume_builder = chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])
-        .unwrap()
+        .build_transaction(bob.id())
+        .authenticated_input_note(swap_note.id())
         .extend_note_args(BTreeMap::from([(swap_note.id(), swapp_note_args(1, 0))]))
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(first_p2id_note.clone()),
             RawOutputNote::Full(remainder_note.clone()),
-        ]);
+        ])
+        .build()
+        .unwrap();
     let executed_tx = execute_and_commit(&mut chain, consume_builder);
 
     assert_eq!(
@@ -405,7 +409,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    expect!["16874"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["16979"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -415,10 +419,12 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
     let second_p2id_note =
         predict_routing_p2id_note(&remainder_note, bob.id(), &remainder_terms, 2);
     let consume_builder = chain
-        .build_tx_context(bob.id(), &[remainder_note.id()], &[])
-        .unwrap()
+        .build_transaction(bob.id())
+        .authenticated_input_note(remainder_note.id())
         .extend_note_args(BTreeMap::from([(remainder_note.id(), swapp_note_args(2, 0))]))
-        .extend_expected_output_notes(vec![RawOutputNote::Full(second_p2id_note.clone())]);
+        .expected_output_notes(vec![RawOutputNote::Full(second_p2id_note.clone())])
+        .build()
+        .unwrap();
     let executed_tx = execute_and_commit(&mut chain, consume_builder);
 
     assert_eq!(
@@ -433,7 +439,9 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
 
     // Alice consumes both P2ID routing notes and receives the requested 3 ETH in total.
     let claim_builder = chain
-        .build_tx_context(alice.id(), &[first_p2id_note.id(), second_p2id_note.id()], &[])
+        .build_transaction(alice.id())
+        .authenticated_input_notes([first_p2id_note.id(), second_p2id_note.id()])
+        .build()
         .unwrap();
     execute_and_commit(&mut chain, claim_builder);
 
@@ -471,14 +479,18 @@ fn swapp_note_creator_reclaims_offered_asset() {
     let mut chain = builder.build().unwrap();
 
     // Alice reclaims her own swap note; no note args are needed.
-    let reclaim_builder = chain.build_tx_context(alice.id(), &[swap_note.id()], &[]).unwrap();
+    let reclaim_builder = chain
+        .build_transaction(alice.id())
+        .authenticated_input_note(swap_note.id())
+        .build()
+        .unwrap();
     let executed_tx = execute_and_commit(&mut chain, reclaim_builder);
 
     assert!(
         output_note_ids(&executed_tx).is_empty(),
         "reclaiming the swap note must not create any output notes"
     );
-    expect!["5046"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["5069"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);
@@ -542,16 +554,18 @@ fn swapp_note_inflight_cross_swap_without_capital() {
         predict_routing_p2id_note(&charlie_swap_note, bob.id(), &charlie_terms, 25);
 
     let consume_builder = chain
-        .build_tx_context(bob.id(), &[alice_swap_note.id(), charlie_swap_note.id()], &[])
-        .unwrap()
+        .build_transaction(bob.id())
+        .authenticated_input_notes([alice_swap_note.id(), charlie_swap_note.id()])
         .extend_note_args(BTreeMap::from([
             (alice_swap_note.id(), swapp_note_args(0, 50)),
             (charlie_swap_note.id(), swapp_note_args(0, 25)),
         ]))
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(alice_p2id_note.clone()),
             RawOutputNote::Full(charlie_p2id_note.clone()),
-        ]);
+        ])
+        .build()
+        .unwrap();
     let executed_tx = execute_and_commit(&mut chain, consume_builder);
 
     assert_eq!(
@@ -566,10 +580,17 @@ fn swapp_note_inflight_cross_swap_without_capital() {
     assert_no_fungible_asset(bob_account, eth_faucet.id());
 
     // Both creators consume their P2ID routing notes.
-    let claim_builder = chain.build_tx_context(alice.id(), &[alice_p2id_note.id()], &[]).unwrap();
+    let claim_builder = chain
+        .build_transaction(alice.id())
+        .authenticated_input_note(alice_p2id_note.id())
+        .build()
+        .unwrap();
     execute_and_commit(&mut chain, claim_builder);
-    let claim_builder =
-        chain.build_tx_context(charlie.id(), &[charlie_p2id_note.id()], &[]).unwrap();
+    let claim_builder = chain
+        .build_transaction(charlie.id())
+        .authenticated_input_note(charlie_p2id_note.id())
+        .build()
+        .unwrap();
     execute_and_commit(&mut chain, claim_builder);
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
@@ -615,14 +636,14 @@ fn assert_swapp_fill_fails(
 
     let chain = builder.build().unwrap();
 
-    let tx_context = chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])
-        .unwrap()
+    let mock_tx = chain
+        .build_transaction(bob.id())
+        .authenticated_input_note(swap_note.id())
         .extend_note_args(BTreeMap::from([(swap_note.id(), note_args)]))
         .build()
         .unwrap();
 
-    let result = block_on(tx_context.execute());
+    let result = block_on(mock_tx.execute());
     assert!(result.is_err(), "{context}");
 }
 
@@ -736,13 +757,15 @@ fn swapp_note_private_partial_fill_creates_private_notes() {
     );
 
     let consume_builder = chain
-        .build_tx_context(bob.id(), &[swap_note.id()], &[])
-        .unwrap()
+        .build_transaction(bob.id())
+        .authenticated_input_note(swap_note.id())
         .extend_note_args(BTreeMap::from([(swap_note.id(), swapp_note_args(1, 0))]))
-        .extend_expected_output_notes(vec![
+        .expected_output_notes(vec![
             RawOutputNote::Full(p2id_note.clone()),
             RawOutputNote::Full(remainder_note.clone()),
-        ]);
+        ])
+        .build()
+        .unwrap();
     let executed_tx = execute_and_commit(&mut chain, consume_builder);
 
     assert_eq!(
@@ -765,7 +788,9 @@ fn swapp_note_private_partial_fill_creates_private_notes() {
     // Alice claims the private P2ID payback note. The mock chain only tracks the private
     // note's header, so the full note details are provided as an unauthenticated input note.
     let claim_builder = chain
-        .build_tx_context(alice.id(), &[], std::slice::from_ref(&p2id_note))
+        .build_transaction(alice.id())
+        .unauthenticated_input_note(p2id_note.clone())
+        .build()
         .unwrap();
     execute_and_commit(&mut chain, claim_builder);
 

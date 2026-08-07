@@ -43,9 +43,9 @@ impl OpEmitter<'_> {
         self.felt_stack_transform(masm::Instruction::EvalCircuit, 3, 3, "crypto", span);
     }
 
-    /// Log a precompile event into the VM precompile transcript.
-    pub fn log_precompile(&mut self, span: SourceSpan) {
-        self.felt_stack_transform(masm::Instruction::LogPrecompile, 12, 12, "crypto", span);
+    /// Log a deferred precompile computation request.
+    pub fn log_deferred(&mut self, span: SourceSpan) {
+        self.felt_stack_transform(masm::Instruction::LogDeferred, 12, 12, "crypto", span);
     }
 }
 
@@ -171,8 +171,8 @@ mod tests {
         assert_transform(masm::Instruction::EvalCircuit, 3, 3, |emitter, span| {
             emitter.eval_circuit(span);
         });
-        assert_transform(masm::Instruction::LogPrecompile, 12, 12, |emitter, span| {
-            emitter.log_precompile(span);
+        assert_transform(masm::Instruction::LogDeferred, 12, 12, |emitter, span| {
+            emitter.log_deferred(span);
         });
     }
 }

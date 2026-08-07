@@ -46,7 +46,7 @@ fn get_id_component_coexists_with_active_account_builtin() {
     // A second account carrying the same component, reached from the note through FPI.
     let foreign_account = AccountBuilder::new([0_u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(foreign_component)
         .build_existing()
@@ -88,11 +88,13 @@ fn get_id_component_coexists_with_active_account_builtin() {
 
     // The note asserts all three `get_id` results internally; a wrong resolution fails the tx.
     let foreign_account_inputs = chain.get_foreign_account_inputs(foreign_account.id()).unwrap();
-    let tx_context_builder = chain
-        .build_tx_context(account.clone(), &[note.id()], &[])
-        .unwrap()
-        .foreign_accounts([foreign_account_inputs]);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(note.id())
+        .foreign_accounts([foreign_account_inputs])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mock_tx);
 }
 
 /// Account component whose `get_id` method deliberately collides with the `ActiveAccount` built-in.

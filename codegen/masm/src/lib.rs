@@ -196,7 +196,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::HornerBase, dyn HirLowering>();
     info.register_operation_trait::<hir::HornerExt, dyn HirLowering>();
     info.register_operation_trait::<hir::EvalCircuit, dyn HirLowering>();
-    info.register_operation_trait::<hir::LogPrecompile, dyn HirLowering>();
+    info.register_operation_trait::<hir::LogDeferred, dyn HirLowering>();
     info.register_operation_trait::<hir::MemStream, dyn HirLowering>();
     info.register_operation_trait::<hir::MemGrow, dyn HirLowering>();
     info.register_operation_trait::<hir::MemSize, dyn HirLowering>();

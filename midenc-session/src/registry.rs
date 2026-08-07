@@ -98,6 +98,16 @@ impl HybridPackageRegistry {
             }
         }
 
+        // The core library package depends on the `miden-precompiles` package, so make the
+        // bundled copy available for dependency resolution unless the local registry already
+        // provides one.
+        let precompiles = miden_core_lib::CoreLibrary::default().precompiles_package();
+        match registry.install_if_missing(precompiles) {
+            Ok(_) => (),
+            Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }) => (),
+            Err(err) => return Err(Report::msg(err.to_string())),
+        }
+
         Ok(registry)
     }
 

@@ -5,7 +5,9 @@ use miden_assembly_syntax::{ast::ModuleKind, debuginfo::Uri};
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::Package;
 use miden_processor::{
-    DefaultHost, ExecutionOptions, Felt, StackInputs, advice::AdviceInputs, execute_sync,
+    DefaultHost, ExecutionOptions, Felt, StackInputs,
+    advice::{AdviceInputs, AdviceStack},
+    execute_sync,
 };
 use midenc_codegen_masm::{ToMasmComponent, intrinsics};
 use midenc_frontend_masm::{DisassemblerConfig, disassemble_source};
@@ -240,6 +242,8 @@ fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
     Assembler::new(source_manager)
         .with_package(core_library.package(), miden_project::Linkage::Dynamic)
         .expect("failed to link core library")
+        .with_package(core_library.precompiles_package(), miden_project::Linkage::Dynamic)
+        .expect("failed to link precompiles library")
         .with_package(library, miden_project::Linkage::Static)
         .expect("original MASM library should link")
         .assemble_program(
@@ -276,6 +280,9 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
         .link_package(core_library.package(), miden_project::Linkage::Dynamic)
         .expect("core library should link");
     assembler
+        .link_package(core_library.precompiles_package(), miden_project::Linkage::Dynamic)
+        .expect("precompiles library should link");
+    assembler
         .link_package(intrinsics::load(), miden_project::Linkage::Static)
         .expect("intrinsics should link");
     // The namespace is absolutized because that is what a real target's is. `Target::library` does
@@ -310,6 +317,8 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
     Assembler::new(source_manager)
         .with_package(core_library.package(), miden_project::Linkage::Dynamic)
         .expect("Miden core library should link")
+        .with_package(core_library.precompiles_package(), miden_project::Linkage::Dynamic)
+        .expect("Miden precompiles library should link")
         .with_package(library, miden_project::Linkage::Static)
         .expect("round-tripped MASM library should link")
         .assemble_program(
@@ -347,12 +356,14 @@ fn execute_program(
     num_outputs: usize,
 ) -> Vec<Felt> {
     let stack_inputs = StackInputs::new(inputs).expect("test inputs should fit on VM stack");
-    let advice_inputs = AdviceInputs::default()
-        .with_stack_values(advice.iter().copied())
+    let advice_stack = AdviceStack::try_from_values(advice.iter().copied())
         .expect("test advice inputs should fit on VM advice stack");
+    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
     let mut host = DefaultHost::default();
     let core_lib = CoreLibrary::default();
-    host.load_library(core_lib.package()).expect("failed to load core library");
+    for package in core_lib.packages() {
+        host.load_library(package).expect("failed to load core library");
+    }
     for (event, handler) in core_lib.handlers() {
         host.register_handler(event, handler)
             .expect("could not register core library event handler");

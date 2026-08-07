@@ -1470,7 +1470,7 @@ impl<'a> ProcedureLifter<'a> {
             HornerBase => self.horner_base(span, builder),
             HornerExt => self.horner_ext(span, builder),
             EvalCircuit => self.eval_circuit(span, builder),
-            LogPrecompile => self.log_precompile(span, builder),
+            LogDeferred => self.log_deferred(span, builder),
             Exec(target) => self.invoke(builder, target, span, ast::InvokeKind::Exec),
             Call(target) => self.invoke(builder, target, span, ast::InvokeKind::Call),
             SysCall(target) => self.invoke(builder, target, span, ast::InvokeKind::SysCall),
@@ -2429,13 +2429,13 @@ impl<'a> ProcedureLifter<'a> {
         Ok(())
     }
 
-    fn log_precompile(
+    fn log_deferred(
         &mut self,
         span: SourceSpan,
         builder: &mut FunctionBuilder<'_, OpBuilder>,
     ) -> Result<()> {
         let operands = self.pop_cast_felt_window(12, span, builder)?;
-        let results = builder.log_precompile(operands, span)?;
+        let results = builder.log_deferred(operands, span)?;
         self.push_results_top_to_bottom(results, span);
         Ok(())
     }

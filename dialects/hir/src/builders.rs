@@ -477,8 +477,8 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op_results!(op))
     }
 
-    /// Log a precompile event into the VM precompile transcript.
-    fn log_precompile<A>(
+    /// Log a deferred precompile computation request.
+    fn log_deferred<A>(
         &mut self,
         stack: A,
         span: SourceSpan,
@@ -486,7 +486,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     where
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::LogPrecompile, (A,)>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::LogDeferred, (A,)>(span);
         let op = op_builder(stack)?;
         Ok(op_results!(op))
     }
