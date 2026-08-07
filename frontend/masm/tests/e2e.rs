@@ -69,6 +69,19 @@ end
 }
 
 #[test]
+fn e2e_roundtrip_exp_u32() {
+    let source = r#"
+pub proc entry(base: felt, exponent: u32) -> felt
+    exp.u32
+end
+"#;
+    assert_roundtrip_outputs(source, &[3, 5], 1);
+
+    let emitted = render_roundtripped_masm(source, e2e_context());
+    assert!(emitted.contains("exp.u32"), "{emitted}");
+}
+
+#[test]
 fn e2e_roundtrip_word_immediate_order() {
     assert_roundtrip_outputs(
         r#"
@@ -312,6 +325,19 @@ end
         )
         .map(Arc::from)
         .expect("round-tripped MASM program should assemble")
+}
+
+fn render_roundtripped_masm(source: &str, context: Rc<Context>) -> String {
+    let disassembled =
+        disassemble_source(source, "test", &DisassemblerConfig::default(), context.clone())
+            .expect("MASM should disassemble to HIR");
+    let analysis_manager = AnalysisManager::new(disassembled.world.as_operation_ref(), None);
+    disassembled
+        .world
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("HIR should lower back to MASM")
+        .to_string()
 }
 
 fn execute_program(

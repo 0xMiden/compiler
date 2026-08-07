@@ -8,15 +8,18 @@ use std::{
 };
 
 use miden_assembly::{
-    Assembler,
+    Assembler, ProjectSourceInputs,
     ast::ItemIndex,
     linker::{Linker, SymbolItem},
 };
-use miden_assembly_syntax::ast::{self, Instruction};
+use miden_assembly_syntax::{
+    ast::{self, Instruction},
+    debuginfo::SourceSpan,
+};
 use miden_package_registry::{
     NoPackageStore, PackageId, PackageRecord, PackageRegistry, PackageVersions, Version,
 };
-use miden_project::ProjectDependencyGraphBuilder;
+use miden_project::{Project, ProjectDependencyGraphBuilder};
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
 use midenc_dialect_hir::{
@@ -29,7 +32,7 @@ use midenc_dialect_hir::{
 use midenc_dialect_scf as scf;
 use midenc_hir::{
     AddressSpace, ArrayType, CallConv, CallOpInterface, FunctionType, Immediate, Op, PointerType,
-    SymbolName, SymbolPath, SymbolTable, Type,
+    Spanned, SymbolName, SymbolPath, SymbolTable, Type,
     diagnostics::{Report, Severity},
     dialects::builtin::{
         self, Function, UnrealizedConversionCast,
@@ -38,6 +41,7 @@ use midenc_hir::{
     effects::AdviceEffect,
     pass::AnalysisManager,
 };
+use midenc_hir_analysis::DataFlowConfig;
 
 use super::*;
 use crate::semantics::{
@@ -347,6 +351,7 @@ fn supported_instruction_matrix_lifts() {
         felt_instruction_case("incr", 1, 1, "add.1"),
         felt_instruction_case("pow2", 1, 1, "pow2"),
         felt_instruction_case("exp", 2, 1, "exp"),
+        instruction_case("exp_u32", &["felt", "u32"], &["felt"], "exp.u32"),
         felt_instruction_case("exp_imm", 1, 1, "exp.2"),
         instruction_case("not", &["i1"], &["i1"], "not"),
         instruction_case("and", &["i1", "i1"], &["i1"], "and"),
@@ -950,7 +955,7 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
     let cases = [
         unsupported_instruction_case("dynexec", 0, "dynexec"),
         unsupported_instruction_case("dyncall", 0, "dyncall"),
-        unsupported_instruction_case("exp_bit_length", 2, "exp.u32"),
+        unsupported_instruction_case("exp_u8", 0, "exp.u8"),
     ];
 
     for case in &cases {
@@ -960,9 +965,9 @@ fn unsupported_instruction_matrix_reports_diagnostics() {
 
 #[test]
 fn instruction_inventory_classifies_all_masm_instruction_variants() {
-    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 237);
+    assert_eq!(LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT, 238);
     assert_eq!(INFER_ONLY_INSTRUCTION_VARIANT_COUNT, 1);
-    assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 3);
+    assert_eq!(UNSUPPORTED_INSTRUCTION_VARIANT_COUNT, 2);
     assert_eq!(
         LIFT_AND_INFER_INSTRUCTION_VARIANT_COUNT
             + INFER_ONLY_INSTRUCTION_VARIANT_COUNT
@@ -975,6 +980,14 @@ fn instruction_inventory_classifies_all_masm_instruction_variants() {
             miden_assembly_syntax::ast::InvocationTarget::Symbol("foo".parse().unwrap())
         )),
         InstructionSemantics::InferOnly
+    );
+    assert_eq!(
+        instruction_semantics(&Instruction::ExpBitLength(32)),
+        InstructionSemantics::LiftAndInfer
+    );
+    assert_eq!(
+        instruction_semantics(&Instruction::ExpBitLength(8)),
+        InstructionSemantics::Unsupported
     );
 }
 
@@ -2168,10 +2181,66 @@ end
 
     Ok(())
 }
+#[test]
+fn known_signature_array_alias_preserves_first_class_stack_value() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub type Caller = [felt; 4]
+
+pub proc get_caller() -> Caller
+    caller
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let signature = find_function(output.module, "get_caller").borrow().get_signature().clone();
+    assert_eq!(signature.params().len(), 0);
+    assert_eq!(signature.results().len(), 1);
+    assert_eq!(signature.results()[0].ty, Type::from(ArrayType::new(Type::Felt, 4)));
+
+    Ok(())
+}
 
 #[test]
-fn project_disassembly_uses_source_dependency_signatures() -> Result<()> {
-    let (root, app_dir) = write_source_dependency_project("midenc_frontend_masm_source_dep");
+fn external_hir_array_signature_preserves_first_class_stack_value() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let array = Type::from(ArrayType::new(Type::Felt, 4));
+    let mut external_signatures = ExternalSignatureMap::new();
+    external_signatures
+        .insert(ast::Path::new("::dep::api::callee").into(), masm_signature([], [array.clone()]));
+
+    let output = disassemble_source_with_external_signatures(
+        r#"
+pub type Caller = [felt; 4]
+
+pub proc entry() -> Caller
+    exec.::dep::api::callee
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        &external_signatures,
+        context,
+    )?;
+
+    let dep_api = find_world_module(output.world, "dep::api");
+    let callee = find_function(dep_api, "callee");
+    let signature = callee.borrow().get_signature().clone();
+    assert_eq!(signature.params().len(), 0);
+    assert_eq!(signature.results().len(), 1);
+    assert_eq!(signature.results()[0].ty, array);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_uses_source_dependency_module_index_metadata() -> Result<()> {
+    let (root, app_dir) =
+        write_source_dependency_module_index_project("midenc_frontend_masm_source_dep_index");
 
     let context = Rc::new(Context::default());
     let output = disassemble_project_target_from_path(
@@ -2217,6 +2286,301 @@ fn project_disassembly_loads_support_modules_into_world_tree() -> Result<()> {
     assert!(
         callee.borrow().as_symbol_operation().nearest_parent_op::<builtin::Module>()
             == Some(support)
+    );
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_accepts_module_index_roots() -> Result<()> {
+    let (root, app_dir) = write_module_index_project("midenc_frontend_masm_module_index");
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target_from_path(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let child = find_world_module(output.world, "app::child");
+    let leaf = find_world_module(output.world, "app::child::leaf");
+    let child_function = find_function(child, "double");
+    let signature = child_function.borrow().get_signature().clone();
+    assert_eq!(signature.params().len(), 1);
+    assert_eq!(signature.params()[0].ty, Type::Felt);
+    assert_eq!(signature.results().len(), 1);
+    assert_eq!(signature.results()[0].ty, Type::Felt);
+
+    let function = find_function(leaf, "inc");
+    let signature = function.borrow().get_signature().clone();
+    assert_eq!(signature.params().len(), 1);
+    assert_eq!(signature.params()[0].ty, Type::Felt);
+    assert_eq!(signature.results().len(), 1);
+    assert_eq!(signature.results()[0].ty, Type::Felt);
+    assert!(child.borrow().get(SymbolName::intern("leaf")).is_some());
+
+    let entry_block = child_function.borrow().entry_block();
+    let entry_block = entry_block.borrow();
+    let mut callee = None;
+    for op in entry_block.body().iter() {
+        if let Some(op) = op.as_trait::<dyn CallOpInterface>() {
+            callee = Some(op.resolve().expect("re-exported leaf callee should resolve"));
+            break;
+        }
+    }
+    let callee = callee.expect("child::double should call through the public re-export");
+    assert_eq!(callee.borrow().name().as_str(), "inc");
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_preserves_module_index_source_spans() -> Result<()> {
+    let (root, app_dir) =
+        write_private_child_module_index_project("midenc_frontend_masm_module_index_spans");
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target_from_path_for_lint(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let function = find_function(output.module, "call_secret");
+    let entry_block = function.borrow().entry_block();
+    let op_span = {
+        let entry_block = entry_block.borrow();
+        entry_block
+            .body()
+            .iter()
+            .next()
+            .expect("call_secret should contain a lifted operation")
+            .span()
+    };
+    let source_manager = output.context.session().source_manager.clone();
+    let loc = source_manager
+        .file_line_col(op_span)
+        .map_err(|err| Report::msg(err.to_string()))?;
+    assert!(loc.uri.to_string().ends_with("mod.masm"));
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_accepts_private_child_module_declaration() -> Result<()> {
+    let (root, app_dir) =
+        write_private_child_module_index_project("midenc_frontend_masm_private_child_index");
+
+    let context = Rc::new(Context::default());
+    let output = disassemble_project_target_from_path(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let function = find_function(output.module, "call_secret");
+    assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn lint_project_disassembly_with_preparsed_sources_does_not_read_target_path() -> Result<()> {
+    let root = temp_project_dir("midenc_frontend_masm_lint_preparsed_index");
+    let app_dir = root.join("app");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "missing.masm"
+"#,
+    )
+    .unwrap();
+    let context = Rc::new(Context::default());
+    let manifest_path = app_dir.join("miden-project.toml");
+    let registry = NoPackageStore;
+    let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+        .with_source_manager(context.session().source_manager.clone())
+        .build_from_path(&manifest_path)?;
+    let app = parse_test_module_with_path(
+        r#"
+pub proc entry() -> felt
+    push.7
+end
+"#,
+        "app",
+        &context,
+    )?;
+    let output = disassemble_project_target_for_lint(
+        ProjectSourceInputs {
+            root: app,
+            support: vec![],
+        },
+        &dependency_graph,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "entry");
+    assert!(output.skipped_procedures.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn lint_project_disassembly_with_preparsed_sources_uses_transitive_dependencies() -> Result<()> {
+    let (root, app_dir) =
+        write_transitive_source_dependency_project("midenc_frontend_masm_lint_transitive_dep");
+    let context = Rc::new(Context::default());
+    let registry = NoPackageStore;
+    let dependency_graph = ProjectDependencyGraphBuilder::new(&registry)
+        .with_source_manager(context.session().source_manager.clone())
+        .build_from_path(app_dir.join("miden-project.toml"))?;
+    let app = parse_test_module_with_path(
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+        "app",
+        &context,
+    )?;
+
+    let output = disassemble_project_target_for_lint(
+        ProjectSourceInputs {
+            root: app,
+            support: vec![],
+        },
+        &dependency_graph,
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let entry = find_function(output.module, "entry");
+    assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(entry), 1);
+    let dep = find_world_module(output.world, "dep");
+    let callee = find_function(dep, "callee");
+    assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(callee), 1);
+    let transitive = find_world_module(output.world, "transitive");
+    let _ = find_function(transitive, "callee");
+    assert!(output.skipped_procedures.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn lint_project_disassembly_with_resolved_input_keeps_module_index_metadata() -> Result<()> {
+    let (root, app_dir) =
+        write_private_child_module_index_project("midenc_frontend_masm_lint_resolved_index");
+
+    let context = Rc::new(Context::default());
+    let manifest_path = app_dir.join("miden-project.toml");
+    let project = Project::load(&manifest_path, &context.session().source_manager)?;
+    let target = project::resolve_project_target(&project, None, &context)?;
+    let output =
+        disassemble_project_target_input_for_lint(target, &DisassemblerConfig::default(), context)?;
+
+    let function = find_function(output.module, "call_secret");
+    assert_eq!(top_level_op_count::<midenc_dialect_hir::Exec>(function), 1);
+    assert!(output.skipped_procedures.is_empty());
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_does_not_fallback_to_undeclared_child_procedure() -> Result<()> {
+    let (root, app_dir) =
+        write_undeclared_child_module_index_project("midenc_frontend_masm_undeclared_child_index");
+
+    let context = Rc::new(Context::default());
+    let err = match disassemble_project_target_from_path(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    ) {
+        Ok(_) => panic!("undeclared child procedure should not resolve through fallback"),
+        Err(err) => err,
+    };
+
+    let message = err.to_string();
+    assert!(message.contains("leaf::secret"));
+    assert!(
+        message.contains("failed to resolve")
+            || message.contains("could not resolve")
+            || message.contains("invalid relative item path"),
+        "{message}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+
+    Ok(())
+}
+
+#[test]
+fn project_disassembly_does_not_strip_invalid_module_declarations() -> Result<()> {
+    let root = temp_project_dir("midenc_frontend_masm_invalid_module_declaration");
+    let app_dir = root.join("app");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "mod.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("mod.masm"),
+        r#"
+mod child::
+
+pub proc entry() -> felt
+    push.1
+end
+"#,
+    )
+    .unwrap();
+
+    let context = Rc::new(Context::default());
+    let err = match disassemble_project_target_from_path(
+        app_dir.join("miden-project.toml"),
+        None,
+        &DisassemblerConfig::default(),
+        context,
+    ) {
+        Ok(_) => panic!("invalid module declaration should be reported by the parser"),
+        Err(err) => err,
+    };
+
+    let message = err.to_string();
+    assert!(
+        message.contains("invalid syntax") || message.contains("syntax error"),
+        "{message}"
     );
 
     let _ = fs::remove_dir_all(root);
@@ -2894,6 +3258,24 @@ end
 
     let findings = advice_taint_findings(output.module)?;
     assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_raw_advice_used_by_exp_u32_exponent() -> Result<()> {
+    let findings = advice_taint_findings_for_source(
+        r#"
+pub proc entry() -> felt
+    push.3
+    adv_push
+    exp.u32
+end
+"#,
+    )?;
+
+    assert_eq!(sink_names(&findings), ["arith.exp"]);
     assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
 
     Ok(())
@@ -3737,6 +4119,114 @@ end
 }
 
 #[test]
+fn advice_taint_handles_duplicate_call_return_values() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc duplicate(value: u32) -> (u32, u32)
+    dup
+end
+
+pub proc entry(rhs: u32) -> u32
+    adv_push
+    exec.duplicate
+    drop
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_reports_worklist_budget_exhaustion() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc duplicate(value: u32) -> (u32, u32)
+    dup
+end
+
+pub proc entry(rhs: u32) -> u32
+    adv_push
+    exec.duplicate
+    drop
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let mut config = DataFlowConfig::new();
+    config.set_interprocedural(true).set_max_worklist_iterations(Some(0));
+    let module = output.module.borrow();
+    let err =
+        match AdviceTaintAnalysis::run_with_config(module.as_operation(), analysis_manager, config)
+        {
+            Ok(_) => panic!("expected advice taint analysis to report worklist budget exhaustion"),
+            Err(err) => err,
+        };
+
+    let err = err.to_string();
+    assert!(err.contains("dataflow solver exceeded worklist iteration budget"));
+    assert!(err.contains("queued analyses:"));
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_partial_run_reports_budget_exhaustion() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+proc duplicate(value: u32) -> (u32, u32)
+    dup
+end
+
+pub proc entry(rhs: u32) -> u32
+    adv_push
+    exec.duplicate
+    drop
+    u32wrapping_add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let analysis_manager = AnalysisManager::new(output.module.as_operation_ref(), None);
+    let mut config = DataFlowConfig::new();
+    config.set_interprocedural(true).set_max_worklist_iterations(Some(0));
+    let module = output.module.borrow();
+    let result = AdviceTaintAnalysis::run_with_config_allow_partial(
+        module.as_operation(),
+        analysis_manager,
+        config,
+    )?;
+
+    let reason = result
+        .incomplete_reason
+        .expect("expected partial advice taint analysis to report budget exhaustion");
+    assert!(reason.contains("dataflow solver exceeded worklist iteration budget"));
+    assert!(reason.contains("queued analyses:"));
+    let source_manager = output.world.borrow().as_operation().context().source_manager();
+    let _ = result.analysis.diagnostics(&source_manager);
+
+    Ok(())
+}
+
+#[test]
 fn advice_taint_keeps_nested_passthrough_call_results_call_site_specific() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source(
@@ -4081,6 +4571,34 @@ end
             "unconstrained value returns from a call here",
         ]
     );
+
+    Ok(())
+}
+
+#[test]
+fn advice_taint_deduplicates_public_return_origins_for_same_result() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source(
+        r#"
+pub proc entry() -> felt
+    adv_push
+    adv_push
+    add
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let exits = advice_taint_exit_findings(output.module)?;
+    assert_eq!(exits.len(), 1, "{exits:#?}");
+    assert_eq!(exits[0].function.as_str(), "entry");
+    assert_eq!(exits[0].result_index, 0);
+    assert_eq!(exits[0].origin.kind, AdviceTaintOriginKind::Advice);
+
+    let diagnostics = advice_taint_diagnostics(output.module)?;
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:#?}");
 
     Ok(())
 }
@@ -4770,6 +5288,736 @@ end
 }
 
 #[test]
+fn strict_disassembly_still_errors_on_lint_branch_depth_fixture() {
+    let context = Rc::new(Context::default());
+    let result = disassemble_source(
+        r#"
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    );
+    let err = match result {
+        Ok(_) => panic!("expected strict disassembly to reject mismatched branch stack depths"),
+        Err(err) => err,
+    };
+
+    assert!(err.to_string().contains("if branches leave different inferred stack depths"));
+}
+
+#[test]
+fn lint_disassembly_skips_branch_depth_mismatch_procedure() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good
+    push.1
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert_ne!(skipped.span, SourceSpan::UNKNOWN);
+    assert!(skipped.reason.contains("if branches leave different inferred stack depths"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_unsupported_do_while_procedure() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good
+    push.1
+end
+
+pub proc bad
+    do
+        push.1
+        dup.0
+        neq.0
+    while
+        dup.0
+        lt.10
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert_ne!(skipped.span, SourceSpan::UNKNOWN);
+    assert!(skipped.reason.contains("do-while control flow is not supported"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_known_signature_stack_shape_mismatch() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc bad(cond: i1) -> felt
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert!(skipped.reason.contains("if branches leave different inferred stack depths"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_single_module_skips_missing_external_after_core_metadata_prescan() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc bad(value: felt) -> felt
+    exec.::dep::missing
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert!(skipped.reason.contains("::dep::missing"));
+    assert!(skipped.reason.contains("signature metadata is missing"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_unresolved_relative_invoke_during_signature_prescan() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc bad(value: felt) -> felt
+    exec.missing::callee
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert!(skipped.reason.contains("signature metadata pre-scan"));
+    assert!(skipped.reason.contains("missing::callee"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_signature_prescan_propagates_immediate_skip_reasons_through_call_chain() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc p0(value: felt) -> felt
+    exec.p1
+end
+
+pub proc p1(value: felt) -> felt
+    exec.p2
+end
+
+pub proc p2(value: felt) -> felt
+    exec.p3
+    exec.p3
+end
+
+pub proc p3(value: felt) -> felt
+    exec.p4
+end
+
+pub proc p4(value: felt) -> felt
+    exec.p5
+end
+
+pub proc p5(value: felt) -> felt
+    exec.::dep::missing
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert_eq!(output.skipped_procedures.len(), 6);
+    for index in 0..5 {
+        let path = format!("::test::p{index}");
+        let skipped = output
+            .skipped_procedures
+            .iter()
+            .find(|skipped| skipped.path.as_str() == path)
+            .unwrap_or_else(|| panic!("expected {path} to be skipped"));
+        assert_eq!(
+            skipped.reason,
+            format!("depends on skipped procedure '::test::p{}'", index + 1)
+        );
+    }
+    let terminal = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::p5")
+        .expect("expected terminal procedure to be skipped");
+    assert!(terminal.reason.contains("::dep::missing"));
+    assert!(terminal.reason.contains("signature metadata is missing"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_signature_prescan_uses_deterministic_skip_reason_precedence() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc own_missing(value: felt) -> felt
+    exec.skipped_b
+    exec.::dep::own_missing
+end
+
+pub proc choose_callee(value: felt) -> felt
+    exec.skipped_b
+    exec.skipped_a
+end
+
+pub proc skipped_a(value: felt) -> felt
+    exec.::dep::missing_a
+end
+
+pub proc skipped_b(value: felt) -> felt
+    exec.::dep::missing_b
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    assert_eq!(output.skipped_procedures.len(), 4);
+    let own_missing = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::own_missing")
+        .expect("expected own_missing to be skipped");
+    assert!(own_missing.reason.contains("::dep::own_missing"));
+
+    let choose_callee = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::choose_callee")
+        .expect("expected choose_callee to be skipped");
+    assert_eq!(choose_callee.reason, "depends on skipped procedure '::test::skipped_b'");
+
+    Ok(())
+}
+
+#[test]
+fn lint_signature_prescan_preserves_direct_root_error_in_seeded_cycle() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc cycle_a(value: felt) -> felt
+    exec.cycle_b
+end
+
+pub proc cycle_b(value: felt) -> felt
+    exec.cycle_a
+    exec.::dep::cycle_root
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    assert_eq!(output.skipped_procedures.len(), 2);
+    let cycle_a = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::cycle_a")
+        .expect("expected cycle_a to be skipped");
+    assert_eq!(cycle_a.reason, "depends on skipped procedure '::test::cycle_b'");
+    let cycle_b = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::cycle_b")
+        .expect("expected cycle_b to be skipped");
+    assert!(cycle_b.reason.contains("::dep::cycle_root"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_declared_signature_body_arity_drift() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc bad() -> felt
+    push.1
+    push.2
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::bad");
+    assert!(skipped.reason.contains("declared signature"));
+    assert!(skipped.reason.contains("extra value"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_keeps_declared_pass_through_signature() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc id(value: felt) -> felt
+    nop
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let signature = find_function(output.module, "id").borrow().get_signature().clone();
+    assert_eq!(signature.params().len(), 1);
+    assert_eq!(signature.params()[0].ty, Type::Felt);
+    assert_eq!(signature.results().len(), 1);
+    assert_eq!(signature.results()[0].ty, Type::Felt);
+    assert!(output.skipped_procedures.is_empty());
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_callers_of_skipped_procedures() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good
+    push.1
+end
+
+pub proc caller
+    exec.bad
+end
+
+pub proc outer
+    exec.caller
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "bad"));
+    assert!(!module_has_function(output.module, "caller"));
+    assert!(!module_has_function(output.module, "outer"));
+
+    let bad = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::bad")
+        .expect("expected bad procedure to be skipped");
+    assert!(bad.reason.contains("if branches leave different inferred stack depths"));
+
+    let caller = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::caller")
+        .expect("expected caller procedure to be skipped");
+    assert_eq!(caller.reason, "depends on skipped procedure '::test::bad'");
+
+    let outer = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::outer")
+        .expect("expected outer procedure to be skipped");
+    assert_eq!(outer.reason, "depends on skipped procedure '::test::caller'");
+
+    Ok(())
+}
+
+#[test]
+fn lint_advice_taint_reports_findings_when_other_procedures_are_skipped() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc entry() -> u32
+    adv_push
+    push.1
+    u32wrapping_add
+end
+
+pub proc bad
+    push.1
+    if.true
+        push.1
+    else
+        push.1
+        push.2
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    assert!(module_has_function(output.module, "entry"));
+    assert!(!module_has_function(output.module, "bad"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    assert_eq!(output.skipped_procedures[0].path.as_str(), "::test::bad");
+
+    let findings = advice_taint_findings(output.module)?;
+    assert_eq!(sink_names(&findings), ["arith.add"]);
+    assert_eq!(findings[0].function.map(|name| name.as_str()), Some("entry"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_unsupported_dynamic_invocation() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc dynamic(value: felt) -> felt
+    dynexec
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "dynamic"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::dynamic");
+    assert_ne!(skipped.span, SourceSpan::UNKNOWN);
+    assert!(skipped.reason.contains("DynExec"));
+    assert!(skipped.reason.contains("not supported during disassembly"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_unsupported_exp_bit_length() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc exp_u8(base: felt, exponent: u32) -> felt
+    exp.u8
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "exp_u8"));
+    assert_eq!(output.skipped_procedures.len(), 1);
+    let skipped = &output.skipped_procedures[0];
+    assert_eq!(skipped.path.as_str(), "::test::exp_u8");
+    assert_ne!(skipped.span, SourceSpan::UNKNOWN);
+    assert!(skipped.reason.contains("ExpBitLength(8)"));
+    assert!(skipped.reason.contains("not supported during disassembly"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_infer_only_proc_ref() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+proc target()
+    nop
+end
+
+pub proc capture() -> [felt; 4]
+    procref.target
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "capture"));
+    let skipped = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::capture")
+        .expect("expected procref procedure to be skipped");
+    assert!(skipped.reason.contains("ProcRef"));
+    assert!(skipped.reason.contains("not supported during disassembly"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_oversized_inferred_signatures() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let pushes = std::iter::repeat_n("    padw", 64).collect::<Vec<_>>().join("\n");
+    let source = format!(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc caller() -> felt
+    exec.huge
+end
+
+pub proc huge
+{pushes}
+end
+"#
+    );
+
+    let output = disassemble_source_for_lint(
+        &source,
+        "test",
+        &DisassemblerConfig {
+            infer_missing_signatures: true,
+        },
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "huge"));
+    assert!(!module_has_function(output.module, "caller"));
+
+    let huge = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::huge")
+        .expect("expected huge procedure to be skipped");
+    assert!(huge.reason.contains("returns 256 value(s)"));
+    assert!(huge.reason.contains("HIR operand limit"));
+
+    let caller = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::caller")
+        .expect("expected caller procedure to be skipped");
+    assert!(
+        caller.reason.contains("depends on skipped procedure '::test::huge'")
+            || caller.reason.contains("declared signature")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_oversized_expanded_bodies() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good(value: felt) -> felt
+    add.1
+end
+
+pub proc caller(value: felt) -> felt
+    exec.huge
+end
+
+pub proc huge(value: felt) -> felt
+    repeat.801
+        add.1
+    end
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "huge"));
+    assert!(!module_has_function(output.module, "caller"));
+
+    let huge = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::huge")
+        .expect("expected huge procedure to be skipped");
+    assert!(huge.reason.contains("estimated to expand to at least 901 HIR operation"));
+    assert!(huge.reason.contains("lint analysis limit"));
+
+    let caller = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::caller")
+        .expect("expected caller procedure to be skipped");
+    assert!(caller.reason.contains("depends on skipped procedure '::test::huge'"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_disassembly_skips_wide_signatures() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc wide(
+    v0: felt, v1: felt, v2: felt, v3: felt, v4: felt,
+    v5: felt, v6: felt, v7: felt, v8: felt
+) -> felt
+    drop
+    dropw
+    dropw
+    push.1
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert!(!module_has_function(output.module, "wide"));
+    let wide = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::wide")
+        .expect("expected wide procedure to be skipped");
+    assert!(wide.reason.contains("has 9 parameter(s)"));
+    assert!(wide.reason.contains("signature limit of 8"));
+
+    Ok(())
+}
+
+#[test]
 fn rejects_mutual_recursion() -> Result<()> {
     let context = Rc::new(Context::default());
     let Err(err) = disassemble_source(
@@ -4847,8 +6095,16 @@ fn parse_test_module(
     source: &str,
     context: &Rc<Context>,
 ) -> Result<Box<miden_assembly_syntax::ast::Module>> {
+    parse_test_module_with_path(source, "test", context)
+}
+
+fn parse_test_module_with_path(
+    source: &str,
+    path: &str,
+    context: &Rc<Context>,
+) -> Result<Box<miden_assembly_syntax::ast::Module>> {
     miden_assembly::ModuleParser::new(Some(ast::ModuleKind::Library)).parse_str(
-        Some(ast::Path::new("test")),
+        Some(ast::Path::new(path)),
         source,
         context.source_manager(),
     )
@@ -5028,6 +6284,17 @@ fn find_function(module: builtin::ModuleRef, name: &str) -> builtin::FunctionRef
     panic!("expected function '{name}'");
 }
 
+fn module_has_function(module: builtin::ModuleRef, name: &str) -> bool {
+    if module.borrow().get(SymbolName::intern(name)).is_some() {
+        return true;
+    }
+
+    module.borrow().body().entry().body().iter().any(|op| {
+        op.downcast_ref::<Function>()
+            .is_some_and(|function| function.get_name().as_str() == name)
+    })
+}
+
 fn find_world_module(world: builtin::WorldRef, module_path: &str) -> builtin::ModuleRef {
     let path = SymbolPath::from_masm_module_id(module_path);
     let symbol = world
@@ -5186,6 +6453,89 @@ end
     )
 }
 
+fn write_transitive_source_dependency_project(
+    prefix: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let dep_dir = root.join("dep");
+    let transitive_dir = root.join("transitive");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::create_dir_all(&dep_dir).unwrap();
+    fs::create_dir_all(&transitive_dir).unwrap();
+
+    fs::write(
+        transitive_dir.join("miden-project.toml"),
+        r#"[package]
+name = "transitive"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        transitive_dir.join("lib.masm"),
+        r#"
+pub proc callee(a: felt) -> felt
+    add.1
+end
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        dep_dir.join("miden-project.toml"),
+        r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "lib.masm"
+
+[dependencies]
+transitive = { path = "../transitive" }
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dep_dir.join("lib.masm"),
+        r#"
+pub proc callee(a: felt) -> felt
+    exec.::transitive::callee
+end
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep" }
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("main.masm"),
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::callee
+end
+"#,
+    )
+    .unwrap();
+
+    (root, app_dir)
+}
+
 fn write_source_dependency_project_with_content(
     prefix: &str,
     main_masm: &str,
@@ -5225,6 +6575,74 @@ dep = { path = "../dep" }
     )
     .unwrap();
     fs::write(app_dir.join("main.masm"), main_masm).unwrap();
+
+    (root, app_dir)
+}
+
+fn write_source_dependency_module_index_project(
+    prefix: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let dep_dir = root.join("dep");
+    fs::create_dir_all(&app_dir).unwrap();
+    fs::create_dir_all(&dep_dir).unwrap();
+
+    fs::write(
+        dep_dir.join("miden-project.toml"),
+        r#"[package]
+name = "dep"
+version = "0.0.1"
+
+[lib]
+path = "mod.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dep_dir.join("mod.masm"),
+        r#"
+pub mod child
+
+pub proc entry(a: felt) -> felt
+    exec.child::leaf
+end
+"#,
+    )
+    .unwrap();
+    fs::write(
+        dep_dir.join("child.masm"),
+        r#"
+pub proc leaf(a: felt) -> felt
+    add.1
+end
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "main.masm"
+
+[dependencies]
+dep = { path = "../dep" }
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("main.masm"),
+        r#"
+pub proc entry(a: felt) -> felt
+    exec.::dep::entry
+end
+"#,
+    )
+    .unwrap();
 
     (root, app_dir)
 }
@@ -5269,6 +6687,155 @@ pub mod math
         r#"
 pub proc inc(a: felt) -> felt
     add.1
+end
+"#,
+    )
+    .unwrap();
+
+    (root, app_dir)
+}
+
+fn write_module_index_project(prefix: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let child_dir = app_dir.join("child");
+    fs::create_dir_all(&child_dir).unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "mod.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("mod.masm"),
+        r#"
+#! This root is only a module index.
+
+pub mod child
+"#,
+    )
+    .unwrap();
+    fs::write(
+        child_dir.join("mod.masm"),
+        r#"
+pub mod leaf
+pub use {inc} from self::leaf
+
+pub proc double(a: felt) -> felt
+    exec.inc
+end
+"#,
+    )
+    .unwrap();
+    fs::write(
+        child_dir.join("leaf.masm"),
+        r#"
+pub proc inc(a: felt) -> felt
+    add.1
+end
+"#,
+    )
+    .unwrap();
+
+    (root, app_dir)
+}
+
+fn write_private_child_module_index_project(
+    prefix: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let child_dir = app_dir.join("child");
+    fs::create_dir_all(&child_dir).unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "mod.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("mod.masm"),
+        r#"
+mod child
+
+pub proc call_secret() -> felt
+    exec.child::leaf::secret
+end
+"#,
+    )
+    .unwrap();
+    fs::write(
+        child_dir.join("mod.masm"),
+        r#"
+pub mod leaf
+"#,
+    )
+    .unwrap();
+    fs::write(
+        child_dir.join("leaf.masm"),
+        r#"
+pub proc secret() -> felt
+    push.1
+end
+"#,
+    )
+    .unwrap();
+
+    (root, app_dir)
+}
+
+fn write_undeclared_child_module_index_project(
+    prefix: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
+    let root = temp_project_dir(prefix);
+    let app_dir = root.join("app");
+    let child_dir = app_dir.join("child");
+    fs::create_dir_all(&child_dir).unwrap();
+
+    fs::write(
+        app_dir.join("miden-project.toml"),
+        r#"[package]
+name = "app"
+version = "0.0.1"
+
+[lib]
+path = "mod.masm"
+"#,
+    )
+    .unwrap();
+    fs::write(
+        app_dir.join("mod.masm"),
+        r#"
+pub proc call_secret() -> felt
+    exec.child::leaf::secret
+end
+"#,
+    )
+    .unwrap();
+    fs::write(
+        child_dir.join("mod.masm"),
+        r#"
+pub mod leaf
+"#,
+    )
+    .unwrap();
+    fs::write(
+        child_dir.join("leaf.masm"),
+        r#"
+pub proc secret() -> felt
+    push.1
 end
 "#,
     )

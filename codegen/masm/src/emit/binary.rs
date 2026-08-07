@@ -870,6 +870,16 @@ impl OpEmitter<'_> {
         self.push(ty);
     }
 
+    pub fn exp_u32_exponent(&mut self, span: SourceSpan) {
+        let rhs = self.pop().expect("operand stack is empty");
+        let lhs = self.pop().expect("operand stack is empty");
+        let ty = lhs.ty();
+        assert_eq!(ty, Type::Felt, "expected exp.u32 base to be felt");
+        assert_eq!(rhs.ty(), Type::Felt, "expected exp.u32 exponent to be felt");
+        self.emit(masm::Instruction::ExpBitLength(32), span);
+        self.push(ty);
+    }
+
     #[allow(unused)]
     pub fn exp_imm(&mut self, imm: Immediate, span: SourceSpan) {
         let lhs = self.pop().expect("operand stack is empty");

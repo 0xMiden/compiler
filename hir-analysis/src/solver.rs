@@ -1,10 +1,10 @@
 mod allocator;
 
-use alloc::{collections::VecDeque, rc::Rc};
+use alloc::{collections::VecDeque, format, rc::Rc, string::ToString, vec::Vec};
 use core::{any::TypeId, cell::RefCell, ptr::NonNull};
 
 use midenc_hir::{
-    EntityRef, FxHashMap, Operation, ProgramPoint, Report, SmallVec, hashbrown,
+    EntityRef, FxHashMap, Operation, ProgramPoint, Report, SmallVec, dialects::builtin, hashbrown,
     pass::AnalysisManager,
 };
 
@@ -307,6 +307,7 @@ impl DataFlowSolver {
         log::debug!(target: "dataflow:solver", "running queued dataflow analyses to fixpoint..");
 
         // Run the analysis until fixpoint
+        let mut iterations = 0usize;
         while let Some(QueuedAnalysis {
             point,
             mut analysis,
@@ -314,6 +315,32 @@ impl DataFlowSolver {
             let mut worklist = self.worklist.borrow_mut();
             worklist.pop_front()
         } {
+            if let Some(max) = self.config.max_worklist_iterations()
+                && iterations >= max
+            {
+                let remaining = self.worklist.borrow().len() + 1;
+                let analysis_name = unsafe { analysis.as_ref().debug_name() };
+                let owner = describe_program_point_owner(&point);
+                let queue_summary = summarize_queued_analyses(
+                    core::iter::once(analysis_name).chain(
+                        self.worklist
+                            .borrow()
+                            .iter()
+                            .map(|queued| unsafe { queued.analysis.as_ref().debug_name() }),
+                    ),
+                );
+                let owner_summary = summarize_queued_program_point_owners(
+                    core::iter::once(&point)
+                        .chain(self.worklist.borrow().iter().map(|queued| &queued.point)),
+                );
+                return Err(Report::msg(format!(
+                    "dataflow solver exceeded worklist iteration budget of {max}; next analysis \
+                     would run {analysis_name} at {point}{owner}, with {remaining} queued item(s) \
+                     remaining; queued analyses: {queue_summary}; queued functions: \
+                     {owner_summary}",
+                )));
+            }
+            iterations += 1;
             self.current_analysis = Some(analysis);
             unsafe {
                 let analysis = analysis.as_mut();
@@ -553,6 +580,90 @@ impl DataFlowSolver {
             let analysis_anchor_id = v.as_ref().anchor_ref().anchor_id();
             analysis_anchor_id == anchor_id
         });
+    }
+}
+
+fn summarize_queued_analyses(
+    names: impl IntoIterator<Item = &'static str>,
+) -> alloc::string::String {
+    summarize_top_counts(names.into_iter().map(ToString::to_string))
+}
+
+fn describe_program_point_owner(point: &ProgramPoint) -> alloc::string::String {
+    describe_program_point_owner_name(point)
+        .map(|name| format!(" in function '{name}'"))
+        .unwrap_or_default()
+}
+
+fn describe_program_point_owner_name(point: &ProgramPoint) -> Option<alloc::string::String> {
+    let op_ref = point.operation()?;
+    let op = op_ref.borrow();
+    if let Some(function) = op.downcast_ref::<builtin::Function>() {
+        return Some(function.get_name().as_str().to_string());
+    }
+    op.nearest_parent_op::<builtin::Function>().map(|function| {
+        let function = function.borrow();
+        function.get_name().as_str().to_string()
+    })
+}
+
+fn summarize_queued_program_point_owners<'a>(
+    points: impl IntoIterator<Item = &'a ProgramPoint>,
+) -> alloc::string::String {
+    summarize_top_counts(points.into_iter().map(|point| {
+        describe_program_point_owner_name(point).unwrap_or_else(|| "<unknown>".into())
+    }))
+}
+
+fn summarize_top_counts(
+    items: impl IntoIterator<Item = alloc::string::String>,
+) -> alloc::string::String {
+    let mut counts = FxHashMap::<alloc::string::String, usize>::default();
+    for item in items {
+        *counts.entry(item).or_insert(0) += 1;
+    }
+    let mut counts = counts.into_iter().collect::<Vec<_>>();
+    counts.sort_by(|(lhs_name, lhs_count), (rhs_name, rhs_count)| {
+        rhs_count.cmp(lhs_count).then_with(|| lhs_name.cmp(rhs_name))
+    });
+    counts
+        .into_iter()
+        .take(5)
+        .map(|(name, count)| format!("{name}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::{format, string::ToString};
+
+    use super::summarize_top_counts;
+
+    #[test]
+    fn summarize_top_counts_handles_empty_input_duplicates_and_ties() {
+        assert_eq!(summarize_top_counts(core::iter::empty()), "");
+
+        let summary = summarize_top_counts(
+            ["beta", "alpha", "gamma", "beta", "alpha"].into_iter().map(ToString::to_string),
+        );
+        assert_eq!(summary, "alpha=2, beta=2, gamma=1");
+    }
+
+    #[test]
+    fn summarize_top_counts_breaks_the_fifth_place_tie_by_name() {
+        let summary = summarize_top_counts(
+            ["zeta", "gamma", "epsilon", "delta", "beta", "alpha", "zeta"]
+                .into_iter()
+                .map(ToString::to_string),
+        );
+        assert_eq!(summary, "zeta=2, alpha=1, beta=1, delta=1, epsilon=1");
+    }
+
+    #[test]
+    fn summarize_top_counts_handles_many_unique_names() {
+        let summary = summarize_top_counts((0..4096).rev().map(|index| format!("item{index:04}")));
+        assert_eq!(summary, "item0000=1, item0001=1, item0002=1, item0003=1, item0004=1");
     }
 }
 

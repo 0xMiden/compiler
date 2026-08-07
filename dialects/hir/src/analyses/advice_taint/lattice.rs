@@ -156,6 +156,7 @@ impl LatticeLike for AdviceTaintValue {
 }
 
 const MAX_CALL_CONTEXT_DEPTH: usize = 4;
+const MAX_CALL_CONTEXTS: usize = 32;
 
 type CallContext = SmallVec<[CallContextFrame; MAX_CALL_CONTEXT_DEPTH]>;
 pub(super) type AdviceTaintSparseLattice = Lattice<ContextualAdviceTaintValue>;
@@ -223,6 +224,24 @@ impl ContextualAdviceTaintValue {
             }
         }
         origins.into_iter()
+    }
+
+    pub(super) fn call_context_spans_containing_origin(
+        &self,
+        origin: AdviceTaintOrigin,
+    ) -> Vec<SourceSpan> {
+        let mut spans = Vec::new();
+        for (context, taint) in self.contexts.iter() {
+            if !taint.contains_origin(origin) {
+                continue;
+            }
+            for frame in context {
+                if !spans.contains(&frame.span) {
+                    spans.push(frame.span);
+                }
+            }
+        }
+        spans
     }
 
     pub fn mark_reported(&self) -> Self {
@@ -300,10 +319,24 @@ impl ContextualAdviceTaintValue {
         context: CallContext,
         taint: AdviceTaintValue,
     ) {
+        if context.is_empty() && !taint.is_clean() && !contexts.is_empty() {
+            let collapsed =
+                contexts.values().fold(taint, |acc, taint| LatticeLike::join(&acc, taint));
+            contexts.clear();
+            contexts.insert(CallContext::new(), collapsed);
+            return;
+        }
+        if let Some(empty) = contexts.get_mut(&CallContext::new())
+            && !empty.is_clean()
+        {
+            *empty = LatticeLike::join(empty, &taint);
+            return;
+        }
         contexts
             .entry(context)
             .and_modify(|current| *current = LatticeLike::join(current, &taint))
             .or_insert(taint);
+        normalize_contexts(contexts);
     }
 }
 
@@ -340,6 +373,28 @@ fn push_call_context(context: &CallContext, frame: CallContextFrame) -> CallCont
     }
     pushed.push(frame);
     pushed
+}
+
+fn normalize_contexts(contexts: &mut BTreeMap<CallContext, AdviceTaintValue>) {
+    if contexts.values().all(AdviceTaintValue::is_clean) {
+        contexts.clear();
+        contexts.insert(CallContext::new(), AdviceTaintValue::clean());
+        return;
+    }
+
+    if contexts.len() > 1 {
+        contexts.retain(|_, taint| !taint.is_clean());
+    }
+
+    if contexts.len() <= MAX_CALL_CONTEXTS {
+        return;
+    }
+
+    let collapsed = contexts
+        .values()
+        .fold(AdviceTaintValue::clean(), |acc, taint| LatticeLike::join(&acc, taint));
+    contexts.clear();
+    contexts.insert(CallContext::new(), collapsed);
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -384,4 +439,79 @@ pub(super) fn value_taint(value: ValueRef, solver: &DataFlowSolver) -> Contextua
         .get::<AdviceTaintSparseLattice, _>(&value)
         .map(|state| state.value().clone())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contextual_taint_collapses_when_call_context_cap_is_exceeded() {
+        let raw = ContextualAdviceTaintValue::raw(SourceSpan::UNKNOWN);
+        let mut joined = ContextualAdviceTaintValue::clean();
+
+        for id in 0..=MAX_CALL_CONTEXTS {
+            let frame = CallContextFrame {
+                id,
+                span: SourceSpan::UNKNOWN,
+            };
+            joined = LatticeLike::join(&joined, &raw.enter_call(frame));
+        }
+
+        assert_eq!(joined.contexts.len(), 1);
+        assert!(joined.contexts.contains_key(&CallContext::new()));
+        assert!(joined.has_unreported_origin());
+    }
+
+    #[test]
+    fn contextual_taint_keeps_distinct_call_contexts_below_cap() {
+        let raw = ContextualAdviceTaintValue::raw(SourceSpan::UNKNOWN);
+        let mut joined = ContextualAdviceTaintValue::clean();
+
+        for id in 0..MAX_CALL_CONTEXTS {
+            let frame = CallContextFrame {
+                id,
+                span: SourceSpan::UNKNOWN,
+            };
+            joined = LatticeLike::join(&joined, &raw.enter_call(frame));
+        }
+
+        assert_eq!(joined.contexts.len(), MAX_CALL_CONTEXTS);
+        assert!(!joined.contexts.contains_key(&CallContext::new()));
+    }
+
+    #[test]
+    fn collapsed_contextual_taint_absorbs_precise_contexts() {
+        let raw = ContextualAdviceTaintValue::raw(SourceSpan::UNKNOWN);
+        let mut precise = ContextualAdviceTaintValue::clean();
+
+        for id in 0..MAX_CALL_CONTEXTS {
+            let frame = CallContextFrame {
+                id,
+                span: SourceSpan::UNKNOWN,
+            };
+            precise = LatticeLike::join(&precise, &raw.enter_call(frame));
+        }
+
+        let collapsed = ContextualAdviceTaintValue::raw(SourceSpan::UNKNOWN);
+        let joined = LatticeLike::join(&collapsed, &precise);
+
+        assert_eq!(joined, collapsed);
+    }
+
+    #[test]
+    fn clean_contextual_taint_stays_canonical_across_call_contexts() {
+        let clean = ContextualAdviceTaintValue::clean();
+        let mut joined = ContextualAdviceTaintValue::clean();
+
+        for id in 0..MAX_CALL_CONTEXTS {
+            let frame = CallContextFrame {
+                id,
+                span: SourceSpan::UNKNOWN,
+            };
+            joined = LatticeLike::join(&joined, &clean.enter_call(frame));
+        }
+
+        assert_eq!(joined, ContextualAdviceTaintValue::clean());
+    }
 }

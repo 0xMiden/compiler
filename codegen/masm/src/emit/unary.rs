@@ -306,6 +306,7 @@ impl OpEmitter<'_> {
                 self.felt_to_int(dst_bits, span);
             }
             // u32
+            (Type::U32, Type::Felt) => (),
             (Type::U32, Type::I64 | Type::U64 | Type::I128) => self.zext_int32(dst_bits, span),
             (Type::U32, Type::I32) => self.assert_i32(span),
             (Type::U32, Type::U16 | Type::U8 | Type::I1) => {
