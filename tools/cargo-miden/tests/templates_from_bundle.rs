@@ -74,7 +74,15 @@ fn bundle_sdk_requirement(bundle_root: &Path) -> String {
     panic!("the bundle declares no sdk-requirement");
 }
 
-/// Every `miden = ...` requirement in a generated project's manifests.
+/// The SDK version required by every `miden` dependency in a generated
+/// project's manifests.
+///
+/// The *version* is extracted and compared for equality rather than searching
+/// the line for a substring. `requirement_for` yields a bare `major.minor` for
+/// a stable SDK, so a substring check would go vacuous the moment 0.14.0 ships:
+/// `"0.14"` is contained in `"0.14.0-rc.1"`, and in `"1.0.14"`. This is the only
+/// assertion that distinguishes the bundle from the external repositories the
+/// resolver used to clone, so it has to be exact.
 fn sdk_requirements(project: &Path) -> Vec<String> {
     let mut found = Vec::new();
     let mut stack = vec![project.to_path_buf()];
@@ -88,16 +96,23 @@ fn sdk_requirements(project: &Path) -> Vec<String> {
                 stack.push(path);
             } else if path.file_name().is_some_and(|name| name == "Cargo.toml") {
                 let text = fs::read_to_string(&path).unwrap_or_default();
-                for line in text.lines() {
-                    let line = line.trim();
-                    if line.starts_with("miden ") || line.starts_with("miden=") {
-                        found.push(line.to_string());
-                    }
-                }
+                found.extend(text.lines().filter_map(quoted_sdk_version));
             }
         }
     }
     found
+}
+
+/// The quoted value of a `miden = ...` dependency line, in either the plain
+/// (`miden = "0.14"`) or table (`miden = { version = "0.14" }`) form.
+fn quoted_sdk_version(line: &str) -> Option<String> {
+    let line = line.trim();
+    if !line.starts_with("miden ") && !line.starts_with("miden=") {
+        return None;
+    }
+    let (_, rest) = line.split_once('"')?;
+    let (value, _) = rest.split_once('"')?;
+    Some(value.to_string())
 }
 
 /// Directories directly inside a bundle template, which survive rendering
@@ -154,10 +169,10 @@ fn new_without_a_template_path_renders_the_bundle_project() {
     let found = sdk_requirements(&project);
     assert!(!found.is_empty(), "the generated project depends on no SDK at all");
     for requirement in &found {
-        assert!(
-            requirement.contains(&required),
-            "generated project requires `{requirement}`, but the bundle declares the templates \
-             carry \"{required}\"; these templates did not come from the bundle"
+        assert_eq!(
+            requirement, &required,
+            "the generated project requires SDK {requirement:?}, but the bundle declares its \
+             templates carry {required:?}; these templates did not come from the bundle"
         );
     }
 

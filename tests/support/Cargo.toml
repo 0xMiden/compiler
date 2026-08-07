@@ -35,5 +35,5 @@ midenc-hir = { workspace = true, features = ["logging"] }
 midenc-session.workspace = true
 midenc-compile.workspace = true
 proptest.workspace = true
-sha2 = "0.11"
+sha2.workspace = true
 walkdir = "2.5.0"

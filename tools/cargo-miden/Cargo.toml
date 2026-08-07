@@ -57,4 +57,4 @@ tempfile.workspace = true
 walkdir = "2.5"
 serde_json.workspace = true
 # Verifies a downloaded template bundle against the digest GitHub reports.
-sha2 = "0.10"
+sha2.workspace = true

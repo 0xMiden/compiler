@@ -114,7 +114,12 @@ fn tar_entry(tar: &[u8], wanted: &str) -> Option<Vec<u8>> {
     None
 }
 
-/// SHA-256, inline to keep the build script dependency-free.
+/// SHA-256, inline rather than via a crate.
+///
+/// `flate2` is a build-dependency here for gunzipping the archive, so this is
+/// no longer about avoiding build dependencies outright -- it is that the digest
+/// must match `sha256_hex` in `src/bundle.rs`, which checks a downloaded bundle
+/// against what GitHub reports. Two implementations that agree are the point.
 fn sha256_hex(data: &[u8]) -> String {
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,

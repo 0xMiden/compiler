@@ -1,9 +1,13 @@
-//! Helpers for the rust-templates integration tests.
+//! Helpers for the project template integration tests.
 //!
 //! [`build_new_project_from_template`] scaffolds a fresh project from a local
 //! template (supplied via `--template-path`) using the `cargo-miden` library
-//! built from the compiler's `next` branch, then builds the project for both the
-//! `dev` and `release` profiles. The `note` and `tx-script` templates
+//! built from this checkout, then builds the project for both the `dev` and
+//! `release` profiles.
+//!
+//! Because the template is supplied by path, these exercise the *templates*
+//! and not template resolution. What `cargo miden new` renders by default is
+//! covered by `tools/cargo-miden/tests/templates_from_bundle.rs`. The `note` and `tx-script` templates
 //! additionally depend on a sibling account contract, which is generated and
 //! built first.
 //!
@@ -54,7 +58,9 @@ fn current_dir_lock() -> CurrentDirGuard {
     }
 }
 
-/// Absolute path to the repository root (the parent of this crate's directory).
+/// Absolute path to `extra/templates/rust`, which holds the templates this
+/// crate tests. Named for the standalone repository these templates used to
+/// live in, where it really was the root.
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

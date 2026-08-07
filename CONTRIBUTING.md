@@ -173,10 +173,12 @@ The templates live in this repository at `extra/templates` and are released as
    cargo make test-templates
    ```
 
-   This scaffolds a project from every template with the compiler from your
-   checkout and builds each one for both profiles. It is the only thing that
-   compiles the templates — they are outside the workspace, so no other
-   `cargo test` reaches them.
+   This scaffolds a project from each of the five `rust/` templates with the
+   compiler from your checkout and builds it for both profiles. It is the only
+   thing that compiles them — they are outside the workspace, so no other
+   `cargo test` reaches them. The `project` scaffold is not covered; changes to
+   it are only checked by `tools/cargo-miden/tests/templates_from_bundle.rs`,
+   which renders it but does not build it.
 
 4. Release the `templates` unit to put the change in front of users.
    `cargo miden new` resolves the newest released bundle in its minor series at

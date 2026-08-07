@@ -8,11 +8,10 @@ publish = false
 doctest = false
 
 [dependencies]
-# `cargo-miden` statically links the Miden compiler, so this branch determines
-# both the compiler used to build the generated projects and (via
-# `--compiler-branch`) the `miden` SDK they depend on.
-#
-# Keep this branch in sync with `COMPILER_BRANCH` in `src/lib.rs`.
+# By path, not by version: `cargo-miden` statically links the compiler, so this
+# is what makes the tests build the templates with the compiler from this
+# checkout rather than a published one. The generated projects depend on the
+# SDK from the same checkout, via the `--compiler-path` these tests pass.
 cargo-miden = { path = "../../../../tools/cargo-miden" }
 
 # Standalone crate: do not search parent directories for a workspace.

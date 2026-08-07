@@ -1,6 +1,9 @@
-//! Builds a new project from every template in this repository and verifies
-//! that `cargo-miden` (from the `next` branch) compiles it without errors for
-//! both the `dev` and `release` profiles.
+//! Builds a new project from each of the five `rust/` templates and verifies
+//! that `cargo-miden` from this checkout compiles it without errors, for both
+//! the `dev` and `release` profiles.
+//!
+//! The bundle declares a sixth, `project`, which is the default scaffold rather
+//! than a single contract and is not covered here.
 
 use template_tests::build_new_project_from_template;
 
