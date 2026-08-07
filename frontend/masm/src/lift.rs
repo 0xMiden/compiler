@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, rc::Rc, sync::Arc};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    rc::Rc,
+    sync::Arc,
+};
 
 use miden_assembly::{
     GlobalItemIndex, ModuleIndex, ProjectSourceInputs,
@@ -42,6 +46,31 @@ use crate::{
 const LINT_ESTIMATED_HIR_OP_LIMIT: usize = 900;
 const LINT_SIGNATURE_VALUE_LIMIT: usize = 8;
 type InitialSkip = (GlobalItemIndex, SourceSpan, String);
+
+struct LintProcedurePreflight {
+    gid: GlobalItemIndex,
+    span: SourceSpan,
+    outcomes: Vec<LintInvocationOutcome>,
+}
+
+enum LintInvocationOutcome {
+    Exact {
+        span: SourceSpan,
+        callee: GlobalItemIndex,
+    },
+    ResolutionFailure {
+        span: SourceSpan,
+        reason: String,
+    },
+}
+
+impl LintInvocationOutcome {
+    fn span(&self) -> SourceSpan {
+        match self {
+            Self::Exact { span, .. } | Self::ResolutionFailure { span, .. } => *span,
+        }
+    }
+}
 
 pub(crate) struct LiftConfig {
     infer_missing_signatures: bool,
@@ -197,57 +226,99 @@ fn link_modules_for_lint(
     let mut module_indices = linker.link_modules([root])?;
     module_indices.extend(linker.link_modules(support)?);
 
-    let mut skipped = BTreeMap::<GlobalItemIndex, (SourceSpan, String)>::new();
-    loop {
-        let mut progress = false;
-        for module_index in 0..linker.modules().len() {
-            let module_index = ModuleIndex::new(module_index);
-            for (item_index, item) in linker[module_index].symbols().enumerate() {
-                let gid = module_index + ast::ItemIndex::new(item_index);
-                if skipped.contains_key(&gid) {
-                    continue;
-                }
-                let SymbolItem::Procedure(procedure) = item.item() else {
-                    continue;
+    let mut procedures = Vec::<LintProcedurePreflight>::new();
+    let mut callers = FxHashMap::<GlobalItemIndex, Vec<GlobalItemIndex>>::default();
+    let mut skipped_gids = FxHashSet::<GlobalItemIndex>::default();
+    let mut pending = VecDeque::<GlobalItemIndex>::new();
+
+    for module_index in 0..linker.modules().len() {
+        let module_index = ModuleIndex::new(module_index);
+        for (item_index, item) in linker[module_index].symbols().enumerate() {
+            let gid = module_index + ast::ItemIndex::new(item_index);
+            let SymbolItem::Procedure(procedure) = item.item() else {
+                continue;
+            };
+            let procedure = procedure.borrow();
+            let mut outcomes = Vec::new();
+            let mut has_resolution_failure = false;
+            for invoke in procedure.invoked() {
+                let resolution = SymbolResolutionContext {
+                    span: invoke.span(),
+                    module: module_index,
+                    kind: Some(invoke.kind),
                 };
-                let procedure = procedure.borrow();
-                let mut reason = None;
-                for invoke in procedure.invoked() {
-                    let resolution = SymbolResolutionContext {
-                        span: invoke.span(),
-                        module: module_index,
-                        kind: Some(invoke.kind),
-                    };
-                    match linker.resolve_invoke_target(&resolution, &invoke.target) {
-                        Ok(SymbolResolution::Exact { gid: callee, .. }) => {
-                            if let Some((_, callee_reason)) = skipped.get(&callee) {
-                                let callee_path =
-                                    linker[callee.module].path().join(linker[callee].name());
-                                reason = Some(format!(
-                                    "depends on skipped procedure '{callee_path}': {callee_reason}"
-                                ));
-                                break;
-                            }
-                        }
-                        Ok(_) => {}
-                        Err(err) => {
-                            reason = Some(format!(
+                match linker.resolve_invoke_target(&resolution, &invoke.target) {
+                    Ok(SymbolResolution::Exact { gid: callee, .. }) => {
+                        callers.entry(callee).or_default().push(gid);
+                        outcomes.push(LintInvocationOutcome::Exact {
+                            span: invoke.span(),
+                            callee,
+                        });
+                    }
+                    Ok(_) => {}
+                    Err(err) => {
+                        has_resolution_failure = true;
+                        outcomes.push(LintInvocationOutcome::ResolutionFailure {
+                            span: invoke.span(),
+                            reason: format!(
                                 "failed to resolve invocation during signature metadata pre-scan: \
                                  {err}; external signature metadata is missing"
-                            ));
-                            break;
-                        }
+                            ),
+                        });
                     }
                 }
-                if let Some(reason) = reason {
-                    skipped.insert(gid, (procedure.span(), reason));
-                    progress = true;
-                }
+            }
+            // `Procedure::invoked` is target-ordered, so restore lexical source order before
+            // selecting which deterministic diagnostic to report.
+            outcomes.sort_by_key(LintInvocationOutcome::span);
+            if has_resolution_failure && skipped_gids.insert(gid) {
+                pending.push_back(gid);
+            }
+            procedures.push(LintProcedurePreflight {
+                gid,
+                span: procedure.span(),
+                outcomes,
+            });
+        }
+    }
+
+    while let Some(callee) = pending.pop_front() {
+        let Some(callee_callers) = callers.get(&callee) else {
+            continue;
+        };
+        for caller in callee_callers.iter().copied() {
+            if skipped_gids.insert(caller) {
+                pending.push_back(caller);
             }
         }
-        if !progress {
-            break;
+    }
+
+    let mut skipped = BTreeMap::<GlobalItemIndex, (SourceSpan, String)>::new();
+    for procedure in procedures {
+        if !skipped_gids.contains(&procedure.gid) {
+            continue;
         }
+        let reason = procedure
+            .outcomes
+            .iter()
+            .find_map(|outcome| match outcome {
+                LintInvocationOutcome::ResolutionFailure { reason, .. } => Some(reason.clone()),
+                LintInvocationOutcome::Exact { .. } => None,
+            })
+            .or_else(|| {
+                procedure.outcomes.iter().find_map(|outcome| match outcome {
+                    LintInvocationOutcome::Exact { callee, .. }
+                        if skipped_gids.contains(callee) =>
+                    {
+                        let callee_path = linker[callee.module].path().join(linker[*callee].name());
+                        Some(skipped_dependency_reason(callee_path.as_str()))
+                    }
+                    LintInvocationOutcome::Exact { .. }
+                    | LintInvocationOutcome::ResolutionFailure { .. } => None,
+                })
+            })
+            .expect("a skipped procedure must have a failing invocation");
+        skipped.insert(procedure.gid, (procedure.span, reason));
     }
 
     for gid in skipped.keys().copied() {
@@ -392,10 +463,11 @@ impl ModuleRegistry {
                                                 && let Some(skipped) =
                                                     self.skipped_procedures.get(&callee)
                                             {
-                                                return Err(Report::msg(format!(
-                                                    "depends on skipped procedure '{}': {}",
-                                                    skipped.path, skipped.reason
-                                                )));
+                                                return Err(Report::msg(
+                                                    skipped_dependency_reason(
+                                                        skipped.path.as_str(),
+                                                    ),
+                                                ));
                                             }
                                         }
                                         validate_lint_liftability(p.body())?;
@@ -648,6 +720,10 @@ fn validate_lint_signature(path: &ast::Path, signature: &Signature) -> Result<()
         )));
     }
     Ok(())
+}
+
+fn skipped_dependency_reason(path: &str) -> String {
+    format!("depends on skipped procedure '{path}'")
 }
 
 fn validate_lint_liftability(block: &Block) -> Result<()> {

@@ -5483,6 +5483,152 @@ end
 }
 
 #[test]
+fn lint_signature_prescan_propagates_immediate_skip_reasons_through_call_chain() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc good() -> felt
+    push.1
+end
+
+pub proc p0(value: felt) -> felt
+    exec.p1
+end
+
+pub proc p1(value: felt) -> felt
+    exec.p2
+end
+
+pub proc p2(value: felt) -> felt
+    exec.p3
+    exec.p3
+end
+
+pub proc p3(value: felt) -> felt
+    exec.p4
+end
+
+pub proc p4(value: felt) -> felt
+    exec.p5
+end
+
+pub proc p5(value: felt) -> felt
+    exec.::dep::missing
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    let _ = find_function(output.module, "good");
+    assert_eq!(output.skipped_procedures.len(), 6);
+    for index in 0..5 {
+        let path = format!("::test::p{index}");
+        let skipped = output
+            .skipped_procedures
+            .iter()
+            .find(|skipped| skipped.path.as_str() == path)
+            .unwrap_or_else(|| panic!("expected {path} to be skipped"));
+        assert_eq!(
+            skipped.reason,
+            format!("depends on skipped procedure '::test::p{}'", index + 1)
+        );
+    }
+    let terminal = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::p5")
+        .expect("expected terminal procedure to be skipped");
+    assert!(terminal.reason.contains("::dep::missing"));
+    assert!(terminal.reason.contains("signature metadata is missing"));
+
+    Ok(())
+}
+
+#[test]
+fn lint_signature_prescan_uses_deterministic_skip_reason_precedence() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc own_missing(value: felt) -> felt
+    exec.skipped_b
+    exec.::dep::own_missing
+end
+
+pub proc choose_callee(value: felt) -> felt
+    exec.skipped_b
+    exec.skipped_a
+end
+
+pub proc skipped_a(value: felt) -> felt
+    exec.::dep::missing_a
+end
+
+pub proc skipped_b(value: felt) -> felt
+    exec.::dep::missing_b
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    assert_eq!(output.skipped_procedures.len(), 4);
+    let own_missing = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::own_missing")
+        .expect("expected own_missing to be skipped");
+    assert!(own_missing.reason.contains("::dep::own_missing"));
+
+    let choose_callee = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::choose_callee")
+        .expect("expected choose_callee to be skipped");
+    assert_eq!(choose_callee.reason, "depends on skipped procedure '::test::skipped_b'");
+
+    Ok(())
+}
+
+#[test]
+fn lint_signature_prescan_preserves_direct_root_error_in_seeded_cycle() -> Result<()> {
+    let context = Rc::new(Context::default());
+    let output = disassemble_source_for_lint(
+        r#"
+pub proc cycle_a(value: felt) -> felt
+    exec.cycle_b
+end
+
+pub proc cycle_b(value: felt) -> felt
+    exec.cycle_a
+    exec.::dep::cycle_root
+end
+"#,
+        "test",
+        &DisassemblerConfig::default(),
+        context,
+    )?;
+
+    assert_eq!(output.skipped_procedures.len(), 2);
+    let cycle_a = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::cycle_a")
+        .expect("expected cycle_a to be skipped");
+    assert_eq!(cycle_a.reason, "depends on skipped procedure '::test::cycle_b'");
+    let cycle_b = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::cycle_b")
+        .expect("expected cycle_b to be skipped");
+    assert!(cycle_b.reason.contains("::dep::cycle_root"));
+
+    Ok(())
+}
+
+#[test]
 fn lint_disassembly_skips_declared_signature_body_arity_drift() -> Result<()> {
     let context = Rc::new(Context::default());
     let output = disassemble_source_for_lint(
@@ -5549,6 +5695,10 @@ pub proc caller
     exec.bad
 end
 
+pub proc outer
+    exec.caller
+end
+
 pub proc bad
     push.1
     if.true
@@ -5569,6 +5719,7 @@ end
     let _ = find_function(output.module, "good");
     assert!(!module_has_function(output.module, "bad"));
     assert!(!module_has_function(output.module, "caller"));
+    assert!(!module_has_function(output.module, "outer"));
 
     let bad = output
         .skipped_procedures
@@ -5582,7 +5733,14 @@ end
         .iter()
         .find(|skipped| skipped.path.as_str() == "::test::caller")
         .expect("expected caller procedure to be skipped");
-    assert!(caller.reason.contains("depends on skipped procedure '::test::bad'"));
+    assert_eq!(caller.reason, "depends on skipped procedure '::test::bad'");
+
+    let outer = output
+        .skipped_procedures
+        .iter()
+        .find(|skipped| skipped.path.as_str() == "::test::outer")
+        .expect("expected outer procedure to be skipped");
+    assert_eq!(outer.reason, "depends on skipped procedure '::test::caller'");
 
     Ok(())
 }
