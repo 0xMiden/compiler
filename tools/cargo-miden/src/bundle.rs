@@ -165,10 +165,26 @@ fn fetch_released(fetch: Fetch) -> Result<Option<Fetched>> {
         // Nothing published in this series yet: the embedded copy is current.
         return give_up(fetch, format!("no templates release exists in the {accepted} series"));
     };
-    // Already holding it, so there is nothing to gain by downloading -- unless
-    // the caller asked precisely for the download to happen.
-    if newest.text == VERSION && fetch == Fetch::IfAvailable {
+
+    // Only ever move *forward*. Comparing for inequality instead would download
+    // whatever the newest tag happens to be, which is a downgrade whenever this
+    // build's bundle is ahead of the last published one -- the normal state of
+    // any commit that has changed the templates but not yet released them. It
+    // is also a downgrade attack: deleting a release, or tampering with the tag
+    // list, walks clients back onto older templates, and the digest check
+    // cannot object because the older release's digest is genuine.
+    //
+    // `--force-download` is exempt: it exists to fetch the released bundle, and
+    // refusing to would defeat it. It says so out loud instead.
+    let embedded = Version::parse(VERSION);
+    if fetch == Fetch::IfAvailable && embedded.as_ref().is_some_and(|current| newest <= *current) {
         return Ok(None);
+    }
+    if embedded.as_ref().is_some_and(|current| newest < *current) {
+        warn_always(&format!(
+            "templates {} is older than the copy built into this binary ({VERSION})",
+            newest.text
+        ));
     }
 
     let Some(body) = http_get(&format!(
@@ -202,16 +218,41 @@ fn fetch_released(fetch: Fetch) -> Result<Option<Fetched>> {
 
     // The digest comes from the API response, not from an asset beside the
     // archive, so a substituted download cannot supply its own checksum.
-    let expected = asset["digest"].as_str().map(|digest| digest.trim_start_matches("sha256:"));
-    if let Some(expected) = expected {
-        let actual = sha256_hex(&archive);
-        if actual != expected {
-            bail!(
-                "the templates {} archive does not match the digest GitHub reports for it \
-                 (expected {expected}, got {actual}); refusing to render templates from it",
-                newest.text
-            );
-        }
+    //
+    // Absent or unrecognised is a hard failure, not a skip. GitHub documents
+    // this field as nullable, so `null` is a legal response -- and treating
+    // that as "no verification needed" would mean rendering unverified bytes
+    // into code the user is about to compile, silently, exactly when the
+    // integrity control is unavailable. `strip_prefix` rather than
+    // `trim_start_matches`, which would also accept an unprefixed digest or a
+    // repeated prefix.
+    let Some(expected) = asset["digest"].as_str().and_then(|d| d.strip_prefix("sha256:")) else {
+        bail!(
+            "GitHub reports no usable sha256 digest for the templates {} archive, so it cannot be \
+             verified; refusing to render templates from unverified bytes",
+            newest.text
+        );
+    };
+    let actual = sha256_hex(&archive);
+    if actual != expected {
+        bail!(
+            "the templates {} archive does not match the digest GitHub reports for it (expected \
+             {expected}, got {actual}); refusing to render templates from it",
+            newest.text
+        );
+    }
+
+    // Same version, different bytes. Only reachable under `--force-download`,
+    // since otherwise an equal version never downloads -- and that is precisely
+    // when someone is trying to find out what a release actually contains.
+    if newest.text == VERSION && actual != SHA256 {
+        warn_always(&format!(
+            "templates {} was released with different content than the copy built into this \
+             binary (released {}, embedded {}); the version was reused",
+            newest.text,
+            &actual[..16],
+            &SHA256[..16]
+        ));
     }
 
     Ok(Some(Fetched {
@@ -221,7 +262,12 @@ fn fetch_released(fetch: Fetch) -> Result<Option<Fetched>> {
 }
 
 /// A version, kept beside its original text so a tag can be reconstructed.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `Eq` is derived from the ordering rather than from the fields, because the
+/// two must agree: `0.32` and `0.32.0` are the same version with different text,
+/// and a type whose `cmp` says `Equal` while `==` says `false` breaks the
+/// contract `sort`, `max` and `dedup` rely on.
+#[derive(Debug, Clone)]
 struct Version {
     major: u64,
     minor: u64,
@@ -237,10 +283,16 @@ impl Version {
             Some((core, pre)) => (core, pre.to_string()),
             None => (text, String::new()),
         };
+        // A trailing `-` leaves an empty prerelease, which would otherwise read
+        // as a stable release and let a stable build accept `0.14.0-`.
+        if text.contains('-') && pre.is_empty() {
+            return None;
+        }
+
         let mut parts = core.split('.');
-        let major = parts.next()?.parse().ok()?;
-        let minor = parts.next()?.parse().ok()?;
-        let patch = parts.next().unwrap_or("0").parse().ok()?;
+        let major = numeric(parts.next()?)?;
+        let minor = numeric(parts.next()?)?;
+        let patch = parts.next().map_or(Some(0), numeric)?;
         if parts.next().is_some() {
             return None;
         }
@@ -254,6 +306,53 @@ impl Version {
     }
 }
 
+/// A SemVer numeric identifier: digits only, and no leading zero.
+///
+/// `u64::from_str` alone would accept `+32` and `032`, whose text is then
+/// reused verbatim to build a release URL.
+fn numeric(field: &str) -> Option<u64> {
+    if field.is_empty() || !field.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    if field.len() > 1 && field.starts_with('0') {
+        return None;
+    }
+    field.parse().ok()
+}
+
+/// Compare prerelease identifiers by SemVer precedence.
+///
+/// Dot-separated, compared field by field: numeric identifiers numerically, and
+/// a numeric identifier always below an alphanumeric one. A plain string
+/// comparison puts `rc.10` below `rc.2`, which for a project releasing `-rc.N`
+/// means the resolver stops finding the newest release at the tenth candidate.
+fn compare_pre(left: &str, right: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let mut left = left.split('.');
+    let mut right = right.split('.');
+    loop {
+        return match (left.next(), right.next()) {
+            (None, None) => Ordering::Equal,
+            // A shorter run of identifiers has lower precedence.
+            (None, Some(_)) => Ordering::Less,
+            (Some(_), None) => Ordering::Greater,
+            (Some(a), Some(b)) => {
+                let ordering = match (numeric(a), numeric(b)) {
+                    (Some(a), Some(b)) => a.cmp(&b),
+                    (Some(_), None) => Ordering::Less,
+                    (None, Some(_)) => Ordering::Greater,
+                    (None, None) => a.cmp(b),
+                };
+                if ordering == Ordering::Equal {
+                    continue;
+                }
+                ordering
+            }
+        };
+    }
+}
+
 impl Ord for Version {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // SemVer precedence: a prerelease sorts below its own release.
@@ -263,10 +362,18 @@ impl Ord for Version {
                 (true, true) => std::cmp::Ordering::Equal,
                 (true, false) => std::cmp::Ordering::Greater,
                 (false, true) => std::cmp::Ordering::Less,
-                (false, false) => self.pre.cmp(&other.pre),
+                (false, false) => compare_pre(&self.pre, &other.pre),
             })
     }
 }
+
+impl PartialEq for Version {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == std::cmp::Ordering::Equal
+    }
+}
+
+impl Eq for Version {}
 
 impl PartialOrd for Version {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
@@ -310,6 +417,11 @@ fn warn(message: &str) {
     eprintln!("warning: {message}; using the templates built into cargo-miden ({VERSION})");
 }
 
+/// A warning that is not about falling back to the embedded copy.
+fn warn_always(message: &str) {
+    eprintln!("warning: {message}");
+}
+
 /// A single GET, yielding `None` for anything that is not a clean 200.
 ///
 /// `curl` rather than an HTTP client crate: it keeps a TLS stack out of the
@@ -322,21 +434,47 @@ fn http_get(url: &str) -> Option<Vec<u8>> {
         // HTTPS.
         .args(["--proto", "=https", "--proto-redir", "=https"])
         .args(["--max-time", "20"])
-        .args(["--header", "Accept: application/vnd.github+json"])
+        // The bundle is ~100 KB and release assets may be 2 GB. A timeout is
+        // not a size bound: a fast link delivers a great deal in 20 seconds,
+        // and the result is read entirely into memory.
+        .args(["--max-filesize", "33554432"])
         .args(["--header", "User-Agent: cargo-miden"]);
 
     // An unauthenticated client shares a per-IP rate limit with everyone behind
     // the same NAT, and CI runners exhaust it routinely.
-    if let Some(token) = std::env::var("GITHUB_TOKEN")
+    //
+    // The token goes to curl on **stdin**, never in argv: process arguments are
+    // world-readable on Linux via /proc/<pid>/cmdline, and `cargo miden new` is
+    // routinely run in CI where GITHUB_TOKEN carries write scopes.
+    let token = std::env::var("GITHUB_TOKEN")
         .or_else(|_| std::env::var("GH_TOKEN"))
         .ok()
-        .filter(|token| !token.is_empty())
-    {
-        command.args(["--header", &format!("Authorization: Bearer {token}")]);
-    }
+        .filter(|token| !token.is_empty());
 
-    let output = command.arg(url).output().ok()?;
+    let mut config = String::from("header = \"Accept: application/vnd.github+json\"\n");
+    if let Some(token) = &token {
+        // curl's config format takes a double-quoted, backslash-escaped value.
+        let escaped = token.replace('\\', "\\\\").replace('"', "\\\"");
+        config.push_str(&format!("header = \"Authorization: Bearer {escaped}\"\n"));
+    }
+    command.args(["--config", "-"]);
+
+    let output = run_with_stdin(command.arg(url), config.as_bytes()).ok()?;
     output.status.success().then_some(output.stdout)
+}
+
+fn run_with_stdin(
+    command: &mut std::process::Command,
+    stdin: &[u8],
+) -> std::io::Result<std::process::Output> {
+    use std::io::Write;
+    let mut child = command
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()?;
+    child.stdin.as_mut().expect("stdin was piped").write_all(stdin)?;
+    child.wait_with_output()
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -421,6 +559,53 @@ mod tests {
         );
     }
 
+    /// Prerelease identifiers are compared field by field, numerically where
+    /// they are numeric. A string comparison puts `rc.10` below `rc.2`, so a
+    /// project releasing `-rc.N` stops finding its newest release at the tenth.
+    #[test]
+    fn prerelease_identifiers_compare_numerically() {
+        let mut versions = [
+            v("0.32.0-rc.2"),
+            v("0.32.0-rc.11"),
+            v("0.32.0-rc.1"),
+            v("0.32.0-rc.9"),
+            v("0.32.0-rc.10"),
+        ];
+        versions.sort();
+        let ordered: Vec<&str> = versions.iter().map(|version| version.text.as_str()).collect();
+        assert_eq!(
+            ordered,
+            ["0.32.0-rc.1", "0.32.0-rc.2", "0.32.0-rc.9", "0.32.0-rc.10", "0.32.0-rc.11"]
+        );
+
+        // The remaining SemVer precedence rules for prerelease identifiers.
+        assert!(v("1.0.0-alpha") < v("1.0.0-alpha.1"), "fewer identifiers rank lower");
+        assert!(v("1.0.0-alpha.1") < v("1.0.0-alpha.beta"), "numeric ranks below alphanumeric");
+        assert!(v("1.0.0-beta") < v("1.0.0-beta.2"));
+        assert!(v("1.0.0-rc.1") < v("1.0.0"), "a prerelease ranks below its release");
+    }
+
+    /// `cmp` and `==` have to agree, or `sort`, `max` and `dedup` misbehave.
+    /// `0.32` and `0.32.0` are the same version written two ways.
+    #[test]
+    fn equality_agrees_with_ordering() {
+        assert_eq!(v("0.32"), v("0.32.0"));
+        assert_eq!(v("0.32").cmp(&v("0.32.0")), std::cmp::Ordering::Equal);
+        assert_ne!(v("0.32.0"), v("0.32.1"));
+    }
+
+    /// Malformed versions must not become candidates: `text` is reused verbatim
+    /// to build the release URL, and a trailing `-` would otherwise read as a
+    /// stable release.
+    #[test]
+    fn malformed_versions_are_rejected() {
+        for bad in ["", "0.32.0-", "0.+32.0", "00.032.0", "0.32.0.1", "templates", "0.x.0"] {
+            assert!(Version::parse(bad).is_none(), "'{bad}' should not parse");
+        }
+        assert!(Version::parse("0.32").is_some(), "a two-part version means patch 0");
+        assert!(Version::parse("0.32.0-rc.1").is_some());
+    }
+
     /// The accepted range is "the embedded copy's minor series", so a template
     /// release can reach installed clients but a *minor* bump cannot drag them
     /// onto templates their compiler was never tested against.
@@ -445,14 +630,6 @@ mod tests {
         assert!(!stable.accepts(&v("0.32.1-rc.1")));
         assert!(prerelease.accepts(&v("0.32.1-rc.1")));
         assert!(prerelease.accepts(&v("0.32.1")), "a prerelease build may take a stable bundle");
-    }
-
-    #[test]
-    fn a_nonsense_version_is_not_a_version() {
-        assert!(Version::parse("").is_none());
-        assert!(Version::parse("0.32").is_some(), "a two-part version means patch 0");
-        assert!(Version::parse("0.32.0.1").is_none(), "four parts is not SemVer");
-        assert!(Version::parse("templates").is_none());
     }
 
     /// The layout the resolver hands to the renderer has to match what is
