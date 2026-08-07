@@ -120,6 +120,13 @@ pub struct NewCommand {
     /// The path to the template to use to generate the project
     #[clap(long, conflicts_with("template"))]
     pub template_path: Option<PathBuf>,
+    /// Require the templates to be downloaded from a GitHub release, instead of
+    /// falling back to the copy embedded in this binary.
+    ///
+    /// Fails rather than falling back, so a project is never generated from
+    /// different templates than were asked for.
+    #[clap(long, conflicts_with("template_path"))]
+    pub force_download: bool,
     /// Use a locally cloned compiler in the generated package
     #[clap(long, hide(true), conflicts_with_all(["compiler_rev", "compiler_branch"]))]
     pub compiler_path: Option<PathBuf>,
@@ -185,10 +192,12 @@ impl NewCommand {
             None => match self.template.as_ref() {
                 Some(project_template) => TemplatePath {
                     auto_path: Some(format!("rust/{project_template}")),
+                    force_download: self.force_download,
                     ..Default::default()
                 },
                 None => TemplatePath {
                     auto_path: Some("project".into()),
+                    force_download: self.force_download,
                     ..Default::default()
                 },
             },

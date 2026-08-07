@@ -3,6 +3,7 @@ name = "{{crate_name | replace: "_", "-" }}"
 version = "0.1.0"
 
 [lib]
+path = "src/lib.rs"
 kind = "account-component"
 namespace = "miden:{{crate_name | replace: "_", "-" }}/{{crate_name | replace: "_", "-" }}@0.1.0"
 

@@ -3,6 +3,7 @@ name = "counter-account"
 version = "0.1.0"
 
 [lib]
+path = "src/lib.rs"
 kind = "account-component"
 # Full `miden:<package>/<interface>@<version>` id. The interface segment is the
 # kebab-cased component trait name (`CounterContract` -> `counter-contract`).

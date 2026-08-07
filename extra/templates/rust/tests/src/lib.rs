@@ -18,7 +18,13 @@ use std::{
 
 use cargo_miden::{CommandOutput, run};
 
-const COMPILER_PATH: &str = "../../../../../";
+/// The compiler checkout, relative to a template directory.
+///
+/// `extra/templates/rust/<template>` is four levels below the repository root.
+/// It was five while these templates lived in their own repository beside a
+/// compiler checkout; the move in-tree changed it, and nothing noticed because
+/// nothing ran these tests.
+const COMPILER_PATH: &str = "../../../../";
 
 /// Guard that serializes the cwd-mutating tests and restores the original
 /// working directory when dropped.

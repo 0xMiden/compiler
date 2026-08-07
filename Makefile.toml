@@ -723,3 +723,17 @@ args = [
 ]
 dependencies = ["release-tool"]
 env = { "GITHUB_REPOSITORY" = "0xMiden/compiler" }
+
+[tasks.test-templates]
+category = "Test"
+description = "Scaffold a project from every template and build it, dev and release"
+# A standalone crate outside the workspace -- it depends on `cargo-miden` by
+# path and must resolve the templates the way a user would, so it cannot be a
+# workspace member. `--test-threads=1` because the harness changes the process
+# working directory.
+script_runner = "@shell"
+script = '''
+cd "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/extra/templates/rust/tests"
+CARGO_TARGET_DIR="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target/template-tests" \
+    cargo test "${@}" -- --test-threads=1 --nocapture
+'''

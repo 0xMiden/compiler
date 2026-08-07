@@ -74,8 +74,8 @@ pub struct Resolved {
 /// is not such a failure and is not tolerated: it means the bytes are not the
 /// ones the release claims, and quietly using the embedded copy instead would
 /// hide that.
-pub fn resolve(destination: &Path) -> Result<Resolved> {
-    if let Some(fetched) = fetch_released()? {
+pub fn resolve(destination: &Path, fetch: Fetch) -> Result<Resolved> {
+    if let Some(fetched) = fetch_released(fetch)? {
         let root = extract_bytes(&fetched.archive, destination)
             .context("failed to extract the released template bundle")?;
         return Ok(Resolved {
@@ -93,18 +93,50 @@ pub fn resolve(destination: &Path) -> Result<Resolved> {
     })
 }
 
+/// How hard to try for a released bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Fetch {
+    /// Use a released bundle when one is reachable, otherwise the embedded copy.
+    IfAvailable,
+    /// Insist on downloading a released bundle, and fail if that is not
+    /// possible.
+    ///
+    /// Two uses: exercising the download path, which is otherwise only reached
+    /// once a release newer than the embedded copy exists, and working around a
+    /// bad embedded bundle in a binary already installed.
+    Required,
+}
+
 struct Fetched {
     version: String,
     archive: Vec<u8>,
 }
 
+/// Decide what a failed lookup means.
+///
+/// Under [`Fetch::IfAvailable`] it means "use what is embedded", because
+/// failing to create a project is far worse than creating one from slightly
+/// older templates. Under [`Fetch::Required`] the caller asked for the released
+/// bundle specifically, so silently substituting a different one would defeat
+/// the request.
+fn give_up<T>(fetch: Fetch, message: String) -> Result<Option<T>> {
+    match fetch {
+        Fetch::Required => bail!("{message}, and --force-download rules out the embedded copy"),
+        Fetch::IfAvailable => {
+            warn(&message);
+            Ok(None)
+        }
+    }
+}
+
 /// One attempt at the newest compatible released bundle.
 ///
 /// `Ok(None)` means "carry on with what is embedded"; `Err` is reserved for a
-/// bundle that was found but is not what it claims to be.
-fn fetch_released() -> Result<Option<Fetched>> {
+/// bundle that was found but is not what it claims to be, and for any failure
+/// at all under [`Fetch::Required`].
+fn fetch_released(fetch: Fetch) -> Result<Option<Fetched>> {
     let Some(accepted) = MinorSeries::of(VERSION) else {
-        return Ok(None);
+        return give_up(fetch, format!("the embedded bundle version ({VERSION}) is unreadable"));
     };
 
     // Matching refs rather than the release list: this returns only template
@@ -112,12 +144,10 @@ fn fetch_released() -> Result<Option<Fetched>> {
     let Some(body) = http_get(&format!(
         "https://api.github.com/repos/{REPOSITORY}/git/matching-refs/tags/{TAG_PREFIX}"
     )) else {
-        warn("could not reach GitHub to look for newer templates");
-        return Ok(None);
+        return give_up(fetch, "could not reach GitHub to look for templates".to_string());
     };
     let Ok(refs) = serde_json::from_slice::<Vec<serde_json::Value>>(&body) else {
-        warn("GitHub returned an unreadable list of template tags");
-        return Ok(None);
+        return give_up(fetch, "GitHub returned an unreadable list of template tags".to_string());
     };
 
     // The endpoint orders lexicographically, which puts v10 below v2, so the
@@ -133,10 +163,11 @@ fn fetch_released() -> Result<Option<Fetched>> {
 
     let Some(newest) = candidates.pop() else {
         // Nothing published in this series yet: the embedded copy is current.
-        return Ok(None);
+        return give_up(fetch, format!("no templates release exists in the {accepted} series"));
     };
-    if newest.text == VERSION {
-        // Already holding it; no download needed.
+    // Already holding it, so there is nothing to gain by downloading -- unless
+    // the caller asked precisely for the download to happen.
+    if newest.text == VERSION && fetch == Fetch::IfAvailable {
         return Ok(None);
     }
 
@@ -146,29 +177,27 @@ fn fetch_released() -> Result<Option<Fetched>> {
     )) else {
         // A tag with no release behind it is normal: tags are created before a
         // release is finalized, and an abandoned release leaves one behind.
-        warn(&format!("templates {} has a tag but no readable release", newest.text));
-        return Ok(None);
+        return give_up(
+            fetch,
+            format!("templates {} has a tag but no readable release", newest.text),
+        );
     };
     let Ok(release) = serde_json::from_slice::<serde_json::Value>(&body) else {
-        warn("GitHub returned an unreadable release");
-        return Ok(None);
+        return give_up(fetch, "GitHub returned an unreadable release".to_string());
     };
 
     let Some(asset) = release["assets"]
         .as_array()
         .and_then(|assets| assets.iter().find(|asset| asset["name"] == "templates.tar.gz"))
     else {
-        warn(&format!("templates {} carries no templates.tar.gz", newest.text));
-        return Ok(None);
+        return give_up(fetch, format!("templates {} carries no templates.tar.gz", newest.text));
     };
 
     let Some(url) = asset["browser_download_url"].as_str() else {
-        warn(&format!("templates {} has no download URL", newest.text));
-        return Ok(None);
+        return give_up(fetch, format!("templates {} has no download URL", newest.text));
     };
     let Some(archive) = http_get(url) else {
-        warn(&format!("could not download templates {}", newest.text));
-        return Ok(None);
+        return give_up(fetch, format!("could not download templates {}", newest.text));
     };
 
     // The digest comes from the API response, not from an asset beside the
@@ -252,6 +281,12 @@ struct MinorSeries {
     /// Whether this build is itself a prerelease, and so may use prerelease
     /// bundles. A stable client must never be pulled onto one.
     prerelease: bool,
+}
+
+impl std::fmt::Display for MinorSeries {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.major, self.minor)
+    }
 }
 
 impl MinorSeries {
