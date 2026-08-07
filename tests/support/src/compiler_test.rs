@@ -331,8 +331,6 @@ impl CompilerTestBuilder {
                     None
                 };
 
-                maybe_dump_cargo_expand(&config, rustflags_env.as_deref());
-
                 argv.extend(self.midenc_flags.iter().cloned());
 
                 setup::install_reporting_hooks();
@@ -344,11 +342,17 @@ impl CompilerTestBuilder {
                     argv,
                 )
                 .unwrap_or_else(|err| err.exit());
-                options.rustflags = rustflags_env;
+                options.rustflags = rustflags_env.clone();
                 options.link_modules.extend(self.link_masm_modules);
                 let source_manager = Arc::new(DefaultSourceManager::default());
                 let session =
                     Rc::new(Session::new(input.clone(), options, None, source_manager).unwrap());
+
+                maybe_dump_cargo_expand(
+                    &config,
+                    rustflags_env.as_deref(),
+                    session.filesystem_package_cache_dir().as_deref(),
+                );
 
                 // The session stays pointed at the `Cargo.toml`, and that is the whole change:
                 // the manifest is compiled as a *project*, so the namespace, target kind and
@@ -1234,7 +1238,11 @@ fn maybe_dump_public_package_wit(artifact_name: &str, package: &miden_mast_packa
 /// the current working directory. When set to `1`, it is treated as enabled and also defaults to
 /// the current working directory. When set to a non-empty value other than `1`, it is treated as
 /// the output directory.
-fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
+fn maybe_dump_cargo_expand(
+    test: &CargoTest,
+    rustflags_env: Option<&str>,
+    package_cache_dir: Option<&Path>,
+) {
     let Some(out_dir) = emit_output_dir("MIDENC_EMIT_MACRO_EXPAND") else {
         return;
     };
@@ -1262,6 +1270,12 @@ fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
     }
     if let Some(rustflags_env) = rustflags_env {
         cmd.env("RUSTFLAGS", rustflags_env);
+    }
+    // Point macro expansion at the session's package cache. This is also the contract-build
+    // script's recursion guard, so a fixture with a `build.rs` expands instead of spawning a
+    // nested `cargo miden build` from inside `cargo expand`.
+    if let Some(package_cache_dir) = package_cache_dir {
+        cmd.env("MIDENC_PACKAGE_CACHE", package_cache_dir);
     }
 
     let output = cmd.output().unwrap_or_else(|err| {

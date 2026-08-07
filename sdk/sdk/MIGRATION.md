@@ -14,6 +14,23 @@ directly below this paragraph, above the previous one (newest first, like the
 
 <!-- Migration instructions for unreleased changes accumulate here as sibling `###` sections. -->
 
+### Contract crates gain a `build.rs` for IDE and plain-cargo builds
+
+New projects created by `cargo miden new` include a `build.rs` in each contract crate. The
+script makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve
+compiled dependency packages: outside a `cargo miden build`, it runs
+`cargo miden package-cache` to locate the project's package cache, populates the cache with a
+nested `cargo miden build --release` when the project has source dependencies, and exports
+`MIDENC_PACKAGE_CACHE` to the crate's macro expansion. Inside a midenc-driven build the script
+does nothing.
+
+Adoption is optional but recommended for existing projects: copy `build.rs` from a freshly
+generated template contract (for example `cargo miden new --account demo`) or from any example
+in the compiler repository (for example `examples/p2id-note/build.rs`) into each contract
+crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PATH`; set the
+`CARGO_MIDEN` environment variable to use a specific `cargo-miden` binary instead. A missing
+tool fails the build script with an install hint.
+
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
 Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,

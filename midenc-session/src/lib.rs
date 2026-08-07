@@ -48,6 +48,8 @@ pub use miden_package_registry;
 pub use miden_project;
 use midenc_hir_symbol::Symbol;
 
+#[cfg(feature = "std")]
+pub use self::package_cache::PackageCacheBuildInputs;
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, Report, SourceManager},
@@ -395,21 +397,7 @@ impl Session {
     /// `Cargo.toml` input, and a rebuilt package has no manifest path — so an executable project
     /// silently got no filesystem cache at all, while a library project of the same shape got one.
     pub fn filesystem_package_cache_dir(&self) -> Option<PathBuf> {
-        let input = self.input.as_ref()?;
-        if !matches!(input.file_type(), FileType::Toml) {
-            return None;
-        }
-        let project_dir = input.as_path()?.parent()?;
-        let project_dir = if project_dir.is_absolute() {
-            project_dir.to_path_buf()
-        } else {
-            self.options.current_dir.join(project_dir)
-        };
-        // Canonicalized because the loaded manifest path this replaces was: the cache directory
-        // is compared by path across nested builds, so `.`-relative and symlinked spellings of
-        // one directory must not resolve to two caches.
-        #[cfg(feature = "std")]
-        let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+        let project_dir = self.package_cache_project_dir()?;
         #[cfg(feature = "std")]
         let package_cache_dir = package_cache::package_cache_parent(&project_dir);
         #[cfg(not(feature = "std"))]
@@ -434,6 +422,41 @@ impl Session {
         {
             Some(package_cache_dir)
         }
+    }
+
+    /// The project directory whose `target/miden/packages` tree holds this session's cache.
+    ///
+    /// `None` unless this session's input is a project locator, mirroring
+    /// [`Session::filesystem_package_cache_dir`].
+    fn package_cache_project_dir(&self) -> Option<PathBuf> {
+        let input = self.input.as_ref()?;
+        if !matches!(input.file_type(), FileType::Toml) {
+            return None;
+        }
+        let project_dir = input.as_path()?.parent()?;
+        let project_dir = if project_dir.is_absolute() {
+            project_dir.to_path_buf()
+        } else {
+            self.options.current_dir.join(project_dir)
+        };
+        // Canonicalized because the loaded manifest path this replaces was: the cache directory
+        // is compared by path across nested builds, so `.`-relative and symlinked spellings of
+        // one directory must not resolve to two caches.
+        #[cfg(feature = "std")]
+        let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
+        Some(project_dir)
+    }
+
+    /// Build-script inputs of this session's project package cache.
+    ///
+    /// `None` under the same condition as [`Session::filesystem_package_cache_dir`]: the
+    /// session input must be a project locator. The watch list and the dependency count let a
+    /// contract build script re-run its nested build exactly when the cache contents could
+    /// change; `cargo miden package-cache` is the consumer.
+    #[cfg(feature = "std")]
+    pub fn package_cache_build_inputs(&self) -> Option<PackageCacheBuildInputs> {
+        let project_dir = self.package_cache_project_dir()?;
+        Some(package_cache::build_script_inputs(&project_dir))
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### `cargo-miden`
+
+- Added `cargo miden package-cache`, which prints the project's fingerprinted package-cache
+  directory, the number of direct dependencies resolved from that cache, and the input paths a
+  contract build script must watch #1298
+- Contract templates and the repository examples now include a `build.rs` that populates the
+  package cache for builds `midenc` does not drive: outside a midenc-driven build it locates
+  the cache with `cargo miden package-cache`, fills it with a nested
+  `cargo miden build --release` when the project has source dependencies, and exports
+  `MIDENC_PACKAGE_CACHE` to macro expansion. Plain `cargo check` and IDE analysis now resolve
+  dependency packages instead of reporting missing packages (#1215). The script uses
+  `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN` environment variable
+  #1298
+- Fixed the contract templates' `miden-project.toml` manifests, which were missing the
+  `[lib].path` key the VM v0.25 project model requires; projects generated from the templates
+  failed both `cargo miden build` and macro expansion with "unable to parse project manifest:
+  missing field `path`"
+
 ### Rust SDK
 
 - The FPI macro diagnostic for a dependency package missing from a midenc-driven build now names

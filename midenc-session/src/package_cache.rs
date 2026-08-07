@@ -360,7 +360,7 @@ pub(crate) fn fingerprint(
     record_options(&mut transcript, options, inherited_rustflags, inherited_rustup_toolchain);
 
     let source_manager = DefaultSourceManager::default();
-    let mut manifests = ManifestClosure::new(&mut transcript, &source_manager);
+    let mut manifests = ManifestClosure::new(&mut transcript, &source_manager, None);
     manifests.visit_project(project_dir, None);
 
     let digest = Blake3_256::hash(transcript.as_bytes());
@@ -371,6 +371,74 @@ pub(crate) fn fingerprint(
         project_dir.display()
     );
     fingerprint
+}
+
+/// Build-script inputs of a project's package cache.
+///
+/// Contract build scripts consume this through `cargo miden package-cache`: the watch list
+/// drives their `cargo:rerun-if-changed` directives, and the dependency count decides whether
+/// a nested `cargo miden build` is required at all.
+#[derive(Debug, Default)]
+pub struct PackageCacheBuildInputs {
+    /// Manifest, source, and package paths whose changes require a new nested build.
+    ///
+    /// Only paths that exist are listed: cargo re-runs a build script unconditionally while a
+    /// watched path is missing, which would turn every check into a nested build.
+    pub watch_paths: Vec<PathBuf>,
+    /// The number of direct dependencies whose packages a build compiles into the cache.
+    ///
+    /// Registry dependencies and explicit `.masp` file paths are excluded: the assembler
+    /// resolves the former, and macros read the latter straight from the manifest's path.
+    pub source_dependency_count: usize,
+}
+
+/// Collects the build-script inputs of the project at `project_dir`.
+///
+/// The watch list covers the manifest closure the fingerprint walks: every project's
+/// manifests, each dependency project's `src` and `wit` directories, and each preassembled
+/// package file. The root project's own sources are deliberately excluded — they do not
+/// change dependency packages, and watching them would re-run the nested build on every edit.
+pub(crate) fn build_script_inputs(project_dir: &Path) -> PackageCacheBuildInputs {
+    let source_manager = DefaultSourceManager::default();
+    let mut transcript = Transcript::new();
+    let mut watch_paths = BTreeSet::new();
+    let mut manifests =
+        ManifestClosure::new(&mut transcript, &source_manager, Some(&mut watch_paths));
+    manifests.visit_project(project_dir, None);
+
+    PackageCacheBuildInputs {
+        watch_paths: watch_paths.into_iter().collect(),
+        source_dependency_count: source_dependency_count(project_dir, &source_manager),
+    }
+}
+
+/// Counts the root project's direct dependencies whose packages a build compiles into the cache.
+fn source_dependency_count(project_dir: &Path, source_manager: &dyn SourceManager) -> usize {
+    let Ok(project) = Project::load(project_dir, source_manager) else {
+        return 0;
+    };
+    project
+        .package()
+        .dependencies()
+        .iter()
+        .filter(|dependency| match dependency.scheme() {
+            DependencyVersionScheme::Registry(_) => false,
+            DependencyVersionScheme::Path { path, .. }
+            | DependencyVersionScheme::WorkspacePath { path, .. } => {
+                !is_package_file_uri(path.inner())
+            }
+            DependencyVersionScheme::Workspace { .. } | DependencyVersionScheme::Git { .. } => true,
+        })
+        .count()
+}
+
+/// Returns true when a path dependency's URI names a preassembled `.masp` package file.
+///
+/// Extension-classified like the fingerprint walk, before any canonicalization.
+fn is_package_file_uri(uri: &miden_project::Uri) -> bool {
+    Path::new(uri.path())
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION))
 }
 
 /// A length-prefixed, domain-separated byte transcript.
@@ -559,17 +627,33 @@ struct ManifestClosure<'a> {
     visited_projects: BTreeSet<PathBuf>,
     visited_packages: BTreeSet<PathBuf>,
     visited_workspace_roots: BTreeSet<PathBuf>,
+    /// Existing filesystem inputs collected for build scripts, when a collector is attached.
+    watch_paths: Option<&'a mut BTreeSet<PathBuf>>,
 }
 
 impl<'a> ManifestClosure<'a> {
     /// Creates an empty manifest-closure walk.
-    fn new(transcript: &'a mut Transcript, source_manager: &'a dyn SourceManager) -> Self {
+    fn new(
+        transcript: &'a mut Transcript,
+        source_manager: &'a dyn SourceManager,
+        watch_paths: Option<&'a mut BTreeSet<PathBuf>>,
+    ) -> Self {
         Self {
             transcript,
             source_manager,
             visited_projects: BTreeSet::new(),
             visited_packages: BTreeSet::new(),
             visited_workspace_roots: BTreeSet::new(),
+            watch_paths,
+        }
+    }
+
+    /// Records a path for build-script watching when collection is active and the path exists.
+    fn watch(&mut self, path: &Path) {
+        if let Some(watch_paths) = self.watch_paths.as_deref_mut()
+            && path.exists()
+        {
+            watch_paths.insert(path.to_path_buf());
         }
     }
 
@@ -618,6 +702,15 @@ impl<'a> ManifestClosure<'a> {
         };
         self.transcript.field("project.load", b"succeeded");
 
+        // Dependency sources feed dependency packages, so build scripts watch them. The root
+        // project's sources do not: its package is not read back by its own macro expansion,
+        // and watching them would re-run the nested build on every edit. The root is the one
+        // project visited without an expected dependency name.
+        if expected_name.is_some() {
+            self.watch(&project_dir.join("src"));
+            self.watch(&project_dir.join("wit"));
+        }
+
         let package = project.package();
         let workspace = match &project {
             Project::WorkspacePackage { workspace, .. } => Some(workspace.as_ref()),
@@ -648,6 +741,7 @@ impl<'a> ManifestClosure<'a> {
         self.transcript.field("manifest.name", name.as_bytes());
         match std::fs::read(path) {
             Ok(bytes) => {
+                self.watch(path);
                 self.transcript.field("manifest.state", b"present");
                 self.transcript.field("manifest.bytes", &bytes);
             }
@@ -769,6 +863,7 @@ impl<'a> ManifestClosure<'a> {
         self.transcript.field("package.file", b"begin");
         match std::fs::read(path) {
             Ok(bytes) => {
+                self.watch(path);
                 self.transcript.field("package.file.state", b"present");
                 let digest = Blake3_256::hash(&bytes);
                 self.transcript.field("package.file.digest", digest.as_bytes());
@@ -1117,6 +1212,44 @@ mod tests {
     /// Computes a test fingerprint with a fresh source manager.
     fn test_fingerprint(options: &Options, project_dir: &Path, version: &str, rev: &str) -> String {
         fingerprint(options, project_dir, None, None, version, rev)
+    }
+
+    #[test]
+    fn build_script_inputs_watch_dependency_sources_but_not_root_sources() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path().join("root");
+        let dependency = temp.path().join("dependency");
+        let prebuilt = temp.path().join("prebuilt.masp");
+        write_project(
+            &root,
+            "root",
+            "\n[dependencies]\nregistry-dep = \"*\"\ndependency = { path = \"../dependency\" \
+             }\nprebuilt = { path = \"../prebuilt.masp\" }\n",
+        );
+        write_project(&dependency, "dependency", "");
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::create_dir_all(dependency.join("src")).unwrap();
+        fs::create_dir_all(dependency.join("wit")).unwrap();
+        fs::write(&prebuilt, b"package bytes").unwrap();
+
+        let inputs = build_script_inputs(&root);
+
+        // Paths may carry `..` components from manifest-relative joins; compare by suffix.
+        let watched = |suffix: &str| inputs.watch_paths.iter().any(|path| path.ends_with(suffix));
+        assert!(watched("root/miden-project.toml"), "the root manifests must be watched");
+        assert!(watched("root/Cargo.toml"), "the root manifests must be watched");
+        assert!(watched("dependency/miden-project.toml"));
+        assert!(watched("dependency/Cargo.toml"));
+        assert!(watched("dependency/src"), "dependency sources must be watched");
+        assert!(watched("dependency/wit"), "dependency WIT must be watched");
+        assert!(watched("prebuilt.masp"), "preassembled packages must be watched");
+        assert!(!watched("root/src"), "root sources must not re-run the nested build");
+        assert!(!watched("root/wit"), "a nonexistent path must never be watched");
+
+        assert_eq!(
+            inputs.source_dependency_count, 1,
+            "only the source-project dependency counts; registry and `.masp` deps do not"
+        );
     }
 
     #[test]
