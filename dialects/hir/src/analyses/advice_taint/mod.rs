@@ -4,6 +4,8 @@ mod layout;
 mod propagation;
 mod sinks;
 mod storage;
+#[cfg(test)]
+mod test_support;
 
 use alloc::{rc::Rc, vec::Vec};
 use core::any::Any;
@@ -36,6 +38,15 @@ use self::{
 };
 
 /// Analysis wrapper that runs the sparse taint propagation and materializes diagnostics.
+///
+/// # Analysis root
+///
+/// Run this over a root that contains every callee reachable from the code under analysis — a
+/// world or a component, as the compiler does. Rooted lower (a single function, say), a call to
+/// a callee outside the root is classified by whether it has a body, not by whether this
+/// analysis can see it: `hir_analysis`'s forward analyses then propagate into a callee they
+/// never visit, seeding clean state with no known return to join, and findings inside that
+/// callee are silently missed. Making that classification scope-aware is tracked separately.
 #[derive(Default)]
 pub struct AdviceTaintAnalysis {
     solver: DataFlowSolver,

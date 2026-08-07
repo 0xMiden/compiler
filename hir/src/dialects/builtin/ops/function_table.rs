@@ -1,0 +1,296 @@
+use alloc::collections::BTreeMap;
+
+use crate::{
+    AsSymbolRef, NamedAttribute, Op, OpParser, OpPrinter, Operation, OperationName, RegionKind,
+    RegionKindInterface, Symbol, SymbolName, SymbolRef, SymbolUseList, UnsafeIntrusiveEntityRef,
+    Usable, Visibility,
+    derive::operation,
+    dialects::builtin::{
+        BuiltinDialect,
+        attributes::{IdentAttr, U32Attr, VisibilityAttr},
+    },
+    parse::ParserExt,
+    print::AsmPrinter,
+    traits::{
+        GraphRegionNoTerminator, HasOnlyGraphRegion, IsolatedFromAbove, NoRegionArguments,
+        NoTerminator, SingleBlock, SingleRegion,
+    },
+};
+
+pub type FunctionTableRef = UnsafeIntrusiveEntityRef<FunctionTable>;
+pub type FunctionTableEntryRef = UnsafeIntrusiveEntityRef<FunctionTableEntry>;
+
+/// A [FunctionTable] declares a function-reference table in the shared memory of a
+/// [super::Component]; the Wasm frontend lowers `funcref` tables to it.
+///
+/// The table occupies two words (8 field elements, 32 bytes) of linear memory per slot: the
+/// first word holds the MAST root digest of the referenced function, and the first element of
+/// the second word holds the callee's signature tag (see [FunctionTableEntry]). A null entry is
+/// all zeroes: the zero digest and the reserved tag 0. The base address of the table is assigned
+/// by the linker (word-aligned), and initialized slots are filled at program startup by the
+/// component `init` procedure.
+///
+/// The `entries` region holds one [FunctionTableEntry] per initialized slot, in application
+/// order (later entries overwrite earlier ones at the same index).
+#[operation(
+    dialect = BuiltinDialect,
+    traits(
+        SingleRegion,
+        SingleBlock,
+        NoRegionArguments,
+        NoTerminator,
+        HasOnlyGraphRegion,
+        GraphRegionNoTerminator,
+        IsolatedFromAbove,
+    ),
+    implements(RegionKindInterface, Symbol, OpPrinter)
+)]
+pub struct FunctionTable {
+    #[attr]
+    name: IdentAttr,
+    #[attr]
+    visibility: VisibilityAttr,
+    /// The number of slots in the table
+    #[attr]
+    num_slots: U32Attr,
+    #[region]
+    entries: RegionRef,
+    #[default]
+    uses: SymbolUseList,
+}
+
+impl FunctionTable {
+    #[inline(always)]
+    pub fn as_function_table_ref(&self) -> FunctionTableRef {
+        unsafe { FunctionTableRef::from_raw(self) }
+    }
+
+    /// The entries of this table that can actually be reached, keyed by slot index.
+    ///
+    /// A later entry at the same index overwrites an earlier one, so only the last entry per slot
+    /// can ever be dispatched to — hence the map rather than a list, and hence the name: every
+    /// other entry is dead, and treating it as live is a soundness bug, not a missed optimization.
+    ///
+    /// Every consumer of the dispatchability rule is built on this, and it is important that they
+    /// stay built on the *same* thing. The `hir.exec_indirect` verifier's guarantee is that no
+    /// dispatchable entry disagrees with the call's signature; `possible_callees`' guarantee is
+    /// that the set it returns contains every entry that can be reached; code generation's job is
+    /// to fill each slot with exactly the entry those two reasoned about. If one of them computed
+    /// a different set than the others, the verifier would silently stop covering entries the
+    /// analysis still considers live, or codegen would write a MAST root the verifier never
+    /// checked a signature for.
+    ///
+    /// The entries are returned unresolved, and deliberately so: the verifier resolves only the
+    /// entries whose tag matches its call site, which on a table with `1 << 20` slots is very much
+    /// not all of them, while codegen resolves every one. Resolving here would make each pay the
+    /// other's cost.
+    ///
+    /// Returns `Err` with the name of the offending operation if the table body holds anything
+    /// other than [`FunctionTableEntry`]; each caller reports that in its own terms.
+    pub fn live_entries(&self) -> Result<BTreeMap<u32, FunctionTableEntryRef>, OperationName> {
+        let mut live = BTreeMap::new();
+        let entries = self.entries();
+        if entries.is_empty() {
+            return Ok(live);
+        }
+        for op in entries.entry().body() {
+            let Some(entry) = op.downcast_ref::<FunctionTableEntry>() else {
+                return Err(op.name());
+            };
+            live.insert(*entry.get_index(), entry.as_function_table_entry_ref());
+        }
+        Ok(live)
+    }
+}
+
+impl RegionKindInterface for FunctionTable {
+    #[inline(always)]
+    fn kind(&self) -> RegionKind {
+        RegionKind::Graph
+    }
+}
+
+impl Usable for FunctionTable {
+    type Use = crate::SymbolUse;
+
+    #[inline(always)]
+    fn uses(&self) -> &SymbolUseList {
+        &self.uses
+    }
+
+    #[inline(always)]
+    fn uses_mut(&mut self) -> &mut SymbolUseList {
+        &mut self.uses
+    }
+}
+
+impl Symbol for FunctionTable {
+    #[inline(always)]
+    fn as_symbol_operation(&self) -> &Operation {
+        &self.op
+    }
+
+    #[inline(always)]
+    fn as_symbol_operation_mut(&mut self) -> &mut Operation {
+        &mut self.op
+    }
+
+    fn name(&self) -> SymbolName {
+        FunctionTable::name(self).as_symbol()
+    }
+
+    fn set_name(&mut self, name: SymbolName) {
+        FunctionTable::set_name(self, name)
+    }
+
+    fn visibility(&self) -> Visibility {
+        *self.get_visibility()
+    }
+
+    fn set_visibility(&mut self, visibility: Visibility) {
+        FunctionTable::set_visibility(self, visibility);
+    }
+}
+
+impl AsSymbolRef for FunctionTable {
+    fn as_symbol_ref(&self) -> SymbolRef {
+        self.as_symbol_operation()
+            .as_symbol_ref()
+            .expect("function tables must provide a symbol operation")
+    }
+}
+
+impl OpPrinter for FunctionTable {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        printer.print_space();
+        printer.print_keyword(self.get_visibility().as_str());
+        printer.print_space();
+        printer.print_symbol_name(self.get_name().as_symbol());
+        *printer += const_text(" : ");
+        *printer += display(*self.get_num_slots());
+        printer.print_space();
+        printer.print_region(&self.entries());
+    }
+}
+
+impl OpParser for FunctionTable {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        use crate::parse::Token;
+
+        let visibility = parser
+            .parse_keyword_from(&[
+                Token::BareIdent("public"),
+                Token::BareIdent("private"),
+                Token::BareIdent("internal"),
+            ])?
+            .into_inner()
+            .parse::<Visibility>()
+            .unwrap();
+        state.add_attribute(
+            "visibility",
+            parser.context_rc().create_attribute::<VisibilityAttr, _>(visibility),
+        );
+
+        let name = parser.parse_symbol_name()?;
+        state.add_attribute("name", parser.context_rc().create_attribute::<IdentAttr, _>(name));
+
+        parser.parse_colon()?;
+        let num_slots = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute(
+            "num_slots",
+            parser.context_rc().create_attribute::<U32Attr, _>(num_slots),
+        );
+
+        let entries = parser.parse_optional_region(&[], /*enable_name_shadowing=*/ false)?;
+        // We always add the entries region, even if empty
+        state.regions.push(entries.unwrap_or_else(|| parser.context().create_region()));
+
+        Ok(())
+    }
+}
+
+/// A [FunctionTableEntry] describes a single initialized slot of a [FunctionTable]: at program
+/// startup, slot `index` is filled with the MAST root digest of `callee`.
+///
+/// This operation type is only permitted in the `entries` region of a [FunctionTable].
+///
+/// An entry is only *live* if no later entry names the same slot; see [FunctionTable::live_entries].
+#[operation(
+    dialect = BuiltinDialect,
+    implements(OpPrinter)
+)]
+pub struct FunctionTableEntry {
+    /// The table slot to initialize
+    #[attr]
+    index: U32Attr,
+    /// An opaque tag identifying the callee's source-level signature; the indirect-call lowering
+    /// compares it against the tag the call site expects before it transfers control. Tags start
+    /// at 1, because 0 is reserved for null (uninitialized) slots.
+    #[attr]
+    type_tag: U32Attr,
+    /// The function whose MAST root fills the slot
+    #[symbol(callable)]
+    callee: SymbolPath,
+}
+
+impl OpPrinter for FunctionTableEntry {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use crate::formatter::*;
+
+        printer.print_space();
+        *printer += display(*self.get_index());
+        printer.print_space();
+        let callee = self.callee();
+        printer.print_symbol_path(callee.path());
+        *printer += const_text(" tag ") + display(*self.get_type_tag());
+    }
+}
+
+impl FunctionTableEntry {
+    #[inline(always)]
+    pub fn as_function_table_entry_ref(&self) -> FunctionTableEntryRef {
+        unsafe { FunctionTableEntryRef::from_raw(self) }
+    }
+
+    /// Resolve this entry's callee, starting from the symbol table that contains the entry.
+    ///
+    /// The path is the *entry's*, not the call site's: a table in module `b` may hold the
+    /// relative entry `@target` while the `hir.exec_indirect` reaching it lives in module `a`,
+    /// which may define a different `@target`. Resolving from the call site would silently
+    /// dispatch to one function while every analysis reasoned about another.
+    ///
+    /// `FunctionTableEntry` sits in a table's `entries` region rather than a symbol table, so
+    /// the nearest symbol table is the module enclosing the table.
+    pub fn resolve_callee(&self) -> Option<SymbolRef> {
+        let symbol_table = self.as_operation().nearest_symbol_table()?;
+        let symbol_table = symbol_table.borrow();
+        symbol_table.as_symbol_table()?.resolve(self.callee().path())
+    }
+}
+
+impl OpParser for FunctionTableEntry {
+    fn parse(
+        state: &mut crate::OperationState,
+        parser: &mut dyn crate::OpAsmParser<'_>,
+    ) -> crate::ParseResult {
+        let index = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute("index", parser.context_rc().create_attribute::<U32Attr, _>(index));
+
+        let callee = parser.parse_symbol_ref()?;
+        state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
+
+        parser.parse_custom_keyword("tag")?;
+        let type_tag = parser.parse_decimal_integer::<u32>()?.into_inner();
+        state.add_attribute(
+            "type_tag",
+            parser.context_rc().create_attribute::<U32Attr, _>(type_tag),
+        );
+
+        Ok(())
+    }
+}

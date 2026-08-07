@@ -17,6 +17,27 @@ pub enum CallControlFlowAction {
     External,
 }
 
+/// Returns true if `call` must be treated as a call to an external callable for interprocedural
+/// analysis: its set of possible callees is not statically known, or at least one possible
+/// callee has no body to analyze.
+///
+/// A call whose possible callees are statically known participates in interprocedural
+/// propagation even without a single resolvable callee (e.g. an indirect call through a function
+/// table).
+pub(crate) fn is_external_call(call: &dyn midenc_hir::CallOpInterface) -> bool {
+    use midenc_hir::CallableOpInterface;
+
+    call.possible_callees().is_none_or(|targets| {
+        targets.iter().any(|target| {
+            let target = target.borrow();
+            target
+                .as_symbol_operation()
+                .as_trait::<dyn CallableOpInterface>()
+                .is_none_or(|callable| callable.get_callable_region().is_none())
+        })
+    })
+}
+
 /// [DataFlowAnalysis] is the base trait for all data-flow analyses.
 ///
 /// In general, a data-flow analysis, is expected to visit the IR rooted at some operation, and in

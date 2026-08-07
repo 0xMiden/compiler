@@ -198,7 +198,25 @@ where
 
     /// After parsing is finished, this function must be called to see if there are any remaining
     /// issues.
-    pub fn finalize(mut self) -> ParseResult {
+    ///
+    /// Verification runs as the last step, if [`ParserConfig::should_verify_after_parse`] is set.
+    pub fn finalize(self) -> ParseResult {
+        let verify = self.parser.state().config.should_verify_after_parse();
+        self.finalize_impl(verify)
+    }
+
+    /// Like [`Self::finalize`], but never verifies, regardless of the parser configuration.
+    ///
+    /// This exists for callers that must reparent the parsed operation before it can be
+    /// meaningfully verified — verification walks down from the anchor world, so any absolute
+    /// symbol path in the parsed IR resolves against the anchor rather than the root the caller
+    /// will actually hand back. Such a caller is responsible for verifying the root itself when
+    /// [`ParserConfig::should_verify_after_parse`] is set; see `parse_anchored_source`.
+    pub fn finalize_without_verifying(self) -> ParseResult {
+        self.finalize_impl(false)
+    }
+
+    fn finalize_impl(mut self, verify: bool) -> ParseResult {
         // Check for any forward references that are left.  If we find any, error out.
         if !self.forward_ref_placeholders.is_empty() {
             let mut labels = Vec::with_capacity(self.forward_ref_placeholders.len());
@@ -258,7 +276,7 @@ where
         self.pop_ssa_name_scope()?;
 
         // Verify that the parsed operations are valid.
-        if self.parser.state().config.should_verify_after_parse() {
+        if verify {
             self.top_level.borrow().as_operation().recursively_verify()?;
         }
 

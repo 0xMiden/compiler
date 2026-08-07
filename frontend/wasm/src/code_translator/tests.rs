@@ -56,6 +56,247 @@ fn check_op(wat_op: &str, expected_ir: midenc_expect_test::ExpectFile) {
     expected_ir.assert_eq(&w);
 }
 
+/// Check IR generated for a complete Wasm module.
+/// Unlike [check_op], prints every `builtin.module` wholesale, including module-level items such
+/// as function tables, so tests can cover more than function bodies.
+fn check_module(wat: &str, expected_ir: midenc_expect_test::ExpectFile) {
+    let context = Rc::new(midenc_hir::Context::default());
+
+    let wasm = wat::parse_str(wat).unwrap();
+    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+        .map_err(|e| {
+            if let Some(labels) = e.labels() {
+                for label in labels {
+                    eprintln!("{}", label.label().unwrap());
+                }
+            }
+            let report = midenc_session::diagnostics::PrintDiagnostic::new(e).to_string();
+            eprintln!("{report}");
+        })
+        .unwrap();
+
+    let component = output.component.borrow();
+    let mut w = String::new();
+    component
+        .as_operation()
+        .prewalk(|op: &Operation| {
+            if op.is::<builtin::Module>() {
+                match writeln!(&mut w, "{op}") {
+                    Ok(_) => WalkResult::Skip,
+                    Err(err) => WalkResult::Break(err),
+                }
+            } else {
+                WalkResult::Continue(())
+            }
+        })
+        .into_result()
+        .unwrap();
+
+    expected_ir.assert_eq(&w);
+}
+
+/// Check that translating a complete Wasm module fails with an error containing `expected_msg`.
+fn check_module_err(wat: &str, expected_msg: &str) {
+    let context = Rc::new(midenc_hir::Context::default());
+    let wasm = wat::parse_str(wat).unwrap();
+    let msg = match translate(&wasm, &WasmTranslationConfig::default(), context) {
+        Ok(_) => panic!("expected translation to fail"),
+        Err(err) => format!("{err}"),
+    };
+    assert!(
+        msg.contains(expected_msg),
+        "expected error containing '{expected_msg}', got: {msg}"
+    );
+}
+
+#[test]
+fn call_indirect() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref)
+            (elem (i32.const 1) func $add $mul)
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect.hir"],
+    )
+}
+
+/// Symbol names in a Wasm module are producer-controlled, so a user function may be named
+/// exactly like the compiler's generated table symbol; the generated name must be bumped until
+/// it is free instead of colliding with the user's function.
+#[test]
+fn call_indirect_table_name_collides_with_user_function() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref)
+            (elem (i32.const 1) func $__indirect_function_table_0 $mul)
+            (memory (;0;) 16384)
+            (func $__indirect_function_table_0 (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_table_name_collision.hir"],
+    )
+}
+
+/// The final table image must honor Wasm initialization order: the whole-table `(ref.func ..)`
+/// default is overwritten by later element segments, and an explicit `ref.null` entry clears a
+/// previously initialized slot (so dispatching through it traps instead of calling a stale
+/// function).
+#[test]
+fn call_indirect_ref_null_overwrites_earlier_entry() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 3 3 funcref (ref.func $add))
+            (elem (i32.const 1) func $mul)
+            (elem (i32.const 2) funcref (ref.null func))
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $mul (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.mul)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_ref_null.hir"],
+    )
+}
+
+/// A table with no statically-initialized entries still lowers: every dispatch through it fails
+/// at runtime on the zero MAST root of a null slot, matching Wasm's uninitialized-element trap.
+#[test]
+fn call_indirect_all_null_table() {
+    check_module(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 2 2 funcref)
+            (memory (;0;) 16384)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_all_null.hir"],
+    )
+}
+
+#[test]
+fn call_indirect_rejects_oversized_table() {
+    check_module_err(
+        r#"
+        (module
+            (type $binop (func (param i32 i32) (result i32)))
+            (table 2000000 2000000 funcref)
+            (elem (i32.const 0) func $add)
+            (memory (;0;) 16384)
+            (func $add (type $binop) (param i32 i32) (result i32)
+                local.get 0
+                local.get 1
+                i32.add)
+            (func $dispatch (param i32 i32 i32) (result i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        "exceeds the supported maximum",
+    )
+}
+
+/// The linker stub for an intrinsic the compiler lowers to an inlined operation (such as
+/// `intrinsics::felt::add`, whose Wasm body is a single `unreachable`) is erased from the module,
+/// so there is no procedure body whose MAST root a table slot could hold. Taking such a
+/// function's address must be rejected at compile time rather than lowered to a null slot.
+#[test]
+fn call_indirect_rejects_inlined_intrinsic_table_entry() {
+    check_module_err(
+        r#"
+        (module
+            (type $binop (func (param f32 f32) (result f32)))
+            (table 1 1 funcref)
+            (elem (i32.const 0) func $intrinsics::felt::add)
+            (memory (;0;) 16384)
+            (func $intrinsics::felt::add (type $binop)
+                unreachable)
+            (func $dispatch (param i32 f32 f32) (result f32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $binop))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        "is an inlined intrinsic without a procedure body",
+    )
+}
+
+/// A stub for an intrinsic lowered to a MASM procedure keeps its own body (an `exec` of the
+/// intrinsic) and therefore its Wasm signature, which is exactly the one the entry's type tag
+/// denotes. Such an entry is well-formed and must keep lowering.
+#[test]
+fn call_indirect_accepts_masm_procedure_intrinsic_table_entry() {
+    check_module(
+        r#"
+        (module
+            (type $hmerge (func (param i32 i32)))
+            (table 1 1 funcref)
+            (elem (i32.const 0) func $intrinsics::crypto::hmerge)
+            (memory (;0;) 16384)
+            (func $intrinsics::crypto::hmerge (type $hmerge)
+                unreachable)
+            (func $dispatch (param i32 i32 i32)
+                local.get 1
+                local.get 2
+                local.get 0
+                call_indirect (type $hmerge))
+            (export "dispatch" (func $dispatch))
+        )"#,
+        expect_file!["./expected/call_indirect_intrinsic_stub.hir"],
+    )
+}
+
 #[test]
 fn memory_grow() {
     check_op(
@@ -1202,4 +1443,30 @@ fn globals() {
     "#,
         expect_file!("./expected/globals.hir"),
     )
+}
+
+/// A data segment may occupy the last bytes of linear memory: `wasm-tools validate` accepts
+/// this module, so the frontend must translate it to a segment at `0xfffffff0` and leave the
+/// address-space arithmetic to the linker, which reports `LayoutOverflow` for it.
+#[test]
+fn translates_a_data_segment_at_the_end_of_memory() {
+    let wat = r#"
+        (module
+            (memory 65536)
+            (data (i32.const -16) "0123456789abcdef")
+        )"#;
+    let wasm = wat::parse_str(wat).unwrap();
+    let context = Rc::new(midenc_hir::Context::default());
+    let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+        .expect("a segment at the end of memory is valid Wasm");
+
+    let mut segments = Vec::new();
+    let component = output.component.borrow();
+    component.as_operation().prewalk_all(|op: &Operation| {
+        if let Some(segment) = op.downcast_ref::<builtin::Segment>() {
+            segments.push((*segment.get_offset(), segment.size_in_bytes()));
+        }
+    });
+
+    assert_eq!(segments, vec![(0xffff_fff0u32, 16usize)]);
 }

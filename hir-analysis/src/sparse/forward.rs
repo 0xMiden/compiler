@@ -245,15 +245,7 @@ where
         // call arguments.
         //
         // TODO: resolve_in_symbol_table
-        let callable = call.resolve();
-        let callable = callable.as_ref().map(|c| c.borrow());
-        let callable = callable
-            .as_ref()
-            .and_then(|c| c.as_symbol_operation().as_trait::<dyn CallableOpInterface>());
-        let is_external_call = callable
-            .as_ref()
-            .is_none_or(|callable| callable.get_callable_region().is_none());
-        if !solver.config().is_interprocedural() || is_external_call {
+        if !solver.config().is_interprocedural() || crate::analysis::is_external_call(call) {
             log::trace!(target: analysis.debug_name(), "callee {} is external", call.callable_for_callee());
             analysis.visit_call_control_flow_transfer(
                 call,

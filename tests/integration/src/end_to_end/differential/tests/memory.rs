@@ -79,3 +79,10 @@ fn mem_size() {
 fn loadwiden() {
     run_case("loadwiden", include_str!("../cases/case_loadwiden.rs"));
 }
+
+/// Exercises a large `.bss` static spanning the region where compiler-managed memory (globals,
+/// function tables, heap) would land if the layout ignored the wasm minimum memory size.
+#[test]
+fn static_bss() {
+    run_case("static_bss", include_str!("../cases/case_static_bss.rs"));
+}

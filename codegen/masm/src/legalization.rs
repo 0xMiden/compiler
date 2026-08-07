@@ -18,6 +18,12 @@ use midenc_hir::{
 
 use crate::HirLowering;
 
+/// The number of operand stack elements addressable by Miden Assembly instructions.
+///
+/// An indirect call schedules its arguments plus the table index inside this window, which
+/// bounds the argument size its lowering can support.
+const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
+
 midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<LegalizeForMasm>(
     LegalizeForMasm::ARGUMENT,
     "legalize HIR for MASM codegen"
@@ -110,6 +116,94 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
         .add_legal_op::<builtin::Function>()
         .add_legal_op::<builtin::GlobalVariable>()
         .add_legal_op::<builtin::Segment>()
+        .add_dynamically_legal_op::<builtin::FunctionTable, _>(|op| {
+            let inside_module =
+                op.parent_op().is_some_and(|parent| parent.borrow().is::<builtin::Module>());
+            if inside_module {
+                DynamicLegalityResult::legal()
+            } else {
+                DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' is only permitted in the body of a 'builtin.module', the one \
+                     place the linker's memory layout visits",
+                    op.name()
+                )))
+            }
+        })
+        .add_dynamically_legal_op::<builtin::FunctionTableEntry, _>(|op| {
+            let entry = op
+                .downcast_ref::<builtin::FunctionTableEntry>()
+                .expect("this legality rule is registered for builtin.function_table_entry");
+            let Some(parent) = op.parent_op() else {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' is only permitted in the entries region of a \
+                     'builtin.function_table'",
+                    op.name()
+                )));
+            };
+            let parent = parent.borrow();
+            let Some(table) = parent.downcast_ref::<builtin::FunctionTable>() else {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' is only permitted in the entries region of a \
+                     'builtin.function_table'",
+                    op.name()
+                )));
+            };
+            let slot = *entry.get_index();
+            let num_slots = *table.get_num_slots();
+            if slot >= num_slots {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' initializes slot {slot}, which is out of bounds for table \
+                     '{}' with {num_slots} slots",
+                    op.name(),
+                    table.get_name().as_str()
+                )));
+            }
+            if *entry.get_type_tag() == 0 {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' uses signature tag 0, which is reserved for null slots",
+                    op.name()
+                )));
+            }
+            if entry.resolve_callee().is_none() {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' names callee '{}', which does not resolve",
+                    op.name(),
+                    entry.callee().path()
+                )));
+            }
+            DynamicLegalityResult::legal()
+        })
+        .add_dynamically_legal_op::<hir::ExecIndirect, _>(|op| {
+            let exec = op
+                .downcast_ref::<hir::ExecIndirect>()
+                .expect("this legality rule is registered for hir.exec_indirect");
+            let signature = exec.get_signature();
+            // The lowering consumes the arguments as-is: an extension requirement would need
+            // instructions operating on the stack top, which the transient slot address holds
+            if let Some(index) = signature.params.iter().position(|param| {
+                !matches!(
+                    param.extension(),
+                    midenc_hir::dialects::builtin::attributes::ArgumentExtension::None
+                )
+            }) {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' does not support argument extension, which parameter {index} \
+                     requires",
+                    op.name()
+                )));
+            }
+            let arg_felts: usize =
+                signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
+            if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' schedules {arg_felts} argument field elements plus the table \
+                     index, which exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand stack \
+                     window",
+                    op.name()
+                )));
+            }
+            DynamicLegalityResult::legal()
+        })
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
                 "operation '{}' is temporary dialect-conversion scaffolding and must be \
@@ -151,11 +245,18 @@ fn masm_lowerable_op(op: &Operation) -> DynamicLegalityResult {
 
 #[cfg(test)]
 mod tests {
-    use alloc::format;
+    use alloc::{boxed::Box, format};
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_dialect_hir::HirOpBuilder;
-    use midenc_hir::{SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, testing::Test};
+    use midenc_hir::{
+        Ident, SourceSpan, Type, ValueRef, Visibility,
+        dialects::builtin::{
+            BuiltinOpBuilder, ModuleBuilder,
+            attributes::{AbiParam, Signature},
+        },
+        testing::Test,
+    };
 
     use super::*;
 
@@ -206,5 +307,120 @@ mod tests {
         let message = format!("{err}");
         assert!(message.contains("builtin.unrealized_conversion_cast"));
         assert!(message.contains("temporary dialect-conversion scaffolding"));
+    }
+
+    /// A function table anywhere but a module body is invisible to the linker's layout scan, so
+    /// it must be rejected here instead of panicking when a dispatch cannot find its address.
+    #[test]
+    fn function_tables_outside_a_module_fail_legalization() {
+        let mut test = Test::new("function_tables_outside_a_module_fail_legalization", &[], &[]);
+        {
+            let mut builder = test.function_builder();
+            builder
+                .create_function_table(Ident::from("tbl"), Visibility::Private, 2)
+                .unwrap();
+            builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+        }
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("builtin.function_table"), "{message}");
+        assert!(message.contains("body of a 'builtin.module'"), "{message}");
+    }
+
+    /// Run `LegalizeForMasm` over `test`'s module.
+    ///
+    /// `Test::apply_pass` anchors the pass on the test's primary function, which never reaches a
+    /// function table: tables live in the module body, as they do under the
+    /// `PassManager::on::<builtin::World>` the backend pipeline uses.
+    fn legalize_module(test: &Test) -> Result<(), Report> {
+        use midenc_hir::pass::{Nesting, PassManager};
+
+        let mut pm = PassManager::on::<builtin::Module>(test.context_rc(), Nesting::Implicit);
+        pm.add_pass(Box::new(LegalizeForMasm));
+        pm.enable_verifier(false);
+        pm.run(test.module().as_operation_ref())
+    }
+
+    /// A slot past the end of its table has no address in the linker's layout, so codegen
+    /// cannot emit an initializer for it; legalization is where that is decided.
+    #[test]
+    fn out_of_bounds_function_table_entries_fail_legalization() {
+        let mut test = Test::named("out_of_bounds_entry").in_module("m");
+        test.with_function("dispatch", &[], &[]);
+        let table = ModuleBuilder::new(test.module())
+            .define_function_table(Ident::from("tbl"), Visibility::Private, 1)
+            .unwrap();
+        ModuleBuilder::new(test.module())
+            .append_function_table_entry(table, 0, 1, test.function(), SourceSpan::UNKNOWN)
+            .unwrap();
+        // The builder rejects an out-of-bounds slot up front, so rewrite the index afterwards to
+        // build the IR a producer that did not go through the builder could hand codegen
+        {
+            let mut entry_op = {
+                let table = table.borrow();
+                let entries = table.entries();
+                entries.entry().body().into_iter().next().unwrap().as_operation_ref()
+            };
+            let mut entry_op = entry_op.borrow_mut();
+            entry_op
+                .downcast_mut::<builtin::FunctionTableEntry>()
+                .expect("a function table's entries region holds only entries")
+                .set_index(9u32);
+        }
+
+        let err = legalize_module(&test).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("builtin.function_table_entry"), "{message}");
+        assert!(message.contains("out of bounds"), "{message}");
+    }
+
+    /// Build a module hosting a two-slot table and a `dispatch` function whose
+    /// `hir.exec_indirect` uses `signature`, passing one u32 constant per parameter.
+    fn test_with_exec_indirect(test: &mut Test, signature: Signature) {
+        test.with_function("dispatch", &[Type::U32], &[]);
+        let table = ModuleBuilder::new(test.module())
+            .define_function_table(Ident::from("tbl"), Visibility::Private, 2)
+            .unwrap();
+        let arity = signature.params.len();
+        let mut builder = test.function_builder();
+        let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+        let args = (0..arity)
+            .map(|_| builder.u32(0, SourceSpan::UNKNOWN))
+            .collect::<alloc::vec::Vec<_>>();
+        builder
+            .exec_indirect(table, signature, 1, index, args, SourceSpan::UNKNOWN)
+            .unwrap();
+        builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+    }
+
+    /// Arguments plus the table index must fit the addressable operand stack window; the wasm
+    /// frontend diagnoses this at translation, but IR from any other producer reaches codegen
+    /// unchecked.
+    #[test]
+    fn oversized_exec_indirect_arguments_fail_legalization() {
+        let mut test = Test::named("oversized_exec_indirect").in_module("m");
+        let signature = Signature::new(&test.context_rc(), vec![Type::U32; 16], []);
+        test_with_exec_indirect(&mut test, signature);
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("operand stack window"), "{message}");
+    }
+
+    /// The indirect-call lowering cannot apply argument extension, since the stack top holds the
+    /// transient slot address while arguments are consumed.
+    #[test]
+    fn extension_requiring_exec_indirect_arguments_fail_legalization() {
+        let mut test = Test::named("extension_exec_indirect").in_module("m");
+        let mut signature = Signature::new(&test.context_rc(), [Type::U32], []);
+        signature.params[0] = AbiParam::sext(Type::U32, &test.context_rc());
+        test_with_exec_indirect(&mut test, signature);
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.exec_indirect"), "{message}");
+        assert!(message.contains("argument extension"), "{message}");
     }
 }

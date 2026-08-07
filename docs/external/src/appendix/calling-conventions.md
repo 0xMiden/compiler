@@ -297,8 +297,9 @@ and thus we want those closer to the top of the operand stack to reduce the amou
 Arguments/return values are laid out on the operand stack just like they would be as if you had just loaded it from memory, so all arguments are aligned,
 but may span multiple operands on the operand stack as necessary based on the size of the type (i.e. a struct type that contains a `u32` and a `i1`
 field would require two operands to represent). If the maximum number of operands allowed for the call is reached, any remaining arguments must be
-spilled to the caller's stack frame, or to the advice provider. The former is used in the case of `exec`/`dynexec`, while the latter is used for `call`
+spilled to the caller's stack frame, or to the advice provider. The former is used in the case of `exec`, while the latter is used for `call`
 and `syscall`, as caller memory is not accessible to the callee with those instructions.
 
-While ostensibly 16 elements is the maximum number of operands on the operand stack that can represent function arguments, due to the way `dynexec`/`dyncall`
-work, it is actually limited to 12 elements, because at least 4 must be free to hold the hash of the function being indirectly called.
+While ostensibly 16 elements is the maximum number of operands on the operand stack that can represent function arguments, indirect calls
+(`dynexec`/`dyncall`) reserve one element for the memory address of the word holding the callee's MAST root, limiting their arguments to 15
+elements; the compiler rejects indirect callee signatures that exceed this instead of spilling.

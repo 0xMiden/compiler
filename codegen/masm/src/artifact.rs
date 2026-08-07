@@ -13,6 +13,10 @@ use crate::{Event, lower::NativePtr, masm};
 
 pub struct MasmComponent {
     pub id: Option<builtin::ComponentId>,
+    /// True if [`Self::id`] belongs to a component the compiler invented to wrap a bare core
+    /// module, rather than one an author wrote — see
+    /// [`builtin::Component::SYNTHETIC_WRAPPER_ATTR`], which is where this comes from.
+    pub synthetic_wrapper: bool,
     /// The path of the root module for this component
     ///
     /// All components must have a canonical root module, even if empty
@@ -261,10 +265,7 @@ impl MasmComponent {
     /// a namespace, not what that namespace is, so a target that names a different one is not
     /// contradicting the file the way a component id would be.
     fn has_no_authored_identity(&self) -> bool {
-        match self.id.as_ref() {
-            Some(id) => id.is_synthetic_wrapper(),
-            None => true,
-        }
+        self.id.is_none() || self.synthetic_wrapper
     }
 
     /// Generate an executable module which when run expects the raw data segment data to be
@@ -598,15 +599,6 @@ mod tests {
 
         use super::*;
 
-        /// The identity `frontend/wasm` gives every component it wraps around a core Wasm module.
-        fn wrapper_id() -> builtin::ComponentId {
-            builtin::ComponentId {
-                namespace: Symbol::intern("root_ns"),
-                name: Symbol::intern("root"),
-                version: Version::new(1, 0, 0),
-            }
-        }
-
         /// The identity a real Wasm *component* carries, which its author chose.
         fn authored_id() -> builtin::ComponentId {
             builtin::ComponentId {
@@ -616,7 +608,22 @@ mod tests {
             }
         }
 
-        /// A component of `id`, rooted at the path that id renders to.
+        /// The component `frontend/wasm` wraps around a core Wasm module: the identity it gives
+        /// that wrapper, plus the marker saying the compiler invented it — which is what
+        /// [`MasmComponent::has_no_authored_identity`] reads. The id alone is a name an author
+        /// may write, and says nothing on its own.
+        fn wrapper_component() -> MasmComponent {
+            let id = builtin::ComponentId {
+                namespace: Symbol::intern("root_ns"),
+                name: Symbol::intern("root"),
+                version: Version::new(1, 0, 0),
+            };
+            let mut component = component(id);
+            component.synthetic_wrapper = true;
+            component
+        }
+
+        /// A component of `id` whose author wrote that id, rooted at the path it renders to.
         fn component(id: builtin::ComponentId) -> MasmComponent {
             let root_path: Arc<Path> = Arc::from(
                 id.to_library_path()
@@ -674,6 +681,7 @@ mod tests {
 
             MasmComponent {
                 id,
+                synthetic_wrapper: false,
                 root: root_path,
                 init: None,
                 entrypoint: Some(exec_target(&child_path.join(masm::Path::new("caller")))),
@@ -859,7 +867,7 @@ mod tests {
         fn a_synthetic_wrappers_library_is_rooted_at_the_target_namespace() {
             let context = context();
             let target = library_target("::example");
-            let component = component(wrapper_id());
+            let component = wrapper_component();
             let decorated = decorations(&component.modules[1], "caller");
 
             let sources = component.source_inputs(&target, context.session()).unwrap();
@@ -904,7 +912,7 @@ mod tests {
         #[test]
         fn a_library_target_named_after_the_wrapper_is_left_alone() {
             let context = context();
-            let component = component(wrapper_id());
+            let component = wrapper_component();
             let expected = paths(&component.modules[1]);
             let decorated = decorations(&component.modules[1], "caller");
             let allocations = target_allocations(&component.modules[1]);
@@ -1027,7 +1035,7 @@ mod tests {
         /// `.masm` program takes.
         #[test]
         fn an_executable_target_still_gets_the_generated_main_module() {
-            for component in [component(wrapper_id()), component_less("::init")] {
+            for component in [wrapper_component(), component_less("::init")] {
                 let context = context();
                 let expected = paths(&component.modules[1]);
                 let target = Target::executable("main", Uri::new("main.wasm"));

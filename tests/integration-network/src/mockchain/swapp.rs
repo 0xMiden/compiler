@@ -270,7 +270,7 @@ fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
 #[test]
 fn swapp_note_package_size() {
     let packages = compile_swapp_packages();
-    expect!["43939"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["38380"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.

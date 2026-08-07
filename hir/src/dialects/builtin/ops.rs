@@ -1,6 +1,7 @@
 mod cast;
 mod component;
 mod function;
+mod function_table;
 mod global_variable;
 mod interface;
 mod module;
@@ -14,6 +15,7 @@ pub use self::{
         ComponentInterface, ComponentRef, ModuleExport, ModuleInterface,
     },
     function::{Function, FunctionBuilder as PrimFunctionBuilder, FunctionRef, Ret, RetImm},
+    function_table::*,
     global_variable::*,
     interface::{Interface, InterfaceBuilder as PrimInterfaceBuilder, InterfaceRef},
     module::{Module, ModuleBuilder as PrimModuleBuilder, ModuleRef},

@@ -100,10 +100,14 @@ builtin.module public @supporting {
 ///
 /// Written out rather than derived, because the call is what it exists for: it is the only
 /// fixture here with a cross-item invocation for the assembler's linker to resolve.
+///
+/// The `@test` module is `public` because its `main` is this component's whole interface: the
+/// assembled package surface is derived from the root's public submodules, so a private module
+/// here would leave the library with no exports at all.
 const WORLD_CALLING_ITS_SUPPORTING_SIBLING: &str = r#"
 builtin.world {
 builtin.component private @"hir_ns:test@1.0.0" {
-    builtin.module private @test {
+    builtin.module public @test {
         builtin.function public extern("C") @main() {
             hir.exec ::@supporting::@sibling() : extern("C") () -> ();
             builtin.ret;
@@ -145,9 +149,32 @@ fn world_with_a_sibling_declaring_a_global() -> String {
 }
 
 /// [`WORLD_WITH_SUPPORTING_SIBLING`] with the identity `frontend/wasm` gives the component it
-/// wraps around a core Wasm module, which is the one component id that gets re-rooted.
+/// wraps around a core Wasm module.
+///
+/// The id alone does not make it the wrapper — see [`mark_as_synthetic_wrapper`], which is what
+/// a fixture standing in for the wrapper has to be put through as well.
 fn wrapper_world_with_a_supporting_sibling() -> String {
     WORLD_WITH_SUPPORTING_SIBLING.replace("hir_ns:test@1.0.0", "root_ns:root@1.0.0")
+}
+
+/// Mark `world`'s component as one the compiler invented, the way `frontend/wasm` marks the
+/// wrapper it builds around a bare core Wasm module.
+///
+/// This cannot be written into a fixture: `builtin.component`'s textual form carries no
+/// attributes, so the marker has to be set on the parsed IR — which is where the frontend sets
+/// it too, rather than on any text.
+fn mark_as_synthetic_wrapper(world: builtin::WorldRef) {
+    let mut component = {
+        let world = world.borrow();
+        let body = world.body();
+        let component = body
+            .entry()
+            .body()
+            .iter()
+            .find_map(|op| op.as_operation_ref().try_downcast_op::<builtin::Component>().ok());
+        component.expect("the fixture must declare a component to mark")
+    };
+    component.borrow_mut().mark_synthetic_wrapper();
 }
 
 /// [`WORLD_WITH_SUPPORTING_SIBLING`] whose supporting module also holds a function with **no
@@ -663,6 +690,7 @@ fn a_sibling_module_declaring_a_data_segment_is_diagnosed() {
 fn a_supporting_sibling_does_not_move_when_the_component_is_re_rooted() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, &wrapper_world_with_a_supporting_sibling());
+    mark_as_synthetic_wrapper(world);
     let lowered = lower_world(world).expect("a wrapper world with a sibling lowers");
     assert_eq!(
         lowered.root.to_string(),
@@ -1008,5 +1036,563 @@ fn type_expr_from_hir_pointer_conversion_preserves_address_space() {
             panic!("expected pointer type expression");
         };
         assert_eq!(ptr.address_space(), addrspace);
+    }
+}
+
+/// A component whose public interface is a component-level function, with its implementation in
+/// a private module beside it.
+///
+/// The module's `helper` must be a *public procedure* for the cross-module `exec` to resolve,
+/// which is exactly the combination the package surface must not leak: a public procedure of a
+/// private submodule.
+const WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("C") @entry() {
+        hir.exec ::@"hir_ns:test@1.0.0"::@test::@helper() : extern("C") () -> ();
+        builtin.ret;
+    };
+    builtin.module private @test {
+        builtin.function public extern("C") @helper() {
+            builtin.ret;
+        };
+    };
+};
+};
+"#;
+
+/// A private module's public procedures are callable within the package, but are not part of
+/// the assembled package's export surface: the surface is derived from the modules reachable
+/// through *public* submodule declarations, and a private HIR module is declared private.
+#[test]
+fn a_private_module_is_not_part_of_the_package_surface() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE);
+    let lowered = lower_world(world).expect("a component with a private module lowers");
+    let target = library_target("hir_ns:test@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+        .expect("a public interface calling into a private module assembles");
+
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        exports.iter().any(|export| export.ends_with("entry")),
+        "the component-level function is the public surface, got exports: {exports:?}"
+    );
+    assert!(
+        !exports.iter().any(|export| export.contains("helper")),
+        "a public procedure of a private module must not be exported, got exports: {exports:?}"
+    );
+}
+
+/// [`WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE`] carrying the id `frontend/wasm` gives
+/// the wrapper it invents around a bare core module — written by an author here, rather than
+/// invented, which is the whole point: nothing marks this component synthetic.
+///
+/// Derived from the shared fixture rather than written out, so the component id is the only
+/// thing that differs from the case beside it.
+fn world_with_an_authored_root_id() -> String {
+    WORLD_WITH_A_PRIVATE_MODULE_BEHIND_ITS_INTERFACE
+        .replace("hir_ns:test@1.0.0", "root_ns:root@1.0.0")
+}
+
+/// The compiler's wrapper around a bare core module is recognized by a marker the frontend
+/// sets, not by its id: an author may legitimately name a component `root_ns:root@1.0.0`, and
+/// theirs keeps the module visibility they declared.
+///
+/// The discriminating half of [`a_private_module_is_not_part_of_the_package_surface`]: the same
+/// fixture and the same assertion, with only the id changed. Recognizing the wrapper by
+/// comparing the id forces this component's modules public, which puts `helper` — a procedure
+/// its author put behind a private module — on the assembled package's export surface.
+#[test]
+fn an_authored_component_named_like_the_wrapper_keeps_private_modules_private() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, &world_with_an_authored_root_id());
+    let lowered = lower_world(world).expect("an authored root-named component lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("it assembles");
+
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        exports.iter().any(|export| export.ends_with("entry")),
+        "the component-level function is still the public surface, got exports: {exports:?}"
+    );
+    assert!(
+        !exports.iter().any(|export| export.contains("helper")),
+        "a private module of an authored component must not be exported, got: {exports:?}"
+    );
+}
+
+/// `builtin.Module` permits nesting, and a nested module's procedures belong to the component
+/// as much as a top-level module's. Lowering must place them at their own path rather than
+/// panicking on a module it did not expect to find in a module body.
+const WORLD_WITH_A_NESTED_MODULE: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @outer {
+        builtin.function public extern("C") @entry() {
+            builtin.ret;
+        };
+
+        builtin.module public @inner {
+            builtin.function public extern("C") @nested() {
+                builtin.ret;
+            };
+        };
+    };
+};
+};
+"#;
+
+#[test]
+fn a_nested_module_is_lowered_at_its_own_path() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_NESTED_MODULE);
+    let lowered = lower_world(world).expect("a component with a nested module lowers");
+
+    let paths = lowered
+        .modules
+        .iter()
+        .map(|module| module.path().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        paths.iter().any(|path| path.ends_with("outer::inner")),
+        "the nested module must be lowered at its own path, got: {paths:?}"
+    );
+}
+
+/// [`WORLD_WITH_A_NESTED_MODULE`] with the *inner* module private.
+///
+/// Derived from the shared fixture rather than written out, because the inner module's
+/// visibility is the only thing that differs, and it is the only thing this asks about.
+fn world_with_a_private_nested_module() -> String {
+    WORLD_WITH_A_NESTED_MODULE
+        .replace("builtin.module public @inner", "builtin.module private @inner")
+}
+
+/// Nesting does not widen the surface. A private module's public procedures stay off the
+/// assembled package's exports whether the module sits at the top level or inside another —
+/// the surface is derived from the modules reachable from the root through *public* submodule
+/// declarations, and a private declaration ends that walk at any depth.
+///
+/// The depth is what makes this worth pinning separately from
+/// [`a_private_module_is_not_part_of_the_package_surface`]: nested modules are lowered by
+/// recursion through `define_module`, and it is `define_module_tree` — which forces every
+/// *intermediate* module public so references through it resolve — that decides which
+/// declaration carries the author's visibility. A recursion that applied the visibility to the
+/// wrong link of the chain would leave `nested` exported here while the top-level case still
+/// passed.
+#[test]
+fn a_private_nested_module_is_not_part_of_the_package_surface() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, &world_with_a_private_nested_module());
+    let lowered = lower_world(world).expect("a component with a private nested module lowers");
+    let target = library_target("hir_ns:test@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("hir_ns:test@1.0.0", sources.root, sources.support)
+        .expect("a public module holding a private one assembles");
+
+    let exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    assert!(
+        exports.iter().any(|export| export.ends_with("entry")),
+        "the public outer module's procedure is the surface, got exports: {exports:?}"
+    );
+    assert!(
+        !exports.iter().any(|export| export.contains("nested")),
+        "a public procedure of a private *nested* module must not be exported, got: {exports:?}"
+    );
+}
+
+/// The shape pure core-Wasm translation produces: a public module (the artifact's interface)
+/// holding a private, address-taken function in a function table.
+const WORLD_WITH_A_PRIVATE_TABLE_CALLEE: &str = r#"
+builtin.world {
+builtin.component private @"root_ns:root@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function private extern("C") @private_callee() {
+            builtin.ret;
+        };
+
+        builtin.function_table private @tbl : 1 {
+            builtin.function_table_entry 0 @private_callee tag 1;
+        };
+
+        builtin.function public extern("C") @dispatch(%index: u32) {
+            hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+            builtin.ret;
+        };
+    };
+};
+};
+"#;
+
+/// A function whose address is taken is still private: the package's export manifest is its
+/// author's interface, and an address-taken private function is not part of it. Initialization
+/// must reach the callee without promoting it, which it does by emitting the `procref` in the
+/// callee's own module.
+#[test]
+fn a_private_table_callee_is_not_part_of_the_package_surface() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_PRIVATE_TABLE_CALLEE);
+    let lowered = lower_world(world).expect("a component with a private table callee lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    // A component owning a function table needs an `init`, and `init` opens by calling the
+    // intrinsic heap initializer, so this one must link the intrinsics as a real build does.
+    let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
+    assembler
+        .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
+        .expect("the compiler intrinsics should link");
+    let package = assembler
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("a table initialized from its callee's own module assembles");
+
+    let mut exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    exports.sort();
+
+    // The whole set, not just the two memberships this is named for. Initializing a table trades
+    // one symbol off the manifest for another: `@private_callee` stays the author's, while
+    // `__init_function_table` — the compiler's own, and public only so `init` can reach it —
+    // joins the surface. That trade is the design, so it is asserted rather than tolerated, and
+    // any *third* symbol arriving on the public surface should be a test failure and not a
+    // discovery made downstream.
+    assert_eq!(
+        exports,
+        vec![
+            "::\"root_ns:root@1.0.0\"::init",
+            "::\"root_ns:root@1.0.0\"::wasm::__init_function_table",
+            "::\"root_ns:root@1.0.0\"::wasm::dispatch",
+        ],
+        "the public surface is the author's `dispatch` plus the compiler's own initializers"
+    );
+}
+
+/// A table entry naming a function in a declaration-only sibling.
+///
+/// The sibling is an external dependency represented in the IR — `@sibling` has no body — so
+/// `classify_siblings` drops it and no module is ever lowered at `::external_dep`. The entry
+/// still resolves and `@sibling` still has a signature, so the `hir.exec_indirect` verifier and
+/// legalization both accept this: it reaches code generation intact.
+const WORLD_WITH_A_TABLE_CALLEE_IN_A_DECLARATION_ONLY_SIBLING: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function_table private @tbl : 1 {
+            builtin.function_table_entry 0 ::@external_dep::@sibling tag 1;
+        };
+
+        builtin.function public extern("C") @dispatch(%index: u32) {
+            hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+            builtin.ret;
+        };
+    };
+};
+builtin.module public @external_dep {
+    builtin.function public extern("C") @sibling() {
+    };
+};
+};
+"#;
+
+/// A table entry whose callee has no definition to take the address of is invalid input, and is
+/// diagnosed as such.
+///
+/// This is the shape that used to panic. Everything upstream accepts it — the entry resolves and
+/// the callee's signature matches the call site's, which is all the verifier asks — so the first
+/// thing a producer of this IR saw was a `.expect` firing inside the slot-filling code, with a
+/// message written for a compiler bug rather than for them.
+#[test]
+fn a_table_callee_in_an_unlowered_module_is_invalid_input() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_TABLE_CALLEE_IN_A_DECLARATION_ONLY_SIBLING);
+    let err = lower_world(world)
+        .err()
+        .expect("a table entry naming a callee with no definition must not lower");
+    let err = err.to_string();
+
+    assert!(
+        err.contains("sibling") && err.contains("external_dep"),
+        "the diagnostic must name the callee and the module it was expected in, got: {err}"
+    );
+    assert!(
+        err.contains("only declarations"),
+        "the diagnostic must say why there was no module to attach the code to, got: {err}"
+    );
+}
+
+/// A component whose table callees are spread across three modules, one of them nested.
+///
+/// `@a` declares the only table, and its three slots name callees in three different modules —
+/// so the slot-filling code for a *single* table is split three ways, which is the case grouping
+/// by callee rather than by table exists for. `@outer` defines a callee of its own, which makes
+/// it the nearest fragment-bearing ancestor of `@inner` and so the module whose initializer has
+/// to reach it.
+const WORLD_WITH_TABLE_CALLEES_ACROSS_MODULES: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @a {
+        builtin.function private extern("C") @callee_a() {
+            builtin.ret;
+        };
+
+        builtin.function_table private @tbl : 3 {
+            builtin.function_table_entry 0 @callee_a tag 1;
+            builtin.function_table_entry 1 ::@"hir_ns:test@1.0.0"::@outer::@callee_b tag 1;
+            builtin.function_table_entry 2 ::@"hir_ns:test@1.0.0"::@outer::@inner::@callee_c tag 1;
+        };
+
+        builtin.function public extern("C") @dispatch(%index: u32) {
+            hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+            builtin.ret;
+        };
+    };
+
+    builtin.module public @outer {
+        builtin.function private extern("C") @callee_b() {
+            builtin.ret;
+        };
+
+        builtin.module public @inner {
+            builtin.function private extern("C") @callee_c() {
+                builtin.ret;
+            };
+        };
+    };
+};
+};
+"#;
+
+/// A table whose only slot is written twice: a dead entry naming a callee in `@z`, then the live
+/// entry naming `@live` in `@a`.
+///
+/// The table's documented rule is last-entry-per-slot-wins, so slot 0 holds `@live` and nothing
+/// else. The module names are what make this discriminating: slot-filling code is grouped by the
+/// callee's defining module and those groups run in path order, so `@a` runs before `@z` and a
+/// codegen that emitted *both* stores would leave `@dead`'s MAST root in the slot — the entry the
+/// `hir.exec_indirect` verifier never looked at, with a signature it never checked.
+const WORLD_WITH_AN_OVERWRITTEN_TABLE_SLOT: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @a {
+        builtin.function private extern("C") @live() {
+            builtin.ret;
+        };
+
+        builtin.function_table private @tbl : 1 {
+            builtin.function_table_entry 0 ::@"hir_ns:test@1.0.0"::@z::@dead tag 1;
+            builtin.function_table_entry 0 @live tag 1;
+        };
+
+        builtin.function public extern("C") @dispatch(%index: u32) {
+            hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+            builtin.ret;
+        };
+    };
+
+    builtin.module public @z {
+        builtin.function private extern("C") @dead(%v: u32) {
+            builtin.ret;
+        };
+    };
+};
+};
+"#;
+
+/// The target of every `procref` in `body`, in order.
+fn procrefs_in(body: &masm::Block) -> Vec<String> {
+    body.iter()
+        .filter_map(|op| match op {
+            masm::Op::Inst(inst) => match inst.inner() {
+                masm::Instruction::ProcRef(masm::InvocationTarget::Path(path)) => {
+                    Some(path.inner().as_str().to_string())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// An entry a later entry overwrites is dead, and dead entries are not written to their slot.
+///
+/// This is a soundness property, not a size optimization. The `hir.exec_indirect` verifier checks
+/// only the entry that wins a slot, so a dead entry's signature is never compared against the call
+/// site's — writing its MAST root into the slot anyway would let a callee with a different stack
+/// contract run behind a tag the runtime check accepts, which is exactly the type confusion the
+/// tag exists to prevent.
+#[test]
+fn a_dead_table_entry_is_not_written_to_its_slot() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_AN_OVERWRITTEN_TABLE_SLOT);
+    let lowered = lower_world(world).expect("a component with an overwritten table slot lowers");
+
+    let mut procrefs = Vec::new();
+    for module in lowered.modules.iter() {
+        for procedure in module.procedures() {
+            if procedure.name().as_str() == super::FUNCTION_TABLE_INIT_PROC {
+                procrefs.extend(procrefs_in(procedure.body()));
+            }
+        }
+    }
+    procrefs.sort();
+
+    assert_eq!(
+        procrefs,
+        vec!["::\"hir_ns:test@1.0.0\"::a::live"],
+        "only the entry that wins the slot may be written to it"
+    );
+
+    // The dead entry was the sole reason `@z` would have carried an initializer at all, so its
+    // absence is the same fact stated where a reader will notice it first.
+    let owners = lowered
+        .modules
+        .iter()
+        .filter(|module| {
+            module
+                .procedures()
+                .any(|proc| proc.name().as_str() == super::FUNCTION_TABLE_INIT_PROC)
+        })
+        .map(|module| module.path().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        owners,
+        vec!["::\"hir_ns:test@1.0.0\"::a"],
+        "a module whose only table entry is dead defines no initializer"
+    );
+}
+
+/// The path of the module whose `__init_function_table` each `exec` in `body` names, in order.
+///
+/// Only the generated initializers are of interest, so anything else `body` invokes — the heap
+/// intrinsic `init` opens with, most of all — is skipped.
+fn function_table_initializers_invoked(body: &masm::Block) -> Vec<String> {
+    let suffix = format!("::{}", super::FUNCTION_TABLE_INIT_PROC);
+    body.iter()
+        .filter_map(|op| match op {
+            masm::Op::Inst(inst) => match inst.inner() {
+                masm::Instruction::Exec(masm::InvocationTarget::Path(path)) => {
+                    path.inner().as_str().strip_suffix(&suffix).map(String::from)
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// Every module defining a table callee initializes the slots of the callees *it* defines, and
+/// is invoked exactly once — by its nearest enclosing initializer if it has one, and by the
+/// component's `init` otherwise.
+///
+/// Both halves matter and neither implies the other. A module reached twice writes its slots
+/// twice, which is merely wasteful; a module reached by nobody leaves its slots as the zero word,
+/// and `dynexec` on a zero slot traps at runtime — a whole table's worth of dispatch failing for
+/// a callee that happened to live one module over.
+#[test]
+fn every_module_defining_a_table_callee_is_initialized_exactly_once() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_TABLE_CALLEES_ACROSS_MODULES);
+    let lowered = lower_world(world).expect("a component with table callees across modules lowers");
+
+    // The three modules defining a callee each carry an initializer, and no other module does
+    let mut owners = lowered
+        .modules
+        .iter()
+        .filter(|module| {
+            module
+                .procedures()
+                .any(|proc| proc.name().as_str() == super::FUNCTION_TABLE_INIT_PROC)
+        })
+        .map(|module| module.path().to_string())
+        .collect::<Vec<_>>();
+    owners.sort();
+    assert_eq!(
+        owners,
+        vec![
+            "::\"hir_ns:test@1.0.0\"::a",
+            "::\"hir_ns:test@1.0.0\"::outer",
+            "::\"hir_ns:test@1.0.0\"::outer::inner",
+        ],
+        "a module defines an initializer if and only if it defines a table callee"
+    );
+
+    // ...and each is invoked exactly once across `init` and every initializer
+    let mut invoked = Vec::new();
+    for module in lowered.modules.iter() {
+        for procedure in module.procedures() {
+            if matches!(procedure.name().as_str(), "init" | super::FUNCTION_TABLE_INIT_PROC) {
+                invoked.extend(function_table_initializers_invoked(procedure.body()));
+            }
+        }
+    }
+    invoked.sort();
+    assert_eq!(invoked, owners, "every initializer must be reached exactly once");
+
+    // Which one reaches which is the recursive shape a single component-global table would be
+    // initialized with, and is not implied by the count above: `init` reaching all three
+    // directly satisfies "exactly once" just as well, and would be a different design.
+    let invoked_by = |module_path: &str, procedure_name: &str| -> Vec<String> {
+        let module = lowered
+            .modules
+            .iter()
+            .find(|module| module.path() == module_path)
+            .unwrap_or_else(|| panic!("no module lowered at '{module_path}'"));
+        let procedure = module
+            .procedures()
+            .find(|procedure| procedure.name().as_str() == procedure_name)
+            .unwrap_or_else(|| panic!("no '{procedure_name}' in '{module_path}'"));
+        let mut invoked = function_table_initializers_invoked(procedure.body());
+        invoked.sort();
+        invoked
+    };
+
+    assert_eq!(
+        invoked_by("::\"hir_ns:test@1.0.0\"", "init"),
+        vec!["::\"hir_ns:test@1.0.0\"::a", "::\"hir_ns:test@1.0.0\"::outer"],
+        "`init` reaches the outermost initializers, and only those"
+    );
+    assert_eq!(
+        invoked_by("::\"hir_ns:test@1.0.0\"::outer", super::FUNCTION_TABLE_INIT_PROC),
+        vec!["::\"hir_ns:test@1.0.0\"::outer::inner"],
+        "a module's initializer reaches the initializers of the modules nested within it"
+    );
+    for leaf in ["::\"hir_ns:test@1.0.0\"::a", "::\"hir_ns:test@1.0.0\"::outer::inner"] {
+        assert!(
+            invoked_by(leaf, super::FUNCTION_TABLE_INIT_PROC).is_empty(),
+            "an initializer with nothing nested within it reaches no other, but '{leaf}' did"
+        );
     }
 }

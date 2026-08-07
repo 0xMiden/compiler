@@ -38,13 +38,6 @@ impl ComponentId {
             && self.version.cmp_precedence(&other.version).is_eq()
     }
 
-    /// Returns true if this is the synthetic wrapper component used for pure-Rust compilation.
-    pub fn is_synthetic_wrapper(&self) -> bool {
-        self.namespace.as_str() == "root_ns"
-            && self.name.as_str() == "root"
-            && self.version == Version::new(1, 0, 0)
-    }
-
     /// Get the Miden Assembly [`midenc_session::LibraryPath`] that uniquely identifies this
     /// interface.
     ///

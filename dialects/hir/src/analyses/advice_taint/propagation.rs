@@ -88,18 +88,25 @@ impl SparseForwardDataFlowAnalysis for AdviceTaintPropagation {
             }
             CallControlFlowAction::External => {
                 let span = call.as_operation().span();
+                // A call with no resolvable callee reaches here only when its possible-callee
+                // set is unknown or contains an unanalyzable callable (calls through a function
+                // table with statically-known callees are handled interprocedurally instead).
+                // Nothing constrains what such a callee returns, so its results are
+                // conservatively treated like an advice-reading external call rather than
+                // trusted clean.
+                let unanalyzable_callee = call.resolve().is_none();
                 for (result_index, (result_value, result)) in
                     call.as_operation().results().all().iter().zip(after).enumerate()
                 {
                     let result_value = result_value.borrow();
-                    let value =
-                        if external_call_result_has_unconstrained_advice_effect(call, result_index)
-                            && is_unconstrained_external_result_type(result_value.ty())
-                        {
-                            ContextualAdviceTaintValue::external_call(span)
-                        } else {
-                            ContextualAdviceTaintValue::clean()
-                        };
+                    let value = if (unanalyzable_callee
+                        || external_call_result_has_unconstrained_advice_effect(call, result_index))
+                        && is_unconstrained_external_result_type(result_value.ty())
+                    {
+                        ContextualAdviceTaintValue::external_call(span)
+                    } else {
+                        ContextualAdviceTaintValue::clean()
+                    };
                     result.join(&value);
                 }
             }
@@ -165,17 +172,23 @@ fn transfer_taint(
 
 #[cfg(test)]
 mod tests {
-    use alloc::{
-        string::{String, ToString},
-        vec::Vec,
-    };
+    use alloc::vec::Vec;
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        SourceSpan, Type, dialects::builtin::BuiltinOpBuilder, pass::AnalysisManager, testing::Test,
+        Op, SourceSpan, Type, ValueRef,
+        dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, attributes::Signature},
+        pass::AnalysisManager,
+        testing::Test,
     };
 
-    use super::super::{AdviceTaintAnalysis, AdviceTaintFinding};
+    use super::super::{
+        AdviceTaintAnalysis, AdviceTaintFinding,
+        test_support::{
+            define_clean_source, define_dispatcher_sinking_result, define_raw_advice_source,
+            define_table, module_advice_taint_findings, sink_names,
+        },
+    };
     use crate::HirOpBuilder;
 
     #[test]
@@ -279,13 +292,240 @@ mod tests {
         Ok(())
     }
 
+    /// Dispatching through a function table joins the taint of the tag-matching callee's return
+    /// value into the call result, exactly like a direct call would.
+    #[test]
+    fn indirect_call_joins_table_callee_result_taint() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::named("indirect_result_taint").in_module("m");
+        let raw_source = define_raw_advice_source(&mut test);
+        let table = define_table(&mut test, &[(1, raw_source, 1)]);
+        define_dispatcher_sinking_result(&mut test, table, /*type_tag=*/ 1);
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    /// A table entry whose signature tag differs from the call site's tag can only trap at
+    /// runtime, never return, so its taint must not reach the call result.
+    #[test]
+    fn indirect_call_ignores_mismatched_signature_entries() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::named("indirect_tag_mismatch").in_module("m");
+        let raw_source = define_raw_advice_source(&mut test);
+        let table = define_table(&mut test, &[(1, raw_source, 2)]);
+        define_dispatcher_sinking_result(&mut test, table, /*type_tag=*/ 1);
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert!(
+            findings.is_empty(),
+            "a mismatched-tag entry can only trap, so its taint must not propagate: {findings:?}"
+        );
+
+        Ok(())
+    }
+
+    /// A dispatchable entry without a body cannot be analyzed, so the call result is
+    /// conservatively treated as unconstrained instead of trusted clean.
+    #[test]
+    fn indirect_call_with_unanalyzable_entry_taints_results() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_unanalyzable").in_module("m");
+        // A declaration: no body to analyze
+        let extern_source = test.define_function("extern_source", &[], &[Type::Felt]);
+        let table = define_table(&mut test, &[(1, extern_source, 1)]);
+
+        let signature = Signature::new(&test.context_rc(), [], [Type::Felt]);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let call = builder.exec_indirect(table, signature, 1, index, [], span)?;
+            let result = {
+                let call = call.borrow();
+                let results = call.results();
+                let result = results.iter().next().unwrap();
+                result.borrow().as_value_ref()
+            };
+            let cast = builder.unrealized_conversion_cast(result, Type::U32, span)?;
+            let one = builder.u32(1, span);
+            let sum = builder.add(cast, one, span)?;
+            builder.ret([sum], span)?;
+        }
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    /// Arguments of an indirect call flow into the tag-matching callee's parameters, so a raw
+    /// advice value passed through the table is flagged at the sink inside the callee.
+    #[test]
+    fn indirect_call_propagates_argument_taint_into_callee() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_argument_taint").in_module("m");
+
+        // The callee sinks its parameter into range-constrained arithmetic
+        let sinkhole = test.define_function("sinkhole", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(sinkhole, test.builder_mut());
+            let param = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let one = builder.u32(1, span);
+            let sum = builder.add(param, one, span)?;
+            builder.ret([sum], span)?;
+        }
+        let table = define_table(&mut test, &[(1, sinkhole, 1)]);
+
+        let signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let advice = builder.advice_pop(span)?;
+            let argument = builder.unrealized_conversion_cast(advice, Type::U32, span)?;
+            let call = builder.exec_indirect(table, signature, 1, index, [argument], span)?;
+            let result = {
+                let call = call.borrow();
+                let results = call.results();
+                let result = results.iter().next().unwrap();
+                result.borrow().as_value_ref()
+            };
+            builder.ret([result], span)?;
+        }
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    /// The call result joins the taint of every tag-matching entry, so one raw-advice callee
+    /// among several possible callees is enough to flag the sink.
+    #[test]
+    fn indirect_call_joins_taint_across_multiple_callees() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::named("indirect_multi_callee").in_module("m");
+        let clean_source = define_clean_source(&mut test);
+        let raw_source = define_raw_advice_source(&mut test);
+        let table = define_table(&mut test, &[(1, clean_source, 1), (2, raw_source, 1)]);
+        define_dispatcher_sinking_result(&mut test, table, /*type_tag=*/ 1);
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    /// A later entry overwrites an earlier one at the same slot, so only the last entry is
+    /// dispatchable: the shadowed raw-advice callee must not contribute taint.
+    #[test]
+    fn indirect_call_dispatches_only_last_entry_per_slot() -> Result<(), midenc_hir::Report> {
+        let mut test = Test::named("indirect_slot_overwrite").in_module("m");
+        let raw_source = define_raw_advice_source(&mut test);
+        let clean_source = define_clean_source(&mut test);
+        let table = define_table(&mut test, &[(1, raw_source, 1), (1, clean_source, 1)]);
+        define_dispatcher_sinking_result(&mut test, table, /*type_tag=*/ 1);
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert!(
+            findings.is_empty(),
+            "a shadowed entry is never dispatched, so its taint must not propagate: {findings:?}"
+        );
+
+        Ok(())
+    }
+
+    /// One unanalyzable entry makes the call results conservative, but arguments still flow into
+    /// the analyzable entries, so a raw advice argument is flagged at the sink inside the bodied
+    /// callee.
+    #[test]
+    fn indirect_call_with_mixed_targets_still_flows_arguments() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_mixed_targets").in_module("m");
+
+        // A declaration: no body to analyze
+        let extern_sink = test.define_function("extern_sink", &[Type::U32], &[Type::U32]);
+
+        // The callee sinks its parameter into range-constrained arithmetic
+        let sinkhole = test.define_function("sinkhole", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(sinkhole, test.builder_mut());
+            let param = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let one = builder.u32(1, span);
+            let sum = builder.add(param, one, span)?;
+            builder.ret([sum], span)?;
+        }
+        let table = define_table(&mut test, &[(1, extern_sink, 1), (2, sinkhole, 1)]);
+
+        let signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let advice = builder.advice_pop(span)?;
+            let argument = builder.unrealized_conversion_cast(advice, Type::U32, span)?;
+            let call = builder.exec_indirect(table, signature, 1, index, [argument], span)?;
+            let result = {
+                let call = call.borrow();
+                let results = call.results();
+                let result = results.iter().next().unwrap();
+                result.borrow().as_value_ref()
+            };
+            builder.ret([result], span)?;
+        }
+
+        let findings = module_advice_taint_findings(&test)?;
+        assert_eq!(sink_names(&findings), ["arith.add"]);
+
+        Ok(())
+    }
+
+    /// An indirect call whose dispatchable entry resolves to a bodyless declaration is an
+    /// external call: raw advice passed to its range-constrained `u32` parameter must produce
+    /// the same finding a direct call to that declaration would.
+    #[test]
+    fn indirect_calls_to_declarations_report_argument_findings() -> Result<(), midenc_hir::Report> {
+        let span = SourceSpan::UNKNOWN;
+        let mut test = Test::named("indirect_external_argument").in_module("m");
+        let raw = define_raw_advice_source(&mut test);
+
+        // A declaration: no body, so the analysis cannot see what it does with its argument
+        let extern_sink = test.define_function("extern_sink", &[Type::U32], &[Type::U32]);
+        let table = define_table(&mut test, &[(0, extern_sink, 7)]);
+
+        let source_signature = Signature::new(&test.context_rc(), [], [Type::U32]);
+        let call_signature = Signature::new(&test.context_rc(), [Type::U32], [Type::U32]);
+        let dispatch = test.define_function("dispatch", &[Type::U32], &[Type::U32]);
+        {
+            let mut builder = FunctionBuilder::new(dispatch, test.builder_mut());
+            let index = builder.entry_block().borrow().arguments()[0] as ValueRef;
+            let tainted = builder.exec(raw, source_signature, [], span)?;
+            let tainted = {
+                let tainted = tainted.borrow();
+                tainted.results().iter().next().unwrap().borrow().as_value_ref()
+            };
+            let call = builder.exec_indirect(table, call_signature, 7, index, [tainted], span)?;
+            let result = {
+                let call = call.borrow();
+                call.results().iter().next().unwrap().borrow().as_value_ref()
+            };
+            builder.ret([result], span)?;
+        }
+
+        let analysis_manager = AnalysisManager::new(test.module().as_operation_ref(), None);
+        let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
+        assert_eq!(
+            analysis.external_call_findings().len(),
+            1,
+            "raw advice reaching a declaration through a table must be reported"
+        );
+
+        Ok(())
+    }
+
     fn advice_taint_findings(test: &Test) -> Result<Vec<AdviceTaintFinding>, midenc_hir::Report> {
         let analysis_manager = AnalysisManager::new(test.function().as_operation_ref(), None);
         let analysis = analysis_manager.get_analysis::<AdviceTaintAnalysis>()?;
         Ok(analysis.findings().to_vec())
-    }
-
-    fn sink_names(findings: &[AdviceTaintFinding]) -> Vec<String> {
-        findings.iter().map(|finding| finding.sink.to_string()).collect()
     }
 }

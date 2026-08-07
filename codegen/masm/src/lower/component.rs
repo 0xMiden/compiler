@@ -1,7 +1,11 @@
 #[cfg(test)]
 mod tests;
 
-use alloc::{collections::BTreeSet, sync::Arc, vec::Vec};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    vec::Vec,
+};
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
 use miden_assembly_syntax::{
@@ -28,9 +32,19 @@ use crate::{
     Event, OperandStack,
     artifact::MasmComponent,
     emitter::BlockEmitter,
-    linker::{LinkInfo, Linker},
+    linker::{FunctionTableLayout, LinkInfo, Linker},
     masm,
 };
+
+/// The generated procedure each module uses to fill the function-table slots whose callees it
+/// defines.
+///
+/// One procedure per module, rather than one for the component, because `procref` on a private
+/// procedure is only legal within its defining module — and a callee's visibility is its
+/// author's decision, not something initialization gets to widen. A module's procedure also
+/// invokes the procedures of the modules nested within it, so the component's `init` only has
+/// to reach the top-level ones; that is the shape a single component-global table would want.
+const FUNCTION_TABLE_INIT_PROC: &str = "__init_function_table";
 
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
 pub trait ToMasmComponent {
@@ -179,11 +193,14 @@ fn is_declaration_only(op: &midenc_hir::OperationRef) -> bool {
 /// than *silently mistranslated*:
 ///
 /// - **Anything unrecognized counts as owning memory.** A module body is only ever legal here if
-///   it holds functions, global variables and segments — `MasmModuleBuilder::build` panics on
-///   anything else — so an item this does not recognize is one that cannot be translated anyway,
-///   including a nested `builtin::Module`. Treating it as owning memory is therefore also what
+///   it holds functions, global variables, segments, function tables and nested modules —
+///   `MasmModuleBuilder::build` panics on anything else — so an item this does not recognize is
+///   one that cannot be translated anyway. Treating it as owning memory is therefore also what
 ///   makes the answer right *at any depth*: the only container that could hold a global or a
-///   segment deeper down is one of those, and none of them get past this.
+///   segment deeper down is a nested `builtin::Module`, which is not recognized here and so does
+///   not get past this. That is deliberately stricter than lowering now requires — a nested module
+///   can be lowered, but a top-level sibling holding one still has no parent component to own
+///   whatever memory that nesting hides, and this predicate cannot see that far.
 /// - **A declared global counts, not just a defined one.** [`Linker::link`] skips declarations
 ///   when building the layout, so this is strictly stricter than the overlay hazard requires. It
 ///   is the right side to err on: a declaration whose definition is elsewhere is absent from the
@@ -196,9 +213,9 @@ fn module_owns_memory(module: &builtin::Module) -> bool {
         if item.is::<builtin::GlobalVariable>() || item.is::<builtin::Segment>() {
             return true;
         }
-        // Plus anything this cannot place. The only other item a module body may legally hold is
-        // a function — `MasmModuleBuilder::build` panics on the rest — so this arm is the
-        // conservative one, not a third case.
+        // Plus anything this cannot place, which includes a nested `builtin::Module` — the only
+        // item that could hide a global or a segment deeper down — so this arm is the conservative
+        // one, not a third case.
         !item.is::<builtin::Function>()
     })
 }
@@ -420,9 +437,10 @@ fn world_body_to_masm_component(
         None => None,
     };
 
-    // If we have global variables or data segments, we will require a component initializer
-    // function, as well as a module to hold component-level functions such as init
-    let requires_init = link_info.has_globals() || link_info.has_data_segments();
+    // If we have global variables, data segments, or function tables, we will require a
+    // component initializer function, as well as a module to hold component-level functions
+    // such as init
+    let requires_init = link_info.requires_init();
     let toplevel_namespaces = world
         .body()
         .entry()
@@ -474,17 +492,13 @@ fn world_body_to_masm_component(
 
     let rodata = data_segments_to_rodata(&link_info)?;
 
-    // Compute the first page boundary after the end of the globals table (or reserved memory
-    // if no globals) to use as the start of the dynamic heap when the program is executed
-    let heap_base = core::cmp::max(
-        link_info.reserved_memory_bytes(),
-        link_info.globals_layout().next_page_boundary() as usize,
-    );
-    let heap_base =
-        u32::try_from(heap_base).expect("unable to allocate dynamic heap: global table too large");
+    let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
     let mut masm_component = MasmComponent {
         id: None,
+        // A world declaring no component is not the compiler's wrapper around one: it has no
+        // component boundary at all.
+        synthetic_wrapper: false,
         root,
         init,
         entrypoint,
@@ -538,6 +552,11 @@ fn component_to_masm_component(
     // Get the current compiler context
     let context = component.as_operation().context_rc();
 
+    // Whether this component is one the compiler invented to wrap a bare core module, which it
+    // says by carrying a marker the frontend set rather than by its id — see
+    // `builtin::Component::SYNTHETIC_WRAPPER_ATTR`.
+    let synthetic_wrapper = component.is_synthetic_wrapper();
+
     // Run the linker for this component in order to compute its data layout
     let id = component.id();
     let link_info = Linker::default()
@@ -572,8 +591,7 @@ fn component_to_masm_component(
             // TODO(pauls): Narrow this to only be true if the target env is not 'rollup', we
             // cannot currently do so because we do not have sufficient Cargo metadata yet in
             // 'cargo miden build' to detect the target env, and we default it to 'rollup'
-            let is_wrapper = id.is_synthetic_wrapper();
-            let path = if is_wrapper {
+            let path = if synthetic_wrapper {
                 component_path.join(entry_id.module.as_str())
             } else {
                 // We're compiling a Wasm component and the component id is included
@@ -589,9 +607,10 @@ fn component_to_masm_component(
         None => None,
     };
 
-    // If we have global variables or data segments, we will require a component initializer
-    // function, as well as a module to hold component-level functions such as init
-    let requires_init = link_info.has_globals() || link_info.has_data_segments();
+    // If we have global variables, data segments, or function tables, we will require a
+    // component initializer function, as well as a module to hold component-level functions
+    // such as init
+    let requires_init = link_info.requires_init();
     let init = if requires_init {
         let name = masm::ProcedureName::new("init").unwrap();
         let qualified = masm::QualifiedProcedureName::new(&component_path, name);
@@ -612,17 +631,11 @@ fn component_to_masm_component(
 
     let rodata = data_segments_to_rodata(&link_info)?;
 
-    // Compute the first page boundary after the end of the globals table (or reserved memory
-    // if no globals) to use as the start of the dynamic heap when the program is executed
-    let heap_base = core::cmp::max(
-        link_info.reserved_memory_bytes(),
-        link_info.globals_layout().next_page_boundary() as usize,
-    );
-    let heap_base =
-        u32::try_from(heap_base).expect("unable to allocate dynamic heap: global table too large");
+    let heap_base = link_info.heap_base();
     let stack_pointer = link_info.globals_layout().stack_pointer_offset();
     let mut masm_component = MasmComponent {
         id: Some(id),
+        synthetic_wrapper,
         root,
         init,
         entrypoint,
@@ -725,6 +738,9 @@ impl MasmComponentBuilder<'_> {
             )));
 
             // Data segment initialization
+            //
+            // Function table initialization is *not* emitted here: it is attached to the modules
+            // defining the callees, which do not exist yet. See below.
             self.emit_data_segment_initialization();
         }
 
@@ -760,12 +776,126 @@ impl MasmComponentBuilder<'_> {
 
         // Finalize the component-level init, if required
         if self.component.init.is_some() {
+            // Function tables are initialized from the modules that define their callees, so this
+            // has to run after those modules exist — which is why it is here rather than beside
+            // the heap and data segment initialization above. Each fragment invokes the fragments
+            // of the modules nested within it; `init` only reaches the outermost ones.
+            let fragments = self.build_function_table_fragments()?;
+            let owners = fragments.keys().cloned().collect::<Vec<_>>();
+            let mut child_calls: BTreeMap<masm::PathBuf, Vec<masm::PathBuf>> = BTreeMap::new();
+            let mut roots: Vec<masm::PathBuf> = Vec::new();
+            for owner in owners.iter() {
+                // The nearest fragment-bearing ancestor, if any: a module's fragment is reached
+                // from its closest enclosing one, and only the modules with no such enclosing
+                // fragment are reached from `init`. `Path::starts_with_exactly` matches
+                // component-wise, so `::a::bc` is not an ancestor's descendant merely because
+                // the text of `::a::b` is a prefix of it.
+                //
+                // A root is only reachable if `init`, which lives in the component root, may
+                // `exec` into it — so a *private* nested module whose parent defines no table
+                // callee is a root `init` cannot reach: MASM visibility lets a module reach its
+                // own children and its siblings, not a private grandchild. Nothing produces that
+                // shape today (the Wasm frontend puts every core callee in one module, and a
+                // private nested module reached from the component root would be unreachable for
+                // ordinary calls too), and it fails loudly at assembly time rather than silently
+                // leaving the slots zeroed, so it is recorded here rather than worked around. The
+                // fix, if it ever arises, is to give the parent an empty fragment to relay
+                // through rather than to promote anyone's visibility.
+                match owners
+                    .iter()
+                    .filter(|candidate| {
+                        *candidate != owner
+                            && owner.as_path().starts_with_exactly(candidate.as_path())
+                    })
+                    .max_by_key(|candidate| candidate.as_path().components().count())
+                {
+                    Some(parent) => {
+                        child_calls.entry(parent.clone()).or_default().push(owner.clone())
+                    }
+                    None => roots.push(owner.clone()),
+                }
+            }
+
+            let span = SourceSpan::default();
+            let proc_name = masm::ProcedureName::new(FUNCTION_TABLE_INIT_PROC).unwrap();
+            for (
+                owner,
+                FunctionTableFragment {
+                    mut body,
+                    mut invoked,
+                    a_callee,
+                },
+            ) in fragments
+            {
+                for child in child_calls.remove(&owner).unwrap_or_default() {
+                    let qualified =
+                        masm::QualifiedProcedureName::new(child.as_path(), proc_name.clone());
+                    let target =
+                        masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
+                    invoked.insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
+                    body.push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
+                }
+
+                // A module holding nothing but declarations is skipped by `classify_siblings` and
+                // never lowered, but a table entry may still name a function in it: the entry
+                // resolves and the function has a signature, so both the `hir.exec_indirect`
+                // verifier and legalization accept the IR. There is no module here to attach the
+                // slot-filling code to, and no MAST root to fill the slot with, so it is invalid
+                // input rather than a compiler bug — and reported like the rest of the invalid
+                // input this function rejects.
+                let Some(index) = self
+                    .component
+                    .modules
+                    .iter()
+                    .position(|module| module.path() == owner.as_path())
+                else {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: callee '{a_callee}' is defined in module \
+                         '{owner}', which was not lowered because it holds only declarations — a \
+                         function table cannot name a callee that has no definition to take the \
+                         address of"
+                    )));
+                };
+                let module = Arc::get_mut(&mut self.component.modules[index])
+                    .expect("expected unique reference");
+                let mut procedure = masm::Procedure::new(
+                    span,
+                    // Public so the parent module's fragment (or `init`) can reach it; this is
+                    // the only symbol table initialization contributes to a module's surface,
+                    // and it is the compiler's own, never the author's
+                    masm::Visibility::Public,
+                    proc_name.clone(),
+                    0,
+                    masm::Block::new(span, body),
+                )
+                .with_signature(masm::FunctionType::new(
+                    midenc_hir::CallConv::Fast,
+                    vec![],
+                    vec![],
+                ));
+                procedure.extend_invoked(invoked);
+                module
+                    .define_procedure(procedure, self.source_manager.clone())
+                    .into_diagnostic()
+                    .wrap_err("failed to define a function table initializer")?;
+            }
+
+            for root in roots {
+                let qualified =
+                    masm::QualifiedProcedureName::new(root.as_path(), proc_name.clone());
+                let target = masm::InvocationTarget::Path(Span::new(span, qualified.into_inner()));
+                self.invoked_from_init
+                    .insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
+                self.init_body
+                    .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
+            }
+
             let module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
 
             let init_name = masm::ProcedureName::new("init").unwrap();
             let init_body = core::mem::take(&mut self.init_body);
-            let init = masm::Procedure::new(
+            let mut init = masm::Procedure::new(
                 Default::default(),
                 masm::Visibility::Public,
                 init_name,
@@ -777,6 +907,14 @@ impl MasmComponentBuilder<'_> {
                 vec![],
                 vec![],
             ));
+            // What `init` invokes is what the assembler's linker builds its call graph from, and
+            // until now nothing attached this set to anything — every invocation recorded while
+            // building `init`'s body, by the fragment roots just above and by global variable
+            // initializers before them, was written and then dropped. The linker resolves an
+            // `exec` from the instruction as well, which is why the omission never showed; an
+            // accurate call graph is still what the set is for, and `init` was the one procedure
+            // in the component reporting none of its callees.
+            init.extend_invoked(core::mem::take(&mut self.invoked_from_init));
 
             module
                 .define_procedure(init, self.source_manager.clone())
@@ -824,15 +962,35 @@ impl MasmComponentBuilder<'_> {
         let module_path = module_path.to_absolute().unwrap();
         let trace_target = TraceTarget::category("codegen");
         log::debug!(target: &trace_target, "defining module '{module_path}'");
-        /*
-        let visibility = match *module.get_visibility() {
-            midenc_hir::Visibility::Public => masm::Visibility::Public,
-            midenc_hir::Visibility::Internal | midenc_hir::Visibility::Private => {
-                masm::Visibility::Private
+        // The submodule declaration's visibility decides whether the module's public procedures
+        // belong to the public surface of the assembled package: the assembler derives that
+        // surface from the modules reachable from the root through *public* submodule
+        // declarations. Core modules are private in HIR, so their procedures — including ones
+        // promoted to public so cross-module `procref`/`exec` can reach them, such as function
+        // table callees — stay resolvable package-internally (a private submodule is visible to
+        // its parent and siblings) without becoming part of the package's interface.
+        //
+        // Two of the shapes reaching here have no component boundary to speak of, and in both
+        // the modules *are* the artifact's interface, so they keep public submodules. A world
+        // lowered without a component id is one. The other is the wrapper the compiler invents
+        // around a bare core module, which is not a real boundary either: the wrapped module is
+        // the artifact's own interface (the entrypoint of an executable, or the exports of a
+        // bare library), and the generated executable `main` module lives outside the wrapper's
+        // module tree. That the wrapper is the compiler's is something it *says* — the frontend
+        // marks it (`builtin::Component::SYNTHETIC_WRAPPER_ATTR`) — rather than something read
+        // off its id, which is a name an author may write. An authored component is the
+        // complement, and keeps the visibility its author declared.
+        let is_artifact_interface = self.component.id.is_none() || self.component.synthetic_wrapper;
+        let visibility = if is_artifact_interface {
+            masm::Visibility::Public
+        } else {
+            match *module.get_visibility() {
+                midenc_hir::Visibility::Public => masm::Visibility::Public,
+                midenc_hir::Visibility::Internal | midenc_hir::Visibility::Private => {
+                    masm::Visibility::Private
+                }
             }
         };
-         */
-        let visibility = masm::Visibility::Public;
         let module_index = if let Some(rest) = module_path.strip_prefix(&self.component.root) {
             self.define_module_tree(rest, Some(0), visibility)?
         } else {
@@ -849,7 +1007,10 @@ impl MasmComponentBuilder<'_> {
             init_body: &mut self.init_body,
             invoked_from_init: &mut self.invoked_from_init,
         };
-        builder.build(module)?;
+        let nested = builder.build(module)?;
+        for nested_module in nested {
+            self.define_module(&nested_module.borrow())?;
+        }
 
         Ok(())
     }
@@ -1005,6 +1166,127 @@ impl MasmComponentBuilder<'_> {
             self.init_body.push(Op::Inst(Span::new(span, Inst::Drop)));
         }
     }
+
+    /// Build the slot-initialization code for every function table in the component, grouped by
+    /// the module that *defines the callee* whose MAST root fills each slot.
+    ///
+    /// Grouping by callee rather than by table is what keeps every `procref` intra-module: a
+    /// table in one module may name a callee in another, and it is the `procref` — not the
+    /// store — that the assembler resolves against visibility.
+    ///
+    /// Only the entries [`builtin::FunctionTable::live_entries`] considers live are written: a
+    /// later entry at the same index overwrites an earlier one, so the earlier one is dead. That
+    /// is a soundness requirement rather than a saving. The `hir.exec_indirect` verifier compares
+    /// signatures only for the entry that wins a slot, so a dead entry's callee has never been
+    /// checked against any call site's stack contract — and grouping by owning module means store
+    /// order no longer follows the entries' textual order, so "the last store wins" would not even
+    /// pick the entry the verifier looked at.
+    ///
+    /// Uninitialized (null) slots are left as the zero word, since VM memory is
+    /// zero-initialized; `dynexec` on such a slot fails at runtime.
+    ///
+    /// Each fragment carries the `procref`s its stores consume, which its procedure declares as
+    /// invocations: that set is what the assembler's linker reads to build its call graph. It is
+    /// a declaration of the dependency, not what creates it — the linker also resolves an
+    /// invocation target from the instruction itself, so an omission here is a call graph missing
+    /// an edge rather than an unresolved symbol.
+    fn build_function_table_fragments(
+        &self,
+    ) -> Result<BTreeMap<masm::PathBuf, FunctionTableFragment>, Report> {
+        use masm::{Instruction as Inst, Op};
+
+        let span = SourceSpan::default();
+        let mut fragments: BTreeMap<masm::PathBuf, FunctionTableFragment> = BTreeMap::new();
+        let layout = self.link_info.function_tables();
+        for (table_ref, _) in layout.iter() {
+            let base_addr = layout
+                .element_addr_of(table_ref)
+                .expect("link error: missing function table in computed layout");
+            let table = table_ref.borrow();
+            // Dead entries are skipped, not merely overwritten; see this function's doc comment.
+            // A dead entry is therefore also unvalidated, which costs nothing for the bounds check
+            // below — an overwritten entry shares its slot index with the entry that overwrote it,
+            // so an out-of-bounds slot is still reported — and is if anything the right answer for
+            // the tag: a slot explicitly nulled and then reassigned is not an error.
+            let live_entries = table.live_entries().map_err(|op_name| {
+                Report::msg(format!(
+                    "invalid function table entry: '{op_name}' is not supported in a function \
+                     table body"
+                ))
+            })?;
+            for (slot, entry) in live_entries {
+                let entry = entry.borrow();
+                if slot >= *table.get_num_slots() {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: slot {slot} is out of bounds for table \
+                         '{}' with {} slots",
+                        table.get_name().as_str(),
+                        *table.get_num_slots()
+                    )));
+                }
+                let type_tag = *entry.get_type_tag();
+                if type_tag == 0 {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: slot {slot} of table '{}' uses signature \
+                         tag 0, which is reserved for null slots",
+                        table.get_name().as_str(),
+                    )));
+                }
+                let Some(callee) = entry.resolve_callee() else {
+                    return Err(Report::msg(format!(
+                        "invalid function table entry: unable to resolve callee '{}'",
+                        entry.callee().path()
+                    )));
+                };
+                let callee_path = callee.borrow().path();
+                let target =
+                    super::lowering::invocation_target_from_symbol_path(&callee_path, span);
+
+                // The fragment belongs to the module defining the callee: `procref` there needs
+                // no visibility beyond what the callee already has
+                let owner = callee_path.without_leaf().to_library_path();
+                let owner = owner.to_absolute().unwrap().into_owned();
+                let fragment = fragments.entry(owner).or_insert_with(|| FunctionTableFragment {
+                    body: Default::default(),
+                    invoked: Default::default(),
+                    a_callee: callee_path.to_string(),
+                });
+                let FunctionTableFragment { body, invoked, .. } = fragment;
+                invoked.insert(masm::Invoke::new(masm::InvokeKind::ProcRef, target.clone()));
+
+                // `procref` pushes the callee's MAST root word (`root[0]` on top),
+                // `mem_storew_le` writes it to the slot's element address (leaving the word on
+                // the stack), and `dropw` cleans up; the slot's signature tag is then stored in
+                // the element right after the digest. The base is word-aligned and each slot is
+                // exactly two words, so every slot address stays word-aligned as `dynexec`
+                // requires.
+                let slot_addr = base_addr + slot * FunctionTableLayout::SLOT_SIZE_ELEMENTS;
+                let tag_addr = slot_addr + FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS;
+                body.push(Op::Inst(Span::new(span, Inst::ProcRef(target))));
+                body.push(Op::Inst(Span::new(span, Inst::MemStoreWLeImm(slot_addr.into()))));
+                body.push(Op::Inst(Span::new(span, Inst::DropW)));
+                body.push(Op::Inst(Span::new(
+                    span,
+                    Inst::Push(masm::Immediate::Value(Span::new(span, type_tag.into()))),
+                )));
+                body.push(Op::Inst(Span::new(span, Inst::MemStoreImm(tag_addr.into()))));
+            }
+        }
+
+        Ok(fragments)
+    }
+}
+
+/// The slot-initialization code one module contributes, for the callees *it* defines.
+struct FunctionTableFragment {
+    /// The stores that fill those slots.
+    body: Vec<masm::Op>,
+    /// The `procref`s those stores consume, for the assembler's linker.
+    invoked: BTreeSet<masm::Invoke>,
+    /// One of the callees that put this fragment here, for diagnostics. Any of them identifies
+    /// the module as well as another, and reporting one is more use than reporting the module
+    /// path alone.
+    a_callee: String,
 }
 
 struct MasmModuleBuilder<'a> {
@@ -1017,7 +1299,14 @@ struct MasmModuleBuilder<'a> {
 }
 
 impl MasmModuleBuilder<'_> {
-    pub fn build(mut self, module: &builtin::Module) -> Result<(), Report> {
+    /// Lower `module`'s body, returning any modules nested within it.
+    ///
+    /// A nested module is not lowered here: MASM's module set is flat and keyed by path, and
+    /// [`MasmComponentBuilder::define_module`] is what turns a fully-qualified HIR module path
+    /// into that set's entry. Returning them lets the component builder recurse without this
+    /// builder having to know how modules are rooted.
+    pub fn build(mut self, module: &builtin::Module) -> Result<Vec<builtin::ModuleRef>, Report> {
+        let mut nested = Vec::new();
         let region = module.body();
         let block = region.entry();
         for op in block.body() {
@@ -1025,7 +1314,14 @@ impl MasmModuleBuilder<'_> {
                 self.define_function(function)?;
             } else if let Some(gv) = op.downcast_ref::<builtin::GlobalVariable>() {
                 self.emit_global_variable_initializer(gv)?;
+            } else if let Some(nested_module) = op.downcast_ref::<builtin::Module>() {
+                nested.push(nested_module.as_module_ref());
             } else if op.is::<builtin::Segment>() {
+                continue;
+            } else if op.is::<builtin::FunctionTable>() {
+                // Laid out by the linker; slots are filled by the `__init_function_table`
+                // procedures `MasmComponentBuilder::build` attaches to the modules defining the
+                // callees, from fragments `build_function_table_fragments` produces
                 continue;
             } else {
                 panic!(
@@ -1035,7 +1331,7 @@ impl MasmModuleBuilder<'_> {
             }
         }
 
-        Ok(())
+        Ok(nested)
     }
 
     pub fn build_from_interface(mut self, interface: &builtin::Interface) -> Result<(), Report> {
@@ -1221,10 +1517,8 @@ impl MasmFunctionBuilder {
         };
 
         // For component export functions, invoke the `init` procedure first if needed.
-        // It loads the data segments and global vars into memory.
-        if function.signature().cc.is_wasm_canonical_abi()
-            && (link_info.has_globals() || link_info.has_data_segments())
-        {
+        // It loads the data segments, global vars, and function tables into memory.
+        if function.signature().cc.is_wasm_canonical_abi() && link_info.requires_init() {
             // Resolve `init` symbolically within the containing module instead of through a
             // fully-qualified component path, which depends on the (user-editable)
             // `[lib].namespace` matching the component's library identity.

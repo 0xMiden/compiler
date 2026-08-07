@@ -7,6 +7,7 @@ use midenc_hir::{
     constants::ConstantData,
     dialects::builtin::{
         self, BuiltinOpBuilder, ComponentBuilder, ModuleBuilder, World, WorldBuilder,
+        attributes::U64Attr,
     },
     version::Version,
 };
@@ -66,7 +67,12 @@ pub fn translate_module_as_component(
     let ns = Ident::from("root_ns");
     let name = Ident::from("root");
     let ver = Version::parse("1.0.0").unwrap();
-    let component_ref = world_builder.define_component(ns, name, ver)?;
+    let mut component_ref = world_builder.define_component(ns, name, ver)?;
+
+    // Mark this as the compiler's wrapper: nothing downstream should have to infer it by
+    // comparing the id, which an author may legitimately use.
+    component_ref.borrow_mut().mark_synthetic_wrapper();
+
     let mut cb = ComponentBuilder::new(component_ref);
     let module_name = parsed_module.module.name().as_str();
     let module_ref = cb.define_module(Ident::from(module_name)).unwrap();
@@ -92,11 +98,20 @@ pub fn build_ir_module(
     _config: &WasmTranslationConfig,
     context: Rc<Context>,
 ) -> WasmResult<()> {
-    let _memory_size = parsed_module
-        .module
-        .memories
-        .get(MemoryIndex::from_u32(0))
-        .map(|mem| mem.minimum as u32);
+    // Record the linear memory the module claims for itself, derived from its declared minimum
+    // memory size, so the linker lays out compiler-managed memory regions past everything the
+    // Wasm producer placed — including zero-initialized statics, which occupy address space
+    // without appearing as data segments.
+    if let Some(memory) = parsed_module.module.memories.get(MemoryIndex::from_u32(0)) {
+        /// The size in bytes of a WebAssembly linear memory page
+        const WASM_PAGE_SIZE: u64 = 2u64.pow(16);
+        let attr = context.create_attribute::<U64Attr, _>(memory.minimum * WASM_PAGE_SIZE);
+        let mut module_ref = module_state.module_builder.module;
+        module_ref
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(builtin::Module::RESERVED_MEMORY_ATTR, attr);
+    }
 
     build_globals(&parsed_module.module, module_state.module_builder, context.diagnostics())?;
     build_data_segments(parsed_module, module_state.module_builder, context.diagnostics())?;
