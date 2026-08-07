@@ -1300,6 +1300,59 @@ fn a_private_table_callee_is_not_part_of_the_package_surface() {
     );
 }
 
+/// A table entry naming a function in a declaration-only sibling.
+///
+/// The sibling is an external dependency represented in the IR — `@sibling` has no body — so
+/// `classify_siblings` drops it and no module is ever lowered at `::external_dep`. The entry
+/// still resolves and `@sibling` still has a signature, so the `hir.exec_indirect` verifier and
+/// legalization both accept this: it reaches code generation intact.
+const WORLD_WITH_A_TABLE_CALLEE_IN_A_DECLARATION_ONLY_SIBLING: &str = r#"
+builtin.world {
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function_table private @tbl : 1 {
+            builtin.function_table_entry 0 ::@external_dep::@sibling tag 1;
+        };
+
+        builtin.function public extern("C") @dispatch(%index: u32) {
+            hir.exec_indirect @tbl[%index] : extern("C") () -> () tag 1;
+            builtin.ret;
+        };
+    };
+};
+builtin.module public @external_dep {
+    builtin.function public extern("C") @sibling() {
+    };
+};
+};
+"#;
+
+/// A table entry whose callee has no definition to take the address of is invalid input, and is
+/// diagnosed as such.
+///
+/// This is the shape that used to panic. Everything upstream accepts it — the entry resolves and
+/// the callee's signature matches the call site's, which is all the verifier asks — so the first
+/// thing a producer of this IR saw was a `.expect` firing inside the slot-filling code, with a
+/// message written for a compiler bug rather than for them.
+#[test]
+fn a_table_callee_in_an_unlowered_module_is_invalid_input() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_TABLE_CALLEE_IN_A_DECLARATION_ONLY_SIBLING);
+    let err = lower_world(world)
+        .err()
+        .expect("a table entry naming a callee with no definition must not lower");
+    let err = err.to_string();
+
+    assert!(
+        err.contains("sibling") && err.contains("external_dep"),
+        "the diagnostic must name the callee and the module it was expected in, got: {err}"
+    );
+    assert!(
+        err.contains("only declarations"),
+        "the diagnostic must say why there was no module to attach the code to, got: {err}"
+    );
+}
+
 /// A component whose table callees are spread across three modules, one of them nested.
 ///
 /// `@a` declares the only table, and its three slots name callees in three different modules —
