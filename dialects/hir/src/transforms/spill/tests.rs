@@ -754,8 +754,8 @@ fn reachability_in_branching_cfg() -> TestResult<()> {
     );
     assert_eq!(
         reach(entry_first, entry_second),
-        Reachability::Guaranteed,
-        "an earlier op always flows into the adjacent next op"
+        Reachability::Maybe,
+        "adjacency alone does not prove that the source operation falls through"
     );
     assert_eq!(
         reach(op_at(entry, 0), entry_second),
@@ -926,8 +926,13 @@ fn reachability_through_region_re_entry() -> TestResult<()> {
     );
     assert_eq!(
         reach(early_op, late_op),
-        Reachability::Guaranteed,
-        "an earlier op always flows into a later op in the same block"
+        Reachability::Maybe,
+        "same-block order does not prove that every intervening operation falls through"
+    );
+    assert_eq!(
+        reach(while_op, ret_op),
+        Reachability::Maybe,
+        "an adjacent while may never exit, so reaching its successor is not guaranteed"
     );
     assert_eq!(
         reach(ret_op, late_op),

@@ -146,16 +146,12 @@ impl Operation {
             return Reachability::Maybe;
         };
 
-        // Within one block an earlier operation may flow into a later one, but control is only
-        // guaranteed to arrive when nothing lies between them: an intervening operation may
-        // loop indefinitely, return from the function, or abort. Positions that were
-        // normalized are likewise conditional on their ancestor op's semantics.
+        // Within one block an earlier operation may flow into a later one, but order alone does
+        // not prove total fallthrough: the source or an intervening operation may loop
+        // indefinitely, return from the function, or abort. Positions that were normalized are
+        // likewise conditional on their ancestor op's semantics.
         if from_block == to_block && from_ancestor.borrow().is_before_in_block(&to_ancestor) {
-            return if from_ancestor == from && to_ancestor == to && from.next() == Some(to) {
-                Reachability::Guaranteed
-            } else {
-                Reachability::Maybe
-            };
+            return Reachability::Maybe;
         }
 
         // A forward path may exist through block successors; earlier positions are only
