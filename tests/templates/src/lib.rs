@@ -50,29 +50,39 @@ fn current_dir_lock() -> CurrentDirGuard {
     }
 }
 
-/// Where generated projects put their build artifacts.
+/// Where one template's generated projects put their build artifacts.
 ///
-/// A single directory inside the workspace's target directory, shared by every
-/// template test, following the convention `cargo_projects_root` establishes in
-/// `tests/support`: keeping generated projects' artifacts under `target/` is
-/// what lets them be reused across tests *and* across runs. Giving each test
-/// its own directory instead costs a full SDK rebuild per template -- measured
-/// at 465s against 32s -- and putting them in a temporary directory throws the
-/// work away between runs.
+/// Under the workspace's target directory, following the convention
+/// `cargo_projects_root` establishes in `tests/support`, so the artifacts
+/// survive between runs -- building a generated project from cold takes
+/// minutes, and throwing that away in a temporary directory each time is what
+/// made these tests slow.
 ///
-/// It must not simply inherit the ambient `CARGO_TARGET_DIR`: `cargo make` sets
-/// that to the workspace's own target directory, so generated projects would
-/// scatter throwaway wasm artifacts through it.
+/// **One directory per template, not one shared by all of them.** Every test
+/// generates a project called `template_test`, and `note` and `tx-script` both
+/// generate a sibling called `add-contract` -- names fixed by the templates
+/// themselves, which reference `../add-contract` by path. Under nextest each
+/// test is its own process, so they run concurrently; pointing them at one
+/// directory means identically named packages writing over each other's output,
+/// and a test picking up another template's artifact. That is not theoretical:
+/// it failed in CI with `account` building a package whose namespace was
+/// `auth-component`.
+///
+/// It must not simply inherit the ambient `CARGO_TARGET_DIR` either, since
+/// `cargo make` points that at the workspace's own target directory.
 struct TargetDirGuard(Option<String>);
 
 impl TargetDirGuard {
-    fn shared() -> Self {
+    fn for_template(template: &str) -> Self {
         let previous = env::var("CARGO_TARGET_DIR").ok();
-        let shared = workspace_root().join("target/miden_test_template_projects");
-        fs::create_dir_all(&shared).expect("create the shared template build directory");
-        // Safety: serialised by the current-directory lock the caller holds,
-        // and under nextest each test is its own process.
-        unsafe { env::set_var("CARGO_TARGET_DIR", &shared) };
+        let dir = workspace_root()
+            .join("target/miden_test_template_projects")
+            .join(template.replace('-', "_"));
+        fs::create_dir_all(&dir).expect("create the template build directory");
+        // Safety: `set_var` is unsafe because of threads elsewhere in the
+        // process; under nextest each test is its own process, and this is set
+        // once before any subprocess is spawned.
+        unsafe { env::set_var("CARGO_TARGET_DIR", &dir) };
         Self(previous)
     }
 }
@@ -183,7 +193,7 @@ pub fn build_new_project_from_template(template: &str) {
     fs::create_dir_all(&temp_dir).unwrap();
     env::set_current_dir(&temp_dir).unwrap();
 
-    let _target_dir = TargetDirGuard::shared();
+    let _target_dir = TargetDirGuard::for_template(template);
 
     if matches!(template, "note" | "tx-script") {
         run(new_project_args("add-contract", "account").into_iter())

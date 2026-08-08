@@ -193,8 +193,13 @@ jobs:
             cargo install cargo-make --force
           fi
       - name: Test
+        # The template tests are excluded here as well as from the unit tests:
+        # each case generates a real project and builds it for both profiles
+        # already, so running them again under `test-release` doubles several
+        # minutes of work to re-check what they just checked. They have their
+        # own job.
         run: |
-          cargo make test-release
+          cargo make test-release -E 'not package(midenc-template-tests)'
 
   lit_tests:
     name: midenc lit/filecheck tests
