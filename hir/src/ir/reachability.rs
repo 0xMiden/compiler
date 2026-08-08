@@ -1,6 +1,9 @@
 use crate::{
-    BlockRef, FxHashMap, FxHashSet, Operation, OperationRef, Region, RegionBranchOpInterface,
-    RegionKindInterface, RegionRef, SmallVec, cfg::Graph,
+    AttributeRef, BlockRef, CallableOpInterface, FxHashMap, FxHashSet, Operation, OperationRef,
+    Region, RegionBranchOpInterface, RegionBranchPoint, RegionBranchTerminatorOpInterface,
+    RegionKindInterface, RegionRef, SmallVec,
+    cfg::Graph,
+    traits::{NoTerminator, ReturnLike},
 };
 
 /// The answer to a control-flow reachability query between two operations.
@@ -95,9 +98,11 @@ impl Operation {
         // function), where no control-flow order is defined. This must precede the scope
         // comparison, which would otherwise misclassify enclosure by an op residing in a
         // graph-like region as interprocedural.
-        if let Some(result) =
-            enclosure_reachability(from, to).or_else(|| enclosure_reachability(to, from))
+        if let Some(result) = enclosure_reachability(from, to, EnclosureDirection::Entering, cache)
         {
+            return result;
+        }
+        if let Some(result) = enclosure_reachability(to, from, EnclosureDirection::Exiting, cache) {
             return result;
         }
 
@@ -186,33 +191,367 @@ fn control_flow_scope(op: OperationRef) -> Option<OperationRef> {
     None
 }
 
-/// If `ancestor` properly encloses `descendant`, classifies the enclosure:
-/// [Reachability::Maybe] when every region crossed between them defines control flow, or
-/// [Reachability::Indeterminate] when the chain crosses a graph-like region (e.g. a module
-/// enclosing a function). Returns `None` when `ancestor` does not enclose `descendant`.
+#[derive(Clone, Copy)]
+enum EnclosureDirection {
+    Entering,
+    Exiting,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundaryReachability {
+    CanCross,
+    CannotCross,
+    Unknown,
+}
+
+struct EnclosureStep {
+    owner: OperationRef,
+    region: RegionRef,
+    position: OperationRef,
+}
+
+struct RegionExitAnalysis {
+    successors: SmallVec<[RegionBranchPoint; 4]>,
+    has_unknown_exit: bool,
+}
+
+enum RegionGraphStart {
+    Parent,
+    Child { region: RegionRef, block: BlockRef },
+}
+
+/// If `ancestor` properly encloses `descendant`, classify whether control can enter or leave the
+/// descendant position through every SSA region separating the two operations.
+///
+/// A graph-like region makes the positional query indeterminate. For SSA regions, `Impossible`
+/// is returned only when a fully modeled CFG or region boundary proves that no path exists;
+/// incomplete terminator or owner semantics remain conservatively `Maybe`.
 fn enclosure_reachability(
     ancestor: OperationRef,
     descendant: OperationRef,
+    direction: EnclosureDirection,
+    cache: &mut ReachabilityCache,
 ) -> Option<Reachability> {
     if !ancestor.borrow().is_proper_ancestor_of(&descendant.borrow()) {
         return None;
     }
-    // Walk the regions from `descendant` up to (and including) the region owned by `ancestor`.
-    let mut region = descendant.borrow().parent_region();
-    while let Some(r) = region {
-        if !region_has_ssa_dominance(r) {
+
+    // Collect the direct owner/child-region boundaries from the descendant out to the ancestor.
+    // `position` is always directly contained in `region`, which gives each boundary analysis a
+    // concrete starting or target block.
+    let mut steps = SmallVec::<[EnclosureStep; 4]>::new();
+    let mut position = descendant;
+    loop {
+        let Some(region) = position.borrow().parent_region() else {
+            // Defensive fallback for malformed ancestry.
+            return Some(Reachability::Maybe);
+        };
+        if !region_has_ssa_dominance(region) {
             return Some(Reachability::Indeterminate);
         }
-        let Some(owner) = r.parent() else {
-            break;
-        };
-        if owner == ancestor {
+        let Some(owner) = region.parent() else {
             return Some(Reachability::Maybe);
+        };
+        steps.push(EnclosureStep {
+            owner,
+            region,
+            position,
+        });
+        if owner == ancestor {
+            break;
         }
-        region = owner.borrow().parent_region();
+        position = owner;
     }
-    // Unreachable given the ancestry check above; defensively report plain enclosure.
+
+    match direction {
+        EnclosureDirection::Entering => {
+            for step in steps.iter().rev() {
+                match region_entry_reachability(step, cache) {
+                    BoundaryReachability::CanCross => {}
+                    BoundaryReachability::CannotCross => {
+                        return Some(Reachability::Impossible);
+                    }
+                    BoundaryReachability::Unknown => return Some(Reachability::Maybe),
+                }
+            }
+        }
+        EnclosureDirection::Exiting => {
+            for step in &steps {
+                match region_exit_reachability(step, cache) {
+                    BoundaryReachability::CanCross => {}
+                    BoundaryReachability::CannotCross => {
+                        return Some(Reachability::Impossible);
+                    }
+                    BoundaryReachability::Unknown => return Some(Reachability::Maybe),
+                }
+            }
+        }
+    }
+
     Some(Reachability::Maybe)
+}
+
+fn region_entry_reachability(
+    step: &EnclosureStep,
+    cache: &mut ReachabilityCache,
+) -> BoundaryReachability {
+    let owner_is_region_branch = step.owner.borrow().implements::<dyn RegionBranchOpInterface>();
+    let owner_is_callable = is_callable_body(step.owner, step.region);
+    if !owner_is_region_branch && !owner_is_callable {
+        return BoundaryReachability::Unknown;
+    }
+
+    let Some(target_block) = step.position.borrow().parent() else {
+        return BoundaryReachability::Unknown;
+    };
+    let Some(entry_block) = step.region.borrow().entry_block_ref() else {
+        return BoundaryReachability::CannotCross;
+    };
+    if !block_reaches(entry_block, target_block, cache) {
+        return BoundaryReachability::CannotCross;
+    }
+
+    if owner_is_region_branch {
+        return region_branch_reachability(
+            step.owner,
+            RegionGraphStart::Parent,
+            RegionBranchPoint::Child(step.region),
+            cache,
+        );
+    }
+
+    if owner_is_callable {
+        BoundaryReachability::CanCross
+    } else {
+        BoundaryReachability::Unknown
+    }
+}
+
+fn region_exit_reachability(
+    step: &EnclosureStep,
+    cache: &mut ReachabilityCache,
+) -> BoundaryReachability {
+    let Some(start_block) = step.position.borrow().parent() else {
+        return BoundaryReachability::Unknown;
+    };
+
+    if step.owner.borrow().implements::<dyn RegionBranchOpInterface>() {
+        return region_branch_reachability(
+            step.owner,
+            RegionGraphStart::Child {
+                region: step.region,
+                block: start_block,
+            },
+            RegionBranchPoint::Parent,
+            cache,
+        );
+    }
+
+    if is_callable_body(step.owner, step.region) {
+        return callable_region_exit_reachability(step.owner, step.region, start_block, cache);
+    }
+
+    BoundaryReachability::Unknown
+}
+
+fn region_branch_reachability(
+    owner: OperationRef,
+    start: RegionGraphStart,
+    target: RegionBranchPoint,
+    cache: &mut ReachabilityCache,
+) -> BoundaryReachability {
+    let mut worklist = SmallVec::<[(RegionRef, Option<BlockRef>); 8]>::new();
+
+    match start {
+        RegionGraphStart::Parent => {
+            let successors = {
+                let owner = owner.borrow();
+                let operands = unknown_operands(owner.num_operands());
+                let branch = owner
+                    .as_trait::<dyn RegionBranchOpInterface>()
+                    .expect("expected a region branch operation");
+                branch
+                    .get_entry_successor_regions(&operands)
+                    .map(RegionBranchPoint::from)
+                    .collect::<SmallVec<[_; 4]>>()
+            };
+            for successor in successors {
+                if successor == target {
+                    return BoundaryReachability::CanCross;
+                }
+                if let RegionBranchPoint::Child(region) = successor {
+                    worklist.push((region, None));
+                }
+            }
+        }
+        RegionGraphStart::Child { region, block } => {
+            worklist.push((region, Some(block)));
+        }
+    }
+
+    // A child reached from another child starts at its entry. The starting exit child instead
+    // starts at the descendant's block; track both states independently so a later region-graph
+    // cycle may legitimately re-enter that same child through its entry block.
+    let mut visited = SmallVec::<[(RegionRef, Option<BlockRef>); 8]>::new();
+    let mut has_unknown_path = false;
+
+    while let Some((region, start_block)) = worklist.pop() {
+        if visited.contains(&(region, start_block)) {
+            continue;
+        }
+        visited.push((region, start_block));
+
+        let start_block = match start_block.or_else(|| region.borrow().entry_block_ref()) {
+            Some(block) => block,
+            None => {
+                has_unknown_path = true;
+                continue;
+            }
+        };
+        let exits = reachable_region_exits(owner, region, start_block, cache);
+        has_unknown_path |= exits.has_unknown_exit;
+
+        for successor in exits.successors {
+            if successor == target {
+                return BoundaryReachability::CanCross;
+            }
+            if let RegionBranchPoint::Child(region) = successor {
+                worklist.push((region, None));
+            }
+            // Parent reached after a child is terminal for this execution of the region owner;
+            // it must not be expanded as though the operation were being entered again.
+        }
+    }
+
+    if has_unknown_path {
+        BoundaryReachability::Unknown
+    } else {
+        BoundaryReachability::CannotCross
+    }
+}
+
+fn reachable_region_exits(
+    owner: OperationRef,
+    region: RegionRef,
+    start_block: BlockRef,
+    cache: &mut ReachabilityCache,
+) -> RegionExitAnalysis {
+    let mut analysis = RegionExitAnalysis {
+        successors: SmallVec::new(),
+        has_unknown_exit: false,
+    };
+
+    for block in region.borrow().body().iter() {
+        let block = block.as_block_ref();
+        if !block_reaches(start_block, block, cache) {
+            continue;
+        }
+        let terminator = block.borrow().terminator();
+        let Some(terminator) = terminator else {
+            if owner.borrow().implements::<dyn NoTerminator>() {
+                let successors = {
+                    let owner = owner.borrow();
+                    let branch = owner
+                        .as_trait::<dyn RegionBranchOpInterface>()
+                        .expect("expected a region branch operation");
+                    branch
+                        .get_successor_regions(RegionBranchPoint::Child(region))
+                        .map(RegionBranchPoint::from)
+                        .collect::<SmallVec<[_; 4]>>()
+                };
+                append_unique_successors(&mut analysis.successors, successors);
+            } else {
+                analysis.has_unknown_exit = true;
+            }
+            continue;
+        };
+
+        let terminator = terminator.borrow();
+        if let Some(region_terminator) =
+            terminator.as_trait::<dyn RegionBranchTerminatorOpInterface>()
+        {
+            let operands = unknown_operands(terminator.num_operands());
+            let successors = region_terminator
+                .get_successor_regions(&operands)
+                .into_iter()
+                .map(|successor| successor.successor());
+            append_unique_successors(&mut analysis.successors, successors);
+        } else if terminator.implements::<dyn ReturnLike>() {
+            // Plain returns are only valid as direct terminators of a callable body. A
+            // ReturnLike under a RegionBranch owner is malformed or otherwise unmodeled.
+            analysis.has_unknown_exit = true;
+        } else if terminator.num_successors() == 0 {
+            // A terminator with no CFG or region successors may abort, throw, or transfer control
+            // by semantics unavailable here. It cannot justify a false `Impossible`.
+            analysis.has_unknown_exit = true;
+        }
+    }
+
+    analysis
+}
+
+fn callable_region_exit_reachability(
+    owner: OperationRef,
+    region: RegionRef,
+    start_block: BlockRef,
+    cache: &mut ReachabilityCache,
+) -> BoundaryReachability {
+    let mut has_unknown_exit = false;
+
+    for block in region.borrow().body().iter() {
+        let block = block.as_block_ref();
+        if !block_reaches(start_block, block, cache) {
+            continue;
+        }
+        let Some(terminator) = block.borrow().terminator() else {
+            if owner.borrow().implements::<dyn NoTerminator>() {
+                return BoundaryReachability::CanCross;
+            }
+            has_unknown_exit = true;
+            continue;
+        };
+        let terminator = terminator.borrow();
+        if terminator.implements::<dyn RegionBranchTerminatorOpInterface>() {
+            // Such a terminator only has a defined destination under a RegionBranch owner.
+            has_unknown_exit = true;
+        } else if terminator.implements::<dyn ReturnLike>() {
+            return BoundaryReachability::CanCross;
+        } else if terminator.num_successors() == 0 {
+            has_unknown_exit = true;
+        }
+    }
+
+    if has_unknown_exit {
+        BoundaryReachability::Unknown
+    } else {
+        BoundaryReachability::CannotCross
+    }
+}
+
+fn is_callable_body(owner: OperationRef, region: RegionRef) -> bool {
+    owner
+        .borrow()
+        .as_trait::<dyn CallableOpInterface>()
+        .is_some_and(|callable| callable.get_callable_region() == Some(region))
+}
+
+fn block_reaches(from: BlockRef, to: BlockRef, cache: &mut ReachabilityCache) -> bool {
+    from == to || cache.leads_to(from, to)
+}
+
+fn unknown_operands(count: usize) -> SmallVec<[Option<AttributeRef>; 4]> {
+    core::iter::repeat_n(None, count).collect()
+}
+
+fn append_unique_successors(
+    successors: &mut SmallVec<[RegionBranchPoint; 4]>,
+    additional: impl IntoIterator<Item = RegionBranchPoint>,
+) {
+    for successor in additional {
+        if !successors.contains(&successor) {
+            successors.push(successor);
+        }
+    }
 }
 
 /// Classifies reachability between two positions in different sub-regions of one `owner` op.
@@ -324,4 +663,190 @@ fn region_can_re_execute(region: RegionRef, cache: &mut ReachabilityCache) -> bo
         current = owner_op.parent_region();
     }
     false
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::vec::Vec;
+
+    use super::*;
+    use crate::{
+        Builder, BuilderExt, Op, RegionSuccessorInfo, RegionSuccessorIter, SourceSpan,
+        SuccessorOperandRange, SuccessorOperandRangeMut, ValueRef,
+        derive::operation,
+        dialects::test::TestDialect,
+        testing::Test,
+        traits::{AnyType, BranchOpInterface, Terminator},
+    };
+
+    #[operation(dialect = TestDialect, implements(RegionBranchOpInterface))]
+    pub struct TestRegionBranch {
+        #[region]
+        first: Region,
+        #[region]
+        second: Region,
+    }
+
+    impl RegionBranchOpInterface for TestRegionBranch {
+        fn get_successor_regions(&self, point: RegionBranchPoint) -> RegionSuccessorIter<'_> {
+            let first = self.first().as_region_ref();
+            let second = self.second().as_region_ref();
+            let successors = match point {
+                RegionBranchPoint::Parent => {
+                    SmallVec::from_buf([RegionSuccessorInfo::Entering(first)])
+                }
+                RegionBranchPoint::Child(region) if region == first => {
+                    SmallVec::from_buf([RegionSuccessorInfo::Entering(second)])
+                }
+                RegionBranchPoint::Child(_) => {
+                    SmallVec::from_buf([RegionSuccessorInfo::Returning(SmallVec::new())])
+                }
+            };
+            RegionSuccessorIter::new(self.as_operation(), successors)
+        }
+    }
+
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator),
+        implements(BranchOpInterface)
+    )]
+    pub struct TestBranch {
+        #[successor]
+        target: Successor,
+    }
+
+    impl BranchOpInterface for TestBranch {}
+
+    #[operation(
+        dialect = TestDialect,
+        traits(Terminator),
+        implements(RegionBranchTerminatorOpInterface)
+    )]
+    pub struct TestRegionYield {
+        #[operands]
+        yielded: AnyType,
+    }
+
+    impl RegionBranchTerminatorOpInterface for TestRegionYield {
+        fn get_successor_operands(&self, _point: RegionBranchPoint) -> SuccessorOperandRange<'_> {
+            SuccessorOperandRange::forward(self.yielded())
+        }
+
+        fn get_mutable_successor_operands(
+            &mut self,
+            _point: RegionBranchPoint,
+        ) -> SuccessorOperandRangeMut<'_> {
+            SuccessorOperandRangeMut::forward(self.yielded_mut())
+        }
+
+        fn get_successor_regions(
+            &self,
+            _operands: &[Option<AttributeRef>],
+        ) -> SmallVec<[RegionSuccessorInfo; 2]> {
+            let region = self.parent_region().expect("test yield must be in a region");
+            let owner = self.parent_op().expect("test yield region must have an owner");
+            let owner = owner.borrow();
+            let owner = owner
+                .downcast_ref::<TestRegionBranch>()
+                .expect("test yield must be nested in TestRegionBranch");
+            if region == owner.first().as_region_ref() {
+                core::iter::once(RegionSuccessorInfo::Entering(owner.second().as_region_ref()))
+                    .collect()
+            } else {
+                core::iter::once(RegionSuccessorInfo::Returning(SmallVec::new())).collect()
+            }
+        }
+    }
+
+    #[operation(dialect = TestDialect)]
+    pub struct TestUnknownRegionOwner {
+        #[region]
+        body: Region,
+    }
+
+    #[operation(dialect = TestDialect)]
+    pub struct TestMarker {}
+
+    #[test]
+    fn region_branch_entry_does_not_bypass_an_intermediate_child_sink() {
+        let mut test =
+            Test::new("region_branch_entry_does_not_bypass_an_intermediate_child_sink", &[], &[]);
+        let (owner, target) = {
+            let mut builder = test.function_builder();
+            let owner = builder.builder_mut().create::<TestRegionBranch, ()>(SourceSpan::UNKNOWN)()
+                .unwrap();
+            let first = owner.borrow().first().as_region_ref();
+            let second = owner.borrow().second().as_region_ref();
+
+            let sink = builder.builder_mut().create_block(first, None, &[]);
+            builder.builder_mut().set_insertion_point_to_end(sink);
+            builder
+                .builder_mut()
+                .create::<TestBranch, (BlockRef, Vec<ValueRef>)>(SourceSpan::UNKNOWN)(
+                sink,
+                Vec::new(),
+            )
+            .unwrap();
+
+            // The abstract owner graph advertises first -> second, but this concrete terminator is
+            // disconnected from the first region's entry and therefore cannot enable that edge.
+            let disconnected = builder.builder_mut().create_block(first, None, &[]);
+            builder.builder_mut().set_insertion_point_to_end(disconnected);
+            builder
+                .builder_mut()
+                .create::<TestRegionYield, (Vec<ValueRef>,)>(SourceSpan::UNKNOWN)(
+                Vec::new()
+            )
+            .unwrap();
+
+            let second_entry = builder.builder_mut().create_block(second, None, &[]);
+            builder.builder_mut().set_insertion_point_to_end(second_entry);
+            let target = builder
+                .builder_mut()
+                .create::<TestRegionYield, (Vec<ValueRef>,)>(SourceSpan::UNKNOWN)(
+                Vec::new()
+            )
+            .unwrap();
+            (owner.as_operation_ref(), target.as_operation_ref())
+        };
+
+        assert_eq!(
+            Operation::reachability(owner, target),
+            Reachability::Impossible,
+            "an abstract child-to-child edge must not bypass a sink in the intermediate child"
+        );
+    }
+
+    #[test]
+    fn unknown_region_owner_semantics_remain_maybe() {
+        let mut test = Test::new("unknown_region_owner_semantics_remain_maybe", &[], &[]);
+        let (owner, nested) = {
+            let mut builder = test.function_builder();
+            let owner =
+                builder.builder_mut().create::<TestUnknownRegionOwner, ()>(SourceSpan::UNKNOWN)()
+                    .unwrap();
+            let body = owner.borrow().body().as_region_ref();
+            let entry = builder.builder_mut().create_block(body, None, &[]);
+            builder.builder_mut().set_insertion_point_to_end(entry);
+            builder
+                .builder_mut()
+                .create::<TestBranch, (BlockRef, Vec<ValueRef>)>(SourceSpan::UNKNOWN)(
+                entry,
+                Vec::new(),
+            )
+            .unwrap();
+            let disconnected = builder.builder_mut().create_block(body, None, &[]);
+            builder.builder_mut().set_insertion_point_to_end(disconnected);
+            let nested =
+                builder.builder_mut().create::<TestMarker, ()>(SourceSpan::UNKNOWN)().unwrap();
+            (owner.as_operation_ref(), nested.as_operation_ref())
+        };
+
+        assert_eq!(
+            Operation::reachability(owner, nested),
+            Reachability::Maybe,
+            "an unmodeled region owner must stay conservative even for a disconnected block"
+        );
+    }
 }

@@ -950,6 +950,11 @@ fn reachability_through_region_re_entry() -> TestResult<()> {
         Reachability::Maybe,
         "the before region is reachable from the after region through the loop"
     );
+    assert_eq!(
+        reach(after_op, while_op),
+        Reachability::Maybe,
+        "leaving the after region can traverse after -> before -> parent"
+    );
     Ok(())
 }
 
@@ -1005,6 +1010,72 @@ fn reachability_through_cfg_cycle_re_entry() -> TestResult<()> {
         Reachability::Maybe,
         "sibling if arms stay reachable when an outer CFG cycle re-executes the if"
     );
+    Ok(())
+}
+
+/// Enclosure reachability is directional and must respect the function body's CFG.
+///
+/// A reachable sink can be entered from the function but cannot return to it. Conversely, a
+/// disconnected block cannot be entered from the function, although an operation already in that
+/// block can follow its own return.
+#[test]
+fn reachability_across_directional_function_enclosure() -> TestResult<()> {
+    let source = r#"builtin.function public extern("C") @reachability_across_directional_function_enclosure(%a: u32, %cond: i1) -> u32 {
+    cf.cond_br %cond ^sink, ^exit : (i1);
+^sink:
+    %sink_value = arith.add %a, %a <{ overflow = #builtin.overflow<unchecked> }>;
+    cf.br ^sink;
+^exit:
+    %exit_value = arith.add %a, %a <{ overflow = #builtin.overflow<unchecked> }>;
+    builtin.ret %exit_value : (u32);
+^dead:
+    %dead_value = arith.add %a, %a <{ overflow = #builtin.overflow<unchecked> }>;
+    builtin.ret %dead_value : (u32);
+};"#;
+
+    let context = Rc::new(Context::default());
+    let (function, _) = parse_function_fixpoint(
+        &context,
+        "reachability_across_directional_function_enclosure.hir",
+        source,
+    )?;
+
+    let function_op = function.as_operation_ref();
+    let sink_op = op_at(block_at(function, 1), 0);
+    let exit_op = op_at(block_at(function, 2), 0);
+    let dead_op = op_at(block_at(function, 3), 0);
+
+    assert_eq!(
+        reach(function_op, sink_op),
+        Reachability::Maybe,
+        "the function entry can flow into the reachable sink"
+    );
+    assert_eq!(
+        reach(sink_op, function_op),
+        Reachability::Impossible,
+        "the sink SCC has no path back to the enclosing function"
+    );
+    assert_eq!(
+        reach(function_op, dead_op),
+        Reachability::Impossible,
+        "the function entry cannot reach a disconnected block"
+    );
+    assert_eq!(
+        reach(dead_op, function_op),
+        Reachability::Maybe,
+        "a position in the disconnected block can still reach its own return"
+    );
+    assert_eq!(
+        reach(function_op, exit_op),
+        Reachability::Maybe,
+        "the ordinary exit block remains reachable from function entry"
+    );
+    assert_eq!(
+        reach(exit_op, function_op),
+        Reachability::Maybe,
+        "the ordinary exit block reaches the enclosing function return"
+    );
+
     Ok(())
 }
 
