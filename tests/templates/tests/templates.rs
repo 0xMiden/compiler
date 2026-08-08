@@ -1,0 +1,33 @@
+//! Builds a new project from each of the five `rust/` templates and verifies
+//! that `cargo-miden` from this checkout compiles it without errors, for both
+//! the `dev` and `release` profiles.
+//!
+//! The bundle declares a sixth, `project`, which is the default scaffold rather
+//! than a single contract and is not covered here.
+
+use midenc_template_tests::build_new_project_from_template;
+
+#[test]
+fn account() {
+    build_new_project_from_template("account");
+}
+
+#[test]
+fn auth_component() {
+    build_new_project_from_template("auth-component");
+}
+
+#[test]
+fn note() {
+    build_new_project_from_template("note");
+}
+
+#[test]
+fn tx_script() {
+    build_new_project_from_template("tx-script");
+}
+
+#[test]
+fn program() {
+    build_new_project_from_template("program");
+}

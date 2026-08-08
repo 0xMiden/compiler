@@ -48,6 +48,21 @@ cargo miden new foo
 In this above example, this will create a new directory `foo`, containing a Cargo project for a
 crate named `foo`, generated from our Miden project template.
 
+Templates are released independently of the compiler, so `cargo miden new`
+fetches the newest compatible template bundle at run time and falls back to a
+copy embedded in `cargo-miden` — you get template fixes without reinstalling,
+and project creation still works with no network access.
+
+Pass `--force-download` to require the released bundle and fail rather than
+silently falling back, which is useful for confirming what a released template
+actually produces:
+
+```bash
+cargo miden new foo --force-download
+```
+
+Pass `--template-path <dir>` to generate from templates on disk instead.
+
 The template we use sets things up so that you can pretty much just build and run. Since the
 toolchain depends on Rust's native WebAssembly target, it is set up just like a minimal WebAssembly
 crate, with some additional tweaks for Miden specifically.

@@ -723,3 +723,13 @@ args = [
 ]
 dependencies = ["release-tool"]
 env = { "GITHUB_REPOSITORY" = "0xMiden/compiler" }
+
+[tasks.test-templates]
+category = "Test"
+description = "Scaffold a project from every template and build it, dev and release"
+# An ordinary workspace member, so it shares the workspace's target directory,
+# profile and lockfile with every other test. Each test generates a project and
+# builds it, which takes minutes -- hence its own task and its own CI job rather
+# than running inside the general test task.
+command = "cargo"
+args = ["make", "test", "-E", "package(midenc-template-tests)", "${@}"]

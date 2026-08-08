@@ -110,5 +110,15 @@ We have put together two useful guides to walk through more detail on compiling 
 2. If you already have a WebAssembly module, or know how to produce one, and want to learn how to
    compile it to Miden Assembly, see [this guide](../guides/wasm_to_masm.md).
 
-You may also be interested in our [basic account project template](https://github.com/0xMiden/rust-templates/tree/main/account/template),
-as a starting point for your own Rust project.
+To start from a working project rather than an empty one, use `cargo miden new`:
+
+```bash
+cargo miden new my-project            # a full project scaffold
+cargo miden new my-account --account  # a single account component
+```
+
+The available templates are `--account`, `--note`, `--tx-script`,
+`--auth-component`, and `--program`. Their sources live in this repository under
+[`extra/templates`](https://github.com/0xMiden/compiler/tree/main/extra/templates)
+and are released independently of the compiler, so `cargo miden new` picks up
+template updates without you reinstalling `cargo-miden`.

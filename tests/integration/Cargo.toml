@@ -39,7 +39,7 @@ midenc-session.workspace = true
 midenc-integration-test-support.workspace = true
 num-traits = "0.2"
 proptest.workspace = true
-sha2 = "0.11"
+sha2.workspace = true
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging

@@ -535,10 +535,9 @@ Follow §3 unchanged. The differences are automatic:
 
 - GitHub releases are marked prerelease and never become "Latest".
 - **Templates can be part of a prerelease**, and must be when a compiler change
-  requires a template change. The bundle takes a prerelease version and stable
-  clients never see it - template resolution selects the highest *stable*
-  compatible release, so a prerelease bundle is reachable only from a prerelease
-  `cargo-miden` or an explicit `--template-version`.
+  requires a template change. The bundle takes a prerelease version, and only a
+  prerelease `cargo-miden` will resolve it — a stable build accepts only stable
+  bundles in its own minor series, so stable users never see it.
 
 ---
 
@@ -793,6 +792,14 @@ has been attempted through it.
 
 ### Not implemented
 
+- **Template resolution robustness** (design §12.3–12.4). `cargo miden new`
+  resolves the bundle at runtime and falls back to the embedded copy, but makes
+  a *single* attempt with no caching, so every invocation queries GitHub, and it
+  does not walk down to an older candidate when the newest tag has no release
+  behind it — which happens routinely, since tags are created before a release
+  is finalized. Also absent: `--template-version`, `--offline`, and the
+  `deny.json` retraction list, so withdrawing a bad template bundle currently
+  means releasing a newer one.
 - **`audit-publishers`.** Trusted Publishing configuration cannot be
   preflighted, so a missing publisher surfaces mid-publication as
   [T7](#t7-403-from-cratesio-during-publication).

@@ -130,43 +130,62 @@ In short, when you submit code changes, your submissions are understood to be un
 
 ## Release Process
 
-### 1. Release of the Miden SDK crates
+Releases are performed by the tooling in `tools/release`, driven by the
+`release.yml` workflow. The operational guide is
+**[docs/release-process.md](docs/release-process.md)** — follow the checklist
+there for the kind of release you are doing.
 
-1. Create a release PR against the `next` branch naming the branch with the `release-plz-` prefix (its important to use this prefix to trigger the crate publishing on CI in the later step).
-2. Manually bump ALL the SDK crate versions (`sdk` folder) and update the `sdk/sdk/CHANGELOG.md`
-3. Review the changes in the release PR,  and merge it into the `next` branch.
-4. The CI will automatically run `release-plz release` after the release PR is merged to publish the new versions to crates.io.
+A few things that used to live here and have changed, because the old procedure
+is still in people's heads:
 
-### 2. Release of the Miden Compiler
+- **Releases happen from `main`, not `next`.** A release starts by promoting
+  `next` into `main`; the release candidate then branches from and merges into
+  `main`.
+- **`release-plz` is gone.** Versions are moved with
+  `cargo make release set-version --unit <compiler|sdk|templates> <version>`,
+  which updates every manifest, every requirement naming them, the lockfile, and
+  `.release/release.toml`. Never hand-edit a version: an SDK bump also rewrites
+  the SDK requirement in every template, and picks a different form of that
+  requirement for a prerelease than for a stable release.
+- **The compiler, the SDK, and the project templates are three independent
+  release units**, each with its own version, tag namespace, and changelog.
 
-1. Update the contract templates at https://github.com/0xMiden/project-template (see 2.1 below).
-2. Update the new project template at https://github.com/0xMiden/project-template (see 2.2 below).
-3. Merging to `main` will create a new release PR containing any unreleased changes.
-4. Optional. Change the proposed crate version, CHANGELOG edits.
-5. The release PR gets merged to `main` when we are ready to publish the release.
-6. The crates are published to crates.io, a new git tag is created, as well as a GitHub release
-7. A job is run to pre-build the executable for our supported targets and upload them to the created Github release.
-8. Merge the `main` branch back to the `next` branch.
+### Changing the project templates
 
-### 2.1. Updating the new contract templates
+The templates live in this repository at `extra/templates` and are released as
+`templates/v*`. They are no longer maintained in `0xMiden/rust-templates` or
+`0xMiden/project-template`, and no git tag is moved to publish them.
 
-1. Bump the Miden SDK version in the Cargo.toml.
-2. Migrate the code in lib.rs.
-3. Create a git tag.
-4. Make a PR in the compiler repo and set the new git tag (bump the current in `PROJECT_TEMPLATES_REPO_TAG` at tools/cargo-miden/src/commands/new_project.rs).
-5. Run the compiler tests, if red then goto 2.
+1. Edit the templates under `extra/templates`.
+2. Regenerate the archive `cargo-miden` embeds:
 
-### 2.2. Updating the new project template
+   ```bash
+   cargo make release bundle --output tools/cargo-miden/templates.tar.gz
+   ```
 
-1. Bump the Miden SDK, `miden-client` versions in the Cargo.toml files, set the `cargo-miden` version to the `next` branch for now(after the compiler release it'd be the new version).
-2. Migrate the code in the contracts, tests and the app.
-3. Create a git tag.
-4. Make a PR in the compiler repo and set the new git tag (bump the current in `MIDEN_PROJECT_TEMPLATE_REPO_TAG` at tools/cargo-miden/src/commands/new_project.rs).
-5. Run the local repo tests, if red then goto 2.
-6. Run the compiler tests, if red then goto 2.
+   `cargo make release lint` fails if you forget; the archive is built from
+   files **tracked by git**, so anything untracked is silently absent from it
+   and is reported rather than included.
 
-### 3. After the Miden Compiler crates are published
+3. Check that the templates still build:
 
-1. Change the `cargo-miden` version to the newly published crate in the PR (created in 2.2.4) at https://github.com/0xMiden/project-template.
-2. Re-set the same git tag (created in 2.2.3) to the new commit.
-3. Merge the PR (created in 2.2.4).
+   ```bash
+   cargo make test-templates
+   ```
+
+   This scaffolds a project from each of the five `rust/` templates with the
+   compiler from your checkout and builds it for both profiles. It is the only
+   thing that compiles them — they are outside the workspace, so no other
+   `cargo test` reaches them. The `project` scaffold is not covered; changes to
+   it are only checked by `tools/cargo-miden/tests/templates_from_bundle.rs`,
+   which renders it but does not build it.
+
+4. Release the `templates` unit to put the change in front of users.
+   `cargo miden new` resolves the newest released bundle in its minor series at
+   runtime and falls back to the copy embedded in the binary, so an installed
+   `cargo-miden` picks up template fixes without being reinstalled — but only
+   once the bundle is released.
+
+   Use `cargo miden new <name> --force-download` to check what a user will
+   actually get: it requires the released bundle and fails rather than quietly
+   falling back to the embedded copy.

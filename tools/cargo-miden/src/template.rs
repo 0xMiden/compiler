@@ -28,6 +28,9 @@ pub struct TemplatePath {
     pub rev: Option<String>,
     /// Subdirectory inside the template repository that contains the actual template.
     pub auto_path: Option<String>,
+    /// Require the template bundle to come from a GitHub release, rather than
+    /// falling back to the copy embedded in this binary.
+    pub force_download: bool,
 }
 
 /// Arguments required to expand a template into a project.
@@ -310,11 +313,27 @@ fn prepare_template(template_path: &TemplatePath) -> Result<TemplateSource> {
         });
     }
 
-    let repo = template_path
-        .git
-        .as_ref()
-        .context("Template source must specify either `path` or `git`")?;
     let temp_dir = TempDir::new().context("Failed to create temporary directory for template")?;
+
+    // No explicit source means the Miden template bundle: the newest released
+    // `templates/v*` in this build's minor series, or the copy compiled in.
+    let Some(repo) = template_path.git.as_ref() else {
+        let fetch = if template_path.force_download {
+            crate::bundle::Fetch::Required
+        } else {
+            crate::bundle::Fetch::IfAvailable
+        };
+        let resolved = crate::bundle::resolve(temp_dir.path(), fetch)?;
+        // Worth saying out loud: which templates a project was generated from
+        // is the first thing anyone asks when a generated project misbehaves.
+        if let crate::bundle::Source::Released { version } = &resolved.source {
+            println!("Using templates {version} from GitHub");
+        }
+        return Ok(TemplateSource {
+            root: resolved.root,
+            _keepalive: Some(temp_dir),
+        });
+    };
 
     clone_repository(repo, template_path, temp_dir.path())?;
 

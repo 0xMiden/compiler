@@ -255,3 +255,8 @@ publish = false
 name = "midenc-integration-tests"
 unit = "private"
 publish = false
+
+[[packages]]
+name = "midenc-template-tests"
+unit = "private"
+publish = false

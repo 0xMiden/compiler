@@ -165,7 +165,7 @@ jobs:
           cargo make check --tests
       - name: Test
         run: |
-          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden))'
+          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests))'
 
   release_profile_tests:
     name: midenc release-profile tests
@@ -321,6 +321,43 @@ jobs:
       - name: Test
         run: |
           cargo make test -E 'package(cargo-miden)'
+
+  template_tests:
+    name: project template tests
+    runs-on: warp-ubuntu-latest-x64-8x
+    # These build a real project from every template with the compiler from this
+    # commit, so they need the workspace to compile first.
+    needs: [unit_tests]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+      - name: Cache Cargo
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
+        with:
+          shared-key: ${{ github.workflow }}-shared-tests
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          save-if: false
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+      # Scaffolds a project from each of the five `rust/` templates and builds
+      # it for both profiles. This is what proves the templates still work
+      # against the compiler and SDK in this commit; every other test that
+      # touches templates passes `--template-path` or renders without building.
+      #
+      # Excluded from the general test job because each case builds a real
+      # project, so it runs here on its own.
+      - name: Test templates
+        run: |
+          cargo make test-templates
 
   miden_integration_node_tests:
     name: miden integration node tests

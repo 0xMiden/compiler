@@ -3,6 +3,7 @@ name = "increment-note"
 version = "0.1.0"
 
 [lib]
+path = "src/lib.rs"
 kind = "note"
 # Notes export a package-derived interface (`miden-<package>`), matching the `#[note]` macro.
 namespace = "miden:increment-note/miden-increment-note@0.1.0"

@@ -1,0 +1,16 @@
+[package]
+name = "midenc-template-tests"
+version = "0.1.0"
+edition.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+# By path, not by version: `cargo-miden` statically links the compiler, so this
+# is what makes the tests build the templates with the compiler from this
+# checkout rather than a published one. The generated projects depend on the
+# SDK from the same checkout, via the `--compiler-path` these tests pass.
+cargo-miden = { path = "../../tools/cargo-miden" }
+
