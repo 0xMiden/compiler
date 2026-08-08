@@ -19,7 +19,7 @@ use alloc::rc::Rc;
 pub use midenc_hir::Context;
 use midenc_hir::Op;
 use midenc_session::{
-    OutputMode,
+    Emit, OutputMode, OutputType,
     diagnostics::{Diagnostic, Report, WrapErr, miette},
 };
 
@@ -54,10 +54,15 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
                 .emit(OutputMode::Text, package)
                 .map_err(Report::msg)
                 .wrap_err("failed to pretty print 'mast' artifact")?;
+            let output_path = session.emit_to(OutputType::Masp, package.name());
             session
                 .emit(OutputMode::Binary, package)
                 .map_err(Report::msg)
-                .wrap_err("failed to serialize 'mast' artifact")
+                .wrap_err("failed to serialize 'mast' artifact")?;
+            if let Some(output_path) = output_path {
+                session.diagnostics.info(format!("Compiled {}", output_path.display()));
+            }
+            Ok(())
         }
         CompiledArtifact::Lowered(_) => {
             log::debug!("no outputs requested by user: pipeline stopped before assembly");
