@@ -1,0 +1,426 @@
+================================================================================
+Package Info:
+  | Name:    counter-contract
+  | Version: 0.1.0
+  | Kind:    account-component
+Section Versioning:
+  | Types:     1
+  | Sources:   1
+  | Functions: 1
+================================================================================
+
+Summary:
+
+Types:
+  | records: 20
+  | strings: 2
+
+Sources:
+  | records: 2
+  | strings: 2
+
+Functions:
+  | records:   19
+  | strings:   19
+  | variables: 0 (total across all functions)
+  | inlined:   0 call sites
+
+Found 172 debug variable records
+
+.debug_str contents:
+--------------------------------------------------------------------------------
+  [types string table]
+  [   0] "0"
+  [   1] "<anon>"
+
+  [sources string table]
+  [   0] "<workspace>/codegen/masm/intrinsics/mem.masm"
+  [   1] "<workspace>/examples/counter-contract/src/lib.rs"
+
+  [functions string table]
+  [   0] "::intrinsics::mem::offset_dw"
+  [   1] "::intrinsics::mem::realign_dw"
+  [   2] "::intrinsics::mem::store_sw"
+  [   3] "::intrinsics::mem::load_sw"
+  [   4] "::intrinsics::mem::store_felt"
+  [   5] "::intrinsics::mem::store_dw"
+  [   6] "::intrinsics::mem::load_dw"
+  [   7] "::intrinsics::mem::load_felt"
+  [   8] "::intrinsics::mem::heap_init"
+  [   9] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs2_Cs3BT8OsCPMeH_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest9get_count"
+  [  10] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#get-count""
+  [  11] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"get-count""
+  [  12] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs2_Cs3BT8OsCPMeH_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest15increment_count"
+  [  13] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#increment-count""
+  [  14] "::"miden:counter-contract/miden-counter-contract@0.1.0"::"increment-count""
+  [  15] "::intrinsics::mem::verify_heap_magic"
+  [  16] "::intrinsics::mem::heap_base"
+  [  17] "::intrinsics::mem::memory_size"
+  [  18] "::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::cabi_realloc"
+
+.debug_types contents:
+--------------------------------------------------------------------------------
+  [   0] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   1] FUNCTION () -> felt
+  [   2] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   3] FUNCTION () -> felt
+  [   4] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   5] STRUCT <anon> (size: 4 bytes)
+    +   0: 0 : felt
+
+  [   6] FUNCTION () -> struct <anon>
+  [   7] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [   8] FUNCTION () -> felt
+  [   9] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  10] FUNCTION () -> felt
+  [  11] PRIMITIVE: felt (size: 8 bytes, 1 felts)
+  [  12] STRUCT <anon> (size: 4 bytes)
+    +   0: 0 : felt
+
+  [  13] FUNCTION () -> struct <anon>
+  [  14] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  15] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  16] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  17] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  18] PRIMITIVE: i32 (size: 4 bytes, 1 felts)
+  [  19] FUNCTION (i32, i32, i32, i32) -> i32
+
+.debug_files contents:
+--------------------------------------------------------------------------------
+  [   0] <workspace>/codegen/masm/intrinsics/mem.masm
+  [   1] <workspace>/examples/counter-contract/src/lib.rs
+
+.debug_functions contents:
+--------------------------------------------------------------------------------
+  [   0] FUNCTION: ::intrinsics::mem::offset_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:349:1
+         MAST root: 0x7918f80a0a89415b237f0c280532317e202515d410948eb29a86d19fd3fe6a6f
+
+  [   1] FUNCTION: ::intrinsics::mem::realign_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:257:1
+         MAST root: 0xa2f3eddd1c3f39730ac9f256dec4b484ba14727780226ed017ddf0e9093c13fe
+
+  [   2] FUNCTION: ::intrinsics::mem::store_sw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:467:1
+         MAST root: 0xb691f6d1e1edde5f53e1445863f1be9e592f961852a0998c3b78c9d12d4ec055
+
+  [   3] FUNCTION: ::intrinsics::mem::load_sw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:158:1
+         MAST root: 0x71baeacb4d294e31ce3e652371958a5d0e653b29359b23e2780caa7997d2d782
+
+  [   4] FUNCTION: ::intrinsics::mem::store_felt
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:458:1
+         MAST root: 0x60d8191f267597e6649b200fd9d653ea3bfaafacad7887c9b8f913db7743ecc6
+
+  [   5] FUNCTION: ::intrinsics::mem::store_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:548:1
+         MAST root: 0x46b0a0a6e28170ead54ae836a7ff13ebd9e1e28342ca38e379704405afa03dc9
+
+  [   6] FUNCTION: ::intrinsics::mem::load_dw
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:367:1
+         MAST root: 0x2bd361000714a0ad22531f33dea9d9cfdc5684da9cedad04b8eb5bc59ae1b00d
+
+  [   7] FUNCTION: ::intrinsics::mem::load_felt
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:149:1
+         MAST root: 0x5aac903cd78b5054c004cf1a202fec6e5f76a04bea4a748d44bd3f5405b9d031
+
+  [   8] FUNCTION: ::intrinsics::mem::heap_init
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:48:1
+         MAST root: 0xc9d5fa1b8d6e44eb85de39b15273969a9d18a4dac1789dd6ab77b1cb1467b2ba
+
+  [   9] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs2_Cs3BT8OsCPMeH_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest9get_count
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0x42ff162d39f4fe05db5edce99c7f1b0d200bd7544d4153a69aeb43e4322ae100
+
+  [  10] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#get-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0x3c8afdcb79770b2999f787f6fc80dc109ec5d195564ef450960db395bcd91222
+
+  [  11] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"get-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0xae42e52c3c104868a824090d6d78f3051d59d35aec2ef83edd31bf89f929d890
+
+  [  12] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::_RNvXs2_Cs3BT8OsCPMeH_16counter_contractNtB5_15CounterContractNtNtNtNtNtNtB5_8bindings7exports5miden16counter_contract22miden_counter_contract5Guest15increment_count
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0xa24bd0f0e4b6841dc0275082fc850a9d15ab39e1745853525f063e551be8082b
+
+  [  13] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::"miden:counter-contract/miden-counter-contract@0.1.0#increment-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0x3a5910f020c0f330f819f4809513a4424ebb1db8f9d6db51f35554770d689513
+
+  [  14] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::"increment-count"
+         Location: <workspace>/examples/counter-contract/src/lib.rs:20:1
+         Type: fn(...)
+         MAST root: 0x8a96ce7979de5cc47a429cc1a1980e5d1e9e99b10fd89ed03152a89bc3f80217
+
+  [  15] FUNCTION: ::intrinsics::mem::verify_heap_magic
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:39:1
+         MAST root: 0x273f0b1e49d55eac5b34a1b70e3fd5b5ea5e98102d58b047fc74fbb535a256b5
+
+  [  16] FUNCTION: ::intrinsics::mem::heap_base
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:58:1
+         MAST root: 0x3ad62be22a86eacb80b8bae941fae1507531da1e69f36e8499e922ae998170d4
+
+  [  17] FUNCTION: ::intrinsics::mem::memory_size
+         Location: <workspace>/codegen/masm/intrinsics/mem.masm:75:1
+         MAST root: 0x061b5cf60ff71870101df3d635785dabebe1dc3ae83f1ec86f9b4b2ed326e671
+
+  [  18] FUNCTION: ::"miden:counter-contract/miden-counter-contract@0.1.0"::counter_contract::cabi_realloc
+         Location: <workspace>/examples/counter-contract/src/lib.rs:13:1
+         Type: fn(...)
+         MAST root: 0xb66c0ef9551334e8922c0dcc297ea411e569a9c75f4e4509d005c55912a49fa1
+
+
+.debug_loc contents (DebugVar entries from MAST):
+--------------------------------------------------------------------------------
+  Total DebugVar entries: 172
+  Unique variable names: 24
+
+  Variable: "?"
+  34 location entries:
+    [var#10] stack[2]
+    [var#11] di.debug_kill
+    [var#34] frame_base(FMP-8)+16 @ src/lib.rs:150:1
+    [var#35] frame_base(FMP-8)+32 @ src/lib.rs:150:1
+    [var#36] stack[0] @ src/lib.rs:150:1
+    [var#37] stack[1] @ src/lib.rs:150:1
+    [var#38] di.debug_kill @ src/lib.rs:150:1
+    [var#39] di.debug_kill @ src/lib.rs:150:1
+    [var#57] frame_base(FMP-8)+32 @ src/lib.rs:148:1
+    [var#58] frame_base(FMP-8)+64 @ src/lib.rs:148:1
+    [var#59] frame_base(FMP-8)+48 @ src/lib.rs:148:1
+    [var#60] frame_base(FMP-8)+64 @ src/lib.rs:148:1
+    [var#62] stack[0] @ src/lib.rs:148:1
+    [var#63] stack[1] @ src/lib.rs:148:1
+    [var#64] di.debug_kill @ src/lib.rs:148:1
+    [var#65] di.debug_kill @ src/lib.rs:148:1
+    [var#66] FMP-5 @ src/lib.rs:148:1
+    [var#68] stack[0] @ src/lib.rs:148:1
+    [var#69] stack[0] @ src/lib.rs:148:1
+    [var#71] di.debug_kill @ src/lib.rs:148:1
+    [var#73] stack[0] @ src/lib.rs:148:1
+    [var#74] stack[1] @ src/lib.rs:148:1
+    [var#75] di.debug_kill @ src/lib.rs:148:1
+    [var#76] di.debug_kill @ src/lib.rs:148:1
+    [var#101] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:1
+    [var#102] stack[1] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:1
+    [var#123] stack[2] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:1
+    [var#124] di.debug_kill @ miden-base-sys-0.12.0/src/bindings/types.rs:13:1
+    [var#148] stack[0] @ src/lib.rs:62:1
+    [var#149] di.debug_kill @ src/lib.rs:62:1
+    [var#150] FMP-4 @ src/lib.rs:62:1
+    [var#157] stack[0] @ src/lib.rs:62:1
+    [var#162] stack[0] @ src/lib.rs:62:1
+    [var#164] di.debug_kill @ src/lib.rs:62:1
+
+  Variable: "a"
+  3 location entries:
+    [var#83] FMP-4 (param #1) @ alignment.rs:254:1
+    [var#85] stack[0] (param #1) @ alignment.rs:254:1
+    [var#87] stack[0] (param #1) @ alignment.rs:254:1
+
+  Variable: "align"
+  5 location entries:
+    [var#139] FMP-6 (param #3) @ src/lib.rs:13:9
+    [var#144] stack[0] (param #3) @ src/lib.rs:13:9
+    [var#160] stack[0] (param #3) @ src/lib.rs:13:9
+    [var#167] stack[0] (param #3) @ src/lib.rs:13:9
+    [var#171] stack[0] (param #3) @ src/lib.rs:13:9
+
+  Variable: "alignment"
+  3 location entries:
+    [var#79] FMP-3 (param #2) @ layout.rs:74:1
+    [var#80] FMP-3 (param #2) @ layout.rs:74:1
+    [var#82] stack[1] (param #2) @ layout.rs:74:1
+
+  Variable: "arg1"
+  18 location entries:
+    [var#5] FMP-3 (param #2)
+    [var#6] FMP-3 (param #2)
+    [var#7] stack[0] (param #2)
+    [var#8] stack[0] (param #2)
+    [var#9] stack[0] (param #2)
+    [var#42] frame_base(FMP-6)+0 (param #2)
+    [var#90] FMP-7 (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#91] FMP-7 (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#92] FMP-7 (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#105] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#106] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#109] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#111] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#113] stack[1] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#116] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#118] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#119] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#134] stack[0] (param #2) @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+
+  Variable: "available"
+  2 location entries:
+    [var#128] stack[1] @ lib.rs:99:1
+    [var#129] di.debug_kill @ lib.rs:99:1
+
+  Variable: "b"
+  3 location entries:
+    [var#84] FMP-3 (param #2) @ alignment.rs:254:1
+    [var#86] stack[1] (param #2) @ alignment.rs:254:1
+    [var#88] stack[1] (param #2) @ alignment.rs:254:1
+
+  Variable: "index"
+  3 location entries:
+    [var#1] FMP-3 (param #2) @ mod.rs:292:1
+    [var#2] stack[0] (param #2) @ mod.rs:292:1
+    [var#4] stack[0] (param #2) @ mod.rs:292:1
+
+  Variable: "local0"
+  3 location entries:
+    [var#27] frame_base(FMP-8)+48 @ src/lib.rs:150:16
+    [var#40] FMP-4 @ miden-base-sys-0.12.0/src/bindings/types.rs:13:37
+    [var#48] frame_base(FMP-8)+80 @ src/lib.rs:148:16
+
+  Variable: "local1"
+  2 location entries:
+    [var#28] frame_base(FMP-8)+48 @ src/lib.rs:150:16
+    [var#49] frame_base(FMP-8)+80 @ src/lib.rs:148:16
+
+  Variable: "local2"
+  4 location entries:
+    [var#14] frame_base(FMP-2)+0 @ /rustc/c935696dd07ca51e6fba2f6579919eea2a50863b/library/core/src/result.rs:1232:16
+    [var#29] frame_base(FMP-8)+48 @ src/lib.rs:150:16
+    [var#43] frame_base(FMP-6)+0
+    [var#50] frame_base(FMP-8)+80 @ src/lib.rs:148:16
+
+  Variable: "local3"
+  11 location entries:
+    [var#15] frame_base(FMP-2)+0 @ /rustc/c935696dd07ca51e6fba2f6579919eea2a50863b/library/core/src/result.rs:1232:16
+    [var#30] frame_base(FMP-8)+48 @ src/lib.rs:150:16
+    [var#44] frame_base(FMP-6)+0
+    [var#51] frame_base(FMP-8)+80 @ src/lib.rs:148:16
+    [var#52] FMP-5 @ src/lib.rs:148:16
+    [var#53] FMP-5 @ src/lib.rs:148:16
+    [var#61] stack[0] @ src/lib.rs:148:16
+    [var#67] stack[0] @ src/lib.rs:148:16
+    [var#70] stack[0] @ src/lib.rs:148:16
+    [var#72] stack[0] @ src/lib.rs:148:16
+    [var#77] stack[0] @ src/lib.rs:148:16
+
+  Variable: "local4"
+  13 location entries:
+    [var#31] frame_base(FMP-8)+48 @ src/lib.rs:150:16
+    [var#54] frame_base(FMP-8)+80 @ src/lib.rs:148:16
+    [var#98] FMP-4 @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#99] FMP-4 @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#100] FMP-4 @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#103] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#107] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#108] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#110] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#135] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#136] stack[0] @ miden-base-sys-0.12.0/src/bindings/types.rs:13:32
+    [var#146] stack[0] @ src/lib.rs:62:9
+    [var#147] di.debug_kill @ src/lib.rs:62:9
+
+  Variable: "local5"
+  2 location entries:
+    [var#32] frame_base(FMP-8)+48 @ src/lib.rs:150:16
+    [var#55] frame_base(FMP-8)+80 @ src/lib.rs:148:16
+
+  Variable: "local6"
+  2 location entries:
+    [var#33] frame_base(FMP-8)+16 @ src/lib.rs:150:16
+    [var#56] frame_base(FMP-8)+48 @ src/lib.rs:148:16
+
+  Variable: "new_len"
+  11 location entries:
+    [var#140] FMP-5 (param #4) @ src/lib.rs:13:9
+    [var#141] FMP-5 (param #4) @ src/lib.rs:13:9
+    [var#145] stack[0] (param #4) @ src/lib.rs:13:9
+    [var#151] stack[0] (param #4) @ src/lib.rs:13:9
+    [var#153] stack[1] (param #4) @ src/lib.rs:13:9
+    [var#155] stack[0] (param #4) @ src/lib.rs:13:9
+    [var#156] di.debug_kill (param #4) @ src/lib.rs:13:9
+    [var#163] stack[0] (param #4) @ src/lib.rs:13:9
+    [var#165] FMP-5 (param #4) @ src/lib.rs:13:9
+    [var#168] stack[0] (param #4) @ src/lib.rs:13:9
+    [var#170] di.debug_kill (param #4) @ src/lib.rs:13:9
+
+  Variable: "old_len"
+  8 location entries:
+    [var#138] FMP-7 (param #2) @ src/lib.rs:13:9
+    [var#142] stack[0] (param #2) @ src/lib.rs:13:9
+    [var#143] stack[0] (param #2) @ src/lib.rs:13:9
+    [var#152] stack[0] (param #2) @ src/lib.rs:13:9
+    [var#154] stack[0] (param #2) @ src/lib.rs:13:9
+    [var#161] stack[0] (param #2) @ src/lib.rs:13:9
+    [var#166] stack[0] (param #2) @ src/lib.rs:13:9
+    [var#169] di.debug_kill (param #2) @ src/lib.rs:13:9
+
+  Variable: "old_ptr"
+  3 location entries:
+    [var#137] FMP-8 (param #1) @ src/lib.rs:13:9
+    [var#158] stack[0] (param #1) @ src/lib.rs:13:9
+    [var#159] stack[0] (param #1) @ src/lib.rs:13:9
+
+  Variable: "prefix"
+  2 location entries:
+    [var#22] FMP-2 (param #3) @ types.rs:269:43
+    [var#23] stack[2] (param #3) @ types.rs:269:43
+
+  Variable: "self"
+  11 location entries:
+    [var#0] FMP-4 (param #1) @ mod.rs:292:1
+    [var#3] stack[0] (param #1) @ mod.rs:292:1
+    [var#25] FMP-3 (param #2) @ types.rs:286:16
+    [var#26] stack[1] (param #2) @ types.rs:286:16
+    [var#46] FMP-3 (param #2) @ storage.rs:29:16
+    [var#47] stack[1] (param #2) @ storage.rs:29:16
+    [var#89] FMP-8 (param #1) @ lib.rs:79:32
+    [var#121] stack[0] (param #1) @ lib.rs:79:32
+    [var#122] stack[0] (param #1) @ lib.rs:79:32
+    [var#126] stack[0] (param #1) @ lib.rs:79:32
+    [var#130] stack[0] (param #1) @ lib.rs:79:32
+
+  Variable: "size"
+  9 location entries:
+    [var#78] FMP-4 (param #1) @ layout.rs:74:1
+    [var#81] stack[0] (param #1) @ layout.rs:74:1
+    [var#97] FMP-5 @ lib.rs:93:32
+    [var#104] stack[0] @ lib.rs:93:32
+    [var#114] stack[0] @ lib.rs:93:32
+    [var#115] stack[0] @ lib.rs:93:32
+    [var#120] stack[0] @ lib.rs:93:32
+    [var#125] stack[0] @ lib.rs:93:32
+    [var#132] stack[0] @ lib.rs:93:32
+
+  Variable: "suffix"
+  2 location entries:
+    [var#21] FMP-3 (param #1) @ types.rs:269:43
+    [var#24] stack[1] (param #1) @ types.rs:269:43
+
+  Variable: "top"
+  9 location entries:
+    [var#93] FMP-6 (param #3) @ lib.rs:98:32
+    [var#94] FMP-6 (param #3) @ lib.rs:98:32
+    [var#95] FMP-6 (param #3) @ lib.rs:98:32
+    [var#96] FMP-6 (param #3) @ lib.rs:98:32
+    [var#112] stack[0] (param #3) @ lib.rs:98:32
+    [var#117] stack[0] (param #3) @ lib.rs:98:32
+    [var#127] stack[0] (param #3) @ lib.rs:98:32
+    [var#131] stack[0] (param #3) @ lib.rs:98:32
+    [var#133] stack[0] (param #3) @ lib.rs:98:32
+
+  Variable: "value"
+  9 location entries:
+    [var#12] FMP-3 (param #2) @ types.rs:12:16
+    [var#13] frame_base(FMP-2)+0 (param #2) @ types.rs:12:16
+    [var#16] stack[0] (param #2) @ types.rs:12:16
+    [var#17] stack[0] (param #2) @ types.rs:12:16
+    [var#18] stack[0] (param #2) @ types.rs:12:16
+    [var#19] stack[0] (param #2) @ types.rs:12:16
+    [var#20] stack[0] (param #2) @ types.rs:12:16
+    [var#41] FMP-7 (param #1) @ types.rs:7:1
+    [var#45] stack[0] (param #1) @ types.rs:7:1

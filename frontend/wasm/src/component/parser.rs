@@ -1022,6 +1022,14 @@ mod tests {
 
         assert_eq!(first_module.debuginfo.dwarf.debug_info.reader().len(), 3);
         assert!(first_module.wasm_file.module_base_offset > 0);
+        let body_offset = first_module
+            .function_body_inputs
+            .values()
+            .next()
+            .expect("module should contain a function body")
+            .body_offset;
+        assert!(body_offset >= first_module.wasm_file.module_base_offset);
+        assert_eq!(first_module.wasm_file.dwarf_offset(body_offset), body_offset);
     }
 }
 

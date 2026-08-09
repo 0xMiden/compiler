@@ -355,8 +355,12 @@ impl Region {
                             child_op.name()
                         );
                         erased_anything = true;
-                        child_op.borrow_mut().drop_all_uses();
-                        rewriter.erase_op(child_op);
+                        if child_op.borrow().is::<crate::dialects::debuginfo::DebugValue>() {
+                            crate::dialects::debuginfo::transform::erase_debug_value(child_op);
+                        } else {
+                            child_op.borrow_mut().drop_all_uses();
+                            rewriter.erase_op(child_op);
+                        }
                     } else {
                         let child_op = child_op.borrow();
                         if child_op.regions().is_empty() {
@@ -553,5 +557,39 @@ mod tests {
         assert_eq!(before.matches("test.add").count(), 2);
         assert_eq!(after.matches("test.debug_value").count(), 1);
         assert_eq!(after.matches("test.add").count(), 1);
+    }
+
+    #[test]
+    fn dead_debug_values_become_kills_during_region_dce() {
+        use crate::{
+            dialects::debuginfo::{DIBuilder, DebugInfoDialect, attributes::Variable},
+            interner::Symbol,
+        };
+
+        let mut test = Test::new("region_dce_salvages_debug_value", &[Type::U32], &[Type::U32]);
+        test.context().get_or_register_dialect::<DebugInfoDialect>();
+        let op = test.function();
+        {
+            let mut builder = test.function_builder();
+            let entry = builder.entry_block();
+            let builder = builder.builder_mut();
+            builder.set_insertion_point_to_end(entry);
+
+            let input = entry.borrow().arguments()[0] as ValueRef;
+            let unused = builder.add(input, input, SourceSpan::UNKNOWN).unwrap();
+            let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
+            builder.debug_value(unused, variable, SourceSpan::UNKNOWN).unwrap();
+            builder.ret([input], SourceSpan::UNKNOWN).unwrap();
+        }
+
+        let region = op.borrow().body().as_region_ref();
+        let mut rewriter = RewriterImpl::<NoopRewriterListener>::new(test.context_rc());
+        Region::dead_code_elimination(&[region], &mut rewriter)
+            .expect("dead code elimination failed unexpectedly");
+
+        let after = format!("{}", op.borrow().as_operation());
+        assert!(!after.contains("di.debug_value"));
+        assert!(!after.contains("test.add"));
+        assert_eq!(after.matches("di.debug_kill").count(), 1);
     }
 }

@@ -668,7 +668,12 @@ impl Operation {
         let name = name.into();
         let attr = OpAttribute::from(NamedAttribute::new(name, value));
         let attr = self.context().alloc_map_item(attr);
-        self.attrs.insert(attr);
+        if self.attrs.find(&name).is_null() {
+            self.attrs.insert(attr);
+        } else {
+            let mut existing = self.attrs.find_mut(&name);
+            existing.replace_with(attr).expect("attribute cursor unexpectedly became null");
+        }
     }
 
     /// Remove any attribute with the given name from this function
@@ -1718,7 +1723,27 @@ impl crate::traits::Foldable for Operation {
 
 #[cfg(test)]
 mod tests {
-    use crate::{AsCallableSymbolRef, AsSymbolRef, Type, testing::Test};
+    use crate::{
+        AsCallableSymbolRef, AsSymbolRef, AttributeRef, ImmediateAttr, Op, Type, testing::Test,
+    };
+
+    #[test]
+    fn set_attribute_replaces_existing_attribute() {
+        let test = Test::new("set_attribute_replaces_existing_attribute", &[], &[]);
+        let mut function = test.function();
+        let first = test.context_rc().create_attribute::<ImmediateAttr, _>(0u32).as_attribute_ref();
+        let replacement =
+            test.context_rc().create_attribute::<ImmediateAttr, _>(1u32).as_attribute_ref();
+
+        let mut function = function.borrow_mut();
+        let operation = function.as_operation_mut();
+        operation.set_attribute("test.attribute", first);
+        operation.set_attribute("test.attribute", replacement);
+
+        assert_eq!(operation.attributes().len(), 1);
+        let actual = operation.get_attribute("test.attribute").unwrap();
+        assert!(AttributeRef::ptr_eq(&actual, &replacement));
+    }
 
     #[test]
     fn borrowed_operation_roundtrips_symbol_and_callable_handles() {

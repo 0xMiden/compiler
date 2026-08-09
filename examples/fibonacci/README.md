@@ -18,4 +18,3 @@ cargo miden build --release
 ```bash
 midenc run target/miden/release/fibonacci.masp --inputs inputs.toml
 ```
-

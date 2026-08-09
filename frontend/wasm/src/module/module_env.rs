@@ -206,6 +206,21 @@ pub struct WasmFileInfo {
     pub module_base_offset: u64,
 }
 
+impl WasmFileInfo {
+    /// Convert a parser-provided file offset into the address space used by this module's DWARF.
+    ///
+    /// Wasmparser reports component-absolute offsets for embedded modules, so those offsets are
+    /// already in the component DWARF address space. Standalone modules use code-section-relative
+    /// DWARF addresses and require subtracting the code section start.
+    pub fn dwarf_offset(&self, parser_offset: u64) -> u64 {
+        if self.module_base_offset > 0 {
+            parser_offset
+        } else {
+            parser_offset.saturating_sub(self.code_section_offset)
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct FunctionMetadata {
     pub params: Box<[WasmType]>,

@@ -26,6 +26,10 @@ fn is_sole_non_transparent_user(value: &dyn Value, operation: OperationRef) -> b
 /// This is used before erasing a defining op whose result is only kept alive by
 /// transparent uses.
 fn erase_transparent_users(value: ValueRef) {
+    // Handle debug value users first: erasing them must leave a `di.debug_kill` marker behind,
+    // so debuggers report the affected variables as optimized out instead of showing a stale
+    // earlier location.
+    midenc_hir::dialects::debuginfo::transform::erase_debug_info(&value);
     let transparent_ops: SmallVec<[OperationRef; 2]> = {
         let v = value.borrow();
         v.iter_uses()
@@ -192,11 +196,17 @@ impl Pass for ControlFlowSink {
 ///
 /// The purpose of this rewrite is to improve the quality of generated code by reducing the live
 /// ranges of values that are trivial to materialize on-demand.
+#[derive(Default)]
 pub struct SinkOperandDefs;
 
 impl SinkOperandDefs {
     const NAME: &str = "sink-operand-defs";
 }
+
+midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<SinkOperandDefs>(
+    "sink-operand-defs",
+    "operand definition sinking"
+));
 
 impl Pass for SinkOperandDefs {
     type Target = Operation;
@@ -323,8 +333,19 @@ impl Pass for SinkOperandDefs {
                 log::debug!(target: Self::NAME, "erasing unused, effect-free, non-terminator op {op}");
                 drop(op);
                 // Erase any remaining transparent uses before erasing the defining op.
-                for result in operation.borrow().results().iter() {
-                    erase_transparent_users(result.borrow().as_value_ref());
+                //
+                // NOTE: The result values are collected first, so that no borrow of the operation
+                // or its results is held while the transparent users are erased — erasing a user
+                // unlinks its operands, which requires mutable access to the referenced values.
+                let results = SmallVec::<[ValueRef; 2]>::from_iter(
+                    operation
+                        .borrow()
+                        .results()
+                        .iter()
+                        .map(|result| result.borrow().as_value_ref()),
+                );
+                for value in results {
+                    erase_transparent_users(value);
                 }
                 operation.borrow_mut().erase();
                 continue;

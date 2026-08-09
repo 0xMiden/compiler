@@ -105,7 +105,7 @@ impl AttrPrinter for SubprogramAttr {
             let names = self
                 .param_names
                 .iter()
-                .map(|name| const_text(name.as_str()))
+                .map(|name| text(format!("\"{}\"", name.as_str().escape_default())))
                 .intersperse(const_text(", "))
                 .fold(Document::Empty, |acc, item| acc + item);
             let names = const_text("[") + names + const_text("]");
@@ -188,8 +188,8 @@ impl AttrParser for SubprogramAttr {
                     subprogram.is_definition = parser
                         .token_stream_mut()
                         .expect_map("boolean", |tok| match tok {
-                            Token::BareIdent("true") => Some(true),
-                            Token::BareIdent("false") => Some(false),
+                            Token::True => Some(true),
+                            Token::False => Some(false),
                             _ => None,
                         })?
                         .into_inner();
@@ -199,8 +199,8 @@ impl AttrParser for SubprogramAttr {
                     subprogram.is_local = parser
                         .token_stream_mut()
                         .expect_map("boolean", |tok| match tok {
-                            Token::BareIdent("true") => Some(true),
-                            Token::BareIdent("false") => Some(false),
+                            Token::True => Some(true),
+                            Token::False => Some(false),
                             _ => None,
                         })?
                         .into_inner();
@@ -208,7 +208,7 @@ impl AttrParser for SubprogramAttr {
                 prop => {
                     return Err(crate::parse::ParserError::InvalidAttributeValue {
                         span,
-                        reason: format!("duplicate DILocalVariableAttr property '{prop}'"),
+                        reason: format!("duplicate SubprogramAttr property '{prop}'"),
                     });
                 }
             }

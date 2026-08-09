@@ -732,6 +732,7 @@ fn rustc(
 
     // Set up the command used to compile the test inputs (typically Rust -> Wasm)
     let mut command = std::process::Command::new("rustc");
+    command.current_dir(&options.current_dir);
     // Pipe output of command to terminal
     if options.diagnostics.is_verbose() {
         command.stdout(std::process::Stdio::inherit());

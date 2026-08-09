@@ -1625,49 +1625,143 @@ fn debug_var_location_from_expression(
 ) -> Option<masm::DebugVarLocation> {
     use masm::DebugVarLocation;
     use miden_core::{Felt, serde::Serializable};
-    use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
+    use midenc_hir::dialects::debuginfo::attributes::{ExpressionOp, FrameBase};
 
-    match expr.operations.as_slice() {
-        [] => value
+    // For `di.debug_value`, the SSA operand carries the variable's current value, so its live
+    // position on the Miden operand stack is an accurate location. Returns `None` when there is
+    // no operand (di.debug_declare) or the value is no longer on the stack.
+    let stack_position = || {
+        value
             .as_ref()
             .and_then(|value| emitter.stack.find(value))
             .map(|pos| emitter.stack.effective_index(pos) as u8)
-            .map(DebugVarLocation::Stack),
+            .map(DebugVarLocation::Stack)
+    };
+
+    match expr.operations.as_slice() {
+        // An empty expression (or a bare DW_OP_stack_value) means the operand itself is the
+        // variable's value
+        [] | [ExpressionOp::StackValue] => stack_position(),
         [first] | [first, ExpressionOp::StackValue] => match first {
-            ExpressionOp::WasmStack(offset) => Some(DebugVarLocation::Stack(*offset as u8)),
             ExpressionOp::WasmLocal(idx) => {
                 // WASM locals are always stored in memory via FMP in Miden.
                 // Store raw WASM local index; the FMP offset will be computed later in
                 // MasmFunctionBuilder::build() when num_locals is known.
                 i16::try_from(*idx).ok().map(DebugVarLocation::Local)
             }
-            ExpressionOp::WasmGlobal(_) | ExpressionOp::Deref => value
-                .as_ref()
-                .and_then(|value| emitter.stack.find(value))
-                .map(|pos| emitter.stack.effective_index(pos) as u8)
-                .map(DebugVarLocation::Stack),
-            ExpressionOp::ConstU64(val) => Some(DebugVarLocation::Const(Felt::new_unchecked(*val))),
-            ExpressionOp::ConstS64(val) => {
-                Some(DebugVarLocation::Const(Felt::new_unchecked(*val as u64)))
+            ExpressionOp::FrameBase { base, byte_offset } => match base {
+                FrameBase::Global(global_index) => Some(DebugVarLocation::FrameBase {
+                    global_index: *global_index,
+                    byte_offset: *byte_offset,
+                }),
+                FrameBase::Local(_) => Some(DebugVarLocation::Expression(expr.to_bytes())),
+            },
+            ExpressionOp::ResolvedFrameBase { .. } => None,
+            // Constants only lower when they are canonical field elements. The debugger's locked
+            // expression decoder cannot safely represent negative or non-canonical constants, so
+            // omit those locations rather than serializing an expression that can panic it.
+            ExpressionOp::ConstU64(val) => Felt::new(*val).ok().map(DebugVarLocation::Const),
+            ExpressionOp::ConstS64(val) => u64::try_from(*val)
+                .ok()
+                .and_then(|val| Felt::new(val).ok())
+                .map(DebugVarLocation::Const),
+            // A DW_OP_WASM_stack index refers to the *Wasm* operand stack, which has no
+            // correspondence to the Miden operand stack, and a Wasm global's runtime address is
+            // not resolved here. When the SSA operand is live on the stack, its position is
+            // still an accurate value location; otherwise there is nothing valid to emit.
+            ExpressionOp::WasmStack(_) | ExpressionOp::WasmGlobal(_) => stack_position(),
+            // A self-contained location we cannot map to a first-class variant; preserve it in
+            // serialized form
+            ExpressionOp::Address { address } => {
+                Felt::new(*address).ok().map(|_| DebugVarLocation::Expression(expr.to_bytes()))
             }
-            ExpressionOp::FrameBase {
-                global_index,
-                byte_offset,
-            } => Some(DebugVarLocation::FrameBase {
-                global_index: *global_index,
-                byte_offset: *byte_offset,
-            }),
-            _ => value
-                .as_ref()
-                .and_then(|value| emitter.stack.find(value))
-                .map(|pos| emitter.stack.effective_index(pos) as u8)
-                .map(DebugVarLocation::Stack),
+            // These transform the operand (e.g. the variable's value is *behind* a pointer held
+            // by the operand). Reporting the operand's own stack slot would present the
+            // untransformed value as the variable, and no DebugVarLocation variant can encode
+            // the transformation, so emit nothing rather than a misleading location.
+            ExpressionOp::Deref
+            | ExpressionOp::PlusUConst(_)
+            | ExpressionOp::Minus
+            | ExpressionOp::Plus
+            | ExpressionOp::StackValue
+            | ExpressionOp::Piece(_)
+            | ExpressionOp::BitPiece { .. }
+            | ExpressionOp::Unsupported(_) => None,
         },
-        _ => Some(DebugVarLocation::Expression(expr.to_bytes())),
+        _ if debugger_can_safely_evaluate_expression(expr) => {
+            Some(DebugVarLocation::Expression(expr.to_bytes()))
+        }
+        _ => None,
     }
 }
 
-const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
+fn debugger_can_safely_evaluate_expression(
+    expr: &midenc_hir::dialects::debuginfo::attributes::Expression,
+) -> bool {
+    use miden_core::Felt;
+    use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
+
+    expr.operations.iter().all(|op| match op {
+        ExpressionOp::ConstU64(value) | ExpressionOp::Address { address: value } => {
+            Felt::new(*value).is_ok()
+        }
+        ExpressionOp::ConstS64(value) => {
+            u64::try_from(*value).ok().is_some_and(|value| Felt::new(value).is_ok())
+        }
+        ExpressionOp::PlusUConst(_) | ExpressionOp::Minus | ExpressionOp::Plus => false,
+        ExpressionOp::FrameBase { .. } | ExpressionOp::ResolvedFrameBase { .. } => false,
+        ExpressionOp::Unsupported(_) => false,
+        // Wasm location indices are not Miden local/operand-stack coordinates. The
+        // single-location fast paths above translate them before this validator is reached, but
+        // compound expressions cannot be serialized until every embedded location is resolved.
+        ExpressionOp::WasmLocal(_) | ExpressionOp::WasmGlobal(_) | ExpressionOp::WasmStack(_) => {
+            false
+        }
+        ExpressionOp::Deref
+        | ExpressionOp::StackValue
+        | ExpressionOp::Piece(_)
+        | ExpressionOp::BitPiece { .. } => true,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use midenc_hir::dialects::debuginfo::attributes::{Expression, ExpressionOp};
+
+    use super::debugger_can_safely_evaluate_expression;
+
+    #[test]
+    fn validates_every_constant_before_serializing_debug_expressions() {
+        assert!(debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::ConstU64(7),
+            ExpressionOp::StackValue,
+        ])));
+        assert!(debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::Address { address: 7 },
+            ExpressionOp::Deref,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::ConstS64(-1),
+            ExpressionOp::PlusUConst(1),
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::ConstU64(u64::MAX),
+            ExpressionOp::StackValue,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::WasmLocal(0),
+            ExpressionOp::Deref,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::WasmGlobal(0),
+            ExpressionOp::Deref,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::WasmStack(0),
+            ExpressionOp::Deref,
+        ])));
+    }
+}
 
 fn apply_debug_var_metadata(
     debug_var: &mut masm::DebugVarInfo,
@@ -1721,8 +1815,6 @@ impl HirLowering for debuginfo::DebugValue {
     }
 
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
-        use midenc_hir::dialects::debuginfo::attributes::ExpressionOp;
-
         // Get the variable info
         let var = self.variable();
 
@@ -1730,24 +1822,9 @@ impl HirLowering for debuginfo::DebugValue {
         let expr = self.expression();
         let value = self.value().as_value_ref();
 
-        // If the value is not on the stack and there's no expression info,
-        // skip emitting this debug info (the value has been optimized away)
-        let has_location_expr = expr.operations.first().is_some_and(|op| {
-            matches!(
-                op,
-                ExpressionOp::WasmStack(_)
-                    | ExpressionOp::WasmLocal(_)
-                    | ExpressionOp::ConstU64(_)
-                    | ExpressionOp::ConstS64(_)
-                    | ExpressionOp::FrameBase { .. }
-            )
-        });
-        if !has_location_expr && emitter.stack.find(&value).is_none() {
-            // Value has been dropped and we have no other location info, skip
-            return Ok(());
-        }
-        // Resolve the runtime location. Returns None when the location cannot be determined, in
-        // which case we skip the decorator rather than emitting a placeholder.
+        // Resolve the runtime location. Returns None when the location cannot be determined
+        // (e.g. the value has been optimized away and the expression alone does not describe a
+        // location), in which case we skip the decorator rather than emitting a placeholder.
         let value_location =
             debug_var_location_from_expression(expr.as_value(), Some(value), emitter);
 

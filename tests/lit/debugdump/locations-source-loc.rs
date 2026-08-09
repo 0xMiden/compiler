@@ -4,16 +4,21 @@
 //! RUN: env RUSTFLAGS="-Cdebuginfo=2" midenc %s --release --debug full -o %t/out.masp
 //! RUN: miden-objtool dump debug-info %t/out.masp --section locations | filecheck %s
 //!
+//! Variables tracked in Wasm locals are described once by their stable frame-pointer-relative
+//! location; no volatile operand-stack snapshots are emitted for local reads/writes, since the
+//! standing FMP location stays valid while the local is updated.
+//!
 //! CHECK: .debug_loc contents (DebugLoc entries from MAST):
-//! CHECK: Total DebugVar entries: 8
+    //! CHECK: Total DebugVar entries: 7
 //! CHECK: Unique variable names: 3
 //!
 //! Check variable "arg0" - parameter from test_assertion function
 //! CHECK: Variable: "arg0"
-//! CHECK: 3 location entries:
+    //! CHECK: 4 location entries:
+    //! CHECK: di.debug_kill (param #1) : i32 @ {{.*}}locations-source-loc.rs
+    //! CHECK: di.debug_kill (param #1) : i32 @ {{.*}}locations-source-loc.rs
+    //! CHECK: di.debug_kill (param #1) : i32 @ {{.*}}locations-source-loc.rs
 //! CHECK: FMP-4 (param #1) : i32 @ {{.*}}locations-source-loc.rs
-//! CHECK: stack[0] (param #1) : i32 @ {{.*}}locations-source-loc.rs
-//! CHECK: stack[0] (param #1) : i32 @ {{.*}}locations-source-loc.rs
 //!
 //! Check variable "local3" - from panic handler
 //! CHECK: Variable: "local3"
@@ -22,11 +27,9 @@
 //!
 //! Check variable "x" - parameter from entrypoint function
 //! CHECK: Variable: "x"
-//! CHECK: 4 location entries:
+//! CHECK: 2 location entries:
 //! CHECK: FMP-4 (param #1) : i32 @ {{.*}}locations-source-loc.rs
 //! CHECK: FMP-4 (param #1) : i32 @ {{.*}}locations-source-loc.rs
-//! CHECK: stack[0] (param #1) : i32 @ {{.*}}locations-source-loc.rs
-//! CHECK: stack[0] (param #1) : i32 @ {{.*}}locations-source-loc.rs
 
 #![no_std]
 #![no_main]

@@ -570,7 +570,6 @@ dependencies = [
  "liquid",
  "liquid-core",
  "log",
- "miden-mast-package",
  "midenc-compile",
  "midenc-hir",
  "midenc-log",
@@ -3295,6 +3294,7 @@ dependencies = [
  "miden-core",
  "miden-mast-package",
  "miden-thiserror",
+ "midenc-hir",
 ]
 
 [[package]]
@@ -3626,6 +3626,7 @@ dependencies = [
  "miden-assembly-syntax",
  "miden-core",
  "miden-core-lib",
+ "miden-debug",
  "miden-mast-package",
  "miden-processor",
  "miden-thiserror",
@@ -3667,6 +3668,7 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "tempfile",
  "toml_edit",
  "wat",
 ]

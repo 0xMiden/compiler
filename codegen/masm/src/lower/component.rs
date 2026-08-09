@@ -12,14 +12,13 @@ use miden_assembly_syntax::{
     ast::{Attribute, DebugVarLocation},
     parser::WordValue,
 };
+use miden_core::serde::Deserializable;
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
     dialects::{
         builtin,
-        debuginfo::attributes::{
-            SubprogramAttr, decode_frame_base_local_index, encode_frame_base_local_offset,
-        },
+        debuginfo::attributes::{Expression, ExpressionOp, FrameBase, SubprogramAttr},
     },
     interner,
     pass::AnalysisManager,
@@ -1657,8 +1656,9 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
 /// `offset = idx - aligned_num_locals` (the FMP-relative offset, typically negative). This matches
 /// the assembler's `locaddr.N` formula, i.e. `FMP - aligned_num_locals + N`.
 ///
-/// Also resolves `FrameBase { global_index, byte_offset }` by replacing the WASM global index with
-/// the resolved Miden memory address of the stack pointer.
+/// Also resolves Wasm frame bases to the Miden local/global encoding understood by the debugger.
+/// Locations that require resolution but cannot be represented are converted to explicit kill
+/// markers so the unresolved Wasm location cannot remain active.
 fn patch_debug_var_locals_in_block(
     block: &mut masm::Block,
     aligned_num_locals: u16,
@@ -1669,35 +1669,12 @@ fn patch_debug_var_locals_in_block(
             masm::Op::Inst(span_inst) => {
                 // Use DerefMut to get mutable access to the inner Instruction
                 if let masm::Instruction::DebugVar(info) = &mut **span_inst {
-                    if let DebugVarLocation::Local(idx) = info.value_location() {
-                        // Convert raw WASM local index to FMP offset
-                        let fmp_offset = *idx - (aligned_num_locals as i16);
-                        info.set_value_location(DebugVarLocation::Local(fmp_offset));
-                    } else if let DebugVarLocation::FrameBase {
-                        global_index,
-                        byte_offset,
-                    } = info.value_location()
-                    {
-                        let byte_offset = *byte_offset;
-                        if let Some(local_index) = decode_frame_base_local_index(*global_index) {
-                            if let Ok(local_index) = i16::try_from(local_index) {
-                                let local_offset = local_index - (aligned_num_locals as i16);
-                                info.set_value_location(DebugVarLocation::FrameBase {
-                                    global_index: encode_frame_base_local_offset(local_offset),
-                                    byte_offset,
-                                });
-                            }
-                        } else {
-                            // Resolve FrameBase: replace WASM global index with
-                            // the Miden memory address of the stack pointer global.
-                            if let Some(resolved_addr) = stack_pointer_addr {
-                                info.set_value_location(DebugVarLocation::FrameBase {
-                                    global_index: resolved_addr,
-                                    byte_offset,
-                                });
-                            }
-                        }
-                    }
+                    let location = patch_debug_var_location(
+                        info.value_location(),
+                        aligned_num_locals,
+                        stack_pointer_addr,
+                    );
+                    info.set_value_location(location);
                 }
             }
             masm::Op::If {
@@ -1728,4 +1705,65 @@ fn patch_debug_var_locals_in_block(
             }
         }
     }
+}
+
+fn patch_debug_var_location(
+    location: &DebugVarLocation,
+    aligned_num_locals: u16,
+    stack_pointer_addr: Option<u32>,
+) -> DebugVarLocation {
+    match location {
+        DebugVarLocation::Local(index) => {
+            checked_fmp_local_offset(i64::from(*index), aligned_num_locals)
+                .map(DebugVarLocation::Local)
+                .unwrap_or_else(debug_var_kill_location)
+        }
+        DebugVarLocation::FrameBase { byte_offset, .. } => {
+            if let Some(resolved_addr) = stack_pointer_addr.filter(|addr| *addr < (1 << 31)) {
+                DebugVarLocation::FrameBase {
+                    global_index: resolved_addr,
+                    byte_offset: *byte_offset,
+                }
+            } else {
+                debug_var_kill_location()
+            }
+        }
+        DebugVarLocation::Expression(bytes) => {
+            let Ok(expression) = Expression::read_from_bytes_with_budget(bytes, bytes.len()) else {
+                return location.clone();
+            };
+            let [
+                ExpressionOp::FrameBase {
+                    base: FrameBase::Local(local_index),
+                    byte_offset,
+                },
+            ] = expression.operations.as_slice()
+            else {
+                return location.clone();
+            };
+            checked_fmp_local_offset(i64::from(*local_index), aligned_num_locals)
+                .map(|local_offset| DebugVarLocation::FrameBase {
+                    global_index: encode_frame_base_local_offset(local_offset),
+                    byte_offset: *byte_offset,
+                })
+                .unwrap_or_else(debug_var_kill_location)
+        }
+        DebugVarLocation::Stack(_) | DebugVarLocation::Memory(_) | DebugVarLocation::Const(_) => {
+            location.clone()
+        }
+    }
+}
+
+fn checked_fmp_local_offset(index: i64, aligned_num_locals: u16) -> Option<i16> {
+    i16::try_from(index - i64::from(aligned_num_locals)).ok()
+}
+
+fn debug_var_kill_location() -> DebugVarLocation {
+    DebugVarLocation::Expression(super::DEBUG_VAR_KILL_SENTINEL.to_vec())
+}
+
+const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
+
+fn encode_frame_base_local_offset(local_offset: i16) -> u32 {
+    FRAME_BASE_LOCAL_MARKER | u32::from(u16::from_le_bytes(local_offset.to_le_bytes()))
 }

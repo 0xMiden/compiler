@@ -5,6 +5,20 @@ use crate::{
     dialects::debuginfo::DebugInfoDialect, interner::Symbol, parse::ParserExt, print::AsmPrinter,
 };
 
+/// The Wasm location that supplies the base address for `DW_OP_fbreg`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum FrameBase {
+    Local(u32),
+    Global(u32),
+}
+
+/// A frame base after MASM lowering has resolved Wasm locations to Miden locations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ResolvedFrameBase {
+    Local(i16),
+    Global(u32),
+}
+
 /// Represents DWARF expression operations for describing variable locations
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
@@ -33,11 +47,15 @@ pub enum ExpressionOp {
     Piece(u64) = 10,
     /// DW_OP_bit_piece - Describes a piece of a variable in bits
     BitPiece { size: u64, offset: u64 } = 11,
-    /// DW_OP_fbreg - Frame base register + offset.
-    /// The variable is in WASM linear memory at `value_of(global[global_index]) + byte_offset`.
-    FrameBase { global_index: u32, byte_offset: i64 } = 12,
     /// DW_OP_addr - pushes memory address `address` on the expression operand stack
     Address { address: u64 } = 13,
+    /// DW_OP_fbreg - Wasm frame-base location + offset.
+    FrameBase { base: FrameBase, byte_offset: i64 } = 14,
+    /// A frame-base location resolved to the corresponding Miden local/global address.
+    ResolvedFrameBase {
+        base: ResolvedFrameBase,
+        byte_offset: i64,
+    } = 15,
     /// Placeholder for unsupported operations
     Unsupported(Symbol) = u8::MAX,
 }
@@ -72,11 +90,30 @@ impl miden_core::serde::Serializable for ExpressionOp {
                 target.write_u64(*size);
                 target.write_u64(*offset);
             }
-            Self::FrameBase {
-                global_index,
-                byte_offset,
-            } => {
-                target.write_u32(*global_index);
+            Self::FrameBase { base, byte_offset } => {
+                match base {
+                    FrameBase::Local(index) => {
+                        target.write_u8(0);
+                        target.write_u32(*index);
+                    }
+                    FrameBase::Global(index) => {
+                        target.write_u8(1);
+                        target.write_u32(*index);
+                    }
+                }
+                target.write_u64(*byte_offset as u64);
+            }
+            Self::ResolvedFrameBase { base, byte_offset } => {
+                match base {
+                    ResolvedFrameBase::Local(offset) => {
+                        target.write_u8(0);
+                        target.write_bytes(&offset.to_le_bytes());
+                    }
+                    ResolvedFrameBase::Global(address) => {
+                        target.write_u8(1);
+                        target.write_u32(*address);
+                    }
+                }
                 target.write_u64(*byte_offset as u64);
             }
             Self::Address { address } => {
@@ -114,16 +151,46 @@ impl miden_core::serde::Deserializable for ExpressionOp {
                 Self::BitPiece { size, offset }
             }
             12 => {
+                // Legacy expressions only represented global frame bases.
                 let global_index = u32::read_from(source)?;
                 let byte_offset = u64::read_from(source)? as i64;
                 Self::FrameBase {
-                    global_index,
+                    base: FrameBase::Global(global_index),
                     byte_offset,
                 }
             }
             13 => {
                 let address = u64::read_from(source)?;
                 Self::Address { address }
+            }
+            14 => {
+                let base = match source.read_u8()? {
+                    0 => FrameBase::Local(u32::read_from(source)?),
+                    1 => FrameBase::Global(u32::read_from(source)?),
+                    tag => {
+                        return Err(DeserializationError::InvalidValue(format!(
+                            "invalid frame-base tag '{tag}'"
+                        )));
+                    }
+                };
+                let byte_offset = u64::read_from(source)? as i64;
+                Self::FrameBase { base, byte_offset }
+            }
+            15 => {
+                let base = match source.read_u8()? {
+                    0 => {
+                        let bytes = source.read_array::<2>()?;
+                        ResolvedFrameBase::Local(i16::from_le_bytes(bytes))
+                    }
+                    1 => ResolvedFrameBase::Global(u32::read_from(source)?),
+                    tag => {
+                        return Err(DeserializationError::InvalidValue(format!(
+                            "invalid resolved frame-base tag '{tag}'"
+                        )));
+                    }
+                };
+                let byte_offset = u64::read_from(source)? as i64;
+                Self::ResolvedFrameBase { base, byte_offset }
             }
             u8::MAX => {
                 let len = usize::read_from(source)?;
@@ -138,6 +205,10 @@ impl miden_core::serde::Deserializable for ExpressionOp {
                 )));
             }
         })
+    }
+
+    fn min_serialized_size() -> usize {
+        1
     }
 }
 
@@ -178,20 +249,30 @@ impl crate::formatter::PrettyPrint for ExpressionOp {
                     + display(*offset)
                     + const_text(")")
             }
-            Self::FrameBase {
-                global_index,
-                byte_offset,
-            } => {
-                if let Some(local_index) = decode_frame_base_local_index(*global_index) {
+            Self::FrameBase { base, byte_offset } => match base {
+                FrameBase::Local(index) => {
                     const_text("DW_OP_fbreg(local, ")
-                        + text(format!("{local_index}{byte_offset:+}"))
-                        + const_text(")")
-                } else {
-                    const_text("DW_OP_fbreg(global, ")
-                        + text(format!("{global_index}{byte_offset:+}"))
+                        + text(format!("{index}{byte_offset:+}"))
                         + const_text(")")
                 }
-            }
+                FrameBase::Global(index) => {
+                    const_text("DW_OP_fbreg(global, ")
+                        + text(format!("{index}{byte_offset:+}"))
+                        + const_text(")")
+                }
+            },
+            Self::ResolvedFrameBase { base, byte_offset } => match base {
+                ResolvedFrameBase::Local(offset) => {
+                    const_text("MIDEN_OP_fbreg(local, ")
+                        + text(format!("{offset}{byte_offset:+}"))
+                        + const_text(")")
+                }
+                ResolvedFrameBase::Global(address) => {
+                    const_text("MIDEN_OP_fbreg(global, ")
+                        + text(format!("{address}{byte_offset:+}"))
+                        + const_text(")")
+                }
+            },
             Self::Address { address } => {
                 const_text("DW_OP_addr") + const_text("(") + display(*address) + const_text(")")
             }
@@ -221,7 +302,7 @@ impl ExpressionOp {
                     "DW_OP_piece" => Some(ExpressionOp::Piece(0)),
                     "DW_OP_bit_piece" => Some(ExpressionOp::BitPiece { size: 0, offset: 0 }),
                     "DW_OP_fbreg" => Some(ExpressionOp::FrameBase {
-                        global_index: 0,
+                        base: FrameBase::Global(0),
                         byte_offset: 0,
                     }),
                     "DW_OP_addr" => Some(ExpressionOp::Address { address: 0 }),
@@ -263,24 +344,49 @@ impl ExpressionOp {
                 *offset = parser.parse_decimal_integer::<u64>()?.into_inner();
                 parser.parse_rparen()?;
             }
-            ExpressionOp::FrameBase {
-                global_index,
-                byte_offset,
-            } => {
+            ExpressionOp::FrameBase { base, byte_offset } => {
                 parser.parse_lparen()?;
-                parser
+                let is_local = parser
                     .token_stream_mut()
-                    .expect_if("'local' or 'global' modifier", |tok| {
-                        matches!(tok, Token::BareIdent("local" | "global"))
+                    .expect_map("'local' or 'global' modifier", |tok| match tok {
+                        Token::BareIdent("local") => Some(true),
+                        Token::BareIdent("global") => Some(false),
+                        _ => None,
                     })?
                     .into_inner();
                 parser.parse_comma()?;
                 let index = parser.parse_decimal_integer::<u32>()?.into_inner();
-                parser.parse_comma()?;
-                *byte_offset = parser.parse_decimal_integer::<i64>()?.into_inner();
-                *global_index = encode_frame_base_local_index(index).unwrap_or(index);
+                // The printed form is `INDEX{+|-}OFFSET`, e.g. `DW_OP_fbreg(local, 2+8)`
+                let negative = parser
+                    .token_stream_mut()
+                    .expect_map("'+' or '-' offset sign", |tok| match tok {
+                        Token::Plus => Some(false),
+                        Token::Minus => Some(true),
+                        _ => None,
+                    })?
+                    .into_inner();
+                let (offset_span, magnitude) = parser.parse_decimal_integer::<u64>()?.into_parts();
+                let signed = if negative {
+                    -(magnitude as i128)
+                } else {
+                    magnitude as i128
+                };
+                *byte_offset = i64::try_from(signed).map_err(|_| {
+                    crate::parse::ParserError::InvalidIntegerLiteral {
+                        span: offset_span,
+                        reason: format!("byte offset '{signed}' is out of range for i64"),
+                    }
+                })?;
+                *base = if is_local {
+                    FrameBase::Local(index)
+                } else {
+                    FrameBase::Global(index)
+                };
                 parser.parse_rparen()?;
             }
+            ExpressionOp::ResolvedFrameBase { .. } => unreachable!(
+                "resolved frame-base expressions are produced only during MASM lowering"
+            ),
         }
 
         Ok(op)
@@ -324,11 +430,8 @@ impl miden_core::serde::Deserializable for Expression {
         source: &mut R,
     ) -> Result<Self, miden_core::serde::DeserializationError> {
         let len = usize::read_from(source)?;
-        let mut expr = Self::with_ops(Vec::with_capacity(len));
-        for _ in 0..len {
-            expr.operations.push(ExpressionOp::read_from(source)?);
-        }
-        Ok(expr)
+        let operations = source.read_many_iter(len)?.collect::<Result<Vec<_>, _>>()?;
+        Ok(Self::with_ops(operations))
     }
 }
 
@@ -387,20 +490,30 @@ impl AttrPrinter for ExpressionAttr {
                         + display(*offset)
                         + const_text(")");
                 }
-                ExpressionOp::FrameBase {
-                    global_index,
-                    byte_offset,
-                } => {
-                    if let Some(local_index) = decode_frame_base_local_index(*global_index) {
+                ExpressionOp::FrameBase { base, byte_offset } => match base {
+                    FrameBase::Local(index) => {
                         *printer += const_text("DW_OP_fbreg(local, ");
-                        *printer += text(format!("{}{:+}", local_index, byte_offset));
-                        *printer += const_text(")");
-                    } else {
-                        *printer += const_text("DW_OP_fbreg(global, ");
-                        *printer += text(format!("{}{:+}", global_index, byte_offset));
+                        *printer += text(format!("{}{:+}", index, byte_offset));
                         *printer += const_text(")");
                     }
-                }
+                    FrameBase::Global(index) => {
+                        *printer += const_text("DW_OP_fbreg(global, ");
+                        *printer += text(format!("{}{:+}", index, byte_offset));
+                        *printer += const_text(")");
+                    }
+                },
+                ExpressionOp::ResolvedFrameBase { base, byte_offset } => match base {
+                    ResolvedFrameBase::Local(offset) => {
+                        *printer += const_text("MIDEN_OP_fbreg(local, ");
+                        *printer += text(format!("{}{:+}", offset, byte_offset));
+                        *printer += const_text(")");
+                    }
+                    ResolvedFrameBase::Global(address) => {
+                        *printer += const_text("MIDEN_OP_fbreg(global, ");
+                        *printer += text(format!("{}{:+}", address, byte_offset));
+                        *printer += const_text(")");
+                    }
+                },
                 ExpressionOp::Address { address } => {
                     *printer += const_text("DW_OP_addr");
                     *printer += const_text("(") + display(*address) + const_text(")");
@@ -435,37 +548,4 @@ impl AttrParser for ExpressionAttr {
 
         Ok(attr.as_attribute_ref())
     }
-}
-
-/// High-bit marker used to carry a Wasm-local frame base through the existing
-/// `FrameBase { global_index, byte_offset }` debug-location shape without
-/// changing the VM-facing `DebugVarLocation` ABI.
-///
-/// Before MASM lowering completes, the low bits hold a raw Wasm local index.
-/// After local patching, the low 16 bits hold the signed FMP-relative offset of
-/// the Miden local containing the frame-base byte address.
-pub const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
-
-pub fn encode_frame_base_local_index(local_index: u32) -> Option<u32> {
-    if local_index < FRAME_BASE_LOCAL_MARKER {
-        Some(FRAME_BASE_LOCAL_MARKER | local_index)
-    } else {
-        None
-    }
-}
-
-pub fn decode_frame_base_local_index(encoded: u32) -> Option<u32> {
-    (encoded & FRAME_BASE_LOCAL_MARKER != 0).then_some(encoded & !FRAME_BASE_LOCAL_MARKER)
-}
-
-pub fn encode_frame_base_local_offset(local_offset: i16) -> u32 {
-    FRAME_BASE_LOCAL_MARKER | u16::from_le_bytes(local_offset.to_le_bytes()) as u32
-}
-
-pub fn decode_frame_base_local_offset(encoded: u32) -> Option<i16> {
-    if encoded & FRAME_BASE_LOCAL_MARKER == 0 {
-        return None;
-    }
-    let low_bits = (encoded & 0xffff) as u16;
-    Some(i16::from_le_bytes(low_bits.to_le_bytes()))
 }

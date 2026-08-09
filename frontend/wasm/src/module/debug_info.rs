@@ -9,7 +9,7 @@ use log::debug;
 use midenc_hir::{
     FxHashMap, SourceSpan,
     dialects::debuginfo::attributes::{
-        CompileUnit, Expression, ExpressionOp, Subprogram, Variable, encode_frame_base_local_index,
+        CompileUnit, Expression, ExpressionOp, FrameBase, Subprogram, Variable,
     },
     interner::Symbol,
 };
@@ -24,7 +24,7 @@ use crate::module::types::ModuleTypesBuilder;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LocationDescriptor {
-    /// Inclusive start offset within the function's code, relative to the Wasm code section.
+    /// Inclusive start offset in the module's DWARF address space.
     pub start: u64,
     /// Exclusive end offset. `None` indicates the location is valid until the end of the function.
     pub end: Option<u64>,
@@ -39,11 +39,8 @@ pub enum VariableStorage {
     ConstU64(u64),
     /// Frame base + byte offset — from DW_OP_fbreg.
     ///
-    /// For Wasm-global frame bases, `global_index` is the Wasm global index.
-    /// For Wasm-local frame bases, it is encoded with
-    /// `encode_frame_base_local_index`.
     FrameBase {
-        global_index: u32,
+        base: FrameBase,
         byte_offset: i64,
     },
     Unsupported,
@@ -63,11 +60,8 @@ impl VariableStorage {
             VariableStorage::Global(idx) => ExpressionOp::WasmGlobal(*idx),
             VariableStorage::Stack(idx) => ExpressionOp::WasmStack(*idx),
             VariableStorage::ConstU64(val) => ExpressionOp::ConstU64(*val),
-            VariableStorage::FrameBase {
-                global_index,
-                byte_offset,
-            } => ExpressionOp::FrameBase {
-                global_index: *global_index,
+            VariableStorage::FrameBase { base, byte_offset } => ExpressionOp::FrameBase {
+                base: *base,
                 byte_offset: *byte_offset,
             },
             VariableStorage::Unsupported => {
@@ -175,8 +169,10 @@ fn build_function_debug_info(
 ) -> Option<FunctionDebugInfo> {
     let func_name = module.func_name(func_index);
 
-    let (file_symbol, directory_symbol) = determine_file_symbols(parsed_module, addr2line, body);
-    let (line, column) = determine_location(addr2line, body.body_offset);
+    let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
+    let (file_symbol, directory_symbol) =
+        determine_file_symbols(parsed_module, addr2line, dwarf_offset);
+    let (line, column) = determine_location(addr2line, dwarf_offset);
 
     let mut compile_unit = CompileUnit::new(Symbol::intern("wasm"), file_symbol);
     compile_unit.directory = directory_symbol;
@@ -211,10 +207,10 @@ fn build_function_debug_info(
 fn determine_file_symbols(
     parsed_module: &ParsedModule,
     addr2line: &Context<DwarfReader<'_>>,
-    body: &FunctionBodyData,
+    dwarf_offset: u64,
 ) -> (Symbol, Option<Symbol>) {
     if let Some(location) = addr2line
-        .find_location(body.body_offset)
+        .find_location(dwarf_offset)
         .ok()
         .flatten()
         .and_then(|loc| loc.file.map(|file| file.to_owned()))
@@ -236,7 +232,8 @@ fn determine_location(addr2line: &Context<DwarfReader<'_>>, offset: u64) -> (u32
     match addr2line.find_location(offset).ok().flatten() {
         Some(location) => {
             let line = location.line.unwrap_or_default();
-            let column = location.column;
+            // In DWARF line programs a column of 0 means "no column information"
+            let column = location.column.filter(|&column| column != 0);
             (line, column)
         }
         None => (0, None),
@@ -396,16 +393,22 @@ fn build_location_schedule(locals: &[Option<LocalDebugInfo>]) -> Vec<LocationSch
         let Some(info) = info_opt else {
             continue;
         };
-        for descriptor in &info.locations {
-            if !is_supported_location_expression(&descriptor.storage) {
-                continue;
-            }
+        let supported: Vec<_> = info
+            .locations
+            .iter()
+            .filter(|descriptor| is_supported_location_expression(&descriptor.storage))
+            .collect();
+        for descriptor in &supported {
             schedule.push(LocationScheduleEntry {
                 offset: descriptor.start,
                 var_index,
                 storage: Some(descriptor.storage.clone()),
             });
             if let Some(end) = descriptor.end {
+                // Keep the kill even when another range starts at the same offset. A supported
+                // DWARF expression is not necessarily representable by the backend (for example,
+                // an operandless WasmGlobal declaration), so the kill prevents an earlier
+                // location from remaining active when its nominal replacement emits no record.
                 schedule.push(LocationScheduleEntry {
                     offset: end,
                     var_index,
@@ -444,11 +447,10 @@ fn collect_dwarf_local_data(
     }
 
     let mut low_pc_map = FxHashMap::default();
-    let code_section_offset = parsed_module.wasm_file.code_section_offset;
     for (defined_idx, body) in parsed_module.function_body_inputs.iter() {
         let func_index = module.func_index(defined_idx);
-        let adjusted = body.body_offset.saturating_sub(code_section_offset);
-        low_pc_map.insert(adjusted, func_index);
+        let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
+        low_pc_map.insert(dwarf_offset, func_index);
     }
 
     let mut results: FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>> = FxHashMap::default();
@@ -496,7 +498,7 @@ fn collect_dwarf_local_data(
                     info.func_index,
                     info.low_pc,
                     info.high_pc,
-                    info.frame_base_global,
+                    info.frame_base,
                     &mut results,
                     &mut scheduled_results,
                 ) {
@@ -520,10 +522,8 @@ struct SubprogramInfo {
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    /// The encoded WASM location used as the frame base (from DW_AT_frame_base).
-    /// Plain values are Wasm globals; values encoded with
-    /// `encode_frame_base_local_index` are Wasm locals.
-    frame_base_global: Option<u32>,
+    /// The Wasm location used as the frame base (from DW_AT_frame_base).
+    frame_base: Option<FrameBase>,
 }
 
 fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
@@ -536,7 +536,7 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
     let mut maybe_name: Option<String> = None;
     let mut low_pc = None;
     let mut high_pc = None;
-    let mut frame_base_global = None;
+    let mut frame_base = None;
 
     for attr in entry.attrs() {
         match attr.name() {
@@ -578,10 +578,10 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
                     while let Ok(Some(op)) = ops.next() {
                         match op {
                             Operation::WasmLocal { index } => {
-                                frame_base_global = encode_frame_base_local_index(index);
+                                frame_base = Some(FrameBase::Local(index));
                             }
                             Operation::WasmGlobal { index } => {
-                                frame_base_global = Some(index);
+                                frame_base = Some(FrameBase::Global(index));
                             }
                             _ => {}
                         }
@@ -596,7 +596,7 @@ fn resolve_subprogram_target<R: gimli::Reader<Offset = usize>>(
         func_index,
         low_pc: lp,
         high_pc: hp,
-        frame_base_global,
+        frame_base,
     };
 
     if let Some(ref name) = maybe_name
@@ -621,7 +621,7 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
     results: &mut FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>>,
     scheduled_results: &mut FxHashMap<FuncIndex, Vec<DwarfLocalData>>,
 ) -> gimli::Result<()> {
@@ -637,7 +637,7 @@ fn collect_subprogram_variables<R: gimli::Reader<Offset = usize>>(
             func_index,
             low_pc,
             high_pc,
-            frame_base_global,
+            frame_base,
             results,
             scheduled_results,
             &mut param_counter,
@@ -654,7 +654,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
     func_index: FuncIndex,
     low_pc: u64,
     high_pc: Option<u64>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
     results: &mut FxHashMap<FuncIndex, FxHashMap<u32, DwarfLocalData>>,
     scheduled_results: &mut FxHashMap<FuncIndex, Vec<DwarfLocalData>>,
     param_counter: &mut u32,
@@ -679,7 +679,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
                 entry,
                 low_pc,
                 high_pc,
-                frame_base_global,
+                frame_base,
                 fallback_index,
                 &mut scheduled_vars,
             )? {
@@ -709,7 +709,7 @@ fn walk_variable_nodes<R: gimli::Reader<Offset = usize>>(
             func_index,
             low_pc,
             high_pc,
-            frame_base_global,
+            frame_base,
             results,
             scheduled_results,
             param_counter,
@@ -725,7 +725,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
     entry: &gimli::DebuggingInformationEntry<R>,
     low_pc: u64,
     high_pc: Option<u64>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
     fallback_index: Option<u32>,
     scheduled_vars: &mut Vec<DwarfLocalData>,
 ) -> gimli::Result<Option<(u32, DwarfLocalData)>> {
@@ -772,7 +772,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
 
     match location_value {
         AttributeValue::Exprloc(ref expr) => {
-            let storage = decode_storage_from_expression(expr, unit, frame_base_global)?;
+            let storage = decode_storage_from_expression(expr, unit, frame_base)?;
             if let Some(storage) = storage {
                 // Determine the WASM local index for this variable.
                 // For WasmLocal storage, use the index directly.
@@ -782,7 +782,9 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                 if let Some(local_index) = local_index {
                     locations.push(LocationDescriptor {
                         start: low_pc,
-                        end: high_pc,
+                        // A single-location description is valid for the variable's whole scope;
+                        // there is no lifetime end to schedule
+                        end: None,
                         storage,
                     });
                     let data = DwarfLocalData {
@@ -798,7 +800,7 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
                     // location expression instead of being dropped.
                     locations.push(LocationDescriptor {
                         start: low_pc,
-                        end: high_pc,
+                        end: None,
                         storage,
                     });
                     let data = DwarfLocalData {
@@ -825,12 +827,19 @@ fn decode_variable_entry<R: gimli::Reader<Offset = usize>>(
             while let Some(entry) = iter.next()? {
                 let storage_expr = entry.data;
                 if let Some(storage) =
-                    decode_storage_from_expression(&storage_expr, unit, frame_base_global)?
+                    decode_storage_from_expression(&storage_expr, unit, frame_base)?
                     && is_supported_location_expression(&storage)
                 {
+                    // A range covering through the end of the subprogram means the variable is
+                    // live at this location until scope end; suppress the end event so no
+                    // pointless (and harmfully placed) terminal kill is scheduled
+                    let end = match high_pc {
+                        Some(high_pc) if entry.range.end >= high_pc => None,
+                        _ => Some(entry.range.end),
+                    };
                     locations.push(LocationDescriptor {
                         start: entry.range.begin,
-                        end: Some(entry.range.end),
+                        end,
                         storage,
                     });
                 }
@@ -886,6 +895,7 @@ fn is_supported_location_expression(storage: &Expression) -> bool {
             | ExpressionOp::ConstU64(_)
             | ExpressionOp::ConstS64(_)
             | ExpressionOp::FrameBase { .. }
+            | ExpressionOp::ResolvedFrameBase { .. }
             | ExpressionOp::Address { .. } => {
                 has_location = true;
             }
@@ -913,14 +923,65 @@ fn resolve_decl_file<R: gimli::Reader<Offset = usize>>(
     let header = line_program.header();
     let file = header.file(file_index)?;
     let raw = dwarf.attr_string(unit, file.path_name()).ok()?;
-    let path = raw.to_string_lossy().ok()?;
-    Some(Symbol::intern(path.as_ref()))
+    let file_name = raw.to_string_lossy().ok()?;
+    let mut comp_dir = unit
+        .comp_dir
+        .as_ref()
+        .and_then(|raw| raw.to_string_lossy().ok())
+        .map(|path| path.into_owned());
+    let directory = file
+        .directory(header)
+        .and_then(|value| dwarf.attr_string(unit, value).ok())
+        .and_then(|raw| raw.to_string_lossy().ok().map(|path| path.into_owned()));
+    if header.version() <= 4 && file.directory_index() == 0 {
+        // gimli resolves the implicit DWARF v2-v4 directory index 0 to the compilation directory,
+        // so avoid prepending the same path twice. In DWARF v5, index 0 is a real directory-table
+        // entry and must be preserved.
+        comp_dir = None;
+    }
+    let path = render_dwarf_file_path(comp_dir.as_deref(), directory.as_deref(), &file_name);
+    Some(Symbol::intern(path))
+}
+
+fn render_dwarf_file_path(comp_dir: Option<&str>, directory: Option<&str>, file: &str) -> String {
+    let mut path = String::new();
+    if let Some(comp_dir) = comp_dir {
+        push_dwarf_path(&mut path, comp_dir);
+    }
+    if let Some(directory) = directory {
+        push_dwarf_path(&mut path, directory);
+    }
+    push_dwarf_path(&mut path, file);
+    path
+}
+
+fn push_dwarf_path(path: &mut String, component: &str) {
+    if component == "." {
+        return;
+    }
+
+    let has_forward_slash_root = component.starts_with('/') || component.get(1..3) == Some(":/");
+    let has_backward_slash_root = component.starts_with('\\') || component.get(1..3) == Some(":\\");
+    if has_forward_slash_root || has_backward_slash_root {
+        *path = component.to_owned();
+        return;
+    }
+
+    let separator = if path.starts_with('\\') || path.get(1..3) == Some(":\\") {
+        '\\'
+    } else {
+        '/'
+    };
+    if !path.is_empty() && !path.ends_with(separator) {
+        path.push(separator);
+    }
+    path.push_str(component);
 }
 
 fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
     expr: &gimli::Expression<R>,
     unit: &gimli::Unit<R>,
-    frame_base_global: Option<u32>,
+    frame_base: Option<FrameBase>,
 ) -> gimli::Result<Option<Expression>> {
     let mut operations = expr.clone().operations(unit.encoding());
     let mut storage = vec![];
@@ -943,10 +1004,9 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
             }
             Operation::FrameOffset { offset } => {
                 // DW_OP_fbreg(offset): variable is at frame_base + offset in WASM linear memory.
-                // The frame base is a WASM global (typically __stack_pointer = global 0).
-                if let Some(global_index) = frame_base_global {
+                if let Some(base) = frame_base {
                     storage.push(ExpressionOp::FrameBase {
-                        global_index,
+                        base,
                         byte_offset: offset,
                     });
                 }
@@ -964,7 +1024,7 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
                 });
             }
             Operation::Register { .. } => {
-                storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_breg(N)")));
+                storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_reg(N)")));
             }
             Operation::RegisterOffset { .. } => {
                 storage.push(ExpressionOp::Unsupported(Symbol::intern("DW_OP_bregx")));
@@ -986,4 +1046,53 @@ fn decode_storage_from_expression<R: gimli::Reader<Offset = usize>>(
 
 fn func_local_index(func_index: FuncIndex, module: &Module) -> Option<usize> {
     module.defined_func_index(func_index).map(|idx| idx.index())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dwarf_file_paths_include_the_line_program_directory() {
+        assert_eq!(
+            render_dwarf_file_path(None, Some("tests/lit/debugdump"), "locations-source-loc.rs"),
+            "tests/lit/debugdump/locations-source-loc.rs"
+        );
+        assert_eq!(
+            render_dwarf_file_path(Some("."), None, "locations-source-loc.rs"),
+            "locations-source-loc.rs"
+        );
+    }
+
+    #[test]
+    fn contiguous_location_ranges_keep_the_intervening_kill() {
+        let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
+        let locations = vec![
+            LocationDescriptor {
+                start: 4,
+                end: Some(8),
+                storage: Expression::with_ops(vec![ExpressionOp::WasmLocal(0)]),
+            },
+            LocationDescriptor {
+                start: 8,
+                end: None,
+                storage: Expression::with_ops(vec![ExpressionOp::WasmGlobal(0)]),
+            },
+        ];
+        let locals = vec![Some(LocalDebugInfo {
+            attr: variable,
+            locations,
+            expression: None,
+        })];
+
+        let schedule = build_location_schedule(&locals);
+
+        assert_eq!(schedule.len(), 3);
+        assert_eq!(schedule[0].offset, 4);
+        assert!(schedule[0].storage.is_some());
+        assert_eq!(schedule[1].offset, 8);
+        assert!(schedule[1].storage.is_none());
+        assert_eq!(schedule[2].offset, 8);
+        assert!(schedule[2].storage.is_some());
+    }
 }

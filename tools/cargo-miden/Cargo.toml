@@ -40,7 +40,6 @@ path = "tests/mod.rs"
 flate2.workspace = true
 
 [dependencies]
-miden-mast-package = { workspace = true, features = ["std"] }
 midenc-compile = { workspace = true, features = ["std"] }
 midenc-hir = { workspace = true, features = ["std"] }
 midenc-session.workspace = true
