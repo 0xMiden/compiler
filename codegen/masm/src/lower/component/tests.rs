@@ -1,4 +1,5 @@
-use alloc::{format, rc::Rc, string::String};
+use alloc::{collections::BTreeMap, format, rc::Rc, string::String};
+use core::cell::RefCell;
 
 use midenc_hir::{Context, OperationRef, PointerType, diagnostics::Uri};
 use midenc_session::{
@@ -1607,7 +1608,7 @@ fn frame_base_locals_use_the_locked_debugger_encoding() {
     }]);
     let location = DebugVarLocation::Expression(expression.to_bytes());
 
-    let patched = patch_debug_var_location(&location, 8, None).expect("location should resolve");
+    let patched = patch_debug_var_location(&location, 8, None);
     let DebugVarLocation::FrameBase {
         global_index,
         byte_offset,
@@ -1634,15 +1635,107 @@ fn frame_base_locals_use_the_locked_debugger_encoding() {
 }
 
 #[test]
-fn high_bit_global_addresses_are_not_misencoded_as_locals() {
-    let location = DebugVarLocation::FrameBase {
-        global_index: 0,
-        byte_offset: -4,
-    };
-    let address = 1 << 31;
-    assert_eq!(
-        patch_debug_var_location(&location, 0, Some(address)),
-        None,
-        "the locked debugger reserves the high bit for locals, so omit rather than misdecode this"
+fn unrepresentable_nested_frame_bases_kill_the_active_debugger_location() {
+    use miden_debug::processor::trace::RowIndex;
+
+    for stack_pointer_addr in [None, Some(1 << 31)] {
+        let kill = patch_nested_frame_base(stack_pointer_addr);
+        assert_eq!(kill.value_location(), &debug_var_kill_location());
+
+        let events = Rc::new(RefCell::new(BTreeMap::new()));
+        let mut tracker = miden_debug::DebugVarTracker::new(events);
+        tracker.record_events(
+            RowIndex::from(1),
+            vec![masm::DebugVarInfo::new(
+                "x",
+                DebugVarLocation::Const(miden_core::Felt::new(7).unwrap()),
+            )],
+        );
+        tracker.record_events(RowIndex::from(2), vec![kill]);
+        tracker.update_to_cycle(RowIndex::from(1));
+        assert!(tracker.get_variable("x").is_some());
+        tracker.update_to_cycle(RowIndex::from(2));
+        assert!(tracker.get_variable("x").is_none());
+    }
+}
+
+#[test]
+fn out_of_range_fmp_offsets_become_debugger_kills() {
+    use miden_core::serde::Serializable;
+
+    let positive_frame_base = DebugVarLocation::Expression(
+        Expression::with_ops(vec![ExpressionOp::FrameBase {
+            base: FrameBase::Local(i16::MAX as u32 + 1),
+            byte_offset: 0,
+        }])
+        .to_bytes(),
     );
+    let negative_frame_base = DebugVarLocation::Expression(
+        Expression::with_ops(vec![ExpressionOp::FrameBase {
+            base: FrameBase::Local(0),
+            byte_offset: 0,
+        }])
+        .to_bytes(),
+    );
+
+    for (location, aligned_num_locals) in [
+        (DebugVarLocation::Local(i16::MIN), 1),
+        (positive_frame_base, 0),
+        (negative_frame_base, i16::MAX as u16 + 2),
+    ] {
+        assert_eq!(
+            patch_debug_var_location(&location, aligned_num_locals, None),
+            debug_var_kill_location()
+        );
+    }
+}
+
+#[test]
+fn final_debugger_locations_and_opaque_expressions_are_preserved() {
+    use miden_core::serde::Serializable;
+
+    let opaque = DebugVarLocation::Expression(
+        Expression::with_ops(vec![ExpressionOp::Address { address: 7 }, ExpressionOp::Deref])
+            .to_bytes(),
+    );
+    let kill = debug_var_kill_location();
+
+    for location in [
+        DebugVarLocation::Stack(0),
+        DebugVarLocation::Memory(1),
+        DebugVarLocation::Const(miden_core::Felt::new(2).unwrap()),
+        opaque,
+        kill,
+    ] {
+        assert_eq!(patch_debug_var_location(&location, 8, None), location);
+    }
+}
+
+fn patch_nested_frame_base(stack_pointer_addr: Option<u32>) -> masm::DebugVarInfo {
+    let span = SourceSpan::default();
+    let debug_var = masm::DebugVarInfo::new(
+        "x",
+        DebugVarLocation::FrameBase {
+            global_index: 0,
+            byte_offset: -4,
+        },
+    );
+    let nested = masm::Block::new(
+        span,
+        vec![masm::Op::Inst(Span::new(span, masm::Instruction::DebugVar(debug_var)))],
+    );
+    let mut block = masm::Block::new(span, vec![masm::Op::While { span, body: nested }]);
+
+    patch_debug_var_locals_in_block(&mut block, 0, stack_pointer_addr);
+
+    let masm::Op::While { body, .. } = block.iter().next().unwrap() else {
+        unreachable!();
+    };
+    let masm::Op::Inst(inst) = body.iter().next().unwrap() else {
+        unreachable!();
+    };
+    let masm::Instruction::DebugVar(info) = inst.inner() else {
+        unreachable!();
+    };
+    info.clone()
 }

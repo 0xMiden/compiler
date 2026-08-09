@@ -1711,10 +1711,13 @@ fn debugger_can_safely_evaluate_expression(
         ExpressionOp::PlusUConst(_) | ExpressionOp::Minus | ExpressionOp::Plus => false,
         ExpressionOp::FrameBase { .. } | ExpressionOp::ResolvedFrameBase { .. } => false,
         ExpressionOp::Unsupported(_) => false,
-        ExpressionOp::WasmLocal(_)
-        | ExpressionOp::WasmGlobal(_)
-        | ExpressionOp::WasmStack(_)
-        | ExpressionOp::Deref
+        // Wasm location indices are not Miden local/operand-stack coordinates. The
+        // single-location fast paths above translate them before this validator is reached, but
+        // compound expressions cannot be serialized until every embedded location is resolved.
+        ExpressionOp::WasmLocal(_) | ExpressionOp::WasmGlobal(_) | ExpressionOp::WasmStack(_) => {
+            false
+        }
+        ExpressionOp::Deref
         | ExpressionOp::StackValue
         | ExpressionOp::Piece(_)
         | ExpressionOp::BitPiece { .. } => true,
@@ -1733,6 +1736,10 @@ mod tests {
             ExpressionOp::ConstU64(7),
             ExpressionOp::StackValue,
         ])));
+        assert!(debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::Address { address: 7 },
+            ExpressionOp::Deref,
+        ])));
         assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
             ExpressionOp::ConstS64(-1),
             ExpressionOp::PlusUConst(1),
@@ -1743,12 +1750,18 @@ mod tests {
         ])));
         assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
             ExpressionOp::WasmLocal(0),
-            ExpressionOp::PlusUConst(1),
+            ExpressionOp::Deref,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::WasmGlobal(0),
+            ExpressionOp::Deref,
+        ])));
+        assert!(!debugger_can_safely_evaluate_expression(&Expression::with_ops(vec![
+            ExpressionOp::WasmStack(0),
+            ExpressionOp::Deref,
         ])));
     }
 }
-
-const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
 
 fn apply_debug_var_metadata(
     debug_var: &mut masm::DebugVarInfo,

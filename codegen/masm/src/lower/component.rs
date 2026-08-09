@@ -1656,9 +1656,9 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
 /// `offset = idx - aligned_num_locals` (the FMP-relative offset, typically negative). This matches
 /// the assembler's `locaddr.N` formula, i.e. `FMP - aligned_num_locals + N`.
 ///
-/// Also resolves Wasm frame bases to explicitly tagged Miden local/global locations. Local frame
-/// bases, and global addresses that would collide with the legacy debugger's high-bit marker, are
-/// carried as expression locations rather than overloading the global address.
+/// Also resolves Wasm frame bases to the Miden local/global encoding understood by the debugger.
+/// Locations that require resolution but cannot be represented are converted to explicit kill
+/// markers so the unresolved Wasm location cannot remain active.
 fn patch_debug_var_locals_in_block(
     block: &mut masm::Block,
     aligned_num_locals: u16,
@@ -1668,13 +1668,12 @@ fn patch_debug_var_locals_in_block(
         match op {
             masm::Op::Inst(span_inst) => {
                 // Use DerefMut to get mutable access to the inner Instruction
-                if let masm::Instruction::DebugVar(info) = &mut **span_inst
-                    && let Some(location) = patch_debug_var_location(
+                if let masm::Instruction::DebugVar(info) = &mut **span_inst {
+                    let location = patch_debug_var_location(
                         info.value_location(),
                         aligned_num_locals,
                         stack_pointer_addr,
-                    )
-                {
+                    );
                     info.set_value_location(location);
                 }
             }
@@ -1712,25 +1711,27 @@ fn patch_debug_var_location(
     location: &DebugVarLocation,
     aligned_num_locals: u16,
     stack_pointer_addr: Option<u32>,
-) -> Option<DebugVarLocation> {
+) -> DebugVarLocation {
     match location {
         DebugVarLocation::Local(index) => {
-            let fmp_offset = *index - aligned_num_locals as i16;
-            Some(DebugVarLocation::Local(fmp_offset))
+            checked_fmp_local_offset(i64::from(*index), aligned_num_locals)
+                .map(DebugVarLocation::Local)
+                .unwrap_or_else(debug_var_kill_location)
         }
         DebugVarLocation::FrameBase { byte_offset, .. } => {
-            let resolved_addr = stack_pointer_addr?;
-            if resolved_addr < (1 << 31) {
-                Some(DebugVarLocation::FrameBase {
+            if let Some(resolved_addr) = stack_pointer_addr.filter(|addr| *addr < (1 << 31)) {
+                DebugVarLocation::FrameBase {
                     global_index: resolved_addr,
                     byte_offset: *byte_offset,
-                })
+                }
             } else {
-                None
+                debug_var_kill_location()
             }
         }
         DebugVarLocation::Expression(bytes) => {
-            let expression = Expression::read_from_bytes_with_budget(bytes, bytes.len()).ok()?;
+            let Ok(expression) = Expression::read_from_bytes_with_budget(bytes, bytes.len()) else {
+                return location.clone();
+            };
             let [
                 ExpressionOp::FrameBase {
                     base: FrameBase::Local(local_index),
@@ -1738,19 +1739,27 @@ fn patch_debug_var_location(
                 },
             ] = expression.operations.as_slice()
             else {
-                return None;
+                return location.clone();
             };
-            let local_index = i16::try_from(*local_index).ok()?;
-            let local_offset = local_index - aligned_num_locals as i16;
-            Some(DebugVarLocation::FrameBase {
-                global_index: encode_frame_base_local_offset(local_offset),
-                byte_offset: *byte_offset,
-            })
+            checked_fmp_local_offset(i64::from(*local_index), aligned_num_locals)
+                .map(|local_offset| DebugVarLocation::FrameBase {
+                    global_index: encode_frame_base_local_offset(local_offset),
+                    byte_offset: *byte_offset,
+                })
+                .unwrap_or_else(debug_var_kill_location)
         }
         DebugVarLocation::Stack(_) | DebugVarLocation::Memory(_) | DebugVarLocation::Const(_) => {
-            None
+            location.clone()
         }
     }
+}
+
+fn checked_fmp_local_offset(index: i64, aligned_num_locals: u16) -> Option<i16> {
+    i16::try_from(index - i64::from(aligned_num_locals)).ok()
+}
+
+fn debug_var_kill_location() -> DebugVarLocation {
+    DebugVarLocation::Expression(super::DEBUG_VAR_KILL_SENTINEL.to_vec())
 }
 
 const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
