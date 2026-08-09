@@ -6,5 +6,8 @@ version = "0.1.0"
 name = "fibonacci"
 path = "src/lib.rs"
 
+[profile.release]
+debug = true
+
 [dependencies]
 miden-core = "*"
