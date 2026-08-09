@@ -217,6 +217,23 @@ macro_rules! test_unary_op_total {
     };
 }
 
+macro_rules! test_saturating_arith {
+    ($fn_name:ident, $strategy:ident, $($op_ty:tt),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                fn test_name() {
+                    test_binary_fn(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
 // Arithmetic ops
 //
 // NOTE: We're testing a limited range of inputs for now to sidestep overflow
@@ -894,6 +911,21 @@ fn checked_rem_i32() {
 #[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
 fn checked_rem_i64() {
     test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
+}
+
+test_saturating_arith!(saturating_add, add_unsigned, u8, u16, u32, u64);
+test_saturating_arith!(saturating_add, add_signed, i8, i16, i32, i64);
+test_saturating_arith!(saturating_sub, sub_unsigned, u8, u16, u32, u64);
+test_saturating_arith!(saturating_sub, sub_signed, i8, i16, i32, i64);
+test_saturating_arith!(saturating_mul, mul_unsigned, u8, u16, u32, u64);
+test_saturating_arith!(saturating_mul, mul_signed, i8, i16, i32);
+test_saturating_arith!(saturating_div, div_unsigned_overflowing, u8, u16, u32, u64);
+test_saturating_arith!(saturating_div, div_signed_overflowing, i8, i16, i32, i64);
+
+#[test]
+#[ignore = "https://github.com/0xMiden/compiler/issues/1144"]
+fn saturating_mul_i64() {
+    test_binary_fn(i64::saturating_mul, "saturating_mul", NumericStrategy::mul_signed());
 }
 
 fn test_overflowing_arith<T>(
