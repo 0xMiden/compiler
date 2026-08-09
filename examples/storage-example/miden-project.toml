@@ -7,6 +7,9 @@ kind = "account-component"
 namespace = "miden:storage-example/foo@1.0.0"
 path = "src/lib.rs"
 
+[profile.release]
+debug = true
+
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"

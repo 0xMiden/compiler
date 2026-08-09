@@ -1,0 +1,118 @@
+name: Examples benchmark
+
+permissions:
+  contents: read
+  pull-requests: write
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_CACHE_KEY: rust-cache-20251212
+
+jobs:
+  compare:
+    name: Compare example cycles and sizes
+    runs-on: warp-ubuntu-latest-x64-8x
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: ./.github/actions/cleanup-runner
+
+      - name: Install Rust
+        run: |
+          rustup update --no-self-update
+          rustc --version
+
+      - name: Cache Cargo
+        uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
+        with:
+          shared-key: examples-benchmark
+          prefix-key: ${{ env.RUST_CACHE_KEY }}
+          cache-targets: false
+
+      - name: Test benchmark report formatter
+        run: python3 -m unittest discover -s .github/scripts -p 'test_compare_example_benchmarks.py'
+
+      - name: Build candidate benchmark tools
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/target/benchmark-candidate
+        run: |
+          cargo build --release -p cargo-miden
+          cargo build --release -p midenc-benchmark-runner --bin example-benchmarks
+
+      - name: Build next cargo-miden
+        run: |
+          git fetch --no-tags origin next:refs/remotes/origin/next
+          git worktree add --detach "$RUNNER_TEMP/compiler-next" origin/next
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/benchmark-next" \
+            cargo build \
+              --manifest-path "$RUNNER_TEMP/compiler-next/Cargo.toml" \
+              --release \
+              -p cargo-miden
+
+      - name: Benchmark next
+        run: |
+          target/benchmark-candidate/release/example-benchmarks \
+            --workspace-root "$GITHUB_WORKSPACE" \
+            --cargo-miden target/benchmark-next/release/cargo-miden \
+            --commit "$(git rev-parse origin/next)" \
+            --output-dir target/example-benchmarks/baseline \
+            --build-dir target/example-benchmark-build/baseline
+
+      - name: Benchmark candidate
+        run: |
+          target/benchmark-candidate/release/example-benchmarks \
+            --workspace-root "$GITHUB_WORKSPACE" \
+            --cargo-miden target/benchmark-candidate/release/cargo-miden \
+            --commit "$GITHUB_SHA" \
+            --output-dir target/example-benchmarks/candidate \
+            --build-dir target/example-benchmark-build/candidate
+
+      - name: Generate comparison report
+        run: |
+          python3 .github/scripts/compare_example_benchmarks.py \
+            target/example-benchmarks/candidate/results.json \
+            target/example-benchmarks/baseline/results.json \
+            --output target/example-benchmarks/report.md
+
+      - name: Comment on pull request
+        if: >-
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: example-benchmarks
+          path: target/example-benchmarks/report.md
+
+      - name: Mark benchmark comment as failed
+        if: >-
+          failure() &&
+          github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository
+        uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
+        with:
+          header: example-benchmarks
+          message: |
+            ## Miden examples benchmark
+
+            Benchmark generation failed for `${{ github.event.pull_request.head.sha }}`.
+            See the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: example-benchmark-results
+          path: target/example-benchmarks/
+          retention-days: 30
+          if-no-files-found: warn
