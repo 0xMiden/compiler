@@ -1,6 +1,6 @@
 [package]
-name = "miden-note-codec-macros"
-description = "Procedural macros for author-side Miden note codecs"
+name = "miden-note-bindings-macros"
+description = "Procedural macros for typed Miden note storage bindings"
 version = "0.14.0"
 rust-version.workspace = true
 authors.workspace = true
@@ -19,7 +19,6 @@ proc-macro = true
 doctest = false
 
 [dependencies]
-heck.workspace = true
 miden-note-schema.workspace = true
 miden-note-schema-codegen.workspace = true
 proc-macro2.workspace = true
@@ -28,4 +27,5 @@ quote.workspace = true
 syn = { workspace = true, features = ["visit-mut"] }
 
 [dev-dependencies]
+midenc-expect-test.workspace = true
 prettyplease = "0.2"

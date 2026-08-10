@@ -2,8 +2,8 @@
 //!
 //! [`prepare_assembler`] runs before assembly, applying the session's link inputs;
 //! [`post_process_package`] runs after it, attaching to the assembled package the sections
-//! and advice-map entries that codegen produced but the assembler knows nothing about. It also
-//! builds and attaches an author codec declared by project metadata.
+//! and advice-map entries that codegen produced but the assembler knows nothing about. For note
+//! targets, it also builds, validates, and attaches an author codec declared by project metadata.
 //!
 //! Both are shared: the [`Pipeline`](super::Pipeline) driver prepares its own assembler
 //! through the first, and every frontend that lowers HIR post-processes through the second —
@@ -67,10 +67,19 @@ pub(crate) fn post_process_package(
     component: &MasmComponent,
     sections: &midenc_frontend_wasm_metadata::PackageSections,
     context: &TargetAssemblyContext<'_>,
+    session: &Session,
 ) -> Result<(), Report> {
     use miden_assembly::serde::Serializable;
     use miden_mast_package::{Section, SectionId};
     use midenc_session::miden_project::TargetType;
+
+    let has_note_codec = crate::cargo::has_project_note_codec(context.package.metadata());
+    validate_note_codec_declaration(
+        has_note_codec,
+        context.target.ty,
+        sections.note_storage_schema.is_some(),
+        context.target.name.inner(),
+    )?;
 
     attach_account_component_metadata(package, sections.account_component_metadata.as_deref());
     attach_component_wit(package, sections.component_wit.as_deref());
@@ -92,8 +101,34 @@ pub(crate) fn post_process_package(
             .push(Section::new(SectionId::KERNEL, kernel_package.to_bytes()));
     }
 
-    attach_note_codec(package, context)?;
+    if has_note_codec {
+        attach_note_codec(package, context, session)?;
+    }
 
+    Ok(())
+}
+
+/// Validates the target and schema required by an author codec declaration.
+fn validate_note_codec_declaration(
+    has_note_codec: bool,
+    target_type: midenc_session::miden_project::TargetType,
+    has_note_storage_schema: bool,
+    target_name: &str,
+) -> Result<(), Report> {
+    use midenc_session::miden_project::TargetType;
+
+    if has_note_codec && target_type != TargetType::Note {
+        return Err(Report::msg(format!(
+            "`[package.metadata.note-codec-crate]` is only valid for note targets, but target \
+             '{target_name}' has type `{target_type}`"
+        )));
+    }
+    if has_note_codec && !has_note_storage_schema {
+        return Err(Report::msg(format!(
+            "note target '{target_name}' declares `[package.metadata.note-codec-crate]` but \
+             emitted no note storage schema; add one named-field `#[note]` struct"
+        )));
+    }
     Ok(())
 }
 
@@ -101,24 +136,25 @@ pub(crate) fn post_process_package(
 fn attach_note_codec(
     package: &mut Package,
     context: &TargetAssemblyContext<'_>,
+    session: &Session,
 ) -> Result<(), Report> {
     let Some(component) = crate::cargo::build_project_note_codec(
         context.package.as_ref(),
         context.manifest_path,
         context.project_root.as_ref(),
         package,
+        session,
     )?
     else {
         return Ok(());
     };
 
-    use miden_mast_package::{Section, SectionId};
+    use miden_mast_package::SectionId;
     let section_id =
         SectionId::custom(midenc_frontend_wasm_metadata::PACKAGE_NOTE_CODEC_SECTION_ID).map_err(
             |error| Report::msg(format!("the note codec package section id is invalid: {error}")),
         )?;
-    package.sections.push(Section::new(section_id, component));
-    Ok(())
+    set_unique_section(package, section_id, component, "note codec")
 }
 
 /// Attach the note storage schema to the assembled package.
@@ -126,13 +162,31 @@ fn attach_note_storage_schema(
     package: &mut Package,
     note_storage_schema: Option<&[u8]>,
 ) -> Result<(), Report> {
-    use miden_mast_package::{Section, SectionId};
+    use miden_mast_package::SectionId;
 
     if let Some(bytes) = note_storage_schema {
         let section_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID)
             .map_err(|err| Report::msg(format!("invalid note storage schema section id: {err}")))?;
-        package.sections.push(Section::new(section_id, bytes.to_vec()));
+        set_unique_section(package, section_id, bytes.to_vec(), "note storage schema")?;
     }
+    Ok(())
+}
+
+/// Adds one package section and rejects an existing section with the same identifier.
+fn set_unique_section(
+    package: &mut Package,
+    section_id: miden_mast_package::SectionId,
+    bytes: Vec<u8>,
+    description: &str,
+) -> Result<(), Report> {
+    use miden_mast_package::Section;
+
+    if package.sections.iter().any(|section| section.id == section_id) {
+        return Err(Report::msg(format!(
+            "cannot attach {description}: package already contains section `{section_id}`"
+        )));
+    }
+    package.sections.push(Section::new(section_id, bytes));
     Ok(())
 }
 
@@ -166,4 +220,45 @@ fn extend_rodata_advice_map(package: &mut Package, rodata: &[midenc_codegen_masm
 
     let advice_map = rodata.iter().map(|segment| (segment.digest, segment.to_elements())).collect();
     package.extend_advice_map(advice_map);
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::string::ToString;
+
+    use miden_mast_package::SectionId;
+    use midenc_session::miden_project::TargetType;
+
+    use super::*;
+
+    #[test]
+    fn unique_sections_reject_an_existing_identifier() {
+        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let id = SectionId::custom("test_unique_section").unwrap();
+
+        set_unique_section(&mut package, id.clone(), vec![1], "test section").unwrap();
+        let error = set_unique_section(&mut package, id, vec![2], "test section")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("already contains section `test_unique_section`"));
+    }
+
+    #[test]
+    fn codec_metadata_requires_a_note_target_with_a_schema() {
+        let wrong_target =
+            validate_note_codec_declaration(true, TargetType::Library, true, "library")
+                .unwrap_err()
+                .to_string();
+        assert!(wrong_target.contains("only valid for note targets"));
+
+        let missing_schema =
+            validate_note_codec_declaration(true, TargetType::Note, false, "schema-less")
+                .unwrap_err()
+                .to_string();
+        assert!(missing_schema.contains("emitted no note storage schema"));
+
+        validate_note_codec_declaration(true, TargetType::Note, true, "note").unwrap();
+        validate_note_codec_declaration(false, TargetType::Library, false, "library").unwrap();
+    }
 }

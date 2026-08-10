@@ -14,11 +14,8 @@ const WASM_TARGET: &str = "wasm32-unknown-unknown";
 
 #[test]
 fn minimal_codec_crate_encodes_to_zero_import_component() {
-    if !ensure_wasm_target() {
-        eprintln!(
-            "skipping component export test: rustup could not install {WASM_TARGET} in this \
-             environment"
-        );
+    if !wasm_target_is_installed() {
+        eprintln!("skipping component export test: {WASM_TARGET} is not installed");
         return;
     }
 
@@ -83,9 +80,9 @@ fn minimal_codec_crate_encodes_to_zero_import_component() {
     );
 }
 
-/// Checks the target and tries to install it before a graceful skip.
-fn ensure_wasm_target() -> bool {
-    let listed = match Command::new("rustup").args(["target", "list"]).output() {
+/// Returns true when rustup reports the component target as installed.
+fn wasm_target_is_installed() -> bool {
+    let output = match Command::new("rustup").args(["target", "list"]).output() {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
             eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
@@ -96,38 +93,7 @@ fn ensure_wasm_target() -> bool {
             return false;
         }
     };
-    if target_is_installed(&listed.stdout) {
-        return true;
-    }
-
-    let install = Command::new("rustup").args(["target", "add", WASM_TARGET]).output();
-    match install {
-        Ok(output) if output.status.success() => {}
-        Ok(output) => {
-            eprintln!(
-                "`rustup target add {WASM_TARGET}` failed:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-            return false;
-        }
-        Err(error) => {
-            eprintln!("could not run `rustup target add {WASM_TARGET}`: {error}");
-            return false;
-        }
-    }
-
-    match Command::new("rustup").args(["target", "list"]).output() {
-        Ok(output) => output.status.success() && target_is_installed(&output.stdout),
-        Err(error) => {
-            eprintln!("could not re-run `rustup target list`: {error}");
-            false
-        }
-    }
-}
-
-/// Returns true when rustup reports the primary component target as installed.
-fn target_is_installed(output: &[u8]) -> bool {
-    String::from_utf8_lossy(output)
+    String::from_utf8_lossy(&output.stdout)
         .lines()
         .any(|line| line.starts_with(WASM_TARGET) && line.contains("(installed)"))
 }

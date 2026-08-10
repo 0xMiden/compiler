@@ -1,48 +1,31 @@
 //! Macro expansion for generated author types and component dispatch.
 
-use std::path::Path;
-
-use miden_mast_package::Package;
-use miden_note_schema::NoteStorageSchema;
+use miden_note_schema::{NotePackageArtifact, NotePackageResolver, NoteStorageSchema};
 use miden_note_schema_codegen::generate_host_types;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
 use syn::{ItemImpl, LitStr, Type, visit_mut::VisitMut};
 
-use crate::{
-    artifact::{freshest_project_package, missing_project_package_message, resolve_manifest_path},
-    registry::{register_codec, register_schema, registered_codecs},
-};
+use crate::registry::{register_codec, register_schema, registered_codecs};
 
 /// The component world embedded in generated export glue.
 const NOTE_CODEC_WIT: &str = include_str!("../../wit/note-codec.wit");
 
 /// Expands a project-relative type generation request.
 pub(crate) fn from_project(input: &LitStr) -> syn::Result<TokenStream> {
-    let project_dir = resolve_manifest_path(&input.value(), input.span())?;
-    if !project_dir.is_dir() {
-        return Err(syn::Error::new(
-            input.span(),
-            format!("note project directory '{}' does not exist", project_dir.display()),
-        ));
-    }
-    let package_path = freshest_project_package(&project_dir, input.span())?.ok_or_else(|| {
-        syn::Error::new(input.span(), missing_project_package_message(&project_dir))
-    })?;
-    expand_package_path(&package_path, input.span())
+    let artifact = NotePackageResolver::new("miden-note-codec")
+        .from_project(&input.value())
+        .map_err(|error| syn::Error::new(input.span(), error.to_string()))?;
+    expand_package_artifact(&artifact, input.span())
 }
 
 /// Expands an exact package type generation request.
 pub(crate) fn from_package(input: &LitStr) -> syn::Result<TokenStream> {
-    let package_path = resolve_manifest_path(&input.value(), input.span())?;
-    if !package_path.is_file() {
-        return Err(syn::Error::new(
-            input.span(),
-            format!("Miden package '{}' does not exist", package_path.display()),
-        ));
-    }
-    expand_package_path(&package_path, input.span())
+    let artifact = NotePackageResolver::new("miden-note-codec")
+        .from_package(&input.value())
+        .map_err(|error| syn::Error::new(input.span(), error.to_string()))?;
+    expand_package_artifact(&artifact, input.span())
 }
 
 /// Expands a WIT string literal for internal tests.
@@ -53,24 +36,9 @@ pub(crate) fn from_wit_text(input: &LitStr) -> syn::Result<TokenStream> {
 }
 
 /// Loads one package, tracks it as an input, and expands its schema types.
-fn expand_package_path(package_path: &Path, span: Span) -> syn::Result<TokenStream> {
-    let package = Package::deserialize_from_file(package_path).map_err(|error| {
-        syn::Error::new(
-            span,
-            format!("failed to read Miden package '{}': {error}", package_path.display()),
-        )
-    })?;
-    let schema = NoteStorageSchema::from_package(&package).map_err(|error| {
-        syn::Error::new(
-            span,
-            format!(
-                "failed to read note storage schema from '{}': {error}",
-                package_path.display()
-            ),
-        )
-    })?;
-    let types = expand_schema(&schema, span)?;
-    let tracked_path = package_path.to_string_lossy();
+fn expand_package_artifact(artifact: &NotePackageArtifact, span: Span) -> syn::Result<TokenStream> {
+    let types = expand_schema(artifact.schema(), span)?;
+    let tracked_path = artifact.path().to_string_lossy();
     Ok(quote! {
         #[doc(hidden)]
         const _: &[u8] = include_bytes!(#tracked_path);
@@ -164,14 +132,36 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
         quote! {
             #fqn => {
                 let value = <#ty as ::miden_note_codec::AuthorTypeCodec>::parse(value)?;
-                Ok(::miden_note_codec::encode_felt_repr(&value))
+                let mut felts = Vec::new();
+                <#ty as __MidenNoteEncode>::__write_note_felts(
+                    &value,
+                    &mut ::miden_note_codec::__private::miden_field_repr::FeltWriter::new(
+                        &mut felts,
+                    ),
+                )
+                .map_err(|error| format!(
+                    "failed to encode codec type `{}`: {error}",
+                    #fqn,
+                ))?;
+                Ok(::miden_note_codec::felts_to_u64(&felts))
             }
         }
     });
     let display_arms = registrations.iter().map(|(fqn, ty)| {
         quote! {
             #fqn => {
-                let value = ::miden_note_codec::decode_felt_repr::<#ty>(value)?;
+                let felts = ::miden_note_codec::felts_from_u64(value)?;
+                let mut reader =
+                    ::miden_note_codec::__private::miden_field_repr::FeltReader::new(&felts);
+                let value = <#ty as __MidenNoteDecode>::__read_note_felts(&mut reader)
+                    .map_err(|error| format!(
+                        "failed to decode codec type `{}`: {error}",
+                        #fqn,
+                    ))?;
+                reader.ensure_eof().map_err(|error| format!(
+                    "codec type `{}` has trailing felt data: {error}",
+                    #fqn,
+                ))?;
                 Ok(<#ty as ::miden_note_codec::AuthorTypeCodec>::display(&value))
             }
         }
@@ -179,7 +169,18 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
     let validate_arms = registrations.iter().map(|(fqn, ty)| {
         quote! {
             #fqn => {
-                let value = ::miden_note_codec::decode_felt_repr::<#ty>(value)?;
+                let felts = ::miden_note_codec::felts_from_u64(value)?;
+                let mut reader =
+                    ::miden_note_codec::__private::miden_field_repr::FeltReader::new(&felts);
+                let value = <#ty as __MidenNoteDecode>::__read_note_felts(&mut reader)
+                    .map_err(|error| format!(
+                        "failed to decode codec type `{}`: {error}",
+                        #fqn,
+                    ))?;
+                reader.ensure_eof().map_err(|error| format!(
+                    "codec type `{}` has trailing felt data: {error}",
+                    #fqn,
+                ))?;
                 <#ty as ::miden_note_codec::AuthorTypeCodec>::validate(&value)
             }
         }

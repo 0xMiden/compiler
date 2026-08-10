@@ -1,11 +1,6 @@
 //! Schema-driven note storage tests on the mock chain.
 
-use std::{
-    env,
-    path::{Path, PathBuf},
-    process::{Command, Output},
-    sync::Arc,
-};
+use std::{process::Command, sync::Arc};
 
 use miden_client::{
     account::{AccountComponent, component::InitStorageData},
@@ -102,7 +97,11 @@ fn transfer_with_storage(
 
 #[test]
 fn dex_note_uses_embedded_schema_and_component_codec() {
-    let note_package = build_dex_note_package();
+    if !wasm_target_is_installed() {
+        eprintln!("skipping DEX note schema test: wasm32-unknown-unknown is not installed");
+        return;
+    }
+    let note_package = compile_rust_package("../../examples/dex-note", true);
     assert_package_section(&note_package, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID);
     assert_package_section(&note_package, PACKAGE_NOTE_CODEC_SECTION_ID);
     let schema = NoteStorageSchema::from_package(&note_package).unwrap();
@@ -148,39 +147,22 @@ fn p2id_note_builds_storage_without_a_component_codec() {
     );
 }
 
-/// Runs cargo-miden so the DEX package receives its codec section.
-fn build_dex_note_package() -> Arc<Package> {
-    let root = workspace_root();
-    let project = root.join("examples/dex-note");
-    let binary = cargo_miden_binary(&root);
-    let output = Command::new(binary)
-        .args(["miden", "build", "--release"])
-        .current_dir(&project)
-        .output()
-        .expect("failed to start cargo miden for dex-note");
-    assert_command_succeeded("cargo miden build for dex-note", &output);
-
-    Arc::new(
-        Package::deserialize_from_file(project.join("target/miden/release/dex-note.masp"))
-            .expect("failed to read the cargo-miden DEX package"),
-    )
-}
-
-/// Returns the cargo-miden binary built by the workspace test workflow.
-fn cargo_miden_binary(root: &Path) -> PathBuf {
-    let candidates = [root.join("target/debug/cargo-miden"), root.join("bin/cargo-miden")];
-    candidates.into_iter().find(|candidate| candidate.is_file()).unwrap_or_else(|| {
-        panic!("cargo-miden is not built; run `cargo build -p cargo-miden` before this test")
-    })
-}
-
-/// Returns the compiler workspace root.
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("integration-network must be under tests/")
-        .to_owned()
+/// Returns true when rustup reports the codec component target as installed.
+fn wasm_target_is_installed() -> bool {
+    let output = match Command::new("rustup").args(["target", "list"]).output() {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
+            return false;
+        }
+        Err(error) => {
+            eprintln!("could not run `rustup target list`: {error}");
+            return false;
+        }
+    };
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.starts_with("wasm32-unknown-unknown") && line.contains("(installed)"))
 }
 
 /// Asserts that a package carries one named custom section.
@@ -189,15 +171,5 @@ fn assert_package_section(package: &Package, name: &str) {
     assert!(
         package.sections.iter().any(|section| section.id == id),
         "package does not contain the `{name}` section"
-    );
-}
-
-/// Includes both output streams when a child process fails.
-fn assert_command_succeeded(action: &str, output: &Output) {
-    assert!(
-        output.status.success(),
-        "{action} failed\nstdout:\n{}\nstderr:\n{}",
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
     );
 }

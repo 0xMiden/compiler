@@ -35,8 +35,10 @@ impl<'a> NoteStorageBuilder<'a> {
     /// `case-name(<value>)` when the selected case has a payload.
     pub fn set(mut self, path: &str, value: impl AsRef<str>) -> Result<Self> {
         let segments = normalize_path(path)?;
-        resolve_path(self.schema.root(), &segments)?;
         let normalized = segments.join(".");
+        let ty = resolve_path(self.schema.root(), &segments)?;
+        let value = value.as_ref();
+        reject_unsupported_constructor_path(ty, &normalized, value, self.registry)?;
 
         if let Some(conflict) = self.values.keys().find(|existing| {
             *existing == &normalized
@@ -47,7 +49,7 @@ impl<'a> NoteStorageBuilder<'a> {
                 "path `{normalized}` conflicts with the existing value at `{conflict}`"
             )));
         }
-        self.values.insert(normalized, value.as_ref().to_owned());
+        self.values.insert(normalized, value.to_owned());
         Ok(self)
     }
 
@@ -65,6 +67,51 @@ impl<'a> NoteStorageBuilder<'a> {
             .map_err(|err| err.context("built note storage does not match its schema"))?;
         NoteStorage::new(felts)
             .map_err(|err| Error::new(format!("failed to create note storage: {err}")))
+    }
+}
+
+/// Rejects structural constructor shapes that need nested record text parsing.
+fn reject_unsupported_constructor_path(
+    ty: &SchemaType,
+    path: &str,
+    value: &str,
+    registry: &CodecRegistry,
+) -> Result<()> {
+    if ty.fqn().is_some_and(|fqn| registry.contains(fqn)) {
+        return Ok(());
+    }
+    match ty.kind() {
+        SchemaTypeKind::Option(payload)
+            if matches!(payload.kind(), SchemaTypeKind::Record(_))
+                && value.trim() != "none"
+                && !payload.fqn().is_some_and(|fqn| registry.contains(fqn)) =>
+        {
+            Err(Error::new(format!(
+                "path `{path}` selects an option with record payload `{}`; the string builder \
+                 does not support nested record constructors without a codec for that payload",
+                payload.fqn().or(payload.name()).unwrap_or("<anonymous record>")
+            )))
+        }
+        SchemaTypeKind::Variant(cases) => {
+            let (case_name, _) = parse_constructor(value)?;
+            let case_name = normalize_name(case_name);
+            let unsupported = cases.iter().find(|case| case.name() == case_name).and_then(|case| {
+                let payload = case.payload()?;
+                (matches!(payload.kind(), SchemaTypeKind::Record(_))
+                    && !payload.fqn().is_some_and(|fqn| registry.contains(fqn)))
+                .then_some(case.name())
+            });
+            if let Some(case_name) = unsupported {
+                Err(Error::new(format!(
+                    "path `{path}` selects variant case `{case_name}` with a record payload; the \
+                     string builder does not support nested record constructors without a codec \
+                     for that payload"
+                )))
+            } else {
+                Ok(())
+            }
+        }
+        _ => Ok(()),
     }
 }
 

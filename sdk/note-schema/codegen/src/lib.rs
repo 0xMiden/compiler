@@ -42,7 +42,8 @@ impl std::error::Error for CodegenError {}
 pub struct GeneratedTypes {
     tokens: TokenStream,
     root_ident: Ident,
-    has_custom_types: bool,
+    type_idents: Vec<Ident>,
+    has_nested_named_types: bool,
 }
 
 impl GeneratedTypes {
@@ -56,15 +57,22 @@ impl GeneratedTypes {
         &self.root_ident
     }
 
-    /// Returns true when the schema has named types other than its storage root and standard
-    /// leaves.
-    pub const fn has_custom_types(&self) -> bool {
-        self.has_custom_types
+    /// Returns every generated Rust type identifier in emission order.
+    pub fn type_idents(&self) -> &[Ident] {
+        &self.type_idents
+    }
+
+    /// Returns true when the schema has a generated named type below its storage root.
+    pub const fn has_nested_named_types(&self) -> bool {
+        self.has_nested_named_types
     }
 }
 
 /// Generates Rust host-profile types and structural felt conversion helpers.
 pub fn generate_host_types(schema: &NoteStorageSchema) -> Result<GeneratedTypes, CodegenError> {
+    schema
+        .validate_native_leaf_shapes()
+        .map_err(|error| CodegenError::new(error.to_string()))?;
     let root = schema.root();
     let root_fqn = root
         .fqn()
@@ -99,7 +107,16 @@ pub fn generate_host_types(schema: &NoteStorageSchema) -> Result<GeneratedTypes,
         .iter()
         .map(|definition| generate_type(definition, &rust_names))
         .collect::<Result<Vec<_>, _>>()?;
-    let has_custom_types = definitions
+    let type_idents = definitions
+        .iter()
+        .map(|definition| {
+            rust_names
+                .get(definition.fqn().expect("generated types have an FQN"))
+                .expect("generated types have a Rust name")
+                .clone()
+        })
+        .collect();
+    let has_nested_named_types = definitions
         .iter()
         .any(|definition| definition.fqn().is_some_and(|fqn| fqn != root_fqn));
 
@@ -109,7 +126,8 @@ pub fn generate_host_types(schema: &NoteStorageSchema) -> Result<GeneratedTypes,
             #(#items)*
         },
         root_ident,
-        has_custom_types,
+        type_idents,
+        has_nested_named_types,
     })
 }
 

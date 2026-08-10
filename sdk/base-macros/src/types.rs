@@ -35,6 +35,11 @@ impl TypeRef {
             dependency.add_required_core_type_imports(imports);
         }
     }
+
+    /// Returns true when this type is an SDK core-type record.
+    pub(crate) fn is_sdk_core_record(&self) -> bool {
+        !self.is_custom && sdk_core_record_names().contains(&self.wit_name)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -331,6 +336,17 @@ fn wit_type_name(ty: WitType) -> &'static str {
 fn sdk_core_type_names() -> &'static HashSet<String> {
     static NAMES: OnceLock<HashSet<String>> = OnceLock::new();
     NAMES.get_or_init(|| parse_wit_type_names(SDK_WIT_SOURCE))
+}
+
+/// Returns the record names declared by the SDK core-types WIT document.
+fn sdk_core_record_names() -> &'static HashSet<String> {
+    static NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+    NAMES.get_or_init(|| {
+        SDK_WIT_SOURCE
+            .lines()
+            .filter_map(|line| extract_wit_type_name(line.trim_start(), "record"))
+            .collect()
+    })
 }
 
 fn parse_wit_type_names(source: &str) -> HashSet<String> {

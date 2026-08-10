@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use miden_mast_package::{Package, SectionId};
+use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
@@ -185,25 +185,10 @@ pub struct NoteStorageSchema {
 impl NoteStorageSchema {
     /// Reads and resolves the note storage schema section from a Miden package.
     pub fn from_package(package: &Package) -> Result<Self> {
-        let section_id =
-            SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).map_err(|err| {
-                Error::new(format!(
-                    "invalid note storage schema section id \
-                     `{PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID}`: {err}"
-                ))
-            })?;
-        let bytes = package
-            .sections
-            .iter()
-            .find(|section| section.id == section_id)
-            .ok_or_else(|| {
-                Error::new(format!(
-                    "package does not contain the `{PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID}` \
-                     section"
-                ))
-            })?
-            .data
-            .as_ref();
+        let bytes = crate::section::unique_package_section(
+            package,
+            PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
+        )?;
         let unpadded_len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
         let text = core::str::from_utf8(&bytes[..unpadded_len]).map_err(|err| {
             Error::new(format!("note storage schema section is not valid UTF-8: {err}"))
@@ -229,6 +214,7 @@ impl NoteStorageSchema {
         let storage_id = interface.types.get("storage").copied().ok_or_else(|| {
             Error::new("the `note-storage` interface does not define the `storage` type alias")
         })?;
+        validate_resolved_core_types(&resolve)?;
         let root = ModelBuilder::new(&resolve).build(Type::Id(storage_id))?;
         if !matches!(root.kind, SchemaTypeKind::Record(_)) {
             return Err(Error::new(format!(
@@ -237,11 +223,13 @@ impl NoteStorageSchema {
             )));
         }
 
-        Ok(Self {
+        let schema = Self {
             wit_text: wit_text.to_owned(),
             root,
             codecs: CodecRegistry::default(),
-        })
+        };
+        schema.validate_native_leaf_shapes()?;
+        Ok(schema)
     }
 
     /// Returns the unpadded WIT document.
@@ -252,6 +240,19 @@ impl NoteStorageSchema {
     /// Returns the root storage record.
     pub const fn root(&self) -> &SchemaType {
         &self.root
+    }
+
+    /// Verifies native host mappings against the pinned standard type shapes.
+    pub fn validate_native_leaf_shapes(&self) -> Result<()> {
+        validate_model_type_shapes(&self.root, &mut HashSet::new())
+    }
+
+    /// Returns all custom named types reachable from the storage root.
+    #[cfg(feature = "codec-component")]
+    pub(crate) fn custom_type_fqns(&self) -> HashSet<String> {
+        let mut fqns = HashSet::new();
+        collect_custom_type_fqns(&self.root, &mut fqns);
+        fqns
     }
 
     /// Returns the root felt layout.
@@ -295,6 +296,203 @@ impl NoteStorageSchema {
         registry: &CodecRegistry,
     ) -> Result<DecodedValue> {
         crate::value::decode(&self.root, storage, registry)
+    }
+}
+
+/// Verifies the raw embedded core-types definitions before the model applies native mappings.
+fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
+    let Some((_, package_id)) = resolve.package_names.iter().find(|(name, _)| {
+        name.namespace == "miden"
+            && name.name == "base"
+            && name.version.as_ref().is_some_and(|version| version.to_string() == "1.0.0")
+    }) else {
+        return Ok(());
+    };
+    let package = &resolve.packages[*package_id];
+    let Some(interface_id) = package.interfaces.get("core-types").copied() else {
+        return Ok(());
+    };
+    let interface = &resolve.interfaces[interface_id];
+
+    for (name, fields) in [
+        ("felt", &["inner"][..]),
+        ("word", &["a", "b", "c", "d"][..]),
+        ("account-id", &["prefix", "suffix"][..]),
+        ("asset-amount", &["inner"][..]),
+    ] {
+        let Some(type_id) = interface.types.get(name).copied() else {
+            continue;
+        };
+        let type_id = follow_resolved_aliases(resolve, type_id)?;
+        let TypeDefKind::Record(record) = &resolve.types[type_id].kind else {
+            return Err(core_shape_error(name, fields));
+        };
+        if record.fields.len() != fields.len()
+            || record
+                .fields
+                .iter()
+                .zip(fields)
+                .any(|(field, expected)| field.name != *expected)
+        {
+            return Err(core_shape_error(name, fields));
+        }
+        if name == "felt" {
+            if !resolves_to_primitive(resolve, record.fields[0].ty, Type::F32)? {
+                return Err(core_shape_error(name, fields));
+            }
+        } else {
+            for field in &record.fields {
+                if !resolves_to_fqn(resolve, field.ty, crate::FELT_FQN)? {
+                    return Err(core_shape_error(name, fields));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Follows raw WIT aliases to their structural definition.
+fn follow_resolved_aliases(resolve: &Resolve, mut id: TypeId) -> Result<TypeId> {
+    let mut visited = HashSet::new();
+    loop {
+        if !visited.insert(id) {
+            return Err(Error::new("cyclic WIT type aliases are not supported"));
+        }
+        match resolve.types[id].kind {
+            TypeDefKind::Type(Type::Id(next)) => id = next,
+            _ => return Ok(id),
+        }
+    }
+}
+
+/// Returns true when a raw WIT type resolves to one primitive.
+fn resolves_to_primitive(resolve: &Resolve, mut ty: Type, expected: Type) -> Result<bool> {
+    let mut visited = HashSet::new();
+    loop {
+        match ty {
+            Type::Id(id) => {
+                if !visited.insert(id) {
+                    return Err(Error::new("cyclic WIT type aliases are not supported"));
+                }
+                let TypeDefKind::Type(next) = resolve.types[id].kind else {
+                    return Ok(false);
+                };
+                ty = next;
+            }
+            primitive => return Ok(primitive == expected),
+        }
+    }
+}
+
+/// Returns true when a raw WIT type resolves to one canonical FQN.
+fn resolves_to_fqn(resolve: &Resolve, ty: Type, expected: &str) -> Result<bool> {
+    let Type::Id(id) = ty else {
+        return Ok(false);
+    };
+    let id = follow_resolved_aliases(resolve, id)?;
+    Ok(ModelBuilder::new(resolve).type_fqn(id)?.as_deref() == Some(expected))
+}
+
+/// Verifies mapped type shapes in the owned schema model.
+fn validate_model_type_shapes(ty: &SchemaType, seen: &mut HashSet<String>) -> Result<()> {
+    if let Some(fqn) = ty.fqn()
+        && !seen.insert(fqn.to_owned())
+    {
+        return Ok(());
+    }
+
+    match ty.fqn() {
+        Some(crate::FELT_FQN) if !matches!(ty.kind(), SchemaTypeKind::Felt) => {
+            return Err(core_shape_error("felt", &["inner"]));
+        }
+        Some(crate::WORD_FQN) => {
+            validate_model_record(ty, "word", &["a", "b", "c", "d"], crate::FELT_FQN)?
+        }
+        Some(crate::ACCOUNT_ID_FQN) => {
+            validate_model_record(ty, "account-id", &["prefix", "suffix"], crate::FELT_FQN)?
+        }
+        Some(crate::ASSET_AMOUNT_FQN) => {
+            validate_model_record(ty, "asset-amount", &["inner"], crate::FELT_FQN)?
+        }
+        _ => {}
+    }
+
+    match ty.kind() {
+        SchemaTypeKind::Record(fields) => {
+            for field in fields {
+                validate_model_type_shapes(field.ty(), seen)?;
+            }
+        }
+        SchemaTypeKind::Option(payload) => validate_model_type_shapes(payload, seen)?,
+        SchemaTypeKind::Variant(cases) => {
+            for payload in cases.iter().filter_map(SchemaCase::payload) {
+                validate_model_type_shapes(payload, seen)?;
+            }
+        }
+        SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => {}
+    }
+    Ok(())
+}
+
+/// Verifies one mapped record in the owned schema model.
+fn validate_model_record(
+    ty: &SchemaType,
+    name: &str,
+    expected_fields: &[&str],
+    expected_field_fqn: &str,
+) -> Result<()> {
+    let SchemaTypeKind::Record(fields) = ty.kind() else {
+        return Err(core_shape_error(name, expected_fields));
+    };
+    if fields.len() != expected_fields.len()
+        || fields.iter().zip(expected_fields).any(|(field, expected)| {
+            field.name() != *expected || field.ty().fqn() != Some(expected_field_fqn)
+        })
+    {
+        return Err(core_shape_error(name, expected_fields));
+    }
+    Ok(())
+}
+
+/// Creates the canonical core-type shape diagnostic.
+fn core_shape_error(name: &str, fields: &[&str]) -> Error {
+    let field_shape = if name == "felt" {
+        "inner: f32".to_owned()
+    } else {
+        fields
+            .iter()
+            .map(|field| format!("{field}: felt"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    Error::new(format!(
+        "embedded WIT type `miden:base/core-types@1.0.0.{name}` does not match the pinned \
+         canonical shape `record {name} {{ {field_shape} }}`"
+    ))
+}
+
+/// Collects schema-owned types and excludes the pinned SDK core-types package.
+#[cfg(feature = "codec-component")]
+fn collect_custom_type_fqns(ty: &SchemaType, fqns: &mut HashSet<String>) {
+    if let Some(fqn) = ty.fqn()
+        && !fqn.starts_with("miden:base/core-types@")
+        && !fqn.starts_with("miden:base/core-types.")
+    {
+        fqns.insert(fqn.to_owned());
+    }
+    match ty.kind() {
+        SchemaTypeKind::Record(fields) => {
+            for field in fields {
+                collect_custom_type_fqns(field.ty(), fqns);
+            }
+        }
+        SchemaTypeKind::Option(payload) => collect_custom_type_fqns(payload, fqns),
+        SchemaTypeKind::Variant(cases) => {
+            for payload in cases.iter().filter_map(SchemaCase::payload) {
+                collect_custom_type_fqns(payload, fqns);
+            }
+        }
+        SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => {}
     }
 }
 
