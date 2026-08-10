@@ -714,8 +714,7 @@ impl<'a> ManifestClosure<'a> {
                 // file, both accepted spellings) is workspace-root-relative, not
                 // manifest-dir-relative — mirror the classifier and resolve it through the
                 // member list first.
-                if let Some(member_manifest) = workspace_member_manifest(workspace, path.inner())
-                {
+                if let Some(member_manifest) = workspace_member_manifest(workspace, path.inner()) {
                     self.visit_project(&member_manifest, Some(dependency.name().as_ref()));
                 } else {
                     self.visit_path_dependency(dependency, manifest_dir, path.inner());
@@ -736,8 +735,7 @@ impl<'a> ManifestClosure<'a> {
                 }
             }
             DependencyVersionScheme::Workspace { member, .. } => {
-                if let Some(manifest_path) = workspace_member_manifest(workspace, member.inner())
-                {
+                if let Some(manifest_path) = workspace_member_manifest(workspace, member.inner()) {
                     self.visit_project(&manifest_path, Some(dependency.name().as_ref()));
                 } else {
                     log::debug!(
@@ -1304,7 +1302,8 @@ mod tests {
         let root = temp.path();
         std::fs::write(
             root.join("miden-project.toml"),
-            "[workspace]\nmembers = [\"dep\", \"app\"]\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+            "[workspace]\nmembers = [\"dep\", \"app\"]\n\n[workspace.package]\nversion = \
+             \"1.0.0\"\n",
         )
         .unwrap();
         write_project(&root.join("dep"), "dep", "");
