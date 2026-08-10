@@ -68,7 +68,7 @@ fn is_fingerprint(name: &str) -> bool {
 /// The extension of a permanent sibling lock file for a fingerprint directory.
 const BUILD_LOCK_EXTENSION: &str = "lock";
 
-/// Prepares a filesystem package cache and returns its lifetime shared lock when available.
+/// Prepares a filesystem package cache and returns its lifetime builder lock when available.
 ///
 /// Deletion is defense in depth. The primary invalidation is in the FPI expansion itself: it
 /// records `option_env!("MIDENC_PACKAGE_CACHE")`, whose value carries the fingerprinted cache
@@ -76,12 +76,15 @@ const BUILD_LOCK_EXTENSION: &str = "lock";
 /// the `include_bytes!` targets of pre-fingerprint expansions, bounds stale package directories,
 /// and takes dead caches out of circulation promptly.
 ///
-/// A build holds a shared `packages/<fingerprint>.lock` lock for its registry's lifetime. Pruning
-/// takes the corresponding exclusive lock while deleting the sibling directory. The permanent
-/// lock lives outside that directory and is acquired before the directory is created, closing the
+/// A build holds the exclusive `packages/<fingerprint>.lock` lock for its registry's lifetime,
+/// so identical-fingerprint builds serialize: the second waits for the first instead of sharing
+/// the directory and rewriting the same package files with possibly divergent bytes. Pruning
+/// takes the same lock non-blockingly while deleting the sibling directory. The permanent lock
+/// lives outside that directory and is acquired before the directory is created, closing the
 /// create-before-lock, unlock-before-delete, and unlink/recreate inode-ABA windows.
 ///
-/// `Some` means the shared liveness lock is held, even when a later preparation step degraded.
+/// `Some` means the exclusive liveness lock is held, even when a later preparation step
+/// degraded.
 /// `None` means locking was skipped: the path is unowned, or opening/locking the lock file
 /// failed. Every leg keeps the cache configured and the cache directory created when possible,
 /// so package publication proceeds against the expected path and reports any concrete
@@ -106,7 +109,7 @@ pub(crate) fn prepare_and_lock_filesystem_cache(filesystem_cache: &Path) -> Opti
         return None;
     };
     if !create_current_filesystem_cache(filesystem_cache) {
-        // The shared lock is already held — keep it. A later publication may still recreate
+        // The exclusive lock is already held — keep it. A later publication may still recreate
         // the directory (its writer creates parent directories), and the lock is what stops a
         // concurrent pruner from classifying that recreated cache as dead. Only the sweep is
         // skipped in this degraded mode.
@@ -146,7 +149,7 @@ fn create_filesystem_cache_parent(parent: &Path) -> bool {
     true
 }
 
-/// Creates or recreates the current cache directory after its shared lock is held.
+/// Creates or recreates the current cache directory after its builder lock is held.
 fn create_current_filesystem_cache(filesystem_cache: &Path) -> bool {
     if let Err(err) = fs::create_dir_all(filesystem_cache) {
         log::warn!(
@@ -159,7 +162,7 @@ fn create_current_filesystem_cache(filesystem_cache: &Path) -> bool {
     true
 }
 
-/// Opens the current fingerprint's sibling lock file and holds a shared builder lock.
+/// Opens the current fingerprint's sibling lock file and holds the exclusive builder lock.
 ///
 /// Waiting is deadlock-free: pruners only try exclusive locks and never wait while holding one,
 /// while a builder waits only for its own lock and holds no other lock. The wait is therefore
@@ -184,7 +187,7 @@ fn acquire_filesystem_cache_lock(filesystem_cache: &Path) -> Option<File> {
         }
     };
 
-    if let Err(err) = lock.lock_shared() {
+    if let Err(err) = lock.lock() {
         log::warn!(
             target: "package-registry",
             "failed to lock filesystem package cache '{}': {err}; continuing without a liveness lock",
@@ -443,7 +446,7 @@ fn record_options(
         optimize,
         debug,
         output_types: _,
-        search_paths: _,
+        search_paths,
         link_libraries,
         link_modules: _,
         sysroot,
@@ -480,9 +483,12 @@ fn record_options(
 
     // Deliberate exclusions are classified here so adding an `Options` field forces a choice.
     // Output paths, naming, diagnostics, printing, and stop flags do not select dependency
-    // packages. Search paths, link modules, remapped paths, custom flags, and similar
-    // content-affecting controls self-heal through the in-run package rewrite; the package-name
-    // set itself is driven by the manifest closure recorded below.
+    // packages. Link modules, remapped paths, custom flags, and similar content-affecting
+    // controls self-heal through the in-run package rewrite; the package-name set itself is
+    // driven by the manifest closure recorded below. Search paths ARE recorded: `-l` resolution
+    // scans them for the first stem match, so they select packages the same way the recorded
+    // sysroot and per-library paths do — and same-fingerprint builds must agree on selection,
+    // because they serialize on one directory and trust each other's files.
     transcript.field("options.profile", profile.as_bytes());
     transcript.field("options.optimize", opt_level_name(*optimize).as_bytes());
     transcript.field("options.debug", debug_info_name(*debug).as_bytes());
@@ -524,6 +530,16 @@ fn record_options(
         transcript.field("options.link_library.name", name.as_bytes());
         transcript.optional_bytes_field("options.link_library.path", path.as_deref());
         transcript.field("options.link_library.linkage", linkage.as_bytes());
+    }
+
+    let mut search_paths = search_paths
+        .iter()
+        .map(|path| path.as_os_str().as_encoded_bytes().to_vec())
+        .collect::<Vec<_>>();
+    search_paths.sort();
+    transcript.field("options.search_paths.count", &(search_paths.len() as u64).to_le_bytes());
+    for path in search_paths {
+        transcript.field("options.search_path", &path);
     }
 
     transcript.optional_bytes_field(
@@ -890,7 +906,7 @@ mod tests {
             .truncate(false)
             .open(&live_precreation_lock_path)
             .unwrap();
-        live_precreation_lock.try_lock_shared().unwrap();
+        live_precreation_lock.try_lock().unwrap();
         fs::write(&unrelated_file, b"unrelated").unwrap();
 
         let current_lock =
@@ -957,7 +973,7 @@ mod tests {
         let builder_lock = completed_rx
             .recv_timeout(Duration::from_secs(5))
             .unwrap()
-            .expect("the builder must acquire a shared lock after pruning completes");
+            .expect("the builder must acquire the lock after pruning completes");
         builder.join().unwrap();
         assert!(current.is_dir(), "the builder must recreate the pruned cache directory");
         let exclusive_contender =
@@ -1025,7 +1041,7 @@ mod tests {
             .truncate(false)
             .open(&stale_lock_path)
             .unwrap();
-        stale_lock.try_lock_shared().unwrap();
+        stale_lock.try_lock().unwrap();
 
         let current_lock =
             prepare_and_lock_filesystem_cache(&current).expect("current cache must be locked");
@@ -1035,21 +1051,24 @@ mod tests {
             .write(true)
             .open(filesystem_cache_lock_path(&current))
             .unwrap();
-        current_contender.try_lock_shared().unwrap();
+        assert!(
+            matches!(current_contender.try_lock_shared(), Err(TryLockError::WouldBlock)),
+            "the builder lock is exclusive; nothing else may attach to a live cache"
+        );
         assert!(stale.exists(), "a live sibling cache must not be pruned");
 
         drop(stale_lock);
+        drop(current_lock);
         let second_lock = prepare_and_lock_filesystem_cache(&current)
-            .expect("same-input builders share the lock");
+            .expect("the next build must acquire the released lock");
         assert!(!stale.exists(), "the stale cache must be pruned after its build exits");
         assert!(stale_lock_path.exists(), "the stale sibling lock must remain permanent");
 
         drop(second_lock);
-        drop(current_lock);
     }
 
     #[test]
-    fn same_fingerprint_contender_remains_live_after_first_builder_exits() {
+    fn same_fingerprint_contender_waits_for_the_first_builder() {
         let temp = TempDir::new().unwrap();
         let parent = temp.path().join("miden").join("packages");
         let shared = parent.join("fedcba9876543210");
@@ -1057,17 +1076,30 @@ mod tests {
 
         let first =
             prepare_and_lock_filesystem_cache(&shared).expect("first builder must lock the cache");
-        let contender = prepare_and_lock_filesystem_cache(&shared)
-            .expect("same-input contender must share the lock");
-        drop(first);
+
+        let (completed_tx, completed_rx) = mpsc::channel();
+        let thread_cache = shared.clone();
+        let contender = std::thread::spawn(move || {
+            completed_tx.send(prepare_and_lock_filesystem_cache(&thread_cache)).unwrap();
+        });
+        assert!(
+            completed_rx.recv_timeout(Duration::from_millis(100)).is_err(),
+            "an identical-fingerprint contender must wait for the first builder"
+        );
 
         let different_lock = prepare_and_lock_filesystem_cache(&different)
-            .expect("different-input builder must lock its cache");
+            .expect("a different-input builder must lock its own cache without waiting");
+        assert!(shared.exists(), "the waiting contender's cache must not be pruned");
 
-        assert!(shared.exists(), "the live contender's cache must not be pruned");
+        drop(first);
+        let contender_lock = completed_rx
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .expect("the contender must acquire the lock once the first builder exits");
+        contender.join().unwrap();
 
         drop(different_lock);
-        drop(contender);
+        drop(contender_lock);
     }
 
     #[test]
@@ -1240,6 +1272,20 @@ mod tests {
         let mut optimized = options.clone();
         optimized.optimize = OptLevel::Max;
         assert_ne!(baseline, test_fingerprint(&optimized, temp.path(), "1.2.3", "abc123"));
+    }
+
+    #[test]
+    fn fingerprint_changes_with_search_paths() {
+        let temp = TempDir::new().unwrap();
+        write_project(temp.path(), "root", "");
+        let options = Options::default();
+        let baseline = test_fingerprint(&options, temp.path(), "1.2.3", "abc123");
+
+        // Search paths select which package a bare `-l` name resolves to, so they are part of
+        // the fingerprint like the sysroot and per-library paths feeding the same decision.
+        let mut with_search_path = options.clone();
+        with_search_path.search_paths.push(temp.path().join("libs"));
+        assert_ne!(baseline, test_fingerprint(&with_search_path, temp.path(), "1.2.3", "abc123"));
     }
 
     #[test]

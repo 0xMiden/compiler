@@ -40,7 +40,7 @@ pub struct HybridPackageRegistry {
     artifacts: FxHashMap<PackageId, BTreeMap<miden_package_registry::Version, Arc<Package>>>,
     #[cfg(any(test, feature = "std"))]
     filesystem_cache: Option<std::path::PathBuf>,
-    /// Holds the current fingerprint's shared liveness lock for the registry's lifetime.
+    /// Holds the current fingerprint's exclusive liveness lock for the registry's lifetime.
     ///
     /// The file is never read; dropping it releases this cache directory for pruning. `None`
     /// means locking was intentionally skipped or cache preparation degraded after an error.
@@ -427,9 +427,10 @@ mod tests {
         assert!(current.is_dir());
         assert!(registry.filesystem_cache_lock.is_some());
         let lock_path = current.with_extension("lock");
-        let contender = OpenOptions::new().read(true).write(true).open(&lock_path).unwrap();
-        contender.try_lock_shared().unwrap();
-        let stale_checker = OpenOptions::new().read(true).write(true).open(lock_path).unwrap();
-        assert!(matches!(stale_checker.try_lock(), Err(std::fs::TryLockError::WouldBlock)));
+        let contender = OpenOptions::new().read(true).write(true).open(lock_path).unwrap();
+        assert!(
+            matches!(contender.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
+            "the registry must hold the exclusive builder lock for its lifetime"
+        );
     }
 }
