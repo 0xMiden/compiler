@@ -12,6 +12,13 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### `#[note]` reserves `get_entrypoint_root`
+
+The `#[note]` macro now generates a `get_entrypoint_root()` associated method on the note type so
+constructors can commit to the note script's MAST root. Rename any inherent item with that name,
+including methods, `#[note_constructor]` methods, associated constants, and items declared in a
+separate impl block.
+
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
 Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,

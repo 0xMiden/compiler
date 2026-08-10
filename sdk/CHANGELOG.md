@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration and breaking changes
 
+- `#[note]` reserves the inherent item name `get_entrypoint_root` for its generated note-script
+  root accessor. Rename existing methods, note constructors, or associated constants with that
+  name; see [MIGRATION.md](./sdk/MIGRATION.md).
 - `#[note]` structs now also implement `felt_repr::ToFeltRepr` (mirroring the generated storage
   decoding), so note constructors can serialize the note inputs when computing the note
   recipient. Note input struct fields must now implement `ToFeltRepr` in addition to

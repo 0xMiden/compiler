@@ -6,7 +6,7 @@ use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::{ToTokens, format_ident, quote};
 use syn::{
     Attribute, FnArg, ImplItem, ImplItemFn, Item, ItemImpl, ItemStruct, PathArguments, Type,
-    parse_macro_input, spanned::Spanned,
+    ext::IdentExt, parse_macro_input, spanned::Spanned,
 };
 
 use crate::{
@@ -25,6 +25,7 @@ const NOTE_CONSTRUCTOR_ATTR: &str = "note_constructor";
 const NOTE_CONSTRUCTOR_MARKER_ATTR: &str = "miden_note_constructor_requires_note";
 const NOTE_CONSTRUCTOR_DOC_MARKER: &str = "__miden_note_constructor_marker";
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
+const ENTRYPOINT_ROOT_METHOD: &str = "get_entrypoint_root";
 
 /// Expands `#[note]` for either a note input `struct` or an inherent `impl` block.
 pub(crate) fn expand_note(
@@ -278,6 +279,10 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         }
     };
 
+    if let Err(err) = reject_entrypoint_root_item_collision(&item_impl) {
+        return err.into_compile_error();
+    }
+
     let (entrypoint_fn, mut item_impl) = match extract_entrypoint(item_impl) {
         Ok(val) => val,
         Err(err) => return err.into_compile_error(),
@@ -289,7 +294,8 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
     };
 
     let entrypoint_ident = &entrypoint_fn.sig.ident;
-    let export_name = entrypoint_ident.to_string().to_kebab_case();
+    let export_name = rust_ident_to_wit_name(entrypoint_ident);
+    let guest_entrypoint_ident = wit_bindgen_guest_ident(&export_name, entrypoint_ident.span());
     let (constructors, constructor_type_imports) =
         match collect_note_constructors(&mut item_impl, entrypoint_ident, &export_name) {
             Ok(val) => val,
@@ -418,7 +424,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         pub struct #guest_struct_ident;
 
         impl #guest_trait_path for #guest_struct_ident {
-            fn #entrypoint_ident(arg: ::miden::Word) {
+            fn #guest_entrypoint_ident(arg: ::miden::Word) {
                 #note_init
                 #account_instantiation
                 #call
@@ -437,6 +443,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
 /// exactly when a `#[note_script]` entrypoint exists. `#[inline(always)]` keeps the compiled
 /// output identical to calling the SDK plumbing directly, even in unoptimized builds.
 fn render_entrypoint_root_method(note_ty: &syn::TypePath) -> TokenStream2 {
+    let method_ident = syn::Ident::new(ENTRYPOINT_ROOT_METHOD, Span::call_site());
     quote! {
         impl #note_ty {
             /// Returns the MAST root digest of this note's script.
@@ -451,11 +458,36 @@ fn render_entrypoint_root_method(note_ty: &syn::TypePath) -> TokenStream2 {
             /// assembly fails with a call-graph cycle error. Inside a running note script, use
             /// `active_note::get_script_root()` instead.
             #[inline(always)]
-            pub fn get_entrypoint_root() -> ::miden::Word {
+            pub fn #method_ident() -> ::miden::Word {
                 ::miden::note::__entrypoint_root()
             }
         }
     }
+}
+
+/// Rejects inherent items that would collide with the note-script root accessor generated below.
+///
+/// Rust permits inherent methods to be split across impl blocks, so the macro can diagnose only
+/// collisions in the annotated block. The reserved name is also documented in the migration guide
+/// for methods declared by other inherent impls.
+fn reject_entrypoint_root_item_collision(item_impl: &ItemImpl) -> syn::Result<()> {
+    for item in &item_impl.items {
+        let ident = match item {
+            ImplItem::Const(item) => &item.ident,
+            ImplItem::Fn(item) => &item.sig.ident,
+            _ => continue,
+        };
+        if ident.unraw() == ENTRYPOINT_ROOT_METHOD {
+            return Err(syn::Error::new(
+                ident.span(),
+                format!(
+                    "`#[note]` reserves the inherent item name `{ENTRYPOINT_ROOT_METHOD}` for the \
+                     generated note-script root accessor; rename this item"
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[derive(Clone)]
@@ -471,6 +503,7 @@ struct AccountParam {
 /// marked `#[note_constructor]` are exported; unmarked methods stay plain Rust helpers.
 struct NoteConstructor {
     fn_ident: syn::Ident,
+    guest_fn_ident: syn::Ident,
     doc_attrs: Vec<Attribute>,
     params: Vec<ConstructorParam>,
     return_info: ConstructorReturn,
@@ -569,7 +602,7 @@ fn collect_note_constructors(
         // The generated bindings implement a trait whose method name wit-bindgen derives by
         // snake-casing the WIT export name; a non-snake-case Rust name would make the generated
         // impl miss the trait method (E0407/E0046 deep inside generated code).
-        let ident_string = sig.ident.to_string();
+        let ident_string = sig.ident.unraw().to_string();
         if ident_string != ident_string.to_snake_case() {
             return Err(syn::Error::new(
                 sig.ident.span(),
@@ -595,7 +628,7 @@ fn collect_note_constructors(
             type_ref.add_required_core_type_imports(&mut type_imports);
             // WIT parameter names are kebab-cased, so distinct Rust identifiers can collide;
             // catch that here instead of surfacing a WIT parse error from the generated bindings.
-            let wit_param_name = pat_ident.ident.to_string().to_kebab_case();
+            let wit_param_name = rust_ident_to_wit_name(&pat_ident.ident);
             if !wit_param_names.insert(wit_param_name.clone()) {
                 return Err(syn::Error::new(
                     pat_ident.ident.span(),
@@ -640,7 +673,7 @@ fn collect_note_constructors(
         // WIT export names must be unique across the interface: a constructor can collide with
         // the entrypoint export or with a duplicate method definition. Catch that here instead
         // of surfacing a WIT parse error from the generated bindings.
-        let wit_name = sig.ident.to_string().to_kebab_case();
+        let wit_name = rust_ident_to_wit_name(&sig.ident);
         if wit_name == entrypoint_export_name || !wit_names.insert(wit_name.clone()) {
             return Err(syn::Error::new(
                 sig.ident.span(),
@@ -653,6 +686,7 @@ fn collect_note_constructors(
         }
 
         constructors.push(NoteConstructor {
+            guest_fn_ident: wit_bindgen_guest_ident(&wit_name, sig.ident.span()),
             wit_name,
             fn_ident: sig.ident.clone(),
             doc_attrs,
@@ -726,6 +760,7 @@ fn render_constructor_guest_method(
     note_ty: &syn::TypePath,
 ) -> TokenStream2 {
     let fn_ident = &constructor.fn_ident;
+    let guest_fn_ident = &constructor.guest_fn_ident;
     let doc_attrs = &constructor.doc_attrs;
     let params: Vec<TokenStream2> = constructor
         .params
@@ -748,13 +783,13 @@ fn render_constructor_guest_method(
     match &constructor.return_info {
         ConstructorReturn::Unit => quote! {
             #(#doc_attrs)*
-            fn #fn_ident(#(#params),*) {
+            fn #guest_fn_ident(#(#params),*) {
                 #note_ty::#fn_ident(#(#args),*);
             }
         },
         ConstructorReturn::Type { user_ty, .. } => quote! {
             #(#doc_attrs)*
-            fn #fn_ident(#(#params),*) -> #user_ty {
+            fn #guest_fn_ident(#(#params),*) -> #user_ty {
                 #note_ty::#fn_ident(#(#args),*)
             }
         },
@@ -766,15 +801,37 @@ fn constructor_wit_signature(constructor: &NoteConstructor) -> String {
     let params = constructor
         .params
         .iter()
-        .map(|param| format!("{}: {}", param.wit_param_name, param.wit_type_name))
+        .map(|param| {
+            format!("{}: {}", explicit_wit_identifier(&param.wit_param_name), param.wit_type_name)
+        })
         .collect::<Vec<_>>()
         .join(", ");
+    let wit_name = explicit_wit_identifier(&constructor.wit_name);
     match &constructor.return_info {
-        ConstructorReturn::Unit => format!("{}: func({params});", constructor.wit_name),
+        ConstructorReturn::Unit => format!("{wit_name}: func({params});"),
         ConstructorReturn::Type { wit_type_name, .. } => {
-            format!("{}: func({params}) -> {wit_type_name};", constructor.wit_name)
+            format!("{wit_name}: func({params}) -> {wit_type_name};")
         }
     }
+}
+
+/// Converts a Rust identifier to its canonical WIT spelling before WIT escaping is applied.
+fn rust_ident_to_wit_name(ident: &syn::Ident) -> String {
+    ident.unraw().to_string().to_kebab_case()
+}
+
+/// Returns the Rust trait-method identifier generated by wit-bindgen for a canonical WIT name.
+fn wit_bindgen_guest_ident(wit_name: &str, span: Span) -> syn::Ident {
+    syn::Ident::new(&wit_bindgen_rust::to_rust_ident(wit_name), span)
+}
+
+/// Renders WIT's explicit identifier form.
+///
+/// Explicit identifiers are valid for both keywords and ordinary identifiers. Using this form for
+/// every Rust-derived name keeps generated interfaces valid without duplicating WIT's evolving
+/// keyword list in the macro.
+fn explicit_wit_identifier(name: &str) -> String {
+    format!("%{name}")
 }
 
 fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
@@ -838,7 +895,7 @@ fn parse_entrypoint_signature(
     // The generated bindings implement a trait whose method name wit-bindgen derives by
     // snake-casing the WIT export name; a non-snake-case Rust name would make the generated
     // impl miss the trait method (E0407/E0046 deep inside generated code).
-    let ident_string = sig.ident.to_string();
+    let ident_string = sig.ident.unraw().to_string();
     if ident_string != ident_string.to_snake_case() {
         return Err(syn::Error::new(
             sig.ident.span(),
@@ -1079,7 +1136,7 @@ fn build_note_script_wit(
         let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
         interface.line(&format!("use core-types.{{{imports}}};"));
         interface.blank_line();
-        interface.line(&format!("{export_name}: func(arg: word);"));
+        interface.line(&format!("{}: func(arg: word);", explicit_wit_identifier(export_name)));
         for constructor in constructors {
             interface.line(&constructor_wit_signature(constructor));
         }
@@ -1320,8 +1377,8 @@ mod tests {
             &[],
         );
 
-        assert!(wit.contains("execute: func(arg: word);"));
-        assert!(!wit.contains("run: func(arg: word);"));
+        assert!(wit.contains("%execute: func(arg: word);"));
+        assert!(!wit.contains("%run: func(arg: word);"));
     }
 
     #[test]
@@ -1360,10 +1417,10 @@ mod tests {
         );
 
         assert!(wit.contains(
-            "create: func(target: account-id, tag: tag, note-type: note-type, serial-num: word) \
-             -> note-idx;"
+            "%create: func(%target: account-id, %tag: tag, %note-type: note-type, %serial-num: \
+             word) -> note-idx;"
         ));
-        assert!(wit.contains("execute: func(arg: word);"));
+        assert!(wit.contains("%execute: func(arg: word);"));
         assert!(
             wit.contains("use core-types.{account-id, note-idx, note-type, tag, word};"),
             "unexpected core-types imports in: {wit}"
@@ -1381,6 +1438,87 @@ mod tests {
                 "constructor markers must be removed from output"
             );
         }
+    }
+
+    #[test]
+    fn note_script_wit_escapes_rust_derived_identifiers() {
+        let mut item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                #[note_constructor]
+                pub fn r#type(result: Word) {}
+
+                pub fn result(self, _arg: Word) {}
+            }
+        };
+        let entrypoint_ident = format_ident!("result");
+        let (constructors, type_imports) =
+            collect_note_constructors(&mut item_impl, &entrypoint_ident, "result").unwrap();
+
+        let wit = build_note_script_wit(
+            "miden:my-note",
+            &semver::Version::new(1, 0, 0),
+            "my-note",
+            "my-note-world",
+            "result",
+            &constructors,
+            &type_imports,
+            &[],
+        );
+
+        assert!(wit.contains("%result: func(arg: word);"), "unexpected WIT: {wit}");
+        assert!(wit.contains("%type: func(%result: word);"), "unexpected WIT: {wit}");
+        wit_bindgen_core::wit_parser::UnresolvedPackageGroup::parse("inline", &wit)
+            .expect("explicit WIT identifiers must parse for keywords and raw Rust identifiers");
+
+        let constructor = constructors.first().unwrap();
+        assert_eq!(constructor.fn_ident.to_string(), "r#type");
+        assert_eq!(constructor.guest_fn_ident, "type_");
+        let rendered =
+            render_constructor_guest_method(constructor, &parse_quote!(MyNote)).to_string();
+        assert!(rendered.contains("fn type_"), "unexpected forwarding method: {rendered}");
+        assert!(
+            rendered.contains("MyNote :: r#type"),
+            "the forwarding method must call the user's raw Rust identifier: {rendered}"
+        );
+    }
+
+    #[test]
+    fn note_impl_rejects_entrypoint_root_method_collision() {
+        let item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                pub fn get_entrypoint_root() -> Word {
+                    unimplemented!()
+                }
+
+                #[note_script]
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+
+        let err = reject_entrypoint_root_item_collision(&item_impl)
+            .expect_err("the generated accessor name must be reserved");
+        assert!(
+            err.to_string()
+                .contains("reserves the inherent item name `get_entrypoint_root`")
+        );
+        assert!(err.to_string().contains("rename this item"));
+    }
+
+    #[test]
+    fn note_impl_rejects_entrypoint_root_associated_const_collision() {
+        let item_impl: ItemImpl = parse_quote! {
+            impl MyNote {
+                const get_entrypoint_root: Word = Word::default();
+
+                #[note_script]
+                pub fn execute(self, _arg: Word) {}
+            }
+        };
+
+        let err = reject_entrypoint_root_item_collision(&item_impl)
+            .expect_err("an associated constant cannot share the generated accessor name");
+        assert!(err.to_string().contains("reserves the inherent item name"));
+        assert!(err.to_string().contains("rename this item"));
     }
 
     #[test]

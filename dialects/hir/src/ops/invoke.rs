@@ -229,6 +229,10 @@ impl InferTypeOpInterface for ExecFpi {
 /// records a use of the callee, keeping it linked into the program.
 ///
 /// The op is effect-free: it only materializes an assembly-time constant.
+///
+/// A private callee may be referenced only from its defining symbol table, which lowers to the
+/// same MASM module. Cross-module users must target a callee declared `internal` or `public`;
+/// MASM legalization rejects a private cross-module target rather than widening its visibility.
 #[derive(EffectOpInterface)]
 #[operation(
     dialect = HirDialect,
@@ -1084,8 +1088,9 @@ builtin.module public @test {
 
         // Re-parse in a fresh context: the printing context already owns the `@test` symbols.
         let reparse_context = Test::default().context_rc();
+        // Keep a caller-owned context handle alive through verification and parsed-op destruction.
         parse::parse_any(
-            ParserConfig::new(reparse_context),
+            ParserConfig::new(reparse_context.clone()),
             Uri::new("procedure_root_prints_and_reparses_with_intent_attribute.hir"),
             &printed,
         )

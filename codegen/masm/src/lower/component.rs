@@ -709,6 +709,14 @@ impl MasmComponentBuilder<'_> {
     ) -> Result<(), Report> {
         use masm::{Instruction as Inst, InvocationTarget, Op};
 
+        // Validate exactly the operations this builder will emit. In particular, a world may
+        // contain declaration-only or memory-owning siblings which codegen deliberately omits;
+        // invalid roots in those items must not mask the established omission diagnostic.
+        crate::legalization::validate_procedure_roots(component)?;
+        for module in supporting {
+            crate::legalization::validate_procedure_roots(module.borrow().as_operation())?;
+        }
+
         // If a component-level init is required, emit code to initialize the heap before any other
         // initialization code.
         if self.component.init.is_some() {
@@ -964,10 +972,9 @@ impl MasmComponentBuilder<'_> {
         // The submodule declaration's visibility decides whether the module's public procedures
         // belong to the public surface of the assembled package: the assembler derives that
         // surface from the modules reachable from the root through *public* submodule
-        // declarations. Core modules are private in HIR, so their procedures — including ones
-        // promoted to public so cross-module `procref`/`exec` can reach them, such as function
-        // table callees — stay resolvable package-internally (a private submodule is visible to
-        // its parent and siblings) without becoming part of the package's interface.
+        // declarations. Core modules are private in HIR, so their public procedures stay
+        // resolvable package-internally (a private submodule is visible to its parent and siblings)
+        // without becoming part of the package's interface.
         //
         // Two of the shapes reaching here have no component boundary to speak of, and in both
         // the modules *are* the artifact's interface, so they keep public submodules. A world
