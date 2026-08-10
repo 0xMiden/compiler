@@ -174,8 +174,10 @@ impl<'a> ComponentTranslator<'a> {
             &self.lifted_export_names,
         )?;
 
-        let sections =
-            collect_package_sections(self.nested_modules.iter().map(|(_, module)| module))?;
+        let sections = collect_package_sections(
+            self.nested_modules.iter().map(|(_, module)| module),
+            self.context.diagnostics(),
+        )?;
 
         let output = FrontendOutput {
             component: self.result.component,

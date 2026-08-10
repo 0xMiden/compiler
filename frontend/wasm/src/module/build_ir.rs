@@ -52,7 +52,8 @@ pub fn translate_module_as_component(
     if let Some(name_override) = config.override_name.as_ref() {
         parsed_module.module.set_name_override(name_override.clone());
     }
-    let sections = collect_package_sections(core::iter::once(&parsed_module))?;
+    let sections =
+        collect_package_sections(core::iter::once(&parsed_module), context.diagnostics())?;
     let module_types = module_types_builder;
 
     // If a world wasn't provided to us, create one

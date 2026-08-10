@@ -6,7 +6,7 @@ use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{
     FrontendMetadata, PackageSections, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
     WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
-    decode_section,
+    count_top_level_wit_packages, decode_section,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
@@ -134,61 +134,12 @@ fn validate_component_wit_section(
     }
 }
 
-/// Counts top-level `package <id>;` declarations in WIT source.
-///
-/// Comments — including nested `/* */` block comments — are stripped first so commented-out
-/// declarations are not counted, and nested package declarations (`package <id> { ... }`, whose
-/// `{` precedes any `;`) are excluded. WIT is whitespace-insensitive, so other items may follow
-/// the declaration on the same line. A well-formed embedded WIT source contains exactly one
-/// top-level declaration; a higher count indicates concatenated sections from multiple component
-/// implementations.
-fn count_top_level_wit_packages(wit: &str) -> usize {
-    strip_wit_comments(wit)
-        .lines()
-        .map(str::trim)
-        .filter(|line| {
-            line.starts_with("package ")
-                && line.find(';').is_some_and(|semi| !line[..semi].contains('{'))
-        })
-        .count()
-}
-
-/// Strips `//` line comments and nested `/* */` block comments, preserving line structure.
-fn strip_wit_comments(wit: &str) -> String {
-    let mut stripped = String::with_capacity(wit.len());
-    let mut chars = wit.chars().peekable();
-    let mut block_depth = 0usize;
-    while let Some(ch) = chars.next() {
-        match ch {
-            '/' if block_depth == 0 && chars.peek() == Some(&'/') => {
-                for next in chars.by_ref() {
-                    if next == '\n' {
-                        stripped.push('\n');
-                        break;
-                    }
-                }
-            }
-            '/' if chars.peek() == Some(&'*') => {
-                chars.next();
-                block_depth += 1;
-            }
-            '*' if block_depth > 0 && chars.peek() == Some(&'/') => {
-                chars.next();
-                block_depth -= 1;
-            }
-            '\n' => stripped.push('\n'),
-            _ if block_depth == 0 => stripped.push(ch),
-            _ => {}
-        }
-    }
-    stripped
-}
-
 /// Merges the package-section payloads of all core modules that feed one component.
 ///
 /// Each payload is a singleton of the final package, so at most one module may supply it.
 pub(crate) fn collect_package_sections<'a, 'data: 'a>(
     modules: impl Iterator<Item = &'a ParsedModule<'data>>,
+    diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<PackageSections> {
     let mut account_component_metadata = None;
     let mut component_wit = None;
@@ -197,11 +148,13 @@ pub(crate) fn collect_package_sections<'a, 'data: 'a>(
             &mut account_component_metadata,
             module.account_component_metadata_bytes,
             WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+            diagnostics,
         )?;
         merge_section_payload(
             &mut component_wit,
             module.component_wit_bytes,
             WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+            diagnostics,
         )?;
     }
     Ok(PackageSections {
@@ -215,14 +168,18 @@ fn merge_section_payload<'data>(
     merged: &mut Option<&'data [u8]>,
     payload: Option<&'data [u8]>,
     section_name: &str,
+    diagnostics: &DiagnosticsHandler,
 ) -> WasmResult<()> {
     if let Some(payload) = payload
         && merged.replace(payload).is_some()
     {
-        return Err(Report::from(WasmError::Unsupported(format!(
-            "found multiple '{section_name}' custom sections across the component's core modules; \
-             only one is allowed per component"
-        ))));
+        return Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: found multiple '{section_name}' custom sections across the \
+                 component's core modules; only one is allowed per component"
+            ))
+            .into_report());
     }
     Ok(())
 }

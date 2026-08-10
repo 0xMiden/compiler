@@ -77,6 +77,13 @@ pub(crate) fn generate_frontend_link_section(entries: &[FrontendMetadata]) -> To
 /// rejects with a dedicated diagnostic when it parses the section.
 pub(crate) fn generate_wit_link_section(wit_source: &str) -> TokenStream2 {
     let wit_source = normalize_embedded_wit(wit_source);
+    // The Wasm frontend rejects a section whose top-level package count is not one; pin the
+    // producing half of that cross-crate contract here.
+    debug_assert_eq!(
+        midenc_frontend_wasm_metadata::count_top_level_wit_packages(&wit_source),
+        1,
+        "embedded component WIT must contain exactly one top-level package declaration"
+    );
     let wit_bytes = wit_source.as_bytes();
     let wit_len = wit_bytes.len();
     let encoded_bytes = Literal::byte_string(wit_bytes);
@@ -95,10 +102,10 @@ pub(crate) fn generate_wit_link_section(wit_source: &str) -> TokenStream2 {
 
 /// Wraps embedded WIT in newlines so section boundaries stay line boundaries.
 ///
-/// The linker concatenates identically named custom sections byte-wise; without the padding a
-/// blob missing a trailing newline would glue the next blob's `package ...;` declaration onto its
-/// last line, hiding the concatenation from the frontend's duplicate-implementation detector
-/// (`count_top_level_wit_packages` in `midenc-frontend-wasm`), which scans line-wise.
+/// The linker concatenates identically named custom sections byte-wise. The frontend's
+/// duplicate-implementation detector (`count_top_level_wit_packages` in
+/// `midenc-frontend-wasm-metadata`) scans token-wise and no longer needs the boundary, but the
+/// padding keeps glued payloads readable and remains cheap insurance for other consumers.
 fn normalize_embedded_wit(wit_source: &str) -> String {
     let mut normalized =
         String::with_capacity(wit_source.len() + 2 - usize::from(wit_source.starts_with('\n')));
