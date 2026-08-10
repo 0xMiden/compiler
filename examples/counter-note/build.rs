@@ -61,6 +61,9 @@ fn main() {
         // Populate the cache. Dependency packages publish before the root target compiles, so
         // even a failing build (for example, this crate is mid-edit) usually leaves the
         // dependency packages usable; the macros report anything that is genuinely missing.
+        // The cache is still exported below on failure: analyzing against the last built
+        // packages beats failing the whole check, at the accepted cost that a broken
+        // dependency keeps its previous interface until it builds again.
         let build = run_cargo_miden(&manifest_dir, "build");
         if !build.status.success() {
             println!(

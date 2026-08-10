@@ -35,6 +35,13 @@ contract crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PAT
 `CARGO_MIDEN` environment variable to use a specific `cargo-miden` binary instead. A missing
 tool fails the build script with an install hint.
 
+Two transient failure modes are accepted by design and heal on the next check. When the nested
+`cargo miden build` fails (for example, a dependency is mid-edit and broken), the script emits
+a cargo warning and still exports the cache, so the editor keeps analyzing against the last
+successfully built dependency packages instead of failing outright. And a concurrent
+midenc-driven build with different build options may prune the cache directory while an editor
+check is consuming it; the affected check fails once and the next one repopulates the cache.
+
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
 Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,
@@ -308,8 +315,10 @@ consolidate it into one self-contained file if the component is consumed as a Mi
 
 Note for the editor workflow: previously, `cargo check` (or rust-analyzer) of the dependency crate
 regenerated its WIT under `target/generated-wit` as a macro side effect. Dependency WIT now comes
-from the compiled package, so run `cargo miden build` for the dependency once (and again after
-changing its interface) before checking a dependent crate.
+from the compiled package. A consumer crate carrying the contract `build.rs` (see "Contract
+crates gain a `build.rs`" above) rebuilds its dependencies automatically; without the script,
+run `cargo miden build` for the dependency once (and again after changing its interface) before
+checking a dependent crate.
 
 ## 0.13.0 -> 0.13.1
 

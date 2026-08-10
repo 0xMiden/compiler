@@ -9,7 +9,10 @@
 //! [`RustProjectFrontend`](super::frontends::rust::RustProjectFrontend),
 //! [`WasmFrontend`](super::frontends::wasm::WasmFrontend) and
 //! [`HirFrontend`](super::frontends::hir::HirFrontend) alike. Keeping one copy is what makes
-//! every route link the same inputs and emit the same sections.
+//! every route link the same inputs and emit the same sections — with one caveat: a `.hir`
+//! input carries no Wasm custom sections to extract, so recompiling an emitted HIR artifact
+//! produces a package without the account-metadata and WIT sections its Wasm-derived
+//! counterpart has.
 
 use alloc::vec::Vec;
 

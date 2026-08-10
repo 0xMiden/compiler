@@ -1,4 +1,6 @@
-//! Utilities for resolving WIT paths from Cargo.toml manifest metadata.
+//! Resolution of the WIT sources a crate's bindings are generated from: the bundled SDK
+//! prelude, the compiled packages of the `miden-project.toml` dependencies, and the crate's
+//! local `wit/` directory.
 
 use std::{
     env, fs,
