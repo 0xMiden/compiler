@@ -418,11 +418,13 @@ impl Session {
         {
             let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
                 let inherited_rustflags = std::env::var_os("RUSTFLAGS");
+                let inherited_cargo_encoded_rustflags = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
                 let inherited_rustup_toolchain = std::env::var_os("RUSTUP_TOOLCHAIN");
                 package_cache::fingerprint(
                     &self.options,
                     &project_dir,
                     inherited_rustflags.as_deref(),
+                    inherited_cargo_encoded_rustflags.as_deref(),
                     inherited_rustup_toolchain.as_deref(),
                     MIDENC_BUILD_VERSION,
                     MIDENC_BUILD_REV,

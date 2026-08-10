@@ -350,6 +350,7 @@ pub(crate) fn fingerprint(
     options: &Options,
     project_dir: &Path,
     inherited_rustflags: Option<&OsStr>,
+    inherited_cargo_encoded_rustflags: Option<&OsStr>,
     inherited_rustup_toolchain: Option<&OsStr>,
     compiler_version: &str,
     compiler_revision: &str,
@@ -357,7 +358,13 @@ pub(crate) fn fingerprint(
     let mut transcript = Transcript::new();
     transcript.field("compiler.version", compiler_version.as_bytes());
     transcript.field("compiler.revision", compiler_revision.as_bytes());
-    record_options(&mut transcript, options, inherited_rustflags, inherited_rustup_toolchain);
+    record_options(
+        &mut transcript,
+        options,
+        inherited_rustflags,
+        inherited_cargo_encoded_rustflags,
+        inherited_rustup_toolchain,
+    );
 
     let source_manager = DefaultSourceManager::default();
     let mut manifests = ManifestClosure::new(&mut transcript, &source_manager);
@@ -421,6 +428,7 @@ fn record_options(
     transcript: &mut Transcript,
     options: &Options,
     inherited_rustflags: Option<&OsStr>,
+    inherited_cargo_encoded_rustflags: Option<&OsStr>,
     inherited_rustup_toolchain: Option<&OsStr>,
 ) {
     let Options {
@@ -496,9 +504,13 @@ fn record_options(
         "options.inherited_rustflags",
         inherited_rustflags.map(OsStr::as_encoded_bytes),
     );
-    // Inherited `CARGO_ENCODED_RUSTFLAGS` is deliberately NOT fingerprinted: `cargo_env` sets
-    // the variable authoritatively for every nested build, so the inherited value has no effect
-    // on what gets built.
+    // Both inherited spellings are fingerprinted: the nested build merges them into its composed
+    // flag list (the encoded variable taking cargo's precedence over the plain one), so either
+    // one changes what gets built.
+    transcript.optional_bytes_field(
+        "options.inherited_cargo_encoded_rustflags",
+        inherited_cargo_encoded_rustflags.map(OsStr::as_encoded_bytes),
+    );
     transcript.optional_bytes_field(
         "options.inherited_rustup_toolchain",
         inherited_rustup_toolchain.map(OsStr::as_encoded_bytes),
@@ -1116,7 +1128,7 @@ mod tests {
 
     /// Computes a test fingerprint with a fresh source manager.
     fn test_fingerprint(options: &Options, project_dir: &Path, version: &str, rev: &str) -> String {
-        fingerprint(options, project_dir, None, None, version, rev)
+        fingerprint(options, project_dir, None, None, None, version, rev)
     }
 
     #[test]
@@ -1236,11 +1248,32 @@ mod tests {
         write_project(temp.path(), "root", "");
         let options = Options::default();
 
-        let missing = fingerprint(&options, temp.path(), None, None, "1.2.3", "abc123");
+        let missing = fingerprint(&options, temp.path(), None, None, None, "1.2.3", "abc123");
         let present = fingerprint(
             &options,
             temp.path(),
             Some(OsStr::new("-C target-feature=+bulk-memory")),
+            None,
+            None,
+            "1.2.3",
+            "abc123",
+        );
+
+        assert_ne!(missing, present);
+    }
+
+    #[test]
+    fn fingerprint_changes_with_inherited_cargo_encoded_rustflags() {
+        let temp = TempDir::new().unwrap();
+        write_project(temp.path(), "root", "");
+        let options = Options::default();
+
+        let missing = fingerprint(&options, temp.path(), None, None, None, "1.2.3", "abc123");
+        let present = fingerprint(
+            &options,
+            temp.path(),
+            None,
+            Some(OsStr::new("-Ctarget-feature=+bulk-memory\u{1f}--cfg=fixture")),
             None,
             "1.2.3",
             "abc123",
@@ -1255,10 +1288,11 @@ mod tests {
         write_project(temp.path(), "root", "");
         let options = Options::default();
 
-        let missing = fingerprint(&options, temp.path(), None, None, "1.2.3", "abc123");
+        let missing = fingerprint(&options, temp.path(), None, None, None, "1.2.3", "abc123");
         let present = fingerprint(
             &options,
             temp.path(),
+            None,
             None,
             Some(OsStr::new("nightly-2026-08-05")),
             "1.2.3",
