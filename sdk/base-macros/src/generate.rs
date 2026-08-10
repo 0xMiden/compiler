@@ -557,7 +557,8 @@ fn load_wit_sources(
 
     // Load WIT definitions embedded in the compiled packages of Miden path dependencies. The
     // `.masp` paths are recorded like read files so rustc recompiles when a dependency package
-    // changes.
+    // changes — and so is a `wit` manifest-key override file, which in that flow is the only
+    // source of the dependency's interface.
     for source in &config.dependency_sources {
         let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
             Error::new(
@@ -570,6 +571,9 @@ fn load_wit_sources(
         })?;
         packages.push(pkg);
         files.push(source.package_path.clone());
+        if let Some(wit_override_path) = &source.wit_override_path {
+            files.push(wit_override_path.clone());
+        }
     }
 
     // Load the crate's own `wit/` directory last so it can reference the dependency packages.

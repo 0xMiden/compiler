@@ -266,8 +266,8 @@ pub(crate) struct MidenDependency {
     pub(crate) name: String,
     /// Path of the compiled `.masp` package the dependency metadata was read from.
     pub(crate) package_path: PathBuf,
-    /// The deserialized package, shared so FPI procedure-root extraction reuses the exact read
-    /// the package identity was verified against.
+    /// The deserialized package, shared so FPI procedure-root extraction reuses the exact bytes
+    /// this resolution read.
     pub(crate) package: Arc<miden_mast_package::Package>,
     /// Exported WIT interfaces loaded from the dependency metadata.
     pub(crate) interfaces: Vec<DependencyInterface>,
@@ -440,13 +440,24 @@ pub(crate) fn parse_dependency_wit_source(wit_source: &str) -> Result<Dependency
     // inline interfaces, or interfaces in an unversioned package) rather than failing the whole
     // dependency: an incidental anonymous export must not break a referenced *named* interface. A
     // reference to a skipped interface still fails later, via `find_interface`, with a precise
-    // "does not export a WIT interface named ..." message.
+    // "does not export a WIT interface named ..." message. The skip reasons are kept so that a
+    // WIT whose *only* exports were skipped names its actual problem instead of "no interface".
+    let mut skip_reasons = Vec::new();
     let interfaces = exported_interfaces(&resolve, package_id)
         .into_iter()
-        .filter_map(|interface_id| dependency_interface_metadata(&resolve, interface_id).ok())
+        .filter_map(|interface_id| {
+            dependency_interface_metadata(&resolve, interface_id)
+                .map_err(|reason| skip_reasons.push(reason))
+                .ok()
+        })
         .collect::<Vec<_>>();
     if interfaces.is_empty() {
-        return Err("no exported WIT interface found in the embedded dependency WIT".to_string());
+        let mut message =
+            "no exported WIT interface found in the embedded dependency WIT".to_string();
+        if !skip_reasons.is_empty() {
+            message.push_str(&format!("; skipped exports: {}", skip_reasons.join("; ")));
+        }
+        return Err(message);
     }
 
     Ok(DependencyWit { interfaces })
@@ -949,6 +960,75 @@ world empty-export-world {
         assert_eq!(dependencies[0].interfaces[0].import, "miden:basic-wallet/basic-wallet@0.1.0");
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn wit_override_path_is_recorded_for_build_tracking() {
+        // The override file is the only interface source in this flow; consumers register it as
+        // a build input, so the resolution must report which file it selected.
+        let fixture_root = empty_fixture_root();
+        let dependency_root = fixture_root.join("wit-world-fixture-dep");
+        fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
+        write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
+        let override_path = fixture_root.join("overrides/basic-wallet.wit");
+        fs::create_dir_all(override_path.parent().unwrap())
+            .expect("override fixture directory must be created");
+        fs::write(&override_path, BASIC_WALLET_GENERATED_WIT)
+            .expect("override fixture must be written");
+        let package = package_with_dependency_and_wit_key(dependency_root, &override_path);
+
+        let sources = crate::dependency_package::with_test_package_cache_dir(
+            Some(&fixture_root.join("package-cache")),
+            || crate::dependency_package::collect_dependency_wit_sources(&fixture_root, &package),
+        )
+        .unwrap();
+
+        let canonical_override =
+            fs::canonicalize(&override_path).expect("override fixture must canonicalize");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].wit_override_path.as_deref(), Some(canonical_override.as_path()));
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn malformed_wit_key_shape_reports_a_type_error() {
+        // A `dependencies` value that is not a table must be a hard error, not a silently absent
+        // key that degrades into the missing-WIT (or bypasses the conflict) diagnostic.
+        let fixture_root = dependency_fixture_root();
+        let dependency_root = fixture_root.clone();
+        let mut miden_metadata = miden_project::Metadata::default();
+        miden_metadata.insert(
+            MidenSpan::unknown(Arc::<str>::from("dependencies")),
+            MidenSpan::unknown(Value::String("not-a-table".to_string())),
+        );
+        let mut metadata = miden_project::MetadataSet::default();
+        metadata.insert(MidenSpan::unknown(Arc::<str>::from("miden")), miden_metadata);
+        let package = package_with_dependency(dependency_root).with_metadata(metadata);
+
+        let error = collect_with_cache(&fixture_root, &package)
+            .expect_err("a malformed dependencies table must fail expansion");
+        let message = error.to_string();
+
+        assert!(
+            message.contains("expected package.metadata.miden.dependencies to be a table"),
+            "unexpected error: {message}"
+        );
+
+        fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
+    }
+
+    #[test]
+    fn unversioned_wit_package_names_the_version_requirement() {
+        // The only export is skipped for a missing version suffix; the error must say so instead
+        // of the generic "no exported WIT interface found ... export an interface" advice.
+        let wit =
+            "package foo:bar;\n\ninterface baz {\n  f: func();\n}\n\nworld w {\n  export baz;\n}\n";
+
+        let err = parse_dependency_wit_source(wit).unwrap_err();
+
+        assert!(err.contains("no exported WIT interface found"), "unexpected error: {err}");
+        assert!(err.contains("missing a version suffix"), "unexpected error: {err}");
     }
 
     #[test]

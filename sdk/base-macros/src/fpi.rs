@@ -1494,8 +1494,8 @@ fn procedure_root_tokens(root: ProcedureRoot) -> TokenStream2 {
 
 /// Extracts exported procedure roots from a selected dependency's package.
 ///
-/// The package was deserialized (and identity-checked) once during dependency resolution and is
-/// reused here rather than re-read from disk.
+/// The package was deserialized once during dependency resolution and is reused here rather
+/// than re-read from disk.
 fn load_dependency(
     dependency: SelectedDependency,
     trait_ident: syn::Ident,

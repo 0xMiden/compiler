@@ -30,11 +30,16 @@ pub(crate) struct DependencyWitSource {
     /// Path of the compiled `.masp` package the WIT was read from.
     pub(crate) package_path: PathBuf,
     /// The deserialized package, shared so later consumers (FPI procedure-root extraction) reuse
-    /// the exact read the package id was verified against.
+    /// the exact bytes this resolution read.
     pub(crate) package: Arc<Package>,
     /// The component WIT source: embedded in the package, or supplied by the dependency's `wit`
     /// manifest key when the package embeds none.
     pub(crate) wit: String,
+    /// The `.wit` file the `wit` manifest key selected, when the WIT is not embedded.
+    ///
+    /// Recorded so consumers can register the file as a build input: it is the only source of
+    /// the dependency's interface in that flow, and an edit to it must re-run the expansion.
+    pub(crate) wit_override_path: Option<PathBuf>,
 }
 
 /// Reads the WIT of every Miden path dependency's compiled package.
@@ -67,67 +72,119 @@ pub(crate) fn collect_dependency_wit_sources(
                 let resolved =
                     resolve_dependency_package(dependency.name().as_ref(), &dependency_root)?;
                 let wit_override = dependency_wit_override(package, dependency.name().as_ref())?;
-                let wit = match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
-                    (Some(_), Some(_)) => {
-                        return Err(Error::new(
-                            error_span,
-                            format!(
-                                "dependency '{}': package '{}' embeds component WIT, but \
-                                 miden-project.toml also sets \
-                                 package.metadata.miden.dependencies.{}.wit; remove the `wit` key \
-                                 — embedded WIT is authoritative",
-                                dependency.name(),
-                                resolved.path.display(),
-                                dependency.name(),
-                            ),
-                        ));
-                    }
-                    (Some(wit), None) => wit,
-                    (None, Some(wit_override)) => {
-                        read_wit_override(&wit_override, manifest_dir, dependency.name().as_ref())?
-                    }
-                    (None, None) => {
-                        return Err(Error::new(
-                            error_span,
-                            missing_embedded_wit_message(
-                                &resolved.path,
+                let (wit, wit_override_path) =
+                    match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
+                        (Some(_), Some(_)) => {
+                            return Err(Error::new(
+                                error_span,
+                                format!(
+                                    "dependency '{}': package '{}' embeds component WIT, but \
+                                     miden-project.toml also sets \
+                                     package.metadata.miden.dependencies.{}.wit; remove the `wit` \
+                                     key — embedded WIT is authoritative",
+                                    dependency.name(),
+                                    resolved.path.display(),
+                                    dependency.name(),
+                                ),
+                            ));
+                        }
+                        (Some(wit), None) => (wit, None),
+                        (None, Some(wit_override)) => {
+                            let (wit, override_path) = read_wit_override(
+                                &wit_override,
+                                manifest_dir,
                                 dependency.name().as_ref(),
-                            ),
-                        ));
-                    }
-                };
+                            )?;
+                            (wit, Some(override_path))
+                        }
+                        (None, None) => {
+                            return Err(Error::new(
+                                error_span,
+                                missing_embedded_wit_message(
+                                    &resolved.path,
+                                    dependency.name().as_ref(),
+                                ),
+                            ));
+                        }
+                    };
                 sources.push(DependencyWitSource {
                     name: dependency.name().to_string(),
                     root: dependency_root,
                     package_path: resolved.path,
                     package: resolved.package,
                     wit,
+                    wit_override_path,
                 });
             }
             // Registry dependencies are MASM base libraries (`miden-core`, `miden-protocol`)
-            // consumed at link time only, so they carry no component WIT. Git and workspace
-            // schemes are not yet supported at macro expansion time (TODO(pauls)).
-            _ => continue,
+            // consumed at link time only, so they carry no component WIT.
+            miden_project::DependencyVersionScheme::Registry(_) => {}
+            // Not supported at macro expansion time. Skipped without an error because a crate
+            // may declare such a dependency without consuming it in a macro; a macro reference
+            // to one of these names is diagnosed at the lookup site instead.
+            miden_project::DependencyVersionScheme::Workspace { .. }
+            | miden_project::DependencyVersionScheme::WorkspacePath { .. }
+            | miden_project::DependencyVersionScheme::Git { .. } => {}
         }
     }
 
     Ok(sources)
 }
 
+/// Describes a declared dependency whose scheme the macros cannot resolve, for diagnostics.
+///
+/// Returns `None` when the dependency is undeclared or uses a supported scheme.
+pub(crate) fn unsupported_dependency_scheme(
+    package: &miden_project::Package,
+    dependency_name: &str,
+) -> Option<&'static str> {
+    let dependency = package
+        .dependencies()
+        .iter()
+        .find(|dependency| dependency.name().as_ref() == dependency_name)?;
+    match dependency.scheme() {
+        miden_project::DependencyVersionScheme::Workspace { .. } => Some("workspace"),
+        miden_project::DependencyVersionScheme::WorkspacePath { .. } => Some("workspace path"),
+        miden_project::DependencyVersionScheme::Git { .. } => Some("git"),
+        miden_project::DependencyVersionScheme::Path { .. }
+        | miden_project::DependencyVersionScheme::Registry(_) => None,
+    }
+}
+
 /// Returns the raw WIT override path from `package.metadata.miden.dependencies.<name>.wit`.
+///
+/// A malformed shape on the way to the key is an error rather than an absent key: silently
+/// ignoring it would degrade to the "does not embed component WIT" diagnostic (or bypass the
+/// embedded-WIT conflict error) while the user believes their key is in effect.
 fn dependency_wit_override(
     package: &miden_project::Package,
     dependency_name: &str,
 ) -> Result<Option<String>, Error> {
-    let Some(wit_value) = package
-        .metadata()
-        .get("miden")
-        .and_then(|meta| meta.get("dependencies"))
-        .and_then(|value| value.as_table())
-        .and_then(|dependencies| dependencies.get(dependency_name))
-        .and_then(|config| config.as_table())
-        .and_then(|config| config.get("wit"))
+    let Some(dependencies) =
+        package.metadata().get("miden").and_then(|meta| meta.get("dependencies"))
     else {
+        return Ok(None);
+    };
+    let dependencies = dependencies.as_table().ok_or_else(|| {
+        Error::new(
+            Span::call_site(),
+            "invalid miden-project.toml configuration: expected \
+             package.metadata.miden.dependencies to be a table",
+        )
+    })?;
+    let Some(config) = dependencies.get(dependency_name) else {
+        return Ok(None);
+    };
+    let config = config.as_table().ok_or_else(|| {
+        Error::new(
+            Span::call_site(),
+            format!(
+                "invalid miden-project.toml configuration: expected \
+                 package.metadata.miden.dependencies.{dependency_name} to be a table"
+            ),
+        )
+    })?;
+    let Some(wit_value) = config.get("wit") else {
         return Ok(None);
     };
     let wit_path = wit_value.as_str().ok_or_else(|| {
@@ -143,7 +200,7 @@ fn dependency_wit_override(
 }
 
 /// Reads a dependency's manually provided WIT from a `.wit` file or a directory containing
-/// exactly one top-level `.wit` file.
+/// exactly one top-level `.wit` file, returning the WIT text and the selected file's path.
 ///
 /// The override is validated like embedded WIT: it must resolve against the bundled SDK WIT alone
 /// and export an interface, so every macro flow gets the accurate diagnostic at the source.
@@ -151,7 +208,7 @@ fn read_wit_override(
     wit_path: &str,
     manifest_dir: &Path,
     dependency_name: &str,
-) -> Result<String, Error> {
+) -> Result<(String, PathBuf), Error> {
     let error_span = Span::call_site();
     let raw_path = Path::new(wit_path);
     let absolute_path = if raw_path.is_absolute() {
@@ -240,7 +297,7 @@ fn read_wit_override(
             ),
         )
     })?;
-    Ok(wit)
+    Ok((wit, file))
 }
 
 /// Formats the diagnostic for a dependency package that embeds no WIT and has no override.
@@ -263,8 +320,38 @@ pub(crate) fn wit_section_id() -> SectionId {
         .expect("the WIT section id must be a valid custom section id")
 }
 
-/// Reads and deserializes a compiled Miden package.
+/// Deserialized package reads, keyed by path and validated by (modification time, length).
+type PackageReadCache =
+    std::collections::HashMap<PathBuf, (std::time::SystemTime, u64, Arc<Package>)>;
+
+thread_local! {
+    /// One deserialized package per path, revalidated by file modification time and length.
+    ///
+    /// A single expansion resolves the same dependency package from several entry points, and
+    /// deserializing a MAST forest is expensive — worse, split reads could pair bindings from
+    /// one cache generation with procedure roots from another when a concurrent build rewrites
+    /// the package between them. The host process may also outlive many builds (rust-analyzer
+    /// keeps proc-macro servers running), so entries are never trusted by path alone.
+    static PACKAGE_READS: core::cell::RefCell<PackageReadCache> =
+        core::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// Reads and deserializes a compiled Miden package, reusing the previous read of an unchanged
+/// file.
 pub(crate) fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
+    let fingerprint = fs::metadata(package_path)
+        .and_then(|metadata| Ok((metadata.modified()?, metadata.len())))
+        .ok();
+    if let Some(fingerprint) = fingerprint
+        && let Some(package) = PACKAGE_READS.with(|reads| {
+            reads.borrow().get(package_path).and_then(|(mtime, len, package)| {
+                ((*mtime, *len) == fingerprint).then(|| package.clone())
+            })
+        })
+    {
+        return Ok(package);
+    }
+
     let error_span = Span::call_site();
     let package_bytes = fs::read(package_path).map_err(|err| {
         Error::new(
@@ -272,17 +359,28 @@ pub(crate) fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
             format!("failed to read dependency package '{}': {err}", package_path.display()),
         )
     })?;
-    Package::read_from_bytes_unchecked(&package_bytes).map(Arc::new).map_err(|err| {
-        Error::new(
-            error_span,
-            format!(
-                "failed to deserialize dependency package '{}': {err}. The package may have been \
-                 produced by a different Miden toolchain version; rebuild the dependency with the \
-                 current `cargo miden build`.",
-                package_path.display()
-            ),
-        )
-    })
+    let package =
+        Package::read_from_bytes_unchecked(&package_bytes)
+            .map(Arc::new)
+            .map_err(|err| {
+                Error::new(
+                    error_span,
+                    format!(
+                        "failed to deserialize dependency package '{}': {err}. The package may \
+                         have been produced by a different Miden toolchain version; rebuild the \
+                         dependency with the current `cargo miden build`.",
+                        package_path.display()
+                    ),
+                )
+            })?;
+    if let Some((mtime, len)) = fingerprint {
+        PACKAGE_READS.with(|reads| {
+            reads
+                .borrow_mut()
+                .insert(package_path.to_path_buf(), (mtime, len, package.clone()));
+        });
+    }
+    Ok(package)
 }
 
 /// Extracts the component WIT embedded in a compiled Miden package.
@@ -308,7 +406,7 @@ fn package_wit(package: &Package, package_path: &Path) -> Result<Option<String>,
     })
 }
 
-/// A located, deserialized, and identity-checked dependency package.
+/// A located and deserialized dependency package.
 pub(crate) struct ResolvedDependencyPackage {
     /// Path of the `.masp` file the package was read from.
     pub(crate) path: PathBuf,
@@ -393,20 +491,27 @@ thread_local! {
 
 /// Runs `run` with the package cache directory overridden for the current thread.
 ///
-/// `None` simulates a build without a configured cache.
+/// `None` simulates a build without a configured cache. The override is reset even when `run`
+/// panics, so an assertion failure cannot leak it into another test on the same thread.
 #[cfg(test)]
 pub(crate) fn with_test_package_cache_dir<R>(
     cache_dir: Option<&Path>,
     run: impl FnOnce() -> R,
 ) -> R {
+    struct ResetOnDrop;
+    impl Drop for ResetOnDrop {
+        fn drop(&mut self) {
+            TEST_PACKAGE_CACHE_DIR.with(|dir| {
+                *dir.borrow_mut() = None;
+            });
+        }
+    }
+
     TEST_PACKAGE_CACHE_DIR.with(|dir| {
         *dir.borrow_mut() = Some(cache_dir.map(Path::to_path_buf));
     });
-    let result = run();
-    TEST_PACKAGE_CACHE_DIR.with(|dir| {
-        *dir.borrow_mut() = None;
-    });
-    result
+    let _reset = ResetOnDrop;
+    run()
 }
 
 /// Formats the diagnostic for a dependency package missing from the build-owned package cache.
@@ -446,11 +551,20 @@ fn missing_package_cache_message(name: &str, root: &Path) -> String {
     )
 }
 
-/// Returns likely `.masp` filename stems for a dependency.
+/// Returns likely `.masp` filename stems for a dependency, most authoritative first.
+///
+/// The cache writer names each file after the *Miden* package name — `miden-project.toml`'s
+/// `[package].name` — so that stem is probed first. The Cargo package name, the manifest
+/// dependency key, and the directory name are fallbacks for prebuilt artifacts named under
+/// older conventions.
 fn dependency_package_stems(name: &str, root: &Path) -> Vec<String> {
     let mut stems = Vec::new();
 
-    if let Some(package_name) = dependency_manifest_package_name(root) {
+    if let Some(package_name) = manifest_package_name(&root.join("miden-project.toml")) {
+        push_dependency_stem(&mut stems, &package_name);
+    }
+
+    if let Some(package_name) = manifest_package_name(&root.join("Cargo.toml")) {
         push_dependency_stem(&mut stems, &package_name);
     }
 
@@ -465,9 +579,8 @@ fn dependency_package_stems(name: &str, root: &Path) -> Vec<String> {
     stems
 }
 
-/// Reads the Cargo package name for dependency directories.
-fn dependency_manifest_package_name(root: &Path) -> Option<String> {
-    let manifest_path = root.join("Cargo.toml");
+/// Reads a TOML manifest's `[package].name`.
+fn manifest_package_name(manifest_path: &Path) -> Option<String> {
     let manifest = fs::read_to_string(manifest_path).ok()?;
     let manifest = manifest.parse::<toml::Table>().ok()?;
     manifest
@@ -510,6 +623,95 @@ mod tests {
         push_dependency_stem(&mut stems, "no-arg-account");
 
         assert_eq!(stems, ["no-arg-account", "no_arg_account"]);
+    }
+
+    #[test]
+    fn probes_the_miden_package_name_stem_first() {
+        // The cache writer names files after miden-project.toml's `[package].name`; a dependency
+        // whose Miden name differs from its Cargo name, manifest key, and directory must still
+        // resolve.
+        let temp_root = fixture_root("miden-name-stem");
+        let cache_dir = temp_root.join("package-cache");
+        let dependency_root = temp_root.join("dirname");
+        std::fs::create_dir_all(&dependency_root).unwrap();
+        std::fs::write(
+            dependency_root.join("miden-project.toml"),
+            "[package]\nname = \"miden-name\"\nversion = \"1.0.0\"\n\n[lib]\npath = \
+             \"src/lib.rs\"\n",
+        )
+        .unwrap();
+        std::fs::write(dependency_root.join("Cargo.toml"), "[package]\nname = \"cargo_name\"\n")
+            .unwrap();
+        let package_path = cache_dir.join("miden-name.masp");
+        write_masp_fixture(&package_path, "miden-name", None);
+
+        let resolved = with_test_package_cache_dir(Some(&cache_dir), || {
+            resolve_dependency_package("dep-key", &dependency_root)
+        })
+        .unwrap();
+
+        assert_eq!(resolved.path, package_path);
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn reuses_the_read_of_an_unchanged_package_and_rereads_after_a_rewrite() {
+        let temp_root = fixture_root("read-memo");
+        let package_path = temp_root.join("dep.masp");
+        write_masp_fixture(&package_path, "first-name", None);
+
+        let first = read_package(&package_path).unwrap();
+        let again = read_package(&package_path).unwrap();
+        assert!(Arc::ptr_eq(&first, &again), "an unchanged file must reuse the previous read");
+
+        // The rewritten package carries a longer id, so the file length changes even when the
+        // modification time granularity is coarse.
+        write_masp_fixture(&package_path, "second-longer-name", None);
+        let rewritten = read_package(&package_path).unwrap();
+        assert_eq!(
+            rewritten.name.to_string(),
+            "second-longer-name",
+            "a rewritten file must be re-read"
+        );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn unsupported_dependency_scheme_names_only_unsupported_schemes() {
+        let workspace_path = miden_project::Dependency::new(
+            miden_assembly_syntax::debuginfo::Span::unknown(Arc::<str>::from("ws-dep")),
+            miden_project::DependencyVersionScheme::WorkspacePath {
+                path: miden_assembly_syntax::debuginfo::Span::unknown(miden_project::Uri::new(
+                    "sibling",
+                )),
+                version: None,
+            },
+            miden_project::Linkage::Dynamic,
+        );
+        let path = miden_project::Dependency::new(
+            miden_assembly_syntax::debuginfo::Span::unknown(Arc::<str>::from("path-dep")),
+            miden_project::DependencyVersionScheme::Path {
+                path: miden_assembly_syntax::debuginfo::Span::unknown(miden_project::Uri::new(
+                    "sibling",
+                )),
+                version: None,
+            },
+            miden_project::Linkage::Dynamic,
+        );
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
+            "default",
+            miden_assembly_syntax::ast::Path::new("empty"),
+            miden_project::Uri::new("lib/src.rs"),
+        );
+        let package = miden_project::Package::new("consumer", target)
+            .with_dependencies([workspace_path, path]);
+
+        assert_eq!(unsupported_dependency_scheme(&package, "ws-dep"), Some("workspace path"));
+        assert_eq!(unsupported_dependency_scheme(&package, "path-dep"), None);
+        assert_eq!(unsupported_dependency_scheme(&package, "undeclared"), None);
     }
 
     #[test]
