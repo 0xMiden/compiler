@@ -1,6 +1,6 @@
 [package]
 name = "miden-note-schema-codegen"
-description = "Internal Rust code generator for Miden note storage schemas"
+description = "Rust code generator for Miden note storage schemas"
 version = "0.14.0"
 rust-version.workspace = true
 authors.workspace = true
@@ -12,7 +12,6 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
-publish = false
 
 [lib]
 doctest = false
@@ -24,6 +23,5 @@ proc-macro2.workspace = true
 quote.workspace = true
 
 [dev-dependencies]
-midenc-expect-test.workspace = true
-prettyplease = "0.2"
+prettyplease = { workspace = true }
 syn.workspace = true

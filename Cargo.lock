@@ -3689,7 +3689,6 @@ version = "0.14.0"
 dependencies = [
  "heck",
  "miden-note-schema",
- "midenc-expect-test",
  "prettyplease",
  "proc-macro2",
  "quote",

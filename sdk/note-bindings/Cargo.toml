@@ -12,7 +12,6 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
-publish = false
 
 [lib]
 doctest = false

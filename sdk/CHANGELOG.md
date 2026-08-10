@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added optional `codec-component` support to the internal `miden-note-schema` host crate. It can
+- Added optional `codec-component` support to the new `miden-note-schema` host crate. It can
   load author-defined note codecs from a package without adding Wasmtime to the default feature
   set or the guest SDK dependency graph.
-- Added typed host note-storage bindings through the internal `miden-note-bindings` macros. Bindings
+- Added typed host note-storage bindings through the new `miden-note-bindings` macros. Bindings
   can load a built note project or an exact `.masp`, generate native Rust storage types, and convert
   typed values to and from note storage. Its facade supplies all generated runtime dependencies,
   and generated string, validation, and display APIs keep stable standard-registry and

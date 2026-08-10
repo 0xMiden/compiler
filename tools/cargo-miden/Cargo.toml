@@ -40,7 +40,6 @@ path = "tests/mod.rs"
 flate2.workspace = true
 
 [dependencies]
-miden-mast-package = { workspace = true, features = ["std"] }
 midenc-compile = { workspace = true, features = ["std"] }
 midenc-hir = { workspace = true, features = ["std"] }
 midenc-session.workspace = true
@@ -60,6 +59,7 @@ serde_json.workspace = true
 sha2.workspace = true
 
 [dev-dependencies]
+miden-mast-package = { workspace = true, features = ["std"] }
 midenc-frontend-wasm-metadata.workspace = true
 wit-component.workspace = true
 wit-parser.workspace = true
