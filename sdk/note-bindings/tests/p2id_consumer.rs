@@ -7,8 +7,9 @@ use std::{
     sync::Arc,
 };
 
-use miden_mast_package::Package;
+use miden_mast_package::{Package, Section, SectionId};
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
 use midenc_integration_test_support::CompilerTest;
 
 /// Compiles one Cargo Miden project without debug output.
@@ -41,6 +42,27 @@ fn host_target() -> String {
         .to_owned()
 }
 
+/// Copies the workspace patch table into an isolated consumer manifest.
+fn workspace_patch_section(workspace: &Path) -> String {
+    let manifest = fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
+    let mut section = String::new();
+    let mut copying = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[patch.crates-io]" {
+            copying = true;
+        } else if copying && trimmed.starts_with('[') {
+            break;
+        }
+        if copying {
+            section.push_str(line);
+            section.push('\n');
+        }
+    }
+    assert!(!section.is_empty(), "workspace manifest has no [patch.crates-io] section");
+    section
+}
+
 #[test]
 fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
     let workspace = workspace_root();
@@ -59,9 +81,29 @@ fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
 
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("src")).unwrap();
+    let second_package_dir = temp.path().join("packages/counter");
+    fs::create_dir_all(&second_package_dir).unwrap();
+    let mut second_package = (*p2id).clone();
+    let schema_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).unwrap();
+    second_package.sections.retain(|section| section.id != schema_id);
+    second_package.sections.push(Section::new(
+        schema_id,
+        br#"package example:counter-schema@1.0.0;
+
+interface note-storage {
+    record counter-note { value: u64 }
+    type storage = counter-note;
+}
+"#
+        .to_vec(),
+    ));
+    second_package
+        .write_masp_file(&second_package_dir)
+        .expect("failed to persist the second schema package");
+    let second_package_path = second_package_dir.join("p2id.masp");
+
     let bindings_dir = workspace.join("sdk/note-bindings");
-    let schema_dir = workspace.join("sdk/note-schema");
-    let field_repr_dir = workspace.join("sdk/field-repr/repr");
+    let patches = workspace_patch_section(&workspace);
     fs::write(
         temp.path().join("Cargo.toml"),
         format!(
@@ -70,16 +112,14 @@ name = "note-bindings-consumer"
 version = "0.1.0"
 edition = "2024"
 
+[workspace]
+
 [dependencies]
-miden-field = "0.28"
-miden-field-repr = {{ path = {field_repr_dir:?} }}
 miden-note-bindings = {{ path = {bindings_dir:?} }}
-miden-note-schema = {{ path = {schema_dir:?} }}
-miden-protocol = {{ version = "=0.16.0-alpha.4", features = ["std"] }}
+
+{patches}
 "#,
-            field_repr_dir = field_repr_dir.to_string_lossy(),
             bindings_dir = bindings_dir.to_string_lossy(),
-            schema_dir = schema_dir.to_string_lossy(),
         ),
     )
     .unwrap();
@@ -87,7 +127,7 @@ miden-protocol = {{ version = "=0.16.0-alpha.4", features = ["std"] }}
     let source = format!(
         r#"use std::collections::BTreeMap;
 
-use miden_protocol::{{account::AccountId, address::NetworkId}};
+use miden_note_bindings::{{account::AccountId, address::NetworkId}};
 
 mod project_bindings {{
     miden_note_bindings::from_project!({project_dir:?});
@@ -95,6 +135,7 @@ mod project_bindings {{
 
 mod package_bindings {{
     miden_note_bindings::from_package!({package_path:?});
+    miden_note_bindings::from_package!({second_package_path:?});
 }}
 
 fn main() {{
@@ -111,9 +152,9 @@ fn main() {{
         storage.items(),
         &[account_id.prefix().as_felt(), account_id.suffix()],
     );
-    typed.validate_with().unwrap();
+    typed.validate().unwrap();
     assert_eq!(
-        typed.display_with().unwrap(),
+        typed.display().unwrap(),
         format!("{{{{target-account-id: {{bech32}}}}}}"),
     );
 
@@ -122,10 +163,16 @@ fn main() {{
 
     let exact = package_bindings::P2idNote::from_note_storage(&storage).unwrap();
     assert_eq!(exact.target_account_id, account_id);
+
+    let counter = package_bindings::CounterNote {{ value: 9 }};
+    let counter_storage = counter.to_note_storage().unwrap();
+    assert_eq!(counter_storage.items()[0].as_canonical_u64(), 9);
+    assert_eq!(counter_storage.items()[1].as_canonical_u64(), 0);
 }}
 "#,
         project_dir = p2id_dir.to_string_lossy(),
         package_path = package_path.to_string_lossy(),
+        second_package_path = second_package_path.to_string_lossy(),
     );
     fs::write(temp.path().join("src/main.rs"), source).unwrap();
 

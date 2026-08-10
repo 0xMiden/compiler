@@ -4,7 +4,6 @@
 
 extern crate proc_macro;
 
-mod artifact;
 mod expand;
 mod registry;
 

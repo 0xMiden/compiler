@@ -3,7 +3,7 @@ use std::{
     boxed::Box,
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     rc::Rc,
     string::{String, ToString},
     sync::Arc,
@@ -15,7 +15,7 @@ use miden_mast_package::Package as MastPackage;
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
 use wit_component::{ComponentEncoder, DecodedWasm};
-use wit_parser::WorldItem;
+use wit_parser::{Function, FunctionKind, Resolve, Type, TypeDefKind, TypeId, WorldId, WorldItem};
 
 use crate::{CodegenOutput, CompilerResult};
 
@@ -27,6 +27,12 @@ const NOTE_CODEC_CRATE_PATH: &str = "path";
 
 /// Rust target used for zero-import note codec components.
 const NOTE_CODEC_TARGET: &str = "wasm32-unknown-unknown";
+
+/// Compiler-provided path to the exact package consumed by `from_project!`.
+const NOTE_CODEC_PACKAGE_PATH_ENV: &str = "MIDENC_NOTE_CODEC_PACKAGE_PATH";
+
+/// Pinned author codec interface used to validate component signatures.
+const NOTE_CODEC_WIT: &str = include_str!("../../sdk/note-codec/wit/note-codec.wit");
 
 /// Cargo-specific options extracted from the `Compiler` struct.
 ///
@@ -325,12 +331,19 @@ pub fn write_package_atomic(
     })
 }
 
+
+/// Returns true when project metadata declares an author-side note codec crate.
+pub(crate) fn has_project_note_codec(metadata: &miden_project::MetadataSet) -> bool {
+    metadata.get(NOTE_CODEC_CRATE_METADATA).is_some()
+}
+
 /// Builds the optional note codec component declared by a project package.
 pub(crate) fn build_project_note_codec(
     project_package: &miden_project::Package,
     project_manifest_path: &Path,
     note_project_dir: &Path,
     note_package: &MastPackage,
+    session: &Session,
 ) -> CompilerResult<Option<Vec<u8>>> {
     let Some(codec_crate_dir) =
         note_codec_crate_dir(project_package.metadata(), project_manifest_path, note_project_dir)?
@@ -338,7 +351,7 @@ pub(crate) fn build_project_note_codec(
         return Ok(None);
     };
 
-    build_note_codec_component(&codec_crate_dir, note_project_dir, note_package).map(Some)
+    build_note_codec_component(&codec_crate_dir, note_project_dir, note_package, session).map(Some)
 }
 
 /// Reads the optional codec crate path from Miden project metadata.
@@ -400,73 +413,91 @@ fn build_note_codec_component(
     codec_crate_dir: &Path,
     note_project_dir: &Path,
     note_package: &MastPackage,
+    session: &Session,
 ) -> CompilerResult<Vec<u8>> {
-    let _staged_package = stage_note_package(note_project_dir, note_package)?;
+    sweep_legacy_note_codec_inputs(note_project_dir)?;
+    let session_target_dir = if session.options.target_dir.is_absolute() {
+        session.options.target_dir.clone()
+    } else {
+        session.options.current_dir.join(&session.options.target_dir)
+    };
+    let work_dir = session_target_dir.join(&session.options.profile).join("note-codec");
+    let staged_package = stage_note_package(&work_dir, note_package)?;
     let manifest_path = codec_crate_dir.join("Cargo.toml");
-    let artifact_name = codec_artifact_name(&manifest_path)?;
-    let target_dir = codec_crate_dir.join("target");
-    let wasm_path = target_dir
-        .join(NOTE_CODEC_TARGET)
-        .join("release")
-        .join(artifact_name)
-        .with_extension("wasm");
-    // Cargo does not track a package file that a procedural macro reads. Remove the final output
-    // so the codec crate expands against the package staged above.
-    match fs::remove_file(&wasm_path) {
-        Ok(()) => {}
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(Report::msg(format!(
-                "failed to prepare note codec output '{}': {error}",
-                wasm_path.display()
-            )));
-        }
-    }
-    let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-    let output = Command::new(cargo)
-        .current_dir(codec_crate_dir)
-        .args([
-            "build",
-            "--manifest-path",
-            manifest_path.to_str().ok_or_else(|| {
-                Report::msg(format!(
-                    "codec manifest path '{}' is not UTF-8",
-                    manifest_path.display()
-                ))
-            })?,
-            "--lib",
-            "--release",
-            "--target",
-            NOTE_CODEC_TARGET,
-            "--target-dir",
-            target_dir.to_str().ok_or_else(|| {
-                Report::msg(format!("codec target path '{}' is not UTF-8", target_dir.display()))
-            })?,
-        ])
-        .env_remove("CARGO_BUILD_TARGET")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env_remove("RUSTFLAGS")
-        .output()
-        .map_err(|error| {
-            Report::msg(format!(
-                "failed to start `cargo build` for note codec crate '{}': {error}",
-                codec_crate_dir.display()
-            ))
-        })?;
-    if !output.status.success() {
+    if !manifest_path.is_file() {
         return Err(Report::msg(format!(
-            "failed to build note codec crate '{}' for {NOTE_CODEC_TARGET} in release mode \
-             (install the target with `rustup target add {NOTE_CODEC_TARGET}` if \
-             needed)\nstdout:\n{}\nstderr:\n{}",
-            codec_crate_dir.display(),
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr),
+            "note codec crate has no manifest at '{}'",
+            manifest_path.display()
         )));
     }
 
+    let cargo_env = env::var_os("CARGO").map(PathBuf::from);
+    let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
+    let toolchain = if cargo_env.is_none() {
+        crate::rust::rustup_toolchain()
+    } else {
+        None
+    };
+    crate::rust::install_wasm32_target("unknown-unknown", toolchain.as_deref())?;
+
+    let cargo_target_dir = work_dir.join("cargo-target");
+    let mut cargo = Command::new(cargo_path);
+    if let Some(toolchain) = toolchain.as_deref() {
+        cargo.arg(format!("+{toolchain}"));
+    }
+    cargo
+        .current_dir(codec_crate_dir)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(&manifest_path)
+        .arg("--lib")
+        .arg("--profile")
+        .arg(&session.options.profile)
+        .arg("--target")
+        .arg(NOTE_CODEC_TARGET)
+        .arg("--target-dir")
+        .arg(&cargo_target_dir)
+        .arg("--message-format")
+        .arg("json-render-diagnostics")
+        .env(NOTE_CODEC_PACKAGE_PATH_ENV, &staged_package)
+        .env_remove("CARGO_BUILD_TARGET")
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("RUSTFLAGS")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit());
+
+    let manifest_path = manifest_path.canonicalize().map_err(|error| {
+        Report::msg(format!(
+            "failed to resolve note codec manifest '{}': {error}",
+            manifest_path.display()
+        ))
+    })?;
+    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+    let mut wasm_paths = artifacts
+        .into_iter()
+        .filter(|artifact| {
+            artifact.manifest_path.as_std_path() == manifest_path
+                && artifact.target.crate_types.contains(&cargo_metadata::CrateType::CDyLib)
+        })
+        .flat_map(|artifact| artifact.filenames)
+        .filter(|path| path.extension() == Some("wasm"))
+        .map(|path| path.into_std_path_buf())
+        .collect::<Vec<_>>();
+    wasm_paths.sort();
+    wasm_paths.dedup();
+    if wasm_paths.len() != 1 {
+        return Err(Report::msg(format!(
+            "note codec build for '{}' must produce exactly one `{NOTE_CODEC_TARGET}` cdylib; set \
+             `[lib] crate-type = [\"cdylib\"]` in '{}', found: {wasm_paths:#?}",
+            codec_crate_dir.display(),
+            manifest_path.display()
+        )));
+    }
+    let wasm_path = wasm_paths.pop().expect("one codec artifact was checked above");
+
     let module = fs::read(&wasm_path).map_err(|error| {
         Report::msg(format!(
-            "note codec build succeeded but did not produce the expected cdylib '{}': {error}",
+            "note codec build produced an unreadable cdylib '{}': {error}",
             wasm_path.display()
         ))
     })?;
@@ -495,80 +526,71 @@ fn build_note_codec_component(
     Ok(component)
 }
 
-/// Stages the current in-memory note package for `from_project!` during the codec build.
-fn stage_note_package(
-    note_project_dir: &Path,
-    note_package: &MastPackage,
-) -> CompilerResult<tempfile::TempDir> {
-    let profiles_dir = note_project_dir.join("target/miden");
-    fs::create_dir_all(&profiles_dir).map_err(|error| {
+/// Stages the current in-memory note package at a stable compiler-owned path.
+fn stage_note_package(work_dir: &Path, note_package: &MastPackage) -> CompilerResult<PathBuf> {
+    let staging_dir = work_dir.join("input");
+    fs::create_dir_all(&staging_dir).map_err(|error| {
         Report::msg(format!(
-            "failed to create note package staging root '{}': {error}",
-            profiles_dir.display()
+            "failed to create note package staging directory '{}': {error}",
+            staging_dir.display()
         ))
     })?;
-    let staging_dir = tempfile::Builder::new()
-        .prefix("zz-note-codec-input-")
-        .tempdir_in(&profiles_dir)
-        .map_err(|error| {
-            Report::msg(format!(
-                "failed to create note package staging directory in '{}': {error}",
-                profiles_dir.display()
-            ))
-        })?;
-    note_package.write_masp_file(staging_dir.path()).map_err(|error| {
+    note_package.write_masp_file(&staging_dir).map_err(|error| {
         Report::msg(format!(
             "failed to stage note package {}@{} for codec generation: {error}",
             note_package.name, note_package.version
         ))
     })?;
-    Ok(staging_dir)
+    let package_name: &str = &note_package.name;
+    staging_dir
+        .join(package_name)
+        .with_extension(MastPackage::EXTENSION)
+        .canonicalize()
+        .map_err(|error| {
+            Report::msg(format!(
+                "failed to resolve the staged note package in '{}': {error}",
+                staging_dir.display()
+            ))
+        })
 }
 
-/// Returns the expected Wasm artifact name and checks the cdylib configuration.
-fn codec_artifact_name(manifest_path: &Path) -> CompilerResult<String> {
-    let source = fs::read_to_string(manifest_path).map_err(|error| {
-        Report::msg(format!(
-            "note codec crate has no readable manifest at '{}': {error}",
-            manifest_path.display()
-        ))
-    })?;
-    let manifest = source.parse::<toml_edit::DocumentMut>().map_err(|error| {
-        Report::msg(format!(
-            "failed to parse note codec manifest '{}': {error}",
-            manifest_path.display()
-        ))
-    })?;
-    let package =
-        manifest
-            .get("package")
-            .and_then(toml_edit::Item::as_table_like)
-            .ok_or_else(|| {
+/// Removes staging directories created by the temporary-directory implementation.
+fn sweep_legacy_note_codec_inputs(note_project_dir: &Path) -> CompilerResult<()> {
+    let legacy_root = note_project_dir.join("target/miden");
+    let entries = match fs::read_dir(&legacy_root) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => {
+            return Err(Report::msg(format!(
+                "failed to inspect legacy note codec staging root '{}': {error}",
+                legacy_root.display()
+            )));
+        }
+    };
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            Report::msg(format!(
+                "failed to inspect legacy note codec staging root '{}': {error}",
+                legacy_root.display()
+            ))
+        })?;
+        let name = entry.file_name();
+        let file_type = entry.file_type().map_err(|error| {
+            Report::msg(format!(
+                "failed to inspect legacy note codec staging entry '{}': {error}",
+                entry.path().display()
+            ))
+        })?;
+        if name.to_string_lossy().starts_with("zz-note-codec-input-") && file_type.is_dir() {
+            fs::remove_dir_all(entry.path()).map_err(|error| {
                 Report::msg(format!(
-                    "codec manifest '{}' has no `[package]` table",
-                    manifest_path.display()
+                    "failed to remove legacy note codec staging directory '{}': {error}",
+                    entry.path().display()
                 ))
             })?;
-    let package_name = package.get("name").and_then(toml_edit::Item::as_str).ok_or_else(|| {
-        Report::msg(format!("codec manifest '{}' has no package name", manifest_path.display()))
-    })?;
-    let lib = manifest.get("lib").and_then(toml_edit::Item::as_table_like).ok_or_else(|| {
-        Report::msg(format!("codec manifest '{}' has no `[lib]` table", manifest_path.display()))
-    })?;
-    let is_cdylib =
-        lib.get("crate-type")
-            .and_then(toml_edit::Item::as_array)
-            .is_some_and(|crate_types| {
-                crate_types.iter().any(|crate_type| crate_type.as_str() == Some("cdylib"))
-            });
-    if !is_cdylib {
-        return Err(Report::msg(format!(
-            "note codec manifest '{}' must set `[lib] crate-type = [\"cdylib\"]`",
-            manifest_path.display()
-        )));
+        }
     }
-    let lib_name = lib.get("name").and_then(toml_edit::Item::as_str).unwrap_or(package_name);
-    Ok(lib_name.replace('-', "_"))
+    Ok(())
 }
 
 /// Verifies the component sandbox and the versioned codec interface export.
@@ -594,29 +616,177 @@ fn validate_note_codec_component(component: &[u8]) -> CompilerResult<()> {
         )));
     }
 
-    let interface = world.exports.values().find_map(|item| {
-        let WorldItem::Interface { id, .. } = item else {
-            return None;
-        };
-        let interface = &resolve.interfaces[*id];
-        let package_id = interface.package?;
-        let package = &resolve.packages[package_id].name;
-        (interface.name.as_deref() == Some("codec")
-            && package.namespace == "miden"
-            && package.name == "note-codec"
-            && package.version.as_ref().is_some_and(|version| version.to_string() == "1.0.0"))
-        .then_some(interface)
-    });
-    let interface = interface
-        .ok_or_else(|| Report::msg("component does not export `miden:note-codec/codec@1.0.0`"))?;
-    for function in ["supported-types", "parse", "display", "validate"] {
-        if !interface.functions.contains_key(function) {
+    let (actual_key, actual_interface_id) = codec_world_export(&resolve, world_id)?;
+
+    let mut expected = Resolve::default();
+    let package_id = expected.push_str("note-codec.wit", NOTE_CODEC_WIT).map_err(|error| {
+        Report::msg(format!("failed to resolve the pinned note codec WIT: {error:#}"))
+    })?;
+    let expected_world_id = expected.packages[package_id]
+        .worlds
+        .get("note-codec")
+        .copied()
+        .ok_or_else(|| Report::msg("pinned note codec WIT has no `note-codec` world"))?;
+    let (expected_key, expected_interface_id) = codec_world_export(&expected, expected_world_id)?;
+
+    if actual_key != expected_key {
+        return Err(Report::msg(format!(
+            "note codec world exports `{actual_key}`, expected `{expected_key}`"
+        )));
+    }
+    compare_codec_interface_signatures(
+        &resolve,
+        actual_interface_id,
+        &expected,
+        expected_interface_id,
+    )
+}
+
+/// Returns the canonical key and interface ID for the sole codec world export.
+fn codec_world_export(
+    resolve: &Resolve,
+    world_id: WorldId,
+) -> CompilerResult<(String, wit_parser::InterfaceId)> {
+    let world = &resolve.worlds[world_id];
+    let (key, item) = world.exports.iter().next().ok_or_else(|| {
+        Report::msg("note codec component does not export `miden:note-codec/codec@1.0.0`")
+    })?;
+    let WorldItem::Interface { id, .. } = item else {
+        return Err(Report::msg(format!(
+            "note codec world export `{}` is not an interface",
+            resolve.name_world_key(key)
+        )));
+    };
+    let interface = &resolve.interfaces[*id];
+    let package_id = interface.package.ok_or_else(|| {
+        Report::msg("note codec world exports an interface without a package identity")
+    })?;
+    let package = &resolve.packages[package_id].name;
+    if interface.name.as_deref() != Some("codec")
+        || package.namespace != "miden"
+        || package.name != "note-codec"
+        || package.version.as_ref().is_none_or(|version| version.to_string() != "1.0.0")
+    {
+        return Err(Report::msg("component does not export `miden:note-codec/codec@1.0.0`"));
+    }
+    Ok((resolve.name_canonicalized_world_key(key), *id))
+}
+
+/// Compares all exported codec function names and structural signatures.
+fn compare_codec_interface_signatures(
+    actual_resolve: &Resolve,
+    actual_id: wit_parser::InterfaceId,
+    expected_resolve: &Resolve,
+    expected_id: wit_parser::InterfaceId,
+) -> CompilerResult<()> {
+    let actual = &actual_resolve.interfaces[actual_id];
+    let expected = &expected_resolve.interfaces[expected_id];
+    if actual.functions.len() != expected.functions.len() {
+        return Err(Report::msg(format!(
+            "`miden:note-codec/codec@1.0.0` exports {} functions, expected {}",
+            actual.functions.len(),
+            expected.functions.len()
+        )));
+    }
+    for (name, expected_function) in &expected.functions {
+        let actual_function = actual.functions.get(name).ok_or_else(|| {
+            Report::msg(format!("`miden:note-codec/codec@1.0.0` is missing `{name}`"))
+        })?;
+        let actual_signature = function_signature(actual_resolve, actual_function)?;
+        let expected_signature = function_signature(expected_resolve, expected_function)?;
+        if actual_signature != expected_signature {
             return Err(Report::msg(format!(
-                "`miden:note-codec/codec@1.0.0` is missing `{function}`"
+                "`miden:note-codec/codec@1.0.0.{name}` has signature `{actual_signature}`, \
+                 expected `{expected_signature}`"
             )));
         }
     }
     Ok(())
+}
+
+/// Returns a structural function signature with aliases resolved.
+fn function_signature(resolve: &Resolve, function: &Function) -> CompilerResult<String> {
+    if function.kind != FunctionKind::Freestanding {
+        return Err(Report::msg(format!(
+            "note codec function `{}` must be freestanding",
+            function.name
+        )));
+    }
+    let params = function
+        .params
+        .iter()
+        .map(|param| {
+            canonical_wit_type(resolve, param.ty, &mut Vec::new())
+                .map(|ty| format!("{}: {ty}", param.name))
+        })
+        .collect::<CompilerResult<Vec<_>>>()?
+        .join(", ");
+    let result = function
+        .result
+        .map(|ty| canonical_wit_type(resolve, ty, &mut Vec::new()))
+        .transpose()?
+        .unwrap_or_else(|| "_".to_string());
+    Ok(format!("func({params}) -> {result}"))
+}
+
+/// Returns a structural WIT type signature with aliases resolved.
+fn canonical_wit_type(
+    resolve: &Resolve,
+    ty: Type,
+    active: &mut Vec<TypeId>,
+) -> CompilerResult<String> {
+    let primitive = match ty {
+        Type::Bool => Some("bool"),
+        Type::U8 => Some("u8"),
+        Type::U16 => Some("u16"),
+        Type::U32 => Some("u32"),
+        Type::U64 => Some("u64"),
+        Type::S8 => Some("s8"),
+        Type::S16 => Some("s16"),
+        Type::S32 => Some("s32"),
+        Type::S64 => Some("s64"),
+        Type::F32 => Some("f32"),
+        Type::F64 => Some("f64"),
+        Type::Char => Some("char"),
+        Type::String => Some("string"),
+        Type::ErrorContext => Some("error-context"),
+        Type::Id(_) => None,
+    };
+    if let Some(primitive) = primitive {
+        return Ok(primitive.to_string());
+    }
+    let Type::Id(id) = ty else {
+        unreachable!("all primitive WIT types returned above")
+    };
+    if active.contains(&id) {
+        return Err(Report::msg("recursive types are not valid in the note codec interface"));
+    }
+    active.push(id);
+    let result = match &resolve.types[id].kind {
+        TypeDefKind::Type(ty) => canonical_wit_type(resolve, *ty, active),
+        TypeDefKind::List(ty) => {
+            canonical_wit_type(resolve, *ty, active).map(|ty| format!("list<{ty}>"))
+        }
+        TypeDefKind::Result(result) => {
+            let ok = result
+                .ok
+                .map(|ty| canonical_wit_type(resolve, ty, active))
+                .transpose()?
+                .unwrap_or_else(|| "_".to_string());
+            let err = result
+                .err
+                .map(|ty| canonical_wit_type(resolve, ty, active))
+                .transpose()?
+                .unwrap_or_else(|| "_".to_string());
+            Ok(format!("result<{ok}, {err}>"))
+        }
+        kind => Err(Report::msg(format!(
+            "unsupported `{}` type in the note codec interface signature",
+            kind.as_str()
+        ))),
+    };
+    active.pop();
+    result
 }
 
 /// Parse `cargo -Zscript`-style frontmatter from a given input string, if present.
@@ -697,4 +867,64 @@ pub fn parse_cargo_frontmatter(
     }
 
     Ok(Some(dependencies))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codec_interface_validation_compares_function_signatures() {
+        let (expected_resolve, expected_id) = resolve_codec_interface(NOTE_CODEC_WIT);
+        compare_codec_interface_signatures(
+            &expected_resolve,
+            expected_id,
+            &expected_resolve,
+            expected_id,
+        )
+        .unwrap();
+
+        let changed = NOTE_CODEC_WIT.replace(
+            "parse: func(type-fqn: string, value: string)",
+            "parse: func(type-fqn: string, value: u64)",
+        );
+        let (actual_resolve, actual_id) = resolve_codec_interface(&changed);
+        let error = compare_codec_interface_signatures(
+            &actual_resolve,
+            actual_id,
+            &expected_resolve,
+            expected_id,
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains(".parse` has signature"));
+        assert!(error.contains("value: u64"));
+        assert!(error.contains("value: string"));
+    }
+
+    #[test]
+    fn note_codec_staging_is_stable_and_sweeps_legacy_directories() {
+        let root = tempfile::TempDir::new().unwrap();
+        let package = midenc_codegen_masm::intrinsics::load();
+
+        let first = stage_note_package(root.path(), &package).unwrap();
+        let second = stage_note_package(root.path(), &package).unwrap();
+        assert_eq!(first, second);
+        assert_eq!(first.parent().and_then(Path::file_name), Some("input".as_ref()));
+
+        let legacy = root.path().join("project/target/miden/zz-note-codec-input-old");
+        fs::create_dir_all(&legacy).unwrap();
+        sweep_legacy_note_codec_inputs(&root.path().join("project")).unwrap();
+        assert!(!legacy.exists());
+    }
+
+    /// Resolves the codec interface from one complete WIT document.
+    fn resolve_codec_interface(wit: &str) -> (Resolve, wit_parser::InterfaceId) {
+        let mut resolve = Resolve::default();
+        let package_id = resolve.push_str("note-codec-test.wit", wit).unwrap();
+        let world_id = resolve.packages[package_id].worlds["note-codec"];
+        let (_, interface_id) = codec_world_export(&resolve, world_id).unwrap();
+        (resolve, interface_id)
+    }
 }

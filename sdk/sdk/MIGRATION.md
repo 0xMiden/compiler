@@ -146,6 +146,48 @@ path. Two different projects that contain a contract crate with the same package
 version and share one `CARGO_TARGET_DIR` reuse each other's build-script output — including
 the staged package cache. Use per-checkout target directories for such layouts.
 
+### Rewrite tuple-note and `Vec` storage layouts
+
+`#[note]` now emits a WIT storage schema and therefore requires each stored value to have a stable,
+named position. Unit structs remain valid, but tuple structs must become named-field structs. Keep
+the fields in the same order to preserve the existing felt layout:
+
+```rust
+// before
+#[note]
+struct PaymentNote(AccountId, u64);
+
+// after
+#[note]
+struct PaymentNote {
+    target: AccountId,
+    amount: u64,
+}
+```
+
+Dynamic `Vec` fields have no fixed note-storage layout and are no longer accepted. Replace a vector
+with explicit fields. Use `Option` for fixed optional positions, or use a named `#[export_type]`
+record when the same fixed group is nested or reused:
+
+```rust
+// before
+#[note]
+struct ValuesNote {
+    values: Vec<Felt>,
+}
+
+// after
+#[note]
+struct ValuesNote {
+    first: Felt,
+    second: Option<Felt>,
+}
+```
+
+There is no direct replacement for an unbounded vector. Choose a fixed maximum represented by
+named and optional fields, or redesign the note so variable-sized data is committed outside its
+storage payload.
+
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
 Binding surfaces whose values are counts now return `u32`: `tx::get_num_input_notes`,

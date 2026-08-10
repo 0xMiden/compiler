@@ -394,6 +394,7 @@ impl Frontend for HirFrontend {
             &found.component,
             &found.sections,
             cx.assembly(),
+            &cx.session(),
         )
     }
 

@@ -35,6 +35,7 @@ members = [
     "sdk/base-sys",
     "sdk/build-script-support",
     "sdk/note-bindings",
+    "sdk/note-bindings/macros",
     "sdk/note-codec",
     "sdk/note-codec/macros",
     "sdk/note-schema",
@@ -203,6 +204,8 @@ midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-base-sys = { version = "0.14.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.14.0", path = "sdk/field-repr/repr" }
+miden-note-bindings = { version = "0.14.0", path = "sdk/note-bindings" }
+miden-note-bindings-macros = { version = "0.14.0", path = "sdk/note-bindings/macros" }
 miden-note-codec = { version = "0.14.0", path = "sdk/note-codec" }
 miden-note-codec-macros = { version = "0.14.0", path = "sdk/note-codec/macros" }
 miden-note-schema = { version = "0.14.0", path = "sdk/note-schema" }

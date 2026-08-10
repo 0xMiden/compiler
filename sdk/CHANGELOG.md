@@ -14,11 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   set or the guest SDK dependency graph.
 - Added typed host note-storage bindings through the internal `miden-note-bindings` macros. Bindings
   can load a built note project or an exact `.masp`, generate native Rust storage types, and convert
-  typed values to and from note storage.
+  typed values to and from note storage. Its facade supplies all generated runtime dependencies,
+  and generated string, validation, and display APIs keep stable standard-registry and
+  caller-provided-registry forms as schemas gain nested types.
+- The `FromFeltRepr`/`ToFeltRepr` derives accept an internal `#[felt_repr(crate_path = "...")]`
+  attribute so macro-generated code can reference the runtime crate through a facade re-export.
 - `#[note]` now embeds a WIT storage schema for named-field note structs in the
   `note_storage_schema` section of the compiled `.masp`. Schema records preserve Rust doc comments
   and can include nested types declared with `#[export_type]` before the note struct. Unit structs
-  emit no schema; tuple structs and `Vec` fields are not supported yet.
+  emit no schema.
+
+### Migration and breaking changes
+
+- `#[note]` storage types now require named-field or unit structs. Tuple structs no longer compile,
+  and note storage fields no longer accept `Vec`. Follow the
+  [migration guidance](./sdk/MIGRATION.md#rewrite-tuple-note-and-vec-storage-layouts) to preserve
+  field order with named fields and replace dynamic vectors with a fixed schema.
 
 ## [0.14.0]
 

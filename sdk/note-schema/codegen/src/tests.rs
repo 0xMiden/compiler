@@ -68,16 +68,16 @@ fn generate(wit: &str) -> (String, bool, String) {
     let file: syn::File = syn::parse2(generated.tokens().clone()).unwrap();
     (
         prettyplease::unparse(&file),
-        generated.has_custom_types(),
+        generated.has_nested_named_types(),
         generated.root_ident().to_string(),
     )
 }
 
 #[test]
 fn maps_protocol_leaf_and_root_type() {
-    let (source, has_custom_types, root) = generate(P2ID_SCHEMA);
+    let (source, has_nested_named_types, root) = generate(P2ID_SCHEMA);
     assert_eq!(root, "P2idNote");
-    assert!(!has_custom_types);
+    assert!(!has_nested_named_types);
     assert!(source.contains("pub target_account_id: ::miden_protocol::account::AccountId"));
     assert!(source.contains("pub const WIT_FQN"));
     assert!(source.contains("self.prefix().as_felt()"));
@@ -85,9 +85,9 @@ fn maps_protocol_leaf_and_root_type() {
 
 #[test]
 fn derives_native_repr_for_custom_records_and_variants() {
-    let (source, has_custom_types, root) = generate(CUSTOM_SCHEMA);
+    let (source, has_nested_named_types, root) = generate(CUSTOM_SCHEMA);
     assert_eq!(root, "DexNote");
-    assert!(has_custom_types);
+    assert!(has_nested_named_types);
     assert!(source.contains("pub struct LimitPrice"));
     assert!(source.contains("pub enum OrderKind"));
     assert!(source.matches("::miden_field_repr::ToFeltRepr").count() >= 2);

@@ -14,17 +14,20 @@
 
 #![deny(missing_docs)]
 
+mod artifact;
 mod builder;
 mod codec;
 #[cfg(feature = "codec-component")]
 mod codec_component;
 mod error;
 mod schema;
+mod section;
 mod value;
 
 #[cfg(test)]
 mod tests;
 
+pub use artifact::{NotePackageArtifact, NotePackageResolver};
 pub use builder::NoteStorageBuilder;
 pub use codec::{
     ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, CodecRegistry, ConsumerTypeCodec, FELT_FQN, WORD_FQN,

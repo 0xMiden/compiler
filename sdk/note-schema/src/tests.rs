@@ -52,6 +52,28 @@ package miden:base@1.0.0 {
 }
 "#;
 
+const NESTED_CONSTRUCTOR_SCHEMA: &str = r#"
+package example:nested-constructors@1.0.0;
+
+interface note-storage {
+    record payload {
+        value: u64,
+    }
+
+    variant selection {
+        empty,
+        nested(payload),
+    }
+
+    record constructor-note {
+        maybe-payload: option<payload>,
+        selected: selection,
+    }
+
+    type storage = constructor-note;
+}
+"#;
+
 /// Returns a valid account ID and its mainnet bech32 form.
 fn account_id() -> (AccountId, String) {
     let account_id = AccountId::try_from(0xaa00_0000_0000_bc11_0000_bc00_0000_de00u128).unwrap();
@@ -95,6 +117,43 @@ fn wit_reader_reports_missing_schema_surface() {
     .to_string();
 
     assert!(error.contains("does not define the `note-storage` interface"));
+}
+
+#[test]
+fn reader_rejects_noncanonical_native_core_type_shapes() {
+    for (type_name, definitions) in [
+        ("felt", "record felt { inner: u32 }"),
+        ("word", "record felt { inner: f32 } record word { a: felt, b: felt, c: felt }"),
+        (
+            "account-id",
+            "record felt { inner: f32 } record account-id { suffix: felt, prefix: felt }",
+        ),
+        ("asset-amount", "record felt { inner: f32 } record asset-amount { inner: u64 }"),
+    ] {
+        let wit = format!(
+            r#"
+package example:bad-core-shape@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface note-storage {{
+    use core-types.{{{type_name}}};
+    record bad-note {{ value: {type_name} }}
+    type storage = bad-note;
+}}
+
+package miden:base@1.0.0 {{
+    interface core-types {{ {definitions} }}
+}}
+"#
+        );
+        let error = NoteStorageSchema::from_wit_text(&wit).err().unwrap().to_string();
+        assert!(
+            error.contains(&format!("miden:base/core-types@1.0.0.{type_name}")),
+            "unexpected error for {type_name}: {error}"
+        );
+        assert!(error.contains("pinned canonical shape"));
+    }
 }
 
 #[test]
@@ -164,7 +223,7 @@ fn decoder_uses_structural_fallback_without_a_codec() {
         .build()
         .unwrap();
 
-    let decoded = schema.decode_with_registry(&storage, &CodecRegistry::new()).unwrap();
+    let decoded = schema.decode_with_registry(&storage, &CodecRegistry::empty()).unwrap();
     let account = decoded.field("target-account-id").unwrap();
     let DecodedValueKind::Record(fields) = account.kind() else {
         panic!("account-id must use its structural record fallback");
@@ -214,6 +273,23 @@ fn builder_reports_missing_unknown_conflicting_and_range_errors() {
         .unwrap_err()
         .to_string();
     assert!(range.contains("u8 value `256` is out of range"));
+}
+
+#[test]
+fn builder_rejects_nested_record_constructor_paths() {
+    let schema = NoteStorageSchema::from_wit_text(NESTED_CONSTRUCTOR_SCHEMA).unwrap();
+
+    let option_error =
+        schema.builder().set("maybe_payload", "some(value)").err().unwrap().to_string();
+    assert!(option_error.contains("path `maybe-payload`"));
+    assert!(option_error.contains("option with record payload"));
+    assert!(option_error.contains("does not support nested record constructors"));
+
+    let variant_error =
+        schema.builder().set("selected", "nested(value)").err().unwrap().to_string();
+    assert!(variant_error.contains("path `selected`"));
+    assert!(variant_error.contains("variant case `nested` with a record payload"));
+    assert!(variant_error.contains("does not support nested record constructors"));
 }
 
 #[test]

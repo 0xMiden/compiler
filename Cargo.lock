@@ -3614,17 +3614,27 @@ dependencies = [
  "miden-field",
  "miden-field-repr",
  "miden-mast-package",
+ "miden-note-bindings-macros",
+ "miden-note-schema",
+ "miden-protocol",
+ "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
+ "midenc-integration-test-support",
+ "tempfile",
+]
+
+[[package]]
+name = "miden-note-bindings-macros"
+version = "0.14.0"
+dependencies = [
  "miden-note-schema",
  "miden-note-schema-codegen",
- "miden-protocol",
  "midenc-expect-test",
- "midenc-frontend-wasm",
- "midenc-integration-test-support",
  "prettyplease",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
- "tempfile",
 ]
 
 [[package]]
@@ -3646,7 +3656,6 @@ name = "miden-note-codec-macros"
 version = "0.14.0"
 dependencies = [
  "heck",
- "miden-mast-package",
  "miden-note-schema",
  "miden-note-schema-codegen",
  "prettyplease",

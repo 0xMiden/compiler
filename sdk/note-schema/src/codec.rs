@@ -43,10 +43,20 @@ pub struct CodecRegistry {
 
 impl CodecRegistry {
     /// Creates an empty codec registry.
-    pub fn new() -> Self {
+    pub fn empty() -> Self {
         Self {
             codecs: BTreeMap::new(),
         }
+    }
+
+    /// Creates a registry containing all standard note storage codecs.
+    pub fn with_standard_codecs() -> Self {
+        let mut registry = Self::empty();
+        registry.register(FELT_FQN, FeltCodec);
+        registry.register(WORD_FQN, WordCodec);
+        registry.register(ACCOUNT_ID_FQN, AccountIdCodec);
+        registry.register(ASSET_AMOUNT_FQN, AssetAmountCodec);
+        registry
     }
 
     /// Registers or replaces a codec under its canonical WIT FQN.
@@ -72,12 +82,7 @@ impl CodecRegistry {
 
 impl Default for CodecRegistry {
     fn default() -> Self {
-        let mut registry = Self::new();
-        registry.register(FELT_FQN, FeltCodec);
-        registry.register(WORD_FQN, WordCodec);
-        registry.register(ACCOUNT_ID_FQN, AccountIdCodec);
-        registry.register(ASSET_AMOUNT_FQN, AssetAmountCodec);
-        registry
+        Self::with_standard_codecs()
     }
 }
 
@@ -254,6 +259,7 @@ mod tests {
         assert!(registry.contains(WORD_FQN));
         assert!(registry.contains(ACCOUNT_ID_FQN));
         assert!(registry.contains(ASSET_AMOUNT_FQN));
+        assert!(!CodecRegistry::empty().contains(FELT_FQN));
     }
 
     #[test]

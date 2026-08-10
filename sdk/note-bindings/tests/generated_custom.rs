@@ -2,9 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use miden_field::Felt;
-use miden_field_repr::{FromFeltRepr, ToFeltRepr};
-use miden_note_schema::CodecRegistry;
+use miden_note_bindings::{CodecRegistry, Felt, FromFeltRepr, ToFeltRepr};
 
 miden_note_bindings::from_wit_text!(
     r#"
@@ -73,6 +71,8 @@ fn custom_types_have_native_repr_and_typed_round_trips() {
         value.display_with(&codecs).unwrap(),
         "{price: {numerator: 3, denominator: 2}, kind: limit({numerator: 5, denominator: 4})}"
     );
+    value.validate().unwrap();
+    assert_eq!(value.display().unwrap(), value.display_with(&codecs).unwrap());
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn custom_record_string_paths_use_the_registry_parameter() {
     values.insert("price.denominator".to_owned(), "6".to_owned());
     values.insert("kind".to_owned(), "market".to_owned());
 
-    let value = CustomNote::from_str_values(&values, &CodecRegistry::default()).unwrap();
+    let value = CustomNote::from_str_values_with(&values, &CodecRegistry::default()).unwrap();
     assert_eq!(
         value,
         CustomNote {

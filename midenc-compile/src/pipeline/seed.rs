@@ -439,6 +439,7 @@ impl Frontend for SeedFrontend {
             &found.component,
             &found.sections,
             cx.assembly(),
+            &cx.session(),
         )
     }
 
@@ -605,6 +606,7 @@ mod tests {
                 &found.component,
                 &found.sections,
                 cx.assembly(),
+                &cx.session(),
             )
         }
 
