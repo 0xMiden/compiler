@@ -710,7 +710,16 @@ impl<'a> ManifestClosure<'a> {
         match dependency.scheme() {
             DependencyVersionScheme::Registry(_) => {}
             DependencyVersionScheme::Path { path, .. } => {
-                self.visit_path_dependency(dependency, manifest_dir, path.inner());
+                // A path dependency naming a workspace member (by directory or by manifest
+                // file, both accepted spellings) is workspace-root-relative, not
+                // manifest-dir-relative — mirror the classifier and resolve it through the
+                // member list first.
+                if let Some(member_manifest) = workspace_member_manifest(workspace, path.inner())
+                {
+                    self.visit_project(&member_manifest, Some(dependency.name().as_ref()));
+                } else {
+                    self.visit_path_dependency(dependency, manifest_dir, path.inner());
+                }
             }
             DependencyVersionScheme::WorkspacePath { path, .. } => {
                 if let Some(workspace_root) =
@@ -727,11 +736,7 @@ impl<'a> ManifestClosure<'a> {
                 }
             }
             DependencyVersionScheme::Workspace { member, .. } => {
-                if let Some(manifest_path) = workspace
-                    .and_then(|workspace| {
-                        workspace.get_member_by_relative_path(member.inner().path())
-                    })
-                    .and_then(|package| package.manifest_path().map(Path::to_path_buf))
+                if let Some(manifest_path) = workspace_member_manifest(workspace, member.inner())
                 {
                     self.visit_project(&manifest_path, Some(dependency.name().as_ref()));
                 } else {
@@ -850,6 +855,25 @@ fn dependency_scheme_key(dependency: &Dependency) -> String {
 /// Formats an optional display value without conflating absence with an empty value.
 fn optional_display(value: Option<&impl core::fmt::Display>) -> String {
     value.map(ToString::to_string).unwrap_or_else(|| "<missing>".into())
+}
+
+/// Resolves a dependency URI to a workspace member's manifest path, when it names one.
+///
+/// Members may be declared by their directory (`dep`) or by their manifest file
+/// (`dep/miden-project.toml`) — both spellings are accepted by `miden-project`'s classifier and
+/// are workspace-root-relative. The workspace lookup compares member directories, so the
+/// manifest-file spelling is normalized to its parent first.
+fn workspace_member_manifest(
+    workspace: Option<&miden_project::Workspace>,
+    uri: &miden_project::Uri,
+) -> Option<PathBuf> {
+    if uri.scheme().is_some_and(|scheme| scheme != "file") {
+        return None;
+    }
+    let member_dir = locator_project_dir(Path::new(uri.path()));
+    workspace?
+        .get_member_by_relative_path(member_dir.as_path())
+        .and_then(|package| package.manifest_path().map(Path::to_path_buf))
 }
 
 /// Returns the directory whose sibling project manifests describe a locator.
@@ -1272,6 +1296,36 @@ mod tests {
         let mut optimized = options.clone();
         optimized.optimize = OptLevel::Max;
         assert_ne!(baseline, test_fingerprint(&optimized, temp.path(), "1.2.3", "abc123"));
+    }
+
+    #[test]
+    fn fingerprint_walks_workspace_members_declared_by_manifest_path() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        std::fs::write(
+            root.join("miden-project.toml"),
+            "[workspace]\nmembers = [\"dep\", \"app\"]\n\n[workspace.package]\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        write_project(&root.join("dep"), "dep", "");
+        // The member is declared by its manifest FILE, a spelling miden-project accepts and
+        // classifies as a workspace member; the lookup must normalize it to the member dir.
+        write_project(
+            &root.join("app"),
+            "app",
+            "\n[dependencies]\ndep = { path = \"dep/miden-project.toml\" }\n",
+        );
+        let options = Options::default();
+        let before = test_fingerprint(&options, &root.join("app"), "1.2.3", "abc123");
+
+        std::fs::write(
+            root.join("dep").join("Cargo.toml"),
+            "[package]\nname = \"dep\"\nversion = \"2.0.0\"\n",
+        )
+        .unwrap();
+        let after = test_fingerprint(&options, &root.join("app"), "1.2.3", "abc123");
+
+        assert_ne!(before, after, "the member's manifest closure must be part of the fingerprint");
     }
 
     #[test]
