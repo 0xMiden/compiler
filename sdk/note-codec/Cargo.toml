@@ -12,7 +12,6 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
-publish = false
 
 [lib]
 doctest = false
@@ -22,7 +21,7 @@ miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-note-codec-macros.workspace = true
 miden-protocol.workspace = true
-wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
+wit-bindgen = { workspace = true }
 
 [dev-dependencies]
 tempfile.workspace = true

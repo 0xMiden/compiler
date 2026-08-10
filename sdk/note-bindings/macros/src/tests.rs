@@ -74,10 +74,10 @@ fn expand(wit: &str) -> String {
 
 #[test]
 fn expands_p2id_schema_golden() {
-    expect_file!["../../src/expected/p2id.rs"].assert_eq(&expand(P2ID_SCHEMA));
+    expect_file!["../expected/p2id.rs"].assert_eq(&expand(P2ID_SCHEMA));
 }
 
 #[test]
 fn expands_custom_schema_golden() {
-    expect_file!["../../src/expected/custom.rs"].assert_eq(&expand(CUSTOM_SCHEMA));
+    expect_file!["../expected/custom.rs"].assert_eq(&expand(CUSTOM_SCHEMA));
 }

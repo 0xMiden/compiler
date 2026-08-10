@@ -224,6 +224,30 @@ name = "miden-field-repr-tests"
 unit = "private"
 
 [[packages]]
+name = "miden-note-schema"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-schema-codegen"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-bindings"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-bindings-macros"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-codec"
+unit = "sdk"
+
+[[packages]]
+name = "miden-note-codec-macros"
+unit = "sdk"
+
+[[packages]]
 name = "midenc-benchmark-runner"
 unit = "private"
 

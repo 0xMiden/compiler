@@ -12,7 +12,6 @@ keywords.workspace = true
 license.workspace = true
 readme.workspace = true
 edition.workspace = true
-publish = false
 
 [lib]
 proc-macro = true
@@ -22,10 +21,10 @@ doctest = false
 miden-note-schema.workspace = true
 miden-note-schema-codegen.workspace = true
 proc-macro2.workspace = true
-proc-macro-crate = "3.5"
+proc-macro-crate = { workspace = true }
 quote.workspace = true
 syn = { workspace = true, features = ["visit-mut"] }
 
 [dev-dependencies]
 midenc-expect-test.workspace = true
-prettyplease = "0.2"
+prettyplease = { workspace = true }
