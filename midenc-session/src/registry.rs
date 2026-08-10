@@ -73,26 +73,60 @@ impl HybridPackageRegistry {
     /// Get a new instance of the registry, using the current compiler options and an optional
     /// filesystem cache directory.
     ///
-    /// A cache path in the owned `miden/packages/<fingerprint>` layout is prepared and, when that
-    /// succeeds, locked for the registry's lifetime. During construction, dead sibling fingerprint
-    /// directories and legacy flat `.masp` entries are pruned as defense in depth; FPI expansions
-    /// track the cache path themselves for correctness. Any other path is created if possible but
-    /// deliberately neither locked nor used to sweep its parent. Ownership is checked lexically by
-    /// design; symlinked cache layouts are outside this contract.
-    ///
-    /// Cache preparation and cleanup failures are reported only through the `package-registry` log
-    /// target. The configured cache remains enabled after a preparation failure, so the first
-    /// package publication reports the concrete filesystem error to the caller.
+    /// The directory is created when possible and every package installed into the registry is
+    /// published into it, but a caller-supplied path is NEVER locked and NEVER used to sweep its
+    /// parent — a path shape alone does not prove midenc owns the location. The locking and
+    /// stale-cache pruning protocol runs only for cache paths the `Session` itself derives; see
+    /// [`Self::new_with_derived_filesystem_cache`].
     #[cfg(any(test, feature = "std"))]
     pub fn new_with_filesystem_cache(
         options: &crate::Options,
         filesystem_cache: Option<std::path::PathBuf>,
     ) -> Result<Self, Report> {
-        use alloc::string::ToString;
+        if let Some(filesystem_cache) = filesystem_cache.as_deref()
+            && let Err(err) = std::fs::create_dir_all(filesystem_cache)
+        {
+            log::warn!(
+                target: "package-registry",
+                "failed to create filesystem package cache '{}': {err}; keeping the cache configured so package publication reports the failure",
+                filesystem_cache.display()
+            );
+        }
+        Self::construct(options, filesystem_cache, None)
+    }
 
+    /// Get a new instance of the registry for a `Session`-derived filesystem cache path.
+    ///
+    /// This is the only entry that runs the cache lifecycle protocol: the fingerprint directory
+    /// is prepared and locked for the registry's lifetime, and dead sibling fingerprint
+    /// directories plus legacy flat `.masp` entries are pruned as defense in depth — FPI
+    /// expansions track the cache path themselves for correctness. It is crate-private because
+    /// the destructive sweep must be reachable only for internally derived paths, whose owned
+    /// `miden/packages/<fingerprint>` layout the session derivation guarantees (and pruning
+    /// re-checks lexically as a belt; symlinked layouts are outside the contract).
+    ///
+    /// Cache preparation and cleanup failures are reported only through the `package-registry`
+    /// log target. The configured cache remains enabled after a preparation failure, so the
+    /// first package publication reports the concrete filesystem error to the caller.
+    #[cfg(any(test, feature = "std"))]
+    pub(crate) fn new_with_derived_filesystem_cache(
+        options: &crate::Options,
+        filesystem_cache: Option<std::path::PathBuf>,
+    ) -> Result<Self, Report> {
         let filesystem_cache_lock = filesystem_cache
             .as_deref()
             .and_then(crate::package_cache::prepare_and_lock_filesystem_cache);
+        Self::construct(options, filesystem_cache, filesystem_cache_lock)
+    }
+
+    /// Builds the registry with system libraries, link libraries, and the given cache state.
+    #[cfg(any(test, feature = "std"))]
+    fn construct(
+        options: &crate::Options,
+        filesystem_cache: Option<std::path::PathBuf>,
+        filesystem_cache_lock: Option<std::fs::File>,
+    ) -> Result<Self, Report> {
+        use alloc::string::ToString;
 
         // Load system libraries
         let mut registry = if options.sysroot.is_some() {
@@ -417,7 +451,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let current = temp.path().join("miden").join("packages").join("fedcba9876543210");
 
-        let registry = HybridPackageRegistry::new_with_filesystem_cache(
+        let registry = HybridPackageRegistry::new_with_derived_filesystem_cache(
             &crate::Options::default(),
             Some(current.clone()),
         )
@@ -431,6 +465,35 @@ mod tests {
         assert!(
             matches!(contender.try_lock(), Err(std::fs::TryLockError::WouldBlock)),
             "the registry must hold the exclusive builder lock for its lifetime"
+        );
+    }
+
+    #[test]
+    fn public_constructor_never_sweeps_or_locks_a_caller_supplied_path() {
+        let temp = TempDir::new().unwrap();
+        let parent = temp.path().join("miden").join("packages");
+        let current = parent.join("fedcba9876543210");
+        let sibling = parent.join("0123456789abcdef");
+        std::fs::create_dir_all(&sibling).unwrap();
+
+        let registry = HybridPackageRegistry::new_with_filesystem_cache(
+            &crate::Options::default(),
+            Some(current.clone()),
+        )
+        .unwrap();
+
+        assert!(current.is_dir(), "the configured cache directory is still created");
+        assert!(
+            sibling.exists(),
+            "a caller-supplied path must never sweep its parent, owned-looking or not"
+        );
+        assert!(
+            registry.filesystem_cache_lock.is_none(),
+            "a caller-supplied path is never locked"
+        );
+        assert!(
+            !current.with_extension("lock").exists(),
+            "no lock file is created for a caller-supplied path"
         );
     }
 }
