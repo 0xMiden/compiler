@@ -1162,18 +1162,9 @@ pub(crate) fn augment_foreign_account_bindings(
     let bindings = file.into_token_stream();
     let package_includes = include_paths
         .into_iter()
-        .map(|path| {
-            let utf8_path = path.to_str().ok_or_else(|| {
-                Error::new(
-                    Span::call_site(),
-                    format!("path '{}' contains invalid UTF-8", path.display()),
-                )
-            })?;
-            Ok(quote! {
-                const _: &[u8] = include_bytes!(#utf8_path);
-            })
-        })
+        .map(|path| package_include_tokens(&path))
         .collect::<syn::Result<Vec<_>>>()?;
+    let cache_tracking = package_cache_tracking_tokens();
 
     Ok(quote! {
         #[doc(hidden)]
@@ -1188,12 +1179,34 @@ pub(crate) fn augment_foreign_account_bindings(
         #(#trait_items)*
         #active_account_item
         #(#package_includes)*
-        // Record the package cache location in the consumer's dep-info. The value carries the
-        // build-input fingerprint, so Cargo re-expands this macro whenever the fingerprint
-        // rotates — even when a stale cache directory survives on disk. The `include_bytes!`
-        // constants above cover content changes at an unchanged path.
-        const _: Option<&str> = option_env!("MIDENC_PACKAGE_CACHE");
+        #cache_tracking
     })
+}
+
+/// Emits the rebuild-tracking constant for one dependency package file.
+///
+/// Everything here lands in consumer scope, so the macro path is fully qualified: a
+/// consumer-defined `include_bytes` must not shadow the rebuild tracking.
+fn package_include_tokens(path: &std::path::Path) -> syn::Result<TokenStream2> {
+    let utf8_path = path.to_str().ok_or_else(|| {
+        Error::new(Span::call_site(), format!("path '{}' contains invalid UTF-8", path.display()))
+    })?;
+    Ok(quote! {
+        const _: &[u8] = ::core::include_bytes!(#utf8_path);
+    })
+}
+
+/// Emits the dep-info record of the package cache location.
+///
+/// The value carries the build-input fingerprint, so Cargo re-expands the consumer whenever the
+/// fingerprint rotates — even when a stale cache directory survives on disk. The
+/// `include_bytes!` constants cover content changes at an unchanged path. Both the type and the
+/// macro are fully qualified because this lands in consumer scope, where a user-defined `Option`
+/// or `option_env` must not shadow the tracking.
+fn package_cache_tracking_tokens() -> TokenStream2 {
+    quote! {
+        const _: ::core::option::Option<&str> = ::core::option_env!("MIDENC_PACKAGE_CACHE");
+    }
 }
 
 /// Builds one generated component trait and its empty attachment impl for the account wrapper.
@@ -2151,6 +2164,20 @@ interface api {
         assert!(message.contains(&temp_root.display().to_string()));
 
         std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn emitted_cache_tracking_is_hygienic_in_consumer_scope() {
+        // The emitted constants land in the consumer crate's scope. Fully qualified paths keep
+        // the tracking working where a user defines their own `Option`, `option_env`, or
+        // `include_bytes`.
+        let tracking = package_cache_tracking_tokens().to_string();
+        assert!(tracking.contains(":: core :: option :: Option"), "{tracking}");
+        assert!(tracking.contains(":: core :: option_env !"), "{tracking}");
+        assert!(tracking.contains("MIDENC_PACKAGE_CACHE"), "{tracking}");
+
+        let include = package_include_tokens(Path::new("/cache/dep.masp")).unwrap().to_string();
+        assert!(include.contains(":: core :: include_bytes !"), "{include}");
     }
 
     #[test]
