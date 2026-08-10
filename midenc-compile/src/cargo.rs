@@ -32,7 +32,7 @@ const NOTE_CODEC_TARGET: &str = "wasm32-unknown-unknown";
 const NOTE_CODEC_PACKAGE_PATH_ENV: &str = "MIDENC_NOTE_CODEC_PACKAGE_PATH";
 
 /// Pinned author codec interface used to validate component signatures.
-const NOTE_CODEC_WIT: &str = include_str!("../../sdk/note-codec/wit/note-codec.wit");
+const NOTE_CODEC_WIT: &str = include_str!("../wit/note-codec.wit");
 
 /// Cargo-specific options extracted from the `Compiler` struct.
 ///
