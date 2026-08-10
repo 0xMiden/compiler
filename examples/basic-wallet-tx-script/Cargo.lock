@@ -948,7 +948,7 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
 name = "miden"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "miden-base",
  "miden-base-macros",
@@ -1037,7 +1037,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "miden-base-sys",
  "miden-stdlib-sys",
@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-macros"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "heck",
  "miden-assembly-syntax",
@@ -1066,7 +1066,7 @@ dependencies = [
 
 [[package]]
 name = "miden-base-sys"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "miden-field-repr",
  "miden-stdlib-sys",
@@ -1200,7 +1200,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "miden-field",
  "miden-field-repr-derive",
@@ -1208,7 +1208,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr-derive"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1402,7 +1402,7 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 
 [[package]]
 name = "miden-serde-utils"
@@ -1438,7 +1438,7 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib-sys"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "miden-field",
 ]
@@ -1506,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-wasm-metadata"
-version = "0.13.1"
+version = "0.14.0-rc.1"
 dependencies = [
  "serde",
  "serde_json",
