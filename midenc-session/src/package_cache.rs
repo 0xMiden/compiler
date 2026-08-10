@@ -307,7 +307,7 @@ fn warn_prune_failure(path: &Path, parent: &Path, err: &std::io::Error) {
 }
 
 /// Returns the permanent sibling lock path associated with a fingerprint directory.
-fn filesystem_cache_lock_path(filesystem_cache: &Path) -> PathBuf {
+pub(crate) fn filesystem_cache_lock_path(filesystem_cache: &Path) -> PathBuf {
     filesystem_cache.with_extension(BUILD_LOCK_EXTENSION)
 }
 

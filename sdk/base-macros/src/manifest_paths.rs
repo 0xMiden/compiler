@@ -23,8 +23,10 @@ pub(crate) const SDK_WIT_SOURCE: &str = include_str!("../wit/miden.wit");
 
 /// WIT metadata extracted from the consuming crate.
 pub(crate) struct ResolvedWit {
-    /// WIT search paths loaded before any dependency source (the SDK prelude).
-    pub paths: Vec<String>,
+    /// The SDK prelude directory, loaded before any dependency source.
+    ///
+    /// Always present in macro expansion; `None` models a self-contained fixture in tests.
+    pub prelude_dir: Option<String>,
     /// WIT sources read from the compiled packages of Miden path dependencies.
     pub dependency_sources: Vec<DependencyWitSource>,
     /// The crate's local `wit/` directory, loaded after the dependency sources so its WIT can
@@ -49,8 +51,6 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
 
     let canonical_prelude_dir = ensure_sdk_wit()?;
 
-    let mut resolved = Vec::new();
-
     let prelude_dir = canonical_prelude_dir
         .to_str()
         .ok_or_else(|| {
@@ -60,8 +60,6 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
             )
         })?
         .to_owned();
-
-    resolved.push(prelude_dir);
 
     // Dependency WIT is read from each path dependency's compiled `.masp` package rather than
     // from files on disk; the sources are pushed into the wit-bindgen resolver alongside the
@@ -84,7 +82,7 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
     }
 
     Ok(ResolvedWit {
-        paths: resolved,
+        prelude_dir: Some(prelude_dir),
         dependency_sources,
         local_wit_root,
         world,
@@ -136,28 +134,7 @@ struct LocalWorld {
 
 /// Scans the component's `wit` directory to find the default world.
 fn detect_world(wit_root: &Path) -> Result<Option<LocalWorld>, Error> {
-    let mut entries = fs::read_dir(wit_root)
-        .map_err(|err| {
-            Error::new(Span::call_site(), format!("failed to read '{}': {err}", wit_root.display()))
-        })?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| {
-            Error::new(
-                Span::call_site(),
-                format!("failed to iterate '{}': {err}", wit_root.display()),
-            )
-        })?;
-    entries.sort_by_key(|entry| entry.file_name());
-
-    let wit_files = entries
-        .into_iter()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            !path.file_name().is_some_and(|name| name == "deps")
-                && !path.is_dir()
-                && path.extension().and_then(|ext| ext.to_str()) == Some("wit")
-        })
-        .collect::<Vec<_>>();
+    let wit_files = crate::util::wit_files_in_dir(wit_root)?;
 
     for path in &wit_files {
         if let Some((package, world)) = parse_package_and_world(path)? {

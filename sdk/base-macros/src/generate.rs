@@ -549,10 +549,10 @@ fn load_wit_sources(
         Ok(())
     };
 
-    // Load WIT definitions from file paths (the SDK prelude). These are always loaded to
-    // populate the resolver with type definitions the other sources may depend on.
-    for path in &config.paths {
-        push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(path))?;
+    // Load the SDK prelude first: it is loaded before every other source to populate the
+    // resolver with type definitions those sources may depend on.
+    if let Some(prelude_dir) = &config.prelude_dir {
+        push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(prelude_dir))?;
     }
 
     // Load WIT definitions embedded in the compiled packages of Miden path dependencies. The
@@ -1714,7 +1714,7 @@ interface api {
         let path = dir.join("component.wit");
         fs::write(&path, wit).expect("local WIT fixture must be written");
         manifest_paths::ResolvedWit {
-            paths: Vec::new(),
+            prelude_dir: None,
             dependency_sources: Vec::new(),
             local_wit_root: Some(dir),
             world: None,

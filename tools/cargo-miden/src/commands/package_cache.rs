@@ -1,9 +1,5 @@
-use std::rc::Rc;
-
 use anyhow::{Result, anyhow};
 use clap::Args;
-use midenc_compile::Compiler;
-use midenc_session::{InputFile, diagnostics::PrintDiagnostic};
 
 /// Command-line arguments accepted by `cargo miden package-cache`.
 ///
@@ -28,26 +24,11 @@ impl PackageCacheCommand {
     ///   ends with this `cargo-miden` binary itself, so a compiler update re-runs the build
     ///   script and rotates the emitted cache path.
     pub fn exec(self) -> Result<()> {
-        let cwd = std::env::current_dir()?;
-        let compiler_opts =
-            Compiler::try_parse_from(cwd.clone(), &self.args).unwrap_or_else(|err| err.exit());
-
-        let manifest_path = match compiler_opts.manifest_path.as_deref() {
-            Some(manifest_path) => manifest_path.to_path_buf(),
-            None => cwd.join("Cargo.toml"),
-        };
-        let input = InputFile::from_path(&manifest_path)
-            .map_err(|err| anyhow!("failed to read '{}': {err}", manifest_path.display()))?;
-        let session = Rc::new(
-            compiler_opts
-                .into_session(input, None, None)
-                .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?,
-        );
+        let (session, _metadata_out_dir) = super::session_from_args(&self.args)?;
 
         let cache_dir = session.filesystem_package_cache_dir().ok_or_else(|| {
             anyhow!(
-                "'{}' does not locate a Miden project, so it has no package cache",
-                manifest_path.display()
+                "the current directory does not locate a Miden project, so it has no package cache"
             )
         })?;
         let inputs = session.package_cache_build_inputs().unwrap_or_default();

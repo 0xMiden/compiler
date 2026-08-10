@@ -38,20 +38,28 @@ fn workspace_root() -> &'static Path {
 #[test]
 fn template_build_scripts_are_identical() {
     let templates = workspace_root().join("extra").join("templates");
-    let mut copies: Vec<PathBuf> = [
-        "rust/auth-component/template/build.rs",
-        "rust/note/template/build.rs",
-        "rust/tx-script/template/build.rs",
-        "rust/program/template/build.rs",
-        "project/contracts/counter-account/build.rs",
-        "project/contracts/increment-note/build.rs",
-    ]
-    .into_iter()
-    .map(|copy| templates.join(copy))
-    .collect();
+    let mut copies = Vec::new();
 
-    // Every example that is a Miden project must carry the script too, so IDE analysis of the
-    // examples works the same way it does for generated projects.
+    // Every cargo-generate contract template must carry the script; discovery instead of a
+    // hardcoded list, so a future template cannot escape the pin.
+    for entry in fs::read_dir(templates.join("rust")).expect("failed to list the rust templates") {
+        let template =
+            entry.expect("failed to read a rust templates entry").path().join("template");
+        if template.is_dir() {
+            copies.push(template.join("build.rs"));
+        }
+    }
+    // Every scaffold contract must carry it too.
+    for entry in fs::read_dir(templates.join("project").join("contracts"))
+        .expect("failed to list the scaffold contracts")
+    {
+        let contract = entry.expect("failed to read a scaffold contracts entry").path();
+        if contract.join("miden-project.toml").is_file() {
+            copies.push(contract.join("build.rs"));
+        }
+    }
+    // And every example that is a Miden project, so IDE analysis of the examples works the
+    // same way it does for generated projects.
     let examples = workspace_root().join("examples");
     for entry in fs::read_dir(&examples).expect("failed to list the examples directory") {
         let example = entry.expect("failed to read an examples entry").path();
@@ -59,7 +67,10 @@ fn template_build_scripts_are_identical() {
             copies.push(example.join("build.rs"));
         }
     }
-    assert!(copies.len() > 6, "the examples walk must find Miden example projects");
+    assert!(
+        copies.len() > 7,
+        "the discovery walks must find the contract templates and example projects"
+    );
 
     for copy_path in copies {
         let bytes = fs::read(&copy_path)
@@ -240,7 +251,7 @@ fn rust_sdk_build_script_p2id_note_plain_cargo_check() {
             .expect("the query must name the cache directory"),
     );
 
-    let lock_path = cache_dir.with_extension("lock");
+    let lock_path = midenc_session::package_cache_lock_path(&cache_dir);
     fs::create_dir_all(lock_path.parent().expect("a fingerprint lock has a packages parent"))
         .expect("failed to create the package cache parent");
     let cache_liveness_lock = fs::OpenOptions::new()

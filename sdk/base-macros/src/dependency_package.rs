@@ -228,35 +228,7 @@ fn read_wit_override(
     })?;
 
     let file = if path.is_dir() {
-        let mut wit_files = fs::read_dir(&path)
-            .map_err(|err| {
-                Error::new(
-                    error_span,
-                    format!(
-                        "failed to read the WIT override directory '{}' for dependency \
-                         '{dependency_name}': {err}",
-                        path.display()
-                    ),
-                )
-            })?
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|err| {
-                Error::new(
-                    error_span,
-                    format!(
-                        "failed to iterate the WIT override directory '{}' for dependency \
-                         '{dependency_name}': {err}",
-                        path.display()
-                    ),
-                )
-            })?
-            .into_iter()
-            .map(|entry| entry.path())
-            .filter(|path| {
-                path.is_file() && path.extension().is_some_and(|extension| extension == "wit")
-            })
-            .collect::<Vec<_>>();
-        wit_files.sort();
+        let mut wit_files = crate::util::wit_files_in_dir(&path)?;
         match wit_files.len() {
             1 => wit_files.remove(0),
             count => {
@@ -332,7 +304,7 @@ thread_local! {
 
 /// Reads and deserializes a compiled Miden package, reusing the previous read of an unchanged
 /// file.
-pub(crate) fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
+fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
     let fingerprint = fs::metadata(package_path)
         .and_then(|metadata| Ok((metadata.modified()?, metadata.len())))
         .ok();
@@ -399,11 +371,11 @@ fn package_wit(package: &Package, package_path: &Path) -> Result<Option<String>,
 }
 
 /// A located and deserialized dependency package.
-pub(crate) struct ResolvedDependencyPackage {
+struct ResolvedDependencyPackage {
     /// Path of the `.masp` file the package was read from.
-    pub(crate) path: PathBuf,
+    path: PathBuf,
     /// The deserialized package.
-    pub(crate) package: Arc<Package>,
+    package: Arc<Package>,
 }
 
 // Manual impl: required by `expect_err` in tests, without requiring `Package: Debug` (which
@@ -425,10 +397,7 @@ impl core::fmt::Debug for ResolvedDependencyPackage {
 /// by the build inputs and rewritten by every build, so the package found under the dependency's
 /// name is trusted as-is; id, version, and digest verification belong to the compiler's project
 /// resolution. Without a configured cache the dependency cannot be resolved at all.
-pub(crate) fn resolve_dependency_package(
-    name: &str,
-    root: &Path,
-) -> Result<ResolvedDependencyPackage, Error> {
+fn resolve_dependency_package(name: &str, root: &Path) -> Result<ResolvedDependencyPackage, Error> {
     if root.is_file() {
         return Ok(ResolvedDependencyPackage {
             path: root.to_path_buf(),

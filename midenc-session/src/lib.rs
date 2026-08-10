@@ -50,6 +50,17 @@ use midenc_hir_symbol::Symbol;
 
 #[cfg(feature = "std")]
 pub use self::package_cache::PackageCacheBuildInputs;
+
+/// Returns the permanent liveness-lock path of a package-cache fingerprint directory.
+///
+/// Holding this lock shared marks the directory as live, which stale-cache pruning respects.
+/// Exposed (hidden) for tests that participate in the liveness protocol; the protocol itself
+/// stays internal.
+#[doc(hidden)]
+#[cfg(feature = "std")]
+pub fn package_cache_lock_path(filesystem_cache_dir: &std::path::Path) -> std::path::PathBuf {
+    package_cache::filesystem_cache_lock_path(filesystem_cache_dir)
+}
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, Report, SourceManager},

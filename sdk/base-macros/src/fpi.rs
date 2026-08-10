@@ -1500,10 +1500,13 @@ fn load_dependency(
     dependency: SelectedDependency,
     trait_ident: syn::Ident,
 ) -> syn::Result<Dependency> {
-    let import = dependency.import().to_owned();
+    let SelectedDependency {
+        package_path,
+        package,
+        interface,
+    } = dependency;
+    let import = interface.import;
     let module_path = import_module_path(&import);
-    let package_path = dependency.package_path.clone();
-    let package = dependency.package.clone();
 
     let mut roots = HashMap::new();
     for export in package.manifest.exports() {

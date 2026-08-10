@@ -1,4 +1,7 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use midenc_frontend_wasm_metadata::{
     FrontendMetadata, WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
@@ -117,6 +120,26 @@ fn normalize_embedded_wit(wit_source: &str) -> String {
         normalized.push('\n');
     }
     normalized
+}
+
+/// Lists the non-directory `.wit` files directly inside `dir`, sorted by name.
+pub(crate) fn wit_files_in_dir(dir: &Path) -> Result<Vec<PathBuf>, Error> {
+    let mut wit_files = fs::read_dir(dir)
+        .map_err(|err| {
+            Error::new(Span::call_site(), format!("failed to read '{}': {err}", dir.display()))
+        })?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            Error::new(Span::call_site(), format!("failed to iterate '{}': {err}", dir.display()))
+        })?
+        .into_iter()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            !path.is_dir() && path.extension().and_then(|ext| ext.to_str()) == Some("wit")
+        })
+        .collect::<Vec<_>>();
+    wit_files.sort();
+    Ok(wit_files)
 }
 
 /// Strips line comments starting with `//` from the provided source line.
