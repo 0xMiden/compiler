@@ -215,16 +215,9 @@ fn build_generated_test(root: impl AsRef<Path>) -> CompilerTest {
 
 /// Extracts the component WIT embedded in a compiled account package.
 fn package_wit(package: &miden_mast_package::Package) -> String {
-    let wit_section_id = miden_mast_package::SectionId::custom(
-        midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
-    )
-    .expect("the WIT section id must be a valid custom section id");
-    let section = package
-        .sections
-        .iter()
-        .find(|section| section.id == wit_section_id)
+    let wit_bytes = midenc_frontend_wasm_metadata::package_wit(package)
         .expect("compiled account package must embed its component WIT");
-    String::from_utf8(section.data.to_vec()).expect("embedded WIT must be UTF-8")
+    String::from_utf8(wit_bytes.to_vec()).expect("embedded WIT must be UTF-8")
 }
 
 /// Runs a generated account/note pair by executing the compiled note script directly.

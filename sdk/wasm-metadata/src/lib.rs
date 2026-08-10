@@ -26,6 +26,25 @@ pub const WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME: &str = "rodata,miden_wit";
 /// Name of the Miden package (`.masp`) section that carries the component's public WIT source.
 pub const PACKAGE_WIT_SECTION_ID: &str = "wit";
 
+/// Returns the Miden package section id that carries the component's public WIT source.
+///
+/// One accessor for every producer and consumer, so the planned upstream `SectionId::WIT`
+/// changes a single place.
+pub fn package_wit_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_WIT_SECTION_ID)
+        .expect("the WIT section id must be a valid custom section id")
+}
+
+/// Returns the component WIT bytes embedded in a compiled Miden package, when present.
+pub fn package_wit(package: &miden_mast_package::Package) -> Option<&[u8]> {
+    let wit_section_id = package_wit_section_id();
+    package
+        .sections
+        .iter()
+        .find(|section| section.id == wit_section_id)
+        .map(|section| section.data.as_ref())
+}
+
 /// Out-of-band payloads extracted from the input binary and attached to the compiled Miden
 /// package as sections.
 ///

@@ -1216,16 +1216,12 @@ fn maybe_dump_public_package_wit(artifact_name: &str, package: &miden_mast_packa
         return;
     };
 
-    let wit_section_id = miden_mast_package::SectionId::custom(
-        midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
-    )
-    .expect("the WIT section id must be a valid custom section id");
-    let Some(section) = package.sections.iter().find(|section| section.id == wit_section_id) else {
+    let Some(wit_bytes) = midenc_frontend_wasm_metadata::package_wit(package) else {
         return;
     };
 
     let out_file = out_dir.join(format!("{}.wit", sanitize_filename_component(artifact_name)));
-    fs::write(&out_file, section.data.as_ref()).unwrap_or_else(|err| {
+    fs::write(&out_file, wit_bytes).unwrap_or_else(|err| {
         panic!("failed to write generated WIT to '{}': {err}", out_file.display())
     });
     eprintln!("wrote generated WIT to '{}'", out_file.display());

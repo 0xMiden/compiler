@@ -16,8 +16,7 @@ use std::{
     sync::Arc,
 };
 
-use miden_mast_package::{Package, SectionId};
-use midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID;
+use miden_mast_package::Package;
 use proc_macro2::Span;
 use syn::Error;
 
@@ -304,20 +303,15 @@ fn read_wit_override(
 fn missing_embedded_wit_message(package_path: &Path, dependency_name: &str) -> String {
     format!(
         "dependency package '{}' does not embed component WIT (missing package section \
-         '{PACKAGE_WIT_SECTION_ID}'); it was likely built with an older Miden toolchain. Rebuild \
-         the dependency with the current `cargo miden build`, or provide the WIT manually via \
+         '{wit_section}'); it was likely built with an older Miden toolchain. Rebuild the \
+         dependency with the current `cargo miden build`, or provide the WIT manually via \
          package.metadata.miden.dependencies.{dependency_name}.wit in miden-project.toml. For \
          manually authored components (a hand-written `wit/` directory with a bare \
          `miden::generate!()`), the WIT is embedded only when the `wit/` directory contains \
          exactly one `.wit` file that is self-contained and exports an interface.",
-        package_path.display()
+        package_path.display(),
+        wit_section = midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
     )
-}
-
-/// Returns the package section id carrying the embedded component WIT.
-pub(crate) fn wit_section_id() -> SectionId {
-    SectionId::custom(PACKAGE_WIT_SECTION_ID)
-        .expect("the WIT section id must be a valid custom section id")
 }
 
 /// Deserialized package reads, keyed by path and validated by (modification time, length).
@@ -388,15 +382,13 @@ pub(crate) fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
 /// Returns `Ok(None)` when the package has no WIT section; a section that is present but not
 /// valid UTF-8 is an error (the package claims its own WIT, so nothing may substitute it).
 fn package_wit(package: &Package, package_path: &Path) -> Result<Option<String>, Error> {
-    let error_span = Span::call_site();
-    let wit_section_id = wit_section_id();
-    let Some(section) = package.sections.iter().find(|section| section.id == wit_section_id) else {
+    let Some(wit_bytes) = midenc_frontend_wasm_metadata::package_wit(package) else {
         return Ok(None);
     };
 
-    String::from_utf8(section.data.to_vec()).map(Some).map_err(|err| {
+    String::from_utf8(wit_bytes.to_vec()).map(Some).map_err(|err| {
         Error::new(
-            error_span,
+            Span::call_site(),
             format!(
                 "dependency package '{}' contains an invalid component WIT section (not UTF-8): \
                  {err}",

@@ -104,10 +104,9 @@ fn attach_account_component_metadata(
 
 /// Attach the component's public WIT source to the assembled package.
 fn attach_component_wit(package: &mut Package, component_wit_bytes: Option<&[u8]>) {
-    use miden_mast_package::{Section, SectionId};
+    use miden_mast_package::Section;
     if let Some(bytes) = component_wit_bytes {
-        let id = SectionId::custom(midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID)
-            .expect("the WIT section id must be a valid custom section id");
+        let id = midenc_frontend_wasm_metadata::package_wit_section_id();
         package.sections.push(Section::new(id, bytes.to_vec()));
     }
 }

@@ -3807,6 +3807,7 @@ dependencies = [
 name = "midenc-frontend-wasm-metadata"
 version = "0.14.0-rc.1"
 dependencies = [
+ "miden-mast-package",
  "serde",
  "serde_json",
 ]

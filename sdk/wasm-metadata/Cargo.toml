@@ -17,5 +17,6 @@ edition.workspace = true
 doctest = false
 
 [dependencies]
+miden-mast-package.workspace = true
 serde.workspace = true
 serde_json.workspace = true

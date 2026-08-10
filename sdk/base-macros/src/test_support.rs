@@ -23,7 +23,7 @@ pub(crate) fn build_package(package_id: &str, wit: Option<&str>) -> Arc<Package>
     package.version = "0.1.0".parse().expect("fixture version must parse");
     if let Some(wit) = wit {
         package.sections.push(miden_mast_package::Section::new(
-            crate::dependency_package::wit_section_id(),
+            midenc_frontend_wasm_metadata::package_wit_section_id(),
             wit.as_bytes().to_vec(),
         ));
     }

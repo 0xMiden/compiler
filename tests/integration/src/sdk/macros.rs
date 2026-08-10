@@ -753,10 +753,7 @@ fn write_sibling_package(cargo_proj: &crate::cargo_proj::Project, wit: Option<&s
         .expect("sibling fixture library must assemble");
     package.version = "0.0.1".parse().expect("sibling fixture version must parse");
     if let Some(wit) = wit {
-        let wit_section_id = miden_mast_package::SectionId::custom(
-            midenc_frontend_wasm_metadata::PACKAGE_WIT_SECTION_ID,
-        )
-        .expect("the WIT section id must be a valid custom section id");
+        let wit_section_id = midenc_frontend_wasm_metadata::package_wit_section_id();
         package
             .sections
             .push(miden_mast_package::Section::new(wit_section_id, wit.as_bytes().to_vec()));
