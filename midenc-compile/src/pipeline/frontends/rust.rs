@@ -1653,10 +1653,12 @@ pub(crate) mod manifest {
         explicit: Option<&str>,
     ) -> Vec<String> {
         let mut args: Vec<String> = mandatory.iter().map(|flag| flag.to_string()).collect();
-        let encoded =
-            inherited_encoded.and_then(|value| value.to_str()).filter(|value| !value.is_empty());
-        let plain =
-            inherited_plain.and_then(|value| value.to_str()).filter(|value| !value.is_empty());
+        let encoded = inherited_encoded
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty());
+        let plain = inherited_plain
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty());
         if let Some(encoded) = encoded {
             args.extend(encoded.split('\x1f').filter(|arg| !arg.is_empty()).map(str::to_string));
         } else if let Some(plain) = plain {
