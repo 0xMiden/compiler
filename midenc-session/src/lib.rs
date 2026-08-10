@@ -362,7 +362,7 @@ impl Session {
 
     /// Get a new package registry instance for this session
     pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
-        registry::HybridPackageRegistry::new_with_filesystem_cache(
+        registry::HybridPackageRegistry::new_with_derived_filesystem_cache(
             &self.options,
             self.filesystem_package_cache_dir(),
         )

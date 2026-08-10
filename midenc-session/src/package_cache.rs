@@ -9,10 +9,10 @@
 //! checksum freshness is enabled.
 //! Expansions also record `MIDENC_PACKAGE_CACHE`, so rotating the fingerprinted path re-expands
 //! consumers even if best-effort stale-directory pruning does not complete.
-//! Concurrent builds with the same fingerprint share one directory. Package publication uses a
-//! temporary file followed by atomic rename, preventing consumers from reading a torn package.
-//! A macro read and rustc's later `include_bytes!` evaluation can still straddle a concurrent
-//! rewrite; that narrow same-fingerprint window is accepted and bounded by the every-run rewrite.
+//! Concurrent builds with the same fingerprint serialize on the directory's exclusive builder
+//! lock, so their publications and macro reads never interleave. Package publication still uses
+//! a temporary file followed by atomic rename, so even a reader outside the protocol cannot see
+//! a torn package.
 //! Registry and git dependencies contribute declaration text only; in particular, a git branch
 //! moving without a manifest edit is outside this fingerprint by design, as are a git package's
 //! transitive dependencies. Pinning a revision or deleting the cache directory recovers from a
