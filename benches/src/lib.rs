@@ -191,12 +191,7 @@ impl BenchmarkRunner {
             .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
         let mut executor = Executor::from_config(config);
         let packages_dir = project_dir.join("target/miden/packages");
-        let mut dependencies = fs::read_dir(&packages_dir)
-            .with_context(|| format!("failed to read {}", packages_dir.display()))?
-            .map(|entry| entry.map(|entry| entry.path()))
-            .collect::<std::io::Result<Vec<_>>>()?;
-        dependencies.retain(|path| path.extension().is_some_and(|ext| ext == "masp"));
-        dependencies.sort();
+        let dependencies = collect_dependency_packages(&packages_dir)?;
         for dependency in dependencies {
             executor
                 .with_package(load_package(&dependency)?)
@@ -212,6 +207,42 @@ impl BenchmarkRunner {
         }
         Ok(profile)
     }
+}
+
+/// Collects the dependency packages that the executor must load for an example.
+///
+/// The compiler stores dependency packages in the project package cache. Old compiler versions
+/// write them directly into `target/miden/packages/`. New compiler versions write them into a
+/// fingerprinted subdirectory of that cache. One runner binary drives both compiler versions
+/// during a benchmark comparison, so the scan reads the cache directory and one level of
+/// subdirectories. Package resolution at execution time is digest-addressed, so packages from a
+/// stale cache entry are inert.
+fn collect_dependency_packages(packages_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut dependencies = Vec::new();
+    for path in read_dir_paths(packages_dir)? {
+        if path.is_dir() {
+            dependencies
+                .extend(read_dir_paths(&path)?.into_iter().filter(|path| is_package_path(path)));
+        } else if is_package_path(&path) {
+            dependencies.push(path);
+        }
+    }
+    dependencies.sort();
+    Ok(dependencies)
+}
+
+/// Lists the entry paths of a directory.
+fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    fs::read_dir(dir)
+        .with_context(|| format!("failed to read {}", dir.display()))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(|| format!("failed to read {}", dir.display()))
+}
+
+/// Returns true when a path names a serialized Miden package file.
+fn is_package_path(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "masp")
 }
 
 fn discover_cases(workspace_root: &Path) -> Result<Vec<BenchmarkCase>> {
@@ -355,6 +386,22 @@ mod tests {
                     execute: true,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn collects_packages_from_flat_and_fingerprinted_cache_layouts() {
+        let cache = tempfile::tempdir().unwrap();
+        fs::write(cache.path().join("legacy.masp"), []).unwrap();
+        fs::write(cache.path().join("1234567890abcdef.lock"), []).unwrap();
+        let fingerprint = cache.path().join("1234567890abcdef");
+        fs::create_dir_all(&fingerprint).unwrap();
+        fs::write(fingerprint.join("miden-core.masp"), []).unwrap();
+        fs::write(fingerprint.join("README.txt"), []).unwrap();
+
+        assert_eq!(
+            collect_dependency_packages(cache.path()).unwrap(),
+            vec![fingerprint.join("miden-core.masp"), cache.path().join("legacy.masp")]
         );
     }
 
