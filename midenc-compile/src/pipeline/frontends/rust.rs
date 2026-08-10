@@ -1563,29 +1563,32 @@ pub(crate) mod manifest {
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
 
-        // Enable memcopy and 128-bit arithmetic ops
-        let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
-        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
-        // cfg-based dependency selection.
-        extra_rust_flags.push_str(" --cfg miden");
-        // Enable errors on missing stub functions
-        extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
-        // Remove the source file paths in the data segment for panics
-        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-        extra_rust_flags.push_str(" -Zlocation-detail=none");
-        // Build with panic=immediate-abort
-        extra_rust_flags.push_str(" -Zunstable-options");
-        extra_rust_flags.push_str(" -Cpanic=immediate-abort");
-        if let Ok(inherited) = std::env::var("RUSTFLAGS")
-            && !inherited.is_empty()
-        {
-            extra_rust_flags.push(' ');
-            extra_rust_flags.push_str(&inherited);
-        }
-        if let Some(explicit) = compiler_opts.rustflags.as_deref() {
-            extra_rust_flags.push(' ');
-            extra_rust_flags.push_str(explicit);
-        }
+        let mandatory_rust_flags = [
+            // Enable memcopy and 128-bit arithmetic ops
+            "-C",
+            "target-feature=+bulk-memory,+wide-arithmetic",
+            // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
+            // for cfg-based dependency selection.
+            "--cfg",
+            "miden",
+            // Enable errors on missing stub functions
+            "-C",
+            "link-args=--fatal-warnings",
+            // Remove the source file paths in the data segment for panics
+            // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+            "-Zlocation-detail=none",
+            // Build with panic=immediate-abort
+            "-Zunstable-options",
+            "-Cpanic=immediate-abort",
+        ];
+        let inherited_encoded = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
+        let inherited_plain = std::env::var_os("RUSTFLAGS");
+        let extra_rust_flags = merge_rust_flags(
+            &mandatory_rust_flags,
+            inherited_encoded.as_deref(),
+            inherited_plain.as_deref(),
+            compiler_opts.rustflags.as_deref(),
+        );
 
         let wasi = if compiler_opts.target_requires_protocol() {
             "wasip2"
@@ -1593,7 +1596,7 @@ pub(crate) mod manifest {
             "wasip1"
         };
 
-        let env = cargo_env(filesystem_cache_dir, extra_rust_flags);
+        let env = cargo_env(filesystem_cache_dir, &extra_rust_flags);
         let mut wasm_outputs =
             run_cargo(wasi, rustup_toolchain.as_deref(), &cargo_build_args, env)?;
 
@@ -1613,27 +1616,56 @@ pub(crate) mod manifest {
     /// variable is *unset* rather than set to an empty path, which is what makes the nested build
     /// fall back to its own default.
     ///
-    /// The composed rust flags are emitted twice: as `RUSTFLAGS` and, authoritatively, as
-    /// `CARGO_ENCODED_RUSTFLAGS`. Cargo prefers the encoded variable, so an inherited value from
-    /// the caller's environment would otherwise silently replace every mandatory Miden flag —
-    /// `--cfg miden`, the target features, the panic strategy. Setting it explicitly makes the
-    /// inherited value inert; the encoding splits on whitespace, which is exactly how cargo
-    /// itself interprets the plain variable.
+    /// The composed rust flags are emitted twice: as `RUSTFLAGS` (space-joined, lossy for
+    /// arguments that contain spaces) and, authoritatively, as `CARGO_ENCODED_RUSTFLAGS`
+    /// (0x1f-joined). Cargo prefers the encoded variable, so emitting it explicitly is what keeps
+    /// the mandatory Miden flags — `--cfg miden`, the target features, the panic strategy — from
+    /// being replaced by an inherited value; the caller's own flags survive because
+    /// [`merge_rust_flags`] folds them into the composed list first.
     ///
     /// Named — rather than left inline where it was — so that this can be asserted without
     /// spawning `cargo -Z build-std` against the SDK.
     pub(super) fn cargo_env(
         filesystem_cache_dir: Option<&Path>,
-        extra_rust_flags: String,
+        extra_rust_flags: &[String],
     ) -> Vec<(&'static str, String)> {
-        let encoded_rust_flags =
-            extra_rust_flags.split_whitespace().collect::<Vec<_>>().join("\x1f");
-        let mut env =
-            vec![("RUSTFLAGS", extra_rust_flags), ("CARGO_ENCODED_RUSTFLAGS", encoded_rust_flags)];
+        let mut env = vec![
+            ("RUSTFLAGS", extra_rust_flags.join(" ")),
+            ("CARGO_ENCODED_RUSTFLAGS", extra_rust_flags.join("\x1f")),
+        ];
         if let Some(filesystem_cache_dir) = filesystem_cache_dir {
             env.push(("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()));
         }
         env
+    }
+
+    /// Composes the rustc flag list for the nested cargo build.
+    ///
+    /// Inherited flags follow cargo's own precedence: a non-empty `CARGO_ENCODED_RUSTFLAGS`
+    /// (0x1f-separated; arguments may contain spaces) replaces plain `RUSTFLAGS`
+    /// (whitespace-split). Inherited flags are folded in after the mandatory set and before the
+    /// explicit `--rustflags`, preserving the pre-existing override order — nothing a caller
+    /// passes is dropped.
+    pub(super) fn merge_rust_flags(
+        mandatory: &[&str],
+        inherited_encoded: Option<&std::ffi::OsStr>,
+        inherited_plain: Option<&std::ffi::OsStr>,
+        explicit: Option<&str>,
+    ) -> Vec<String> {
+        let mut args: Vec<String> = mandatory.iter().map(|flag| flag.to_string()).collect();
+        let encoded =
+            inherited_encoded.and_then(|value| value.to_str()).filter(|value| !value.is_empty());
+        let plain =
+            inherited_plain.and_then(|value| value.to_str()).filter(|value| !value.is_empty());
+        if let Some(encoded) = encoded {
+            args.extend(encoded.split('\x1f').filter(|arg| !arg.is_empty()).map(str::to_string));
+        } else if let Some(plain) = plain {
+            args.extend(plain.split_whitespace().map(str::to_string));
+        }
+        if let Some(explicit) = explicit {
+            args.extend(explicit.split_whitespace().map(str::to_string));
+        }
+        args
     }
 
     /// Returns the Cargo profile value for a compiler optimization level.
@@ -3161,12 +3193,13 @@ path = "lib.rs"
     /// which is minutes of work and a network fetch.
     #[test]
     fn the_filesystem_cache_directory_is_handed_to_the_nested_cargo_build() {
-        let rustflags = String::from("-C target-feature=+bulk-memory");
+        let rustflags = vec!["-C".to_string(), "target-feature=+bulk-memory".to_string()];
         let cache = std::path::Path::new("/tmp/midenc-package-cache");
 
-        let with = manifest::cargo_env(Some(cache), rustflags.clone());
+        let with = manifest::cargo_env(Some(cache), &rustflags);
         assert!(
-            with.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
+            with.iter()
+                .any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags.join(" ")),
             "the rust flags must survive the cache directory being added: {with:?}"
         );
         let (_, found) = with
@@ -3175,29 +3208,84 @@ path = "lib.rs"
             .expect("a cache directory must be delivered to the nested build");
         assert_eq!(found, &cache.display().to_string());
 
-        let without = manifest::cargo_env(None, rustflags.clone());
+        let without = manifest::cargo_env(None, &rustflags);
         assert!(
             !without.iter().any(|(key, _)| *key == "MIDENC_PACKAGE_CACHE"),
             "no cache directory means the variable is unset, not set to nothing: {without:?}"
         );
         assert!(
-            without.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
+            without
+                .iter()
+                .any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags.join(" ")),
             "and the rust flags are handed over either way: {without:?}"
         );
     }
 
     #[test]
     fn the_encoded_rustflags_override_inherited_values_with_the_same_flags() {
-        let rustflags = String::from("-C target-feature=+bulk-memory --cfg miden");
+        let rustflags = vec![
+            "-C".to_string(),
+            "target-feature=+bulk-memory".to_string(),
+            "--cfg".to_string(),
+            "miden".to_string(),
+        ];
 
-        let env = manifest::cargo_env(None, rustflags);
+        let env = manifest::cargo_env(None, &rustflags);
         let (_, encoded) = env
             .iter()
             .find(|(key, _)| *key == "CARGO_ENCODED_RUSTFLAGS")
             .expect("the encoded variable must be set so an inherited value cannot override it");
-        // 0x1f-separated units, one per whitespace-separated flag — cargo's own split rule for
-        // the plain variable.
+        // 0x1f-separated units, one per argument.
         assert_eq!(*encoded, "-C\x1ftarget-feature=+bulk-memory\x1f--cfg\x1fmiden");
+    }
+
+    #[test]
+    fn merged_rust_flags_preserve_inherited_encoded_arguments() {
+        use std::ffi::OsStr;
+
+        let mandatory = ["--cfg", "miden"];
+
+        // A non-empty encoded value wins over the plain spelling, mirroring cargo's precedence,
+        // and its 0x1f-separated arguments survive verbatim — including ones with spaces.
+        let merged = manifest::merge_rust_flags(
+            &mandatory,
+            Some(OsStr::new("-C\x1flink-args=--flag one --flag two")),
+            Some(OsStr::new("--cfg plain_ignored")),
+            Some("--cfg explicit"),
+        );
+        assert_eq!(
+            merged,
+            vec![
+                "--cfg".to_string(),
+                "miden".to_string(),
+                "-C".to_string(),
+                "link-args=--flag one --flag two".to_string(),
+                "--cfg".to_string(),
+                "explicit".to_string(),
+            ]
+        );
+
+        // Without an encoded value the plain spelling is whitespace-split, as cargo does.
+        let merged =
+            manifest::merge_rust_flags(&mandatory, None, Some(OsStr::new("-C opt-level=3")), None);
+        assert_eq!(
+            merged,
+            vec![
+                "--cfg".to_string(),
+                "miden".to_string(),
+                "-C".to_string(),
+                "opt-level=3".to_string(),
+            ]
+        );
+
+        // Empty inherited values are treated as unset.
+        let merged = manifest::merge_rust_flags(
+            &mandatory,
+            Some(OsStr::new("")),
+            Some(OsStr::new("")),
+            None,
+        );
+        assert_eq!(merged, vec!["--cfg".to_string(), "miden".to_string()]);
     }
 
     /// A WebAssembly module with a body, for the lowering half of the entry point.
