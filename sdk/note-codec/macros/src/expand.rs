@@ -10,7 +10,7 @@ use syn::{ItemImpl, LitStr, Type, visit_mut::VisitMut};
 use crate::registry::{register_codec, register_schema, registered_codecs};
 
 /// The component world embedded in generated export glue.
-const NOTE_CODEC_WIT: &str = include_str!("../../wit/note-codec.wit");
+const NOTE_CODEC_WIT: &str = include_str!("../wit/note-codec.wit");
 
 /// Expands a project-relative type generation request.
 pub(crate) fn from_project(input: &LitStr) -> syn::Result<TokenStream> {
