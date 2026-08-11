@@ -5,8 +5,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use clap::Args;
-use miden_assembly_syntax::ast::DebugVarLocation;
-use miden_core::serde::Deserializable;
+use miden_assembly_syntax::ast::{DebugFrameBase, DebugVarLocation};
 use miden_mast_package::{
     MastForest, Package,
     debug_info::{
@@ -14,7 +13,6 @@ use miden_mast_package::{
         DebugTypeInfo, PackageDebugInfo,
     },
 };
-use midenc_hir::dialects::debuginfo::attributes::{Expression, ExpressionOp, ResolvedFrameBase};
 
 use super::{DumpError, Section};
 
@@ -99,41 +97,25 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
     Ok(())
 }
 
-const DEBUG_VAR_KILL_SENTINEL: &[u8] = b"\0miden.debug.kill";
-
 fn format_debug_var_location(location: &DebugVarLocation) -> String {
     if is_debug_var_kill_location(location) {
         "di.debug_kill".to_string()
-    } else if let DebugVarLocation::Expression(bytes) = location
-        && let Some(formatted) = format_resolved_frame_base(bytes)
-    {
-        formatted
+    } else if let DebugVarLocation::ResolvedFrameBase { base, byte_offset } = location {
+        match base {
+            DebugFrameBase::Local(offset) => {
+                format!("frame_base(FMP{offset:+}){byte_offset:+}")
+            }
+            DebugFrameBase::Memory(address) => {
+                format!("frame_base(mem[{address}]){byte_offset:+}")
+            }
+        }
     } else {
         location.to_string()
     }
 }
 
-fn format_resolved_frame_base(bytes: &[u8]) -> Option<String> {
-    let expression = Expression::read_from_bytes_with_budget(bytes, bytes.len()).ok()?;
-    let [ExpressionOp::ResolvedFrameBase { base, byte_offset }] = expression.operations.as_slice()
-    else {
-        return None;
-    };
-    Some(match base {
-        ResolvedFrameBase::Local(offset) => {
-            format!("frame_base(FMP{offset:+}){byte_offset:+}")
-        }
-        ResolvedFrameBase::Global(address) => {
-            format!("frame_base(global[{address}]){byte_offset:+}")
-        }
-    })
-}
-
 fn is_debug_var_kill_location(location: &DebugVarLocation) -> bool {
-    matches!(
-        location,
-        DebugVarLocation::Expression(expression) if expression == DEBUG_VAR_KILL_SENTINEL
-    )
+    matches!(location, DebugVarLocation::Unavailable)
 }
 
 fn print_summary(debug_info: &PackageDebugInfo) {
@@ -699,32 +681,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn formats_debug_kill_sentinel() {
-        let location = DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec());
-
-        assert_eq!(format_debug_var_location(&location), "di.debug_kill");
+    fn formats_debug_kills() {
+        assert_eq!(
+            format_debug_var_location(&DebugVarLocation::Unavailable),
+            "di.debug_kill"
+        );
     }
 
     #[test]
     fn formats_explicit_local_frame_base() {
-        use miden_core::serde::Serializable;
-
-        let expression = Expression::with_ops(vec![ExpressionOp::ResolvedFrameBase {
-            base: ResolvedFrameBase::Local(-7),
+        let location = DebugVarLocation::ResolvedFrameBase {
+            base: DebugFrameBase::Local(-7),
             byte_offset: 28,
-        }]);
-        let location = DebugVarLocation::Expression(expression.to_bytes());
-
-        assert_eq!(format_debug_var_location(&location), "frame_base(FMP-7)+28");
-    }
-
-    #[test]
-    fn does_not_decode_high_bit_globals_as_locals() {
-        let location = DebugVarLocation::FrameBase {
-            global_index: 1 << 31,
-            byte_offset: 0,
         };
 
-        assert_eq!(format_debug_var_location(&location), "global[2147483648]+0");
+        assert_eq!(format_debug_var_location(&location), "frame_base(FMP-7)+28");
     }
 }

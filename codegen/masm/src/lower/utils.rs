@@ -553,6 +553,7 @@ mod tests {
             link_info: &link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: None,
             stack,
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(function_name.as_symbol()),
@@ -597,6 +598,7 @@ mod tests {
             link_info: &link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: None,
             stack,
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(function_name.as_symbol()),
@@ -687,6 +689,7 @@ mod tests {
             link_info: &link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: None,
             stack,
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(function_name.as_symbol()),
@@ -781,6 +784,7 @@ mod tests {
             link_info: &link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: None,
             stack,
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(function_name.as_symbol()),
@@ -1006,6 +1010,7 @@ mod tests {
             link_info: &link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: None,
             stack,
             trace_target: TraceTarget::category("codegen").with_relevant_symbol(name),
         };

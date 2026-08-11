@@ -7,7 +7,7 @@
 builtin.module public @local2reg_debug_declare {
 builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 2, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
     %2 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
     %3 = arith.add %2, %2 <{ overflow = #builtin.overflow<wrapping> }>;
     builtin.ret %3 : (i32);
@@ -26,14 +26,14 @@ builtin.function public extern("C") @l2r_test(%0: i32) -> i32 {
 // dereference. Keep the slot live instead of erasing its only store.
 builtin.function public extern("C") @l2r_transformed_declare(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }>;
     %1 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
     builtin.ret %1 : (i32);
 };
 
 // CHECK-LABEL: builtin.function public extern("C") @l2r_transformed_declare
 // CHECK-NEXT:     hir.store_local [[TRANSFORMED_ARG:%\d+]] <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }>;
+// CHECK-NEXT:     di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 10, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }>;
 // CHECK-NEXT:     [[TRANSFORMED_LOAD:%\d+]] = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
 // CHECK-NEXT:     builtin.ret [[TRANSFORMED_LOAD]] : (i32);
 
@@ -41,8 +41,8 @@ builtin.function public extern("C") @l2r_transformed_declare(%0: i32) -> i32 {
 // reference, rewrite all of them before removing the slot.
 builtin.function public extern("C") @l2r_multiple_declares(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 20, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
-    di.debug_declare <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 21, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 20, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "y", file = "test.rs", line = 21, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0)]> }>;
     %1 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
     builtin.ret %1 : (i32);
 };
@@ -57,7 +57,7 @@ builtin.function public extern("C") @l2r_multiple_declares(%0: i32) -> i32 {
 // The same safety rule applies to stores that appear dead to runtime liveness.
 builtin.function public extern("C") @l2r_dead_store_with_transformed_declare(%0: i32) -> i32 {
     hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }>;
+    di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 30, ty = i32 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }>;
     builtin.ret %0 : (i32);
 };
 

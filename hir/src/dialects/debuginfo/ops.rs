@@ -35,7 +35,7 @@ pub type DebugKillRef = UnsafeIntrusiveEntityRef<DebugKill>;
 ///
 /// ```text
 /// di.debug_value %0 #[variable = di.local_variable(name = x, ...)]
-///             #[expression = di.expression(DW_OP_WASM_local 0)]
+///             #[expression = di.expression(DI_OP_local_slot 0)]
 /// ```
 #[derive(EffectOpInterface, OpParser, OpPrinter)]
 #[operation(
@@ -85,7 +85,7 @@ impl Verify<dyn DebugEffectOpInterface> for DebugValue {
 ///
 /// Unlike [DebugValue] which tracks values, [DebugDeclare] tracks the location where a variable is
 /// stored. This is useful for variables that live in memory (e.g., stack slots) where the address is
-/// described by a debug expression such as `DW_OP_fbreg`.
+/// described by a debug expression such as `DI_OP_frame_base`.
 #[derive(EffectOpInterface, OpParser, OpPrinter)]
 #[operation(
     dialect = DebugInfoDialect,

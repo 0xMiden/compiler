@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- The Wasm frontend now normalizes DWARF variable locations into target-neutral HIR slots, and
+  MASM lowering resolves those slots to the VM's typed Miden location protocol once the final frame
+  layout is known; unsupported locations become explicit kills instead of stale expressions
+  (#1317).
 - `midenc` accepts `--stop-after=CHECKPOINT` (or `MIDENC_STOP_AFTER`) to stop at a frontend's
   `parse`, `analyze`, `transform`, `lower`, or `assemble` checkpoint, or at a fully qualified
   checkpoint such as `hir.initial`. Invalid checkpoints report the names available for the

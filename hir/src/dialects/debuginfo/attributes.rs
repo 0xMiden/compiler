@@ -5,7 +5,7 @@ mod variable;
 
 pub use self::{
     compile_unit::{CompileUnit, CompileUnitAttr},
-    expression::{Expression, ExpressionAttr, ExpressionOp, FrameBase, ResolvedFrameBase},
+    expression::{Expression, ExpressionAttr, ExpressionOp, FrameBase},
     subprogram::{Subprogram, SubprogramAttr},
     variable::{Variable, VariableAttr},
 };

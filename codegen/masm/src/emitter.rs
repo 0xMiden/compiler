@@ -19,6 +19,7 @@ pub(crate) struct BlockEmitter<'b> {
     pub link_info: &'b LinkInfo,
     pub invoked: &'b mut BTreeSet<masm::Invoke>,
     pub target: Vec<masm::Op>,
+    pub debug_frame_size: Option<u16>,
     pub stack: OperandStack,
     pub trace_target: TraceTarget,
 }
@@ -30,6 +31,7 @@ impl BlockEmitter<'_> {
             link_info: self.link_info,
             invoked: self.invoked,
             target: Default::default(),
+            debug_frame_size: self.debug_frame_size,
             stack: self.stack.clone(),
             trace_target: self.trace_target.clone(),
         }

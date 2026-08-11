@@ -48,9 +48,9 @@ fn convert_debug_references_for_local<R: Rewriter>(
         };
         if let Some((expr, references)) = expression
             && expr.as_value().operations.iter().any(|op| match op {
-                ExpressionOp::WasmLocal(index) => *index == local_index,
+                ExpressionOp::LocalSlot(index) => *index == local_index,
                 ExpressionOp::FrameBase {
-                    base: FrameBase::Local(index),
+                    base: FrameBase::LocalSlot(index),
                     ..
                 } => *index == local_index,
                 _ => false,
@@ -74,7 +74,7 @@ fn convert_debug_references_for_local<R: Rewriter>(
                 .as_value()
                 .operations
                 .as_slice(),
-            [ExpressionOp::WasmLocal(index)] if *index == local_index
+            [ExpressionOp::LocalSlot(index)] if *index == local_index
         )
     });
     let values_are_safe = values.iter().all(|value_op| {
@@ -87,7 +87,7 @@ fn convert_debug_references_for_local<R: Rewriter>(
                 .as_value()
                 .operations
                 .as_slice(),
-            [ExpressionOp::WasmLocal(index)] if *index == local_index
+            [ExpressionOp::LocalSlot(index)] if *index == local_index
         )
     });
     if !declares_are_safe || !values_are_safe {
@@ -481,7 +481,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             let v0 = builder.entry_block().borrow().arguments()[0] as ValueRef;
             builder.store_local(local0, v0, SourceSpan::UNKNOWN).unwrap();
             let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
-            let expr = Expression::with_ops(alloc::vec![ExpressionOp::WasmLocal(0)]);
+            let expr = Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]);
             BuiltinOpBuilder::builder_mut(&mut builder)
                 .debug_declare(variable, expr, SourceSpan::UNKNOWN)
                 .unwrap();
@@ -529,7 +529,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             let value = builder.entry_block().borrow().arguments()[0] as ValueRef;
             builder.store_local(local0, value, SourceSpan::UNKNOWN).unwrap();
             let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
-            let expression = Expression::with_ops(alloc::vec![ExpressionOp::WasmLocal(0)]);
+            let expression = Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0)]);
             BuiltinOpBuilder::builder_mut(&mut builder)
                 .debug_value_with_expr(value, variable, Some(expression), SourceSpan::UNKNOWN)
                 .unwrap();
@@ -546,7 +546,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
 // CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[]> }> : (i32);
 // CHECK-NEXT: builtin.ret %0 : (i32);
 // CHECK-NOT: hir.store_local
-// CHECK-NOT: DW_OP_WASM_local
+// CHECK-NOT: DI_OP_local_slot
             "#
         );
     }
@@ -571,7 +571,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             builder.store_local(local0, value, SourceSpan::UNKNOWN).unwrap();
             let variable = Variable::new(Symbol::intern("x"), Symbol::intern("test.rs"), 1, None);
             let expression =
-                Expression::with_ops(alloc::vec![ExpressionOp::WasmLocal(0), ExpressionOp::Deref,]);
+                Expression::with_ops(alloc::vec![ExpressionOp::LocalSlot(0), ExpressionOp::Deref,]);
             BuiltinOpBuilder::builder_mut(&mut builder)
                 .debug_value_with_expr(value, variable, Some(expression), SourceSpan::UNKNOWN)
                 .unwrap();
@@ -586,7 +586,7 @@ builtin.function public extern("C") @promotes_redundant(%0: i32, %1: i32) -> i32
             r#"
 // CHECK-LABEL: builtin.function public extern("C") @preserves_transformed_debug_value
 // CHECK-NEXT: hir.store_local %0 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-// CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DW_OP_WASM_local(0), DW_OP_deref]> }> : (i32);
+// CHECK-NEXT: di.debug_value %0 <{ variable = #di.variable<{ name = "x", file = "test.rs", line = 1 }>, expression = #di.expression<[DI_OP_local_slot(0), DW_OP_deref]> }> : (i32);
             "#
         );
     }

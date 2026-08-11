@@ -8,18 +8,11 @@ use alloc::{
 };
 
 use miden_assembly::{PathBuf as LibraryPath, ast::InvocationTarget};
-use miden_assembly_syntax::{
-    ast::{Attribute, DebugVarLocation},
-    parser::WordValue,
-};
-use miden_core::serde::Deserializable;
+use miden_assembly_syntax::{ast::Attribute, parser::WordValue};
 use midenc_hir::{
     FunctionIdent, Op, OpExt, SourceSpan, Span, Symbol, TraceTarget, Type, ValueRef,
     diagnostics::IntoDiagnostic,
-    dialects::{
-        builtin,
-        debuginfo::attributes::{Expression, ExpressionOp, FrameBase, SubprogramAttr},
-    },
+    dialects::{builtin, debuginfo::attributes::SubprogramAttr},
     interner,
     pass::AnalysisManager,
 };
@@ -1388,6 +1381,7 @@ impl MasmModuleBuilder<'_> {
             link_info: self.link_info,
             invoked: self.invoked_from_init,
             target: Default::default(),
+            debug_frame_size: None,
             stack: OperandStack::new(gv.as_operation().context_rc()),
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(gv.name().as_symbol()),
@@ -1511,6 +1505,7 @@ impl MasmFunctionBuilder {
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: Some(self.num_locals.next_multiple_of(miden_core::WORD_SIZE as u16)),
             stack,
             trace_target,
         };
@@ -1563,23 +1558,6 @@ impl MasmFunctionBuilder {
             visibility,
             num_locals,
         } = self;
-
-        // Align num_locals to WORD_SIZE, matching the assembler's FMP frame sizing.
-        // num_locals already counts all HIR locals (including those allocated for params).
-        // The assembler rounds up to next_multiple_of(WORD_SIZE) when advancing FMP
-        // (see fmp.rs fmp_start_frame_sequence and mem_ops.rs locaddr), so we must use
-        // the same alignment for debug var offset computation.
-        let aligned_num_locals = num_locals.next_multiple_of(miden_core::WORD_SIZE as u16);
-
-        // Resolve FrameBase global_index → Miden memory address.
-        // Use the stack pointer offset from the linker's global layout.
-        let stack_pointer_addr = link_info.globals_layout().stack_pointer_offset();
-
-        // Patch DebugVar Local locations to compute FMP offset.
-        // During lowering, Local(idx) stores the raw WASM local index.
-        // Now convert to FMP offset: idx - aligned_num_locals
-        // This matches locaddr.N which computes -(aligned_num_locals - N).
-        patch_debug_var_locals_in_block(&mut body, aligned_num_locals, stack_pointer_addr);
 
         // If a function body after lowering produces a MASM procedure with an empty body aside
         // from debug decorators, then we must emit a `nop` at the end of the block which will
@@ -1648,122 +1626,4 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
         } => block_has_real_instructions(body) || block_has_real_instructions(condition),
         masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
     })
-}
-
-/// Recursively patch DebugVar locations in a block.
-///
-/// Converts `Local(idx)` where idx is the raw WASM local index to `Local(offset)` where
-/// `offset = idx - aligned_num_locals` (the FMP-relative offset, typically negative). This matches
-/// the assembler's `locaddr.N` formula, i.e. `FMP - aligned_num_locals + N`.
-///
-/// Also resolves Wasm frame bases to the Miden local/global encoding understood by the debugger.
-/// Locations that require resolution but cannot be represented are converted to explicit kill
-/// markers so the unresolved Wasm location cannot remain active.
-fn patch_debug_var_locals_in_block(
-    block: &mut masm::Block,
-    aligned_num_locals: u16,
-    stack_pointer_addr: Option<u32>,
-) {
-    for op in block.iter_mut() {
-        match op {
-            masm::Op::Inst(span_inst) => {
-                // Use DerefMut to get mutable access to the inner Instruction
-                if let masm::Instruction::DebugVar(info) = &mut **span_inst {
-                    let location = patch_debug_var_location(
-                        info.value_location(),
-                        aligned_num_locals,
-                        stack_pointer_addr,
-                    );
-                    info.set_value_location(location);
-                }
-            }
-            masm::Op::If {
-                then_blk, else_blk, ..
-            } => {
-                patch_debug_var_locals_in_block(then_blk, aligned_num_locals, stack_pointer_addr);
-                patch_debug_var_locals_in_block(else_blk, aligned_num_locals, stack_pointer_addr);
-            }
-            masm::Op::While {
-                body: while_body, ..
-            } => {
-                patch_debug_var_locals_in_block(while_body, aligned_num_locals, stack_pointer_addr);
-            }
-            masm::Op::DoWhile {
-                body, condition, ..
-            } => {
-                patch_debug_var_locals_in_block(body, aligned_num_locals, stack_pointer_addr);
-                patch_debug_var_locals_in_block(condition, aligned_num_locals, stack_pointer_addr);
-            }
-            masm::Op::Repeat {
-                body: repeat_body, ..
-            } => {
-                patch_debug_var_locals_in_block(
-                    repeat_body,
-                    aligned_num_locals,
-                    stack_pointer_addr,
-                );
-            }
-        }
-    }
-}
-
-fn patch_debug_var_location(
-    location: &DebugVarLocation,
-    aligned_num_locals: u16,
-    stack_pointer_addr: Option<u32>,
-) -> DebugVarLocation {
-    match location {
-        DebugVarLocation::Local(index) => {
-            checked_fmp_local_offset(i64::from(*index), aligned_num_locals)
-                .map(DebugVarLocation::Local)
-                .unwrap_or_else(debug_var_kill_location)
-        }
-        DebugVarLocation::FrameBase { byte_offset, .. } => {
-            if let Some(resolved_addr) = stack_pointer_addr.filter(|addr| *addr < (1 << 31)) {
-                DebugVarLocation::FrameBase {
-                    global_index: resolved_addr,
-                    byte_offset: *byte_offset,
-                }
-            } else {
-                debug_var_kill_location()
-            }
-        }
-        DebugVarLocation::Expression(bytes) => {
-            let Ok(expression) = Expression::read_from_bytes_with_budget(bytes, bytes.len()) else {
-                return location.clone();
-            };
-            let [
-                ExpressionOp::FrameBase {
-                    base: FrameBase::Local(local_index),
-                    byte_offset,
-                },
-            ] = expression.operations.as_slice()
-            else {
-                return location.clone();
-            };
-            checked_fmp_local_offset(i64::from(*local_index), aligned_num_locals)
-                .map(|local_offset| DebugVarLocation::FrameBase {
-                    global_index: encode_frame_base_local_offset(local_offset),
-                    byte_offset: *byte_offset,
-                })
-                .unwrap_or_else(debug_var_kill_location)
-        }
-        DebugVarLocation::Stack(_) | DebugVarLocation::Memory(_) | DebugVarLocation::Const(_) => {
-            location.clone()
-        }
-    }
-}
-
-fn checked_fmp_local_offset(index: i64, aligned_num_locals: u16) -> Option<i16> {
-    i16::try_from(index - i64::from(aligned_num_locals)).ok()
-}
-
-fn debug_var_kill_location() -> DebugVarLocation {
-    DebugVarLocation::Expression(super::DEBUG_VAR_KILL_SENTINEL.to_vec())
-}
-
-const FRAME_BASE_LOCAL_MARKER: u32 = 1 << 31;
-
-fn encode_frame_base_local_offset(local_offset: i16) -> u32 {
-    FRAME_BASE_LOCAL_MARKER | u32::from(u16::from_le_bytes(local_offset.to_le_bytes()))
 }
