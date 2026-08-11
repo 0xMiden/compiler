@@ -6,7 +6,6 @@ version = "0.1.0"
 path = "src/lib.rs"
 kind = "account-component"
 namespace = "miden:{{crate_name | replace: "_", "-" }}/auth-component@0.1.0"
-path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
