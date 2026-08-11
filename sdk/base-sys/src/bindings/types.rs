@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use miden_field_repr::FromFeltRepr;
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 use miden_stdlib_sys::{Felt, Word, felt};
 
 /// Packs a scalar felt into the leading limb of a protocol word.
@@ -18,7 +18,7 @@ pub fn felt_from_padded_word(value: Word) -> Result<Felt, &'static str> {
 }
 
 /// Unique identifier for a Miden account, composed of two field elements.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromFeltRepr, ToFeltRepr)]
 pub struct AccountId {
     pub prefix: Felt,
     pub suffix: Felt,

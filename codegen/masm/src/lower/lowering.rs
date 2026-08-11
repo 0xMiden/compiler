@@ -991,6 +991,18 @@ impl HirLowering for hir::Exec {
     }
 }
 
+impl HirLowering for hir::ProcedureRoot {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let symbol = crate::legalization::validate_procedure_root(self)?;
+        let callee_path = symbol.borrow().path();
+
+        let target = invocation_target_from_symbol_path(&callee_path, self.span());
+        emitter.inst_emitter(self.as_operation()).procedure_root(target, self.span());
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::ExecIndirect {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let context = self.as_operation().context();

@@ -430,6 +430,17 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
+    /// Push the MAST root digest of `callee` onto the operand stack as one word.
+    ///
+    /// This emits a `procref` instruction; the assembler computes the digest at assembly time
+    /// and pushes it with `root[0]` on top.
+    pub fn procedure_root(&mut self, callee: masm::InvocationTarget, span: SourceSpan) {
+        for _ in 0..midenc_dialect_hir::ProcedureRoot::DIGEST_FELTS {
+            self.push(Type::Felt);
+        }
+        self.emit(masm::Instruction::ProcRef(callee), span);
+    }
+
     /// Execute the given procedure in a new context.
     ///
     /// A function called using this operation is invoked in a new memory context.

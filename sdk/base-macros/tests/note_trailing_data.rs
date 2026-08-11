@@ -7,7 +7,7 @@ extern crate self as miden;
 pub use miden_field::Felt;
 
 pub mod felt_repr {
-    pub use miden_field_repr::{FeltReader, FeltReprError, FromFeltRepr};
+    pub use miden_field_repr::{FeltReader, FeltReprError, FeltWriter, FromFeltRepr, ToFeltRepr};
 }
 
 #[derive(Debug)]

@@ -30,7 +30,7 @@ use crate::{
     util::generate_frontend_link_section,
 };
 
-mod generate_wit;
+pub(crate) mod generate_wit;
 mod sibling;
 mod storage;
 

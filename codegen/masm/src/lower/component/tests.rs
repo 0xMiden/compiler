@@ -323,6 +323,28 @@ fn library_target(namespace: &str) -> midenc_session::miden_project::Target {
     )
 }
 
+/// Assemble `component` as a library and return its complete, sorted public procedure surface.
+fn assembled_library_exports(
+    context: &Rc<Context>,
+    component: &MasmComponent,
+    namespace: &str,
+) -> Vec<String> {
+    let target = library_target(namespace);
+    let sources = component
+        .source_inputs(&target, context.session())
+        .expect("the lowered component should provide assembler inputs");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library(namespace, sources.root, sources.support)
+        .expect("the lowered component should assemble as a library");
+    let mut exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    exports.sort();
+    exports
+}
+
 /// Parse `text`, returning the top-level operation it holds.
 ///
 /// `verify: true` matches what the `.hir` frontend does, since HIR that arrives as text has
@@ -355,6 +377,38 @@ fn lower_component(context: &Rc<Context>, text: &str) -> Result<MasmComponent, R
         .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
     let analysis_manager = AnalysisManager::new(op, None);
     component.borrow().to_masm_component(analysis_manager)
+}
+
+/// Lower a component through the MASM legalization boundary used by the compiler pipeline.
+fn legalize_and_lower_component(
+    context: &Rc<Context>,
+    text: &str,
+) -> Result<MasmComponent, Report> {
+    use midenc_hir::pass::{Nesting, PassManager};
+
+    let op = parse(context, text);
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    let mut pm = PassManager::on::<builtin::Component>(context.clone(), Nesting::Implicit);
+    pm.add_pass(alloc::boxed::Box::new(crate::LegalizeForMasm));
+    pm.enable_verifier(false);
+    pm.run(component.as_operation_ref())?;
+
+    let analysis_manager = AnalysisManager::new(op, None);
+    component.borrow().to_masm_component(analysis_manager)
+}
+
+/// Lower a world through the MASM legalization boundary used by the compiler pipeline.
+fn legalize_and_lower_world(context: &Rc<Context>, text: &str) -> Result<MasmComponent, Report> {
+    use midenc_hir::pass::{Nesting, PassManager};
+
+    let world = parse_world(context, text);
+    let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
+    pm.add_pass(alloc::boxed::Box::new(crate::LegalizeForMasm));
+    pm.enable_verifier(false);
+    pm.run(world.as_operation_ref())?;
+    lower_world(world)
 }
 
 /// Parse `text`, whose top-level operation must be a `builtin.world`.
@@ -1037,6 +1091,372 @@ fn type_expr_from_hir_pointer_conversion_preserves_address_space() {
             panic!("expected pointer type expression");
         };
         assert_eq!(ptr.address_space(), addrspace);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ProcedureRootCallerOwner {
+    Component,
+    Interface,
+    Module,
+}
+
+/// A component whose procedure-root user and callee lower to different MASM modules.
+///
+/// `callee_first` lets the regressions prove that visibility behavior is independent of lowering
+/// order. `callee_visibility` is substituted as HIR source so the same fixture covers the rejected
+/// private target and the explicitly cross-module-linkable internal target.
+fn component_with_cross_module_procedure_root(
+    caller_owner: ProcedureRootCallerOwner,
+    callee_visibility: &str,
+    callee_first: bool,
+) -> String {
+    let callee_module = format!(
+        r#"    builtin.module private @callee_mod {{
+        builtin.function {callee_visibility} extern("C") @callee() {{
+            builtin.ret;
+        }};
+    }};"#
+    );
+    let caller_function = r#"builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@callee_mod::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };"#;
+    let caller = match caller_owner {
+        ProcedureRootCallerOwner::Component => format!("    {caller_function}"),
+        ProcedureRootCallerOwner::Interface => format!(
+            r#"    builtin.interface @caller {{
+        {caller_function}
+    }};"#
+        ),
+        ProcedureRootCallerOwner::Module => format!(
+            r#"    builtin.module public @caller_mod {{
+        {caller_function}
+    }};"#
+        ),
+    };
+    let (first, second) = if callee_first {
+        (callee_module.as_str(), caller.as_str())
+    } else {
+        (caller.as_str(), callee_module.as_str())
+    };
+
+    format!(
+        r#"builtin.component private @"hir_ns:test@1.0.0" {{
+{first}
+{second}
+}};
+"#
+    )
+}
+
+/// A component whose procedure-root user and private callee share one MASM module.
+fn component_with_same_owner_private_procedure_root(
+    owner: ProcedureRootCallerOwner,
+    callee_first: bool,
+) -> String {
+    let callee = r#"builtin.function private extern("C") @callee() {
+        builtin.ret;
+    };"#;
+    let root = r#"builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root @callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };"#;
+    let (first, second) = if callee_first {
+        (callee, root)
+    } else {
+        (root, callee)
+    };
+    let owner = match owner {
+        ProcedureRootCallerOwner::Component => format!("    {first}\n\n    {second}"),
+        ProcedureRootCallerOwner::Interface => format!(
+            r#"    builtin.interface @api {{
+        {first}
+
+        {second}
+    }};"#
+        ),
+        ProcedureRootCallerOwner::Module => format!(
+            r#"    builtin.module public @api {{
+        {first}
+
+        {second}
+    }};"#
+        ),
+    };
+
+    format!(
+        r#"builtin.component private @"hir_ns:test@1.0.0" {{
+{owner}
+}};
+"#
+    )
+}
+
+#[test]
+fn cross_module_private_procedure_roots_are_rejected_for_every_owner_in_both_orders() {
+    for caller_owner in [
+        ProcedureRootCallerOwner::Component,
+        ProcedureRootCallerOwner::Interface,
+        ProcedureRootCallerOwner::Module,
+    ] {
+        for callee_first in [true, false] {
+            let context = Rc::new(Context::default());
+            let source =
+                component_with_cross_module_procedure_root(caller_owner, "private", callee_first);
+            let err = legalize_and_lower_component(&context, &source)
+                .err()
+                .expect("a cross-module procedure_root must not target a private callee");
+            let message = err.to_string();
+            assert!(
+                message.contains("private callee")
+                    && message.contains("callee_mod/callee")
+                    && message.contains("not linkable from another Miden Assembly module"),
+                "owner: {caller_owner:?}, callee_first: {callee_first}, error: {message}"
+            );
+        }
+    }
+}
+
+#[test]
+fn direct_lowering_reports_both_sides_of_a_private_cross_module_procedure_root() {
+    let context = Rc::new(Context::default());
+    let source = component_with_cross_module_procedure_root(
+        ProcedureRootCallerOwner::Module,
+        "private",
+        true,
+    );
+    let err = legalize_and_lower_component(&context, &source)
+        .err()
+        .expect("the compiler lowering path must preflight procedure_root visibility");
+    let labels = err
+        .labels()
+        .expect("the structured diagnostic must label both operations")
+        .filter_map(|label| label.label().map(str::to_string))
+        .collect::<Vec<_>>();
+    assert!(
+        labels
+            .iter()
+            .any(|label| { label == "this reference crosses a Miden Assembly module boundary" }),
+        "the root use must be the primary diagnostic site: {labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .any(|label| label == "this callee is private to its defining module"),
+        "the private callee must be identified as the secondary site: {labels:?}"
+    );
+    let help = err.help().expect("the diagnostic must explain the valid remedies").to_string();
+    assert!(
+        help.contains("declare the callee internal or public"),
+        "the diagnostic must explain both valid remedies: {help}"
+    );
+}
+
+const COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@outer::@hidden::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+    builtin.module public @outer {
+        builtin.module private @hidden {
+            builtin.function internal extern("C") @callee() {
+                builtin.ret;
+            };
+        };
+    };
+};
+"#;
+
+#[test]
+fn procedure_root_rejects_an_internal_callee_beneath_a_private_nested_module() {
+    let context = Rc::new(Context::default());
+    let err =
+        legalize_and_lower_component(&context, COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET)
+            .err()
+            .expect("an internal procedure is not reachable through a private nested module");
+    let message = err.to_string();
+    assert!(
+        message.contains("callee")
+            && message.contains("private module")
+            && message.contains("hidden"),
+        "the diagnostic must identify the inaccessible module path: {message}"
+    );
+}
+
+#[test]
+fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET);
+    let mut component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    component.borrow_mut().mark_synthetic_wrapper();
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a synthetic wrapper exposes its nested module path");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
+    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+}
+
+const COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT: &str = r#"
+builtin.world {
+    builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root @only::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+    builtin.module public @only {
+        builtin.function private extern("C") @callee() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+#[test]
+fn a_component_less_world_procedure_root_shares_its_single_modules_masm_root() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_world(
+        &context,
+        COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT,
+    )
+    .expect("the world-level caller and sole module callee share one MASM module");
+    let exports = assembled_library_exports(&context, &lowered, "only");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
+}
+
+const COMPONENT_LESS_WORLD_WITH_EFFECTIVELY_PUBLIC_NESTED_MODULES: &str = r#"
+builtin.world {
+    builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root @only::@hidden::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+    builtin.module private @only {
+        builtin.module private @hidden {
+            builtin.function internal extern("C") @callee() {
+                builtin.ret;
+            };
+        };
+    };
+};
+"#;
+
+#[test]
+fn component_less_world_procedure_roots_use_effective_module_visibility() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_world(
+        &context,
+        COMPONENT_LESS_WORLD_WITH_EFFECTIVELY_PUBLIC_NESTED_MODULES,
+    )
+    .expect("component-less world modules form the public artifact interface");
+    let exports = assembled_library_exports(&context, &lowered, "only");
+    assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
+    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+}
+
+const COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module private @internal {
+        builtin.function internal extern("C") @callee() {
+            builtin.ret;
+        };
+    };
+    builtin.module public @api {
+        builtin.module public @deep {
+            builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+                %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@internal::@callee;
+                builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+            };
+        };
+    };
+};
+"#;
+
+#[test]
+fn a_deep_procedure_root_caller_can_reach_its_ancestors_private_child() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_component(
+        &context,
+        COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE,
+    )
+    .expect("a private child is visible to every descendant of its parent");
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
+}
+
+const WORLD_WITH_OMITTED_INVALID_PROCEDURE_ROOT_USER: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module public @api {
+            builtin.function private extern("C") @callee() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.interface @omitted {
+        builtin.function public extern("C") @unused() -> (felt, felt, felt, felt) {
+            %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@api::@callee;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        };
+    };
+};
+"#;
+
+#[test]
+fn legalization_does_not_validate_procedure_roots_in_an_omitted_world_sibling() {
+    let (context, emitter) = capturing_context();
+    legalize_and_lower_world(&context, WORLD_WITH_OMITTED_INVALID_PROCEDURE_ROOT_USER)
+        .expect("an omitted sibling must not fail the selected component's build");
+    let captured = emitter.captured();
+    assert!(
+        captured.contains("this build omits"),
+        "the established omission warning must still be emitted: {captured}"
+    );
+}
+
+#[test]
+fn cross_module_internal_procedure_roots_assemble_in_both_module_orders() {
+    for callee_first in [true, false] {
+        let context = Rc::new(Context::default());
+        let source = component_with_cross_module_procedure_root(
+            ProcedureRootCallerOwner::Component,
+            "internal",
+            callee_first,
+        );
+        let lowered = legalize_and_lower_component(&context, &source)
+            .expect("an explicitly internal cross-module procedure_root target must lower");
+        let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+        assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+        assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
+    }
+}
+
+#[test]
+fn same_owner_private_procedure_roots_stay_private_in_both_orders() {
+    for owner in [ProcedureRootCallerOwner::Component, ProcedureRootCallerOwner::Module] {
+        for callee_first in [true, false] {
+            let context = Rc::new(Context::default());
+            let source = component_with_same_owner_private_procedure_root(owner, callee_first);
+            let lowered = legalize_and_lower_component(&context, &source)
+                .expect("a procedure_root may target a private callee in its own MASM module");
+            let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+            assert_eq!(
+                exports.len(),
+                1,
+                "owner: {owner:?}, callee_first: {callee_first}, exports: {exports:?}"
+            );
+            assert!(
+                exports[0].ends_with("root"),
+                "owner: {owner:?}, callee_first: {callee_first}, exports: {exports:?}"
+            );
+        }
     }
 }
 
