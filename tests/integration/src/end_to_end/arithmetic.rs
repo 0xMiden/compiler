@@ -1062,6 +1062,126 @@ fn test_checked_arith<T>(
     }
 }
 
+/// Like [`test_checked_arith`], but for shift/rotate-style operations whose shift amount is a
+/// `u32` regardless of the operand width (e.g. `checked_shl`, `checked_shr`).
+fn test_checked_shift<T, U>(
+    op: fn(T, U) -> Option<T>,
+    fn_name: &str,
+    strategy: impl Strategy<Value = (T, U)>,
+) where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary,
+    U: ToMidenRepr + PrimInt + Arbitrary,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
+    let main_fn = format!(
+        r#"(a: {lhs_ty_name}, b: {rhs_ty_name}) -> ({lhs_ty_name}, bool) {{
+        // Convert `Option<T>` to (T, bool) as `Option` is not yet supported (#111)
+        match a.{fn_name}(b) {{
+            Some(value) => (value, true),
+            None => (0 as {lhs_ty_name}, false),
+        }}
+    }}"#
+    );
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+    let package = test.compile_package();
+
+    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+        let rust_out = match op(a, b) {
+            Some(value) => (value, true),
+            None => (T::zero(), false),
+        };
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        out_addr.push_to_operand_stack(&mut args);
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
+
+        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
+            // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
+            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
+
+            let rs_out_bytes =
+                [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
+
+            prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
+            Ok(())
+        })?;
+        Ok(())
+    });
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
+/// Like [`test_overflowing_arith`], but for shift-style operations whose shift amount is a `u32`
+/// regardless of the operand width (e.g. `overflowing_shl`, `overflowing_shr`).
+fn test_overflowing_shift<T, U>(
+    op: fn(T, U) -> (T, bool),
+    fn_name: &str,
+    strategy: impl Strategy<Value = (T, U)>,
+) where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary,
+    U: ToMidenRepr + PrimInt + Arbitrary,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
+    let main_fn = format!(
+        r#"(a: {lhs_ty_name}, b: {rhs_ty_name}) -> ({lhs_ty_name}, bool) {{
+        a.{fn_name}(b)
+    }}"#
+    );
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+    let package = test.compile_package();
+
+    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+        let rust_out = op(a, b);
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        out_addr.push_to_operand_stack(&mut args);
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
+
+        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
+            let ty_byte_size = std::mem::size_of::<T>();
+            assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
+            // At most 17 bytes are written to memory: ty_byte_size <= 16 and 1 byte for the bool.
+            let x: [u8; 17] =
+                trace.read_from_rust_memory(out_addr).expect("output was not written");
+            let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
+
+            let rs_out_bytes =
+                [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
+
+            prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
+            Ok(())
+        })?;
+        Ok(())
+    });
+    match res {
+        Err(TestError::Fail(reason, value)) => {
+            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
+        }
+        Ok(_) => (),
+        _ => panic!("Unexpected test result: {:?}", res),
+    }
+}
+
 test_bool_op_total!(ge, >=, u64);
 test_bool_op_total!(ge, >=, i64);
 test_bool_op_total!(ge, >=, u32);
@@ -1259,6 +1379,398 @@ fn wrapping_shr_i64() {
 #[test]
 fn wrapping_shr_i128() {
     test_binary_fn(i128::wrapping_shr, "wrapping_shr", (any::<i128>(), any::<u32>()));
+}
+
+// `rotate_left` / `rotate_right`. The shift amount is an arbitrary `u32`, so these also exercise
+// the `rotate_count >= width` case, which Rust handles by rotating `count % width` bits.
+
+#[test]
+fn rotate_left_u8() {
+    test_binary_fn(u8::rotate_left, "rotate_left", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_u16() {
+    test_binary_fn(u16::rotate_left, "rotate_left", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_u32() {
+    test_binary_fn(u32::rotate_left, "rotate_left", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_u64() {
+    test_binary_fn(u64::rotate_left, "rotate_left", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_u128() {
+    test_binary_fn(u128::rotate_left, "rotate_left", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_i8() {
+    test_binary_fn(i8::rotate_left, "rotate_left", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_i16() {
+    test_binary_fn(i16::rotate_left, "rotate_left", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_i32() {
+    test_binary_fn(i32::rotate_left, "rotate_left", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_i64() {
+    test_binary_fn(i64::rotate_left, "rotate_left", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_left_i128() {
+    test_binary_fn(i128::rotate_left, "rotate_left", (any::<i128>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_u8() {
+    test_binary_fn(u8::rotate_right, "rotate_right", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_u16() {
+    test_binary_fn(u16::rotate_right, "rotate_right", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_u32() {
+    test_binary_fn(u32::rotate_right, "rotate_right", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_u64() {
+    test_binary_fn(u64::rotate_right, "rotate_right", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_u128() {
+    test_binary_fn(u128::rotate_right, "rotate_right", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_i8() {
+    test_binary_fn(i8::rotate_right, "rotate_right", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_i16() {
+    test_binary_fn(i16::rotate_right, "rotate_right", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_i32() {
+    test_binary_fn(i32::rotate_right, "rotate_right", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_i64() {
+    test_binary_fn(i64::rotate_right, "rotate_right", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn rotate_right_i128() {
+    test_binary_fn(i128::rotate_right, "rotate_right", (any::<i128>(), any::<u32>()));
+}
+
+// `checked_shl` / `checked_shr`. These return `None` when the shift amount is `>= width`, which the
+// arbitrary `u32` strategy exercises frequently.
+
+#[test]
+fn checked_shl_u8() {
+    test_checked_shift(u8::checked_shl, "checked_shl", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_u16() {
+    test_checked_shift(u16::checked_shl, "checked_shl", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_u32() {
+    test_checked_shift(u32::checked_shl, "checked_shl", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_u64() {
+    test_checked_shift(u64::checked_shl, "checked_shl", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_i8() {
+    test_checked_shift(i8::checked_shl, "checked_shl", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_i16() {
+    test_checked_shift(i16::checked_shl, "checked_shl", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_i32() {
+    test_checked_shift(i32::checked_shl, "checked_shl", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shl_i64() {
+    test_checked_shift(i64::checked_shl, "checked_shl", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_u8() {
+    test_checked_shift(u8::checked_shr, "checked_shr", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_u16() {
+    test_checked_shift(u16::checked_shr, "checked_shr", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_u32() {
+    test_checked_shift(u32::checked_shr, "checked_shr", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_u64() {
+    test_checked_shift(u64::checked_shr, "checked_shr", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_i8() {
+    test_checked_shift(i8::checked_shr, "checked_shr", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_i16() {
+    test_checked_shift(i16::checked_shr, "checked_shr", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_i32() {
+    test_checked_shift(i32::checked_shr, "checked_shr", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn checked_shr_i64() {
+    test_checked_shift(i64::checked_shr, "checked_shr", (any::<i64>(), any::<u32>()));
+}
+
+// `overflowing_shl` / `overflowing_shr`. The `bool` reports whether the shift amount was masked
+// (i.e. was `>= width`), not arithmetic overflow.
+
+#[test]
+fn overflowing_shl_u8() {
+    test_overflowing_shift(u8::overflowing_shl, "overflowing_shl", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_u16() {
+    test_overflowing_shift(u16::overflowing_shl, "overflowing_shl", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_u32() {
+    test_overflowing_shift(u32::overflowing_shl, "overflowing_shl", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_u64() {
+    test_overflowing_shift(u64::overflowing_shl, "overflowing_shl", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_u128() {
+    test_overflowing_shift(u128::overflowing_shl, "overflowing_shl", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_i8() {
+    test_overflowing_shift(i8::overflowing_shl, "overflowing_shl", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_i16() {
+    test_overflowing_shift(i16::overflowing_shl, "overflowing_shl", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_i32() {
+    test_overflowing_shift(i32::overflowing_shl, "overflowing_shl", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_i64() {
+    test_overflowing_shift(i64::overflowing_shl, "overflowing_shl", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shl_i128() {
+    test_overflowing_shift(i128::overflowing_shl, "overflowing_shl", (any::<i128>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_u8() {
+    test_overflowing_shift(u8::overflowing_shr, "overflowing_shr", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_u16() {
+    test_overflowing_shift(u16::overflowing_shr, "overflowing_shr", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_u32() {
+    test_overflowing_shift(u32::overflowing_shr, "overflowing_shr", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_u64() {
+    test_overflowing_shift(u64::overflowing_shr, "overflowing_shr", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_u128() {
+    test_overflowing_shift(u128::overflowing_shr, "overflowing_shr", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_i8() {
+    test_overflowing_shift(i8::overflowing_shr, "overflowing_shr", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_i16() {
+    test_overflowing_shift(i16::overflowing_shr, "overflowing_shr", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_i32() {
+    test_overflowing_shift(i32::overflowing_shr, "overflowing_shr", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_i64() {
+    test_overflowing_shift(i64::overflowing_shr, "overflowing_shr", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn overflowing_shr_i128() {
+    test_overflowing_shift(i128::overflowing_shr, "overflowing_shr", (any::<i128>(), any::<u32>()));
+}
+
+// `unbounded_shl` / `unbounded_shr`. Unlike the wrapping variants, a shift amount `>= width`
+// shifts the value entirely out and yields `0` (or the sign bit's fill for signed `shr`).
+
+#[test]
+fn unbounded_shl_u8() {
+    test_binary_fn(u8::unbounded_shl, "unbounded_shl", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_u16() {
+    test_binary_fn(u16::unbounded_shl, "unbounded_shl", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_u32() {
+    test_binary_fn(u32::unbounded_shl, "unbounded_shl", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_u64() {
+    test_binary_fn(u64::unbounded_shl, "unbounded_shl", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_u128() {
+    test_binary_fn(u128::unbounded_shl, "unbounded_shl", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_i8() {
+    test_binary_fn(i8::unbounded_shl, "unbounded_shl", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_i16() {
+    test_binary_fn(i16::unbounded_shl, "unbounded_shl", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_i32() {
+    test_binary_fn(i32::unbounded_shl, "unbounded_shl", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_i64() {
+    test_binary_fn(i64::unbounded_shl, "unbounded_shl", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shl_i128() {
+    test_binary_fn(i128::unbounded_shl, "unbounded_shl", (any::<i128>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_u8() {
+    test_binary_fn(u8::unbounded_shr, "unbounded_shr", (any::<u8>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_u16() {
+    test_binary_fn(u16::unbounded_shr, "unbounded_shr", (any::<u16>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_u32() {
+    test_binary_fn(u32::unbounded_shr, "unbounded_shr", (any::<u32>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_u64() {
+    test_binary_fn(u64::unbounded_shr, "unbounded_shr", (any::<u64>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_u128() {
+    test_binary_fn(u128::unbounded_shr, "unbounded_shr", (any::<u128>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_i8() {
+    test_binary_fn(i8::unbounded_shr, "unbounded_shr", (any::<i8>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_i16() {
+    test_binary_fn(i16::unbounded_shr, "unbounded_shr", (any::<i16>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_i32() {
+    test_binary_fn(i32::unbounded_shr, "unbounded_shr", (any::<i32>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_i64() {
+    test_binary_fn(i64::unbounded_shr, "unbounded_shr", (any::<i64>(), any::<u32>()));
+}
+
+#[test]
+fn unbounded_shr_i128() {
+    test_binary_fn(i128::unbounded_shr, "unbounded_shr", (any::<i128>(), any::<u32>()));
 }
 
 test_unary_op!(neg, -, i32, (i32::MIN + 1)..=i32::MAX);
