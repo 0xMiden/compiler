@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `println!` supports format arguments; formatted output requires `extern crate alloc` and a
+  configured global allocator.
 - `#[note]` impl blocks generate a `get_entrypoint_root()` associated method on the note type,
   returning the MAST root digest of the note script defined by the current crate (the
   `#[note_script]` entrypoint export). It is backed by a compiler intrinsic resolved at
