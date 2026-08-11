@@ -200,9 +200,9 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         }
 
         // If DWARF didn't provide a location expression, synthesize one from the
-        // wasm local index — we know this variable is stored as a wasm local.
+        // logical local slot — we know this variable is stored as a function local.
         let expr = expr_opt.or_else(|| {
-            let ops = vec![ExpressionOp::WasmLocal(idx as u32)];
+            let ops = vec![ExpressionOp::LocalSlot(idx as u32)];
             Some(Expression::with_ops(ops))
         });
 
@@ -312,7 +312,7 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
             return;
         }
 
-        if let Some(value) = wasm_stack_value_from_expression(&storage, wasm_stack) {
+        if let Some(value) = operand_stack_value_from_expression(&storage, wasm_stack) {
             if let Err(err) =
                 DIBuilder::builder_mut(self).debug_value_with_expr(value, attr, None, span)
             {
@@ -724,19 +724,12 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
     }
 }
 
-fn wasm_local_index_from_expression(expression: &Expression) -> Option<u32> {
-    expression.operations.iter().find_map(|op| match op {
-        ExpressionOp::WasmLocal(index) => Some(*index),
-        _ => None,
-    })
-}
-
-fn wasm_stack_value_from_expression(
+fn operand_stack_value_from_expression(
     expression: &Expression,
     wasm_stack: &[ValueRef],
 ) -> Option<ValueRef> {
     let index = expression.operations.iter().find_map(|op| match op {
-        ExpressionOp::WasmStack(index) => Some(*index as usize),
+        ExpressionOp::OperandStackSlot(index) => Some(*index as usize),
         _ => None,
     })?;
     wasm_stack.iter().rev().nth(index).copied()
