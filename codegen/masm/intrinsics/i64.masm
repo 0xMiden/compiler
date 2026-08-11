@@ -253,6 +253,50 @@ pub proc checked_div # [b_lo, b_hi, a_lo, a_hi]
     end
 end
 
+# Computes `a % b`, asserting that both inputs are valid i64 values (u32 limbs).
+#
+# Execution traps if `b == 0` or if the result overflows (i64::MIN % -1), matching Rust's
+# panicking `%` semantics for signed integers -- the same case `checked_div` traps on.
+pub proc checked_mod # [b_lo, b_hi, a_lo, a_hi]
+    u32assertw
+
+    # check for i64::MIN % -1, the only overflow case for signed i64 remainder
+    dup.1 push.NEG1_HI eq
+    dup.1 push.NEG1_LO eq
+    and                           # [b == -1, b_lo, b_hi, a_lo, a_hi]
+    dup.4 push.MIN_HI eq
+    dup.4 push.MIN_LO eq
+    and                           # [a == MIN, b == -1, b_lo, b_hi, a_lo, a_hi]
+    and                           # [overflows, b_lo, b_hi, a_lo, a_hi]
+    assertz                       # [b_lo, b_hi, a_lo, a_hi]
+
+    # sign(b) -- computed only to keep the abs(a)/abs(b) choreography identical to
+    # checked_div; unused for the sign of the result.
+    dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq
+    # sign(a)
+    dup.4 push.SIGN_BIT u32and push.SIGN_BIT eq
+    # negate_result = sign(a) -- unlike division, `%`'s result sign always follows the
+    # dividend, never the divisor.
+    dup.0
+    # reorder: [sign_a, sign_b, b, a, negate_result]
+    movdn.6
+
+    # abs(a)
+    movup.4 movup.5 swap
+    exec.cneg_u64  # [abs_a_lo, abs_a_hi, sign_b, b_lo, b_hi, negate_result]
+
+    # abs(b)
+    movup.3 movup.4 swap
+    movup.4 movdn.2
+    exec.cneg_u64  # [abs_b_lo, abs_b_hi, abs_a_lo, abs_a_hi, negate_result]
+
+    # remainder = |a| % |b|
+    exec.::miden::core::math::u64::mod  # [r_lo, r_hi, negate_result]
+
+    # apply the dividend's sign to the result
+    exec.cneg_u64
+end
+
 # Given two i64 values in two's complement representation, compare them,
 # returning -1 if `a` < `b`, 0 if equal, and 1 if `a` > `b`.
 pub proc icmp # [b_lo, b_hi, a_lo, a_hi]

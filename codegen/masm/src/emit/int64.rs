@@ -732,6 +732,17 @@ impl OpEmitter<'_> {
         self.raw_exec("::miden::core::math::u64::mod", span);
     }
 
+    /// Pops two i64 values off the stack, `b` and `a`, and pushes the result of `a % b` on the
+    /// stack.
+    ///
+    /// Both the operands and result are validated to ensure they are valid i64 values. This
+    /// operation is checked, so if the operands or result are not valid i64, execution traps.
+    /// It also traps for `i64::MIN % -1` since the underlying division overflows.
+    #[inline]
+    pub fn checked_mod_i64(&mut self, span: SourceSpan) {
+        self.raw_exec("::intrinsics::i64::checked_mod", span);
+    }
+
     /// Pops two u64 values off the stack, `b` and `a`, and pushes the result of `a % b` on the
     /// stack.
     ///

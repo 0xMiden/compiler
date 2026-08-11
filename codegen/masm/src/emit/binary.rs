@@ -654,6 +654,7 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected mod operands to be the same type");
         match &ty {
             Type::U64 => self.checked_mod_u64(span),
+            Type::I64 => self.checked_mod_i64(span),
             Type::I32 => self.checked_mod_i32(span),
             Type::U32 => self.checked_mod_u32(span),
             ty @ (Type::U16 | Type::U8) => {
