@@ -109,13 +109,78 @@ fn i32_add() {
 }
 
 #[test]
+fn i32_sub() {
+    test_i32_wasm_op_binary("i32.sub", NumericStrategy::<i32>::sub_signed());
+}
+
+#[test]
+fn i32_mul() {
+    test_i32_wasm_op_binary("i32.mul", NumericStrategy::<i32>::mul_signed());
+}
+
+#[test]
 fn i32_div_s() {
     test_i32_wasm_op_binary("i32.div_s", NumericStrategy::<i32>::div_signed_checked());
 }
 
 #[test]
+fn i32_div_u() {
+    // The values remain bit-identical i32 parameters at the Wasm boundary; `i32.div_u`
+    // interprets those bits as unsigned. This strategy deliberately includes zero divisors.
+    test_i32_wasm_op_binary("i32.div_u", NumericStrategy::<i32>::div_signed_checked());
+}
+
+#[test]
 fn i32_rem_s() {
     test_i32_wasm_op_binary("i32.rem_s", NumericStrategy::<i32>::rem_signed_checked());
+}
+
+#[test]
+fn i32_rem_u() {
+    // See `i32_div_u` for why a signed input strategy is still appropriate here.
+    test_i32_wasm_op_binary("i32.rem_u", NumericStrategy::<i32>::rem_signed_checked());
+}
+
+#[test]
+fn i32_and() {
+    test_i32_wasm_op_binary("i32.and", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_or() {
+    test_i32_wasm_op_binary("i32.or", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_xor() {
+    test_i32_wasm_op_binary("i32.xor", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_shl() {
+    // Wasm masks the movement count to five bits. The strategy includes negative and
+    // out-of-range bit patterns to cover that behavior.
+    test_i32_wasm_op_binary("i32.shl", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_shr_s() {
+    test_i32_wasm_op_binary("i32.shr_s", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_shr_u() {
+    test_i32_wasm_op_binary("i32.shr_u", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_rotl() {
+    test_i32_wasm_op_binary("i32.rotl", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_rotr() {
+    test_i32_wasm_op_binary("i32.rotr", NumericStrategy::<i32>::shr_signed_checked());
 }
 
 /// Convert a [`wasmi`] trap into the [`TrapExpectation`] describing the matching Miden VM trap.
