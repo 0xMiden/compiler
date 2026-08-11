@@ -291,6 +291,38 @@ description = "Update dependencies to latest semver-compatible version"
 command = "cargo"
 args = ["update"]
 
+[tasks.refresh-example-lockfiles]
+category = "Dependencies"
+description = "Refresh checked-in example and fixture lockfiles without compiling crates"
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+refreshed=0
+
+while IFS= read -r -d '' lockfile; do
+    manifest="${WORKSPACE}/${lockfile%/Cargo.lock}/Cargo.toml"
+    if [[ ! -f "${manifest}" ]]; then
+        echo "missing manifest for ${lockfile}: ${manifest}" >&2
+        exit 1
+    fi
+
+    echo "Refreshing ${lockfile}"
+    cargo update --workspace --manifest-path "${manifest}"
+    refreshed=$((refreshed + 1))
+done < <(git -C "${WORKSPACE}" ls-files -z -- \
+    'examples/**/Cargo.lock' \
+    'tests/fixtures/**/Cargo.lock')
+
+if [[ "${refreshed}" -eq 0 ]]; then
+    echo "no checked-in example or fixture lockfiles found" >&2
+    exit 0
+fi
+
+echo "Refreshed ${refreshed} lockfiles"
+''']
+
 [tasks.outdated]
 category = "Dependencies"
 description = "Look for dependencies with newer, possibly-incompatible versions"

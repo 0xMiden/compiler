@@ -187,12 +187,27 @@ pub fn pipe_double_words_to_memory(_num_words: Felt) -> (Word, Vec<Felt>) {
     unimplemented!("miden::core::mem bindings are only available when targeting the Miden VM")
 }
 
-/// Pops an arbitrary number of words from the advice stack and asserts it matches the commitment.
+/// Pops `num_words` words from the advice stack and asserts they match the commitment.
 /// Returns a Vec containing the loaded words.
-#[inline]
+///
+/// Traps when `num_words` is `2^30` or more: that many words cannot be represented in the
+/// 32-bit wasm address space, and truncating the count would under-size the buffer the VM
+/// writes into.
+///
+/// Callers load advice data on hot paths, so the body must stay inlined: an out-of-line copy
+/// costs call overhead per load and blocks length-based simplifications at the call site.
+#[inline(always)]
 #[cfg(all(target_family = "wasm", miden))]
 pub fn adv_load_preimage(num_words: Felt, commitment: Word) -> Vec<Felt> {
-    // Allocate a Vec with the specified capacity
+    // The length feeds an unsafe external write of the *original* `num_words` felt, so a value
+    // whose felt count does not fit the 32-bit wasm `usize` must not be truncated into an
+    // undersized buffer. The bound is checked with a native felt comparison — full u64
+    // casts/checked arithmetic lower expensively on the VM — after which the truncating
+    // conversion below is provably lossless.
+    // 2^30 words = 2^32 felts, the first count whose felt total overflows a 32-bit usize.
+    if num_words >= felt!(1073741824) {
+        core::arch::wasm32::unreachable()
+    }
     let num_words_usize = num_words.as_canonical_u64() as usize;
     let num_felts = num_words_usize * 4;
     let mut result: Vec<Felt> = Vec::with_capacity(num_felts);

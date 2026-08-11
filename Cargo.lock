@@ -2628,6 +2628,7 @@ dependencies = [
  "miden-field-repr",
  "miden-sdk-alloc",
  "miden-stdlib-sys",
+ "miden-tx-script-args",
  "wit-bindgen",
 ]
 
@@ -3433,6 +3434,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-tx-script-args"
+version = "0.14.0-rc.1"
+dependencies = [
+ "miden-field",
+ "miden-field-repr",
+ "miden-stdlib-sys",
+]
+
+[[package]]
 name = "miden-utils-core-derive"
 version = "0.25.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3860,10 +3870,13 @@ version = "0.1.0"
 dependencies = [
  "miden-client",
  "miden-core",
+ "miden-field",
+ "miden-field-repr",
  "miden-mast-package",
  "miden-protocol",
  "miden-standards",
  "miden-testing",
+ "miden-tx-script-args",
  "midenc-expect-test",
  "midenc-frontend-wasm",
  "midenc-integration-test-support",

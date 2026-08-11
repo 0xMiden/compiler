@@ -169,7 +169,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .extend_advice_map([(commitment_key, commitment_input)])
         .extend_expected_output_notes(vec![RawOutputNote::Full(bob_note.clone())]);
     let tx_measurements = execute_tx(&mut chain, create_tx_context_builder);
-    expect!["8040"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["8078"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();

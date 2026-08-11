@@ -18,6 +18,32 @@ const FRONTEND_METADATA_BYTES_STATIC_IDENT: &str = "__miden_frontend_metadata_by
 pub(crate) const FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL: &str =
     "__MIDEN_FRONTEND_METADATA_UNIQUENESS_GUARD";
 
+/// Returns true if a function's return type is unit.
+pub(crate) fn is_unit_return_type(output: &syn::ReturnType) -> bool {
+    match output {
+        syn::ReturnType::Default => true,
+        syn::ReturnType::Type(_, ty) => {
+            matches!(ty.as_ref(), syn::Type::Tuple(tuple) if tuple.elems.is_empty())
+        }
+    }
+}
+
+/// Checks if a type's final path segment matches `name` (allowing module-qualified paths like
+/// `miden::Word`).
+pub(crate) fn is_type_named(ty: &syn::Type, name: &str) -> bool {
+    let syn::Type::Path(type_path) = ty else {
+        return false;
+    };
+    if type_path.qself.is_some() {
+        return false;
+    }
+    type_path
+        .path
+        .segments
+        .last()
+        .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, syn::PathArguments::None))
+}
+
 fn target_folder() -> PathBuf {
     let mut manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is not set");
     manifest_dir.push_str("/target/");

@@ -26,6 +26,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The `#[note]` macro writes the note's WIT interface (entrypoint plus constructors) to
   `target/generated-wit/`, so dependent crates can reference it via
   `[package.metadata.component.target.dependencies]` #786
+- `#[tx_script]` entrypoints now take typed script arguments: the entrypoint is a free function
+  of any name whose by-value parameter can be any `ScriptArgs` type (every
+  `FromFeltRepr + ToFeltRepr` type qualifies, e.g. `Felt`, `Word`, or a user struct deriving
+  both) and is decoded automatically from the `TX_SCRIPT_ARGS` word — packed directly in the
+  args word when the encoding statically fits its 4 felts, or fetched from the advice provider
+  and hash-verified against the args word otherwise. The parameters may appear in any order
+  (the account reference is optional); existing `fn run(arg: Word, ...)` signatures keep
+  compiling and behave unchanged. On the host, `ScriptArgs::encode` on a struct with the
+  identical layout yields the args word or the advice-map preimage (`EncodedScriptArgs`). The
+  trait lives in the new `miden-tx-script-args` crate (re-exported from `miden`), which
+  off-chain code can depend on without pulling in any on-chain SDK crates.
+  `ScriptArgs::decode` returns `Result<_, ScriptArgsError>`: the generated entrypoint wrapper
+  panics on decode errors (failing the transaction), while off-chain code handles them as
+  values. On the basic-wallet example script, typed decoding costs about 790 VM cycles and
+  4.4 KB of package size over the previous hand-rolled advice decode. See the
+  [migration guide](./sdk/MIGRATION.md) for adopting typed arguments #1291
+- `FromFeltRepr` gained a `FIXED_LEN: Option<usize>` associated constant — the statically known
+  encoded length in felts, used by `ScriptArgs` to pick the transport mode at compile time. It
+  defaults to `None` (variable length, the fail-safe commitment transport), so existing manual
+  implementations keep compiling; `#[derive(FromFeltRepr)]` computes the exact value #1291
+- `Tag`, `NoteType`, `Recipient`, and `Asset` now implement `FromFeltRepr`/`ToFeltRepr`, so
+  they can be used as fields of derived script-argument structs. The `miden` crate additionally
+  re-exports `miden_field_repr` under its own crate name, so the derives' generated code
+  resolves in crates that only depend on `miden` and glob-import it #1291
 
 ### Migration and breaking changes
 
@@ -38,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `FromFeltRepr`, and a manual `ToFeltRepr` impl on the note type now conflicts with the
   generated one; see [MIGRATION.md](./sdk/MIGRATION.md) for the required changes. `AccountId`
   implements `ToFeltRepr` #786
+
+
+### Fixed
+
+- `adv_load_preimage` no longer truncates huge word counts into an undersized buffer on wasm32
+  (a potential guest heap overflow); it now traps for counts of `2^30` words or more, whose felt
+  total cannot be represented in the 32-bit address space #1291
 
 ## [0.14.0-rc.1]
 

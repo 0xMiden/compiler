@@ -272,7 +272,7 @@ fn batch_kernel() {
     let package = test.compile_package();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["101603"].assert_eq(&stripped_mast_size_str(&package));
+    expect!["102625"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -326,7 +326,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["31350"].assert_eq(&cycles.to_string());
+        expect!["31591"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -378,7 +378,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note.
-        expect!["27536"].assert_eq(&cycles.to_string());
+        expect!["27738"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");
@@ -416,7 +416,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the Layer 1 hash check rejects the tampered pre-image.
-        expect!["913"].assert_eq(&cycles.to_string());
+        expect!["948"].assert_eq(&cycles.to_string());
     }
 
     // Scenario 4: tx1 consumes a note that only tx2 creates; the consume-before-create ordering
@@ -450,7 +450,7 @@ fn batch_kernel() {
         };
 
         // The cycle at which the consume-before-create ordering gate rejects the batch.
-        expect!["15188"].assert_eq(&cycles.to_string());
+        expect!["15319"].assert_eq(&cycles.to_string());
     }
 }
 

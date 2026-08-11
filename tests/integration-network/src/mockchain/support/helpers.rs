@@ -15,6 +15,7 @@ use miden_client::{
     transaction::RawOutputNote,
 };
 use miden_core::Felt;
+use miden_field_repr::{FromFeltRepr, ToFeltRepr};
 use miden_mast_package::{Package, TargetType};
 use miden_protocol::{
     account::{
@@ -27,13 +28,55 @@ use miden_protocol::{
 };
 use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
 use miden_testing::{MockChain, TransactionContextBuilder};
+use miden_tx_script_args::{EncodedScriptArgs, ScriptArgs};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_test_support::CompilerTestBuilder;
 use rand::{SeedableRng, rngs::StdRng};
 
+/// Host-side mirror of the transaction-script arguments declared in
+/// `examples/basic-wallet-tx-script`, spelled in the felt-repr primitives its field types encode
+/// to (`Tag`/`NoteType` = one felt, `Recipient` = one word, `Asset` = key and value words); what
+/// must match the script's struct is the felt-repr wire sequence, not the Rust fields.
+#[derive(FromFeltRepr, ToFeltRepr)]
+struct TxScriptArgs {
+    tag: miden_field::Felt,
+    note_type: miden_field::Felt,
+    recipient: miden_field::Word,
+    asset_key: miden_field::Word,
+    asset_value: miden_field::Word,
+}
+
 /// Converts a value's felt representation into `miden_core::Felt` elements.
 pub(crate) fn to_core_felts(value: &AccountId) -> Vec<Felt> {
     vec![value.prefix().as_felt(), value.suffix()]
+}
+
+// FIELD <-> PROTOCOL FELT CONVERSIONS
+// ================================================================================================
+
+/// Converts a protocol felt into the field-crate felt type.
+pub(crate) fn to_field_felt(value: Felt) -> miden_field::Felt {
+    miden_field::Felt::new(value.as_canonical_u64()).expect("protocol felt must be canonical")
+}
+
+/// Converts four protocol felts into the field-crate word type.
+pub(crate) fn to_field_word(felts: [Felt; 4]) -> miden_field::Word {
+    miden_field::Word::new(felts.map(to_field_felt))
+}
+
+/// Converts field-crate felts into protocol felts.
+pub(crate) fn from_field_felts(felts: &[miden_field::Felt]) -> Vec<Felt> {
+    felts.iter().map(|felt| Felt::new_unchecked(felt.as_canonical_u64())).collect()
+}
+
+/// Converts a field-crate word into a protocol word.
+pub(crate) fn from_field_word(word: miden_field::Word) -> Word {
+    Word::new([
+        Felt::new_unchecked(word[0].as_canonical_u64()),
+        Felt::new_unchecked(word[1].as_canonical_u64()),
+        Felt::new_unchecked(word[2].as_canonical_u64()),
+        Felt::new_unchecked(word[3].as_canonical_u64()),
+    ])
 }
 
 /// Asserts the scalar counter value stored in an account's storage map at `storage_key`.
@@ -97,7 +140,7 @@ pub(crate) fn note_script_root(package: &Package) -> Word {
 }
 
 /// Builds a transaction script from a compiled transaction-script package.
-fn transaction_script_from_package(package: &Package) -> TransactionScript {
+pub(crate) fn transaction_script_from_package(package: &Package) -> TransactionScript {
     assert_eq!(
         package.kind,
         TargetType::TransactionScript,
@@ -181,6 +224,33 @@ pub(crate) fn build_send_notes_script(
     SendNotesTransactionScript::new(&account.code_interface(), &partial_notes).unwrap()
 }
 
+/// Applies encoded transaction-script arguments to a transaction context.
+///
+/// Word-mode arguments pass through the script-args word directly; commitment-mode arguments
+/// hash the preimage into the script-args word and register the matching advice-map entry.
+pub(crate) fn apply_script_args(
+    builder: TransactionContextBuilder,
+    args: &impl ScriptArgs,
+) -> TransactionContextBuilder {
+    match args.encode() {
+        EncodedScriptArgs::Word(word) => builder.tx_script_args(from_field_word(word)),
+        EncodedScriptArgs::Preimage(felts) => {
+            let preimage = from_field_felts(&felts);
+            let args_word: Word = miden_core::crypto::hash::Poseidon2::hash_elements(&preimage);
+            builder.tx_script_args(args_word).extend_advice_map([(args_word, preimage)])
+        }
+    }
+}
+
+/// Executes a transaction context and expects the execution to fail, returning the error message.
+pub(crate) fn execute_tx_expect_failure(tx_context_builder: TransactionContextBuilder) -> String {
+    let tx_context = tx_context_builder.build().unwrap();
+    match block_on(tx_context.execute()) {
+        Ok(_) => panic!("expected transaction execution to fail"),
+        Err(err) => err.to_string(),
+    }
+}
+
 /// Executes a transaction context against the chain and commits it in the next block.
 ///
 /// Returns the transaction measurements captured during execution.
@@ -232,33 +302,26 @@ pub(crate) fn build_asset_transfer_tx(
         .build()
         .unwrap();
 
-    // Prepare commitment data
-    // This must match the input layout expected by `examples/basic-wallet-tx-script`.
-    let mut commitment_input: Vec<Felt> = vec![
-        // The output's note tag
-        Felt::ZERO,
-        // The output's note type
-        Felt::from(NoteType::Public),
-    ];
+    // Build the script arguments through the mirror `TxScriptArgs` struct — the same encoding the
+    // tx script decodes, so the host-side layout cannot drift from the guest side.
     let recipient_digest: [Felt; 4] = output_note.recipient().digest().into();
-    commitment_input.extend(recipient_digest);
-
     let asset_elements = asset.as_elements();
-    commitment_input.extend(asset_elements);
-    // Ensure word alignment for `adv_load_preimage` in the tx script.
-    commitment_input.extend([Felt::ZERO, Felt::ZERO]);
-
-    let commitment_key: Word =
-        miden_core::crypto::hash::Poseidon2::hash_elements(&commitment_input);
-    assert_eq!(commitment_input.len() % 4, 0, "commitment input needs to be word-aligned");
+    let asset_key: [Felt; 4] = asset_elements[..4].try_into().unwrap();
+    let asset_value: [Felt; 4] = asset_elements[4..].try_into().unwrap();
+    let script_args = TxScriptArgs {
+        tag: to_field_felt(Felt::ZERO),
+        note_type: to_field_felt(Felt::from(NoteType::Public)),
+        recipient: to_field_word(recipient_digest),
+        asset_key: to_field_word(asset_key),
+        asset_value: to_field_word(asset_value),
+    };
 
     let tx_context_builder = chain
         .build_tx_context(sender_id, &[], &[])
         .unwrap()
         .foreign_accounts(vec![chain.get_foreign_account_inputs(faucet_id).unwrap()])
-        .tx_script(tx_script)
-        .tx_script_args(commitment_key)
-        .extend_advice_map([(commitment_key, commitment_input)])
+        .tx_script(tx_script);
+    let tx_context_builder = apply_script_args(tx_context_builder, &script_args)
         .extend_expected_output_notes(vec![RawOutputNote::Full(output_note.clone())]);
 
     (tx_context_builder, output_note)
@@ -380,4 +443,44 @@ pub(crate) fn build_counter_account_with_rust_rpo_auth(
     .expect("failed to build counter account");
 
     (account, secret_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_tx_script_args::ScriptArgs;
+
+    use super::TxScriptArgs;
+
+    /// Pins the mirror's encoded size so layout drift vs the guest struct in
+    /// `examples/basic-wallet-tx-script` fails loudly (tag + note type + recipient word +
+    /// asset key and value words = 14 felts).
+    #[test]
+    fn tx_script_arg_mirror_has_the_guest_layout_size() {
+        assert_eq!(<TxScriptArgs as ScriptArgs>::FIXED_LEN, Some(14));
+    }
+
+    /// Pins the mirror's wire sequence with distinct sentinels, catching same-length field
+    /// reorders that the size pin cannot.
+    #[test]
+    fn tx_script_arg_mirror_has_the_guest_wire_sequence() {
+        let felt = |value: u64| miden_field::Felt::new(value).unwrap();
+        let word = |base: u64| {
+            miden_field::Word::new([felt(base), felt(base + 1), felt(base + 2), felt(base + 3)])
+        };
+
+        let args = TxScriptArgs {
+            tag: felt(1),
+            note_type: felt(2),
+            recipient: word(10),
+            asset_key: word(20),
+            asset_value: word(30),
+        };
+
+        let expected: Vec<miden_field::Felt> =
+            [1, 2, 10, 11, 12, 13, 20, 21, 22, 23, 30, 31, 32, 33]
+                .into_iter()
+                .map(felt)
+                .collect();
+        assert_eq!(miden_field_repr::ToFeltRepr::to_felt_repr(&args), expected);
+    }
 }

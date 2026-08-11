@@ -129,7 +129,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, alice_tx_context_builder);
-    expect!["5345"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["6133"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();

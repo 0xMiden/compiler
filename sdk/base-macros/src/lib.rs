@@ -454,7 +454,52 @@ pub fn note_constructor(
     note::expand_note_constructor(attr, item)
 }
 
-/// Marks the function as a transaction script
+/// Marks a free function as the transaction-script entrypoint.
+///
+/// The transaction kernel passes a single `Word` of script arguments (`TX_SCRIPT_ARGS`) to the
+/// script. The generated guest wrapper decodes it through the `ScriptArgs` trait and instantiates
+/// the account parameter before calling the annotated function.
+///
+/// # Supported entrypoint signature
+///
+/// - Must be a free function (any name) returning `()`.
+/// - Accepts 1 or 2 parameters, in any order:
+///   - one by-value script-args parameter (required) — any type implementing `ScriptArgs` (every
+///     `FromFeltRepr + ToFeltRepr` type qualifies, e.g. `Felt`, `Word`, or a user struct deriving
+///     both); an encoding of at most 4 felts travels in the args word directly, longer or
+///     variable-length encodings travel through the advice provider, verified against the args
+///     word as their commitment;
+///   - optionally one reference to an `#[account(...)]` type (`&MyAccount` or `&mut MyAccount`)
+///     bound to the active (native) account.
+/// - Generic functions and `async fn` are not supported.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use miden::*;
+///
+/// #[account(basic_wallet::BasicWallet)]
+/// struct Wallet;
+///
+/// /// Arguments of the transaction script, transported via `TX_SCRIPT_ARGS`.
+/// #[derive(FromFeltRepr, ToFeltRepr)]
+/// struct TxScriptArgs {
+///     tag: Tag,
+///     note_type: NoteType,
+///     recipient: Recipient,
+///     asset: Asset,
+/// }
+///
+/// #[tx_script]
+/// fn run(args: TxScriptArgs, account: &mut Wallet) {
+///     let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+///     account.move_asset_to_note(args.asset, note_idx);
+/// }
+/// ```
+///
+/// On the host, build the transaction from the same struct with `ScriptArgs::encode`: word-mode
+/// values become the script-args word; commitment-mode values are hashed by the caller to produce
+/// the script-args word plus the matching advice-map entry.
 #[proc_macro_attribute]
 pub fn tx_script(
     attr: proc_macro::TokenStream,

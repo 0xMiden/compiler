@@ -24,6 +24,7 @@ miden-base-macros = { version = "0.14.0-rc.1", path = "../base-macros" }
 miden-base-sys.workspace = true
 miden-field-repr.workspace = true
 miden-field = { workspace = true, default-features = false }
+miden-tx-script-args = { workspace = true, features = ["miden-vm-guest"] }
 wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
 
 [features]

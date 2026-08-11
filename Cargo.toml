@@ -35,6 +35,7 @@ members = [
     "sdk/base-sys",
     "sdk/sdk",
     "sdk/stdlib-sys",
+    "sdk/tx-script-args",
     "sdk/wasm-metadata",
     "tools/cargo-miden",
     "tools/expect-test",
@@ -192,6 +193,7 @@ midenc-expect-test = { path = "tools/expect-test" }
 miden-base-sys = { version = "0.14.0-rc.1", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.14.0-rc.1", path = "sdk/field-repr/repr" }
 miden-stdlib-sys = { version = "0.14.0-rc.1", path = "sdk/stdlib-sys" }
+miden-tx-script-args = { version = "0.14.0-rc.1", path = "sdk/tx-script-args" }
 
 [patch.crates-io]
 #midenc-hir-type = { path = "../miden-vm/crates/midenc-hir-type"}

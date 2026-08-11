@@ -13,7 +13,7 @@ use crate::{
     boilerplate::runtime_boilerplate,
     component_macro::generate_wit::write_component_wit_file,
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
-    util::generate_frontend_link_section,
+    util::{generate_frontend_link_section, is_type_named, is_unit_return_type},
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
 };
@@ -1034,28 +1034,6 @@ fn parse_account_ref_type(ty: &Type) -> Option<(Type, bool)> {
         return None;
     }
     Some(((*type_ref.elem).clone(), type_ref.mutability.is_some()))
-}
-
-/// Returns true if the entrypoint return type is unit.
-fn is_unit_return_type(output: &syn::ReturnType) -> bool {
-    match output {
-        syn::ReturnType::Default => true,
-        syn::ReturnType::Type(_, ty) => matches!(ty.as_ref(), Type::Tuple(t) if t.elems.is_empty()),
-    }
-}
-
-fn is_type_named(ty: &Type, name: &str) -> bool {
-    let Type::Path(type_path) = ty else {
-        return false;
-    };
-    if type_path.qself.is_some() {
-        return false;
-    }
-    type_path
-        .path
-        .segments
-        .last()
-        .is_some_and(|seg| seg.ident == name && matches!(seg.arguments, PathArguments::None))
 }
 
 /// Returns true if any entrypoint marker attribute is present.

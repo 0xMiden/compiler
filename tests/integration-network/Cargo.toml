@@ -16,6 +16,10 @@ publish = false
 doctest = false
 
 [dependencies]
+# Typed tx-script argument transport and felt-repr, for host-side argument mirrors
+miden-field.workspace = true
+miden-field-repr.workspace = true
+miden-tx-script-args.workspace = true
 miden-client = { version = "0.16.0-alpha.1", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }

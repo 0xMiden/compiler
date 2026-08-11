@@ -169,6 +169,62 @@ debug = false
     manifest
 }
 
+/// Returns a generated transaction-script project `miden-project.toml`.
+pub(crate) fn tx_script_miden_project_toml(script_name: &str) -> String {
+    format!(
+        r#"
+[package]
+name = "{script_name}"
+version = "0.0.1"
+
+[lib]
+kind = "tx-script"
+namespace = "miden:base/transaction-script@1.0.0"
+path = "src/lib.rs"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+"#
+    )
+}
+
+/// Returns the generated transaction-script `Cargo.toml`.
+///
+/// Unlike the account/note generators, no `internal-wit-emit` feature is passed: transaction
+/// scripts are never consumed as dependencies of other packages, so nothing reads their WIT.
+pub(crate) fn tx_script_cargo_toml(script_name: &str) -> String {
+    let sdk_path = sdk_crate_path();
+    format!(
+        r#"
+[package]
+name = "{script_name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = {{ path = "{sdk_path}" }}
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug-assertions = true
+overflow-checks = false
+debug = false
+"#,
+        sdk_path = sdk_path.display(),
+    )
+}
+
 /// Appends path dependencies and WIT mappings to a generated Miden project manifest.
 pub(crate) fn append_miden_project_dependencies(
     manifest: &mut String,
