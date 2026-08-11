@@ -1519,6 +1519,7 @@ impl MasmModuleBuilder<'_> {
             link_info: self.link_info,
             invoked: self.invoked_from_init,
             target: Default::default(),
+            debug_frame_size: None,
             stack: OperandStack::new(gv.as_operation().context_rc()),
             trace_target: TraceTarget::category("codegen")
                 .with_relevant_symbol(gv.name().as_symbol()),
@@ -1656,6 +1657,7 @@ impl MasmFunctionBuilder {
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
+            debug_frame_size: Some(self.num_locals.next_multiple_of(miden_core::WORD_SIZE as u16)),
             stack,
             trace_target,
         };

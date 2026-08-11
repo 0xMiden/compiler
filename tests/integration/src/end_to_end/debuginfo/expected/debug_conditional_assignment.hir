@@ -46,8 +46,8 @@ builtin.component private @root_ns:root@1.0.0 {
         } attributes { di.compile_unit = #di.compile_unit<{ language = "wasm", file = "unknown", producer = "midenc-frontend-wasm", optimized = false }>, di.subprogram = #di.subprogram<{ name = "_initialize", file = "unknown", line = 0, definition = true, local = false }> };
         builtin.function public extern("C") @entrypoint(%30: i32) -> i32 {
             hir.store_local %30 <{ local = #builtin.local_variable<0, i32> }> : (i32);
-            di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+12)]> }>;
-            di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DW_OP_fbreg(local, 1+8)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "x", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 19, arg = 0, ty = i32 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+12)]> }>;
+            di.debug_declare <{ variable = #di.variable<{ name = "result", file = "test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0.rs", line = 20 }>, expression = #di.expression<[DI_OP_frame_base(local_slot, 1+8)]> }>;
             %32 = builtin.global_symbol ::@root_ns:root@1.0.0::@test_rust_6a38c85fac04c065bce04eac12569a730e53b0bf392ff986bec40561d4ead6b0::@__stack_pointer : ptr<u8, byte>;
             %33 = hir.bitcast %32 <{ ty = #builtin.type<ptr<i32, byte>> }>;
             %34 = hir.load %33;
