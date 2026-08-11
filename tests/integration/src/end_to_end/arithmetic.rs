@@ -285,8 +285,7 @@ test_wide_bin_op!(div, /, u128, u128, 0..=u128::MAX, 1..=u128::MAX);
 test_wide_bin_op!(div, /, i128, i128, i128::MIN..=i128::MAX, 1..=i128::MAX);
 
 test_int_op!(rem, %, u64, 0..=u64::MAX, 1..=u64::MAX);
-// https://github.com/0xMiden/compiler/issues/1285
-// test_int_op!(rem, %, i64, i64::MIN..=i64::MAX, 1..=i64::MAX);
+test_int_op!(rem, %, i64, i64::MIN..=i64::MAX, 1..=i64::MAX);
 test_int_op!(rem, %, u32, 0..=u32::MAX, 1..=u32::MAX);
 test_int_op!(rem, %, i32, i32::MIN..=i32::MAX, 1..=i32::MAX);
 test_int_op!(rem, %, u16, 0..=u16::MAX, 1..=u16::MAX);
