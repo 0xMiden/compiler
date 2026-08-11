@@ -162,12 +162,18 @@ fn decode_commitment<T: FromFeltRepr>(_arg: Word) -> ScriptArgsResult<T> {
     Err(ScriptArgsError::AdviceProviderUnavailable)
 }
 
-/// Decodes a value from a commitment-mode preimage, enforcing the canonical zero padding.
+/// Decodes a value from a commitment-mode preimage, enforcing the whole-word length and the
+/// canonical zero padding.
 ///
 /// This is the pure half of commitment-mode [`ScriptArgs::decode`]: it runs anywhere, so hosts
 /// can round-trip [`EncodedScriptArgs::Preimage`] bytes in tests and tooling without the VM.
 #[inline(always)]
 pub fn decode_preimage<T: FromFeltRepr>(preimage: &[Felt]) -> ScriptArgsResult<T> {
+    // Advice values are word-granular in-VM, so a non-word-multiple length can never reach the
+    // guest decoder; reject it here too so host-side validation agrees with the VM path.
+    if !preimage.len().is_multiple_of(WORD_FELTS) {
+        return Err(ScriptArgsError::NonWordMultipleLength);
+    }
     let mut reader = FeltReader::new(preimage);
     let value = T::from_felt_repr(&mut reader)?;
     check_decoded_len::<T>(&reader)?;
@@ -389,6 +395,15 @@ mod tests {
             decode_preimage(&[felt(2), felt(5), felt(6), felt(9)]);
 
         assert_eq!(decoded, Err(ScriptArgsError::NonZeroPadding));
+    }
+
+    /// A non-word-multiple preimage fails the decode even when the value consumes it exactly,
+    /// matching the in-VM length check that runs before the advice value reaches the decoder.
+    #[test]
+    fn decode_preimage_rejects_non_word_multiple_length() {
+        let decoded: ScriptArgsResult<Vec<Felt>> = decode_preimage(&[felt(2), felt(5), felt(6)]);
+
+        assert_eq!(decoded, Err(ScriptArgsError::NonWordMultipleLength));
     }
 
     /// A whole extra word beyond the encoding fails the decode, even when it is all zeros.
