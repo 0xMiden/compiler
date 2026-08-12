@@ -1,10 +1,7 @@
 use std::{
     env, fs,
-    io::ErrorKind,
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard, OnceLock},
-    thread,
-    time::Duration,
 };
 
 #[allow(dead_code)]
@@ -48,66 +45,32 @@ pub(crate) fn project_template_arg(template: &str) -> String {
     let template = template.trim_start_matches("--");
     let templates_path = match env::var("TEST_LOCAL_TEMPLATES_PATH") {
         Ok(path) => PathBuf::from(path),
-        Err(_) => cached_rust_templates_path().expect("failed to prepare rust-templates cache"),
+        Err(_) => local_rust_templates_path(),
     };
     format!("--template-path={}", templates_path.join(template).display())
 }
 
-fn cached_rust_templates_path() -> anyhow::Result<PathBuf> {
-    let cache_root = env::temp_dir().join("cargo_miden_local_rust_templates");
-    let ready_marker = cache_root.join(".ready");
-    if templates_cache_is_ready(&cache_root, &ready_marker) {
-        return Ok(cache_root);
-    }
-
-    let lock_dir = cache_root.with_extension("lock");
-    loop {
-        match fs::create_dir(&lock_dir) {
-            Ok(()) => break,
-            Err(err) if err.kind() == ErrorKind::AlreadyExists => {
-                if templates_cache_is_ready(&cache_root, &ready_marker) {
-                    return Ok(cache_root);
-                }
-                thread::sleep(Duration::from_millis(100));
+/// Materializes the local stand-in templates for this test process and returns the directory.
+///
+/// The templates are written fresh once per test process, so scaffolded projects always see the
+/// current template sources and resolve their dependencies from scratch, exactly like a user
+/// running `cargo miden new`. There is deliberately no cross-run cache: a persisted copy can
+/// only get stale. The per-process directory name keeps concurrent test processes apart, and
+/// the OS temp cleaner reclaims leftovers.
+fn local_rust_templates_path() -> PathBuf {
+    static TEMPLATES: OnceLock<PathBuf> = OnceLock::new();
+    TEMPLATES
+        .get_or_init(|| {
+            let root = env::temp_dir()
+                .join(format!("cargo_miden_local_rust_templates_{}", std::process::id()));
+            // A recycled pid can find leftovers from an earlier process; rewrite from scratch.
+            if root.exists() {
+                fs::remove_dir_all(&root).expect("failed to remove stale local rust templates");
             }
-            Err(err) => return Err(err.into()),
-        }
-    }
-
-    let _lock = LockDir { path: lock_dir };
-    if templates_cache_is_ready(&cache_root, &ready_marker) {
-        return Ok(cache_root);
-    }
-
-    if cache_root.exists() {
-        fs::remove_dir_all(&cache_root)?;
-    }
-
-    write_local_test_templates(&cache_root)?;
-    fs::write(&ready_marker, templates_revision())?;
-    Ok(cache_root)
-}
-
-/// The cache is keyed by template content: the ready marker stores a digest of the rendered
-/// template sources, so editing `local_template_files` invalidates stale caches automatically.
-fn templates_cache_is_ready(cache_root: &Path, ready_marker: &Path) -> bool {
-    fs::read_to_string(ready_marker).is_ok_and(|revision| revision == templates_revision())
-        && local_template_files()
-            .iter()
-            .all(|(template, ..)| cache_root.join(template).is_dir())
-}
-
-/// Digest of the local template contents used to detect stale caches.
-fn templates_revision() -> String {
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    for (name, cargo_toml, lib_rs) in local_template_files() {
-        name.hash(&mut hasher);
-        cargo_toml.hash(&mut hasher);
-        lib_rs.hash(&mut hasher);
-    }
-    format!("{:016x}", hasher.finish())
+            write_local_test_templates(&root).expect("failed to write local rust templates");
+            root
+        })
+        .clone()
 }
 
 fn write_local_test_templates(cache_root: &Path) -> anyhow::Result<()> {
@@ -279,7 +242,6 @@ fn write_template(
     fs::create_dir_all(template_root.join("src"))?;
     fs::write(template_root.join("Cargo.toml"), cargo_toml)?;
     fs::write(template_root.join("src/lib.rs"), lib_rs)?;
-    fs::copy(workspace_root().join("Cargo.lock"), template_root.join("Cargo.lock"))?;
     Ok(())
 }
 
@@ -289,14 +251,4 @@ pub(crate) fn workspace_root() -> PathBuf {
         .and_then(Path::parent)
         .expect("cargo-miden should live under tools/cargo-miden")
         .to_path_buf()
-}
-
-struct LockDir {
-    path: PathBuf,
-}
-
-impl Drop for LockDir {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir(&self.path);
-    }
 }
