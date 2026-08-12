@@ -17,9 +17,10 @@ use crate::{
 /// Proptest harness for a binary `(i32, i32) -> i32` Wasm operation.
 ///
 /// The `wat_op` is executed in a function exported as `entrypoint`.
-fn test_i32_wasm_op_binary<S>(wat_op: &str, strategy: S)
+fn test_i32_wasm_op_binary<S, T>(wat_op: &str, strategy: S)
 where
-    S: Strategy<Value = (i32, i32)>,
+    S: Strategy<Value = (T, T)>,
+    T: WasmI32Input + std::fmt::Debug,
 {
     let wat = format!(
         r#"(module
@@ -45,15 +46,17 @@ where
     let package = test.compile_package();
     let program = package.unwrap_program();
 
-    let res = NumericStrategy::<i32>::test_runner().run(&strategy, |(a, b)| {
+    let res = NumericStrategy::<T>::test_runner().run(&strategy, |(a, b)| {
+        let a = a.into_bits();
+        let b = b.into_bits();
         let expected = interpreter
             .borrow_mut()
-            .call_entrypoint::<(i32, i32), i32>("entrypoint", (a, b));
+            .call_entrypoint::<(i32, i32), i32>("entrypoint", (a as i32, b as i32));
 
         // The `(a, b)` entrypoint follows the C calling convention, so pass stack `[a, b]`
         let stack_inputs = StackInputs::new(&[
-            Felt::new(a as u32 as u64).expect("u32 values fit in a felt"),
-            Felt::new(b as u32 as u64).expect("u32 values fit in a felt"),
+            Felt::new(a as u64).expect("u32 values fit in a felt"),
+            Felt::new(b as u64).expect("u32 values fit in a felt"),
         ])
         .expect("invalid stack inputs");
 
@@ -103,6 +106,23 @@ where
     }
 }
 
+/// Converts a generated input into the bit pattern passed to a Wasm `i32` parameter.
+trait WasmI32Input {
+    fn into_bits(self) -> u32;
+}
+
+impl WasmI32Input for i32 {
+    fn into_bits(self) -> u32 {
+        self as u32
+    }
+}
+
+impl WasmI32Input for u32 {
+    fn into_bits(self) -> u32 {
+        self
+    }
+}
+
 #[test]
 fn i32_add() {
     test_i32_wasm_op_binary("i32.add", NumericStrategy::<i32>::add_signed());
@@ -125,9 +145,7 @@ fn i32_div_s() {
 
 #[test]
 fn i32_div_u() {
-    // The values remain bit-identical i32 parameters at the Wasm boundary; `i32.div_u`
-    // interprets those bits as unsigned. This strategy deliberately includes zero divisors.
-    test_i32_wasm_op_binary("i32.div_u", NumericStrategy::<i32>::div_signed_checked());
+    test_i32_wasm_op_binary("i32.div_u", NumericStrategy::<u32>::div_unsigned_checked());
 }
 
 #[test]
@@ -137,8 +155,7 @@ fn i32_rem_s() {
 
 #[test]
 fn i32_rem_u() {
-    // See `i32_div_u` for why a signed input strategy is still appropriate here.
-    test_i32_wasm_op_binary("i32.rem_u", NumericStrategy::<i32>::rem_signed_checked());
+    test_i32_wasm_op_binary("i32.rem_u", NumericStrategy::<u32>::rem_unsigned_checked());
 }
 
 #[test]
