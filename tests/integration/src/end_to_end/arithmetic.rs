@@ -954,6 +954,21 @@ where
     T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + std::fmt::Debug,
     U: ToMidenRepr + PrimInt + Arbitrary,
 {
+    test_binary_fn_with_runner(op, fn_name, strategy, TestRunner::default());
+}
+
+/// Like [`test_binary_fn`], but runs `strategy` with the caller-provided `runner`. Pass a
+/// [`NumericStrategy::test_runner`] when the strategy is `NumericStrategy`-generated, so its higher
+/// case count reliably exercises the edge cases.
+fn test_binary_fn_with_runner<T, U>(
+    op: fn(T, U) -> T,
+    fn_name: &str,
+    strategy: impl Strategy<Value = (T, U)>,
+    mut runner: TestRunner,
+) where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + std::fmt::Debug,
+    U: ToMidenRepr + PrimInt + Arbitrary,
+{
     // The return value of `type_name` isn't stable, but it's good enough for this test.
     let lhs_ty_name = type_name::<T>();
     let rhs_ty_name = type_name::<U>();
@@ -970,7 +985,7 @@ where
     let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+    let res = runner.run(&strategy, move |(a, b)| {
         let rust_out = op(a, b);
 
         // Write the operation result to 20 * PAGE_SIZE.
@@ -1062,9 +1077,9 @@ fn test_checked_arith<T>(
     }
 }
 
-/// Like [`test_checked_arith`], but for shift/rotate-style operations whose shift amount is a
-/// `u32` regardless of the operand width (e.g. `checked_shl`, `checked_shr`).
-fn test_checked_shift<T, U>(
+/// Like [`test_checked_arith`], but for binary operations whose right-hand operand type `U` may
+/// differ from the left-hand/result type `T` (e.g. the `u32` shift amount of `checked_shl`).
+fn test_checked_binary_fn<T, U>(
     op: fn(T, U) -> Option<T>,
     fn_name: &str,
     strategy: impl Strategy<Value = (T, U)>,
@@ -1087,7 +1102,7 @@ fn test_checked_shift<T, U>(
     let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
         let rust_out = match op(a, b) {
             Some(value) => (value, true),
             None => (T::zero(), false),
@@ -1103,9 +1118,10 @@ fn test_checked_shift<T, U>(
 
         eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
             let ty_byte_size = std::mem::size_of::<T>();
-            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
-            // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
-            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
+            assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
+            // At most 17 bytes are written to memory: ty_byte_size <= 16 and 1 byte for the bool.
+            let x: [u8; 17] =
+                trace.read_from_rust_memory(out_addr).expect("output was not written");
             let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
 
             let rs_out_bytes =
@@ -1125,9 +1141,9 @@ fn test_checked_shift<T, U>(
     }
 }
 
-/// Like [`test_overflowing_arith`], but for shift-style operations whose shift amount is a `u32`
-/// regardless of the operand width (e.g. `overflowing_shl`, `overflowing_shr`).
-fn test_overflowing_shift<T, U>(
+/// Like [`test_overflowing_arith`], but for binary operations whose right-hand operand type `U` may
+/// differ from the left-hand/result type `T` (e.g. the `u32` shift amount of `overflowing_shl`).
+fn test_overflowing_binary_fn<T, U>(
     op: fn(T, U) -> (T, bool),
     fn_name: &str,
     strategy: impl Strategy<Value = (T, U)>,
@@ -1146,7 +1162,7 @@ fn test_overflowing_shift<T, U>(
     let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
         let rust_out = op(a, b);
 
         // Write the operation result to 20 * PAGE_SIZE.
@@ -1381,190 +1397,390 @@ fn wrapping_shr_i128() {
     test_binary_fn(i128::wrapping_shr, "wrapping_shr", (any::<i128>(), any::<u32>()));
 }
 
-// `rotate_left` / `rotate_right`. The shift amount is an arbitrary `u32`, so these also exercise
-// the `rotate_count >= width` case, which Rust handles by rotating `count % width` bits.
+// `rotate_left` / `rotate_right`. The shift amount is a `u32`; the strategies emphasize counts
+// at, above, and at multiples of the operand width, which Rust reduces via `count % width`.
 
 #[test]
 fn rotate_left_u8() {
-    test_binary_fn(u8::rotate_left, "rotate_left", (any::<u8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u8::rotate_left,
+        "rotate_left",
+        NumericStrategy::<u8>::rotate_unsigned_u32(),
+        NumericStrategy::<u8>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_u16() {
-    test_binary_fn(u16::rotate_left, "rotate_left", (any::<u16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u16::rotate_left,
+        "rotate_left",
+        NumericStrategy::<u16>::rotate_unsigned_u32(),
+        NumericStrategy::<u16>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_u32() {
-    test_binary_fn(u32::rotate_left, "rotate_left", (any::<u32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u32::rotate_left,
+        "rotate_left",
+        NumericStrategy::<u32>::rotate_unsigned_u32(),
+        NumericStrategy::<u32>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_u64() {
-    test_binary_fn(u64::rotate_left, "rotate_left", (any::<u64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u64::rotate_left,
+        "rotate_left",
+        NumericStrategy::<u64>::rotate_unsigned_u32(),
+        NumericStrategy::<u64>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_u128() {
-    test_binary_fn(u128::rotate_left, "rotate_left", (any::<u128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u128::rotate_left,
+        "rotate_left",
+        NumericStrategy::<u128>::rotate_unsigned_u32(),
+        NumericStrategy::<u128>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_i8() {
-    test_binary_fn(i8::rotate_left, "rotate_left", (any::<i8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i8::rotate_left,
+        "rotate_left",
+        NumericStrategy::<i8>::rotate_signed_u32(),
+        NumericStrategy::<i8>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_i16() {
-    test_binary_fn(i16::rotate_left, "rotate_left", (any::<i16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i16::rotate_left,
+        "rotate_left",
+        NumericStrategy::<i16>::rotate_signed_u32(),
+        NumericStrategy::<i16>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_i32() {
-    test_binary_fn(i32::rotate_left, "rotate_left", (any::<i32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i32::rotate_left,
+        "rotate_left",
+        NumericStrategy::<i32>::rotate_signed_u32(),
+        NumericStrategy::<i32>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_i64() {
-    test_binary_fn(i64::rotate_left, "rotate_left", (any::<i64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i64::rotate_left,
+        "rotate_left",
+        NumericStrategy::<i64>::rotate_signed_u32(),
+        NumericStrategy::<i64>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_left_i128() {
-    test_binary_fn(i128::rotate_left, "rotate_left", (any::<i128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i128::rotate_left,
+        "rotate_left",
+        NumericStrategy::<i128>::rotate_signed_u32(),
+        NumericStrategy::<i128>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_u8() {
-    test_binary_fn(u8::rotate_right, "rotate_right", (any::<u8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u8::rotate_right,
+        "rotate_right",
+        NumericStrategy::<u8>::rotate_unsigned_u32(),
+        NumericStrategy::<u8>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_u16() {
-    test_binary_fn(u16::rotate_right, "rotate_right", (any::<u16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u16::rotate_right,
+        "rotate_right",
+        NumericStrategy::<u16>::rotate_unsigned_u32(),
+        NumericStrategy::<u16>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_u32() {
-    test_binary_fn(u32::rotate_right, "rotate_right", (any::<u32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u32::rotate_right,
+        "rotate_right",
+        NumericStrategy::<u32>::rotate_unsigned_u32(),
+        NumericStrategy::<u32>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_u64() {
-    test_binary_fn(u64::rotate_right, "rotate_right", (any::<u64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u64::rotate_right,
+        "rotate_right",
+        NumericStrategy::<u64>::rotate_unsigned_u32(),
+        NumericStrategy::<u64>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_u128() {
-    test_binary_fn(u128::rotate_right, "rotate_right", (any::<u128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u128::rotate_right,
+        "rotate_right",
+        NumericStrategy::<u128>::rotate_unsigned_u32(),
+        NumericStrategy::<u128>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_i8() {
-    test_binary_fn(i8::rotate_right, "rotate_right", (any::<i8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i8::rotate_right,
+        "rotate_right",
+        NumericStrategy::<i8>::rotate_signed_u32(),
+        NumericStrategy::<i8>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_i16() {
-    test_binary_fn(i16::rotate_right, "rotate_right", (any::<i16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i16::rotate_right,
+        "rotate_right",
+        NumericStrategy::<i16>::rotate_signed_u32(),
+        NumericStrategy::<i16>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_i32() {
-    test_binary_fn(i32::rotate_right, "rotate_right", (any::<i32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i32::rotate_right,
+        "rotate_right",
+        NumericStrategy::<i32>::rotate_signed_u32(),
+        NumericStrategy::<i32>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_i64() {
-    test_binary_fn(i64::rotate_right, "rotate_right", (any::<i64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i64::rotate_right,
+        "rotate_right",
+        NumericStrategy::<i64>::rotate_signed_u32(),
+        NumericStrategy::<i64>::test_runner(),
+    );
 }
 
 #[test]
 fn rotate_right_i128() {
-    test_binary_fn(i128::rotate_right, "rotate_right", (any::<i128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i128::rotate_right,
+        "rotate_right",
+        NumericStrategy::<i128>::rotate_signed_u32(),
+        NumericStrategy::<i128>::test_runner(),
+    );
 }
 
-// `checked_shl` / `checked_shr`. These return `None` when the shift amount is `>= width`, which the
-// arbitrary `u32` strategy exercises frequently.
+// `checked_shl` / `checked_shr`. These return `None` when the shift amount is `>= width`; the
+// strategies straddle that boundary deliberately.
 
 #[test]
 fn checked_shl_u8() {
-    test_checked_shift(u8::checked_shl, "checked_shl", (any::<u8>(), any::<u32>()));
+    test_checked_binary_fn(
+        u8::checked_shl,
+        "checked_shl",
+        NumericStrategy::<u8>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_u16() {
-    test_checked_shift(u16::checked_shl, "checked_shl", (any::<u16>(), any::<u32>()));
+    test_checked_binary_fn(
+        u16::checked_shl,
+        "checked_shl",
+        NumericStrategy::<u16>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_u32() {
-    test_checked_shift(u32::checked_shl, "checked_shl", (any::<u32>(), any::<u32>()));
+    test_checked_binary_fn(
+        u32::checked_shl,
+        "checked_shl",
+        NumericStrategy::<u32>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_u64() {
-    test_checked_shift(u64::checked_shl, "checked_shl", (any::<u64>(), any::<u32>()));
+    test_checked_binary_fn(
+        u64::checked_shl,
+        "checked_shl",
+        NumericStrategy::<u64>::checked_shift_unsigned_u32(),
+    );
+}
+
+#[test]
+fn checked_shl_u128() {
+    test_checked_binary_fn(
+        u128::checked_shl,
+        "checked_shl",
+        NumericStrategy::<u128>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_i8() {
-    test_checked_shift(i8::checked_shl, "checked_shl", (any::<i8>(), any::<u32>()));
+    test_checked_binary_fn(
+        i8::checked_shl,
+        "checked_shl",
+        NumericStrategy::<i8>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_i16() {
-    test_checked_shift(i16::checked_shl, "checked_shl", (any::<i16>(), any::<u32>()));
+    test_checked_binary_fn(
+        i16::checked_shl,
+        "checked_shl",
+        NumericStrategy::<i16>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_i32() {
-    test_checked_shift(i32::checked_shl, "checked_shl", (any::<i32>(), any::<u32>()));
+    test_checked_binary_fn(
+        i32::checked_shl,
+        "checked_shl",
+        NumericStrategy::<i32>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shl_i64() {
-    test_checked_shift(i64::checked_shl, "checked_shl", (any::<i64>(), any::<u32>()));
+    test_checked_binary_fn(
+        i64::checked_shl,
+        "checked_shl",
+        NumericStrategy::<i64>::checked_shift_signed_u32(),
+    );
+}
+
+#[test]
+fn checked_shl_i128() {
+    test_checked_binary_fn(
+        i128::checked_shl,
+        "checked_shl",
+        NumericStrategy::<i128>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_u8() {
-    test_checked_shift(u8::checked_shr, "checked_shr", (any::<u8>(), any::<u32>()));
+    test_checked_binary_fn(
+        u8::checked_shr,
+        "checked_shr",
+        NumericStrategy::<u8>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_u16() {
-    test_checked_shift(u16::checked_shr, "checked_shr", (any::<u16>(), any::<u32>()));
+    test_checked_binary_fn(
+        u16::checked_shr,
+        "checked_shr",
+        NumericStrategy::<u16>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_u32() {
-    test_checked_shift(u32::checked_shr, "checked_shr", (any::<u32>(), any::<u32>()));
+    test_checked_binary_fn(
+        u32::checked_shr,
+        "checked_shr",
+        NumericStrategy::<u32>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_u64() {
-    test_checked_shift(u64::checked_shr, "checked_shr", (any::<u64>(), any::<u32>()));
+    test_checked_binary_fn(
+        u64::checked_shr,
+        "checked_shr",
+        NumericStrategy::<u64>::checked_shift_unsigned_u32(),
+    );
+}
+
+#[test]
+fn checked_shr_u128() {
+    test_checked_binary_fn(
+        u128::checked_shr,
+        "checked_shr",
+        NumericStrategy::<u128>::checked_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_i8() {
-    test_checked_shift(i8::checked_shr, "checked_shr", (any::<i8>(), any::<u32>()));
+    test_checked_binary_fn(
+        i8::checked_shr,
+        "checked_shr",
+        NumericStrategy::<i8>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_i16() {
-    test_checked_shift(i16::checked_shr, "checked_shr", (any::<i16>(), any::<u32>()));
+    test_checked_binary_fn(
+        i16::checked_shr,
+        "checked_shr",
+        NumericStrategy::<i16>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_i32() {
-    test_checked_shift(i32::checked_shr, "checked_shr", (any::<i32>(), any::<u32>()));
+    test_checked_binary_fn(
+        i32::checked_shr,
+        "checked_shr",
+        NumericStrategy::<i32>::checked_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn checked_shr_i64() {
-    test_checked_shift(i64::checked_shr, "checked_shr", (any::<i64>(), any::<u32>()));
+    test_checked_binary_fn(
+        i64::checked_shr,
+        "checked_shr",
+        NumericStrategy::<i64>::checked_shift_signed_u32(),
+    );
+}
+
+#[test]
+fn checked_shr_i128() {
+    test_checked_binary_fn(
+        i128::checked_shr,
+        "checked_shr",
+        NumericStrategy::<i128>::checked_shift_signed_u32(),
+    );
 }
 
 // `overflowing_shl` / `overflowing_shr`. The `bool` reports whether the shift amount was masked
@@ -1572,102 +1788,182 @@ fn checked_shr_i64() {
 
 #[test]
 fn overflowing_shl_u8() {
-    test_overflowing_shift(u8::overflowing_shl, "overflowing_shl", (any::<u8>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u8::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<u8>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_u16() {
-    test_overflowing_shift(u16::overflowing_shl, "overflowing_shl", (any::<u16>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u16::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<u16>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_u32() {
-    test_overflowing_shift(u32::overflowing_shl, "overflowing_shl", (any::<u32>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u32::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<u32>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_u64() {
-    test_overflowing_shift(u64::overflowing_shl, "overflowing_shl", (any::<u64>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u64::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<u64>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_u128() {
-    test_overflowing_shift(u128::overflowing_shl, "overflowing_shl", (any::<u128>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u128::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<u128>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_i8() {
-    test_overflowing_shift(i8::overflowing_shl, "overflowing_shl", (any::<i8>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i8::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<i8>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_i16() {
-    test_overflowing_shift(i16::overflowing_shl, "overflowing_shl", (any::<i16>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i16::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<i16>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_i32() {
-    test_overflowing_shift(i32::overflowing_shl, "overflowing_shl", (any::<i32>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i32::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<i32>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_i64() {
-    test_overflowing_shift(i64::overflowing_shl, "overflowing_shl", (any::<i64>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i64::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<i64>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shl_i128() {
-    test_overflowing_shift(i128::overflowing_shl, "overflowing_shl", (any::<i128>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i128::overflowing_shl,
+        "overflowing_shl",
+        NumericStrategy::<i128>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_u8() {
-    test_overflowing_shift(u8::overflowing_shr, "overflowing_shr", (any::<u8>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u8::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<u8>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_u16() {
-    test_overflowing_shift(u16::overflowing_shr, "overflowing_shr", (any::<u16>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u16::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<u16>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_u32() {
-    test_overflowing_shift(u32::overflowing_shr, "overflowing_shr", (any::<u32>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u32::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<u32>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_u64() {
-    test_overflowing_shift(u64::overflowing_shr, "overflowing_shr", (any::<u64>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u64::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<u64>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_u128() {
-    test_overflowing_shift(u128::overflowing_shr, "overflowing_shr", (any::<u128>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        u128::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<u128>::overflowing_shift_unsigned_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_i8() {
-    test_overflowing_shift(i8::overflowing_shr, "overflowing_shr", (any::<i8>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i8::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<i8>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_i16() {
-    test_overflowing_shift(i16::overflowing_shr, "overflowing_shr", (any::<i16>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i16::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<i16>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_i32() {
-    test_overflowing_shift(i32::overflowing_shr, "overflowing_shr", (any::<i32>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i32::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<i32>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_i64() {
-    test_overflowing_shift(i64::overflowing_shr, "overflowing_shr", (any::<i64>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i64::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<i64>::overflowing_shift_signed_u32(),
+    );
 }
 
 #[test]
 fn overflowing_shr_i128() {
-    test_overflowing_shift(i128::overflowing_shr, "overflowing_shr", (any::<i128>(), any::<u32>()));
+    test_overflowing_binary_fn(
+        i128::overflowing_shr,
+        "overflowing_shr",
+        NumericStrategy::<i128>::overflowing_shift_signed_u32(),
+    );
 }
 
 // `unbounded_shl` / `unbounded_shr`. Unlike the wrapping variants, a shift amount `>= width`
@@ -1675,102 +1971,202 @@ fn overflowing_shr_i128() {
 
 #[test]
 fn unbounded_shl_u8() {
-    test_binary_fn(u8::unbounded_shl, "unbounded_shl", (any::<u8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u8::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<u8>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u8>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_u16() {
-    test_binary_fn(u16::unbounded_shl, "unbounded_shl", (any::<u16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u16::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<u16>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u16>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_u32() {
-    test_binary_fn(u32::unbounded_shl, "unbounded_shl", (any::<u32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u32::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<u32>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u32>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_u64() {
-    test_binary_fn(u64::unbounded_shl, "unbounded_shl", (any::<u64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u64::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<u64>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u64>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_u128() {
-    test_binary_fn(u128::unbounded_shl, "unbounded_shl", (any::<u128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u128::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<u128>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u128>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_i8() {
-    test_binary_fn(i8::unbounded_shl, "unbounded_shl", (any::<i8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i8::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<i8>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i8>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_i16() {
-    test_binary_fn(i16::unbounded_shl, "unbounded_shl", (any::<i16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i16::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<i16>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i16>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_i32() {
-    test_binary_fn(i32::unbounded_shl, "unbounded_shl", (any::<i32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i32::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<i32>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i32>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_i64() {
-    test_binary_fn(i64::unbounded_shl, "unbounded_shl", (any::<i64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i64::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<i64>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i64>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shl_i128() {
-    test_binary_fn(i128::unbounded_shl, "unbounded_shl", (any::<i128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i128::unbounded_shl,
+        "unbounded_shl",
+        NumericStrategy::<i128>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i128>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_u8() {
-    test_binary_fn(u8::unbounded_shr, "unbounded_shr", (any::<u8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u8::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<u8>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u8>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_u16() {
-    test_binary_fn(u16::unbounded_shr, "unbounded_shr", (any::<u16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u16::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<u16>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u16>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_u32() {
-    test_binary_fn(u32::unbounded_shr, "unbounded_shr", (any::<u32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u32::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<u32>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u32>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_u64() {
-    test_binary_fn(u64::unbounded_shr, "unbounded_shr", (any::<u64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u64::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<u64>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u64>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_u128() {
-    test_binary_fn(u128::unbounded_shr, "unbounded_shr", (any::<u128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        u128::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<u128>::unbounded_shift_unsigned_u32(),
+        NumericStrategy::<u128>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_i8() {
-    test_binary_fn(i8::unbounded_shr, "unbounded_shr", (any::<i8>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i8::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<i8>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i8>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_i16() {
-    test_binary_fn(i16::unbounded_shr, "unbounded_shr", (any::<i16>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i16::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<i16>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i16>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_i32() {
-    test_binary_fn(i32::unbounded_shr, "unbounded_shr", (any::<i32>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i32::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<i32>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i32>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_i64() {
-    test_binary_fn(i64::unbounded_shr, "unbounded_shr", (any::<i64>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i64::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<i64>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i64>::test_runner(),
+    );
 }
 
 #[test]
 fn unbounded_shr_i128() {
-    test_binary_fn(i128::unbounded_shr, "unbounded_shr", (any::<i128>(), any::<u32>()));
+    test_binary_fn_with_runner(
+        i128::unbounded_shr,
+        "unbounded_shr",
+        NumericStrategy::<i128>::unbounded_shift_signed_u32(),
+        NumericStrategy::<i128>::test_runner(),
+    );
 }
 
 test_unary_op!(neg, -, i32, (i32::MIN + 1)..=i32::MAX);

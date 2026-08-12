@@ -818,6 +818,244 @@ where
             1 => Just((v.zero, max_u32_shift)),
         ]
     }
+
+    /// Shift amount (second tuple value) is a `u32`, matching `rotate_left`/`rotate_right`. Rotates
+    /// are total and reduce the count modulo the operand width, so identity points (multiples of
+    /// the width) and out-of-range counts are emphasized.
+    pub fn rotate_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        let double_width = bit_width * 2;
+        // 0x55.. and 0xAA.. bit patterns expose rotate bugs that uniform bytes miss.
+        let alt_lo = v.max_div_three;
+        let alt_hi = v.max_div_three + v.max_div_three;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.max, 0u32)),
+            1 => Just((v.max, 1u32)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((alt_lo, 1u32)),
+            1 => Just((alt_lo, max_shift)),
+            1 => Just((alt_hi, 1u32)),
+            1 => Just((alt_hi, max_shift)),
+            1 => Just((v.half, max_shift)),
+            1 => Just((v.half_plus_one, max_shift)),
+            1 => Just((v.max, double_width)),
+            1 => Just((v.max, u32::MAX)),
+            1 => Just((v.zero, overflow_shift)),
+        ]
+    }
+
+    /// Signed counterpart of [`Self::rotate_unsigned_u32`]; adds `min` (sign bit set) and `-1`
+    /// (all-ones) operands.
+    pub fn rotate_signed_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        let double_width = bit_width * 2;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.min, 0u32)),
+            1 => Just((v.min, 1u32)),
+            1 => Just((v.min, max_shift)),
+            1 => Just((v.min, overflow_shift)),
+            1 => Just((v.max, 1u32)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((neg_one, 1u32)),
+            1 => Just((neg_one, max_shift)),
+            1 => Just((neg_one, overflow_shift)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.min, double_width)),
+            1 => Just((v.max, u32::MAX)),
+            1 => Just((v.zero, overflow_shift)),
+        ]
+    }
+
+    /// Shift amount is a `u32`, for `checked_shl`/`checked_shr`, which return `None` once the shift
+    /// is `>= width`. The last in-range shift (`width - 1`) and first out-of-range shift (`width`)
+    /// are emphasized.
+    pub fn checked_shift_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.max, 0u32)),
+            1 => Just((v.max, 1u32)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.max, overflow_shift + 1)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.half, max_shift)),
+            1 => Just((v.half_plus_one, max_shift)),
+            1 => Just((v.zero, 0u32)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.max, u32::MAX)),
+        ]
+    }
+
+    /// Signed counterpart of [`Self::checked_shift_unsigned_u32`].
+    pub fn checked_shift_signed_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.min, 0u32)),
+            1 => Just((v.min, 1u32)),
+            1 => Just((v.min, max_shift)),
+            1 => Just((v.min, overflow_shift)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((neg_one, 1u32)),
+            1 => Just((neg_one, max_shift)),
+            1 => Just((neg_one, overflow_shift)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.min, u32::MAX)),
+        ]
+    }
+
+    /// Shift amount is a `u32`, for `overflowing_shl`/`overflowing_shr`. The boolean reports whether
+    /// the shift was masked (i.e. was `>= width`), so the width boundary is emphasized.
+    pub fn overflowing_shift_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        let double_width = bit_width * 2;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.max, 0u32)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.max, overflow_shift + 1)),
+            1 => Just((v.max, double_width)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.half, max_shift)),
+            1 => Just((v.half_plus_one, overflow_shift)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.max, u32::MAX)),
+        ]
+    }
+
+    /// Signed counterpart of [`Self::overflowing_shift_unsigned_u32`].
+    pub fn overflowing_shift_signed_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        let double_width = bit_width * 2;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.min, 0u32)),
+            1 => Just((v.min, max_shift)),
+            1 => Just((v.min, overflow_shift)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((neg_one, max_shift)),
+            1 => Just((neg_one, overflow_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.min, double_width)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.min, u32::MAX)),
+        ]
+    }
+
+    /// Shift amount is a `u32`, for `unbounded_shl`/`unbounded_shr`, which yield `0` (or the sign
+    /// fill for signed `shr`) once the shift is `>= width`. Large out-of-range shifts are
+    /// emphasized alongside the width boundary.
+    pub fn unbounded_shift_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        let double_width = bit_width * 2;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.max, 0u32)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.max, double_width)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.half, max_shift)),
+            1 => Just((v.half_plus_one, overflow_shift)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.max, u32::MAX)),
+            1 => Just((v.max, u32::MAX - 1)),
+        ]
+    }
+
+    /// Signed counterpart of [`Self::unbounded_shift_unsigned_u32`].
+    pub fn unbounded_shift_signed_u32() -> impl Strategy<Value = (T, u32)>
+    where
+        T: num_traits::Signed + 'static,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let neg_one = v.neg_one.unwrap();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = bit_width - 1;
+        let overflow_shift = bit_width;
+        let double_width = bit_width * 2;
+        prop_oneof![
+            3 => (any::<T>(), 0u32..bit_width),
+            3 => (any::<T>(), bit_width..=u32::MAX),
+            1 => Just((v.min, 0u32)),
+            1 => Just((v.min, max_shift)),
+            1 => Just((v.min, overflow_shift)),
+            1 => Just((v.min, double_width)),
+            1 => Just((neg_one, max_shift)),
+            1 => Just((neg_one, overflow_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.min, u32::MAX)),
+            1 => Just((neg_one, u32::MAX)),
+        ]
+    }
 }
 
 /// Common values frequently used in [`NumericStrategy`].
