@@ -5,8 +5,9 @@
 //!
 //! Every dependency package comes from the build-owned package cache named by
 //! `MIDENC_PACKAGE_CACHE`. A midenc-driven build compiles the dependencies, publishes them into
-//! the fingerprinted cache, and exports the variable to its nested cargo builds; the contract
-//! `build.rs` does the same for plain `cargo build`/`cargo check` and IDE analysis. The macros
+//! its per-build cache, and exports the variable to its nested cargo builds; the contract
+//! `build.rs` does the same for plain `cargo build`/`cargo check` and IDE analysis through a
+//! stable exported directory. The macros
 //! never search the filesystem for packages themselves — the one exception is a dependency whose
 //! manifest path names a `.masp` file directly, which is read from that explicit location.
 
@@ -393,10 +394,11 @@ impl core::fmt::Debug for ResolvedDependencyPackage {
 /// A `root` that is itself a `.masp` file is the manifest's explicit choice and is read from
 /// that location (the manifest key need not equal the prebuilt package's id). Every other
 /// dependency package is read from the `MIDENC_PACKAGE_CACHE` directory under its package name,
-/// trying the hyphen/underscore stem spellings the cache writers use. The cache is fingerprinted
-/// by the build inputs and rewritten by every build, so the package found under the dependency's
-/// name is trusted as-is; id, version, and digest verification belong to the compiler's project
-/// resolution. Without a configured cache the dependency cannot be resolved at all.
+/// trying the hyphen/underscore stem spellings the cache writers use. The cache belongs to one
+/// build — a unique per-build directory, or the stable directory a build exported — so the
+/// package found under the dependency's name is trusted as-is; id, version, and digest
+/// verification belong to the compiler's project resolution. Without a configured cache the
+/// dependency cannot be resolved at all.
 fn resolve_dependency_package(name: &str, root: &Path) -> Result<ResolvedDependencyPackage, Error> {
     if root.is_file() {
         return Ok(ResolvedDependencyPackage {

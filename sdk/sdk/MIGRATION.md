@@ -25,11 +25,18 @@ separate impl block.
 
 New projects created by `cargo miden new` include a `build.rs` in each contract crate. The
 script makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve
-compiled dependency packages: outside a `cargo miden build`, it runs
-`cargo miden package-cache` to locate the project's package cache, populates the cache with a
-nested `cargo miden build --release` when the project has source dependencies, and exports
-`MIDENC_PACKAGE_CACHE` to the crate's macro expansion. Inside a midenc-driven build the script
-does nothing.
+compiled dependency packages: outside a `cargo miden build`, it stages a package cache under
+its `OUT_DIR`, fills it with a nested `cargo miden build --release` that adopts the staged
+directory through `MIDENC_PACKAGE_CACHE`, and exports the same variable to the crate's macro
+expansion. Inside a midenc-driven build the script does nothing: the compiler exchanges
+packages with its nested builds through a directory of its own, which it deletes when the
+build ends.
+
+The nested build runs whenever cargo re-runs the script. The script watches the crate's
+`miden-project.toml` and `Cargo.toml`, so a manifest edit re-stages the packages; an edit
+inside a *dependency's* sources alone does not — touch the crate's manifest (or run
+`cargo clean`) to ask for a re-stage. Computing a precise trigger set would mean
+re-implementing build provenance, which belongs to the compiler.
 
 The build script is now required for plain cargo builds of crates with Miden source
 dependencies. The SDK macros read dependency packages only from the `MIDENC_PACKAGE_CACHE`
@@ -42,12 +49,16 @@ contract crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PAT
 `CARGO_MIDEN` environment variable to use a specific `cargo-miden` binary instead. A missing
 tool fails the build script with an install hint.
 
-Two transient failure modes are accepted by design and heal on the next check. When the nested
-`cargo miden build` fails (for example, a dependency is mid-edit and broken), the script emits
-a cargo warning and still exports the cache, so the editor keeps analyzing against the last
-successfully built dependency packages instead of failing outright. And a concurrent
-midenc-driven build with different build options may prune the cache directory while an editor
-check is consuming it; the affected check fails once and the next one repopulates the cache.
+One transient failure mode is accepted by design and heals on the next successful build: when
+the nested `cargo miden build` fails (for example, a dependency is mid-edit and broken), the
+script emits a cargo warning and keeps the previously staged packages, so the editor keeps
+analyzing against the last successfully built dependency packages instead of failing
+outright.
+
+One sharing caveat: cargo keys build-script output by crate name and version, not by project
+path. Two different projects that contain a contract crate with the same package name and
+version and share one `CARGO_TARGET_DIR` reuse each other's build-script output — including
+the staged package cache. Use per-checkout target directories for such layouts.
 
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 

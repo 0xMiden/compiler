@@ -1194,11 +1194,12 @@ fn package_include_tokens(path: &std::path::Path) -> syn::Result<TokenStream2> {
 
 /// Emits the dep-info record of the package cache location.
 ///
-/// The value carries the build-input fingerprint, so Cargo re-expands the consumer whenever the
-/// fingerprint rotates — even when a stale cache directory survives on disk. The
-/// `include_bytes!` constants cover content changes at an unchanged path. Both the type and the
-/// macro are fully qualified because this lands in consumer scope, where a user-defined `Option`
-/// or `option_env` must not shadow the tracking.
+/// Every midenc-driven build exchanges packages through its own unique directory, so Cargo
+/// re-expands the consumer whenever the cache path rotates — the correctness leg of the
+/// per-build cache design. The `include_bytes!` constants cover content changes at an
+/// unchanged path, which is how consumers of a stable exported directory re-expand. Both the
+/// type and the macro are fully qualified because this lands in consumer scope, where a
+/// user-defined `Option` or `option_env` must not shadow the tracking.
 fn package_cache_tracking_tokens() -> TokenStream2 {
     quote! {
         const _: ::core::option::Option<&str> = ::core::option_env!("MIDENC_PACKAGE_CACHE");
