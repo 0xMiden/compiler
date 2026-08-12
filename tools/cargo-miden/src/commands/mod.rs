@@ -1,6 +1,5 @@
 pub mod build;
 pub mod new_project;
-pub mod package_cache;
 pub mod test;
 
 use std::{path::PathBuf, rc::Rc};
@@ -10,15 +9,12 @@ pub use build::BuildCommand;
 use midenc_compile::Compiler;
 use midenc_session::{InputFile, Session, diagnostics::PrintDiagnostic};
 pub use new_project::NewCommand;
-pub use package_cache::PackageCacheCommand;
 pub use test::TestCommand;
 
 /// Parses midenc-style arguments into a compilation session for the current directory.
 ///
-/// Shared by `build` and `package-cache` so both derive the identical session — and therefore
-/// the identical package-cache fingerprint — from the same arguments; the contract build
-/// script depends on that equality. Returns the session together with the metadata output
-/// directory (`<target-dir>/<profile>`).
+/// Returns the session together with the metadata output directory
+/// (`<target-dir>/<profile>`).
 pub(crate) fn session_from_args(args: &[String]) -> anyhow::Result<(Rc<Session>, PathBuf)> {
     let cwd = std::env::current_dir()?;
     let compiler_opts =
@@ -32,9 +28,9 @@ pub(crate) fn session_from_args(args: &[String]) -> anyhow::Result<(Rc<Session>,
     };
     let input = InputFile::from_path(&manifest_path)
         .map_err(|err| anyhow!("failed to read '{}': {err}", manifest_path.display()))?;
-    // This root session is expected to name one selected package. Package-cache closure
-    // fingerprinting relies on workspace builds reaching this point once per selected member;
-    // an unselected workspace-root manifest is rejected during project preparation.
+    // This root session is expected to name one selected package. The package-cache closure
+    // walk relies on workspace builds reaching this point once per selected member; an
+    // unselected workspace-root manifest is rejected during project preparation.
     let session = Rc::new(
         compiler_opts
             .into_session(input, None, None)

@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 
-use crate::commands::{BuildCommand, NewCommand, PackageCacheCommand, TestCommand};
+use crate::commands::{BuildCommand, NewCommand, TestCommand};
 
 /// Top-level command-line interface for `cargo-miden`.
 #[derive(Debug, Parser)]
@@ -25,9 +25,4 @@ pub enum CargoMidenCommand {
     Build(BuildCommand),
     /// Run the miden-tests in the project.
     Test(TestCommand),
-    /// Print the package-cache location and build-script inputs of the current project.
-    ///
-    /// Contract build scripts use this to populate `MIDENC_PACKAGE_CACHE` for builds that
-    /// `midenc` does not drive.
-    PackageCache(PackageCacheCommand),
 }
