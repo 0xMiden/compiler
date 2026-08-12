@@ -1766,37 +1766,26 @@ mod tests {
 fn apply_debug_var_metadata(
     debug_var: &mut masm::DebugVarInfo,
     var: &midenc_hir::dialects::debuginfo::attributes::Variable,
-    session: &midenc_session::Session,
+    source_manager: &dyn midenc_session::SourceManager,
 ) {
-    use miden_assembly_syntax::debuginfo::SourceManagerExt;
-
     // Set arg_index if this is a parameter
     if let Some(arg_index) = var.arg_index {
         debug_var.set_arg_index(arg_index + 1); // Convert to 1-based
     }
 
-    if let Some(ty) = var.ty.clone() {
-        debug_var.set_ty(ty, None);
-    }
-
     // Set source location
     if let Some(line) = core::num::NonZeroU32::new(var.line) {
-        use miden_assembly::debuginfo::{ColumnNumber, LineNumber, Location, Uri};
+        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
         let uri = Uri::new(var.file.as_str());
-        let line = LineNumber::new(line.get()).unwrap_or_default();
-        let column = var.column.and_then(ColumnNumber::new).unwrap_or_default();
-        let file = session.source_manager.get_by_uri(&uri);
-        if let Some(file) = file {
-            if let Some(span) = file.line_column_to_span(line, column) {
-                let loc = Location::new(uri, span.start(), span.end());
-                debug_var.set_location(loc);
-            }
-        } else if let Some(path) = uri.to_path()
-            && let Some(file) = session.source_manager.load_file(&path).ok()
-            && let Some(span) = file.line_column_to_span(line, column)
+        let file_line_col = FileLineCol::new(
+            uri,
+            LineNumber::new(line.get()).unwrap_or_default(),
+            var.column.and_then(ColumnNumber::new).unwrap_or_default(),
+        );
+        if let Some(span) = source_manager.file_line_col_to_span(file_line_col)
+            && let Ok(location) = source_manager.location(span)
         {
-            let loc = Location::new(uri, span.start(), span.end());
-            debug_var.set_location(loc);
+            debug_var.set_location(location);
         }
     }
 }
@@ -1833,8 +1822,8 @@ impl HirLowering for debuginfo::DebugValue {
         };
 
         let mut debug_var = masm::DebugVarInfo::new(var.name.to_string(), value_location);
-        let session = self.as_operation().context().session();
-        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
+        let source_manager = self.as_operation().context().source_manager();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), source_manager.as_ref());
 
         // Emit the instruction followed by a `nop` so that the debug var instruction is never the
         // last instruction in a MASM block
@@ -1866,8 +1855,8 @@ impl HirLowering for debuginfo::DebugDeclare {
         };
 
         let mut debug_var = masm::DebugVarInfo::new(var.name.to_string(), value_location);
-        let session = self.as_operation().context().session();
-        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
+        let source_manager = self.as_operation().context().source_manager();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), source_manager.as_ref());
 
         // Emit the instruction followed by a `nop` so that the debug var instruction is never the
         // last instruction in a MASM block
@@ -1898,8 +1887,8 @@ impl HirLowering for debuginfo::DebugKill {
             var.name.to_string(),
             masm::DebugVarLocation::Expression(DEBUG_VAR_KILL_SENTINEL.to_vec()),
         );
-        let session = self.as_operation().context().session();
-        apply_debug_var_metadata(&mut debug_var, var.as_value(), session);
+        let source_manager = self.as_operation().context().source_manager();
+        apply_debug_var_metadata(&mut debug_var, var.as_value(), source_manager.as_ref());
 
         // Emit the instruction followed by a `nop` so that the debug var instruction is never the
         // last instruction in a MASM block
