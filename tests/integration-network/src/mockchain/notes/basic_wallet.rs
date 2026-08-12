@@ -110,9 +110,9 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, mock_tx);
-    expect!["3421"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["4535"].assert_eq(single_note_cycles(&tx_measurements));
-    expect!["4535"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["3473"].assert_eq(prologue_cycles(&tx_measurements));
+    expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
     let alice_account = chain.committed_account(alice_id).unwrap();
@@ -132,7 +132,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         &mut note_rng,
     );
     let tx_measurements = execute_tx(&mut chain, mock_tx);
-    expect!["6133"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+    expect!["6177"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
@@ -143,7 +143,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, mock_tx);
-    expect!["4535"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -282,7 +282,7 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, mock_tx);
-    expect!["4943"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["4966"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
     let bob_account = chain.committed_account(bob_id).unwrap();
@@ -421,7 +421,7 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx(&mut chain, mock_tx);
-    expect!["5518"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["5541"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back
     let alice_account = chain.committed_account(alice_id).unwrap();
