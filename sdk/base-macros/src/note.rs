@@ -12,7 +12,10 @@ use syn::{
 use crate::{
     boilerplate::runtime_boilerplate,
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
-    util::{generate_frontend_link_section, is_type_named, is_unit_return_type},
+    util::{
+        generate_frontend_link_section, generate_wit_link_section, is_type_named,
+        is_unit_return_type,
+    },
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
 };
@@ -375,6 +378,21 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         &dependency_imports,
     );
     let inline_literal = Literal::string(&inline_wit);
+    // The public WIT is embedded in the compiled package, so a dependent crate that imports
+    // this note's constructors reads the interface from the `.masp` itself. It stays
+    // export-only (no dependency imports), so it is self-contained for the consumer's
+    // resolver, which parses dependency WIT against the bundled SDK WIT alone.
+    let public_wit = build_note_script_wit(
+        &component_package,
+        metadata.package.version().inner(),
+        &interface_name,
+        &world_name,
+        &export_name,
+        &constructors,
+        &constructor_type_imports,
+        &[],
+    );
+    let wit_link_section = generate_wit_link_section(&public_wit);
     let guest_trait_path = match build_guest_trait_path(&component_package, &interface_module) {
         Ok(path) => path,
         Err(err) => return err.into_compile_error(),
@@ -415,6 +433,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         }
 
         #frontend_link_section
+        #wit_link_section
     }
 }
 
