@@ -142,6 +142,13 @@ impl BenchmarkRunner {
         })
     }
 
+    /// Compiles an example, keeping its dependency packages readable for [`Self::profile`].
+    ///
+    /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
+    /// current compiler adopts the directory as its package cache and leaves the packages
+    /// in place after it exits. Old compiler versions — one runner binary drives both
+    /// during a benchmark comparison — ignore the inherited variable and persist their
+    /// packages in the project cache instead, which the legacy scan picks up.
     fn compile(&self, project_dir: &Path, debug: &str) -> Result<PathBuf> {
         let mut command = if let Some(cargo_miden) = self.cargo_miden.as_ref() {
             let mut command = Command::new(cargo_miden);
@@ -166,6 +173,7 @@ impl BenchmarkRunner {
             .arg("--color")
             .arg("never")
             .env("CARGO_TARGET_DIR", self.build_dir.join("cargo-target"))
+            .env("MIDENC_PACKAGE_CACHE", self.package_cache_dir(project_dir))
             .current_dir(project_dir);
 
         let output = command
@@ -176,6 +184,12 @@ impl BenchmarkRunner {
         }
 
         parse_compiled_package(&output, project_dir)
+    }
+
+    /// The per-example package-cache directory this run hands to the compiler.
+    fn package_cache_dir(&self, project_dir: &Path) -> PathBuf {
+        let case = project_dir.file_name().unwrap_or_default();
+        self.build_dir.join("package-cache").join(case)
     }
 
     fn profile(
@@ -191,7 +205,15 @@ impl BenchmarkRunner {
             .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
         let mut executor = Executor::from_config(config);
         let packages_dir = project_dir.join("target/miden/packages");
-        let dependencies = collect_dependency_packages(&packages_dir)?;
+        let mut dependencies = collect_dependency_packages(&packages_dir)?;
+        // The current compiler leaves the dependency packages here; see `Self::compile`.
+        let export_dir = self.package_cache_dir(project_dir);
+        if export_dir.is_dir() {
+            dependencies.extend(
+                read_dir_paths(&export_dir)?.into_iter().filter(|path| is_package_path(path)),
+            );
+        }
+        dependencies.sort();
         for dependency in dependencies {
             executor
                 .with_package(load_package(&dependency)?)
@@ -209,15 +231,19 @@ impl BenchmarkRunner {
     }
 }
 
-/// Collects the dependency packages that the executor must load for an example.
+/// Collects the legacy-layout dependency packages that the executor must load for an example.
 ///
-/// The compiler stores dependency packages in the project package cache. Old compiler versions
-/// write them directly into `target/miden/packages/`. New compiler versions write them into a
-/// fingerprinted subdirectory of that cache. One runner binary drives both compiler versions
-/// during a benchmark comparison, so the scan reads the cache directory and one level of
-/// subdirectories. Package resolution at execution time is digest-addressed, so packages from a
-/// stale cache entry are inert.
+/// One runner binary drives both compiler versions during a benchmark comparison. The current
+/// compiler adopts the runner-provided `MIDENC_PACKAGE_CACHE` directory and leaves its packages
+/// there (see `BenchmarkRunner::compile`). Old compiler versions
+/// persist packages in the project cache: either directly in `target/miden/packages/` or in a
+/// fingerprinted subdirectory of it, so the scan reads the cache directory and one level of
+/// subdirectories, and tolerates the directory being absent. Package resolution at execution
+/// time is digest-addressed, so packages from a stale cache entry are inert.
 fn collect_dependency_packages(packages_dir: &Path) -> Result<Vec<PathBuf>> {
+    if !packages_dir.exists() {
+        return Ok(Vec::new());
+    }
     let mut dependencies = Vec::new();
     for path in read_dir_paths(packages_dir)? {
         if path.is_dir() {
