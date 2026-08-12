@@ -160,7 +160,10 @@ fn build_rust_project_with_masm_path_dependency() {
 
     env::set_current_dir(&project_path).unwrap();
     let build_started_at = SystemTime::now();
-    let result = run(["cargo", "miden", "build"].into_iter().map(|s| s.to_string()));
+    let export_dir = crate::utils::exported_packages_dir(&project_path);
+    let result = crate::utils::with_package_cache_env(&export_dir, || {
+        run(["cargo", "miden", "build"].into_iter().map(|s| s.to_string()))
+    });
     env::set_current_dir(&restore_dir).unwrap();
 
     match restore_target_dir {
@@ -177,14 +180,11 @@ fn build_rust_project_with_masm_path_dependency() {
     // The root's own package building is not by itself evidence that the dependency was built
     // through a source provider: it would also hold if the dependency had been resolved from a
     // registry, or skipped. A materialized `.masp` for the dependency is produced only by
-    // assembling it from its Miden Assembly sources. The package cache is uniqued by the build
-    // inputs, so the package lives inside the build's fingerprint directory.
+    // assembling it from its Miden Assembly sources and publishing it into the adopted
+    // package-cache directory, which the compiler leaves in place.
     // `.masp` is `miden_mast_package::Package::EXTENSION`, spelled inline because cargo-miden
     // no longer links miden-mast-package.
-    let dependency_package_name = format!("{dependency_name}.masp");
-    let dependency_package =
-        crate::utils::package_cache_fingerprint_dir(&project_path, &dependency_package_name)
-            .join(dependency_package_name);
+    let dependency_package = export_dir.join(format!("{dependency_name}.masp"));
     assert!(
         dependency_package.exists(),
         "expected the masm dependency to be assembled and materialized at {}",

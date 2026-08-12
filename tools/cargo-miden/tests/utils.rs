@@ -44,72 +44,31 @@ pub(crate) fn current_dir_lock() -> CurrentDirGuard {
     }
 }
 
-/// Returns the newest build-fingerprint directory containing `expected_package`.
+/// The directory the post-build package tests hand to the compiler as its package cache.
 ///
-/// Another live build may retain a different fingerprint directory, so the package itself rather
-/// than directory cardinality identifies the cache produced by the build under test.
-pub(crate) fn package_cache_fingerprint_dir(project_dir: &Path, expected_package: &str) -> PathBuf {
-    let package_cache_dir = project_dir.join("target").join("miden").join("packages");
-    let entries = fs::read_dir(&package_cache_dir)
-        .unwrap_or_else(|err| {
-            panic!(
-                "expected the package cache directory '{}' to exist after the build: {err}",
-                package_cache_dir.display()
-            )
-        })
-        .collect::<Vec<_>>();
+/// A lease the compiler mints itself is deleted when the compiler finishes, so a test that
+/// asserts on materialized dependency packages names its own stable directory through
+/// `MIDENC_PACKAGE_CACHE`; the compiler adopts it, leaves it in place, and the test reads
+/// the packages from there.
+pub(crate) fn exported_packages_dir(project_dir: &Path) -> PathBuf {
+    project_dir.join("target").join("miden").join("exported-packages")
+}
 
-    let mut listing = Vec::new();
-    let mut candidates = Vec::new();
-    for entry in entries {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if !path.is_dir() {
-            listing.push(path.display().to_string());
-            continue;
-        }
-        // Only compiler-owned fingerprint directories are candidates; unrelated directories may
-        // coexist under the cache parent and must not attribute an old package to this build.
-        let is_fingerprint = path.file_name().and_then(|name| name.to_str()).is_some_and(|name| {
-            name.len() == 16
-                && name.bytes().all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        });
-        if !is_fingerprint {
-            listing.push(path.display().to_string());
-            continue;
-        }
-
-        let contents = fs::read_dir(&path)
-            .map(|entries| {
-                entries
-                    .filter_map(Result::ok)
-                    .map(|entry| entry.file_name().to_string_lossy().into_owned())
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|err| vec![format!("<unreadable: {err}>")]);
-        listing.push(format!("{}: {contents:?}", path.display()));
-
-        let expected = path.join(expected_package);
-        if let Ok(metadata) = expected.metadata() {
-            let modified = metadata.modified().unwrap_or(std::time::UNIX_EPOCH);
-            candidates.push((modified, path));
-        }
+/// Runs `body` with `MIDENC_PACKAGE_CACHE` set to `dir`, restoring the prior value after.
+///
+/// The tests run one per process under nextest, so mutating the process environment is
+/// safe; the restore keeps the state clean for in-process helpers that run later.
+pub(crate) fn with_package_cache_env<R>(dir: &Path, body: impl FnOnce() -> R) -> R {
+    let restore = env::var_os("MIDENC_PACKAGE_CACHE");
+    unsafe {
+        env::set_var("MIDENC_PACKAGE_CACHE", dir);
     }
-
-    // `read_dir` order is unspecified, so equal mtimes at the filesystem's precision leave this
-    // diagnostic attribution tie nondeterministic. No production behavior depends on the choice.
-    candidates
-        .into_iter()
-        .max_by_key(|(modified, _)| *modified)
-        .map(|(_, path)| path)
-        .unwrap_or_else(|| {
-            panic!(
-                "expected a fingerprint directory in '{}' containing '{expected_package}'; \
-                 entries:\n{}",
-                package_cache_dir.display(),
-                listing.join("\n")
-            )
-        })
+    let result = body();
+    match restore {
+        Some(value) => unsafe { env::set_var("MIDENC_PACKAGE_CACHE", value) },
+        None => unsafe { env::remove_var("MIDENC_PACKAGE_CACHE") },
+    }
+    result
 }
 
 pub(crate) fn project_template_arg(template: &str) -> String {
