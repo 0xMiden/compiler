@@ -984,9 +984,9 @@ impl RustProjectFrontend {
     /// Where the nested builds publish and look for compiled dependency packages.
     ///
     /// Derived from `self.session` — the session the project `cargo` is invoked *in* — rather
-    /// than from `cx.session()`: the cache lives under the root project's `target/` directory
+    /// than from `cx.session()`: the per-build package exchange belongs to the root project
     /// and must be the same for every target of the build.
-    fn filesystem_cache_dir(&self) -> Option<PathBuf> {
+    fn filesystem_cache_dir(&self) -> CompilerResult<Option<PathBuf>> {
         self.session.filesystem_package_cache_dir()
     }
 
@@ -1022,7 +1022,7 @@ impl RustProjectFrontend {
         let cargo_manifest_path = cx.assembly().manifest_path.with_file_name("Cargo.toml");
         let wasm = build_manifest_to_wasm(
             &cargo_manifest_path,
-            self.filesystem_cache_dir().as_deref(),
+            self.filesystem_cache_dir()?.as_deref(),
             &cx.session(),
         )?;
         let source = WasmFrontend::read_input(&wasm)?;
@@ -1056,7 +1056,7 @@ impl RustProjectFrontend {
             assembly.package.name().to_string(),
             assembly.target,
             assembly.manifest_path.with_file_name("Cargo.toml"),
-            self.filesystem_cache_dir().as_deref(),
+            self.filesystem_cache_dir()?.as_deref(),
             &self.session.options,
             &cargo_opts,
             source_manager,

@@ -357,7 +357,7 @@ impl CompilerTestBuilder {
                 maybe_dump_cargo_expand(
                     &config,
                     rustflags_env.as_deref(),
-                    session.filesystem_package_cache_dir().as_deref(),
+                    session.filesystem_package_cache_dir().unwrap().as_deref(),
                 );
 
                 // The session stays pointed at the `Cargo.toml`, and that is the whole change:

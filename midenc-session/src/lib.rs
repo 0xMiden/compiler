@@ -27,8 +27,8 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
-#[cfg(any(test, feature = "std"))]
-mod package_cache;
+#[cfg(feature = "std")]
+mod package_lease;
 pub mod path;
 pub mod registry;
 #[cfg(feature = "std")]
@@ -48,19 +48,6 @@ pub use miden_package_registry;
 pub use miden_project;
 use midenc_hir_symbol::Symbol;
 
-#[cfg(feature = "std")]
-pub use self::package_cache::PackageCacheBuildInputs;
-
-/// Returns the permanent liveness-lock path of a package-cache fingerprint directory.
-///
-/// Holding this lock shared marks the directory as live, which stale-cache pruning respects.
-/// Exposed (hidden) for tests that participate in the liveness protocol; the protocol itself
-/// stays internal.
-#[doc(hidden)]
-#[cfg(feature = "std")]
-pub fn package_cache_lock_path(filesystem_cache_dir: &std::path::Path) -> std::path::PathBuf {
-    package_cache::filesystem_cache_lock_path(filesystem_cache_dir)
-}
 pub use self::{
     color::ColorChoice,
     diagnostics::{DiagnosticsHandler, Emitter, Report, SourceManager},
@@ -94,12 +81,14 @@ pub struct Session {
     /// Statistics gathered from the current compiler session
     #[cfg(feature = "std")]
     pub statistics: Statistics,
-    /// The build-input fingerprint used to isolate this session's package cache.
+    /// The per-build package-exchange directory, created once for the root build.
     ///
-    /// Memoization assumes fingerprint-relevant [`Options`] are not mutated after the first cache
-    /// path request. Cloning the session copies the memoized value when present.
+    /// Shared by `Arc`, so every clone of this session observes the same lease and no clone
+    /// can mint a second directory. The `Result` memoizes a creation failure, which is
+    /// re-reported identically on every access (fail closed). Dropping the last owner
+    /// deletes the directory; see the `package_lease` module for the lifecycle.
     #[cfg(feature = "std")]
-    package_cache_fingerprint: std::sync::OnceLock<String>,
+    package_cache_lease: Arc<std::sync::OnceLock<Result<package_lease::PackageCacheLease, String>>>,
 }
 
 impl fmt::Debug for Session {
@@ -333,7 +322,7 @@ impl Session {
             #[cfg(feature = "std")]
             statistics: Default::default(),
             #[cfg(feature = "std")]
-            package_cache_fingerprint: Default::default(),
+            package_cache_lease: Default::default(),
         }
     }
 
@@ -375,66 +364,63 @@ impl Session {
 
     /// Get a new package registry instance for this session
     pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
-        registry::HybridPackageRegistry::new_with_derived_filesystem_cache(
-            &self.options,
-            self.filesystem_package_cache_dir(),
-        )
-        .map(Box::new)
+        #[cfg(feature = "std")]
+        let filesystem_cache = self.filesystem_package_cache_dir()?;
+        #[cfg(not(feature = "std"))]
+        let filesystem_cache = None;
+        registry::HybridPackageRegistry::new_with_filesystem_cache(&self.options, filesystem_cache)
+            .map(Box::new)
     }
 
-    /// Where compiled dependency packages of this session's project are published and looked for.
+    /// Where compiled dependency packages of this build are published and looked for.
     ///
-    /// `None` unless this session's input is a project locator: with `std`, the cache lives under
-    /// the project's own `target/miden/packages/<fingerprint>/` directory, and a session compiling
-    /// a standalone source file has no project directory to put one under. The fingerprint covers
-    /// the compiler identity, relevant build options, and the project's manifest closure. Both
-    /// readers — this session's package registry and the nested `cargo` builds a Rust project's
-    /// dependencies run through — must agree on the answer, which is why there is one derivation
-    /// of it. Without `std`, this returns the existing flat `target/miden/packages/` path without a
-    /// fingerprint component.
+    /// `Ok(None)` unless this session's input is a project locator: a session compiling a
+    /// standalone source file has no project to exchange packages for. When the calling
+    /// process already exported `MIDENC_PACKAGE_CACHE`, that directory is adopted as-is and
+    /// left in place — the caller owns its location and lifetime (this is how a contract
+    /// `build.rs` keeps the packages readable after the compiler exits). Otherwise the
+    /// directory is a per-build lease with a globally unique name under the project's own
+    /// `target/miden/packages/`, created on first access and deleted when the last clone of
+    /// this session drops; see the `package_lease` module for both lifecycles.
     ///
-    /// Only the root compilation session derives this path. Nested dependency sessions receive
-    /// the root value threaded through their build environment, rather than deriving paths from
-    /// their own locators. The root is intentionally tied to the project directory and ignores
-    /// `--target-dir`, so every participant in one build agrees on the cache location.
+    /// Both readers — this session's package registry and the nested `cargo` builds a Rust
+    /// project's dependencies run through — must agree on the answer, which is why there is
+    /// one derivation of it. Only the root compilation session derives the path. Nested
+    /// dependency sessions receive the root value threaded through their build environment,
+    /// rather than deriving paths from their own locators: a dependency with a private
+    /// directory could not see its already-assembled transitive dependencies. The path is
+    /// intentionally tied to the project directory and ignores `--target-dir`, so every
+    /// participant in one build agrees on the location.
     ///
-    /// [`Session`] is [`Clone`]. Once this method has initialized the fingerprint, a clone keeps
-    /// that memoized value even if its public options are later changed; callers must mutate
-    /// fingerprint-relevant options before the first path request.
+    /// [`Session`] is [`Clone`], and clones share the lease cell, so every clone observes the
+    /// same directory and no clone can mint a second one. Errors when the directory cannot be
+    /// created — fail closed, so the build stops here instead of failing later inside a macro
+    /// expansion with a confusing missing-package diagnostic; the failure is memoized and
+    /// re-reported on every access.
     ///
     /// Derived from the input locator rather than from a loaded manifest, which is what
     /// [`Session::new`] no longer has. That is also a repair: the manifest path was previously
     /// taken from a package that `fixup_cargo_target` had rebuilt for every executable
     /// `Cargo.toml` input, and a rebuilt package has no manifest path — so an executable project
     /// silently got no filesystem cache at all, while a library project of the same shape got one.
-    pub fn filesystem_package_cache_dir(&self) -> Option<PathBuf> {
-        let project_dir = self.package_cache_project_dir()?;
-        #[cfg(feature = "std")]
-        let package_cache_dir = package_cache::package_cache_parent(&project_dir);
-        #[cfg(not(feature = "std"))]
-        let package_cache_dir = project_dir.join("target").join("miden").join("packages");
-        #[cfg(feature = "std")]
-        {
-            let fingerprint = self.package_cache_fingerprint.get_or_init(|| {
-                let inherited_rustflags = std::env::var_os("RUSTFLAGS");
-                let inherited_cargo_encoded_rustflags = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
-                let inherited_rustup_toolchain = std::env::var_os("RUSTUP_TOOLCHAIN");
-                package_cache::fingerprint(
-                    &self.options,
-                    &project_dir,
-                    inherited_rustflags.as_deref(),
-                    inherited_cargo_encoded_rustflags.as_deref(),
-                    inherited_rustup_toolchain.as_deref(),
-                    MIDENC_BUILD_VERSION,
-                    MIDENC_BUILD_REV,
-                )
-            });
-            Some(package_cache_dir.join(fingerprint))
+    #[cfg(feature = "std")]
+    pub fn filesystem_package_cache_dir(&self) -> Result<Option<PathBuf>, Report> {
+        let Some(project_dir) = self.package_cache_project_dir() else {
+            return Ok(None);
+        };
+        let lease = self
+            .package_cache_lease
+            .get_or_init(|| package_lease::PackageCacheLease::create(&project_dir));
+        match lease {
+            Ok(lease) => Ok(Some(lease.path().to_path_buf())),
+            Err(message) => Err(Report::msg(message.clone())),
         }
-        #[cfg(not(feature = "std"))]
-        {
-            Some(package_cache_dir)
-        }
+    }
+
+    /// Without `std` there is no filesystem package exchange.
+    #[cfg(not(feature = "std"))]
+    pub fn filesystem_package_cache_dir(&self) -> Result<Option<PathBuf>, Report> {
+        Ok(None)
     }
 
     /// The project directory whose `target/miden/packages` tree holds this session's cache.
@@ -458,18 +444,6 @@ impl Session {
         #[cfg(feature = "std")]
         let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
         Some(project_dir)
-    }
-
-    /// Build-script inputs of this session's project package cache.
-    ///
-    /// `None` under the same condition as [`Session::filesystem_package_cache_dir`]: the
-    /// session input must be a project locator. The watch list and the dependency count let a
-    /// contract build script re-run its nested build exactly when the cache contents could
-    /// change; `cargo miden package-cache` is the consumer.
-    #[cfg(feature = "std")]
-    pub fn package_cache_build_inputs(&self) -> Option<PackageCacheBuildInputs> {
-        let project_dir = self.package_cache_project_dir()?;
-        Some(package_cache::build_script_inputs(&project_dir))
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to
@@ -834,14 +808,15 @@ mod tests {
             Arc::new(diagnostics::DefaultSourceManager::default()),
         );
 
-        let cache_dir = session.filesystem_package_cache_dir().unwrap();
+        let cache_dir = session.filesystem_package_cache_dir().unwrap().unwrap();
         let expected_parent = temp.path().canonicalize().unwrap().join("target/miden/packages");
         assert_eq!(cache_dir.parent(), Some(expected_parent.as_path()));
-        assert!(
-            package_cache::is_owned_filesystem_cache_path(&cache_dir),
-            "the derived cache path must satisfy the owned-layout check, or locking and pruning \
-             silently degrade: {}",
-            cache_dir.display()
-        );
+        assert!(cache_dir.is_dir(), "the lease directory must exist once derived");
+
+        let clone_dir = session.clone().filesystem_package_cache_dir().unwrap().unwrap();
+        assert_eq!(cache_dir, clone_dir, "clones must share one lease, never mint a second");
+
+        drop(session);
+        assert!(!cache_dir.exists(), "dropping the last session must delete the lease");
     }
 }

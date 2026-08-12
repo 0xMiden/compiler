@@ -257,10 +257,14 @@ basic-wallet = { path = "../basic-wallet" }
 }
 
 /// Reads the named dependency package from a compiled consumer's filesystem cache.
+///
+/// The cache is a per-build lease that lives as long as the test's session, so the read
+/// must happen while the [`CompilerTest`] is still alive.
 fn read_cached_dependency_package(test: &CompilerTest, package_name: &str) -> Package {
     let cache_dir = test
         .session
         .filesystem_package_cache_dir()
+        .expect("the package exchange must be creatable")
         .expect("a Cargo Miden project must have a filesystem package cache");
     let path = fs::read_dir(&cache_dir)
         .unwrap_or_else(|err| {
@@ -637,7 +641,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
 
     let mut first_build = CompilerTest::rust_source_cargo_miden(&consumer, config.clone(), []);
     let first_masm = first_build.masm_src();
-    let first_cache = first_build.session.filesystem_package_cache_dir().unwrap();
+    let first_cache = first_build.session.filesystem_package_cache_dir().unwrap().unwrap();
     let first_dependency = read_cached_dependency_package(&first_build, "basic-wallet");
     let first_export =
         find_manifest_procedure(&first_dependency, "basic-wallet receive-asset export", |path| {
@@ -666,7 +670,7 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
 
     let mut second_build = CompilerTest::rust_source_cargo_miden(&consumer, config.clone(), []);
     let second_masm = second_build.masm_src();
-    let second_cache = second_build.session.filesystem_package_cache_dir().unwrap();
+    let second_cache = second_build.session.filesystem_package_cache_dir().unwrap().unwrap();
     let second_dependency = read_cached_dependency_package(&second_build, "basic-wallet");
     let second_export =
         find_manifest_procedure(&second_dependency, "basic-wallet receive-asset export", |path| {
@@ -674,7 +678,10 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
         });
     let second_root = second_export.digest;
 
-    assert_eq!(first_cache, second_cache, "both builds must exercise the same cache path");
+    assert_ne!(
+        first_cache, second_cache,
+        "every build must exchange packages through its own unique lease directory"
+    );
     assert_ne!(first_root, second_root, "the dependency implementation must change its root");
     assert_ne!(first_masm, second_masm, "the consumer must be recompiled with the new root");
     assert!(
@@ -712,7 +719,6 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
 
     let mut third_build = CompilerTest::rust_source_cargo_miden(&consumer, config, []);
     let third_masm = third_build.masm_src();
-    let third_cache = third_build.session.filesystem_package_cache_dir().unwrap();
     let third_dependency = read_cached_dependency_package(&third_build, "basic-wallet");
     let third_export =
         find_manifest_procedure(&third_dependency, "basic-wallet receive-asset export", |path| {
@@ -720,12 +726,6 @@ fn rust_sdk_fpi_reexpands_after_dependency_package_changes() {
         });
     let third_root = third_export.digest;
 
-    assert_ne!(second_cache, third_cache, "manifest changes must rotate the cache path");
-    assert!(
-        !second_cache.exists(),
-        "the obsolete fingerprint directory must be pruned after rotation: {}",
-        second_cache.display()
-    );
     for stale_root in [first_root, second_root] {
         if stale_root != third_root {
             assert!(

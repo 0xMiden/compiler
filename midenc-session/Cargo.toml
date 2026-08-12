@@ -22,6 +22,7 @@ std = [
     "dep:termcolor",
     "dep:parking_lot",
     "dep:clap",
+    "dep:tempfile",
     "anyhow/std",
     "miden-debug-types/std",
     "miden-protocol/std",
@@ -49,6 +50,7 @@ miden-protocol.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
 parking_lot = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 termcolor = { version = "1.4.1", optional = true }
 thiserror.workspace = true
 

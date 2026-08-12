@@ -4,9 +4,9 @@
 //! from the canonical copy (the account template); [`template_build_scripts_are_identical`]
 //! pins every other copy to those bytes, so these tests cover exactly what users get. The script
 //! makes plain `cargo check`/`cargo build` and IDE analysis resolve compiled dependency
-//! packages: outside a midenc-driven build it locates the fingerprinted package cache with
-//! `cargo miden package-cache`, populates it with a nested `cargo miden build --release`, and
-//! exports `MIDENC_PACKAGE_CACHE` to macro expansion.
+//! packages: outside a midenc-driven build it stages a package cache under its `OUT_DIR`, fills
+//! it with a nested `cargo miden build --release` that adopts the staged directory through
+//! `MIDENC_PACKAGE_CACHE`, and exports the same variable to macro expansion.
 
 use std::{
     fs,
@@ -137,27 +137,56 @@ fn assert_check_succeeded(phase: &str, output: &Output) {
     );
 }
 
-/// Finds the cached `basic-wallet.masp` under the consumer's fingerprinted package cache.
-fn cached_basic_wallet(consumer: &Path) -> Option<PathBuf> {
-    let packages_root = consumer.join("target").join("miden").join("packages");
-    fs::read_dir(&packages_root)
-        .ok()?
+/// Finds a build script's staged package cache under `target_root`'s cargo target directory.
+///
+/// The script stages the cache in its `OUT_DIR`, whose path embeds a cargo-chosen hash:
+/// `<target>[/<triple>]/debug/build/<crate>-<hash>/out/miden-packages`. The fixtures pin a
+/// wasm build target in `.cargo/config.toml`, which puts the script's run directory under
+/// the triple subtree, so the scan covers the host layout and every per-triple layout.
+/// `target_root` is the directory that owns the check's `target/` — the workspace root for
+/// the generated pair, the example itself for the standalone p2id check — and `crate_name`
+/// is the cargo package name of the crate whose script staged the cache.
+fn staged_package(target_root: &Path, crate_name: &str, expected_package: &str) -> Option<PathBuf> {
+    let target = target_root.join("target");
+    let mut build_roots = vec![target.join("debug").join("build")];
+    if let Ok(entries) = fs::read_dir(&target) {
+        for entry in entries.filter_map(Result::ok) {
+            build_roots.push(entry.path().join("debug").join("build"));
+        }
+    }
+    build_roots
+        .into_iter()
+        .filter_map(|build_root| fs::read_dir(build_root).ok())
+        .flatten()
         .filter_map(|entry| Some(entry.ok()?.path()))
-        .filter(|path| path.is_dir())
-        .map(|fingerprint_dir| fingerprint_dir.join("basic-wallet.masp"))
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with(crate_name))
+        })
+        .map(|build_dir| build_dir.join("out").join("miden-packages").join(expected_package))
         .find(|path| path.is_file())
 }
 
+/// Finds the staged `basic-wallet.masp` of the swapp-note consumer in its workspace.
+fn cached_basic_wallet(workspace_root_dir: &Path) -> Option<PathBuf> {
+    staged_package(workspace_root_dir, "swapp-note", "basic-wallet.masp")
+}
+
 /// A plain `cargo check` (the LSP flow) must resolve dependency packages through the template
-/// build script, refresh them when dependency sources change, and recover a pruned cache.
+/// build script and re-stage them when the script re-runs.
 ///
-/// Three phases against one generated basic-wallet/swapp-note pair:
-/// 1. the first check populates the fingerprinted cache with a nested
+/// Two phases against one generated basic-wallet/swapp-note pair:
+/// 1. the first check stages the packages under the script's `OUT_DIR` with a nested
 ///    `cargo miden build --release` and exports `MIDENC_PACKAGE_CACHE` to macro expansion;
-/// 2. editing the dependency's source re-runs the script through its `watch=` list (the
-///    dependency `src` directory) and republishes a package with different contents;
-/// 3. deleting the fingerprint directory re-runs the script through its missing-watched-path
-///    rule and repopulates the cache.
+/// 2. after a dependency source edit, touching the consumer's manifest re-runs the script —
+///    the always-rebuild trigger the script documents — and re-stages a package with
+///    different contents.
+///
+/// The script watches only the consumer's manifests, by design: a dependency source edit
+/// alone does not re-run it (computing a precise trigger set would re-implement build
+/// provenance), and the staged packages stay as they are until a manifest touch — the
+/// recovery phase 2 exercises — or a `cargo clean` discards the staging.
 #[test]
 fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
     let swapp_note_source = include_str!(concat!(
@@ -171,16 +200,25 @@ fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
     );
     let consumer = project.root().join("swapp-note");
     let dependency_source = project.root().join("basic-wallet").join("src").join("lib.rs");
+    let consumer_manifest = consumer.join("miden-project.toml");
 
-    // Phase 1: the first check populates the cache.
+    // The project builder rewrites only changed files and keeps `target/` to cache across
+    // test runs, so a previous run's staging can look fresh to cargo. Touch the consumer
+    // manifest before each phase, so each check provably re-runs the script and stages
+    // from the sources as they are now.
+    let touch_consumer_manifest = || {
+        let manifest_bytes = fs::read(&consumer_manifest).unwrap();
+        fs::write(&consumer_manifest, manifest_bytes).unwrap();
+    };
+
+    // Phase 1: the check stages the dependency package built from the original sources.
+    touch_consumer_manifest();
     assert_check_succeeded("initial check", &plain_cargo_check(&consumer));
-    let cached = cached_basic_wallet(&consumer).expect(
-        "the first check must publish basic-wallet.masp into a fingerprint directory of the \
-         consumer's package cache",
-    );
+    let cached = cached_basic_wallet(&project.root())
+        .expect("the first check must stage basic-wallet.masp under the consumer's build OUT_DIR");
     let original_package = fs::read(&cached).expect("failed to read the cached package");
 
-    // Phase 2: a dependency source edit must reach the cache through the watch list.
+    // Phase 2: after a dependency source edit, a consumer-manifest touch re-stages.
     let original_source = fs::read_to_string(&dependency_source).unwrap();
     let mutation_anchor = "        self.add_asset(asset);";
     assert_eq!(
@@ -195,85 +233,40 @@ fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
         1,
     );
     fs::write(&dependency_source, changed_source).unwrap();
+    // The script watches the consumer's manifests, not the dependency's sources; the touch
+    // is the documented way to ask for a re-stage.
+    touch_consumer_manifest();
 
     assert_check_succeeded("check after dependency edit", &plain_cargo_check(&consumer));
-    let refreshed = cached_basic_wallet(&consumer)
-        .expect("the cache must still hold basic-wallet.masp after the dependency edit");
+    let refreshed = cached_basic_wallet(&project.root())
+        .expect("the staging must still hold basic-wallet.masp after the manifest touch");
     let refreshed_package = fs::read(&refreshed).expect("failed to read the refreshed package");
     assert_ne!(
         refreshed_package, original_package,
-        "editing the dependency source must republish a different basic-wallet package"
-    );
-
-    // Phase 3: a pruned cache directory is a missing watched path and must be repopulated.
-    let fingerprint_dir = refreshed.parent().expect("a cached package lives in a directory");
-    fs::remove_dir_all(fingerprint_dir).expect("failed to prune the package cache");
-
-    assert_check_succeeded("check after cache prune", &plain_cargo_check(&consumer));
-    assert!(
-        cached_basic_wallet(&consumer).is_some(),
-        "the check after pruning must repopulate the package cache"
+        "the re-run script must re-stage the edited basic-wallet package"
     );
 }
 
 /// The p2id-note example must pass an IDE-style plain `cargo check` in place, through its
-/// shipped build script, with the basic-wallet dependency package resolved from the cache.
+/// shipped build script, with the basic-wallet dependency package resolved from the staged
+/// package cache.
 ///
-/// Other tests build this example through the driven pipeline concurrently, and cache
-/// preparation prunes every unlocked sibling fingerprint directory. The test therefore joins
-/// the cache liveness protocol: it resolves its fingerprint directory up front with the same
-/// `cargo miden package-cache --release` query the build script runs, and holds the shared
-/// sibling lock across the check and the assertion, so concurrent pruners skip this cache the
-/// same way they skip any live build's.
+/// The check passing is the load-bearing assertion: the macros can only expand when the
+/// staged packages are readable. Concurrent driven builds of this example exchange their
+/// packages through their own per-build leases and never touch the staging, so no
+/// cross-test locking is needed. The staging may survive from an earlier run, so the
+/// package-existence assertion does not attribute the file to this run.
 #[test]
 fn rust_sdk_build_script_p2id_note_plain_cargo_check() {
     let consumer = workspace_root().join("examples").join("p2id-note");
 
-    let query = std::process::Command::new(cargo_miden_binary())
-        .args(["miden", "package-cache", "--release"])
-        .env_remove("MIDENC_PACKAGE_CACHE")
-        .env_remove("CARGO_TARGET_DIR")
-        .env_remove("RUSTFLAGS")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .current_dir(&consumer)
-        .output()
-        .expect("failed to spawn cargo miden package-cache");
-    assert!(
-        query.status.success(),
-        "the package-cache query must succeed:\n{}",
-        String::from_utf8_lossy(&query.stderr)
-    );
-    let stdout = String::from_utf8(query.stdout).unwrap();
-    let cache_dir = PathBuf::from(
-        stdout
-            .lines()
-            .find_map(|line| line.strip_prefix("cache-dir="))
-            .expect("the query must name the cache directory"),
-    );
-
-    let lock_path = midenc_session::package_cache_lock_path(&cache_dir);
-    fs::create_dir_all(lock_path.parent().expect("a fingerprint lock has a packages parent"))
-        .expect("failed to create the package cache parent");
-    let cache_liveness_lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&lock_path)
-        .expect("failed to open the cache liveness lock");
-    cache_liveness_lock
-        .lock_shared()
-        .expect("failed to hold the cache liveness lock");
-
     assert_check_succeeded("p2id-note check", &plain_cargo_check(&consumer));
-    // In place, a concurrent driven build's cache could also hold basic-wallet.masp, so the
-    // assertion targets this check's own fingerprint directory.
+    // The example's cargo package is named `p2id`, and that name keys its build directory.
+    let exported = staged_package(&consumer, "p2id", "basic-wallet.masp");
     assert!(
-        cache_dir.join("basic-wallet.masp").is_file(),
-        "the check must publish basic-wallet.masp into '{}'",
-        cache_dir.display()
+        exported.is_some(),
+        "the check must stage basic-wallet.masp under p2id-note's build OUT_DIR"
     );
-    drop(cache_liveness_lock);
 }
 
 /// A missing `cargo-miden` is a hard build-script error with an actionable message.
@@ -320,7 +313,7 @@ path = "src/lib.rs"
     assert!(!output.status.success(), "cargo check must fail without cargo-miden");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("failed to run `cargo miden package-cache`"),
+        stderr.contains("failed to run `cargo miden build`"),
         "the build script must name the missing tool, got:\n{stderr}"
     );
 }
