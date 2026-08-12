@@ -20,7 +20,7 @@ use crate::{
 fn test_i32_wasm_op_binary<S, T>(wat_op: &str, strategy: S)
 where
     S: Strategy<Value = (T, T)>,
-    T: WasmI32Input + std::fmt::Debug,
+    T: I32Operand + std::fmt::Debug,
 {
     let wat = format!(
         r#"(module
@@ -47,16 +47,14 @@ where
     let program = package.unwrap_program();
 
     let res = NumericStrategy::<T>::test_runner().run(&strategy, |(a, b)| {
-        let a = a.into_bits();
-        let b = b.into_bits();
         let expected = interpreter
             .borrow_mut()
-            .call_entrypoint::<(i32, i32), i32>("entrypoint", (a as i32, b as i32));
+            .call_entrypoint::<(i32, i32), i32>("entrypoint", (a.as_i32(), b.as_i32()));
 
         // The `(a, b)` entrypoint follows the C calling convention, so pass stack `[a, b]`
         let stack_inputs = StackInputs::new(&[
-            Felt::new(a as u64).expect("u32 values fit in a felt"),
-            Felt::new(b as u64).expect("u32 values fit in a felt"),
+            Felt::new(u64::from(a.as_u32())).expect("u32 values fit in a felt"),
+            Felt::new(u64::from(b.as_u32())).expect("u32 values fit in a felt"),
         ])
         .expect("invalid stack inputs");
 
@@ -106,20 +104,33 @@ where
     }
 }
 
-/// Converts a generated input into the bit pattern passed to a Wasm `i32` parameter.
-trait WasmI32Input {
-    fn into_bits(self) -> u32;
+/// A value a strategy can generate as the operand of a Wasm `i32` operation, whether the operation
+/// interprets it as signed or unsigned.
+trait I32Operand {
+    /// The operand as passed to a Wasm `i32` parameter.
+    fn as_i32(&self) -> i32;
+
+    /// The operand's bit pattern as pushed onto the Miden VM stack.
+    fn as_u32(&self) -> u32;
 }
 
-impl WasmI32Input for i32 {
-    fn into_bits(self) -> u32 {
-        self as u32
+impl I32Operand for i32 {
+    fn as_i32(&self) -> i32 {
+        *self
+    }
+
+    fn as_u32(&self) -> u32 {
+        *self as u32
     }
 }
 
-impl WasmI32Input for u32 {
-    fn into_bits(self) -> u32 {
-        self
+impl I32Operand for u32 {
+    fn as_i32(&self) -> i32 {
+        *self as i32
+    }
+
+    fn as_u32(&self) -> u32 {
+        *self
     }
 }
 
@@ -187,7 +198,7 @@ fn i32_shr_s() {
 
 #[test]
 fn i32_shr_u() {
-    test_i32_wasm_op_binary("i32.shr_u", NumericStrategy::<i32>::shr_signed_checked());
+    test_i32_wasm_op_binary("i32.shr_u", NumericStrategy::<u32>::shr_unsigned_checked());
 }
 
 #[test]

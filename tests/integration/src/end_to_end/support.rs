@@ -753,6 +753,38 @@ where
         ]
     }
 
+    /// Out-of-range shift counts are covered by the bit width itself and by `T::MAX`, since
+    /// unsigned types have no negative counts to exercise.
+    pub fn shr_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = T::from(bit_width - 1).unwrap();
+        let overflow_shift = T::from(bit_width).unwrap();
+        prop_oneof![
+            3 => (any::<T>(), v.zero..=max_shift),
+            3 => (any::<T>(), any::<T>()),
+            1 => Just((v.zero, v.zero)),
+            1 => Just((v.zero, v.one)),
+            1 => Just((v.zero, max_shift)),
+            1 => Just((v.one, v.zero)),
+            1 => Just((v.one, max_shift)),
+            1 => Just((v.half, v.one)),
+            1 => Just((v.half_plus_one, v.one)),
+            1 => Just((v.half_plus_one, max_shift)),
+            1 => Just((v.max, v.zero)),
+            1 => Just((v.max, v.one)),
+            1 => Just((v.max, max_shift)),
+            1 => Just((v.zero, overflow_shift)),
+            1 => Just((v.one, overflow_shift)),
+            1 => Just((v.half_plus_one, overflow_shift)),
+            1 => Just((v.max, overflow_shift)),
+            1 => Just((v.max, v.max)),
+        ]
+    }
+
     pub fn shr_signed_checked() -> impl Strategy<Value = (T, T)>
     where
         T: num_traits::Signed + 'static,
