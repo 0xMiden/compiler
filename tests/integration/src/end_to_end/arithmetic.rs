@@ -640,7 +640,6 @@ fn overflowing_rem_u128() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1173"]
 fn overflowing_rem_i8() {
     test_overflowing_arith(
         i8::overflowing_rem,
@@ -650,7 +649,6 @@ fn overflowing_rem_i8() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1173"]
 fn overflowing_rem_i16() {
     test_overflowing_arith(
         i16::overflowing_rem,
@@ -660,7 +658,6 @@ fn overflowing_rem_i16() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1173"]
 fn overflowing_rem_i32() {
     test_overflowing_arith(
         i32::overflowing_rem,
