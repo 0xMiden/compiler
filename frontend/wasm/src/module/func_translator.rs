@@ -247,8 +247,7 @@ fn parse_function_body<B: ?Sized + Builder>(
         func_validator.op(pos, &op).into_diagnostic()?;
 
         let dwarf_offset = module.wasm_file.dwarf_offset(offset as u64);
-        let resolved =
-            resolve_instruction_debug_context(addr2line, dwarf_offset, session, config)?;
+        let resolved = resolve_instruction_debug_context(addr2line, dwarf_offset, session, config)?;
         let span = resolved.span;
         builder.set_inline_calls(resolved.inline_calls);
         if !span.is_unknown() {
@@ -422,12 +421,14 @@ fn resolve_source_location(
     // treat such rows as unresolved instead of defaulting to line 1, so that an outer inline
     // frame (the call site) or the last valid span provides the location, rather than a bogus
     // `file:1:1` span polluting the line table.
-    let Some(line) = loc.line.and_then(LineNumber::new) else {
+    let raw_line = loc.line.unwrap_or_default();
+    let Some(line) = LineNumber::new(raw_line) else {
         return Ok(None);
     };
 
     let source_file = session.source_manager.load_file(&absolute_path).into_diagnostic()?;
-    let column = loc.column.and_then(ColumnNumber::new).unwrap_or_default();
+    let raw_column = loc.column.unwrap_or_default();
+    let column = ColumnNumber::new(raw_column).unwrap_or_default();
     let span = source_file.line_column_to_span(line, column).unwrap_or(SourceSpan::UNKNOWN);
 
     let path = if path.is_absolute() {

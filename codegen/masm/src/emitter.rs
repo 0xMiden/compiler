@@ -138,8 +138,10 @@ impl BlockEmitter<'_> {
     }
 
     fn emit_inline_call_chain(&mut self, op: &Operation) {
-        use miden_assembly::debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri};
-        use miden_core::operations::DebugInlineCallInfo;
+        use miden_assembly::{
+            ast::DebugInlineCallInfo,
+            debuginfo::{ColumnNumber, FileLineCol, LineNumber, Uri},
+        };
 
         self.target.push(masm::Op::Inst(midenc_hir::Span::new(
             op.span(),
