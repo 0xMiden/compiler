@@ -21,6 +21,13 @@ struct Args {
     /// Commit recorded in results.json; defaults to workspace HEAD.
     #[arg(long)]
     commit: Option<String>,
+    /// Skip examples whose build fails instead of failing the whole run.
+    ///
+    /// For the baseline side of a comparison, whose (older) compiler may not build every
+    /// example of the candidate workspace. Skipped cases appear in the report without a
+    /// baseline value.
+    #[arg(long)]
+    skip_failed_builds: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -34,6 +41,7 @@ fn main() -> anyhow::Result<()> {
         &args.output_dir,
         &args.build_dir,
         args.cargo_miden,
+        args.skip_failed_builds,
     )?
     .run(commit)?;
 

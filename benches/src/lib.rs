@@ -44,6 +44,15 @@ pub struct BenchmarkRunner {
     output_dir: PathBuf,
     build_dir: PathBuf,
     cargo_miden: Option<PathBuf>,
+    /// Whether a case whose build fails is skipped instead of failing the whole run.
+    ///
+    /// The baseline side of a benchmark comparison drives the previous compiler over the
+    /// candidate's examples and SDK, so a candidate change that old compilers cannot build
+    /// — for example, macros that require package features the old compiler does not
+    /// produce — would otherwise fail the baseline outright. Skipped cases appear in the
+    /// comparison report without a baseline value. The candidate run must never set this:
+    /// a candidate build failure is a real regression.
+    skip_failed_builds: bool,
 }
 
 impl BenchmarkRunner {
@@ -52,6 +61,7 @@ impl BenchmarkRunner {
         output_dir: impl Into<PathBuf>,
         build_dir: impl Into<PathBuf>,
         cargo_miden: Option<PathBuf>,
+        skip_failed_builds: bool,
     ) -> Result<Self> {
         let workspace_root = workspace_root
             .into()
@@ -68,6 +78,7 @@ impl BenchmarkRunner {
             output_dir,
             build_dir,
             cargo_miden,
+            skip_failed_builds,
         })
     }
 
@@ -79,7 +90,13 @@ impl BenchmarkRunner {
         let mut benchmarks = Vec::with_capacity(cases.len());
         for case in cases {
             eprintln!("Benchmarking {}", case.name);
-            benchmarks.push(self.run_case(&case)?);
+            match self.run_case(&case) {
+                Ok(benchmark) => benchmarks.push(benchmark),
+                Err(err) if self.skip_failed_builds => {
+                    eprintln!("Skipping {}: {err:#}", case.name);
+                }
+                Err(err) => return Err(err),
+            }
         }
 
         let report = BenchmarkReport {
