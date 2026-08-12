@@ -12,6 +12,9 @@ crate-type = ["cdylib"]
 miden = { path = "../../sdk/sdk" }
 miden-field-repr = { path = "../../sdk/field-repr/repr" }
 
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../../sdk/build-script-support" }
+
 [profile.release]
 trim-paths = ["diagnostics", "object"]
 

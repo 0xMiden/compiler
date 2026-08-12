@@ -331,7 +331,6 @@ pub fn write_package_atomic(
     })
 }
 
-
 /// Returns true when project metadata declares an author-side note codec crate.
 pub(crate) fn has_project_note_codec(metadata: &miden_project::MetadataSet) -> bool {
     metadata.get(NOTE_CODEC_CRATE_METADATA).is_some()
