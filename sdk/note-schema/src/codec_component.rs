@@ -478,7 +478,7 @@ interface note-storage {
             .push_node(BasicBlockNodeBuilder::new(vec![Operation::Add]))
             .expect("failed to build package procedure");
         builder.mark_root(node_id);
-        let (forest, remapping) = builder.finish_with_id_map().expect("failed to build package");
+        let (forest, remapping) = builder.build_with_id_map().expect("failed to build package");
         let node_id = remapping.get(node_id).expect("package root was removed");
         let export = ProcedureExport::new(
             MastPathBuf::absolute("component-codec-test::run").into(),

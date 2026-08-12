@@ -8,7 +8,6 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
 use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
 
-use super::persist_cargo_miden_dependency;
 use crate::CompilerTest;
 
 /// Disables debug output so compiled package content is stable.
@@ -63,9 +62,6 @@ fn assert_note_storage_schema(package: &Package, expected_root: &str, expected: 
 
 #[test]
 fn note_packages_carry_resolvable_storage_schema_metadata() {
-    let wallet = compile_project("../../examples/basic-wallet");
-    persist_cargo_miden_dependency("../../examples/basic-wallet", wallet.as_ref());
-
     let p2id = compile_project("../../examples/p2id-note");
     assert_note_storage_schema(
         &p2id,

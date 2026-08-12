@@ -476,8 +476,9 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     return Err(diagnostics
                         .diagnostic(Severity::Error)
                         .with_message(format!(
-                            "wasm error: multiple '{WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}' \
-                             custom sections were found; only one is allowed per core Wasm module"
+                            "wasm error: multiple \
+                             '{WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}' custom sections \
+                             were found; only one is allowed per core Wasm module"
                         ))
                         .into_report());
                 }

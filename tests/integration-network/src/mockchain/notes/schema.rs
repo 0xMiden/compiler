@@ -75,16 +75,19 @@ fn transfer_with_storage(
     let faucet = chain.committed_account(faucet_id).unwrap().clone();
     let send_script = build_send_notes_script(&faucet, std::slice::from_ref(&note));
     let send = chain
-        .build_tx_context(faucet_id, &[], &[])
-        .unwrap()
-        .tx_script(send_script.into())
-        .extend_expected_output_notes(vec![RawOutputNote::Full(note.clone())]);
+        .build_transaction(faucet_id)
+        .send_notes_script(&send_script)
+        .expected_output_notes(vec![RawOutputNote::Full(note.clone())])
+        .build()
+        .unwrap();
     execute_tx(&mut chain, send);
 
     let consume = chain
-        .build_tx_context(recipient_id, &[note.id()], &[])
-        .unwrap()
-        .foreign_accounts(vec![chain.get_foreign_account_inputs(faucet_id).unwrap()]);
+        .build_transaction(recipient_id)
+        .authenticated_input_note(note.id())
+        .foreign_accounts(vec![chain.get_foreign_account_inputs(faucet_id).unwrap()])
+        .build()
+        .unwrap();
     execute_tx(&mut chain, consume);
 
     assert_account_has_fungible_asset(
