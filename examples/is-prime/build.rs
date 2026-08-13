@@ -3,15 +3,19 @@
 //! Plain `cargo check`, `cargo build`, and IDE analysis expand the Miden SDK macros without a
 //! surrounding `cargo miden build`. Those macros read compiled dependency packages from the
 //! directory named by `MIDENC_PACKAGE_CACHE`. The compiler's own package cache is deleted when
-//! each build ends, so this script stages a cache of its own under `OUT_DIR`, fills it with a
-//! nested `cargo miden build` that adopts the staged directory through the same variable, and
-//! exports the variable to the compilation of this crate.
+//! each build ends, so this script stages generations of its own under `OUT_DIR`, fills the
+//! next generation with a nested `cargo miden build` that adopts it through the same variable,
+//! and exports the variable to the compilation of this crate.
 //!
-//! The nested build runs whenever cargo re-runs this script — an always-rebuild strategy. The
-//! script watches the project manifests, so a manifest edit re-runs it; an edit inside a
-//! dependency's sources does not, and the staged packages stay as they are until a watched
-//! input changes or `cargo miden build` runs. Computing a precise trigger set would mean
-//! re-implementing build provenance, which belongs to the compiler.
+//! Staging is generational so the exported directory is always one consistent build: the
+//! nested build fills a fresh generation, and only a fully successful build moves the current
+//! pointer. A failed build keeps exporting the previous generation whole — never a mix of new
+//! and old packages — and if no good generation exists yet, the script fails the outer build.
+//!
+//! The nested build runs whenever cargo re-runs this script. The script watches the project
+//! manifests and, through the watch lists the compiler writes next to the staged packages, the
+//! source inputs of every resolved dependency — so editing a dependency re-stages its package
+//! on the next check.
 //!
 //! One sharing caveat: cargo keys build-script output by crate name and version, not by
 //! project path. Two different projects with the same package name and version that share one
@@ -27,9 +31,9 @@ use std::{
 };
 
 fn main() {
-    // The manifests are the one precise trigger: they declare the dependency set this
-    // script stages packages for. Naming any watch disables cargo's watch-everything
-    // default, which would otherwise re-run the nested build after every source edit.
+    // The manifests declare the dependency set this script stages packages for. Naming any
+    // watch disables cargo's watch-everything default, which would otherwise re-run the
+    // nested build after every source edit of this crate.
     println!("cargo:rerun-if-changed=miden-project.toml");
     println!("cargo:rerun-if-changed=Cargo.toml");
     // Re-evaluate when the build mode or the tool selection changes.
@@ -41,25 +45,46 @@ fn main() {
 
     // Inside a midenc-driven build the compiler owns the package cache, macro expansion
     // already sees the variable, and a nested build would recurse into this script forever.
-    if env::var_os("MIDENC_PACKAGE_CACHE").is_some() {
+    // An empty value counts as unset, matching the compiler and the SDK macros.
+    if env::var_os("MIDENC_PACKAGE_CACHE").is_some_and(|value| !value.is_empty()) {
         return;
     }
 
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    // The staged cache lives in this script's OUT_DIR, so it belongs to this crate and
-    // build configuration and is removed by `cargo clean`. The directory is not cleared
-    // between runs: a failed nested build then leaves the previously staged packages
-    // usable, because analyzing against the last built packages beats failing the check.
-    let cache_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap()).join("miden-packages");
-    // The macros treat a missing directory as an empty cache; create it up front so the
-    // exported variable always points at a real location.
-    fs::create_dir_all(&cache_dir).expect("failed to create the Miden package cache directory");
+    let out_dir = PathBuf::from(env::var_os("OUT_DIR").unwrap());
+    // Generations live under this script's OUT_DIR, so they belong to this crate and build
+    // configuration and are removed by `cargo clean`.
+    let generations = out_dir.join("miden-packages");
+    let pointer = out_dir.join("miden-packages.current");
 
-    // Stage the dependency packages: the nested compiler adopts `cache_dir` through
+    // Alternate between two generations: the pointer names the last good one, the nested
+    // build fills the other from scratch (which also drops packages of removed
+    // dependencies).
+    let current = fs::read_to_string(&pointer)
+        .ok()
+        .map(|name| name.trim().to_string())
+        .filter(|name| name == "gen-0" || name == "gen-1")
+        .filter(|name| generations.join(name).is_dir());
+    let next = match current.as_deref() {
+        Some("gen-0") => "gen-1",
+        _ => "gen-0",
+    };
+    let next_dir = generations.join(next);
+    let _ = fs::remove_dir_all(&next_dir);
+    fs::create_dir_all(&next_dir).expect("failed to create the Miden package cache generation");
+
+    // Stage the dependency packages: the nested compiler adopts the generation through
     // MIDENC_PACKAGE_CACHE, publishes every dependency package into it before the root
     // target compiles, and leaves the directory in place for the outer build to read.
-    let build = run_cargo_miden_build(&manifest_dir, &cache_dir);
-    if !build.status.success() {
+    let build = run_cargo_miden_build(&manifest_dir, &next_dir);
+    let exported = if build.status.success() {
+        // Only a complete generation becomes current. The pointer write is the publication
+        // step: a crash before it leaves the previous generation exported.
+        let staged = pointer.with_extension("current.tmp");
+        fs::write(&staged, next).expect("failed to stage the Miden package cache pointer");
+        fs::rename(&staged, &pointer).expect("failed to publish the Miden package cache pointer");
+        next_dir
+    } else {
         let stderr = String::from_utf8_lossy(&build.stderr);
         // A missing `cargo miden` plugin is a setup error, not a broken build; surface it
         // with instructions instead of a stale-packages warning.
@@ -71,15 +96,52 @@ fn main() {
                 build.status,
             );
         }
-        println!(
-            "cargo:warning=`cargo miden build --release` failed ({}); dependency packages may \
-             be stale or missing: {}",
-            build.status,
-            last_stderr_line(&build.stderr),
-        );
+        match current {
+            // "Stale beats broken": the previous generation is a consistent package set, and
+            // analyzing against it beats failing the whole check while a dependency is
+            // mid-edit.
+            Some(current) => {
+                println!(
+                    "cargo:warning=`cargo miden build --release` failed ({}); analyzing against \
+                     the previously staged dependency packages: {}",
+                    build.status,
+                    last_stderr_line(&build.stderr),
+                );
+                generations.join(current)
+            }
+            // With no good generation there is nothing consistent to export; failing here is
+            // clearer than every macro expansion failing on missing packages.
+            None => panic!(
+                "`cargo miden build --release` failed ({}) and no previously staged dependency \
+                 packages exist:\n{}",
+                build.status,
+                String::from_utf8_lossy(&build.stderr),
+            ),
+        }
+    };
+
+    // Watch the resolved dependency inputs recorded by the compiler, so editing a dependency
+    // re-runs this script and re-stages its package. One absolute path per line, one file per
+    // resolved consumer project.
+    let watch_dir = exported.join("miden-deps");
+    if let Ok(entries) = fs::read_dir(&watch_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|extension| extension == "watch")
+                && let Ok(watch_list) = fs::read_to_string(&path)
+            {
+                for line in watch_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                    // Watch only paths that exist: cargo re-runs a build script
+                    // unconditionally while a watched path is missing.
+                    if Path::new(line).exists() {
+                        println!("cargo:rerun-if-changed={line}");
+                    }
+                }
+            }
+        }
     }
 
-    println!("cargo:rustc-env=MIDENC_PACKAGE_CACHE={}", cache_dir.display());
+    println!("cargo:rustc-env=MIDENC_PACKAGE_CACHE={}", exported.display());
 }
 
 /// Runs `cargo miden build --release` for the project in `manifest_dir`, staging the
