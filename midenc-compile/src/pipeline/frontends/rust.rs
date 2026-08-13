@@ -624,29 +624,14 @@ trim-paths = [\"diagnostics\", \"object\"]
 
     let cargo_build_args = build_cargo_args(&manifest_path, options);
 
-    // Enable memcopy and 128-bit arithmetic ops
-    let mut rustflags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
-    // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
-    // cfg-based dependency selection.
-    rustflags.push_str(" --cfg miden");
-    // Enable errors on missing stub functions
-    rustflags.push_str(" -C link-args=--fatal-warnings");
-    // Remove the source file paths in the data segment for panics
-    // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-    rustflags.push_str(" -Zlocation-detail=none");
-    // Build with panic=immediate-abort
-    rustflags.push_str(" -Zunstable-options");
-    rustflags.push_str(" -Cpanic=immediate-abort");
-    if let Ok(inherited) = std::env::var("RUSTFLAGS")
-        && !inherited.is_empty()
-    {
-        rustflags.push(' ');
-        rustflags.push_str(&inherited);
-    }
-    if let Some(explicit) = options.rustflags.as_deref() {
-        rustflags.push(' ');
-        rustflags.push_str(explicit);
-    }
+    // The same mandatory set and inherited-flag precedence as the manifest route: a present
+    // `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
+    let extra_rust_flags = manifest::merge_rust_flags(
+        manifest::MANDATORY_RUST_FLAGS,
+        std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
+        std::env::var_os("RUSTFLAGS").as_deref(),
+        options.rustflags.as_deref(),
+    );
 
     let wasi = if options.target_requires_protocol() {
         "wasip2"
@@ -672,7 +657,11 @@ trim-paths = [\"diagnostics\", \"object\"]
     if let Some(toolchain) = toolchain.as_deref() {
         cargo.arg(format!("+{toolchain}"));
     }
-    cargo.env("RUSTFLAGS", rustflags);
+    // Both rustflags spellings, so an inherited encoded value cannot override the composed
+    // list. No package cache: a standalone-file session has none.
+    for (key, value) in manifest::cargo_env(None, &extra_rust_flags) {
+        cargo.env(key, value);
+    }
     // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
     // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
     // to Miden VM code by `midenc`.
@@ -742,23 +731,22 @@ fn rustc(
         command.stderr(std::process::Stdio::piped());
     }
 
-    // If `RUSTFLAGS` is present, convert them to `rustc` flags
-    let mut rustflags = std::env::var("RUSTFLAGS").ok().unwrap_or_default();
-    if let Some(explicit) = options.rustflags.as_deref() {
-        if !rustflags.is_empty() {
-            rustflags.push(' ');
-        }
-        rustflags.push_str(explicit);
-    }
-    let rustflags = rustflags.split_ascii_whitespace().collect::<Vec<_>>();
-    let mut rustc_flags = Vec::with_capacity(rustflags.len());
+    // Convert the inherited rustflags to `rustc` flags, with cargo's own precedence: a
+    // present `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
+    let rustflags = manifest::merge_rust_flags(
+        &[],
+        std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
+        std::env::var_os("RUSTFLAGS").as_deref(),
+        options.rustflags.as_deref(),
+    );
+    let mut rustc_flags: Vec<String> = Vec::with_capacity(rustflags.len());
     let mut rustflags = rustflags.into_iter();
     let mut target = None;
     while let Some(flag) = rustflags.next() {
         if flag == "--target"
             && let Some(value) = rustflags.next()
         {
-            target = Some(value.to_string());
+            target = Some(value);
             continue;
         } else if flag == "-C"
             && let Some(value) = rustflags.next()
@@ -1528,6 +1516,27 @@ pub(crate) mod manifest {
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
+    /// The rustc flags every Miden build needs, shared by the manifest-driven and the
+    /// standalone-file cargo routes so the two cannot drift apart.
+    pub(super) const MANDATORY_RUST_FLAGS: &[&str] = &[
+        // Enable memcopy and 128-bit arithmetic ops
+        "-C",
+        "target-feature=+bulk-memory,+wide-arithmetic",
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
+        // for cfg-based dependency selection.
+        "--cfg",
+        "miden",
+        // Enable errors on missing stub functions
+        "-C",
+        "link-args=--fatal-warnings",
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        "-Zlocation-detail=none",
+        // Build with panic=immediate-abort
+        "-Zunstable-options",
+        "-Cpanic=immediate-abort",
+    ];
+
     /// Executes a Cargo-based build with the provided compiler options and package registry
     pub(crate) fn cargo_build(
         manifest_path: &Path,
@@ -1734,28 +1743,10 @@ pub(crate) mod manifest {
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
 
-        let mandatory_rust_flags = [
-            // Enable memcopy and 128-bit arithmetic ops
-            "-C",
-            "target-feature=+bulk-memory,+wide-arithmetic",
-            // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
-            // for cfg-based dependency selection.
-            "--cfg",
-            "miden",
-            // Enable errors on missing stub functions
-            "-C",
-            "link-args=--fatal-warnings",
-            // Remove the source file paths in the data segment for panics
-            // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-            "-Zlocation-detail=none",
-            // Build with panic=immediate-abort
-            "-Zunstable-options",
-            "-Cpanic=immediate-abort",
-        ];
         let inherited_encoded = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
         let inherited_plain = std::env::var_os("RUSTFLAGS");
         let extra_rust_flags = merge_rust_flags(
-            &mandatory_rust_flags,
+            MANDATORY_RUST_FLAGS,
             inherited_encoded.as_deref(),
             inherited_plain.as_deref(),
             compiler_opts.rustflags.as_deref(),
