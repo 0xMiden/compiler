@@ -1641,11 +1641,12 @@ pub(crate) mod manifest {
 
     /// Composes the rustc flag list for the nested cargo build.
     ///
-    /// Inherited flags follow cargo's own precedence: a non-empty `CARGO_ENCODED_RUSTFLAGS`
+    /// Inherited flags follow cargo's own precedence: a *present* `CARGO_ENCODED_RUSTFLAGS`
     /// (0x1f-separated; arguments may contain spaces) replaces plain `RUSTFLAGS`
-    /// (whitespace-split). Inherited flags are folded in after the mandatory set and before the
-    /// explicit `--rustflags`, preserving the pre-existing override order — nothing a caller
-    /// passes is dropped.
+    /// (whitespace-split) even when its value is empty — cargo treats an empty encoded value
+    /// as "no inherited flags", not as an absent variable. Inherited flags are folded in after
+    /// the mandatory set and before the explicit `--rustflags`, preserving the pre-existing
+    /// override order — nothing a caller passes is dropped.
     pub(super) fn merge_rust_flags(
         mandatory: &[&str],
         inherited_encoded: Option<&std::ffi::OsStr>,
@@ -1653,9 +1654,9 @@ pub(crate) mod manifest {
         explicit: Option<&str>,
     ) -> Vec<String> {
         let mut args: Vec<String> = mandatory.iter().map(|flag| flag.to_string()).collect();
-        let encoded = inherited_encoded
-            .and_then(|value| value.to_str())
-            .filter(|value| !value.is_empty());
+        // Present-but-empty encoded flags are authoritative: cargo itself suppresses
+        // RUSTFLAGS whenever CARGO_ENCODED_RUSTFLAGS is set, whatever its value.
+        let encoded = inherited_encoded.and_then(|value| value.to_str());
         let plain = inherited_plain
             .and_then(|value| value.to_str())
             .filter(|value| !value.is_empty());
@@ -3280,13 +3281,18 @@ path = "lib.rs"
             ]
         );
 
-        // Empty inherited values are treated as unset.
+        // A present-but-empty encoded value is authoritative: cargo suppresses RUSTFLAGS
+        // whenever CARGO_ENCODED_RUSTFLAGS is set, so the plain flags must not leak in.
         let merged = manifest::merge_rust_flags(
             &mandatory,
             Some(OsStr::new("")),
-            Some(OsStr::new("")),
+            Some(OsStr::new("-C opt-level=3")),
             None,
         );
+        assert_eq!(merged, vec!["--cfg".to_string(), "miden".to_string()]);
+
+        // An empty plain value with no encoded variable contributes nothing.
+        let merged = manifest::merge_rust_flags(&mandatory, None, Some(OsStr::new("")), None);
         assert_eq!(merged, vec!["--cfg".to_string(), "miden".to_string()]);
     }
 
