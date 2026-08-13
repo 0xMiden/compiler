@@ -1782,10 +1782,11 @@ pub(crate) mod manifest {
     /// `MIDENC_PACKAGE_CACHE` is the whole reason `filesystem_cache_dir` is threaded down from
     /// the entry point: it tells the nested `midenc` invocations where to publish the packages
     /// they compile and where to look for the ones their own dependencies already produced. The
-    /// directory is fingerprinted by the root build's compiler, options, and manifest closure so
-    /// every participant in that build uses the same isolated cache. Absent a cache directory the
-    /// variable is *unset* rather than set to an empty path, which is what makes the nested build
-    /// fall back to its own default.
+    /// directory is the root session's cache — its per-build lease, or a caller-provided
+    /// directory the root adopted through this same variable — so every participant in one
+    /// build exchanges packages through one directory. Absent a cache directory (non-project
+    /// inputs) the variable is *unset* rather than set to an empty path; every reader treats
+    /// an empty value as unset.
     ///
     /// The composed rust flags are emitted twice: as `RUSTFLAGS` (space-joined, lossy for
     /// arguments that contain spaces) and, authoritatively, as `CARGO_ENCODED_RUSTFLAGS`

@@ -28,9 +28,9 @@ pub(crate) fn session_from_args(args: &[String]) -> anyhow::Result<(Rc<Session>,
     };
     let input = InputFile::from_path(&manifest_path)
         .map_err(|err| anyhow!("failed to read '{}': {err}", manifest_path.display()))?;
-    // This root session is expected to name one selected package. The package-cache closure
-    // walk relies on workspace builds reaching this point once per selected member; an
-    // unselected workspace-root manifest is rejected during project preparation.
+    // This root session is expected to name one selected package: cargo runs the build command
+    // once per selected workspace member, and an unselected workspace-root manifest is rejected
+    // during project preparation.
     let session = Rc::new(
         compiler_opts
             .into_session(input, None, None)

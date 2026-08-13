@@ -7,7 +7,7 @@ use crate::{CompilerTestBuilder, assert_helpers::assert_unique_protocol_export};
 fn counter_note() {
     let config = WasmTranslationConfig::default();
     // The counter-note build compiles its counter-contract dependency itself and resolves it
-    // through the fingerprinted package cache; no separate dependency pre-build is needed.
+    // through the build's package cache; no separate dependency pre-build is needed.
     let builder =
         CompilerTestBuilder::rust_source_cargo_miden("../../examples/counter-note", config, []);
 

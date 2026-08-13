@@ -74,10 +74,10 @@ path = "lib/mod.masm"
 /// * A **library** target, not the `[[bin]]` `cargo miden new --program` writes. The template's
 ///   `src/lib.rs` compiles to a Wasm library, and the assembler rejects a library root module
 ///   for an executable target.
-/// * A **plain** library, not an account component. The SDK's `#[component]` macro resolves
-///   every Miden dependency of a component project as a WIT package during macro expansion, so
-///   a component root cannot take a dependency that has no WIT — which a Miden Assembly project
-///   never does.
+/// * A **plain** library, not an account component. A component root can hold a WIT-less
+///   dependency (the SDK macros skip it during WIT collection), but the plain shape keeps the
+///   fixture free of SDK macros entirely, so the test exercises the compiler's MASM-dependency
+///   pipeline and nothing else.
 fn write_library_manifest(project_dir: &Path, name: &str, dependency: &str, relative_path: &str) {
     fs::write(
         project_dir.join("miden-project.toml"),

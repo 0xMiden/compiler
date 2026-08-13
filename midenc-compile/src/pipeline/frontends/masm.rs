@@ -266,9 +266,9 @@ impl MasmProjectFrontend {
     /// and cached every dependency (`crates/assembly/src/project.rs:406-425`) — it calls
     /// `load_target_sources`, and so this frontend, only afterwards (`:428-434`). For an
     /// executable root, `assemble_interruptible` also assembles the project's library target
-    /// before either (`:303-320`). So a lint-only run builds the dependency closure and writes
-    /// `.masp` files into `target/miden/packages/<build-fingerprint>` that it previously never
-    /// produced.
+    /// before either (`:303-320`). So a lint-only run builds the dependency closure and
+    /// publishes `.masp` files into the session's package cache — the per-build lease or the
+    /// adopted `MIDENC_PACKAGE_CACHE` directory — that it previously never produced.
     ///
     /// That is an accepted consequence of routing project compilation through the assembler,
     /// not an oversight. The frontend is reachable only as an assembler callback, so any goal
