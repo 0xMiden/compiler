@@ -94,6 +94,7 @@ impl ProjectPackageMetadata {
     ) -> Result<Vec<String>, syn::Error> {
         let mut imports =
             collect_miden_dependencies(&self.manifest_dir, &self.package, error_span)?
+                .dependencies
                 .into_iter()
                 .flat_map(|dependency| {
                     dependency
@@ -237,6 +238,7 @@ impl ManifestPackage {
     ) -> Result<Vec<String>, syn::Error> {
         let mut imports = self
             .collect_miden_dependencies(error_span)?
+            .dependencies
             .into_iter()
             .flat_map(|dependency| {
                 dependency
@@ -254,8 +256,31 @@ impl ManifestPackage {
     pub(crate) fn collect_miden_dependencies(
         &self,
         error_span: Span,
-    ) -> Result<Vec<MidenDependency>, syn::Error> {
+    ) -> Result<MidenDependencies, syn::Error> {
         collect_miden_dependencies(&self.manifest_dir, &self.package, error_span)
+    }
+}
+
+/// The resolved Miden dependencies of a consumer, with the ones that carry no WIT.
+pub(crate) struct MidenDependencies {
+    /// Dependencies whose component WIT resolved, sorted by name.
+    pub(crate) dependencies: Vec<MidenDependency>,
+    /// Dependencies without component WIT; a macro reference to one is an error at its
+    /// lookup site, carrying the recorded reason.
+    pub(crate) skipped: Vec<crate::dependency_package::SkippedDependency>,
+}
+
+// Manual impl: required by `expect_err` in tests, without requiring `Package: Debug` (which
+// would dump the whole MAST forest).
+impl core::fmt::Debug for MidenDependencies {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("MidenDependencies")
+            .field(
+                "dependencies",
+                &self.dependencies.iter().map(|dependency| &dependency.name).collect::<Vec<_>>(),
+            )
+            .field("skipped", &self.skipped.iter().map(|skipped| &skipped.name).collect::<Vec<_>>())
+            .finish()
     }
 }
 
@@ -373,10 +398,11 @@ fn collect_miden_dependencies(
     manifest_dir: &Path,
     package: &miden_project::Package,
     error_span: Span,
-) -> Result<Vec<MidenDependency>, syn::Error> {
+) -> Result<MidenDependencies, syn::Error> {
+    let collected = collect_dependency_wit_sources(manifest_dir, package)?;
     let mut dependencies = Vec::new();
 
-    for source in collect_dependency_wit_sources(manifest_dir, package)? {
+    for source in collected.sources {
         let dependency_wit = parse_dependency_wit_source(&source.wit).map_err(|msg| {
             syn::Error::new(error_span, dependency_wit_error_message(&source, &msg))
         })?;
@@ -391,7 +417,10 @@ fn collect_miden_dependencies(
 
     dependencies.sort_by(|a, b| a.name.cmp(&b.name));
 
-    Ok(dependencies)
+    Ok(MidenDependencies {
+        dependencies,
+        skipped: collected.skipped,
+    })
 }
 
 /// Formats the dependency WIT diagnostic emitted by SDK macros.
@@ -614,7 +643,7 @@ world basic-wallet-world {
     fn collect_with_cache(
         fixture_root: &Path,
         package: &miden_project::Package,
-    ) -> Result<Vec<crate::wit_world::MidenDependency>, syn::Error> {
+    ) -> Result<crate::wit_world::MidenDependencies, syn::Error> {
         crate::dependency_package::with_test_package_cache_dir(
             Some(&fixture_root.join("package-cache")),
             || collect_miden_dependencies(fixture_root, package, proc_macro2::Span::call_site()),
@@ -850,7 +879,7 @@ world empty-export-world {
 
         let package = package_with_dependency(dependency_root.clone());
 
-        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap().dependencies;
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);
@@ -877,7 +906,7 @@ world empty-export-world {
 
         let package = package_with_dependency(package_path.clone());
 
-        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap().dependencies;
         let package_path =
             fs::canonicalize(package_path).expect("package path fixture must canonicalize");
 
@@ -915,24 +944,31 @@ world empty-export-world {
     }
 
     #[test]
-    fn package_without_wit_section_reports_rebuild_error() {
+    fn package_without_wit_section_is_skipped_with_a_rebuild_reason() {
+        // A dependency without component WIT is link-only until a macro references it, so the
+        // collection records it as skipped instead of failing every expansion; the recorded
+        // reason is what a reference-site diagnostic reports.
         let fixture_root = empty_fixture_root();
         let dependency_root = fixture_root.join("wit-world-fixture-dep");
         fs::create_dir_all(&dependency_root).expect("dependency fixture directory must be created");
         write_masp_fixture(&fixture_root.join("package-cache/wit_world_fixture_dep.masp"), None);
         let package = package_with_dependency(dependency_root);
 
-        let error = collect_with_cache(&fixture_root, &package)
-            .expect_err("package without an embedded WIT section must fail metadata load");
-        let message = error.to_string();
+        let collected = collect_with_cache(&fixture_root, &package)
+            .expect("a WIT-less dependency must not fail the collection");
 
-        assert!(message.contains("does not embed component WIT"), "unexpected error: {message}");
-        assert!(message.contains("older Miden toolchain"), "unexpected error: {message}");
-        assert!(message.contains("cargo miden build"), "unexpected error: {message}");
-        assert!(message.contains("provide the WIT manually via"), "unexpected error: {message}");
+        assert!(collected.dependencies.is_empty(), "nothing resolves WIT here");
+        assert_eq!(collected.skipped.len(), 1);
+        assert_eq!(collected.skipped[0].name, "wit-world-fixture-dep");
+        let message = &collected.skipped[0].reason;
+
+        assert!(message.contains("does not embed component WIT"), "unexpected reason: {message}");
+        assert!(message.contains("older Miden toolchain"), "unexpected reason: {message}");
+        assert!(message.contains("cargo miden build"), "unexpected reason: {message}");
+        assert!(message.contains("provide the WIT manually via"), "unexpected reason: {message}");
         assert!(
             message.contains("package.metadata.miden.dependencies.wit-world-fixture-dep.wit"),
-            "unexpected error: {message}"
+            "unexpected reason: {message}"
         );
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
@@ -953,7 +989,7 @@ world empty-export-world {
             .expect("override fixture must be written");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_path);
 
-        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap().dependencies;
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);
@@ -985,8 +1021,11 @@ world empty-export-world {
 
         let canonical_override =
             fs::canonicalize(&override_path).expect("override fixture must canonicalize");
-        assert_eq!(sources.len(), 1);
-        assert_eq!(sources[0].wit_override_path.as_deref(), Some(canonical_override.as_path()));
+        assert_eq!(sources.sources.len(), 1);
+        assert_eq!(
+            sources.sources[0].wit_override_path.as_deref(),
+            Some(canonical_override.as_path())
+        );
 
         fs::remove_dir_all(fixture_root).expect("temporary fixture directory must be removed");
     }
@@ -1044,7 +1083,7 @@ world empty-export-world {
             .expect("override fixture must be written");
         let package = package_with_dependency_and_wit_key(dependency_root, &override_dir);
 
-        let dependencies = collect_with_cache(&fixture_root, &package).unwrap();
+        let dependencies = collect_with_cache(&fixture_root, &package).unwrap().dependencies;
 
         assert_eq!(dependencies.len(), 1);
         assert_eq!(dependencies[0].interface_names(), vec!["basic-wallet"]);

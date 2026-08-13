@@ -42,93 +42,170 @@ pub(crate) struct DependencyWitSource {
     pub(crate) wit_override_path: Option<PathBuf>,
 }
 
-/// Reads the WIT of every Miden path dependency's compiled package.
+/// The result of resolving every declared Miden dependency's component WIT.
+pub(crate) struct DependencyWitSources {
+    /// Dependencies whose WIT resolved, in declaration order.
+    pub(crate) sources: Vec<DependencyWitSource>,
+    /// Dependencies that resolved to a package without component WIT (and no `wit` override).
+    ///
+    /// Not an error here: a link-only dependency — for example a MASM library — is never
+    /// referenced by an SDK macro and needs no WIT. A macro that does reference one of these
+    /// names is diagnosed at its lookup site with the recorded reason.
+    pub(crate) skipped: Vec<SkippedDependency>,
+    /// The compiler-written artifact map this resolution consumed, when one was present.
+    ///
+    /// Recorded so consumers can register the file as a build input.
+    pub(crate) artifact_map_path: Option<PathBuf>,
+}
+
+// Manual impl: required by `expect_err` in tests, without requiring `Package: Debug` (which
+// would dump the whole MAST forest).
+impl core::fmt::Debug for DependencyWitSources {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("DependencyWitSources")
+            .field("sources", &self.sources.iter().map(|source| &source.name).collect::<Vec<_>>())
+            .field("skipped", &self.skipped.iter().map(|skipped| &skipped.name).collect::<Vec<_>>())
+            .finish_non_exhaustive()
+    }
+}
+
+/// A declared dependency that resolved, but without component WIT to consume.
+#[derive(Debug)]
+pub(crate) struct SkippedDependency {
+    /// Manifest key of the dependency.
+    pub(crate) name: String,
+    /// Why its WIT is unavailable, phrased for a reference-site diagnostic.
+    pub(crate) reason: String,
+}
+
+/// Reads the WIT of every Miden dependency's compiled package.
+///
+/// Resolution follows the compiler: when the package cache carries the artifact map the
+/// compiler wrote for this consumer (`miden-deps/<consumer>.deps.toml`), every declared
+/// dependency — whatever its source scheme — is read from the exact artifact the compiler
+/// selected. Without a map (a hand-assembled cache), only path dependencies resolve, through
+/// the legacy name probing.
 ///
 /// Embedded WIT is authoritative. A dependency whose package embeds none may supply it manually
 /// through the `package.metadata.miden.dependencies.<name>.wit` key in `miden-project.toml` — the
 /// escape hatch for packages produced by toolchains that do not embed WIT. Setting the key for a
-/// package that embeds WIT is an error.
+/// package that embeds WIT is an error, and a package with neither is skipped, not rejected:
+/// only dependencies a macro references need WIT.
 pub(crate) fn collect_dependency_wit_sources(
     manifest_dir: &Path,
     package: &miden_project::Package,
-) -> Result<Vec<DependencyWitSource>, Error> {
+) -> Result<DependencyWitSources, Error> {
     let error_span = Span::call_site();
-    let mut sources = Vec::new();
+    let artifact_map = load_dependency_artifact_map(package)?;
+    let mut collected = DependencyWitSources {
+        sources: Vec::new(),
+        skipped: Vec::new(),
+        artifact_map_path: artifact_map.as_ref().map(|map| map.map_path.clone()),
+    };
 
     for dependency in package.dependencies() {
-        match dependency.scheme() {
-            miden_project::DependencyVersionScheme::Path { path, .. } => {
-                let absolute_path = manifest_dir.join(path.path());
-                let dependency_root = fs::canonicalize(&absolute_path).map_err(|err| {
-                    Error::new(
+        let name = dependency.name().as_ref();
+        // Registry dependencies are MASM base libraries (`miden-core`, `miden-protocol`)
+        // consumed at link time only; no SDK macro references them, so their (large)
+        // packages are never deserialized here.
+        if matches!(dependency.scheme(), miden_project::DependencyVersionScheme::Registry(_)) {
+            continue;
+        }
+
+        let resolved = match &artifact_map {
+            Some(map) => Some(map.resolve(name, error_span)?),
+            None => match dependency.scheme() {
+                miden_project::DependencyVersionScheme::Path { path, .. } => {
+                    Some(legacy_resolve_path_dependency(manifest_dir, name, path.path())?)
+                }
+                // Without the compiler's artifact map these schemes cannot be resolved at
+                // expansion time; a macro reference to one of these names is diagnosed at
+                // the lookup site instead.
+                miden_project::DependencyVersionScheme::Workspace { .. }
+                | miden_project::DependencyVersionScheme::WorkspacePath { .. }
+                | miden_project::DependencyVersionScheme::Git { .. } => None,
+                miden_project::DependencyVersionScheme::Registry(_) => unreachable!(),
+            },
+        };
+        let Some((dependency_root, resolved)) = resolved else {
+            continue;
+        };
+
+        let wit_override = dependency_wit_override(package, name)?;
+        let (wit, wit_override_path) =
+            match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
+                (Some(_), Some(_)) => {
+                    return Err(Error::new(
                         error_span,
                         format!(
-                            "failed to canonicalize dependency '{}' path '{}': {err}",
-                            dependency.name(),
-                            absolute_path.display()
+                            "dependency '{name}': package '{}' embeds component WIT, but \
+                             miden-project.toml also sets \
+                             package.metadata.miden.dependencies.{name}.wit; remove the `wit` key \
+                             — embedded WIT is authoritative",
+                            resolved.path.display(),
                         ),
-                    )
-                })?;
-                let resolved =
-                    resolve_dependency_package(dependency.name().as_ref(), &dependency_root)?;
-                let wit_override = dependency_wit_override(package, dependency.name().as_ref())?;
-                let (wit, wit_override_path) =
-                    match (package_wit(&resolved.package, &resolved.path)?, wit_override) {
-                        (Some(_), Some(_)) => {
-                            return Err(Error::new(
-                                error_span,
-                                format!(
-                                    "dependency '{}': package '{}' embeds component WIT, but \
-                                     miden-project.toml also sets \
-                                     package.metadata.miden.dependencies.{}.wit; remove the `wit` \
-                                     key — embedded WIT is authoritative",
-                                    dependency.name(),
-                                    resolved.path.display(),
-                                    dependency.name(),
-                                ),
-                            ));
-                        }
-                        (Some(wit), None) => (wit, None),
-                        (None, Some(wit_override)) => {
-                            let (wit, override_path) = read_wit_override(
-                                &wit_override,
-                                manifest_dir,
-                                dependency.name().as_ref(),
-                            )?;
-                            (wit, Some(override_path))
-                        }
-                        (None, None) => {
-                            return Err(Error::new(
-                                error_span,
-                                missing_embedded_wit_message(
-                                    &resolved.path,
-                                    dependency.name().as_ref(),
-                                ),
-                            ));
-                        }
-                    };
-                sources.push(DependencyWitSource {
-                    name: dependency.name().to_string(),
-                    root: dependency_root,
-                    package_path: resolved.path,
-                    package: resolved.package,
-                    wit,
-                    wit_override_path,
-                });
-            }
-            // Registry dependencies are MASM base libraries (`miden-core`, `miden-protocol`)
-            // consumed at link time only, so they carry no component WIT.
-            miden_project::DependencyVersionScheme::Registry(_) => {}
-            // Not supported at macro expansion time. Skipped without an error because a crate
-            // may declare such a dependency without consuming it in a macro; a macro reference
-            // to one of these names is diagnosed at the lookup site instead.
-            miden_project::DependencyVersionScheme::Workspace { .. }
-            | miden_project::DependencyVersionScheme::WorkspacePath { .. }
-            | miden_project::DependencyVersionScheme::Git { .. } => {}
-        }
+                    ));
+                }
+                (Some(wit), None) => (wit, None),
+                (None, Some(wit_override)) => {
+                    let (wit, override_path) =
+                        read_wit_override(&wit_override, manifest_dir, name)?;
+                    (wit, Some(override_path))
+                }
+                (None, None) => {
+                    collected.skipped.push(SkippedDependency {
+                        name: name.to_string(),
+                        reason: missing_embedded_wit_message(&resolved.path, name),
+                    });
+                    continue;
+                }
+            };
+        collected.sources.push(DependencyWitSource {
+            name: name.to_string(),
+            root: dependency_root,
+            package_path: resolved.path,
+            package: resolved.package,
+            wit,
+            wit_override_path,
+        });
     }
 
-    Ok(sources)
+    Ok(collected)
+}
+
+/// Resolves a path dependency without a compiler-written artifact map.
+///
+/// The legacy flow for hand-assembled caches: the dependency root is canonicalized, a root
+/// that is itself a `.masp` file is read in place, and anything else is probed in the cache
+/// by likely package-name stems. A root naming the project's manifest file is normalized to
+/// the project directory first — both spellings are accepted by the compiler's resolver.
+fn legacy_resolve_path_dependency(
+    manifest_dir: &Path,
+    dependency_name: &str,
+    path: &str,
+) -> Result<(PathBuf, ResolvedDependencyPackage), Error> {
+    let error_span = Span::call_site();
+    let absolute_path = manifest_dir.join(path);
+    let mut dependency_root = fs::canonicalize(&absolute_path).map_err(|err| {
+        Error::new(
+            error_span,
+            format!(
+                "failed to canonicalize dependency '{dependency_name}' path '{}': {err}",
+                absolute_path.display()
+            ),
+        )
+    })?;
+    if dependency_root.is_file()
+        && dependency_root.file_name().is_some_and(|file_name| {
+            file_name.eq_ignore_ascii_case("miden-project.toml")
+                || file_name.eq_ignore_ascii_case("Cargo.toml")
+        })
+        && let Some(parent) = dependency_root.parent()
+    {
+        dependency_root = parent.to_path_buf();
+    }
+    let resolved = resolve_dependency_package(dependency_name, &dependency_root)?;
+    Ok((dependency_root, resolved))
 }
 
 /// Describes a declared dependency whose scheme the macros cannot resolve, for diagnostics.
@@ -287,38 +364,42 @@ fn missing_embedded_wit_message(package_path: &Path, dependency_name: &str) -> S
     )
 }
 
-/// Deserialized package reads, keyed by path and validated by (modification time, length).
-type PackageReadCache =
-    std::collections::HashMap<PathBuf, (std::time::SystemTime, u64, Arc<Package>)>;
+/// Deserialized package reads, keyed by path and revalidated by content identity.
+type PackageReadCache = std::collections::HashMap<PathBuf, (ContentIdentity, Arc<Package>)>;
+
+/// The content identity of a package file: its length and a hash of its bytes.
+///
+/// File metadata is not identity: the adopted package cache keeps stable paths that are
+/// replaced atomically, and a same-length replacement can carry a colliding or coarse
+/// modification timestamp. The hash is not cryptographic — the cache defends against
+/// accidental staleness in a long-lived proc-macro host, not against an adversary.
+type ContentIdentity = (u64, u64);
+
+/// Computes the [`ContentIdentity`] of package bytes.
+fn content_identity(bytes: &[u8]) -> ContentIdentity {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    (bytes.len() as u64, hasher.finish())
+}
 
 thread_local! {
-    /// One deserialized package per path, revalidated by file modification time and length.
+    /// One deserialized package per path, revalidated by content identity.
     ///
     /// A single expansion resolves the same dependency package from several entry points, and
-    /// deserializing a MAST forest is expensive — worse, split reads could pair bindings from
-    /// one cache generation with procedure roots from another when a concurrent build rewrites
-    /// the package between them. The host process may also outlive many builds (rust-analyzer
-    /// keeps proc-macro servers running), so entries are never trusted by path alone.
+    /// deserializing a MAST forest is expensive. The file is read on every call — the read is
+    /// what makes one call see one consistent snapshot of an atomically replaced file — and
+    /// the memo skips only the deserialization when the bytes are unchanged. The host process
+    /// may outlive many builds (rust-analyzer keeps proc-macro servers running), so entries
+    /// are never trusted by path or file metadata alone.
     static PACKAGE_READS: core::cell::RefCell<PackageReadCache> =
         core::cell::RefCell::new(std::collections::HashMap::new());
 }
 
-/// Reads and deserializes a compiled Miden package, reusing the previous read of an unchanged
-/// file.
+/// Reads and deserializes a compiled Miden package, reusing the previous deserialization of
+/// unchanged bytes.
 fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
-    let fingerprint = fs::metadata(package_path)
-        .and_then(|metadata| Ok((metadata.modified()?, metadata.len())))
-        .ok();
-    if let Some(fingerprint) = fingerprint
-        && let Some(package) = PACKAGE_READS.with(|reads| {
-            reads.borrow().get(package_path).and_then(|(mtime, len, package)| {
-                ((*mtime, *len) == fingerprint).then(|| package.clone())
-            })
-        })
-    {
-        return Ok(package);
-    }
-
     let error_span = Span::call_site();
     let package_bytes = fs::read(package_path).map_err(|err| {
         Error::new(
@@ -326,6 +407,14 @@ fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
             format!("failed to read dependency package '{}': {err}", package_path.display()),
         )
     })?;
+    let identity = content_identity(&package_bytes);
+    if let Some(package) = PACKAGE_READS.with(|reads| {
+        reads.borrow().get(package_path).and_then(|(cached_identity, package)| {
+            (*cached_identity == identity).then(|| package.clone())
+        })
+    }) {
+        return Ok(package);
+    }
     let package =
         Package::read_from_bytes_unchecked(&package_bytes)
             .map(Arc::new)
@@ -340,13 +429,11 @@ fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
                     ),
                 )
             })?;
-    if let Some((mtime, len)) = fingerprint {
-        PACKAGE_READS.with(|reads| {
-            reads
-                .borrow_mut()
-                .insert(package_path.to_path_buf(), (mtime, len, package.clone()));
-        });
-    }
+    PACKAGE_READS.with(|reads| {
+        reads
+            .borrow_mut()
+            .insert(package_path.to_path_buf(), (identity, package.clone()));
+    });
     Ok(package)
 }
 
@@ -372,6 +459,143 @@ fn package_wit(package: &Package, package_path: &Path) -> Result<Option<String>,
 }
 
 /// A located and deserialized dependency package.
+/// The per-consumer artifact map the compiler writes into the package cache.
+///
+/// `miden-deps/<consumer>.deps.toml` records, for every declared dependency of the consumer
+/// project, the artifact the compiler's resolution selected: a `package` file name inside the
+/// cache directory, or an absolute `path` for a preassembled `.masp` consumed in place. When
+/// the map is present it is authoritative — the macros follow the compiler instead of
+/// re-deriving resolution from the manifests.
+struct DependencyArtifactMap {
+    /// The map file itself, tracked as a build input by consumers.
+    map_path: PathBuf,
+    /// The cache directory `package` entries are relative to.
+    cache_dir: PathBuf,
+    /// Declared dependency name → selected artifact.
+    entries: std::collections::BTreeMap<String, ArtifactMapEntry>,
+}
+
+/// One artifact selection in a [`DependencyArtifactMap`].
+enum ArtifactMapEntry {
+    /// A file name inside the cache directory.
+    CacheFile(String),
+    /// An absolute path outside the cache (a preassembled dependency consumed in place).
+    Path(PathBuf),
+}
+
+impl DependencyArtifactMap {
+    /// Resolves a declared dependency through the map.
+    fn resolve(
+        &self,
+        dependency_name: &str,
+        error_span: Span,
+    ) -> Result<(PathBuf, ResolvedDependencyPackage), Error> {
+        let Some(entry) = self.entries.get(dependency_name) else {
+            return Err(Error::new(
+                error_span,
+                format!(
+                    "dependency '{dependency_name}' is not recorded in the compiler's dependency \
+                     manifest '{}'; the staged package cache is out of date with \
+                     miden-project.toml — rebuild with `cargo miden build`, or re-run the check \
+                     so the contract build script re-stages the packages",
+                    self.map_path.display(),
+                ),
+            ));
+        };
+        let path = match entry {
+            ArtifactMapEntry::CacheFile(file) => self.cache_dir.join(file),
+            ArtifactMapEntry::Path(path) => path.clone(),
+        };
+        let package = read_package(&path)?;
+        Ok((path.clone(), ResolvedDependencyPackage { path, package }))
+    }
+}
+
+/// Loads the artifact map the compiler wrote for `package`, when one exists.
+///
+/// `Ok(None)` when no package cache is configured, or the cache carries no map for this
+/// consumer — the hand-assembled caches of tests and user tooling. A present map that cannot
+/// be read or parsed is an error: the compiler wrote it, so corruption is a real problem.
+fn load_dependency_artifact_map(
+    package: &miden_project::Package,
+) -> Result<Option<DependencyArtifactMap>, Error> {
+    let error_span = Span::call_site();
+    let Some(cache_dir) = package_cache_dir() else {
+        return Ok(None);
+    };
+    let consumer = package.name().to_string();
+    if consumer.is_empty() {
+        return Ok(None);
+    }
+    let map_path = cache_dir.join("miden-deps").join(format!("{consumer}.deps.toml"));
+    let contents = match fs::read_to_string(&map_path) {
+        Ok(contents) => contents,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => {
+            return Err(Error::new(
+                error_span,
+                format!(
+                    "failed to read the compiler's dependency manifest '{}': {err}",
+                    map_path.display()
+                ),
+            ));
+        }
+    };
+    let table = contents.parse::<toml::Table>().map_err(|err| {
+        Error::new(
+            error_span,
+            format!(
+                "failed to parse the compiler's dependency manifest '{}': {err}",
+                map_path.display()
+            ),
+        )
+    })?;
+    let map_error = |message: String| Error::new(error_span, message);
+    let schema = table.get("schema").and_then(toml::Value::as_integer);
+    if schema != Some(1) {
+        return Err(map_error(format!(
+            "the compiler's dependency manifest '{}' has an unsupported schema {schema:?}; the \
+             package cache was staged by an incompatible toolchain — rebuild with the current \
+             `cargo miden build`",
+            map_path.display(),
+        )));
+    }
+    let mut entries = std::collections::BTreeMap::new();
+    if let Some(dependencies) = table.get("dependencies") {
+        let dependencies = dependencies.as_table().ok_or_else(|| {
+            map_error(format!(
+                "the compiler's dependency manifest '{}' has a malformed `dependencies` table",
+                map_path.display(),
+            ))
+        })?;
+        for (name, value) in dependencies {
+            let entry = value.as_table().and_then(|entry| {
+                if let Some(file) = entry.get("package").and_then(toml::Value::as_str) {
+                    Some(ArtifactMapEntry::CacheFile(file.to_string()))
+                } else {
+                    entry
+                        .get("path")
+                        .and_then(toml::Value::as_str)
+                        .map(|path| ArtifactMapEntry::Path(PathBuf::from(path)))
+                }
+            });
+            let Some(entry) = entry else {
+                return Err(map_error(format!(
+                    "the compiler's dependency manifest '{}' has a malformed entry for dependency \
+                     '{name}'",
+                    map_path.display(),
+                )));
+            };
+            entries.insert(name.clone(), entry);
+        }
+    }
+    Ok(Some(DependencyArtifactMap {
+        map_path,
+        cache_dir,
+        entries,
+    }))
+}
+
 struct ResolvedDependencyPackage {
     /// Path of the `.masp` file the package was read from.
     path: PathBuf,
@@ -401,6 +625,21 @@ impl core::fmt::Debug for ResolvedDependencyPackage {
 /// dependency cannot be resolved at all.
 fn resolve_dependency_package(name: &str, root: &Path) -> Result<ResolvedDependencyPackage, Error> {
     if root.is_file() {
+        // Only a `.masp` file is an explicit package choice; any other file here is a
+        // mis-declared path (manifest files are normalized to their directory upstream).
+        if !root
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case(Package::EXTENSION))
+        {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "dependency '{name}': path '{}' names a file that is not a `.{}` package",
+                    root.display(),
+                    Package::EXTENSION,
+                ),
+            ));
+        }
         return Ok(ResolvedDependencyPackage {
             path: root.to_path_buf(),
             package: read_package(root)?,
@@ -439,7 +678,11 @@ fn package_cache_dir() -> Option<PathBuf> {
     if let Some(overridden) = TEST_PACKAGE_CACHE_DIR.with(|dir| dir.borrow().clone()) {
         return overridden;
     }
-    env::var_os("MIDENC_PACKAGE_CACHE").map(PathBuf::from)
+    // An empty value counts as unset at every boundary of the variable, matching the
+    // compiler's adoption check and the contract build script's guard.
+    env::var_os("MIDENC_PACKAGE_CACHE")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
 }
 
 #[cfg(test)]
@@ -784,6 +1027,95 @@ mod tests {
         assert!(message.contains("failed to deserialize"), "unexpected error: {message}");
         assert!(
             message.contains("different Miden toolchain version"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("cargo miden build"), "unexpected error: {message}");
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    /// Builds a consumer package named `consumer` with one workspace-scheme dependency.
+    ///
+    /// The workspace scheme is unresolvable at expansion time without the compiler's artifact
+    /// map, which makes it the sharpest probe of map-based resolution.
+    fn consumer_with_workspace_dependency(dependency_name: &str) -> Box<miden_project::Package> {
+        use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
+
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
+            "default",
+            ast::Path::new("empty"),
+            miden_project::Uri::new("lib/src.rs"),
+        );
+        let dependency = miden_project::Dependency::new(
+            MidenSpan::unknown(Arc::<str>::from(dependency_name)),
+            miden_project::DependencyVersionScheme::Workspace {
+                member: MidenSpan::unknown(miden_project::Uri::new(dependency_name)),
+                version: None,
+            },
+            miden_project::Linkage::Dynamic,
+        );
+        miden_project::Package::new("consumer", target).with_dependencies([dependency])
+    }
+
+    const MAPPED_DEP_WIT: &str = "package miden:mapped-dep@0.1.0;\n\ninterface api {\n  get: \
+                                  func() -> u64;\n}\n\nworld w {\n  export api;\n}\n";
+
+    #[test]
+    fn artifact_map_resolves_any_dependency_scheme() {
+        // The compiler records the artifact it selected for every declared dependency; with the
+        // map present the macros follow it, so even schemes they cannot resolve themselves —
+        // here a workspace member — read the exact selected package.
+        let temp_root = fixture_root("artifact-map");
+        let cache_dir = temp_root.join("package-cache");
+        write_masp_fixture(&cache_dir.join("mapped-dep.masp"), "mapped-dep", Some(MAPPED_DEP_WIT));
+        let map_dir = cache_dir.join("miden-deps");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(
+            map_dir.join("consumer.deps.toml"),
+            "schema = 1\n\n[dependencies]\nthe-dep = { package = \"mapped-dep.masp\", version = \
+             \"0.1.0\" }\n",
+        )
+        .unwrap();
+        let package = consumer_with_workspace_dependency("the-dep");
+
+        let collected = with_test_package_cache_dir(Some(&cache_dir), || {
+            collect_dependency_wit_sources(&temp_root, &package)
+        })
+        .expect("the map must resolve the workspace dependency");
+
+        assert_eq!(collected.sources.len(), 1);
+        assert_eq!(collected.sources[0].name, "the-dep");
+        assert_eq!(collected.sources[0].package_path, cache_dir.join("mapped-dep.masp"));
+        assert_eq!(
+            collected.artifact_map_path.as_deref(),
+            Some(map_dir.join("consumer.deps.toml").as_path()),
+            "the consumed map must be reported for build-input tracking"
+        );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn artifact_map_missing_entry_reports_staging_drift() {
+        // A present map is authoritative: a declared dependency the compiler did not record
+        // means the staged cache predates the manifest edit, which re-staging fixes.
+        let temp_root = fixture_root("artifact-map-drift");
+        let cache_dir = temp_root.join("package-cache");
+        let map_dir = cache_dir.join("miden-deps");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(map_dir.join("consumer.deps.toml"), "schema = 1\n\n[dependencies]\n")
+            .unwrap();
+        let package = consumer_with_workspace_dependency("the-dep");
+
+        let error = with_test_package_cache_dir(Some(&cache_dir), || {
+            collect_dependency_wit_sources(&temp_root, &package)
+        })
+        .expect_err("a declared dependency absent from the map must fail");
+        let message = error.to_string();
+
+        assert!(
+            message.contains("not recorded in the compiler's dependency manifest"),
             "unexpected error: {message}"
         );
         assert!(message.contains("cargo miden build"), "unexpected error: {message}");

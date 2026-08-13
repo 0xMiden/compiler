@@ -555,10 +555,14 @@ fn load_wit_sources(
         push_path(&mut resolve, &mut packages, &mut files, PathBuf::from(prelude_dir))?;
     }
 
-    // Load WIT definitions embedded in the compiled packages of Miden path dependencies. The
+    // Load WIT definitions embedded in the compiled packages of Miden dependencies. The
     // `.masp` paths are recorded like read files so rustc recompiles when a dependency package
-    // changes — and so is a `wit` manifest-key override file, which in that flow is the only
-    // source of the dependency's interface.
+    // changes — and so are the compiler's artifact map, which selects those packages, and a
+    // `wit` manifest-key override file, which in its flow is the only source of the
+    // dependency's interface.
+    if let Some(map_path) = &config.dependency_artifact_map {
+        files.push(map_path.clone());
+    }
     for source in &config.dependency_sources {
         let pkg = resolve.push_str(format!("{}.wit", source.name), &source.wit).map_err(|err| {
             Error::new(
@@ -1717,6 +1721,7 @@ interface api {
         manifest_paths::ResolvedWit {
             prelude_dir: None,
             dependency_sources: Vec::new(),
+            dependency_artifact_map: None,
             local_wit_root: Some(dir),
             world: None,
             embeddable_local_wit: Some(path),

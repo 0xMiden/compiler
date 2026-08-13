@@ -29,8 +29,12 @@ pub(crate) struct ResolvedWit {
     ///
     /// Always present in macro expansion; `None` models a self-contained fixture in tests.
     pub prelude_dir: Option<String>,
-    /// WIT sources read from the compiled packages of Miden path dependencies.
+    /// WIT sources read from the compiled packages of Miden dependencies.
     pub dependency_sources: Vec<DependencyWitSource>,
+    /// The compiler-written artifact map the dependency resolution consumed, when present.
+    ///
+    /// Tracked as a build input alongside the packages it selects.
+    pub dependency_artifact_map: Option<PathBuf>,
     /// The crate's local `wit/` directory, loaded after the dependency sources so its WIT can
     /// import the dependency packages.
     pub local_wit_root: Option<PathBuf>,
@@ -63,11 +67,11 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
         })?
         .to_owned();
 
-    // Dependency WIT is read from each path dependency's compiled `.masp` package rather than
+    // Dependency WIT is read from each dependency's compiled `.masp` package rather than
     // from files on disk; the sources are pushed into the wit-bindgen resolver alongside the
-    // file-based paths collected here.
-    let dependency_sources =
-        collect_dependency_wit_sources(&manifest.manifest_dir, &manifest.package)?;
+    // file-based paths collected here. Dependencies without WIT are link-only and contribute
+    // nothing to bindings generation.
+    let collected = collect_dependency_wit_sources(&manifest.manifest_dir, &manifest.package)?;
 
     let raw_local_wit_root = Path::new(&manifest.manifest_dir).join("wit");
     let mut local_wit_root = None;
@@ -85,7 +89,8 @@ pub(crate) fn resolve_wit_paths(options: ResolveOptions) -> Result<ResolvedWit, 
 
     Ok(ResolvedWit {
         prelude_dir: Some(prelude_dir),
-        dependency_sources,
+        dependency_sources: collected.sources,
+        dependency_artifact_map: collected.artifact_map_path,
         local_wit_root,
         world,
         embeddable_local_wit,

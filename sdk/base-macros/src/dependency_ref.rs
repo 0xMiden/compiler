@@ -190,7 +190,8 @@ pub(crate) fn select_dependencies(
     requested: &[DependencyRef],
     error_span: Span,
 ) -> syn::Result<Vec<SelectedDependency>> {
-    let dependencies = manifest.collect_miden_dependencies(error_span)?;
+    let collected = manifest.collect_miden_dependencies(error_span)?;
+    let dependencies = &collected.dependencies;
     let available = dependencies
         .iter()
         .map(|dependency| dependency.name.clone())
@@ -203,8 +204,15 @@ pub(crate) fn select_dependencies(
                 .iter()
                 .find(|dependency| dependency.name == reference.package)
                 .ok_or_else(|| {
-                    // A declared dependency can be absent from the collected set because its
-                    // scheme is skipped at expansion time; name that instead of "not declared".
+                    // A declared dependency can be absent from the collected set because it
+                    // resolved to a package without component WIT, or because its scheme is
+                    // unresolvable at expansion time; name the cause instead of "not
+                    // declared".
+                    if let Some(skipped) =
+                        collected.skipped.iter().find(|skipped| skipped.name == reference.package)
+                    {
+                        return Error::new(reference.span, skipped.reason.clone());
+                    }
                     if let Some(scheme) = crate::dependency_package::unsupported_dependency_scheme(
                         &manifest.package,
                         &reference.package,
@@ -213,8 +221,9 @@ pub(crate) fn select_dependencies(
                             reference.span,
                             format!(
                                 "dependency `{}` is declared with a {scheme} dependency scheme, \
-                                 which is not supported at macro expansion time; use a path \
-                                 dependency",
+                                 which the macros cannot resolve without a compiler-staged \
+                                 package cache; build through `cargo miden build` or the contract \
+                                 build script, or use a path dependency",
                                 reference.package_ident,
                             ),
                         );
