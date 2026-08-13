@@ -506,6 +506,106 @@ impl Project {
     }
 }
 
+/// The Cargo target directory this test process builds under.
+///
+/// Derived from an absolute `CARGO_TARGET_DIR` when the process was started with one, otherwise
+/// inferred from the test executable's location. Read **once**, before [`use_shared_build_dir`]
+/// overwrites the variable, so both directories below are anchored to the same place whether the
+/// suite is invoked as `cargo test` (no ambient variable) or through `cargo make` (which sets one,
+/// `Makefile.toml`).
+fn test_target_dir() -> PathBuf {
+    static TARGET_DIR: OnceLock<PathBuf> = OnceLock::new();
+    TARGET_DIR
+        .get_or_init(|| {
+            // Prefer an explicit override when provided (useful in CI).
+            if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
+                let dir = PathBuf::from(dir);
+                if dir.is_absolute() {
+                    return dir;
+                }
+            }
+
+            let exe = std::env::current_exe()
+                .unwrap_or_else(|e| panic!("failed to determine test target directory: {e}"));
+
+            // `cargo test` places the test binary at `<target_dir>/<profile>/deps/<bin>`.
+            for ancestor in exe.ancestors() {
+                if ancestor
+                    .file_name()
+                    .is_some_and(|file_name| file_name.eq_ignore_ascii_case("target"))
+                    && ancestor.is_dir()
+                {
+                    return ancestor.to_path_buf();
+                }
+            }
+
+            panic!("failed to determine test target directory from current_exe: {}", exe.display());
+        })
+        .clone()
+}
+
+/// The one build directory every nested `cargo` invocation in this suite shares.
+///
+/// # Why one directory
+///
+/// Each generated project is its own workspace, so with no `CARGO_TARGET_DIR` Cargo gives each one
+/// a private `target/` and shares nothing. Every one of them builds `core`, `alloc`,
+/// `compiler_builtins` and `panic_abort` from source (`-Z build-std`) plus the whole native Miden
+/// stack as build dependencies, at `lto = true, codegen-units = 1` — around 900 MB and half a
+/// minute of compilation to produce a few hundred bytes of Wasm. Across the suite that is the same
+/// work tens of times over: at the time this was written, this was measured at 48,131 crate units
+/// of which 1,627 are distinct.
+///
+/// Cargo already keys artifacts by a metadata hash that separates flag variants, so one directory
+/// holds all of them side by side. It takes an exclusive lock on the build directory, so concurrent
+/// nested builds serialize; that cost was measured before this was adopted rather than assumed. On
+/// a 19-test slice driving 57 nested builds on ten cores: **1034 s and 33.6 GB unshared, versus
+/// 66.9 s and 1.05 GB shared** — 15.5x on time and 31.8x on disk — with 56 build-directory lock
+/// waits which, in total, cannot have exceeded the 67 s the whole run took.
+///
+/// The directory is a sibling of the generated projects rather than the workspace target directory
+/// itself, so that nested-build output stays separable from the workspace's own and can be measured
+/// (and deleted) on its own.
+///
+/// # Why it is worth keeping
+///
+/// At a few GB the cache survives between runs, without this, the total size of a warm cache was
+/// exceeding 100GB, which made it necessary to frequently delete it to avoid consuming a lot of
+/// disk space unnecessarily - this made test runs cold, exacerbating test run times due to the
+/// need to rebuild the cache frequently.
+pub fn shared_build_dir() -> PathBuf {
+    test_target_dir().join("miden_test_shared")
+}
+
+/// Point this process's nested `cargo` invocations at [`shared_build_dir`].
+///
+/// The environment is the only means we have to reache them: the nested `cargo` is spawned by the
+/// compiler itself (`midenc-compile`'s `run_cargo`), which inherits this process's environment,
+/// and it selects the project with `--manifest-path` rather than by working directory — so a
+/// `.cargo/config.toml` written beside the project would never be read.
+///
+/// Idempotent, and safe to call from any entry point that is about to cause a nested build. It must
+/// be called by **every** such entry point, not just [`project`]: tests that compile a checked-in
+/// fixture project never generate one, and before this they wrote a private `target/` into the
+/// source tree (`tests/fixtures/components/*/target`, measured at ~1.7 GB apiece).
+///
+/// # Safety
+///
+/// `set_var` is unsafe because a concurrent `getenv` on another thread is a data race. This runs at
+/// most once per process, from the first entry point reached, and before that entry point spawns
+/// anything. The same reasoning is what permits the equivalent call in `tests/templates`, and the
+/// suite's own runner (`cargo make test` → `nextest`) gives each test its own process.
+pub fn use_shared_build_dir() {
+    static INIT: OnceLock<()> = OnceLock::new();
+    INIT.get_or_init(|| {
+        let dir = shared_build_dir();
+        std::fs::create_dir_all(&dir).unwrap_or_else(|e| {
+            panic!("failed to create the shared build directory {}: {e}", dir.display())
+        });
+        unsafe { std::env::set_var("CARGO_TARGET_DIR", &dir) };
+    });
+}
+
 /// Creates a [`ProjectBuilder`] for a generated Cargo project.
 ///
 /// The project is located under the Cargo target directory to maximize reuse of build artifacts
@@ -518,36 +618,13 @@ pub fn project(proj_folder_name: &str) -> ProjectBuilder {
     /// Compute the directory under which generated Cargo projects should live.
     ///
     /// We keep these projects in the Cargo target directory so that Cargo build artifacts
-    /// (under each project's `target/`) can be reused across test runs.
+    /// (which now live in [`shared_build_dir`]) can be reused across test runs.
     fn cargo_projects_root() -> PathBuf {
-        static ROOT: OnceLock<PathBuf> = OnceLock::new();
-        ROOT.get_or_init(|| {
-            // Prefer an explicit override when provided (useful in CI).
-            if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-                let dir = PathBuf::from(dir);
-                if dir.is_absolute() {
-                    return dir.join("miden_test_cargo_projects");
-                }
-            }
-
-            let exe = std::env::current_exe()
-                .unwrap_or_else(|e| panic!("failed to determine test target directory: {e}"));
-
-            // `cargo test` places the test binary at `<target_dir>/<profile>/deps/<bin>`.
-            if let Some(target_dir) = exe.parent().and_then(|p| p.parent()).and_then(|p| p.parent())
-            {
-                return target_dir.join("miden_test_cargo_projects");
-            }
-
-            for ancestor in exe.ancestors() {
-                if ancestor.file_name() == Some(std::ffi::OsStr::new("target")) {
-                    return ancestor.join("miden_test_cargo_projects");
-                }
-            }
-
-            panic!("failed to determine test target directory from current_exe: {}", exe.display());
-        })
-        .clone()
+        let root = test_target_dir().join("miden_test_cargo_projects");
+        // Anything built out of a generated project is a nested build, so redirect them before the
+        // caller gets a chance to start one.
+        use_shared_build_dir();
+        root
     }
 
     /// Convert a call site into a stable directory name component.
