@@ -169,20 +169,6 @@ fn rust_sdk_output_note_add_word_attachment_binding() {
 }
 
 #[test]
-fn rust_sdk_output_note_set_word_attachment_binding() {
-    run_output_note_binding_test(
-        "rust_sdk_output_note_set_word_attachment_binding",
-        "pub fn binding(&self) -> Felt {
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
-        let attachment_scheme = Felt::new(0).unwrap();
-        let attachment = Word::from([Felt::new(0).unwrap(); 4]);
-        output_note::set_word_attachment(idx, attachment_scheme, attachment);
-        Felt::new(0).unwrap()
-    }",
-    );
-}
-
-#[test]
 fn rust_sdk_output_note_add_attachment_binding() {
     run_output_note_binding_test(
         "rust_sdk_output_note_add_attachment_binding",
@@ -191,20 +177,6 @@ fn rust_sdk_output_note_add_attachment_binding() {
         let attachment_scheme = Felt::new(1).unwrap();
         let attachment = Word::from([Felt::new(0).unwrap(); 4]);
         output_note::add_attachment(idx, attachment_scheme, attachment);
-        Felt::new(0).unwrap()
-    }",
-    );
-}
-
-#[test]
-fn rust_sdk_output_note_set_array_attachment_binding() {
-    run_output_note_binding_test(
-        "rust_sdk_output_note_set_array_attachment_binding",
-        "pub fn binding(&self) -> Felt {
-        let idx = NoteIdx { inner: Felt::new(0).unwrap() };
-        let attachment_scheme = Felt::new(0).unwrap();
-        let attachment = Word::from([Felt::new(0).unwrap(); 4]);
-        output_note::set_array_attachment(idx, attachment_scheme, attachment);
         Felt::new(0).unwrap()
     }",
     );

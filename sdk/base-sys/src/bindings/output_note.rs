@@ -156,11 +156,6 @@ pub fn add_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachmen
     }
 }
 
-/// Sets the attachment of the output note specified by `note_idx` to the provided word.
-pub fn set_word_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
-    add_word_attachment(note_idx, attachment_scheme, attachment);
-}
-
 /// Adds an attachment commitment to the output note specified by `note_idx`.
 ///
 /// The advice map must contain an entry for the attachment elements committed to by `attachment`.
@@ -177,20 +172,16 @@ pub fn add_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Wo
     }
 }
 
-/// Sets the attachment of the output note specified by `note_idx` to the provided commitment.
-///
-/// The advice map must contain an entry for the attachment elements committed to by `attachment`.
-pub fn set_array_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Word) {
-    add_attachment(note_idx, attachment_scheme, attachment);
-}
-
 /// Adds a multi-word attachment from linear memory to the output note specified by `note_idx`.
+///
+/// Panics if `attachment` is empty or contains more than 256 words; the kernel rejects both.
 pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, attachment: &[Word]) {
-    let ptr = if attachment.is_empty() {
-        0
-    } else {
-        (attachment.as_ptr().addr() / 4) as u32
-    };
+    assert!(!attachment.is_empty(), "note attachment cannot be empty");
+    assert!(
+        attachment.len() <= MAX_ATTACHMENT_WORDS,
+        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
+    );
+    let ptr = (attachment.as_ptr().addr() / 4) as u32;
 
     unsafe {
         extern_output_note_add_attachment_from_memory(

@@ -14,6 +14,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   their commitments change. Hosts that execute or test the compiled packages must use matching
   protocol `0.16.0-rc.3` crates (for example `miden-testing 0.16.0-rc.3`). Guest code compiles
   unchanged: the SDK API did not change.
+- `output_note::add_attachment_from_memory` now panics with a clear message when the attachment
+  is empty or contains more than 256 words. Before, such calls reached the transaction kernel
+  and failed there with an opaque assertion.
+
+### Removed
+
+- [BREAKING] `output_note::set_word_attachment` and `output_note::set_array_attachment` are
+  removed. They were backward-compatibility aliases from the protocol 0.15 rename, and their
+  names promised replace semantics the transaction kernel does not have: attachments are
+  append-only. Call `output_note::add_word_attachment` / `output_note::add_attachment` instead.
 
 ### Added
 
