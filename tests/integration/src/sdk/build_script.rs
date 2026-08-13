@@ -139,8 +139,9 @@ fn assert_check_succeeded(phase: &str, output: &Output) {
 
 /// Finds a build script's staged package cache under `target_root`'s cargo target directory.
 ///
-/// The script stages the cache in its `OUT_DIR`, whose path embeds a cargo-chosen hash:
-/// `<target>[/<triple>]/debug/build/<crate>-<hash>/out/miden-packages`. The fixtures pin a
+/// The script stages generations in its `OUT_DIR`, whose path embeds a cargo-chosen hash:
+/// `<target>[/<triple>]/debug/build/<crate>-<hash>/out/miden-packages/<generation>`, with the
+/// sibling `miden-packages.current` file naming the exported generation. The fixtures pin a
 /// wasm build target in `.cargo/config.toml`, which puts the script's run directory under
 /// the triple subtree, so the scan covers the host layout and every per-triple layout.
 /// `target_root` is the directory that owns the check's `target/` — the workspace root for
@@ -164,7 +165,11 @@ fn staged_package(target_root: &Path, crate_name: &str, expected_package: &str) 
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| name.starts_with(crate_name))
         })
-        .map(|build_dir| build_dir.join("out").join("miden-packages").join(expected_package))
+        .filter_map(|build_dir| {
+            let out_dir = build_dir.join("out");
+            let generation = fs::read_to_string(out_dir.join("miden-packages.current")).ok()?;
+            Some(out_dir.join("miden-packages").join(generation.trim()).join(expected_package))
+        })
         .find(|path| path.is_file())
 }
 
@@ -174,19 +179,14 @@ fn cached_basic_wallet(workspace_root_dir: &Path) -> Option<PathBuf> {
 }
 
 /// A plain `cargo check` (the LSP flow) must resolve dependency packages through the template
-/// build script and re-stage them when the script re-runs.
+/// build script and re-stage them when a dependency changes.
 ///
 /// Two phases against one generated basic-wallet/swapp-note pair:
 /// 1. the first check stages the packages under the script's `OUT_DIR` with a nested
 ///    `cargo miden build --release` and exports `MIDENC_PACKAGE_CACHE` to macro expansion;
-/// 2. after a dependency source edit, touching the consumer's manifest re-runs the script —
-///    the always-rebuild trigger the script documents — and re-stages a package with
+/// 2. editing the dependency's source alone re-runs the script — through the watch list the
+///    compiler wrote next to the staged packages in phase 1 — and re-stages a package with
 ///    different contents.
-///
-/// The script watches only the consumer's manifests, by design: a dependency source edit
-/// alone does not re-run it (computing a precise trigger set would re-implement build
-/// provenance), and the staged packages stay as they are until a manifest touch — the
-/// recovery phase 2 exercises — or a `cargo clean` discards the staging.
 #[test]
 fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
     let swapp_note_source = include_str!(concat!(
@@ -218,7 +218,7 @@ fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
         .expect("the first check must stage basic-wallet.masp under the consumer's build OUT_DIR");
     let original_package = fs::read(&cached).expect("failed to read the cached package");
 
-    // Phase 2: after a dependency source edit, a consumer-manifest touch re-stages.
+    // Phase 2: the dependency source edit alone re-stages.
     let original_source = fs::read_to_string(&dependency_source).unwrap();
     let mutation_anchor = "        self.add_asset(asset);";
     assert_eq!(
@@ -233,13 +233,12 @@ fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
         1,
     );
     fs::write(&dependency_source, changed_source).unwrap();
-    // The script watches the consumer's manifests, not the dependency's sources; the touch
-    // is the documented way to ask for a re-stage.
-    touch_consumer_manifest();
+    // No manifest touch: the dependency's source directory is on the compiler-written watch
+    // list phase 1 staged, so the edit alone must re-run the script.
 
     assert_check_succeeded("check after dependency edit", &plain_cargo_check(&consumer));
     let refreshed = cached_basic_wallet(&project.root())
-        .expect("the staging must still hold basic-wallet.masp after the manifest touch");
+        .expect("the staging must still hold basic-wallet.masp after the dependency edit");
     let refreshed_package = fs::read(&refreshed).expect("failed to read the refreshed package");
     assert_ne!(
         refreshed_package, original_package,
