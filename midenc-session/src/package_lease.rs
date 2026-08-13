@@ -41,6 +41,13 @@
 use alloc::string::String;
 use std::path::{Path, PathBuf};
 
+/// The shared cell owning a session family's package-cache lease.
+///
+/// Cloned into every consumer whose lifetime must keep the leased directory alive — the
+/// session's clones, and the package registry that publishes into the directory.
+pub(crate) type SharedPackageCacheLease =
+    alloc::sync::Arc<std::sync::OnceLock<Result<PackageCacheLease, String>>>;
+
 /// The environment variable that names the package cache.
 ///
 /// The compiler reads it to adopt a caller-provided directory, and sets it for the

@@ -40,6 +40,13 @@ pub struct HybridPackageRegistry {
     artifacts: FxHashMap<PackageId, BTreeMap<miden_package_registry::Version, Arc<Package>>>,
     #[cfg(any(test, feature = "std"))]
     filesystem_cache: Option<std::path::PathBuf>,
+    /// Keeps the owning session's package-cache lease alive for this registry's lifetime.
+    ///
+    /// Never read: the field exists so a leased cache directory cannot be deleted while a
+    /// registry that publishes into it is still live, even after every `Session` clone is
+    /// dropped.
+    #[cfg(feature = "std")]
+    _filesystem_cache_lease: Option<crate::package_lease::SharedPackageCacheLease>,
 }
 
 impl HybridPackageRegistry {
@@ -48,12 +55,26 @@ impl HybridPackageRegistry {
         self.filesystem_cache.as_deref()
     }
 
+    /// Keeps the session's package-cache lease alive for this registry's lifetime.
+    ///
+    /// Called by [`crate::Session::package_registry`] after construction; see the
+    /// `_filesystem_cache_lease` field for why.
+    #[cfg(feature = "std")]
+    pub(crate) fn retain_session_package_cache(
+        &mut self,
+        lease: crate::package_lease::SharedPackageCacheLease,
+    ) {
+        self._filesystem_cache_lease = Some(lease);
+    }
+
     /// Get an empty, uninitialized registry
     pub fn empty() -> Self {
         Self {
             packages: Default::default(),
             artifacts: Default::default(),
             filesystem_cache: None,
+            #[cfg(feature = "std")]
+            _filesystem_cache_lease: None,
         }
     }
 
@@ -106,6 +127,10 @@ impl HybridPackageRegistry {
             Self::empty()
         };
         registry.filesystem_cache = filesystem_cache;
+        #[cfg(feature = "std")]
+        {
+            registry._filesystem_cache_lease = None;
+        }
 
         // Load link libraries
         let core = crate::LinkLibrary::core();

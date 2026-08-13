@@ -88,7 +88,7 @@ pub struct Session {
     /// re-reported identically on every access (fail closed). Dropping the last owner
     /// deletes the directory; see the `package_lease` module for the lifecycle.
     #[cfg(feature = "std")]
-    package_cache_lease: Arc<std::sync::OnceLock<Result<package_lease::PackageCacheLease, String>>>,
+    package_cache_lease: package_lease::SharedPackageCacheLease,
 }
 
 impl fmt::Debug for Session {
@@ -368,8 +368,17 @@ impl Session {
         let filesystem_cache = self.filesystem_package_cache_dir()?;
         #[cfg(not(feature = "std"))]
         let filesystem_cache = None;
-        registry::HybridPackageRegistry::new_with_filesystem_cache(&self.options, filesystem_cache)
-            .map(Box::new)
+        #[allow(unused_mut)]
+        let mut registry = registry::HybridPackageRegistry::new_with_filesystem_cache(
+            &self.options,
+            filesystem_cache,
+        )?;
+        // The registry publishes into the leased directory and may outlive every clone of
+        // this session; retaining the shared lease keeps the directory alive for as long
+        // as the registry is.
+        #[cfg(feature = "std")]
+        registry.retain_session_package_cache(self.package_cache_lease.clone());
+        Ok(Box::new(registry))
     }
 
     /// Where compiled dependency packages of this build are published and looked for.
@@ -818,5 +827,36 @@ mod tests {
 
         drop(session);
         assert!(!cache_dir.exists(), "dropping the last session must delete the lease");
+    }
+
+    #[test]
+    fn a_registry_keeps_the_leased_cache_alive_after_the_session_drops() {
+        let temp = TempDir::new().unwrap();
+        let options = Options {
+            current_dir: temp.path().to_path_buf(),
+            target_dir: temp.path().join("target"),
+            ..Options::default()
+        };
+        let input = InputFile::new(FileType::Toml, InputType::Real("Cargo.toml".into()));
+        let session = Session::new_project(
+            "registry-outlives".into(),
+            Some(input),
+            Box::new(options),
+            None,
+            Arc::new(diagnostics::DefaultSourceManager::default()),
+        );
+
+        let registry = session.package_registry().unwrap();
+        let cache_dir = registry.filesystem_cache_dir().unwrap().to_path_buf();
+        assert!(cache_dir.is_dir());
+
+        drop(session);
+        assert!(
+            cache_dir.is_dir(),
+            "the registry publishes into the leased directory, so it must keep the lease alive"
+        );
+
+        drop(registry);
+        assert!(!cache_dir.exists(), "dropping the last owner must delete the lease");
     }
 }
