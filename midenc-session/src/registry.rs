@@ -395,7 +395,7 @@ mod tests {
                 .unwrap()
                 .file_name()
                 .to_string_lossy()
-                .contains(".tmp-")),
+                .ends_with(".tmp")),
             "successful publication must not leave its temporary file behind"
         );
 
@@ -426,7 +426,7 @@ mod tests {
                 .unwrap()
                 .file_name()
                 .to_string_lossy()
-                .contains(".tmp-")),
+                .ends_with(".tmp")),
             "failed publication must clean up its temporary file"
         );
     }
