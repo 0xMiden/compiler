@@ -18,19 +18,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never shared between builds cannot go stale, so the fingerprint derivation, permanent lock
   files, and stale-cache pruning of the earlier design are removed. A killed build can leave
   a remnant lease behind; remnants are inert and `cargo clean` removes them #1302
+- The compiler records its dependency resolution in the package cache: for every Rust project
+  it builds, a `miden-deps/<consumer>.deps.toml` maps each declared dependency to the artifact
+  the resolver selected, and the root consumer's `miden-deps/<consumer>.watch` lists the
+  source inputs of every resolved dependency. The SDK macros and the contract build script
+  consume these instead of re-deriving resolution #1328
+- Nested cargo builds now treat a present-but-empty `CARGO_ENCODED_RUSTFLAGS` the way cargo
+  does — as authoritative suppression of `RUSTFLAGS` — instead of falling back to the plain
+  variable #1328
 
 ### `cargo-miden`
 
 - Contract templates and the repository examples now include a `build.rs` that populates the
-  package cache for builds `midenc` does not drive: outside a midenc-driven build it stages a
-  package cache under its `OUT_DIR`, fills it with a nested `cargo miden build --release`
-  that adopts the staged directory through `MIDENC_PACKAGE_CACHE`, and exports the same
-  variable to macro expansion. Plain `cargo check` and IDE analysis now resolve dependency
-  packages instead of reporting missing packages (#1215). The nested build runs whenever
-  cargo re-runs the script (the script watches the project manifests); computing a precise
-  trigger set would re-implement build provenance, which stays with the compiler. The script
-  uses `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN` environment
-  variable #1298
+  package cache for builds `midenc` does not drive: outside a midenc-driven build it stages
+  package-cache generations under its `OUT_DIR`, fills the next generation with a nested
+  `cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports
+  the same variable to macro expansion. Plain `cargo check` and IDE analysis now resolve
+  dependency packages instead of reporting missing packages (#1215). Only a fully successful
+  nested build publishes its generation; a failed one keeps the previous generation exported
+  whole, never a mix of new and old packages. The script watches the project manifests and
+  the compiler-recorded source inputs of every resolved dependency, so editing a dependency
+  re-stages its package on the next check. The script uses `cargo miden` from `PATH`, or the
+  binary named by the `CARGO_MIDEN` environment variable #1298
 - Fixed the contract templates' `miden-project.toml` manifests, which were missing the
   `[lib].path` key the VM v0.25 project model requires; projects generated from the templates
   failed both `cargo miden build` and macro expansion with "unable to parse project manifest:
@@ -66,6 +75,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Builds driven by `cargo miden build` export the variable already; plain `cargo build`,
   `cargo check`, and IDE analysis need the contract `build.rs`. An expansion without a
   configured cache now fails with instructions instead of searching the filesystem #1298
+- The SDK macros resolve dependencies through the artifact map the compiler writes into the
+  package cache, so workspace, workspace-path, and git dependencies now resolve during macro
+  expansion exactly as the compiler resolved them; the name-probing of `.masp` files remains
+  only as a fallback for hand-assembled caches without a map #1328
+- A dependency whose package embeds no component WIT (and has no `wit` key) — for example a
+  link-only MASM library — no longer fails every macro expansion; it is skipped, and only a
+  macro that actually references it reports the missing WIT, at the reference site #1328
 
 ## [0.10.0-rc.1]
 

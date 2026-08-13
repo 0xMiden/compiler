@@ -25,18 +25,17 @@ separate impl block.
 
 New projects created by `cargo miden new` include a `build.rs` in each contract crate. The
 script makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve
-compiled dependency packages: outside a `cargo miden build`, it stages a package cache under
-its `OUT_DIR`, fills it with a nested `cargo miden build --release` that adopts the staged
-directory through `MIDENC_PACKAGE_CACHE`, and exports the same variable to the crate's macro
-expansion. Inside a midenc-driven build the script does nothing: the compiler exchanges
-packages with its nested builds through a directory of its own, which it deletes when the
-build ends.
+compiled dependency packages: outside a `cargo miden build`, it stages package-cache
+generations under its `OUT_DIR`, fills the next generation with a nested
+`cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports the
+same variable to the crate's macro expansion. Inside a midenc-driven build the script does
+nothing: the compiler exchanges packages with its nested builds through a directory of its
+own, which it deletes when the build ends.
 
 The nested build runs whenever cargo re-runs the script. The script watches the crate's
-`miden-project.toml` and `Cargo.toml`, so a manifest edit re-stages the packages; an edit
-inside a *dependency's* sources alone does not — touch the crate's manifest (or run
-`cargo clean`) to ask for a re-stage. Computing a precise trigger set would mean
-re-implementing build provenance, which belongs to the compiler.
+manifests and, through the watch lists the compiler writes next to the staged packages, the
+source inputs of every resolved dependency — so editing a dependency re-stages its package on
+the next check.
 
 The build script is now required for plain cargo builds of crates with Miden source
 dependencies. The SDK macros read dependency packages only from the `MIDENC_PACKAGE_CACHE`
@@ -51,9 +50,10 @@ tool fails the build script with an install hint.
 
 One transient failure mode is accepted by design and heals on the next successful build: when
 the nested `cargo miden build` fails (for example, a dependency is mid-edit and broken), the
-script emits a cargo warning and keeps the previously staged packages, so the editor keeps
-analyzing against the last successfully built dependency packages instead of failing
-outright.
+script emits a cargo warning and keeps exporting the previous generation whole — never a mix
+of new and old packages — so the editor keeps analyzing against the last successfully built
+dependency set instead of failing outright. If no good generation exists yet, the script
+fails the build with the nested build's error.
 
 One sharing caveat: cargo keys build-script output by crate name and version, not by project
 path. Two different projects that contain a contract crate with the same package name and
