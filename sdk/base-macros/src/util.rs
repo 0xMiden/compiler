@@ -148,6 +148,33 @@ fn normalize_embedded_wit(wit_source: &str) -> String {
     normalized
 }
 
+/// Emits the rebuild-tracking constant for one file a macro expansion consumed.
+///
+/// Everything here lands in consumer scope, so the macro path is fully qualified: a
+/// consumer-defined `include_bytes` must not shadow the rebuild tracking.
+pub(crate) fn package_include_tokens(path: &Path) -> Result<TokenStream2, Error> {
+    let utf8_path = path.to_str().ok_or_else(|| {
+        Error::new(Span::call_site(), format!("path '{}' contains invalid UTF-8", path.display()))
+    })?;
+    Ok(quote! {
+        const _: &[u8] = ::core::include_bytes!(#utf8_path);
+    })
+}
+
+/// Emits the dep-info record of the package cache location.
+///
+/// Every midenc-driven build exchanges packages through its own unique directory, so Cargo
+/// re-expands the consumer whenever the cache path rotates — the correctness leg of the
+/// per-build cache design. The `include_bytes!` constants cover content changes at an
+/// unchanged path, which is how consumers of a stable exported directory re-expand. Both the
+/// type and the macro are fully qualified because this lands in consumer scope, where a
+/// user-defined `Option` or `option_env` must not shadow the tracking.
+pub(crate) fn package_cache_tracking_tokens() -> TokenStream2 {
+    quote! {
+        const _: ::core::option::Option<&str> = ::core::option_env!("MIDENC_PACKAGE_CACHE");
+    }
+}
+
 /// Lists the non-directory `.wit` files directly inside `dir`, sorted by name.
 pub(crate) fn wit_files_in_dir(dir: &Path) -> Result<Vec<PathBuf>, Error> {
     let mut wit_files = fs::read_dir(dir)

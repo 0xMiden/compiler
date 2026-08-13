@@ -300,24 +300,22 @@ fn generate_bindings_from_sources(
     }
     let mut tokens = file.into_token_stream();
 
-    // Include a dummy `include_bytes!` for any files we read so rustc knows that
-    // we depend on the contents of those files.
+    // Record every file the expansion consumed in dep-info so rustc re-expands when one
+    // changes.
     for path in wit_sources.files_read {
-        let utf8_path = path.to_str().ok_or_else(|| {
-            Error::new(
-                Span::call_site(),
-                format!("path '{}' contains invalid UTF-8", path.display()),
-            )
-        })?;
-        tokens.extend(quote! {
-            const _: &[u8] = include_bytes!(#utf8_path);
-        });
+        tokens.extend(crate::util::package_include_tokens(&path)?);
+    }
+    // Bindings built from dependency packages also track the cache location itself, so a
+    // cache rotation with byte-identical contents still re-expands the consumer.
+    if !config.dependency_sources.is_empty() {
+        tokens.extend(crate::util::package_cache_tracking_tokens());
     }
     #[cfg(feature = "internal-wit-emit")]
     if inline_source.is_some() {
-        // Make Cargo invalidate cached macro output when inline-WIT emission is toggled.
+        // Make Cargo invalidate cached macro output when inline-WIT emission is toggled. Fully
+        // qualified: this lands in consumer scope.
         tokens.extend(quote! {
-            const _: Option<&str> = option_env!("MIDENC_EMIT_WIT");
+            const _: ::core::option::Option<&str> = ::core::option_env!("MIDENC_EMIT_WIT");
         });
     }
 
