@@ -1020,9 +1020,13 @@ impl RustProjectFrontend {
         }
 
         let cargo_manifest_path = cx.assembly().manifest_path.with_file_name("Cargo.toml");
+        let filesystem_cache_dir = self.filesystem_cache_dir()?;
+        if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
+            write_dependency_manifest(cx, cache_dir)?;
+        }
         let wasm = build_manifest_to_wasm(
             &cargo_manifest_path,
-            self.filesystem_cache_dir()?.as_deref(),
+            filesystem_cache_dir.as_deref(),
             &cx.session(),
         )?;
         let source = WasmFrontend::read_input(&wasm)?;
@@ -1052,11 +1056,15 @@ impl RustProjectFrontend {
         let assembly = cx.assembly();
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = self.session.source_manager.clone();
+        let filesystem_cache_dir = self.filesystem_cache_dir()?;
+        if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
+            write_dependency_manifest(cx, cache_dir)?;
+        }
         crate::cargo::cargo_build(
             assembly.package.name().to_string(),
             assembly.target,
             assembly.manifest_path.with_file_name("Cargo.toml"),
-            self.filesystem_cache_dir()?.as_deref(),
+            filesystem_cache_dir.as_deref(),
             &self.session.options,
             &cargo_opts,
             source_manager,
@@ -1070,6 +1078,169 @@ impl RustProjectFrontend {
     fn lowered(&self, key: &TargetKey) -> Option<CodegenOutput> {
         self.compiled.borrow().get(key).cloned().or_else(|| self.wasm.lowered_for(key))
     }
+}
+
+/// The package-cache subdirectory holding the per-consumer dependency manifests.
+const DEPENDENCY_MANIFEST_DIR: &str = "miden-deps";
+
+/// Records the compiler-selected dependency artifacts for `cx`'s project in the package cache.
+///
+/// Written before the project's nested cargo build spawns — at which point every dependency
+/// is already resolved and published (the assembler resolves depth-first) — so the SDK macros
+/// expanding inside that build consume the same resolution the compiler made, independent of
+/// the dependency's source scheme, instead of re-deriving it from the manifests.
+///
+/// Two files per consumer, both replaced atomically:
+/// - `miden-deps/<consumer>.deps.toml` — for each declared dependency, the artifact selected
+///   for it: a `package` file name inside the cache for compiler-published artifacts, or an
+///   absolute `path` for preassembled `.masp` dependencies consumed in place.
+/// - `miden-deps/<consumer>.watch` — root consumer only: the source inputs of every resolved
+///   dependency in the graph, one absolute path per line. A contract build script turns the
+///   list into `cargo:rerun-if-changed` directives, so editing a dependency re-stages its
+///   package on the next check.
+fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> CompilerResult<()> {
+    use midenc_session::miden_project::ProjectDependencyNodeProvenance;
+
+    if cx.is_virtual_project() {
+        return Ok(());
+    }
+    let assembly = cx.assembly();
+    let package = &assembly.package;
+    let graph = assembly.dependency_graph;
+    let consumer = package.name().to_string();
+
+    let mut dependencies = toml_edit::Table::new();
+    for dependency in package.dependencies() {
+        let name = dependency.name();
+        let Some(node) = graph.get(&name.clone().into()) else {
+            // Every declared dependency resolves into the graph; a miss here means the
+            // resolver rejected it earlier, so there is nothing to record.
+            continue;
+        };
+        let mut entry = toml_edit::InlineTable::new();
+        match &node.provenance {
+            ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
+                entry.insert("path", path.display().to_string().into());
+            }
+            ProjectDependencyNodeProvenance::Source(_)
+            | ProjectDependencyNodeProvenance::Registry { .. } => {
+                entry.insert("package", format!("{}.{}", node.name, MastPackage::EXTENSION).into());
+            }
+        }
+        entry.insert("version", node.version.to_string().into());
+        dependencies
+            .insert(name.as_ref(), toml_edit::Item::Value(toml_edit::Value::InlineTable(entry)));
+    }
+
+    let mut doc = toml_edit::DocumentMut::new();
+    doc["schema"] = toml_edit::value(1);
+    doc["dependencies"] = toml_edit::Item::Table(dependencies);
+
+    let manifest_dir = cache_dir.join(DEPENDENCY_MANIFEST_DIR);
+    std::fs::create_dir_all(&manifest_dir).map_err(|err| {
+        Report::msg(format!(
+            "failed to create the dependency manifest directory '{}': {err}",
+            manifest_dir.display()
+        ))
+    })?;
+    write_atomically(&manifest_dir.join(format!("{consumer}.deps.toml")), doc.to_string())?;
+
+    if cx.role().is_root() {
+        let watch_list = collect_dependency_watch_paths(cx);
+        let mut contents = String::new();
+        for path in watch_list {
+            contents.push_str(&path.display().to_string());
+            contents.push('\n');
+        }
+        write_atomically(&manifest_dir.join(format!("{consumer}.watch")), contents)?;
+    }
+    Ok(())
+}
+
+/// Collects the watched source inputs of every resolved dependency in the graph.
+///
+/// The root project's own sources are excluded: its package is not read back by its own
+/// macro expansion, and watching them would re-run the nested build on every edit. Git
+/// checkouts are excluded too — their content changes only when the declaration changes,
+/// which the consumer's manifest watch already covers. Registry dependencies have no local
+/// sources. Only existing paths are listed, because cargo re-runs a build script
+/// unconditionally while a watched path is missing.
+fn collect_dependency_watch_paths(cx: &TargetContext<'_>) -> alloc::collections::BTreeSet<PathBuf> {
+    use midenc_session::miden_project::{
+        ProjectDependencyNodeProvenance, ProjectSource, ProjectSourceOrigin,
+    };
+
+    let assembly = cx.assembly();
+    let graph = assembly.dependency_graph;
+    let mut watch = alloc::collections::BTreeSet::new();
+    let mut add = |path: &Path| {
+        if path.exists() {
+            watch.insert(path.to_path_buf());
+        }
+    };
+
+    for (name, node) in graph.nodes() {
+        if name == graph.root() {
+            continue;
+        }
+        match &node.provenance {
+            ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
+                origin,
+                manifest_path,
+                project_root,
+                workspace_root,
+                library_path,
+                ..
+            }) => {
+                if matches!(origin, ProjectSourceOrigin::Git { .. }) {
+                    continue;
+                }
+                add(manifest_path);
+                add(&project_root.join("Cargo.toml"));
+                if let Some(workspace_root) = workspace_root {
+                    add(&workspace_root.join("miden-project.toml"));
+                    add(&workspace_root.join("Cargo.toml"));
+                }
+                // Sibling modules live next to the target's root source, so its directory
+                // is the watch unit — unless that directory is the project root itself,
+                // which would sweep in `target/` churn.
+                if let Some(library_path) = library_path {
+                    match library_path.parent() {
+                        Some(parent) if parent != project_root.as_path() => add(parent),
+                        _ => add(library_path),
+                    }
+                }
+                add(&project_root.join("wit"));
+            }
+            ProjectDependencyNodeProvenance::Preassembled { path, .. } => add(path),
+            ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. })
+            | ProjectDependencyNodeProvenance::Registry { .. } => {}
+        }
+    }
+    watch
+}
+
+/// Writes `contents` to `path` through a temporary sibling and an atomic rename.
+fn write_atomically(path: &Path, contents: String) -> CompilerResult<()> {
+    let directory = path.parent().ok_or_else(|| {
+        Report::msg(format!("dependency manifest path '{}' has no parent", path.display()))
+    })?;
+    let tmp = tempfile::Builder::new()
+        .prefix(".")
+        .suffix(".tmp")
+        .tempfile_in(directory)
+        .map_err(|err| {
+            Report::msg(format!(
+                "failed to create a temporary file for '{}': {err}",
+                path.display()
+            ))
+        })?;
+    std::fs::write(tmp.path(), contents)
+        .map_err(|err| Report::msg(format!("failed to write '{}': {err}", path.display())))?;
+    tmp.into_temp_path().persist(path).map_err(|err| {
+        Report::msg(format!("failed to atomically replace '{}': {err}", path.display()))
+    })?;
+    Ok(())
 }
 
 impl Frontend for RustProjectFrontend {
