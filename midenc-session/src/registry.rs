@@ -259,44 +259,36 @@ impl HybridPackageRegistry {
     }
 }
 
-/// Publishes `package` into `filesystem_cache` with an atomic replacement of the final path.
+/// Publishes `package` as `<out_dir>/<package name>.masp`, atomically, and returns that path.
+///
+/// The package is serialized to a temporary file in the same directory and then renamed over
+/// the final path. Compiled packages are read concurrently by other build processes — e.g. the
+/// `#[account(..)]` proc macro of a dependent crate deserializes a dependency's `.masp` while a
+/// parallel build of that dependency may be rewriting it — and the rename guarantees a reader
+/// only ever observes a complete artifact.
 #[cfg(any(test, feature = "std"))]
-fn write_package_atomically(
+pub fn write_package_atomically(
     package: &Package,
-    filesystem_cache: &std::path::Path,
-) -> std::io::Result<()> {
-    use std::{
-        ffi::OsString,
-        io::{Error, ErrorKind},
-        sync::atomic::{AtomicU64, Ordering},
-    };
-
-    static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(0);
-
+    out_dir: &std::path::Path,
+) -> std::io::Result<std::path::PathBuf> {
+    std::fs::create_dir_all(out_dir)?;
     let package_name: &str = &package.name;
-    let destination = filesystem_cache.join(package_name).with_extension(Package::EXTENSION);
-    let destination_name = destination.file_name().ok_or_else(|| {
-        Error::new(
-            ErrorKind::InvalidInput,
-            format!("package cache destination '{}' has no file name", destination.display()),
-        )
-    })?;
-    let mut temp_name = OsString::from(".");
-    temp_name.push(destination_name);
-    temp_name.push(format!(
-        ".tmp-{}-{}",
-        std::process::id(),
-        NEXT_TEMP_ID.fetch_add(1, Ordering::Relaxed)
-    ));
-    let temp_path = destination.with_file_name(temp_name);
-
-    let result = package
-        .write_to_file(&temp_path)
-        .and_then(|()| std::fs::rename(&temp_path, &destination));
-    if result.is_err() {
-        let _ = std::fs::remove_file(&temp_path);
+    let destination = out_dir.join(package_name).with_extension(Package::EXTENSION);
+    let temp_prefix = format!(".{package_name}");
+    let temp_suffix = format!(".{}.tmp", Package::EXTENSION);
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(&temp_prefix).suffix(&temp_suffix);
+    // Temporary files default to mode 0o600; the published package must stay readable by the
+    // other build processes that share the cache.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
     }
-    result
+    let temp_path = builder.tempfile_in(out_dir)?.into_temp_path();
+    package.write_to_file(&temp_path)?;
+    temp_path.persist(&destination).map_err(|err| err.error)?;
+    Ok(destination)
 }
 
 impl HybridPackageRegistry {
