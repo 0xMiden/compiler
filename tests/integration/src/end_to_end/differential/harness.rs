@@ -119,7 +119,7 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
         .file("Cargo.toml", &manifest)
         .file("src/lib.rs", &full_source)
         .build();
-    let dylib_path = build_host_cdylib(&native_proj.root(), &pkg_name);
+    let dylib_path = build_host_cdylib(native_proj.root(), &pkg_name);
 
     let lib = unsafe { libloading::Library::new(&dylib_path) }
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", dylib_path.display()));

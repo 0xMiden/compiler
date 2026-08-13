@@ -37,11 +37,10 @@ pub(super) fn build_sibling_test_packages(
     let counter_package = compile_rust_package(counter_project.root(), true);
 
     let counter_root = counter_project.root();
-    let dependencies = [(names.counter_account_package.as_str(), counter_root.as_path())];
+    let dependencies = [(names.counter_account_package.as_str(), counter_root)];
     let (caller_project, caller_package) =
         build_sibling_caller_project(&names, &dependencies, caller_source);
-    let note_package =
-        build_sibling_note_package(&names, caller_project.root().as_path(), note_source);
+    let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
 
     (counter_package, caller_package, note_package, counter_storage_slot)
 }
@@ -91,13 +90,12 @@ pub(super) fn build_multi_sibling_test_packages(
     let first_root = first_project.root();
     let second_root = second_project.root();
     let dependencies = [
-        (names.counter_account_package.as_str(), first_root.as_path()),
-        (second_account_package.as_str(), second_root.as_path()),
+        (names.counter_account_package.as_str(), first_root),
+        (second_account_package.as_str(), second_root),
     ];
     let (caller_project, caller_package) =
         build_sibling_caller_project(&names, &dependencies, caller_source);
-    let note_package =
-        build_sibling_note_package(&names, caller_project.root().as_path(), note_source);
+    let note_package = build_sibling_note_package(&names, caller_project.root(), note_source);
 
     (
         first_package,

@@ -170,11 +170,8 @@ fn compile_note_package(note_name: &str, source: &str, wallet_root: &Path) -> Ar
 fn asset_amount_api_matches_kernel_balances() {
     // Compile the contracts first (before creating any runtime)
     let (wallet_project, wallet_package) = build_wallet_project();
-    let note_package = compile_note_package(
-        "asset-amount-note",
-        ASSET_AMOUNT_NOTE_SOURCE,
-        wallet_project.root().as_path(),
-    );
+    let note_package =
+        compile_note_package("asset-amount-note", ASSET_AMOUNT_NOTE_SOURCE, wallet_project.root());
 
     let wallet_component =
         AccountComponent::from_package(&wallet_package, &InitStorageData::default()).unwrap();

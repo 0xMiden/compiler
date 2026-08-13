@@ -39,11 +39,8 @@ pub(super) fn build_fpi_test_packages(
     let counter_package = compile_rust_package(account_project.root(), true);
 
     let note_project = project(&names.note_name)
-        .file(
-            "miden-project.toml",
-            &note_miden_project_toml(&names, account_project.root().as_path()),
-        )
-        .file("Cargo.toml", &note_cargo_toml(&names, account_project.root().as_path()))
+        .file("miden-project.toml", &note_miden_project_toml(&names, account_project.root()))
+        .file("Cargo.toml", &note_cargo_toml(&names, account_project.root()))
         .file("src/lib.rs", caller_source)
         .build();
     let caller_note_package = compile_rust_package(note_project.root(), true);
@@ -113,8 +110,8 @@ pub(super) fn build_multi_package_fpi_test_packages(
     let first_account_root = first_account_project.root();
     let second_account_root = second_account_project.root();
     let dependencies = [
-        (names.first_account_package.as_str(), first_account_root.as_path()),
-        (names.second_account_package.as_str(), second_account_root.as_path()),
+        (names.first_account_package.as_str(), first_account_root),
+        (names.second_account_package.as_str(), second_account_root),
     ];
     let note_project = project(&names.note_name)
         .file(
@@ -173,7 +170,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
                 &names.caller_account_name,
                 &names.caller_account_package,
                 &names.callee_account_package,
-                callee_project.root().as_path(),
+                callee_project.root(),
             ),
         )
         .file(
@@ -182,7 +179,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
                 &names.caller_account_name,
                 &names.caller_account_package,
                 &names.callee_account_package,
-                callee_project.root().as_path(),
+                callee_project.root(),
             ),
         )
         .file("src/lib.rs", caller_source)
@@ -196,7 +193,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
                 &names.note_name,
                 &names.note_package,
                 &names.caller_account_package,
-                caller_project.root().as_path(),
+                caller_project.root(),
             ),
         )
         .file(
@@ -204,7 +201,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
             &note_cargo_toml_for_dependency(
                 &names.note_name,
                 &names.caller_account_package,
-                caller_project.root().as_path(),
+                caller_project.root(),
             ),
         )
         .file("src/lib.rs", note_source)

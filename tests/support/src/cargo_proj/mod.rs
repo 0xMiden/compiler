@@ -172,13 +172,18 @@ pub struct ProjectBuilder {
 
 impl ProjectBuilder {
     /// Root of the project, ex: `/path/to/cargo/target/cit/t0/foo`
-    pub fn root(&self) -> PathBuf {
+    pub fn root(&self) -> &Path {
         self.root.root()
     }
 
     /// Project's debug dir, ex: `/path/to/cargo/target/cit/t0/foo/target/debug`
     pub fn target_debug_dir(&self) -> PathBuf {
         self.root.target_debug_dir()
+    }
+
+    /// Project's debug dir, ex: `/path/to/cargo/target/cit/t0/foo/target/release`
+    pub fn target_release_dir(&self) -> PathBuf {
+        self.root.target_release_dir()
     }
 
     /// Creates a new [`ProjectBuilder`] rooted at `root`.
@@ -249,7 +254,6 @@ impl ProjectBuilder {
 
         // Create the directory if missing
         self.root.root().mkdir_p();
-
         let manifest_path = self.root.root().join("Cargo.toml");
         if !self.no_manifest && self.files.iter().all(|fb| fb.path != manifest_path) {
             self._file(Path::new("Cargo.toml"), &basic_manifest("foo", "0.0.1"), false)
@@ -357,7 +361,7 @@ impl ProjectBuilder {
             }
         }
 
-        prune_dir(&root, &expected_files, &expected_symlinks);
+        prune_dir(root, &expected_files, &expected_symlinks);
     }
 
     fn skip_rust_compilation(&self, artifact_name: &str) -> bool {
@@ -416,8 +420,8 @@ fn workspace_lockfile_path() -> PathBuf {
 
 impl Project {
     /// Root of the project, ex: `/path/to/cargo/target/cit/t0/foo`
-    pub fn root(&self) -> PathBuf {
-        self.root.clone()
+    pub fn root(&self) -> &Path {
+        &self.root
     }
 
     /// Project's target dir, ex: `/path/to/cargo/target/cit/t0/foo/target`
@@ -428,6 +432,11 @@ impl Project {
     /// Project's debug dir, ex: `/path/to/cargo/target/cit/t0/foo/target/debug`
     pub fn target_debug_dir(&self) -> PathBuf {
         self.build_dir().join("debug")
+    }
+
+    /// Project's release dir, ex: `/path/to/cargo/target/cit/t0/foo/target/release`
+    pub fn target_release_dir(&self) -> PathBuf {
+        self.build_dir().join("release")
     }
 
     /// Path to an example built as a library.
@@ -448,9 +457,7 @@ impl Project {
     /// Path to a release binary.
     /// ex: `/path/to/cargo/target/cit/t0/foo/target/release/foo`
     pub fn release_bin(&self, b: &str) -> PathBuf {
-        self.build_dir()
-            .join("release")
-            .join(format!("{}{}", b, env::consts::EXE_SUFFIX))
+        self.target_release_dir().join(format!("{}{}", b, env::consts::EXE_SUFFIX))
     }
 
     /// Path to a debug binary for a specific target triple.
@@ -645,6 +652,7 @@ pub fn project(proj_folder_name: &str) -> ProjectBuilder {
     let cargo_projects_root =
         cargo_projects_root().join(callsite_dir(loc.file(), loc.line(), loc.column()));
     let cargo_proj_path = cargo_projects_root.join(proj_folder_name);
+
     ProjectBuilder::new(cargo_proj_path)
 }
 
