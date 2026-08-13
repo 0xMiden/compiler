@@ -1191,11 +1191,17 @@ fn collect_dependency_watch_paths(cx: &TargetContext<'_>) -> alloc::collections:
                 }
                 // Sibling modules live next to the target's root source, so its directory
                 // is the watch unit — unless that directory is the project root itself,
-                // which would sweep in `target/` churn.
+                // which would sweep in `target/` churn. There the sibling sources are
+                // watched as individual files instead, so editing a sibling module alone
+                // still re-stages the package. A module added later joins the list through
+                // the root file, which must declare it and is watched here.
                 if let Some(library_path) = library_path {
                     match library_path.parent() {
                         Some(parent) if parent != project_root.as_path() => add(parent),
-                        _ => add(library_path),
+                        _ => {
+                            add(library_path);
+                            add_sibling_sources(&mut add, library_path);
+                        }
                     }
                 }
                 add(&project_root.join("wit"));
@@ -1206,6 +1212,27 @@ fn collect_dependency_watch_paths(cx: &TargetContext<'_>) -> alloc::collections:
         }
     }
     watch
+}
+
+/// Adds every file next to `library_path` that shares its extension.
+///
+/// Used when a library target's root source sits in the project root itself. A directory
+/// read failure leaves the sibling sources unwatched; the root file stays watched either
+/// way.
+fn add_sibling_sources(add: &mut impl FnMut(&Path), library_path: &Path) {
+    let (Some(directory), Some(extension)) = (library_path.parent(), library_path.extension())
+    else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() && path.extension() == Some(extension) {
+            add(&path);
+        }
+    }
 }
 
 /// Writes `contents` to `path` through a temporary sibling and an atomic rename.

@@ -66,8 +66,36 @@ path = "lib/mod.masm"
         .expect("write masm dependency submodule");
 }
 
+/// Write the same Miden Assembly project into `dir`, with its sources at the project root.
+///
+/// The `[lib] path` names `mod.masm` directly in the project root — the layout where the
+/// compiler-recorded watch list cannot watch the source directory (that would sweep in
+/// `target/` churn) and must list the sibling module files individually.
+fn write_masm_dependency_at_root(dir: &Path, name: &str) {
+    fs::create_dir_all(dir).expect("create masm dependency dir");
+    fs::write(
+        dir.join("miden-project.toml"),
+        format!(
+            r#"[package]
+name = "{name}"
+version = "0.1.0"
+
+[lib]
+path = "mod.masm"
+
+[dependencies]
+"#
+        ),
+    )
+    .expect("write masm dependency manifest");
+    fs::write(dir.join("mod.masm"), DEPENDENCY_ROOT).expect("write masm dependency root");
+    fs::write(dir.join("support.masm"), DEPENDENCY_SUPPORT)
+        .expect("write masm dependency submodule");
+}
+
 /// Rewrite the Miden manifest of the scaffolded project in `project_dir` as a plain Rust
-/// library target that depends on the Miden Assembly project `dependency` at `relative_path`.
+/// library target that depends on the given Miden Assembly projects (`name`, `relative_path`
+/// pairs).
 ///
 /// The manifest is replaced rather than edited because the shape matters twice over:
 ///
@@ -78,7 +106,13 @@ path = "lib/mod.masm"
 ///   dependency (the SDK macros skip it during WIT collection), but the plain shape keeps the
 ///   fixture free of SDK macros entirely, so the test exercises the compiler's MASM-dependency
 ///   pipeline and nothing else.
-fn write_library_manifest(project_dir: &Path, name: &str, dependency: &str, relative_path: &str) {
+fn write_library_manifest(project_dir: &Path, name: &str, dependencies: &[(&str, &str)]) {
+    let dependency_lines = dependencies
+        .iter()
+        .map(|(dependency, relative_path)| {
+            format!("{dependency} = {{ path = \"{relative_path}\" }}\n")
+        })
+        .collect::<String>();
     fs::write(
         project_dir.join("miden-project.toml"),
         format!(
@@ -95,8 +129,7 @@ namespace = "root_ns:root@1.0.0"
 path = "src/lib.rs"
 
 [dependencies]
-{dependency} = {{ path = "{relative_path}" }}
-"#
+{dependency_lines}"#
         ),
     )
     .expect("write the root project's Miden manifest");
@@ -138,6 +171,10 @@ fn build_rust_project_with_masm_path_dependency() {
 
     let dependency_name = "masm-dep";
     write_masm_dependency(&root.join("masm_dep"), dependency_name);
+    // A second dependency with its sources directly in the project root, so one build pins
+    // both watch-list shapes.
+    let flat_dependency_name = "masm-dep-flat";
+    write_masm_dependency_at_root(&root.join("masm_dep_flat"), flat_dependency_name);
 
     let project_name = "masm_dep_root";
     let output = run([
@@ -156,7 +193,11 @@ fn build_rust_project_with_masm_path_dependency() {
         other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
 
-    write_library_manifest(&project_path, project_name, dependency_name, "../masm_dep");
+    write_library_manifest(
+        &project_path,
+        project_name,
+        &[(dependency_name, "../masm_dep"), (flat_dependency_name, "../masm_dep_flat")],
+    );
 
     env::set_current_dir(&project_path).unwrap();
     let build_started_at = SystemTime::now();
@@ -198,6 +239,33 @@ fn build_rust_project_with_masm_path_dependency() {
         "expected this build to rewrite {}, but its modification time {modified:?} predates the \
          one-second-tolerant build attribution floor {attribution_floor:?}",
         dependency_package.display()
+    );
+    let flat_dependency_package = export_dir.join(format!("{flat_dependency_name}.masp"));
+    assert!(
+        flat_dependency_package.exists(),
+        "expected the root-level masm dependency to be assembled and materialized at {}",
+        flat_dependency_package.display()
+    );
+
+    // The compiler-recorded watch list drives dependency re-staging for plain-cargo and IDE
+    // builds. The two dependency layouts pin both watch shapes: a source subdirectory is
+    // watched as a directory, while a root-level library's sibling modules are watched as
+    // individual files (watching the project root itself would sweep in `target/` churn).
+    let watch_file = export_dir.join("miden-deps").join(format!("{project_name}.watch"));
+    let watch = fs::read_to_string(&watch_file).unwrap_or_else(|err| {
+        panic!(
+            "expected the compiler-recorded watch list at {}: {err}",
+            watch_file.display()
+        )
+    });
+    let watch_has = |suffix: &str| watch.lines().any(|line| Path::new(line).ends_with(suffix));
+    assert!(
+        watch_has("masm_dep/lib"),
+        "expected the subdirectory dependency's source directory to be watched in:\n{watch}"
+    );
+    assert!(
+        watch_has("masm_dep_flat/support.masm"),
+        "expected the root-level dependency's sibling module to be watched in:\n{watch}"
     );
 
     fs::remove_dir_all(&root).unwrap();
