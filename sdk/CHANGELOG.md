@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `ActiveNote` trait with the `active_note` operations (`get_sender`, `get_recipient`,
+  `get_script_root`, `get_serial_number`, `get_metadata`, `is_public`, `is_private`,
+  `get_initial_assets`, and the attachment functions), implemented automatically for the
+  `#[note]` input struct, so a `#[note_script]` entrypoint can call them directly on `self`,
+  e.g. `self.get_sender()`. `get_storage` is not part of the trait: the `#[note]` macro already
+  decodes the note storage into the struct fields. The `active_note` module functions stay
+  available and unchanged. A user trait implemented for the note struct with an identically
+  named method now needs UFCS disambiguation at the call site #1010
 - The new `miden-sdk-build-script-support` crate owns the package-staging protocol needed by
   plain Cargo builds and IDE analysis. Contract crates add it as a build dependency and call `prepare_package_cache()`
 - `println!` supports format arguments; formatted output requires `extern crate alloc` and a

@@ -465,6 +465,113 @@ impl Note {
     test.compile_package();
 }
 
+/// Compiles a note script that calls every `ActiveNote` trait method on `self`.
+///
+/// The trait is implemented by the `#[note]` struct expansion and brought into scope by the
+/// `#[note]` impl expansion, so the source needs no explicit trait import.
+#[test]
+fn rust_sdk_active_note_trait_bindings() {
+    let name = "rust_sdk_active_note_trait_bindings";
+    let namespace = component_namespace(name);
+    let sdk_path = sdk_crate_path();
+    let sdk_alloc_path = sdk_alloc_crate_path();
+    let miden_project_toml = format!(
+        r#"
+        [package]
+        name = "{name}"
+        version = "0.0.1"
+
+        [lib]
+        kind = "note"
+        namespace = "{namespace}"
+        path = "src/lib.rs"
+        "#
+    );
+    let cargo_toml = format!(
+        r#"
+[package]
+name = "{name}"
+version = "0.0.1"
+edition = "2024"
+authors = []
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden-sdk-alloc = {{ path = "{sdk_alloc_path}" }}
+miden = {{ path = "{sdk_path}" }}
+
+[profile.release]
+opt-level = "z"
+panic = "abort"
+debug = false
+"#,
+        name = name,
+        sdk_path = sdk_path.display(),
+        sdk_alloc_path = sdk_alloc_path.display(),
+    );
+
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::*;
+
+#[note]
+struct TraitNote {
+    owner: AccountId,
+}
+
+#[note]
+impl TraitNote {
+    #[note_script]
+    pub fn run(self, _arg: Word) {
+        let sender = self.get_sender();
+        assert_eq!(sender, self.owner);
+
+        let recipient = self.get_recipient();
+        assert_eq!(recipient.inner, recipient.inner);
+        let script_root = self.get_script_root();
+        assert_eq!(script_root, script_root);
+        let serial_number = self.get_serial_number();
+        assert_eq!(serial_number, serial_number);
+        let metadata = self.get_metadata();
+        assert_eq!(metadata.header, metadata.header);
+        assert!(self.is_public() || self.is_private() || true);
+
+        let attachments_commitment = self.get_attachments_commitment();
+        assert_eq!(attachments_commitment, attachments_commitment);
+        let commitments = self.write_attachment_commitments_to_memory();
+        let attachment = self.write_attachment_to_memory(0);
+        assert!(commitments.len() + attachment.len() < 1024);
+        let attachment_idx = self.find_attachment(Felt::new(1).unwrap()).unwrap_or(0);
+        assert!(attachment_idx < 1024);
+
+        let assets = self.get_initial_assets();
+        for asset in assets {
+            assert_eq!(asset.key, asset.key);
+        }
+    }
+}
+"#;
+
+    let cargo_proj = project(name)
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
+        .file("src/lib.rs", lib_rs)
+        .build();
+
+    let mut test = CompilerTestBuilder::rust_source_cargo_miden(
+        cargo_proj.root(),
+        WasmTranslationConfig::default(),
+        [],
+    )
+    .build();
+
+    // Ensure the crate compiles all the way to a package, exercising the trait bindings.
+    test.compile_package();
+}
+
 /// Regression test for https://github.com/0xMiden/compiler/issues/831
 ///
 /// Previously, compilation could panic during MASM codegen with:

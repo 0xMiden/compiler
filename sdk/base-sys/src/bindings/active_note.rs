@@ -206,3 +206,94 @@ pub fn find_attachment(attachment_scheme: Felt) -> Option<u32> {
         ret_area.into_inner().assume_init().into_attachment_index()
     }
 }
+
+/// Trait that provides active-note operations for note scripts.
+///
+/// This trait is automatically implemented for the note input struct marked with the `#[note]`
+/// macro, so a `#[note_script]` entrypoint can call the operations directly on `self`, e.g.
+/// `self.get_sender()`.
+///
+/// The operations read the note that is currently executing. Call them only during note-script
+/// execution: a note value constructed outside of it (for example in a `#[note_constructor]`)
+/// has no active note, and the transaction kernel rejects the calls at run time.
+///
+/// `get_storage` is intentionally not part of this trait: the `#[note]` macro decodes the note
+/// storage into the struct fields, so the values are available directly on `self`.
+///
+/// An inherent method of the note struct with the same name shadows the trait method; the trait
+/// method stays reachable with UFCS, e.g. `<MyNote as ActiveNote>::get_sender(&note)`.
+pub trait ActiveNote {
+    /// Get the initial assets of the currently executing note.
+    ///
+    /// These are the note's assets at creation time, unaffected by in-transaction removal.
+    #[inline]
+    fn get_initial_assets(&self) -> Vec<Asset> {
+        get_initial_assets()
+    }
+
+    /// Returns the sender [`AccountId`] of the note that is currently executing.
+    #[inline]
+    fn get_sender(&self) -> AccountId {
+        get_sender()
+    }
+
+    /// Returns the recipient of the note that is currently executing.
+    #[inline]
+    fn get_recipient(&self) -> Recipient {
+        get_recipient()
+    }
+
+    /// Returns the script root of the currently executing note.
+    #[inline]
+    fn get_script_root(&self) -> Word {
+        get_script_root()
+    }
+
+    /// Returns the serial number of the currently executing note.
+    #[inline]
+    fn get_serial_number(&self) -> Word {
+        get_serial_number()
+    }
+
+    /// Returns the metadata header of the note that is currently executing.
+    #[inline]
+    fn get_metadata(&self) -> NoteMetadata {
+        get_metadata()
+    }
+
+    /// Returns whether the note currently executing is public.
+    #[inline]
+    fn is_public(&self) -> bool {
+        is_public()
+    }
+
+    /// Returns whether the note currently executing is private.
+    #[inline]
+    fn is_private(&self) -> bool {
+        is_private()
+    }
+
+    /// Returns the commitment over all attachments of the note currently executing.
+    #[inline]
+    fn get_attachments_commitment(&self) -> Word {
+        get_attachments_commitment()
+    }
+
+    /// Writes attachment commitments to memory and returns them as protocol words.
+    #[inline]
+    fn write_attachment_commitments_to_memory(&self) -> Vec<Word> {
+        write_attachment_commitments_to_memory()
+    }
+
+    /// Writes the selected attachment to memory and returns it as protocol words.
+    #[inline]
+    fn write_attachment_to_memory(&self, attachment_idx: u32) -> Vec<Word> {
+        write_attachment_to_memory(attachment_idx)
+    }
+
+    /// Searches the active note metadata for `attachment_scheme`.
+    #[inline]
+    fn find_attachment(&self, attachment_scheme: Felt) -> Option<u32> {
+        find_attachment(attachment_scheme)
+    }
+}
