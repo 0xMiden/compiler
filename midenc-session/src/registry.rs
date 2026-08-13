@@ -127,10 +127,6 @@ impl HybridPackageRegistry {
             Self::empty()
         };
         registry.filesystem_cache = filesystem_cache;
-        #[cfg(feature = "std")]
-        {
-            registry._filesystem_cache_lease = None;
-        }
 
         // Load link libraries
         let core = crate::LinkLibrary::core();

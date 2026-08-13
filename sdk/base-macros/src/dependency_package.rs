@@ -459,7 +459,6 @@ fn package_wit(package: &Package, package_path: &Path) -> Result<Option<String>,
     })
 }
 
-/// A located and deserialized dependency package.
 /// The per-consumer artifact map the compiler writes into the package cache.
 ///
 /// `miden-deps/<consumer>.deps.toml` records, for every declared dependency of the consumer
@@ -599,6 +598,7 @@ fn load_dependency_artifact_map(
     }))
 }
 
+/// A located and deserialized dependency package.
 struct ResolvedDependencyPackage {
     /// Path of the `.masp` file the package was read from.
     path: PathBuf,

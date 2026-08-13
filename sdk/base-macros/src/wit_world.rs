@@ -436,11 +436,16 @@ fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> 
          current `cargo miden build`."
     };
 
+    // In map mode the recorded root IS the package path; repeating it adds nothing.
+    let root_clause = if source.root == source.package_path {
+        String::new()
+    } else {
+        format!(" (root '{}')", source.root.display())
+    };
     format!(
-        "failed to load dependency WIT metadata for dependency '{}' (root '{}') from its compiled \
-         package '{}': {details}. {guidance}",
+        "failed to load dependency WIT metadata for dependency '{}'{root_clause} from its \
+         compiled package '{}': {details}. {guidance}",
         source.name,
-        source.root.display(),
         source.package_path.display(),
     )
 }

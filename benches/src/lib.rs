@@ -39,6 +39,18 @@ struct BenchmarkCase {
     execute: bool,
 }
 
+/// Marker wrapping a compile-step failure, so `--skip-failed-builds` skips exactly those.
+#[derive(Debug)]
+struct BuildFailure(anyhow::Error);
+
+impl std::fmt::Display for BuildFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#}", self.0)
+    }
+}
+
+impl std::error::Error for BuildFailure {}
+
 pub struct BenchmarkRunner {
     workspace_root: PathBuf,
     output_dir: PathBuf,
@@ -92,7 +104,10 @@ impl BenchmarkRunner {
             eprintln!("Benchmarking {}", case.name);
             match self.run_case(&case) {
                 Ok(benchmark) => benchmarks.push(benchmark),
-                Err(err) if self.skip_failed_builds => {
+                // Only compile-step failures are skippable: a malformed inputs.toml or an
+                // executor failure is a harness problem, not an old-compiler limitation,
+                // and must fail the run.
+                Err(err) if self.skip_failed_builds && err.is::<BuildFailure>() => {
                     eprintln!("Skipping {}: {err:#}", case.name);
                 }
                 Err(err) => return Err(err),
@@ -120,8 +135,13 @@ impl BenchmarkRunner {
             case.name
         );
 
-        let optimized = self.compile(&project_dir, "none")?;
-        let saved_package = self.output_dir.join("packages").join(format!("{}.masp", case.name));
+        let optimized = self
+            .compile(&project_dir, "none")
+            .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+        let saved_package = self
+            .output_dir
+            .join("packages")
+            .join(format!("{}.{}", case.name, Package::EXTENSION));
         fs::copy(&optimized, &saved_package).with_context(|| {
             format!(
                 "failed to copy optimized package from {} to {}",
@@ -136,7 +156,9 @@ impl BenchmarkRunner {
             let inputs = project_dir.join("inputs.toml");
             let optimized_profile = self.profile(optimized_package, &inputs, &project_dir, None)?;
 
-            let debuggable = self.compile(&project_dir, "full")?;
+            let debuggable = self
+                .compile(&project_dir, "full")
+                .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
             let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
             let flamegraph_path = self.output_dir.join(&relative_flamegraph);
             self.profile(
@@ -295,7 +317,7 @@ fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
 
 /// Returns true when a path names a serialized Miden package file.
 fn is_package_path(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| ext == "masp")
+    path.extension().is_some_and(|ext| ext == Package::EXTENSION)
 }
 
 fn discover_cases(workspace_root: &Path) -> Result<Vec<BenchmarkCase>> {

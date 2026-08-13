@@ -14,7 +14,7 @@
 use std::{
     env, fs,
     path::Path,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::SystemTime,
 };
 
 use cargo_miden::run;
@@ -231,15 +231,7 @@ fn build_rust_project_with_masm_path_dependency() {
         "expected the masm dependency to be assembled and materialized at {}",
         dependency_package.display()
     );
-    let modified = dependency_package.metadata().unwrap().modified().unwrap();
-    let attribution_floor =
-        build_started_at.checked_sub(Duration::from_secs(1)).unwrap_or(UNIX_EPOCH);
-    assert!(
-        modified >= attribution_floor,
-        "expected this build to rewrite {}, but its modification time {modified:?} predates the \
-         one-second-tolerant build attribution floor {attribution_floor:?}",
-        dependency_package.display()
-    );
+    crate::utils::assert_written_by_this_build(&dependency_package, build_started_at);
     let flat_dependency_package = export_dir.join(format!("{flat_dependency_name}.masp"));
     assert!(
         flat_dependency_package.exists(),

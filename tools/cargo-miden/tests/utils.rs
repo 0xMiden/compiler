@@ -4,8 +4,29 @@ use std::{
     path::{Path, PathBuf},
     sync::{Mutex, MutexGuard, OnceLock},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+/// Asserts that a build starting at `build_started_at` (re)wrote the file at `path`.
+///
+/// The floor is one second below the start time, tolerating coarse filesystem timestamp
+/// granularity.
+#[allow(dead_code)]
+pub(crate) fn assert_written_by_this_build(path: &Path, build_started_at: SystemTime) {
+    let modified = path
+        .metadata()
+        .unwrap_or_else(|err| panic!("failed to stat '{}': {err}", path.display()))
+        .modified()
+        .unwrap();
+    let attribution_floor =
+        build_started_at.checked_sub(Duration::from_secs(1)).unwrap_or(UNIX_EPOCH);
+    assert!(
+        modified >= attribution_floor,
+        "expected this build to rewrite {}, but its modification time {modified:?} predates the \
+         one-second-tolerant build attribution floor {attribution_floor:?}",
+        path.display()
+    );
+}
 
 #[allow(dead_code)]
 pub(crate) fn get_test_path(test_dir_name: &str) -> PathBuf {
