@@ -10,7 +10,8 @@
 //! Staging is generational so the exported directory is always one consistent build: the
 //! nested build fills a fresh generation, and only a fully successful build moves the current
 //! pointer. A failed build keeps exporting the previous generation whole — never a mix of new
-//! and old packages — and if no good generation exists yet, the script fails the outer build.
+//! and old packages — and is retried on the next check; if no good generation exists yet, the
+//! script fails the outer build.
 //!
 //! The nested build runs whenever cargo re-runs this script. The script watches the project
 //! manifests and, through the watch lists the compiler writes next to the staged packages, the
@@ -61,19 +62,33 @@ fn main() {
 
     // Alternate between two generations: the pointer names the last good one, the nested
     // build fills the other from scratch (which also drops packages of removed
-    // dependencies).
-    let current = fs::read_to_string(&pointer)
-        .ok()
-        .map(|name| name.trim().to_string())
-        .filter(|name| name == "gen-0" || name == "gen-1")
-        .filter(|name| generations.join(name).is_dir());
+    // dependencies). Only a missing pointer means "no current generation": treating a
+    // transient read error that way would select the last-good generation for clearing.
+    let current = match fs::read_to_string(&pointer) {
+        Ok(name) => Some(name.trim().to_string()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => {
+            panic!("failed to read the package cache pointer '{}': {err}", pointer.display())
+        }
+    }
+    .filter(|name| name == "gen-0" || name == "gen-1")
+    .filter(|name| generations.join(name).is_dir());
     let next = match current.as_deref() {
         Some("gen-0") => "gen-1",
         _ => "gen-0",
     };
     let next_dir = generations.join(next);
-    let _ = fs::remove_dir_all(&next_dir);
-    fs::create_dir_all(&next_dir).expect("failed to create the Miden package cache generation");
+    match fs::remove_dir_all(&next_dir) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            panic!("failed to clear the staging generation '{}': {err}", next_dir.display())
+        }
+    }
+    fs::create_dir_all(&generations).expect("failed to create the Miden package cache directory");
+    // `create_dir`, not `create_dir_all`: it fails if anything survived the removal, so a
+    // partially cleared generation can never masquerade as a fresh one.
+    fs::create_dir(&next_dir).expect("failed to create the Miden package cache generation");
 
     // Stage the dependency packages: the nested compiler adopts the generation through
     // MIDENC_PACKAGE_CACHE, publishes every dependency package into it before the root
@@ -109,6 +124,13 @@ fn main() {
                     build.status,
                     last_stderr_line(&build.stderr),
                 );
+                // Watch a path that never exists: cargo re-runs the script unconditionally
+                // while a watched path is missing, so the failed nested build is retried on
+                // the next check instead of the fallback being cached as a success.
+                println!(
+                    "cargo:rerun-if-changed={}",
+                    out_dir.join("miden-packages.retry").display()
+                );
                 generations.join(current)
             }
             // With no good generation there is nothing consistent to export; failing here is
@@ -124,20 +146,27 @@ fn main() {
 
     // Watch the resolved dependency inputs recorded by the compiler, so editing a dependency
     // re-runs this script and re-stages its package. One absolute path per line, one file per
-    // resolved consumer project.
+    // resolved consumer project. Read errors fail loud: swallowing them would cache the
+    // staged generation with no dependency watches at all. Only a missing directory is fine —
+    // a project without path dependencies records none.
     let watch_dir = exported.join("miden-deps");
-    if let Ok(entries) = fs::read_dir(&watch_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_some_and(|extension| extension == "watch")
-                && let Ok(watch_list) = fs::read_to_string(&path)
-            {
-                for line in watch_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
-                    // Watch only paths that exist: cargo re-runs a build script
-                    // unconditionally while a watched path is missing.
-                    if Path::new(line).exists() {
-                        println!("cargo:rerun-if-changed={line}");
-                    }
+    let entries = match fs::read_dir(&watch_dir) {
+        Ok(entries) => Some(entries),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => None,
+        Err(err) => panic!("failed to list the watch lists in '{}': {err}", watch_dir.display()),
+    };
+    for entry in entries.into_iter().flatten() {
+        let entry = entry.expect("failed to read a watch-list directory entry");
+        let path = entry.path();
+        if path.extension().is_some_and(|extension| extension == "watch") {
+            let watch_list = fs::read_to_string(&path).unwrap_or_else(|err| {
+                panic!("failed to read the watch list '{}': {err}", path.display())
+            });
+            for line in watch_list.lines().map(str::trim).filter(|line| !line.is_empty()) {
+                // Watch only paths that exist: cargo re-runs a build script
+                // unconditionally while a watched path is missing.
+                if Path::new(line).exists() {
+                    println!("cargo:rerun-if-changed={line}");
                 }
             }
         }
