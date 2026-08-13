@@ -221,14 +221,24 @@ impl BenchmarkRunner {
         let config = ExecutionConfig::parse_file(inputs_path)
             .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
         let mut executor = Executor::from_config(config);
-        let packages_dir = project_dir.join("target/miden/packages");
-        let mut dependencies = collect_dependency_packages(&packages_dir)?;
-        // The current compiler leaves the dependency packages here; see `Self::compile`.
+        // Load exactly one package generation. The current compiler adopts the runner-owned
+        // cache directory (see `Self::compile`), so when that directory holds packages it is
+        // the generation this run produced and the only one loaded. The legacy project-cache
+        // scan serves old compiler versions only — combining generations could pair a stale
+        // package with the current one under the same name and version but a different
+        // digest, which package installation rejects.
         let export_dir = self.package_cache_dir(project_dir);
-        if export_dir.is_dir() {
-            dependencies.extend(
-                read_dir_paths(&export_dir)?.into_iter().filter(|path| is_package_path(path)),
-            );
+        let mut dependencies: Vec<PathBuf> = if export_dir.is_dir() {
+            read_dir_paths(&export_dir)?
+                .into_iter()
+                .filter(|path| is_package_path(path))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if dependencies.is_empty() {
+            let packages_dir = project_dir.join("target/miden/packages");
+            dependencies = collect_dependency_packages(&packages_dir)?;
         }
         dependencies.sort();
         for dependency in dependencies {
