@@ -746,9 +746,9 @@ fn missing_cached_dependency_package_message(
         "could not find a built `.masp` package for Miden dependency '{name}' (root '{}'). The \
          SDK macros need the dependency package during Rust macro expansion to read its embedded \
          WIT and procedure roots. Expected one of these package names: {expected_files}. Searched \
-         {} directory '{}'. The cache is populated by a midenc-driven build \
-         (`cargo miden build`), and by the contract `build.rs` for plain cargo builds; rebuild \
-         through either so the dependency package is available during macro expansion.",
+         {} directory '{}'. The cache is populated by a midenc-driven build (`cargo miden \
+         build`), and by the contract `build.rs` for plain cargo builds; rebuild through either \
+         so the dependency package is available during macro expansion.",
         root.display(),
         package_cache::PACKAGE_CACHE_ENV,
         filesystem_cache_dir.display(),
@@ -758,11 +758,11 @@ fn missing_cached_dependency_package_message(
 /// Formats the diagnostic for an expansion without a configured package cache.
 fn missing_package_cache_message(name: &str, root: &Path) -> String {
     format!(
-        "the Miden package cache is not configured ({} is not set), so the \
-         compiled package for Miden dependency '{name}' (root '{}') cannot be resolved during \
-         Rust macro expansion. Build through `cargo miden build`, which exports the variable to \
-         its nested builds, or add the contract `build.rs` from a generated template so plain \
-         `cargo build`/`cargo check` and IDE analysis populate and export the cache.",
+        "the Miden package cache is not configured ({} is not set), so the compiled package for \
+         Miden dependency '{name}' (root '{}') cannot be resolved during Rust macro expansion. \
+         Build through `cargo miden build`, which exports the variable to its nested builds, or \
+         add the contract `build.rs` from a generated template so plain `cargo build`/`cargo \
+         check` and IDE analysis populate and export the cache.",
         package_cache::PACKAGE_CACHE_ENV,
         root.display(),
     )

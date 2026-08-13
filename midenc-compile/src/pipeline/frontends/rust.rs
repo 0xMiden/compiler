@@ -1134,7 +1134,10 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
             manifest_dir.display()
         ))
     })?;
-    write_atomically(&manifest_dir.join(package_cache::dependency_map_file_name(&consumer)), doc.to_string())?;
+    write_atomically(
+        &manifest_dir.join(package_cache::dependency_map_file_name(&consumer)),
+        doc.to_string(),
+    )?;
 
     if cx.role().is_root() {
         let watch_list = collect_dependency_watch_paths(cx);

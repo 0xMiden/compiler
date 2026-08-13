@@ -138,10 +138,10 @@ impl BenchmarkRunner {
         let optimized = self
             .compile(&project_dir, "none")
             .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
-        let saved_package = self
-            .output_dir
-            .join("packages")
-            .join(format!("{}.{}", case.name, Package::EXTENSION));
+        let saved_package =
+            self.output_dir
+                .join("packages")
+                .join(format!("{}.{}", case.name, Package::EXTENSION));
         fs::copy(&optimized, &saved_package).with_context(|| {
             format!(
                 "failed to copy optimized package from {} to {}",

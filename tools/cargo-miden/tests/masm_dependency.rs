@@ -11,11 +11,7 @@
 //! to derive a per-target role across package boundaries: the Rust root is
 //! `TargetRole::Root`, the MASM library is a `TargetRole::Dependency`.
 
-use std::{
-    env, fs,
-    path::Path,
-    time::SystemTime,
-};
+use std::{env, fs, path::Path, time::SystemTime};
 
 use cargo_miden::run;
 
@@ -245,10 +241,7 @@ fn build_rust_project_with_masm_path_dependency() {
     // individual files (watching the project root itself would sweep in `target/` churn).
     let watch_file = export_dir.join("miden-deps").join(format!("{project_name}.watch"));
     let watch = fs::read_to_string(&watch_file).unwrap_or_else(|err| {
-        panic!(
-            "expected the compiler-recorded watch list at {}: {err}",
-            watch_file.display()
-        )
+        panic!("expected the compiler-recorded watch list at {}: {err}", watch_file.display())
     });
     let watch_has = |suffix: &str| watch.lines().any(|line| Path::new(line).ends_with(suffix));
     assert!(

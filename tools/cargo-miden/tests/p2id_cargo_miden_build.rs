@@ -1,7 +1,4 @@
-use std::{
-    env,
-    time::SystemTime,
-};
+use std::{env, time::SystemTime};
 
 use cargo_miden::run;
 
