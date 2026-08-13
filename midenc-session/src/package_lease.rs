@@ -51,8 +51,9 @@ pub(crate) type SharedPackageCacheLease =
 /// The environment variable that names the package cache.
 ///
 /// The compiler reads it to adopt a caller-provided directory, and sets it for the
-/// nested cargo builds it spawns.
-pub(crate) const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
+/// nested cargo builds it spawns. The spelling is shared with the SDK macros through the
+/// contract crate.
+pub(crate) use midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV;
 
 /// The per-build package-cache directory.
 ///

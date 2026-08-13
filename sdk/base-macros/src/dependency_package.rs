@@ -18,6 +18,7 @@ use std::{
 };
 
 use miden_mast_package::Package;
+use midenc_frontend_wasm_metadata::package_cache;
 use proc_macro2::Span;
 use syn::Error;
 
@@ -527,7 +528,9 @@ fn load_dependency_artifact_map(
     if consumer.is_empty() {
         return Ok(None);
     }
-    let map_path = cache_dir.join("miden-deps").join(format!("{consumer}.deps.toml"));
+    let map_path = cache_dir
+        .join(package_cache::DEPENDENCY_MANIFEST_DIR)
+        .join(package_cache::dependency_map_file_name(&consumer));
     let contents = match fs::read_to_string(&map_path) {
         Ok(contents) => contents,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -552,7 +555,7 @@ fn load_dependency_artifact_map(
     })?;
     let map_error = |message: String| Error::new(error_span, message);
     let schema = table.get("schema").and_then(toml::Value::as_integer);
-    if schema != Some(1) {
+    if schema != Some(package_cache::DEPENDENCY_MAP_SCHEMA) {
         return Err(map_error(format!(
             "the compiler's dependency manifest '{}' has an unsupported schema {schema:?}; the \
              package cache was staged by an incompatible toolchain — rebuild with the current \
@@ -652,7 +655,7 @@ fn resolve_dependency_package(name: &str, root: &Path) -> Result<ResolvedDepende
 
     let package_stems = dependency_package_stems(name, root);
     for stem in &package_stems {
-        let candidate = filesystem_cache_dir.join(format!("{stem}.{}", Package::EXTENSION));
+        let candidate = filesystem_cache_dir.join(package_cache::package_file_name(stem));
         if candidate.is_file() {
             return Ok(ResolvedDependencyPackage {
                 package: read_package(&candidate)?,
@@ -679,10 +682,16 @@ fn package_cache_dir() -> Option<PathBuf> {
         return overridden;
     }
     // An empty value counts as unset at every boundary of the variable, matching the
-    // compiler's adoption check and the contract build script's guard.
-    env::var_os("MIDENC_PACKAGE_CACHE")
+    // compiler's adoption check and the contract build script's guard. The value is
+    // absolutized like the compiler's adoption does — and because the resolved package
+    // paths are emitted into `include_bytes!` tracking constants, which rustc resolves
+    // against the containing source file rather than the working directory.
+    env::var_os(package_cache::PACKAGE_CACHE_ENV)
         .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+        .map(|value| {
+            let path = PathBuf::from(value);
+            std::path::absolute(&path).unwrap_or(path)
+        })
 }
 
 #[cfg(test)]
@@ -737,10 +746,11 @@ fn missing_cached_dependency_package_message(
         "could not find a built `.masp` package for Miden dependency '{name}' (root '{}'). The \
          SDK macros need the dependency package during Rust macro expansion to read its embedded \
          WIT and procedure roots. Expected one of these package names: {expected_files}. Searched \
-         MIDENC_PACKAGE_CACHE directory '{}'. The cache is populated by a midenc-driven build \
+         {} directory '{}'. The cache is populated by a midenc-driven build \
          (`cargo miden build`), and by the contract `build.rs` for plain cargo builds; rebuild \
          through either so the dependency package is available during macro expansion.",
         root.display(),
+        package_cache::PACKAGE_CACHE_ENV,
         filesystem_cache_dir.display(),
     )
 }
@@ -748,11 +758,12 @@ fn missing_cached_dependency_package_message(
 /// Formats the diagnostic for an expansion without a configured package cache.
 fn missing_package_cache_message(name: &str, root: &Path) -> String {
     format!(
-        "the Miden package cache is not configured (MIDENC_PACKAGE_CACHE is not set), so the \
+        "the Miden package cache is not configured ({} is not set), so the \
          compiled package for Miden dependency '{name}' (root '{}') cannot be resolved during \
          Rust macro expansion. Build through `cargo miden build`, which exports the variable to \
          its nested builds, or add the contract `build.rs` from a generated template so plain \
          `cargo build`/`cargo check` and IDE analysis populate and export the cache.",
+        package_cache::PACKAGE_CACHE_ENV,
         root.display(),
     )
 }

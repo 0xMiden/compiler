@@ -34,6 +34,7 @@ use std::{
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, SourceFileProvenance};
 use miden_mast_package::Package as MastPackage;
+use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::{Context, formatter::DisplayMany};
 use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
 
@@ -1068,9 +1069,6 @@ impl RustProjectFrontend {
     }
 }
 
-/// The package-cache subdirectory holding the per-consumer dependency manifests.
-const DEPENDENCY_MANIFEST_DIR: &str = "miden-deps";
-
 /// Records the compiler-selected dependency artifacts for `cx`'s project in the package cache.
 ///
 /// Written before the project's nested cargo build spawns — at which point every dependency
@@ -1110,28 +1108,33 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
             ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
                 entry.insert("path", path.display().to_string().into());
             }
-            ProjectDependencyNodeProvenance::Source(_)
-            | ProjectDependencyNodeProvenance::Registry { .. } => {
-                entry.insert("package", format!("{}.{}", node.name, MastPackage::EXTENSION).into());
+            ProjectDependencyNodeProvenance::Source(_) => {
+                entry.insert("package", package_cache::package_file_name(&node.name).into());
             }
+            // The macros skip registry dependencies before consulting the map — MASM base
+            // libraries carry nothing a macro reads — so recording them would only pin file
+            // names nothing verifies.
+            ProjectDependencyNodeProvenance::Registry { .. } => continue,
         }
+        // No reader consults the version yet; it is recorded for the #1300 digest pin, which
+        // extends these entries with the artifact identity to verify on read.
         entry.insert("version", node.version.to_string().into());
         dependencies
             .insert(name.as_ref(), toml_edit::Item::Value(toml_edit::Value::InlineTable(entry)));
     }
 
     let mut doc = toml_edit::DocumentMut::new();
-    doc["schema"] = toml_edit::value(1);
+    doc["schema"] = toml_edit::value(package_cache::DEPENDENCY_MAP_SCHEMA);
     doc["dependencies"] = toml_edit::Item::Table(dependencies);
 
-    let manifest_dir = cache_dir.join(DEPENDENCY_MANIFEST_DIR);
+    let manifest_dir = cache_dir.join(package_cache::DEPENDENCY_MANIFEST_DIR);
     std::fs::create_dir_all(&manifest_dir).map_err(|err| {
         Report::msg(format!(
             "failed to create the dependency manifest directory '{}': {err}",
             manifest_dir.display()
         ))
     })?;
-    write_atomically(&manifest_dir.join(format!("{consumer}.deps.toml")), doc.to_string())?;
+    write_atomically(&manifest_dir.join(package_cache::dependency_map_file_name(&consumer)), doc.to_string())?;
 
     if cx.role().is_root() {
         let watch_list = collect_dependency_watch_paths(cx);
@@ -1140,7 +1143,7 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
             contents.push_str(&path.display().to_string());
             contents.push('\n');
         }
-        write_atomically(&manifest_dir.join(format!("{consumer}.watch")), contents)?;
+        write_atomically(&manifest_dir.join(package_cache::watch_file_name(&consumer)), contents)?;
     }
     Ok(())
 }
@@ -1236,26 +1239,13 @@ fn add_sibling_sources(add: &mut impl FnMut(&Path), library_path: &Path) {
 }
 
 /// Writes `contents` to `path` through a temporary sibling and an atomic rename.
+///
+/// Delegates to the session's shared cache writer, which also widens the file mode: these
+/// files are read by the same processes that read the packages beside them, and a map the
+/// macros cannot read is a hard expansion error.
 fn write_atomically(path: &Path, contents: String) -> CompilerResult<()> {
-    let directory = path.parent().ok_or_else(|| {
-        Report::msg(format!("dependency manifest path '{}' has no parent", path.display()))
-    })?;
-    let tmp = tempfile::Builder::new()
-        .prefix(".")
-        .suffix(".tmp")
-        .tempfile_in(directory)
-        .map_err(|err| {
-            Report::msg(format!(
-                "failed to create a temporary file for '{}': {err}",
-                path.display()
-            ))
-        })?;
-    std::fs::write(tmp.path(), contents)
-        .map_err(|err| Report::msg(format!("failed to write '{}': {err}", path.display())))?;
-    tmp.into_temp_path().persist(path).map_err(|err| {
-        Report::msg(format!("failed to atomically replace '{}': {err}", path.display()))
-    })?;
-    Ok(())
+    midenc_session::registry::write_file_atomically(path, contents.as_bytes())
+        .map_err(|err| Report::msg(format!("failed to write '{}': {err}", path.display())))
 }
 
 impl Frontend for RustProjectFrontend {
@@ -1824,7 +1814,10 @@ pub(crate) mod manifest {
             ("CARGO_ENCODED_RUSTFLAGS", extra_rust_flags.join("\x1f")),
         ];
         if let Some(filesystem_cache_dir) = filesystem_cache_dir {
-            env.push(("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()));
+            env.push((
+                midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV,
+                filesystem_cache_dir.to_string_lossy().into_owned(),
+            ));
         }
         env
     }

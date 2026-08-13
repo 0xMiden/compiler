@@ -3996,6 +3996,7 @@ dependencies = [
  "miden-project",
  "miden-protocol",
  "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "parking_lot",

@@ -170,8 +170,9 @@ pub(crate) fn package_include_tokens(path: &Path) -> Result<TokenStream2, Error>
 /// type and the macro are fully qualified because this lands in consumer scope, where a
 /// user-defined `Option` or `option_env` must not shadow the tracking.
 pub(crate) fn package_cache_tracking_tokens() -> TokenStream2 {
+    let env_name = midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV;
     quote! {
-        const _: ::core::option::Option<&str> = ::core::option_env!("MIDENC_PACKAGE_CACHE");
+        const _: ::core::option::Option<&str> = ::core::option_env!(#env_name);
     }
 }
 

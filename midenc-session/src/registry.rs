@@ -272,23 +272,50 @@ pub fn write_package_atomically(
     out_dir: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
     std::fs::create_dir_all(out_dir)?;
-    let package_name: &str = &package.name;
-    let destination = out_dir.join(package_name).with_extension(Package::EXTENSION);
-    let temp_prefix = format!(".{package_name}");
-    let temp_suffix = format!(".{}.tmp", Package::EXTENSION);
+    let destination = out_dir
+        .join(midenc_frontend_wasm_metadata::package_cache::package_file_name(&package.name));
+    persist_atomically(&destination, |temp_path| package.write_to_file(temp_path))?;
+    Ok(destination)
+}
+
+/// Writes `bytes` to `path` through a temporary sibling and an atomic rename.
+///
+/// The byte-oriented door to the same publication mechanics as
+/// [`write_package_atomically`], for the other files the compiler places into the shared
+/// cache directory — the recorded dependency resolution, whose readers are the same
+/// population as the packages'.
+#[cfg(any(test, feature = "std"))]
+pub fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    persist_atomically(path, |temp_path| std::fs::write(temp_path, bytes))
+}
+
+/// Writes through a temporary sibling of `path` and renames it over the final name.
+///
+/// Temporary files default to mode 0o600, and the published file must stay readable by the
+/// other build processes that share the cache directory, so the mode is widened to 0o666
+/// (the process umask still applies).
+#[cfg(any(test, feature = "std"))]
+fn persist_atomically(
+    path: &std::path::Path,
+    write: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let directory = path.parent().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("path '{}' has no parent directory", path.display()),
+        )
+    })?;
     let mut builder = tempfile::Builder::new();
-    builder.prefix(&temp_prefix).suffix(&temp_suffix);
-    // Temporary files default to mode 0o600; the published package must stay readable by the
-    // other build processes that share the cache.
+    builder.prefix(".").suffix(".tmp");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         builder.permissions(std::fs::Permissions::from_mode(0o666));
     }
-    let temp_path = builder.tempfile_in(out_dir)?.into_temp_path();
-    package.write_to_file(&temp_path)?;
-    temp_path.persist(&destination).map_err(|err| err.error)?;
-    Ok(destination)
+    let temp_path = builder.tempfile_in(directory)?.into_temp_path();
+    write(&temp_path)?;
+    temp_path.persist(path).map_err(|err| err.error)?;
+    Ok(())
 }
 
 impl HybridPackageRegistry {

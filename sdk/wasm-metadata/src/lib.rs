@@ -35,6 +35,49 @@ pub fn package_wit_section_id() -> miden_mast_package::SectionId {
         .expect("the WIT section id must be a valid custom section id")
 }
 
+/// The filesystem package-cache exchange contract.
+///
+/// The compiler publishes compiled dependency packages — and its recorded dependency
+/// resolution — into the directory named by [`package_cache::PACKAGE_CACHE_ENV`]; the SDK
+/// macros and the contract build script consume them. Every spelling of that contract lives
+/// here so the producer and the consumers cannot drift apart. (The contract build script is
+/// the one deliberate exception: it is dependency-free by design and spells the same values
+/// inline.)
+pub mod package_cache {
+    use alloc::{format, string::String};
+
+    /// Environment variable naming the package-cache directory a build exchanges packages
+    /// through. An empty value counts as unset everywhere.
+    pub const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
+
+    /// Subdirectory of the cache holding the compiler-recorded per-consumer files.
+    pub const DEPENDENCY_MANIFEST_DIR: &str = "miden-deps";
+
+    /// Schema version of the dependency artifact map.
+    pub const DEPENDENCY_MAP_SCHEMA: i64 = 1;
+
+    /// File name of a consumer's dependency artifact map inside
+    /// [`DEPENDENCY_MANIFEST_DIR`].
+    pub fn dependency_map_file_name(consumer: &str) -> String {
+        format!("{consumer}.deps.toml")
+    }
+
+    /// File name of a consumer's watch list inside [`DEPENDENCY_MANIFEST_DIR`].
+    pub fn watch_file_name(consumer: &str) -> String {
+        format!("{consumer}.watch")
+    }
+
+    /// File name of a published package: the package name with the `.masp` extension
+    /// appended.
+    ///
+    /// Append semantics on purpose: `Path::with_extension` would truncate a package name
+    /// that contains a dot, and then the publisher and the artifact map would disagree
+    /// about the file's name.
+    pub fn package_file_name(package_name: &str) -> String {
+        format!("{package_name}.{}", miden_mast_package::Package::EXTENSION)
+    }
+}
+
 /// Returns the component WIT bytes embedded in a compiled Miden package, when present.
 pub fn package_wit(package: &miden_mast_package::Package) -> Option<&[u8]> {
     let wit_section_id = package_wit_section_id();
