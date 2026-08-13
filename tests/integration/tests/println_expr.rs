@@ -4,20 +4,22 @@ use miden_debug::logger::DebugLogger;
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_tests::{CompilerTest, testing::eval_package};
 
-// Manipulates bytes directly instead of going through Rust's formatting infra: `core::fmt` is
-// dominated by indirect calls (now supported) and trait-object dispatch, which are far too
-// expensive on the VM for a logging test.
+/// Exercises the expression arm of the `println` macro.
 #[test]
-fn println_dynamic() {
+fn println_expr() {
     DebugLogger::init_for_tests()
         .expect("each test using DebugLogger should run in its own process");
     log::set_max_level(log::LevelFilter::Warn);
 
     let main_fn = r#"(digit: u32) -> u32 {
-        let mut s = alloc::string::String::from("the digit is: ");
+        let mut s = ::alloc::string::String::from("the digit is: ");
         // b'0' is zero as ASCII, then add `digit` as offset
         s.push((b'0' + (digit as u8)) as char);
         println!(s.as_str());
+
+        // Use string formatting in the expression.
+        println!(::alloc::format!("{digit} is the digit").as_str());
+
         0
     }"#;
     let mut test = CompilerTest::rust_fn_body_with_sdk(
@@ -47,7 +49,7 @@ fn println_dynamic() {
         .collect();
     assert_eq!(
         info_messages.as_slice(),
-        ["the digit is: 7"],
+        ["the digit is: 7", "7 is the digit"],
         "observed logs: {:?}",
         logs.iter().map(|e| format!("{}: {}", e.level, e.message)).collect::<Vec<_>>(),
     );

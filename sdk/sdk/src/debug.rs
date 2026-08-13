@@ -1,3 +1,11 @@
+/// Prints a message through Miden's trace-based `PrintLn` functionality.
+///
+/// # Formatting
+///
+/// The formatting variant requires the `alloc` crate and a configured global allocator.
+///
+/// This supports most common use cases of Rust's `format!`. However, named arguments without
+/// argument list are not supported, for example `println!("result: {res}");`
 #[macro_export]
 macro_rules! println {
     ($message:literal) => {{
@@ -6,9 +14,10 @@ macro_rules! println {
     ($message:expr) => {{
         $crate::debug::println($message);
     }};
-    ($format:literal, $($arg:tt),+) => {
-        compile_error!("unsupported use of println! with format arguments");
-    };
+    ($format:literal, $($arg:tt)+) => {{
+        let message = ::alloc::format!($format, $($arg)+);
+        $crate::debug::println(&message);
+    }};
 }
 
 #[inline(always)]

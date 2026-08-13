@@ -5,7 +5,7 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_integration_tests::{CompilerTest, testing::eval_package};
 
 #[test]
-fn println_static() {
+fn println_literal() {
     DebugLogger::init_for_tests()
         .expect("each test using DebugLogger should run in its own process");
     log::set_max_level(log::LevelFilter::Warn);
