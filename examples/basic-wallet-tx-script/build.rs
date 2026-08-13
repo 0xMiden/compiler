@@ -39,8 +39,10 @@ fn main() {
     // Re-evaluate when the build mode or the tool selection changes.
     println!("cargo:rerun-if-env-changed=MIDENC_PACKAGE_CACHE");
     println!("cargo:rerun-if-env-changed=CARGO_MIDEN");
-    // These inputs shape the compiled packages.
+    // These inputs shape the compiled packages. Cargo prefers the encoded rustflags variable
+    // over the plain one, so both spellings are watched.
     println!("cargo:rerun-if-env-changed=RUSTFLAGS");
+    println!("cargo:rerun-if-env-changed=CARGO_ENCODED_RUSTFLAGS");
     println!("cargo:rerun-if-env-changed=RUSTUP_TOOLCHAIN");
 
     // Inside a midenc-driven build the compiler owns the package cache, macro expansion

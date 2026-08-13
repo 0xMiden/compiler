@@ -8,6 +8,9 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
         .arg("--target")
         .arg("wasm32-wasip2")
         .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
+        // Cargo prefers the encoded variable; an inherited value would silently replace the
+        // `RUSTFLAGS` set above.
+        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         // The macros read dependency packages only from this directory, the way a driven build
         // or the contract build script exposes it.
         .env("MIDENC_PACKAGE_CACHE", project.root().join("package-cache"))
