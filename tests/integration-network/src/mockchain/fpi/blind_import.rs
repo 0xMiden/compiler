@@ -72,10 +72,7 @@ fn different_account_import_sets_have_distinct_metadata_worlds() {
     );
     let first_root = first_account.root();
     let second_root = second_account.root();
-    let dependencies = [
-        (FIRST_ACCOUNT_PACKAGE, first_root.as_path()),
-        (SECOND_ACCOUNT_PACKAGE, second_root.as_path()),
-    ];
+    let dependencies = [(FIRST_ACCOUNT_PACKAGE, first_root), (SECOND_ACCOUNT_PACKAGE, second_root)];
     let note_project = project(NOTE_NAME)
         .file(
             "miden-project.toml",
@@ -136,7 +133,7 @@ fn build_note_project(
                 note_name,
                 note_package,
                 ACCOUNT_PACKAGE,
-                &account_root,
+                account_root,
             )),
         )
         .file(
@@ -144,7 +141,7 @@ fn build_note_project(
             &use_regression_version(note_cargo_toml_for_dependency(
                 note_name,
                 ACCOUNT_PACKAGE,
-                &account_root,
+                account_root,
             )),
         )
         .file("src/lib.rs", source)

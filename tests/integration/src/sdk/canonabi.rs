@@ -249,13 +249,13 @@ fn run_canonabi_case(
     let names = CanonAbiProjectNames::new(case);
     let account_project = build_account_project(&names, account_source);
     let account_root = account_project.root();
-    let mut account_test = build_generated_test(&account_root);
+    let mut account_test = build_generated_test(account_root);
     let account_package = account_test.compile_package();
     assert!(account_package.is_library());
     let generated_wit = read_generated_wit(&account_project);
     assert_generated_wit(&generated_wit);
 
-    let note_project = build_note_project(&names, &account_root, note_body);
+    let note_project = build_note_project(&names, account_root, note_body);
     let mut note_test = build_generated_test(note_project.root());
     let note_package = note_test.compile_package();
     assert!(note_package.is_library());

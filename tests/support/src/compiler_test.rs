@@ -320,6 +320,12 @@ impl CompilerTestBuilder {
         // Build test
         match source {
             CompilerTestInputType::CargoMiden(config) => {
+                // Every route into a nested `cargo` has to redirect it, not just the generated-
+                // project one: a test naming a checked-in fixture project never calls
+                // `cargo_proj::project`, and without this it builds a private `target/` into the
+                // source tree instead of sharing one.
+                crate::cargo_proj::use_shared_build_dir();
+
                 let mut argv = vec![];
                 if config.release {
                     argv.push("--release".to_string());

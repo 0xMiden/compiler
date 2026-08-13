@@ -6,7 +6,10 @@
 //! with the requested asset routed back to the creator through a P2ID note and the unfilled
 //! portion re-offered through a remainder SWAPP note.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, OnceLock},
+};
 
 use miden_client::{
     account::component::{BasicWallet, InitStorageData},
@@ -53,9 +56,18 @@ struct SwappPackages {
 ///
 /// The basic wallet is compiled first so that its package artifacts are available to the note
 /// project which depends on it.
+#[track_caller]
 fn compile_swapp_packages() -> SwappPackages {
-    let wallet = compile_rust_package("../../examples/basic-wallet", true);
-    let swapp = compile_rust_package("../fixtures/components/swapp-note", true);
+    static WALLET: OnceLock<Arc<Package>> = OnceLock::new();
+    static SWAPP: OnceLock<Arc<Package>> = OnceLock::new();
+
+    let wallet = WALLET
+        .get_or_init(|| compile_rust_package("../../examples/basic-wallet", true))
+        .clone();
+    let swapp = SWAPP
+        .get_or_init(|| compile_rust_package("../fixtures/components/swapp-note", true))
+        .clone();
+
     SwappPackages { wallet, swapp }
 }
 
