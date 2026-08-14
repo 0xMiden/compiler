@@ -46,7 +46,8 @@ where
         }
         cli::CargoMidenCommand::Build(cmd) => cmd.exec().map(|output| {
             Some(CommandOutput::BuildCommandOutput {
-                output: vec![output],
+                // Empty on a deliberate `--stop-after` stop short of a package.
+                output: output.into_iter().collect(),
             })
         }),
         cli::CargoMidenCommand::Test(cmd) => {

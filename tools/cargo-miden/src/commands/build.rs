@@ -20,13 +20,22 @@ pub struct BuildCommand {
 }
 
 impl BuildCommand {
-    /// Executes `cargo miden build`, returning the resulting command output.
-    pub fn exec(self) -> Result<PathBuf> {
+    /// Executes `cargo miden build`, returning the built package's path — or `None` when the
+    /// run was deliberately stopped short of a package by `--stop-after` (e.g. the contract
+    /// build script staging a consumer's dependencies without compiling the consumer).
+    pub fn exec(self) -> Result<Option<PathBuf>> {
         let (session, metadata_out_dir) = super::session_from_args(&self.args)?;
 
         let artifact =
-            midenc_compile::compile_to_memory(Rc::new(midenc_hir::Context::new(session)))
-                .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?;
+            match midenc_compile::compile_to_memory(Rc::new(midenc_hir::Context::new(session))) {
+                Ok(artifact) => artifact,
+                // A `--stop-after` stop is a successful, deliberately partial run; there is
+                // no package to materialize.
+                Err(err) if err.downcast_ref::<midenc_compile::CompilerStopped>().is_some() => {
+                    return Ok(None);
+                }
+                Err(err) => return Err(anyhow!("{}", PrintDiagnostic::new(err))),
+            };
 
         match artifact {
             CompiledArtifact::Assembled(package) => {
@@ -41,7 +50,7 @@ impl BuildCommand {
                                 &package.name, &package.version
                             )
                         })?;
-                Ok(output_path)
+                Ok(Some(output_path))
             }
             _ => unreachable!(),
         }

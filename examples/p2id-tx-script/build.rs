@@ -191,7 +191,10 @@ fn run_cargo_miden_build(manifest_dir: &Path, cache_dir: &Path, nested_target: &
         None => Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into())),
     };
     command
-        .args(["miden", "build", "--release"])
+        // `--stop-after=dependencies` stages the dependency packages and the compiler's
+        // resolution records, then stops before compiling this crate itself — the macros
+        // only ever read the dependencies, and the outer cargo build compiles the crate.
+        .args(["miden", "build", "--release", "--stop-after=dependencies"])
         .current_dir(manifest_dir)
         .env("MIDENC_PACKAGE_CACHE", cache_dir)
         .env("CARGO_TARGET_DIR", nested_target.join("cargo"))

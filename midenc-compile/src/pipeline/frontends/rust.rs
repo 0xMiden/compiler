@@ -66,8 +66,10 @@ use crate::{
 /// `.wasm` target publishes, because it is run by that code. As a *dependency* it publishes
 /// nothing, and nothing asks it to.
 ///
-/// The route is therefore [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s, held to that by
-/// `the_project_route_is_the_wasm_route`.
+/// The route is therefore [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s, with one
+/// project-only checkpoint ahead of it: `dependencies.staged`, published before the root's
+/// cargo build so `--stop-after=dependencies` stages a consumer's dependencies without
+/// compiling the consumer. Held to that by `the_project_route_is_the_wasm_route`.
 ///
 /// # Why there are still two Rust registrations
 ///
@@ -87,6 +89,7 @@ pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
     FrontendId::new("rust"),
     &["rs"],
     &[
+        CheckpointId::DEPENDENCIES_STAGED,
         CheckpointId::WASM_PARSED,
         CheckpointId::HIR_INITIAL,
         CheckpointId::HIR_ANALYZED,
@@ -95,6 +98,7 @@ pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
         CheckpointId::PACKAGE_ASSEMBLED,
     ],
     &[
+        ("dependencies", CheckpointId::DEPENDENCIES_STAGED),
         ("parse", CheckpointId::WASM_PARSED),
         ("analyze", CheckpointId::HIR_ANALYZED),
         ("transform", CheckpointId::HIR_TRANSFORMED),
@@ -102,6 +106,13 @@ pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
         ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
     ],
     &[
+        // The staged dependency exchange is directories and TOML records on disk already;
+        // there is no document to render. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::DEPENDENCIES_STAGED,
+            id: ArtifactId::DEPENDENCIES,
+            render: unrendered,
+        },
         // `--emit=wat` is written by `WasmFrontend::emit_wat`, which this route reaches through
         // [`WasmFrontend::compile_wasm`](super::wasm::WasmFrontend). See [`unrendered`].
         ArtifactDecl {
@@ -1420,6 +1431,24 @@ impl Frontend for RustProjectFrontend {
         }
 
         if cx.role().is_root() {
+            // Everything a consumer's dependencies produce exists before the root's own
+            // build: the assembler resolved, assembled, and published each of them already.
+            // Writing the resolution records and publishing the checkpoint here — before the
+            // root's cargo build — is what lets `--stop-after=dependencies` stage a
+            // consumer's dependencies without compiling the consumer itself. (The records
+            // are also written on the `built_for_root` path, which a provenance-first call
+            // reaches without passing through here.)
+            let filesystem_cache_dir = self.filesystem_cache_dir()?;
+            if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
+                write_dependency_manifest(cx, cache_dir)?;
+            }
+            if let Flow::Break(stopped) = cx.checkpoint(
+                CheckpointId::DEPENDENCIES_STAGED,
+                ArtifactId::DEPENDENCIES,
+                filesystem_cache_dir,
+            )? {
+                return Ok(Flow::Break(stopped));
+            }
             return self.wasm.compile_wasm(cx, self.built_for_root(cx)?);
         }
 
@@ -2223,14 +2252,26 @@ mod tests {
             &["rs"],
             "dispatch is by target-root extension, and a Rust target is rooted at a `.rs` file"
         );
+        let (first, shared_tail) =
+            RUST_FRONTEND.route().split_first().expect("the project route is not empty");
         assert_eq!(
-            RUST_FRONTEND.route(),
+            *first,
+            CheckpointId::DEPENDENCIES_STAGED,
+            "the one project-only checkpoint precedes the cargo build; everything after is the \
+             wasm frontend's"
+        );
+        assert_eq!(
+            shared_tail,
             WASM_FRONTEND.route(),
             "past the cargo build this route is run by the wasm frontend's own code, so it must \
              declare exactly what that code publishes"
         );
+        let (first_alias, shared_aliases) =
+            RUST_FRONTEND.aliases().split_first().expect("the project aliases are not empty");
+        assert_eq!(first_alias.0, "dependencies");
+        assert_eq!(first_alias.1, CheckpointId::DEPENDENCIES_STAGED);
         assert_eq!(
-            RUST_FRONTEND.aliases(),
+            shared_aliases,
             WASM_FRONTEND.aliases(),
             "and `--stop-after` must name the same points on both, since the same phases produce \
              them"
@@ -2726,6 +2767,14 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         ]
     }
 
+    /// The manifest-backed route's published trace: the project-only dependency staging
+    /// checkpoint, then the shared tail.
+    fn project_trace() -> Vec<CheckpointId> {
+        let mut trace = vec![CheckpointId::DEPENDENCIES_STAGED];
+        trace.extend(rust_trace());
+        trace
+    }
+
     /// A standalone `.rs` target reaches every checkpoint its route declares.
     #[test]
     fn a_standalone_rust_target_publishes_its_whole_route() {
@@ -2816,12 +2865,13 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         assert!(!flow.is_break(), "package.assembled is the orchestrator's to publish, not ours");
         assert_eq!(
             observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
-            rust_trace(),
-            "a manifest-backed root target publishes what the shared tail publishes"
+            project_trace(),
+            "a manifest-backed root target publishes the staging checkpoint, then what the \
+             shared tail publishes"
         );
         assert_eq!(
             RUST_FRONTEND.route().len(),
-            rust_trace().len() + 1,
+            project_trace().len() + 1,
             "and the route declares exactly those, plus the terminal checkpoint the driver \
              publishes"
         );
@@ -2836,7 +2886,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
     /// stopped only at its first would satisfy a single-goal test.
     #[test]
     fn a_manifest_backed_root_target_stops_at_each_goal_on_its_route() {
-        for goal in rust_trace() {
+        for goal in project_trace() {
             let project = library("rust_project_root_stops");
             let assembly = project.assembly_context().expect("assembly context");
             let context = context();
@@ -2939,7 +2989,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         let frontend = already_built(context.session_rc(), cx.target_key());
         let _ = frontend.compile(&cx).expect("the first callback lowers the built WebAssembly");
         let after_first = observer.borrow().records().len();
-        assert_eq!(after_first, rust_trace().len(), "the first callback publishes the route");
+        assert_eq!(after_first, project_trace().len(), "the first callback publishes the route");
 
         let _ = frontend.compile(&cx).expect("the second callback must be served, not rebuilt");
         assert_eq!(

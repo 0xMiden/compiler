@@ -9,6 +9,9 @@ use core::{any::Any, fmt};
 pub struct ArtifactId(&'static str);
 
 impl ArtifactId {
+    /// The staged dependency exchange of a consumer project: the package-cache directory
+    /// holding every resolved dependency package and the compiler-recorded resolution.
+    pub const DEPENDENCIES: Self = Self("dependencies");
     /// Miden IR.
     pub const HIR: Self = Self("hir");
     /// Miden Assembly.
