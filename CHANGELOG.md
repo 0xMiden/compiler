@@ -19,10 +19,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   files, and stale-cache pruning of the earlier design are removed. A killed build can leave
   a remnant lease behind; remnants are inert and `cargo clean` removes them #1302
 - The compiler records its dependency resolution in the package cache: for every Rust project
-  it builds, a `miden-deps/<consumer>.deps.toml` maps each declared dependency to the artifact
-  the resolver selected, and the root consumer's `miden-deps/<consumer>.watch` lists the
-  source inputs of every resolved dependency. The SDK macros and the contract build script
-  consume these instead of re-deriving resolution #1328
+  it builds, a `miden-deps/<consumer>.deps.toml` maps each declared dependency — registry-resolved
+  components included — to the artifact the resolver selected, with a flag naming whether it
+  embeds component WIT so the macros can skip link-only packages without deserializing them.
+  The root consumer's `miden-deps/<consumer>.watch` lists the source inputs of every resolved
+  dependency, derived from the cargo dep-info each dependency's own build records (the files
+  cargo actually consumed, build scripts included) plus the manifests, `Cargo.lock`, and
+  `.cargo` configuration that dep-info does not cover. The SDK macros and the contract build
+  script consume these instead of re-deriving resolution #1328
+- `--stop-after=dependencies` stops a manifest-backed build after every dependency is
+  resolved, assembled, and published into the package cache together with the recorded
+  resolution — before the consumer project itself is compiled #1328
+- Package-cache leases and the compiled artifacts of nested builds are created under the
+  session's configured target directory (`--target-dir`/`MIDENC_TARGET_DIR`), so building from
+  a read-only checkout works with a writable target directory; the default location is
+  unchanged #1328
 - Nested cargo builds now treat a present-but-empty `CARGO_ENCODED_RUSTFLAGS` the way cargo
   does — as authoritative suppression of `RUSTFLAGS` — instead of falling back to the plain
   variable. The standalone-file route (`midenc` on a `.rs` file or stdin) composes its rustflags
@@ -40,8 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   nested build publishes its generation; a failed one keeps the previous generation exported
   whole, never a mix of new and old packages. The script watches the project manifests and
   the compiler-recorded source inputs of every resolved dependency, so editing a dependency
-  re-stages its package on the next check. The script uses `cargo miden` from `PATH`, or the
-  binary named by the `CARGO_MIDEN` environment variable #1298
+  re-stages its package on the next check. Staging runs `cargo miden build --release
+  --stop-after=dependencies`, so the crate itself is never compiled twice and its cargo
+  feature selection does not affect staging; the nested build's target directories live
+  under the script's `OUT_DIR`, honoring the outer build's configured target directory. The
+  script uses `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN`
+  environment variable #1298
 - Fixed the contract templates' `miden-project.toml` manifests, which were missing the
   `[lib].path` key the VM v0.25 project model requires; projects generated from the templates
   failed both `cargo miden build` and macro expansion with "unable to parse project manifest:
@@ -76,8 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cargo check`, and IDE analysis need the contract `build.rs`. An expansion without a
   configured cache now fails with instructions instead of searching the filesystem #1298
 - The SDK macros resolve dependencies through the artifact map the compiler writes into the
-  package cache, so workspace, workspace-path, and git dependencies now resolve during macro
-  expansion exactly as the compiler resolved them; the name-probing of `.masp` files remains
+  package cache, so workspace, workspace-path, git, and registry dependencies now resolve
+  during macro expansion exactly as the compiler resolved them. Entries the compiler records
+  as embedding no component WIT — the base link libraries, MASM-only dependencies — are
+  skipped without deserializing their packages. The name-probing of `.masp` files remains
   only as a fallback for hand-assembled caches without a map #1328
 - A dependency whose package embeds no component WIT (and has no `wit` key) — for example a
   link-only MASM library — no longer fails every macro expansion; it is skipped, and only a

@@ -53,8 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-exports `miden_field_repr` under its own crate name, so the derives' generated code
   resolves in crates that only depend on `miden` and glob-import it #1291
 - The SDK macros resolve dependencies through the artifact map the compiler writes into the
-  package cache, so workspace, workspace-path, and git dependencies now resolve during macro
-  expansion exactly as the compiler resolved them; the name-probing of `.masp` files remains
+  package cache, so workspace, workspace-path, git, and registry dependencies now resolve
+  during macro expansion exactly as the compiler resolved them. Entries the compiler records
+  as embedding no component WIT — the base link libraries, MASM-only dependencies — are
+  skipped without deserializing their packages. The name-probing of `.masp` files remains
   only as a fallback for hand-assembled caches without a map #1328
 
 ### Migration and breaking changes
