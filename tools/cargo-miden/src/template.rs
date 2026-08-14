@@ -103,10 +103,12 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
         let cargo_manifest = cargo_manifest
             .parse::<DocumentMut>()
             .context("Failed to parse generated Cargo.toml")?;
-        fs::write(
-            &miden_project_toml,
-            render_miden_project_manifest(&project_name, &cargo_manifest),
-        )?;
+        if cargo_manifest.contains_key("package") {
+            fs::write(
+                &miden_project_toml,
+                render_miden_project_manifest(&project_name, &cargo_manifest),
+            )?;
+        }
     }
 
     if args.force_git_init {
@@ -852,6 +854,44 @@ package = "miden:{{project-name}}""#,
         let project_dir = generate(args)?;
         let rendered = fs::read_to_string(project_dir.join("README.md"))?;
         assert!(rendered.contains("auto_case"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn generate_does_not_create_manifest_for_workspace_template_roots() -> Result<()> {
+        let template_dir = tempdir()?;
+        let template_root = template_dir.path().join("template");
+        fs::create_dir_all(&template_root)?;
+        fs::write(
+            template_root.join("Cargo.toml"),
+            r#"[workspace]
+members = ["contracts/demo"]
+resolver = "2"
+"#,
+        )?;
+        fs::create_dir_all(template_root.join("contracts").join("demo"))?;
+        fs::write(
+            template_root.join("contracts").join("demo").join("miden-project.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )?;
+
+        let destination_dir = tempdir()?;
+        let args = GenerateArgs {
+            template_path: TemplatePath {
+                path: Some(template_dir.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+            destination: Some(destination_dir.path().to_path_buf()),
+            name: Some("workspace-project".into()),
+            force: true,
+            ..Default::default()
+        };
+
+        let project_dir = generate(args)?;
+
+        assert!(!project_dir.join("miden-project.toml").exists());
+        assert!(project_dir.join("contracts").join("demo").join("miden-project.toml").exists());
 
         Ok(())
     }
