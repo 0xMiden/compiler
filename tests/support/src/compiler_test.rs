@@ -1304,7 +1304,10 @@ fn maybe_dump_cargo_expand(
     // script's recursion guard, so a fixture with a `build.rs` expands instead of spawning a
     // nested `cargo miden build` from inside `cargo expand`.
     if let Some(package_cache_dir) = package_cache_dir {
-        cmd.env(midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV, package_cache_dir);
+        cmd.env(
+            midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV,
+            package_cache_dir,
+        );
     }
 
     let output = cmd.output().unwrap_or_else(|err| {

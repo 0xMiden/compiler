@@ -446,13 +446,14 @@ package miden:new@0.1.0;
     fn top_level_wit_packages_reports_identifiers_in_order() {
         let concatenated = "package miden:first@0.1.0; world first-world { }\npackage \
                             miden:second@0.1.0; world second-world { }\n";
-        assert_eq!(top_level_wit_packages(concatenated), [
-            "miden:first@0.1.0".to_string(),
-            "miden:second@0.1.0".to_string()
-        ]);
-        assert_eq!(top_level_wit_packages("package\tmiden:tabbed@1.0.0;\n"), [
-            "miden:tabbed@1.0.0".to_string()
-        ]);
+        assert_eq!(
+            top_level_wit_packages(concatenated),
+            ["miden:first@0.1.0".to_string(), "miden:second@0.1.0".to_string()]
+        );
+        assert_eq!(
+            top_level_wit_packages("package\tmiden:tabbed@1.0.0;\n"),
+            ["miden:tabbed@1.0.0".to_string()]
+        );
     }
 
     /// Ensures world detection is token-based and depth-aware.

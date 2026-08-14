@@ -181,8 +181,9 @@ fn parse_package_and_world(path: &Path) -> Result<Option<(String, String)>, Erro
 /// count gate and the Wasm frontend handle them. The `@<version>` suffix is stripped for
 /// the `package/world` selection spelling.
 fn extract_package_name(contents: &str) -> Option<String> {
-    let first =
-        midenc_frontend_wasm_metadata::top_level_wit_packages(contents).into_iter().next()?;
+    let first = midenc_frontend_wasm_metadata::top_level_wit_packages(contents)
+        .into_iter()
+        .next()?;
     let name = first.split('@').next().unwrap_or(first.as_str()).trim();
     if name.is_empty() {
         None
