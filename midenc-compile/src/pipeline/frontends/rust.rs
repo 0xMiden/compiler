@@ -1085,7 +1085,7 @@ impl RustProjectFrontend {
 ///   list into `cargo:rerun-if-changed` directives, so editing a dependency re-stages its
 ///   package on the next check.
 fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> CompilerResult<()> {
-    use midenc_session::miden_project::ProjectDependencyNodeProvenance;
+    use midenc_session::miden_project::{self, ProjectDependencyNodeProvenance};
 
     if cx.is_virtual_project() {
         return Ok(());
@@ -1093,6 +1093,7 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
     let assembly = cx.assembly();
     let package = &assembly.package;
     let graph = assembly.dependency_graph;
+    let registry = assembly.package_registry;
     let consumer = package.name().to_string();
 
     let mut dependencies = toml_edit::Table::new();
@@ -1108,17 +1109,31 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
             ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
                 entry.insert("path", path.display().to_string().into());
             }
-            ProjectDependencyNodeProvenance::Source(_) => {
+            // Registry-resolved packages are published into the cache exactly like
+            // compiler-built ones, and the scheme can select an assembled component — so
+            // they are mapped like every other artifact.
+            ProjectDependencyNodeProvenance::Source(_)
+            | ProjectDependencyNodeProvenance::Registry { .. } => {
                 entry.insert("package", package_cache::package_file_name(&node.name).into());
             }
-            // The macros skip registry dependencies before consulting the map — MASM base
-            // libraries carry nothing a macro reads — so recording them would only pin file
-            // names nothing verifies.
-            ProjectDependencyNodeProvenance::Registry { .. } => continue,
         }
         // No reader consults the version yet; it is recorded for the #1300 digest pin, which
         // extends these entries with the artifact identity to verify on read.
         entry.insert("version", node.version.to_string().into());
+        // The assembler's registry holds every resolved artifact. Recording whether it
+        // embeds component WIT lets the macros skip a link-only package — a base library,
+        // a MASM-only dependency — without deserializing it. An absent key means unknown,
+        // and the reader reads the package to find out.
+        let package_id: midenc_session::miden_package_registry::PackageId = name.clone().into();
+        let embeds_wit = registry
+            .get_by_semver(&package_id, &node.version)
+            .and_then(|record| record.digest().copied())
+            .map(|digest| miden_project::Version::new(node.version.clone(), digest))
+            .and_then(|version| registry.load_package(&package_id, &version).ok())
+            .map(|package| midenc_frontend_wasm_metadata::package_wit(&package).is_some());
+        if let Some(embeds_wit) = embeds_wit {
+            entry.insert("wit", embeds_wit.into());
+        }
         dependencies
             .insert(name.as_ref(), toml_edit::Item::Value(toml_edit::Value::InlineTable(entry)));
     }

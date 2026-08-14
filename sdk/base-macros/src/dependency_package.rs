@@ -106,15 +106,22 @@ pub(crate) fn collect_dependency_wit_sources(
 
     for dependency in package.dependencies() {
         let name = dependency.name().as_ref();
-        // Registry dependencies are MASM base libraries (`miden-core`, `miden-protocol`)
-        // consumed at link time only; no SDK macro references them, so their (large)
-        // packages are never deserialized here.
-        if matches!(dependency.scheme(), miden_project::DependencyVersionScheme::Registry(_)) {
-            continue;
-        }
-
         let resolved = match &artifact_map {
-            Some(map) => Some(map.resolve(name, error_span)?),
+            // A `wit = false` entry is a link-only package (for example a base library or a
+            // MASM-only dependency): the compiler recorded that there is no component WIT to
+            // read, so its (potentially large) package is never deserialized here.
+            Some(map) => match map.resolve(name, error_span)? {
+                MapResolution::Resolved(root, resolved) => Some((root, resolved)),
+                MapResolution::LinkOnly => {
+                    collected.skipped.push(SkippedDependency {
+                        name: name.to_string(),
+                        reason: "the compiler recorded its package as embedding no component \
+                                 WIT; it is consumed at link time only"
+                            .to_string(),
+                    });
+                    continue;
+                }
+            },
             None => match dependency.scheme() {
                 miden_project::DependencyVersionScheme::Path { path, .. } => {
                     Some(legacy_resolve_path_dependency(manifest_dir, name, path.path())?)
@@ -124,8 +131,8 @@ pub(crate) fn collect_dependency_wit_sources(
                 // the lookup site instead.
                 miden_project::DependencyVersionScheme::Workspace { .. }
                 | miden_project::DependencyVersionScheme::WorkspacePath { .. }
-                | miden_project::DependencyVersionScheme::Git { .. } => None,
-                miden_project::DependencyVersionScheme::Registry(_) => unreachable!(),
+                | miden_project::DependencyVersionScheme::Git { .. }
+                | miden_project::DependencyVersionScheme::Registry(_) => None,
             },
         };
         let Some((dependency_root, resolved)) = resolved else {
@@ -476,20 +483,36 @@ struct DependencyArtifactMap {
 }
 
 /// One artifact selection in a [`DependencyArtifactMap`].
-enum ArtifactMapEntry {
+/// One artifact selection recorded in the map.
+struct ArtifactMapEntry {
+    /// Where the selected artifact lives.
+    location: ArtifactLocation,
+    /// Whether the artifact embeds component WIT, when the compiler recorded it.
+    ///
+    /// `Some(false)` lets the macros skip a link-only package without deserializing it. An
+    /// absent key (a map from an older writer) means unknown, and the package is read to
+    /// find out.
+    embeds_wit: Option<bool>,
+}
+
+enum ArtifactLocation {
     /// A file name inside the cache directory.
     CacheFile(String),
     /// An absolute path outside the cache (a preassembled dependency consumed in place).
     Path(PathBuf),
 }
 
+/// The outcome of resolving one declared dependency through the map.
+enum MapResolution {
+    /// The dependency's package was located and deserialized.
+    Resolved(PathBuf, ResolvedDependencyPackage),
+    /// The compiler recorded the package as embedding no component WIT; it was not read.
+    LinkOnly,
+}
+
 impl DependencyArtifactMap {
     /// Resolves a declared dependency through the map.
-    fn resolve(
-        &self,
-        dependency_name: &str,
-        error_span: Span,
-    ) -> Result<(PathBuf, ResolvedDependencyPackage), Error> {
+    fn resolve(&self, dependency_name: &str, error_span: Span) -> Result<MapResolution, Error> {
         let Some(entry) = self.entries.get(dependency_name) else {
             return Err(Error::new(
                 error_span,
@@ -502,12 +525,15 @@ impl DependencyArtifactMap {
                 ),
             ));
         };
-        let path = match entry {
-            ArtifactMapEntry::CacheFile(file) => self.cache_dir.join(file),
-            ArtifactMapEntry::Path(path) => path.clone(),
+        if entry.embeds_wit == Some(false) {
+            return Ok(MapResolution::LinkOnly);
+        }
+        let path = match &entry.location {
+            ArtifactLocation::CacheFile(file) => self.cache_dir.join(file),
+            ArtifactLocation::Path(path) => path.clone(),
         };
         let package = read_package(&path)?;
-        Ok((path.clone(), ResolvedDependencyPackage { path, package }))
+        Ok(MapResolution::Resolved(path.clone(), ResolvedDependencyPackage { path, package }))
     }
 }
 
@@ -572,14 +598,19 @@ fn load_dependency_artifact_map(
         })?;
         for (name, value) in dependencies {
             let entry = value.as_table().and_then(|entry| {
-                if let Some(file) = entry.get("package").and_then(toml::Value::as_str) {
-                    Some(ArtifactMapEntry::CacheFile(file.to_string()))
-                } else {
-                    entry
-                        .get("path")
-                        .and_then(toml::Value::as_str)
-                        .map(|path| ArtifactMapEntry::Path(PathBuf::from(path)))
-                }
+                let location =
+                    if let Some(file) = entry.get("package").and_then(toml::Value::as_str) {
+                        Some(ArtifactLocation::CacheFile(file.to_string()))
+                    } else {
+                        entry
+                            .get("path")
+                            .and_then(toml::Value::as_str)
+                            .map(|path| ArtifactLocation::Path(PathBuf::from(path)))
+                    };
+                location.map(|location| ArtifactMapEntry {
+                    location,
+                    embeds_wit: entry.get("wit").and_then(toml::Value::as_bool),
+                })
             });
             let Some(entry) = entry else {
                 return Err(map_error(format!(
@@ -1069,6 +1100,27 @@ mod tests {
         miden_project::Package::new("consumer", target).with_dependencies([dependency])
     }
 
+    fn consumer_with_registry_dependency(dependency_name: &str) -> Box<miden_project::Package> {
+        use miden_assembly_syntax::{ast, debuginfo::Span as MidenSpan};
+
+        let target = miden_project::Target::new(
+            miden_project::TargetType::Library,
+            "default",
+            ast::Path::new("empty"),
+            miden_project::Uri::new("lib/src.rs"),
+        );
+        let dependency = miden_project::Dependency::new(
+            MidenSpan::unknown(Arc::<str>::from(dependency_name)),
+            miden_project::DependencyVersionScheme::Registry(
+                miden_project::VersionRequirement::Semantic(MidenSpan::unknown(
+                    "^0.1.0".parse().unwrap(),
+                )),
+            ),
+            miden_project::Linkage::Dynamic,
+        );
+        miden_project::Package::new("consumer", target).with_dependencies([dependency])
+    }
+
     const MAPPED_DEP_WIT: &str = "package miden:mapped-dep@0.1.0;\n\ninterface api {\n  get: \
                                   func() -> u64;\n}\n\nworld w {\n  export api;\n}\n";
 
@@ -1103,6 +1155,65 @@ mod tests {
             Some(map_dir.join("consumer.deps.toml").as_path()),
             "the consumed map must be reported for build-input tracking"
         );
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn artifact_map_resolves_a_registry_component() {
+        // The registry scheme is generic and can select an assembled component; with the
+        // compiler's map present it resolves exactly like every other scheme.
+        let temp_root = fixture_root("artifact-map-registry");
+        let cache_dir = temp_root.join("package-cache");
+        write_masp_fixture(&cache_dir.join("mapped-dep.masp"), "mapped-dep", Some(MAPPED_DEP_WIT));
+        let map_dir = cache_dir.join("miden-deps");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(
+            map_dir.join("consumer.deps.toml"),
+            "schema = 1\n\n[dependencies]\nthe-dep = { package = \"mapped-dep.masp\", version = \
+             \"0.1.0\" }\n",
+        )
+        .unwrap();
+        let package = consumer_with_registry_dependency("the-dep");
+
+        let collected = with_test_package_cache_dir(Some(&cache_dir), || {
+            collect_dependency_wit_sources(&temp_root, &package)
+        })
+        .expect("the map must resolve the registry dependency");
+
+        assert_eq!(collected.sources.len(), 1);
+        assert_eq!(collected.sources[0].name, "the-dep");
+        assert_eq!(collected.sources[0].package_path, cache_dir.join("mapped-dep.masp"));
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    #[test]
+    fn recorded_link_only_entries_are_skipped_without_reading_the_package() {
+        // `wit = false` is the compiler's record that the package embeds no component WIT.
+        // The package file deliberately does not exist in the fixture cache: a skip that
+        // tried to read it would fail, proving link-only packages are never deserialized.
+        let temp_root = fixture_root("link-only-fast-path");
+        let cache_dir = temp_root.join("package-cache");
+        let map_dir = cache_dir.join("miden-deps");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(
+            map_dir.join("consumer.deps.toml"),
+            "schema = 1\n\n[dependencies]\nmiden-core = { package = \"miden-core.masp\", version \
+             = \"0.1.0\", wit = false }\n",
+        )
+        .unwrap();
+        let package = consumer_with_registry_dependency("miden-core");
+
+        let collected = with_test_package_cache_dir(Some(&cache_dir), || {
+            collect_dependency_wit_sources(&temp_root, &package)
+        })
+        .expect("a recorded link-only package must be skipped without being read");
+
+        assert!(collected.sources.is_empty());
+        assert_eq!(collected.skipped.len(), 1);
+        assert_eq!(collected.skipped[0].name, "miden-core");
+        assert!(collected.skipped[0].reason.contains("link time"));
 
         std::fs::remove_dir_all(temp_root).unwrap();
     }
