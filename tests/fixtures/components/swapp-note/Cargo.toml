@@ -26,10 +26,3 @@ project-kind = "note-script"
 
 [package.metadata.component]
 package = "miden:swapp-note"
-
-# Miden dependencies for cargo-miden build/linking
-[package.metadata.miden.dependencies]
-"miden:basic-wallet" = { path = "../../../../examples/basic-wallet" }
-
-[package.metadata.component.target.dependencies]
-"miden:basic-wallet" = { path = "../../../../examples/basic-wallet/target/generated-wit/" }

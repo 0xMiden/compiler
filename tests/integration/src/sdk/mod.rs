@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod base;
+mod build_script;
 mod canonabi;
 mod macros;
 mod note_script_root;
@@ -129,6 +130,32 @@ fn assert_component_export_signatures_match_wit(package: &miden_mast_package::Pa
 /// Creates a generated workspace containing the existing basic-wallet/swapp-note FPI pair.
 #[track_caller]
 fn fpi_package_cache_regression_project() -> crate::Project {
+    let original_swapp_note_source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../fixtures/components/swapp-note/src/lib.rs"
+    ));
+    let swapp_note_mutation = "        let offered_asset = &note_assets[0];";
+    assert_eq!(
+        original_swapp_note_source.matches(swapp_note_mutation).count(),
+        1,
+        "the swapp-note fixture mutation must match exactly once"
+    );
+    let swapp_note_source = original_swapp_note_source.replacen(
+        swapp_note_mutation,
+        "        let offered_asset = &note_assets[0];\n        let foreign_wallet = \
+         Wallet::new(self.creator);\n        foreign_wallet.receive_asset(*offered_asset);",
+        1,
+    );
+    basic_wallet_swapp_note_project("fpi_package_cache_stale_root", &swapp_note_source, None)
+}
+
+/// Creates a generated workspace with the basic-wallet/swapp-note pair and optional build script.
+#[track_caller]
+fn basic_wallet_swapp_note_project(
+    name: &str,
+    swapp_note_source: &str,
+    swapp_note_build_script: Option<&str>,
+) -> crate::Project {
     let sdk_path = sdk_crate_path();
     let workspace_manifest = r#"
 [workspace]
@@ -180,9 +207,6 @@ package = "miden:swapp-note"
 
 [package.metadata.miden.dependencies]
 "miden:basic-wallet" = {{ path = "../basic-wallet" }}
-
-[package.metadata.component.target.dependencies]
-"miden:basic-wallet" = {{ path = "../basic-wallet/target/generated-wit/" }}
 "#,
         sdk_path.display(),
     );
@@ -198,28 +222,8 @@ path = "src/lib.rs"
 
 [dependencies]
 basic-wallet = { path = "../basic-wallet" }
-
-[package.metadata.miden.dependencies]
-basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
 "#;
-    let original_swapp_note_source = include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../fixtures/components/swapp-note/src/lib.rs"
-    ));
-    let swapp_note_mutation = "        let offered_asset = &note_assets[0];";
-    assert_eq!(
-        original_swapp_note_source.matches(swapp_note_mutation).count(),
-        1,
-        "the swapp-note fixture mutation must match exactly once"
-    );
-    let swapp_note_source = original_swapp_note_source.replacen(
-        swapp_note_mutation,
-        "        let offered_asset = &note_assets[0];\n        let foreign_wallet = \
-         Wallet::new(self.creator);\n        foreign_wallet.receive_asset(*offered_asset);",
-        1,
-    );
-
-    project("fpi_package_cache_stale_root")
+    let mut builder = project(name)
         .file("Cargo.toml", workspace_manifest)
         .file(
             ".cargo/config.toml",
@@ -245,8 +249,11 @@ basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
         )
         .file("swapp-note/Cargo.toml", &swapp_note_cargo)
         .file("swapp-note/miden-project.toml", swapp_note_miden_manifest)
-        .file("swapp-note/src/lib.rs", &swapp_note_source)
-        .build()
+        .file("swapp-note/src/lib.rs", swapp_note_source);
+    if let Some(build_script) = swapp_note_build_script {
+        builder = builder.file("swapp-note/build.rs", build_script);
+    }
+    builder.build()
 }
 
 /// Reads the named dependency package from a compiled consumer's filesystem cache.

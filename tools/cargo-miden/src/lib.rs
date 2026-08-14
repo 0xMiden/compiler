@@ -53,6 +53,10 @@ where
             cmd.exec()?;
             Ok(None)
         }
+        cli::CargoMidenCommand::PackageCache(cmd) => {
+            cmd.exec()?;
+            Ok(None)
+        }
     }
 }
 

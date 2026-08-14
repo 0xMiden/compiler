@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use cranelift_entity::{PrimaryMap, packed_option::ReservedValue};
 use midenc_frontend_wasm_metadata::{
-    FrontendMetadata, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME, decode_section,
+    FrontendMetadata, PackageSections, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+    WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
+    count_top_level_wit_packages, decode_section,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
@@ -86,8 +88,100 @@ pub struct ParsedModule<'data> {
 
     /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
     pub account_component_metadata_bytes: Option<&'data [u8]>,
+    /// The component's public WIT source emitted by the `#[component]` macro.
+    pub component_wit_bytes: Option<&'data [u8]>,
     /// Frontend-only component metadata entries emitted by SDK macros (empty when none present).
     pub component_frontend_metadata: Vec<FrontendMetadata>,
+}
+
+/// Validates that a component WIT custom section holds exactly one top-level WIT package.
+///
+/// Linking two `#[component]` implementations into one binary concatenates their identically
+/// named custom sections into a single section whose merged text is not valid WIT, and a section
+/// without any package declaration cannot be consumed either; name the actual cause here, at the
+/// producing crate, instead of surfacing an opaque parse error in dependent crates.
+fn validate_component_wit_section(
+    bytes: &[u8],
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    let Ok(wit) = core::str::from_utf8(bytes) else {
+        return Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section does \
+                 not contain valid UTF-8 WIT source"
+            ))
+            .into_report());
+    };
+
+    match count_top_level_wit_packages(wit) {
+        1 => Ok(()),
+        0 => Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section does \
+                 not contain a top-level WIT package declaration"
+            ))
+            .into_report()),
+        package_declarations => Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: found {package_declarations} top-level WIT package declarations in \
+                 the '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' custom section; a linked binary \
+                 may contain at most one `#[component]` implementation"
+            ))
+            .into_report()),
+    }
+}
+
+/// Merges the package-section payloads of all core modules that feed one component.
+///
+/// Each payload is a singleton of the final package, so at most one module may supply it.
+pub(crate) fn collect_package_sections<'a, 'data: 'a>(
+    modules: impl Iterator<Item = &'a ParsedModule<'data>>,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<PackageSections> {
+    let mut account_component_metadata = None;
+    let mut component_wit = None;
+    for module in modules {
+        merge_section_payload(
+            &mut account_component_metadata,
+            module.account_component_metadata_bytes,
+            WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
+            diagnostics,
+        )?;
+        merge_section_payload(
+            &mut component_wit,
+            module.component_wit_bytes,
+            WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME,
+            diagnostics,
+        )?;
+    }
+    Ok(PackageSections {
+        account_component_metadata: account_component_metadata.map(<[u8]>::to_vec),
+        component_wit: component_wit.map(<[u8]>::to_vec),
+    })
+}
+
+/// Records a module's section payload, rejecting a second module supplying the same section.
+fn merge_section_payload<'data>(
+    merged: &mut Option<&'data [u8]>,
+    payload: Option<&'data [u8]>,
+    section_name: &str,
+    diagnostics: &DiagnosticsHandler,
+) -> WasmResult<()> {
+    if let Some(payload) = payload
+        && merged.replace(payload).is_some()
+    {
+        return Err(diagnostics
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "wasm error: found multiple '{section_name}' custom sections across the \
+                 component's core modules; only one is allowed per component"
+            ))
+            .into_report());
+    }
+    Ok(())
 }
 
 /// Collects the frontend metadata entries emitted by all core modules of one component.
@@ -325,8 +419,31 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                 }
             }
             Payload::CustomSection(s) if s.name().starts_with(".debug_") => self.dwarf_section(&s),
-            Payload::CustomSection(s) if s.name() == "rodata,miden_account" => {
-                self.result.account_component_metadata_bytes = Some(s.data());
+            Payload::CustomSection(s)
+                if s.name() == WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME =>
+            {
+                if self.result.account_component_metadata_bytes.replace(s.data()).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "wasm error: multiple \
+                             '{WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME}' custom \
+                             sections were found; only one is allowed per core Wasm module"
+                        ))
+                        .into_report());
+                }
+            }
+            Payload::CustomSection(s) if s.name() == WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME => {
+                validate_component_wit_section(s.data(), diagnostics)?;
+                if self.result.component_wit_bytes.replace(s.data()).is_some() {
+                    return Err(diagnostics
+                        .diagnostic(Severity::Error)
+                        .with_message(format!(
+                            "wasm error: multiple '{WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME}' \
+                             custom sections were found; only one is allowed per core Wasm module"
+                        ))
+                        .into_report());
+                }
             }
             Payload::CustomSection(s) if s.name() == WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME => {
                 let metadata = decode_section(s.data()).map_err(|err| {

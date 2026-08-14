@@ -17,6 +17,11 @@ Contracts are built individually with cargo-miden (not `cargo build`):
 cargo miden build --manifest-path contracts/<name>/Cargo.toml --release
 ```
 
+Each contract has a `build.rs` that populates the Miden package cache, so plain `cargo check`
+and IDE analysis resolve dependency packages without a manual `cargo miden build` first. The
+script needs `cargo miden` on `PATH` (or a binary named by the `CARGO_MIDEN` environment
+variable).
+
 Tests run via the workspace:
 ```
 cargo test -p integration --release

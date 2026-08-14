@@ -11,7 +11,6 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
-    component_macro::generate_wit::write_component_wit_file,
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
     util::{generate_frontend_link_section, is_type_named, is_unit_return_type},
     wit_builder::WitBuilder,
@@ -375,24 +374,6 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         &constructor_type_imports,
         &dependency_imports,
     );
-    // The public WIT file lets other crates declare this note package as a Miden dependency and
-    // call its exported constructors. It stays export-only (no dependency imports) so dependents
-    // don't have to materialize this note's transitive dependencies next to the generated WIT.
-    let public_wit = build_note_script_wit(
-        &component_package,
-        metadata.package.version().inner(),
-        &interface_name,
-        &world_name,
-        &export_name,
-        &constructors,
-        &constructor_type_imports,
-        &[],
-    );
-    if let Err(err) =
-        write_component_wit_file(proc_macro::Span::call_site(), &public_wit, &component_package)
-    {
-        return err.into_compile_error();
-    }
     let inline_literal = Literal::string(&inline_wit);
     let guest_trait_path = match build_guest_trait_path(&component_package, &interface_module) {
         Ok(path) => path,

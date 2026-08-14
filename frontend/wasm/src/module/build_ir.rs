@@ -19,14 +19,14 @@ use super::{
     module_translation_state::ModuleTranslationState, types::ModuleTypesBuilder,
 };
 use crate::{
-    WasmTranslationConfig,
+    FrontendOutput, WasmTranslationConfig,
     error::WasmResult,
     intrinsics::Intrinsic,
     module::{
         DefinedFuncIndex,
         func_translator::FuncTranslator,
         linker_stubs::{is_unreachable_stub, maybe_lower_linker_stub},
-        module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule},
+        module_env::{FunctionBodyData, ModuleEnvironment, ParsedModule, collect_package_sections},
         types::ir_type,
     },
 };
@@ -41,7 +41,7 @@ pub fn translate_module_as_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,
     context: Rc<Context>,
-) -> WasmResult<builtin::ComponentRef> {
+) -> WasmResult<FrontendOutput> {
     let mut validator = Validator::new_with_features(crate::supported_features());
     let parser = wasmparser::Parser::new(0);
     let mut module_types_builder = Default::default();
@@ -55,6 +55,8 @@ pub fn translate_module_as_component(
     if let Some(name_override) = config.override_name.as_ref() {
         parsed_module.module.set_name_override(name_override.clone());
     }
+    let sections =
+        collect_package_sections(core::iter::once(&parsed_module), context.diagnostics())?;
     let module_types = module_types_builder;
 
     // If a world wasn't provided to us, create one
@@ -88,7 +90,10 @@ pub fn translate_module_as_component(
     )?;
     build_ir_module(&mut parsed_module, &module_types, &mut module_state, config, context)?;
 
-    Ok(component_ref)
+    Ok(FrontendOutput {
+        component: component_ref,
+        sections,
+    })
 }
 
 pub fn build_ir_module(

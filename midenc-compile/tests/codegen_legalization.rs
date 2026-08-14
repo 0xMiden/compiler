@@ -78,7 +78,7 @@ fn build_test_component(
     MidenComponent {
         world,
         component: Some(component),
-        account_component_metadata_bytes: None,
+        sections: Default::default(),
         source_provenance: ProjectSourceProvenanceInputs {
             root: SourceFileProvenance {
                 path: Path::new(file!()).to_path_buf().into_boxed_path(),

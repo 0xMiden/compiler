@@ -9,7 +9,10 @@
 //! [`RustProjectFrontend`](super::frontends::rust::RustProjectFrontend),
 //! [`WasmFrontend`](super::frontends::wasm::WasmFrontend) and
 //! [`HirFrontend`](super::frontends::hir::HirFrontend) alike. Keeping one copy is what makes
-//! every route link the same inputs and emit the same sections.
+//! every route link the same inputs and emit the same sections — with one caveat: a `.hir`
+//! input carries no Wasm custom sections to extract, so recompiling an emitted HIR artifact
+//! produces a package without the account-metadata and WIT sections its Wasm-derived
+//! counterpart has.
 
 use alloc::vec::Vec;
 
@@ -59,7 +62,7 @@ pub(crate) fn prepare_assembler(
 pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
-    account_component_metadata_bytes: Option<&[u8]>,
+    sections: &midenc_frontend_wasm_metadata::PackageSections,
     target: &midenc_session::miden_project::Target,
     registry: &dyn miden_package_registry::PackageRegistryAndProvider,
 ) -> Result<(), Report> {
@@ -67,7 +70,8 @@ pub(crate) fn post_process_package(
     use miden_mast_package::{Section, SectionId};
     use midenc_session::miden_project::TargetType;
 
-    attach_account_component_metadata(package, account_component_metadata_bytes);
+    attach_account_component_metadata(package, sections.account_component_metadata.as_deref());
+    attach_component_wit(package, sections.component_wit.as_deref());
     extend_rodata_advice_map(package, &component.rodata);
 
     // Embed the kernel in note/transaction script packages, if not already embedded
@@ -98,6 +102,15 @@ fn attach_account_component_metadata(
         package
             .sections
             .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes.to_vec()));
+    }
+}
+
+/// Attach the component's public WIT source to the assembled package.
+fn attach_component_wit(package: &mut Package, component_wit_bytes: Option<&[u8]>) {
+    use miden_mast_package::Section;
+    if let Some(bytes) = component_wit_bytes {
+        let id = midenc_frontend_wasm_metadata::package_wit_section_id();
+        package.sections.push(Section::new(id, bytes.to_vec()));
     }
 }
 

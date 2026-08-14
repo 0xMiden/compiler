@@ -14,6 +14,3 @@ debug = true
 miden-core = "*"
 miden-protocol = "*"
 counter-contract = { path = "../counter-contract" }
-
-[package.metadata.miden.dependencies]
-counter-contract = { wit = "../counter-contract/target/generated-wit/" }

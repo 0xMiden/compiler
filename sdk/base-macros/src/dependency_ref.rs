@@ -203,6 +203,22 @@ pub(crate) fn select_dependencies(
                 .iter()
                 .find(|dependency| dependency.name == reference.package)
                 .ok_or_else(|| {
+                    // A declared dependency can be absent from the collected set because its
+                    // scheme is skipped at expansion time; name that instead of "not declared".
+                    if let Some(scheme) = crate::dependency_package::unsupported_dependency_scheme(
+                        &manifest.package,
+                        &reference.package,
+                    ) {
+                        return Error::new(
+                            reference.span,
+                            format!(
+                                "dependency `{}` is declared with a {scheme} dependency scheme, \
+                                 which is not supported at macro expansion time; use a path \
+                                 dependency",
+                                reference.package_ident,
+                            ),
+                        );
+                    }
                     Error::new(
                         reference.span,
                         format!(

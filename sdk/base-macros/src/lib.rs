@@ -67,6 +67,7 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
+mod dependency_package;
 mod dependency_ref;
 mod export_type;
 mod foreign_account;
@@ -75,6 +76,8 @@ mod generate;
 mod manifest_paths;
 mod note;
 mod script;
+#[cfg(test)]
+mod test_support;
 mod types;
 mod util;
 mod wit_builder;

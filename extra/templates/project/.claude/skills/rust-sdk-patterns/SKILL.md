@@ -95,7 +95,7 @@ To send assets to another account, create a P2ID (Pay-to-ID) output note. See [m
 
 ## Cross-Component Dependencies
 
-To call another component's methods from a note or tx script, two Cargo.toml sections are needed. See [increment-note/Cargo.toml](../../../contracts/increment-note/Cargo.toml) for a working example showing both `[package.metadata.miden.dependencies]` and `[package.metadata.component.target.dependencies]`.
+To call another component's methods from a note or tx script, declare the component under `[dependencies]` in `miden-project.toml` (for example `counter-account = { path = "../counter-account" }`). See [increment-note/miden-project.toml](../../../contracts/increment-note/miden-project.toml) for a working example; the interface comes from the dependency's compiled package, so no Cargo.toml metadata is needed.
 
 Then import the bindings in your Rust code. See [increment-note/src/lib.rs](../../../contracts/increment-note/src/lib.rs) line 13 for the import pattern: `use crate::bindings::miden::target_component::target_component;`
 
@@ -185,6 +185,6 @@ See [miden-bank deposit-note](https://github.com/0xMiden/tutorials/blob/main/exa
 - [ ] `crate-type = ["cdylib"]` in Cargo.toml
 - [ ] Correct `project-kind` in `[package.metadata.miden]`
 - [ ] Typed storage uses `StorageValue<T>` / `StorageMap<K, V>` with `get()` / `set()`
-- [ ] Cross-component deps in both `[package.metadata.miden.dependencies]` and `[package.metadata.component.target.dependencies]`
+- [ ] Cross-component deps declared under `[dependencies]` in `miden-project.toml`
 - [ ] Felt arithmetic validated before subtraction (see rust-sdk-pitfalls skill)
 - [ ] Felt comparisons use `.as_canonical_u64()` (see rust-sdk-pitfalls skill)
