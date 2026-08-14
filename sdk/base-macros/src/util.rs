@@ -140,7 +140,9 @@ pub(crate) fn generate_wit_link_section(wit_source: &str) -> Result<TokenStream2
             )]
             #[doc(hidden)]
             #[allow(clippy::octal_escapes)]
-            #[used]
+            // No `#[used]`: the section survives without it, and on this target the
+            // attribute additionally lands the bytes in the module's data segments,
+            // growing every package by the size of its own WIT.
             pub static __MIDEN_COMPONENT_WIT: [u8; #wit_len] = *#encoded_bytes;
         }
     })
