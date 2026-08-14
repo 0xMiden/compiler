@@ -70,7 +70,7 @@ pub(crate) enum PackageCacheLease {
 }
 
 impl PackageCacheLease {
-    /// Derives the package-cache directory for the root build of `project_dir`.
+    /// Derives the package-cache directory for a root build using `target_dir`.
     ///
     /// Adopts the directory named by `MIDENC_PACKAGE_CACHE` when the variable is set
     /// (an empty value counts as unset), and mints a unique lease under
@@ -82,18 +82,18 @@ impl PackageCacheLease {
     ///
     /// The error is a `String` so the caller can memoize it in a shared cell and report
     /// it identically on every access.
-    pub(crate) fn create(project_dir: &Path) -> Result<Self, String> {
-        Self::from_env_value(std::env::var_os(PACKAGE_CACHE_ENV), project_dir)
+    pub(crate) fn create(target_dir: &Path) -> Result<Self, String> {
+        Self::from_env_value(std::env::var_os(PACKAGE_CACHE_ENV), target_dir)
     }
 
     /// [`Self::create`] with the environment read separated out, for tests.
     fn from_env_value(
         env_value: Option<std::ffi::OsString>,
-        project_dir: &Path,
+        target_dir: &Path,
     ) -> Result<Self, String> {
         match env_value {
             Some(value) if !value.is_empty() => Self::adopt(PathBuf::from(value)),
-            _ => Self::lease(project_dir),
+            _ => Self::lease(target_dir),
         }
     }
 
@@ -117,9 +117,9 @@ impl PackageCacheLease {
         Ok(Self::Adopted(dir))
     }
 
-    /// Mints a unique lease directory under [`package_cache_parent`] of `project_dir`.
-    fn lease(project_dir: &Path) -> Result<Self, String> {
-        let parent = package_cache_parent(project_dir);
+    /// Mints a unique lease directory under [`package_cache_parent`] of `target_dir`.
+    fn lease(target_dir: &Path) -> Result<Self, String> {
+        let parent = package_cache_parent(target_dir);
         std::fs::create_dir_all(&parent).map_err(|err| {
             format!("cannot create the package cache parent '{}': {err}", parent.display())
         })?;
@@ -143,12 +143,15 @@ impl PackageCacheLease {
     }
 }
 
-/// `<project>/target/miden/packages` — the parent directory of every minted lease.
+/// `<target-dir>/packages` — the parent directory of every minted lease.
 ///
-/// Tied to the project directory rather than `--target-dir`, so every participant in one
-/// build derives the same parent. The unique lease name below it does the isolation.
-pub(crate) fn package_cache_parent(project_dir: &Path) -> PathBuf {
-    project_dir.join("target").join("miden").join("packages")
+/// Anchored at the session's configured target directory (`<cwd>/target/miden` by default),
+/// so a caller-supplied `--target-dir` — a writable location for a read-only checkout, for
+/// example — is honored. Only the root build derives this path; every nested participant
+/// receives it through `MIDENC_PACKAGE_CACHE`, so agreement needs no fixed anchor. The
+/// unique lease name below the parent does the isolation.
+pub(crate) fn package_cache_parent(target_dir: &Path) -> PathBuf {
+    target_dir.join("packages")
 }
 
 #[cfg(test)]
@@ -206,11 +209,11 @@ mod tests {
     fn creation_fails_closed_on_an_unwritable_parent() {
         let temp = tempfile::TempDir::new().unwrap();
         // Occupy the parent path with a file, so the directory cannot be created.
-        let project_dir = temp.path().join("project");
-        std::fs::create_dir_all(project_dir.join("target").join("miden")).unwrap();
-        std::fs::write(package_cache_parent(&project_dir), b"not a directory").unwrap();
+        let target_dir = temp.path().join("target-dir");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        std::fs::write(package_cache_parent(&target_dir), b"not a directory").unwrap();
 
-        let error = PackageCacheLease::from_env_value(None, &project_dir).unwrap_err();
+        let error = PackageCacheLease::from_env_value(None, &target_dir).unwrap_err();
         assert!(error.contains("package cache"), "unexpected error text: {error}");
     }
 }

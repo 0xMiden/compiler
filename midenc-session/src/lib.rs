@@ -388,18 +388,18 @@ impl Session {
     /// process already exported `MIDENC_PACKAGE_CACHE`, that directory is adopted as-is and
     /// left in place — the caller owns its location and lifetime (this is how a contract
     /// `build.rs` keeps the packages readable after the compiler exits). Otherwise the
-    /// directory is a per-build lease with a globally unique name under the project's own
-    /// `target/miden/packages/`, created on first access and deleted when the last clone of
-    /// this session drops; see the `package_lease` module for both lifecycles.
+    /// directory is a per-build lease with a globally unique name under the session's
+    /// configured target directory (`<target-dir>/packages`), created on first access and
+    /// deleted when the last clone of this session drops; see the `package_lease` module for
+    /// both lifecycles. Anchoring at the target directory honors a caller-supplied
+    /// `--target-dir` — a writable location for a read-only checkout, for example.
     ///
     /// Both readers — this session's package registry and the nested `cargo` builds a Rust
     /// project's dependencies run through — must agree on the answer, which is why there is
     /// one derivation of it. Only the root compilation session derives the path. Nested
     /// dependency sessions receive the root value threaded through their build environment,
     /// rather than deriving paths from their own locators: a dependency with a private
-    /// directory could not see its already-assembled transitive dependencies. The path is
-    /// intentionally tied to the project directory and ignores `--target-dir`, so every
-    /// participant in one build agrees on the location.
+    /// directory could not see its already-assembled transitive dependencies.
     ///
     /// [`Session`] is [`Clone`], and clones share the lease cell, so every clone observes the
     /// same directory and no clone can mint a second one. Errors when the directory cannot be
@@ -414,12 +414,12 @@ impl Session {
     /// silently got no filesystem cache at all, while a library project of the same shape got one.
     #[cfg(feature = "std")]
     pub fn filesystem_package_cache_dir(&self) -> Result<Option<PathBuf>, Report> {
-        let Some(project_dir) = self.package_cache_project_dir() else {
+        if self.package_cache_project_dir().is_none() {
             return Ok(None);
-        };
+        }
         let lease = self
             .package_cache_lease
-            .get_or_init(|| package_lease::PackageCacheLease::create(&project_dir));
+            .get_or_init(|| package_lease::PackageCacheLease::create(&self.options.target_dir));
         match lease {
             Ok(lease) => Ok(Some(lease.path().to_path_buf())),
             Err(message) => Err(Report::msg(message.clone())),
@@ -432,10 +432,11 @@ impl Session {
         Ok(None)
     }
 
-    /// The project directory whose `target/miden/packages` tree holds this session's cache.
+    /// The project directory this session's package cache belongs to.
     ///
-    /// `None` unless this session's input is a project locator, mirroring
-    /// [`Session::filesystem_package_cache_dir`].
+    /// Used as the gate for having a cache at all: `None` unless this session's input is a
+    /// project locator, mirroring [`Session::filesystem_package_cache_dir`]. The cache itself
+    /// is anchored at the configured target directory, not here.
     fn package_cache_project_dir(&self) -> Option<PathBuf> {
         let input = self.input.as_ref()?;
         if !matches!(input.file_type(), FileType::Toml) {
@@ -818,7 +819,8 @@ mod tests {
         );
 
         let cache_dir = session.filesystem_package_cache_dir().unwrap().unwrap();
-        let expected_parent = temp.path().canonicalize().unwrap().join("target/miden/packages");
+        // The lease is anchored at the configured target directory, honoring `--target-dir`.
+        let expected_parent = temp.path().join("target/packages");
         assert_eq!(cache_dir.parent(), Some(expected_parent.as_path()));
         assert!(cache_dir.is_dir(), "the lease directory must exist once derived");
 

@@ -93,7 +93,7 @@ fn main() {
     // Stage the dependency packages: the nested compiler adopts the generation through
     // MIDENC_PACKAGE_CACHE, publishes every dependency package into it before the root
     // target compiles, and leaves the directory in place for the outer build to read.
-    let build = run_cargo_miden_build(&manifest_dir, &next_dir);
+    let build = run_cargo_miden_build(&manifest_dir, &next_dir, &out_dir.join("nested-target"));
     let exported = if build.status.success() {
         // Only a complete generation becomes current. The pointer write is the publication
         // step: a crash before it leaves the previous generation exported.
@@ -179,10 +179,13 @@ fn main() {
 /// dependency packages into `cache_dir`.
 ///
 /// `CARGO_MIDEN` selects a specific `cargo-miden` binary; otherwise the `cargo miden` plugin
-/// is resolved through the `cargo` that drives this build. The nested build gets its own
-/// cargo target directory: the outer cargo holds a lock on this build's target directory
-/// while build scripts run, and a nested build against the same directory would deadlock.
-fn run_cargo_miden_build(manifest_dir: &Path, cache_dir: &Path) -> Output {
+/// is resolved through the `cargo` that drives this build. The nested build's cargo and
+/// midenc target directories live under `nested_target` (inside this script's `OUT_DIR`),
+/// so every write lands beneath the outer build's configured target directory and is
+/// removed by `cargo clean`. The nested cargo target must stay disjoint from the outer
+/// target directory itself: the outer cargo holds a lock on it while build scripts run,
+/// and a nested build against the same directory would deadlock.
+fn run_cargo_miden_build(manifest_dir: &Path, cache_dir: &Path, nested_target: &Path) -> Output {
     let mut command = match env::var_os("CARGO_MIDEN") {
         Some(cargo_miden) => Command::new(cargo_miden),
         None => Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into())),
@@ -191,10 +194,8 @@ fn run_cargo_miden_build(manifest_dir: &Path, cache_dir: &Path) -> Output {
         .args(["miden", "build", "--release"])
         .current_dir(manifest_dir)
         .env("MIDENC_PACKAGE_CACHE", cache_dir)
-        .env(
-            "CARGO_TARGET_DIR",
-            manifest_dir.join("target").join("miden").join("build-script"),
-        );
+        .env("CARGO_TARGET_DIR", nested_target.join("cargo"))
+        .env("MIDENC_TARGET_DIR", nested_target.join("miden"));
     command.output().unwrap_or_else(|err| {
         panic!(
             "failed to run `cargo miden build`: {err}.\nInstall cargo-miden (`cargo install \
