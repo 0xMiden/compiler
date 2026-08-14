@@ -13,7 +13,10 @@ fn cargo_check_miden_target(project: &crate::cargo_proj::Project) -> std::proces
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         // The macros read dependency packages only from this directory, the way a driven build
         // or the contract build script exposes it.
-        .env("MIDENC_PACKAGE_CACHE", project.root().join("package-cache"))
+        .env(
+            midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV,
+            project.root().join("package-cache"),
+        )
         .current_dir(project.root())
         .output()
         .expect("failed to spawn `cargo check` for the component macro regression test")

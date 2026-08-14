@@ -75,8 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the SDK macros read dependency WIT from the dependency's compiled package. The
   `wit = "..."` keys in `miden-project.toml` are now only a fallback for dependency packages
   without embedded WIT (e.g. produced by other toolchains): setting the key for a package that
-  embeds WIT is an error, and packages built by older Miden toolchains are rejected unless the
-  key supplies their WIT. See [MIGRATION.md](./sdk/MIGRATION.md) for the manifest edits and
+  embeds WIT is an error, and a package built by an older Miden toolchain is skipped unless the
+  key supplies its WIT — only a macro that references it reports the missing interface. See [MIGRATION.md](./sdk/MIGRATION.md) for the manifest edits and
   rebuild steps #1248
 - BREAKING: The SDK macros now read dependency packages only from the `MIDENC_PACKAGE_CACHE`
   directory (or from a manifest path that names a `.masp` file directly). The previous search

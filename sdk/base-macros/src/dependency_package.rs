@@ -257,8 +257,11 @@ pub(crate) fn unsupported_dependency_scheme(
         miden_project::DependencyVersionScheme::Workspace { .. } => Some("workspace"),
         miden_project::DependencyVersionScheme::WorkspacePath { .. } => Some("workspace path"),
         miden_project::DependencyVersionScheme::Git { .. } => Some("git"),
-        miden_project::DependencyVersionScheme::Path { .. }
-        | miden_project::DependencyVersionScheme::Registry(_) => None,
+        // With the compiler's artifact map a registry dependency resolves like any other, and
+        // then never reaches this lookup (it is collected or skipped). Reaching it means the
+        // cache is hand-assembled, where the scheme genuinely cannot be resolved.
+        miden_project::DependencyVersionScheme::Registry(_) => Some("registry"),
+        miden_project::DependencyVersionScheme::Path { .. } => None,
     }
 }
 
@@ -464,9 +467,13 @@ fn read_package(package_path: &Path) -> Result<Arc<Package>, Error> {
                 )
             })?;
     PACKAGE_READS.with(|reads| {
-        reads
-            .borrow_mut()
-            .insert(package_path.to_path_buf(), (identity, package.clone()));
+        let mut reads = reads.borrow_mut();
+        // Every driven build exchanges packages through a fresh lease directory, so a
+        // long-lived proc-macro server accumulates entries for paths that no longer exist —
+        // each pinning a deserialized MAST forest. Dropping dead paths on the (rare) insert
+        // bounds the memo to the caches that are still on disk.
+        reads.retain(|path, _| path.exists());
+        reads.insert(package_path.to_path_buf(), (identity, package.clone()));
     });
     Ok(package)
 }
@@ -509,7 +516,6 @@ struct DependencyArtifactMap {
 }
 
 /// One artifact selection in a [`DependencyArtifactMap`].
-/// One artifact selection recorded in the map.
 struct ArtifactMapEntry {
     /// Where the selected artifact lives.
     location: ArtifactLocation,
@@ -521,6 +527,7 @@ struct ArtifactMapEntry {
     embeds_wit: Option<bool>,
 }
 
+/// Where a selected artifact lives.
 enum ArtifactLocation {
     /// A file name inside the cache directory.
     CacheFile(String),

@@ -433,9 +433,10 @@ After:
 basic-wallet = { path = "../basic-wallet" }
 ```
 
-A `.masp` built by an older SDK has no embedded WIT and is rejected during macro expansion with a
-"does not embed component WIT" error; rebuild each dependency with the current toolchain
-(`cargo miden build`), or supply the WIT manually via the `wit` key as above. Components written
+A `.masp` built by an older SDK has no embedded WIT: the macros skip it, and a macro that
+references it reports the missing interface at the reference site; rebuild each dependency with
+the current toolchain (`cargo miden build`), or supply the WIT manually via the `wit` key as
+above. Components written
 without the `#[component]` macro — a hand-written `wit/` directory and a bare
 `miden::generate!()` — embed their WIT automatically when the `wit/` directory contains a single
 `.wit` file, so no changes are needed there. WIT split across multiple files, or referencing

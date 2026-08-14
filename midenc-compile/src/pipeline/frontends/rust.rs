@@ -940,6 +940,12 @@ pub struct RustProjectFrontend {
     /// WebAssembly and `compile` lowers it — and a `cargo` build is the most expensive thing
     /// this frontend does.
     built: RefCell<BTreeMap<TargetKey, WasmSource>>,
+    /// The targets whose resolution records are already written into the package cache.
+    ///
+    /// A root target reaches [`write_dependency_manifest`] twice — from `compile` ahead of
+    /// the staging checkpoint, and from `built_for_root`, which a provenance-first call
+    /// reaches without passing through `compile` — and the records are identical both times.
+    dependency_manifests_written: RefCell<alloc::collections::BTreeSet<TargetKey>>,
     /// The WebAssembly half of the **root** arm, which is everything past the cargo build.
     ///
     /// Held rather than reimplemented, exactly as [`RustStandaloneFrontend`] holds one: the two
@@ -956,6 +962,7 @@ impl RustProjectFrontend {
             session,
             compiled: RefCell::new(BTreeMap::new()),
             built: RefCell::new(BTreeMap::new()),
+            dependency_manifests_written: RefCell::new(alloc::collections::BTreeSet::new()),
             wasm: WasmFrontend::default(),
         }
     }
@@ -984,6 +991,7 @@ impl RustProjectFrontend {
             session,
             compiled: RefCell::new(BTreeMap::from([(key, output)])),
             built: RefCell::new(BTreeMap::new()),
+            dependency_manifests_written: RefCell::new(alloc::collections::BTreeSet::new()),
             wasm: WasmFrontend::default(),
         }
     }
@@ -1020,6 +1028,23 @@ impl RustProjectFrontend {
     /// `MasmComponent::source_inputs` then emitted a *library* root module for an executable
     /// target — which `load_target_sources` rejects with "requested target type is executable,
     /// but root module provided to assembler ... is library".
+    /// Writes the consumer's resolution records once per target.
+    ///
+    /// See the `dependency_manifests_written` field for why two arrivals are normal.
+    fn write_dependency_manifest_once(
+        &self,
+        cx: &TargetContext<'_>,
+        cache_dir: &Path,
+    ) -> CompilerResult<()> {
+        let key = cx.target_key();
+        if self.dependency_manifests_written.borrow().contains(&key) {
+            return Ok(());
+        }
+        write_dependency_manifest(cx, cache_dir)?;
+        self.dependency_manifests_written.borrow_mut().insert(key);
+        Ok(())
+    }
+
     fn built_for_root(&self, cx: &TargetContext<'_>) -> CompilerResult<WasmSource> {
         let key = cx.target_key();
         if let Some(found) = self.built.borrow().get(&key) {
@@ -1029,7 +1054,7 @@ impl RustProjectFrontend {
         let cargo_manifest_path = cx.assembly().manifest_path.with_file_name("Cargo.toml");
         let filesystem_cache_dir = self.filesystem_cache_dir()?;
         if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
-            write_dependency_manifest(cx, cache_dir)?;
+            self.write_dependency_manifest_once(cx, cache_dir)?;
         }
         let wasm = build_manifest_to_wasm(
             &cargo_manifest_path,
@@ -1065,7 +1090,7 @@ impl RustProjectFrontend {
         let source_manager = self.session.source_manager.clone();
         let filesystem_cache_dir = self.filesystem_cache_dir()?;
         if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
-            write_dependency_manifest(cx, cache_dir)?;
+            self.write_dependency_manifest_once(cx, cache_dir)?;
         }
         crate::cargo::cargo_build(
             assembly.package.name().to_string(),
@@ -1094,16 +1119,20 @@ impl RustProjectFrontend {
 /// expanding inside that build consume the same resolution the compiler made, independent of
 /// the dependency's source scheme, instead of re-deriving it from the manifests.
 ///
-/// Two files per consumer, both replaced atomically:
-/// - `miden-deps/<consumer>.deps.toml` — for each declared dependency, the artifact selected
-///   for it: a `package` file name inside the cache for compiler-published artifacts, or an
-///   absolute `path` for preassembled `.masp` dependencies consumed in place.
-/// - `miden-deps/<consumer>.watch` — root consumer only: the source inputs of every resolved
+/// The consumer's files under `miden-deps/`, each replaced atomically:
+/// - `<consumer>.deps.toml` — for each declared dependency, the artifact selected for it: a
+///   `package` file name inside the cache for compiler-published artifacts, or an absolute
+///   `path` for preassembled `.masp` dependencies consumed in place. Each entry also records
+///   `version` (unread until the #1300 digest pin extends it) and `wit` — whether the
+///   artifact embeds component WIT, which lets the macros skip link-only packages without
+///   deserializing them.
+/// - `<consumer>.watch` — root consumer only: the source inputs of every resolved
 ///   dependency in the graph, one absolute path per line. A contract build script turns the
 ///   list into `cargo:rerun-if-changed` directives, so editing a dependency re-stages its
 ///   package on the next check. Rust dependencies' inputs come from the cargo dep-info their
-///   own builds record beside this file (`miden-deps/<consumer>.dep-info`, see
-///   [`record_dependency_dep_info`]).
+///   own builds record beside this file.
+/// - `<consumer>.dep-info` — written by the consumer's own cargo build, not here; see
+///   [`record_dependency_dep_info`].
 fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> CompilerResult<()> {
     use midenc_session::miden_project::{self, ProjectDependencyNodeProvenance};
 
@@ -1446,7 +1475,7 @@ impl Frontend for RustProjectFrontend {
             // reaches without passing through here.)
             let filesystem_cache_dir = self.filesystem_cache_dir()?;
             if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
-                write_dependency_manifest(cx, cache_dir)?;
+                self.write_dependency_manifest_once(cx, cache_dir)?;
             }
             if let Flow::Break(stopped) = cx.checkpoint(
                 CheckpointId::DEPENDENCIES_STAGED,
@@ -2201,21 +2230,6 @@ mod tests {
     };
     use core::cell::RefCell;
 
-    #[test]
-    fn dep_info_parsing_handles_escaped_spaces_and_multiple_lines() {
-        let parsed = super::parse_dep_info(
-            "/out/a.wasm: /src/lib.rs /src/with\\ space.rs\n\n/out/b.rmeta: /src/lib.rs\n",
-        );
-        assert_eq!(
-            parsed,
-            vec![
-                std::path::PathBuf::from("/src/lib.rs"),
-                std::path::PathBuf::from("/src/with space.rs"),
-                std::path::PathBuf::from("/src/lib.rs"),
-            ]
-        );
-    }
-
     use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
     use midenc_codegen_masm::MasmComponent;
     use midenc_hir::Context;
@@ -2232,6 +2246,21 @@ mod tests {
         resolve_goal,
         testing::{self, VirtualProject, wat_fixture},
     };
+
+    #[test]
+    fn dep_info_parsing_handles_escaped_spaces_and_multiple_lines() {
+        let parsed = super::parse_dep_info(
+            "/out/a.wasm: /src/lib.rs /src/with\\ space.rs\n\n/out/b.rmeta: /src/lib.rs\n",
+        );
+        assert_eq!(
+            parsed,
+            vec![
+                std::path::PathBuf::from("/src/lib.rs"),
+                std::path::PathBuf::from("/src/with space.rs"),
+                std::path::PathBuf::from("/src/lib.rs"),
+            ]
+        );
+    }
 
     /// The project route *is* the WebAssembly route, and this is what holds it to that.
     ///
@@ -3590,13 +3619,13 @@ path = "lib.rs"
         );
         let (_, found) = with
             .iter()
-            .find(|(key, _)| *key == "MIDENC_PACKAGE_CACHE")
+            .find(|(key, _)| *key == package_cache::PACKAGE_CACHE_ENV)
             .expect("a cache directory must be delivered to the nested build");
         assert_eq!(found, &cache.display().to_string());
 
         let without = manifest::cargo_env(None, &rustflags);
         assert!(
-            !without.iter().any(|(key, _)| *key == "MIDENC_PACKAGE_CACHE"),
+            !without.iter().any(|(key, _)| *key == package_cache::PACKAGE_CACHE_ENV),
             "no cache directory means the variable is unset, not set to nothing: {without:?}"
         );
         assert!(

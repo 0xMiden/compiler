@@ -414,7 +414,7 @@ impl Session {
     /// silently got no filesystem cache at all, while a library project of the same shape got one.
     #[cfg(feature = "std")]
     pub fn filesystem_package_cache_dir(&self) -> Result<Option<PathBuf>, Report> {
-        if self.package_cache_project_dir().is_none() {
+        if !self.is_project_session() {
             return Ok(None);
         }
         let lease = self
@@ -432,28 +432,16 @@ impl Session {
         Ok(None)
     }
 
-    /// The project directory this session's package cache belongs to.
+    /// Whether this session compiles a project — the gate for having a package cache at all.
     ///
-    /// Used as the gate for having a cache at all: `None` unless this session's input is a
-    /// project locator, mirroring [`Session::filesystem_package_cache_dir`]. The cache itself
-    /// is anchored at the configured target directory, not here.
-    fn package_cache_project_dir(&self) -> Option<PathBuf> {
-        let input = self.input.as_ref()?;
-        if !matches!(input.file_type(), FileType::Toml) {
-            return None;
-        }
-        let project_dir = input.as_path()?.parent()?;
-        let project_dir = if project_dir.is_absolute() {
-            project_dir.to_path_buf()
-        } else {
-            self.options.current_dir.join(project_dir)
-        };
-        // Canonicalized because the loaded manifest path this replaces was: the cache directory
-        // is compared by path across nested builds, so `.`-relative and symlinked spellings of
-        // one directory must not resolve to two caches.
-        #[cfg(feature = "std")]
-        let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
-        Some(project_dir)
+    /// Mirrors [`Session::filesystem_package_cache_dir`]: a session compiling a standalone
+    /// source file has no project to exchange packages for. The cache itself is anchored at
+    /// the configured target directory.
+    #[cfg(feature = "std")]
+    fn is_project_session(&self) -> bool {
+        self.input
+            .as_ref()
+            .is_some_and(|input| matches!(input.file_type(), FileType::Toml))
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to

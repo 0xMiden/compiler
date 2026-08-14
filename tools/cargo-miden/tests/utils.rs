@@ -78,18 +78,23 @@ pub(crate) fn exported_packages_dir(project_dir: &Path) -> PathBuf {
 /// Runs `body` with `MIDENC_PACKAGE_CACHE` set to `dir`, restoring the prior value after.
 ///
 /// The tests run one per process under nextest, so mutating the process environment is
-/// safe; the restore keeps the state clean for in-process helpers that run later.
+/// safe. The restore lives in a drop guard, so a panicking assertion inside `body` cannot
+/// leak the variable into in-process helpers that run later.
 pub(crate) fn with_package_cache_env<R>(dir: &Path, body: impl FnOnce() -> R) -> R {
-    let restore = env::var_os("MIDENC_PACKAGE_CACHE");
+    struct RestoreOnDrop(Option<std::ffi::OsString>);
+    impl Drop for RestoreOnDrop {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => unsafe { env::set_var("MIDENC_PACKAGE_CACHE", value) },
+                None => unsafe { env::remove_var("MIDENC_PACKAGE_CACHE") },
+            }
+        }
+    }
+    let _restore = RestoreOnDrop(env::var_os("MIDENC_PACKAGE_CACHE"));
     unsafe {
         env::set_var("MIDENC_PACKAGE_CACHE", dir);
     }
-    let result = body();
-    match restore {
-        Some(value) => unsafe { env::set_var("MIDENC_PACKAGE_CACHE", value) },
-        None => unsafe { env::remove_var("MIDENC_PACKAGE_CACHE") },
-    }
-    result
+    body()
 }
 
 pub(crate) fn project_template_arg(template: &str) -> String {

@@ -401,7 +401,9 @@ mod tests {
         let options = crate::Options::default();
         let package = crate::LinkLibrary::core().load(&options).unwrap();
         let package_name: &str = &package.name;
-        let cached_package = cache.join(package_name).with_extension(Package::EXTENSION);
+        let cached_package = cache.join(
+            midenc_frontend_wasm_metadata::package_cache::package_file_name(package_name),
+        );
         let mut registry = HybridPackageRegistry::empty();
         registry.filesystem_cache = Some(cache);
 

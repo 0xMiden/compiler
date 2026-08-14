@@ -342,7 +342,7 @@ fn build_consumer_wat_with_package_cache(
         .args(["build", "--release", "--locked", "--manifest-path"])
         .arg(consumer.join("Cargo.toml"))
         .env("CARGO_TARGET_DIR", cargo_target_dir)
-        .env("MIDENC_PACKAGE_CACHE", package_cache_dir)
+        .env(midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV, package_cache_dir)
         .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .current_dir(consumer)

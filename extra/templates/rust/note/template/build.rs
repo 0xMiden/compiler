@@ -119,7 +119,8 @@ fn main() {
             // mid-edit.
             Some(current) => {
                 println!(
-                    "cargo:warning=`cargo miden build --release` failed ({}); analyzing against \
+                    "cargo:warning=`cargo miden build --release --stop-after=dependencies` failed \
+                     ({}); analyzing against \
                      the previously staged dependency packages: {}",
                     build.status,
                     last_stderr_line(&build.stderr),
@@ -136,7 +137,8 @@ fn main() {
             // With no good generation there is nothing consistent to export; failing here is
             // clearer than every macro expansion failing on missing packages.
             None => panic!(
-                "`cargo miden build --release` failed ({}) and no previously staged dependency \
+                "`cargo miden build --release --stop-after=dependencies` failed ({}) and no \
+                 previously staged dependency \
                  packages exist:\n{}",
                 build.status,
                 String::from_utf8_lossy(&build.stderr),
@@ -175,7 +177,8 @@ fn main() {
     println!("cargo:rustc-env=MIDENC_PACKAGE_CACHE={}", exported.display());
 }
 
-/// Runs `cargo miden build --release` for the project in `manifest_dir`, staging the
+/// Runs `cargo miden build --release --stop-after=dependencies` for the project in
+/// `manifest_dir`, staging the
 /// dependency packages into `cache_dir`.
 ///
 /// `CARGO_MIDEN` selects a specific `cargo-miden` binary; otherwise the `cargo miden` plugin

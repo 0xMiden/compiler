@@ -13,7 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `MIDENC_PACKAGE_CACHE`, the compiler adopts that directory as its package cache and leaves
   it in place — the caller owns its location and lifetime, which is how packages stay
   readable after the compiler exits. Otherwise the compiler creates a globally unique lease
-  directory under the project's `target/miden/packages/`, exchanges dependency packages with
+  directory under the configured target directory (`<target-dir>/packages`, by default the
+  project's `target/miden/packages/`), exchanges dependency packages with
   its nested builds through it, and deletes it when the compilation ends. A directory that is
   never shared between builds cannot go stale, so the fingerprint derivation, permanent lock
   files, and stale-cache pruning of the earlier design are removed. A killed build can leave
@@ -78,8 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the SDK macros read dependency WIT from the dependency's compiled package. The
   `wit = "..."` keys in `miden-project.toml` are now only a fallback for dependency packages
   without embedded WIT (e.g. produced by other toolchains): setting the key for a package that
-  embeds WIT is an error, and packages built by older Miden toolchains are rejected unless the
-  key supplies their WIT. See the [migration guide](./sdk/sdk/MIGRATION.md) for the manifest
+  embeds WIT is an error, and a package built by an older Miden toolchain is skipped unless the
+  key supplies its WIT — only a macro that references it reports the missing interface. See the [migration guide](./sdk/sdk/MIGRATION.md) for the manifest
   edits and rebuild steps #1248
 - BREAKING: The SDK macros now read dependency packages only from the `MIDENC_PACKAGE_CACHE`
   directory (or from a manifest path that names a `.masp` file directly). The previous search
