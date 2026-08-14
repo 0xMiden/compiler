@@ -182,14 +182,26 @@ pub(crate) fn collect_dependency_wit_sources(
                     continue;
                 }
             };
-        collected.sources.push(DependencyWitSource {
+        let source = DependencyWitSource {
             name: name.to_string(),
             root: dependency_root,
             package_path: resolved.path,
             package: resolved.package,
             wit,
             wit_override_path,
-        });
+        };
+        // The dependency's WIT must be self-contained apart from the bundled SDK WIT.
+        // Validated here — the single point every macro path shares — so a package is
+        // accepted or rejected identically by the `#[component]`-family macros and by bare
+        // `generate!()` consumers, whose resolver would otherwise tolerate imports of
+        // sibling dependency packages.
+        if let Err(details) = crate::wit_world::parse_dependency_wit_source(&source.wit) {
+            return Err(Error::new(
+                error_span,
+                crate::wit_world::dependency_wit_error_message(&source, &details),
+            ));
+        }
+        collected.sources.push(source);
     }
 
     Ok(collected)

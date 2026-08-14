@@ -424,7 +424,7 @@ fn collect_miden_dependencies(
 }
 
 /// Formats the dependency WIT diagnostic emitted by SDK macros.
-fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> String {
+pub(crate) fn dependency_wit_error_message(source: &DependencyWitSource, details: &str) -> String {
     // A "package not found" from wit-parser means the embedded WIT itself references another
     // package: the rebuild advice cannot fix that, so name the self-containment requirement.
     let guidance = if details.contains("not found") {

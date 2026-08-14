@@ -109,9 +109,17 @@ pub fn package_wit(package: &miden_mast_package::Package) -> Option<&[u8]> {
 /// `{` precedes any `;`) are excluded. The scan is token-based: any whitespace may follow the
 /// keyword, a declaration may span lines, and several declarations may share one line.
 pub fn count_top_level_wit_packages(wit: &str) -> usize {
+    top_level_wit_packages(wit).len()
+}
+
+/// The identifiers of every top-level `package <id>;` declaration in WIT source, in order.
+///
+/// Same scan as [`count_top_level_wit_packages`]; each identifier is the text between the
+/// keyword and the terminating `;`, trimmed, with any `@<version>` suffix retained.
+pub fn top_level_wit_packages(wit: &str) -> Vec<String> {
     let stripped = strip_wit_comments(wit);
     let bytes = stripped.as_bytes();
-    let mut count = 0;
+    let mut packages = Vec::new();
     let mut index = 0;
     while let Some(found) = stripped[index..].find("package") {
         let start = index + found;
@@ -133,11 +141,53 @@ pub fn count_top_level_wit_packages(wit: &str) -> usize {
         if let Some(semi) = rest.find(';')
             && rest.find('{').is_none_or(|brace| semi < brace)
         {
-            count += 1;
+            packages.push(rest[..semi].trim().into());
             index = end + semi + 1;
         }
     }
-    count
+    packages
+}
+
+/// The name of the first top-level `world <name>` declaration in WIT source, when present.
+///
+/// Token-based like [`top_level_wit_packages`]: comments are stripped first, and only
+/// declarations at brace depth zero count — a world inside the nested package notation
+/// (`package <id> { world w { ... } }`) is not a top-level world of the file.
+pub fn first_top_level_wit_world(wit: &str) -> Option<String> {
+    let stripped = strip_wit_comments(wit);
+    let bytes = stripped.as_bytes();
+    let mut depth = 0usize;
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'{' => depth += 1,
+            b'}' => depth = depth.saturating_sub(1),
+            // Anchored on the ASCII `w`, which is always a character boundary, so the slice
+            // below cannot split a multi-byte character.
+            b'w' if depth == 0 && stripped[index..].starts_with("world") => {
+                let end = index + "world".len();
+                let preceded = index == 0
+                    || matches!(bytes[index - 1], b';' | b'}')
+                    || bytes[index - 1].is_ascii_whitespace();
+                let followed = bytes.get(end).is_some_and(u8::is_ascii_whitespace);
+                if preceded && followed {
+                    let name: String = stripped[end..]
+                        .trim_start()
+                        .chars()
+                        .take_while(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_')
+                        .collect();
+                    if !name.is_empty() {
+                        return Some(name);
+                    }
+                }
+                index = end;
+                continue;
+            }
+            _ => {}
+        }
+        index += 1;
+    }
+    None
 }
 
 /// Strips `//` line comments and nested `/* */` block comments, preserving line structure.
@@ -389,6 +439,46 @@ package miden:new@0.1.0;
 "#;
 
         assert_eq!(count_top_level_wit_packages(wit), 1);
+    }
+
+    /// Ensures the collecting scan reports the declared identifiers, version suffix retained.
+    #[test]
+    fn top_level_wit_packages_reports_identifiers_in_order() {
+        let concatenated = "package miden:first@0.1.0; world first-world { }\npackage \
+                            miden:second@0.1.0; world second-world { }\n";
+        assert_eq!(top_level_wit_packages(concatenated), [
+            "miden:first@0.1.0".to_string(),
+            "miden:second@0.1.0".to_string()
+        ]);
+        assert_eq!(top_level_wit_packages("package\tmiden:tabbed@1.0.0;\n"), [
+            "miden:tabbed@1.0.0".to_string()
+        ]);
+    }
+
+    /// Ensures world detection is token-based and depth-aware.
+    #[test]
+    fn first_top_level_wit_world_is_token_based_and_depth_aware() {
+        assert_eq!(
+            first_top_level_wit_world("package miden:x@1.0.0;\n\nworld\tmy-world {\n}\n")
+                .as_deref(),
+            Some("my-world"),
+            "tabs after the keyword must not hide the world"
+        );
+        assert_eq!(
+            first_top_level_wit_world("// world commented-out {}\nworld real { }\n").as_deref(),
+            Some("real"),
+            "commented-out worlds must be ignored"
+        );
+        assert_eq!(
+            first_top_level_wit_world("package miden:nested@0.1.0 { world inner { } }\n"),
+            None,
+            "a world inside the nested package notation is not a top-level world of the file"
+        );
+        assert_eq!(
+            first_top_level_wit_world("interface world-like { f: func(); }\n"),
+            None,
+            "identifiers containing the keyword are not declarations"
+        );
     }
 
     /// Ensures byte-wise gluing without a boundary newline still exposes both declarations.

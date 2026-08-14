@@ -104,29 +104,56 @@ pub(crate) fn generate_frontend_link_section(entries: &[FrontendMetadata]) -> To
 /// guard export would be the only runtime cost of WIT embedding. Linking two component
 /// implementations concatenates their identically named sections instead, which the Wasm frontend
 /// rejects with a dedicated diagnostic when it parses the section.
-pub(crate) fn generate_wit_link_section(wit_source: &str) -> TokenStream2 {
+pub(crate) fn generate_wit_link_section(wit_source: &str) -> Result<TokenStream2, Error> {
     let wit_source = normalize_embedded_wit(wit_source);
-    // The Wasm frontend rejects a section whose top-level package count is not one; pin the
-    // producing half of that cross-crate contract here.
-    debug_assert_eq!(
-        midenc_frontend_wasm_metadata::count_top_level_wit_packages(&wit_source),
-        1,
-        "embedded component WIT must contain exactly one top-level package declaration"
-    );
+    // The Wasm frontend rejects a section whose top-level package count is not one; enforce
+    // the producing half of that cross-crate contract here, where the offending source can
+    // still be named. User-written WIT reaches this point, so this is a diagnostic, not an
+    // assertion.
+    let package_count = midenc_frontend_wasm_metadata::count_top_level_wit_packages(&wit_source);
+    if package_count != 1 {
+        return Err(Error::new(
+            Span::call_site(),
+            format!(
+                "embedded component WIT must contain exactly one top-level `package <id>;` \
+                 declaration, found {package_count}"
+            ),
+        ));
+    }
     let wit_bytes = wit_source.as_bytes();
     let wit_len = wit_bytes.len();
     let encoded_bytes = Literal::byte_string(wit_bytes);
+    // The wrapper module's name is derived from the content, so two WIT emitters in one
+    // module — two components, or a note next to a bare `generate!()` — do not collide on a
+    // fixed static name with an opaque rustc E0428. Their sections concatenate instead, and
+    // the duplicate reaches the Wasm frontend's dedicated diagnostic.
+    let module_ident = format_ident!("__miden_component_wit_{:016x}", content_hash(wit_bytes));
 
-    quote! {
-        #[unsafe(
-            // Keep the Mach-O-friendly `segment,section` naming scheme used by the other metadata
-            // sections so the linker preserves these bytes in test and release builds.
-            link_section = #WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME
-        )]
+    Ok(quote! {
         #[doc(hidden)]
-        #[allow(clippy::octal_escapes)]
-        pub static __MIDEN_COMPONENT_WIT: [u8; #wit_len] = *#encoded_bytes;
-    }
+        mod #module_ident {
+            #[unsafe(
+                // Keep the Mach-O-friendly `segment,section` naming scheme used by the other
+                // metadata sections so the linker preserves these bytes in test and release
+                // builds.
+                link_section = #WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME
+            )]
+            #[doc(hidden)]
+            #[allow(clippy::octal_escapes)]
+            #[used]
+            pub static __MIDEN_COMPONENT_WIT: [u8; #wit_len] = *#encoded_bytes;
+        }
+    })
+}
+
+/// A stable content fingerprint for naming per-expansion items.
+///
+/// `DefaultHasher::new()` uses fixed keys, so the name is deterministic across builds.
+fn content_hash(bytes: &[u8]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Wraps embedded WIT in newlines so section boundaries stay line boundaries.
@@ -194,19 +221,6 @@ pub(crate) fn wit_files_in_dir(dir: &Path) -> Result<Vec<PathBuf>, Error> {
         .collect::<Vec<_>>();
     wit_files.sort();
     Ok(wit_files)
-}
-
-/// Strips line comments starting with `//` from the provided source line.
-///
-/// Returns the portion of the line before the comment, or the entire line if no comment exists.
-///
-/// **Note:** This is a simple heuristic that doesn't account for `//` appearing
-/// inside string literals. Only use for WIT source parsing where this is not an issue.
-pub fn strip_line_comment(line: &str) -> &str {
-    match line.split_once("//") {
-        Some((before, _)) => before,
-        None => line,
-    }
 }
 
 #[cfg(test)]

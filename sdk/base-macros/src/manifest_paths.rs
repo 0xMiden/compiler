@@ -13,7 +13,7 @@ use syn::Error;
 
 use crate::{
     dependency_package::{DependencyWitSource, collect_dependency_wit_sources},
-    util::{bundled_wit_folder, strip_line_comment},
+    util::bundled_wit_folder,
     wit_world::ProjectPackageMetadata,
 };
 
@@ -175,41 +175,23 @@ fn parse_package_and_world(path: &Path) -> Result<Option<(String, String)>, Erro
 }
 
 /// Returns the package identifier from a WIT source string, if present.
+///
+/// Token-based through the shared scanner in the contract crate, so comments (line and
+/// block), tabs, and multi-line declarations are all handled the same way the embedding
+/// count gate and the Wasm frontend handle them. The `@<version>` suffix is stripped for
+/// the `package/world` selection spelling.
 fn extract_package_name(contents: &str) -> Option<String> {
-    for line in contents.lines() {
-        let trimmed = strip_line_comment(line).trim_start();
-        if let Some(rest) = trimmed.strip_prefix("package ") {
-            let mut token = rest.trim();
-            if let Some(idx) = token.find(';') {
-                token = &token[..idx];
-            }
-            let mut name = token.trim();
-            if let Some(idx) = name.find('@') {
-                name = &name[..idx];
-            }
-            return Some(name.trim().to_string());
-        }
+    let first =
+        midenc_frontend_wasm_metadata::top_level_wit_packages(contents).into_iter().next()?;
+    let name = first.split('@').next().unwrap_or(first.as_str()).trim();
+    if name.is_empty() {
+        None
+    } else {
+        Some(name.to_string())
     }
-    None
 }
 
-/// Extracts the first world identifier from a WIT source string.
+/// Extracts the first top-level world identifier from a WIT source string.
 pub(crate) fn extract_world_name(contents: &str) -> Option<String> {
-    for line in contents.lines() {
-        let trimmed = strip_line_comment(line).trim_start();
-        if let Some(rest) = trimmed.strip_prefix("world ") {
-            let mut name = String::new();
-            for ch in rest.trim().chars() {
-                if ch.is_alphanumeric() || ch == '-' || ch == '_' {
-                    name.push(ch);
-                } else {
-                    break;
-                }
-            }
-            if !name.is_empty() {
-                return Some(name);
-            }
-        }
-    }
-    None
+    midenc_frontend_wasm_metadata::first_top_level_wit_world(contents)
 }

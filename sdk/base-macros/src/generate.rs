@@ -188,7 +188,13 @@ fn local_wit_link_section(
     if crate::wit_world::parse_dependency_wit_source(&wit_source).is_err() {
         return Ok(TokenStream2::new());
     }
-    Ok(crate::util::generate_wit_link_section(&wit_source))
+    // The emitter and the Wasm frontend accept exactly one top-level package declaration.
+    // A file the parser accepts but the count gate does not — the nested `package <id> {}`
+    // notation — is skipped like every other non-embeddable local WIT, not rejected.
+    if midenc_frontend_wasm_metadata::count_top_level_wit_packages(&wit_source) != 1 {
+        return Ok(TokenStream2::new());
+    }
+    crate::util::generate_wit_link_section(&wit_source)
 }
 
 /// Generates WIT bindings using `wit-bindgen` directly instead of the `generate!` macro.

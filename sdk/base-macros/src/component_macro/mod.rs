@@ -705,7 +705,7 @@ fn expand_component_trait_impl(
     })?;
     // The public WIT is embedded into a Wasm custom section, carried by the compiler into the
     // Miden package (`.masp`), where dependent crates' macros read it back during expansion.
-    let wit_link_section = generate_wit_link_section(&public_wit_source);
+    let wit_link_section = generate_wit_link_section(&public_wit_source)?;
     let inline_literal = Literal::string(&inline_wit_source);
 
     let interface_path =

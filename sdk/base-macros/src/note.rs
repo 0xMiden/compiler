@@ -392,7 +392,10 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         &constructor_type_imports,
         &[],
     );
-    let wit_link_section = generate_wit_link_section(&public_wit);
+    let wit_link_section = match generate_wit_link_section(&public_wit) {
+        Ok(tokens) => tokens,
+        Err(err) => return err.into_compile_error(),
+    };
     let guest_trait_path = match build_guest_trait_path(&component_package, &interface_module) {
         Ok(path) => path,
         Err(err) => return err.into_compile_error(),
