@@ -67,6 +67,16 @@ pub mod package_cache {
         format!("{consumer}.watch")
     }
 
+    /// File name of a consumer's recorded cargo dep-info inside
+    /// [`DEPENDENCY_MANIFEST_DIR`].
+    ///
+    /// A compiler-internal record: each consumer's nested cargo build copies the artifact's
+    /// consolidated dep-info here, and the root consumer's watch list is assembled from
+    /// these records. Neither the SDK macros nor the contract build script read it.
+    pub fn dependency_dep_info_file_name(consumer: &str) -> String {
+        format!("{consumer}.dep-info")
+    }
+
     /// File name of a published package: the package name with the `.masp` extension
     /// appended.
     ///

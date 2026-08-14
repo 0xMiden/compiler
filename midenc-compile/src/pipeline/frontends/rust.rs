@@ -353,12 +353,19 @@ pub fn build_manifest_to_wasm(
 ) -> CompilerResult<InputFile> {
     let options = session.options.clone();
     let mut outputs = manifest::cargo_build(manifest_path, filesystem_cache_dir, options)?;
-    outputs.pop().ok_or_else(|| {
+    let wasm = outputs.pop().ok_or_else(|| {
         Report::msg(format!(
             "`cargo build` of '{}' produced no WebAssembly artifact",
             manifest_path.display()
         ))
-    })
+    })?;
+    // This is the one choke point every consumer's cargo build passes — the root through its
+    // frontend, dependencies through `compile_manifest` — so the dep-info record is made
+    // here, where the artifact path is in hand.
+    if let Some(cache_dir) = filesystem_cache_dir {
+        record_dependency_dep_info(session.name.as_str(), cache_dir, &wasm);
+    }
+    Ok(wasm)
 }
 
 /// Lower the WebAssembly a manifest build produced, through to Miden Assembly.
@@ -1083,7 +1090,9 @@ impl RustProjectFrontend {
 /// - `miden-deps/<consumer>.watch` — root consumer only: the source inputs of every resolved
 ///   dependency in the graph, one absolute path per line. A contract build script turns the
 ///   list into `cargo:rerun-if-changed` directives, so editing a dependency re-stages its
-///   package on the next check.
+///   package on the next check. Rust dependencies' inputs come from the cargo dep-info their
+///   own builds record beside this file (`miden-deps/<consumer>.dep-info`, see
+///   [`record_dependency_dep_info`]).
 fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> CompilerResult<()> {
     use midenc_session::miden_project::{self, ProjectDependencyNodeProvenance};
 
@@ -1155,7 +1164,7 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
     )?;
 
     if cx.role().is_root() {
-        let watch_list = collect_dependency_watch_paths(cx);
+        let watch_list = collect_dependency_watch_paths(cx, cache_dir);
         let mut contents = String::new();
         for path in watch_list {
             contents.push_str(&path.display().to_string());
@@ -1166,7 +1175,95 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
     Ok(())
 }
 
+/// Copies this consumer's cargo dep-info into the package cache.
+///
+/// Cargo writes a consolidated dep-info file next to the built artifact, listing every
+/// local file the build actually consumed — the sources of the whole path-dependency
+/// closure, build scripts included; immutable registry and toolchain inputs are already
+/// excluded by cargo. The root consumer's watch list is assembled from these records, so
+/// the watch set is what cargo used rather than a prediction. Dependencies build before
+/// the root's watch list is written, which is what makes the records available in time.
+///
+/// Best-effort: without a record, the watch collector falls back to watching the
+/// dependency's source directory.
+fn record_dependency_dep_info(consumer: &str, cache_dir: &Path, wasm: &InputFile) {
+    let Some(artifact) = wasm.as_path() else {
+        return;
+    };
+    let dep_info = artifact.with_extension("d");
+    let contents = match std::fs::read_to_string(&dep_info) {
+        Ok(contents) => contents,
+        Err(err) => {
+            log::debug!(
+                target: "package-cache",
+                "no cargo dep-info at '{}': {err}",
+                dep_info.display()
+            );
+            return;
+        }
+    };
+    let path = cache_dir
+        .join(package_cache::DEPENDENCY_MANIFEST_DIR)
+        .join(package_cache::dependency_dep_info_file_name(&consumer));
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(err) = write_atomically(&path, contents) {
+        log::debug!(
+            target: "package-cache",
+            "failed to record the dep-info of '{consumer}': {err}"
+        );
+    }
+}
+
+/// Reads the file list a consumer's build recorded from cargo's dep-info, when present.
+fn recorded_dep_info_files(cache_dir: &Path, consumer: &str) -> Option<Vec<PathBuf>> {
+    let path = cache_dir
+        .join(package_cache::DEPENDENCY_MANIFEST_DIR)
+        .join(package_cache::dependency_dep_info_file_name(consumer));
+    let contents = std::fs::read_to_string(path).ok()?;
+    Some(parse_dep_info(&contents))
+}
+
+/// Parses the file list out of a Makefile-syntax cargo dep-info payload.
+///
+/// Each line is `target: input input...`; spaces inside paths are escaped as `\ `.
+fn parse_dep_info(contents: &str) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for line in contents.lines() {
+        let Some((_, inputs)) = line.split_once(": ") else {
+            continue;
+        };
+        let mut current = String::new();
+        let mut chars = inputs.chars().peekable();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\\' if chars.peek() == Some(&' ') => {
+                    current.push(' ');
+                    chars.next();
+                }
+                ' ' => {
+                    if !current.is_empty() {
+                        files.push(PathBuf::from(core::mem::take(&mut current)));
+                    }
+                }
+                _ => current.push(ch),
+            }
+        }
+        if !current.is_empty() {
+            files.push(PathBuf::from(current));
+        }
+    }
+    files
+}
+
 /// Collects the watched source inputs of every resolved dependency in the graph.
+///
+/// A Rust dependency's inputs come from the cargo dep-info its own build recorded — the
+/// files cargo actually consumed, rather than a predicted closure — plus the inputs
+/// dep-info does not cover: the project manifests, `Cargo.lock`, and `.cargo` config.
+/// A dependency without a record (a MASM library builds without cargo) falls back to
+/// watching its source directory.
 ///
 /// The root project's own sources are excluded: its package is not read back by its own
 /// macro expansion, and watching them would re-run the nested build on every edit. Git
@@ -1174,7 +1271,10 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
 /// which the consumer's manifest watch already covers. Registry dependencies have no local
 /// sources. Only existing paths are listed, because cargo re-runs a build script
 /// unconditionally while a watched path is missing.
-fn collect_dependency_watch_paths(cx: &TargetContext<'_>) -> alloc::collections::BTreeSet<PathBuf> {
+fn collect_dependency_watch_paths(
+    cx: &TargetContext<'_>,
+    cache_dir: &Path,
+) -> alloc::collections::BTreeSet<PathBuf> {
     use midenc_session::miden_project::{
         ProjectDependencyNodeProvenance, ProjectSource, ProjectSourceOrigin,
     };
@@ -1210,13 +1310,22 @@ fn collect_dependency_watch_paths(cx: &TargetContext<'_>) -> alloc::collections:
                     add(&workspace_root.join("miden-project.toml"));
                     add(&workspace_root.join("Cargo.toml"));
                 }
-                // Sibling modules live next to the target's root source, so its directory
-                // is the watch unit — unless that directory is the project root itself,
-                // which would sweep in `target/` churn. There the sibling sources are
-                // watched as individual files instead, so editing a sibling module alone
-                // still re-stages the package. A module added later joins the list through
-                // the root file, which must declare it and is watched here.
-                if let Some(library_path) = library_path {
+                // Inputs that shape the build but never appear in cargo's dep-info.
+                add(&project_root.join("Cargo.lock"));
+                add(&project_root.join(".cargo").join("config.toml"));
+                add(&project_root.join(".cargo").join("config"));
+                if let Some(files) = recorded_dep_info_files(cache_dir, &node.name) {
+                    for file in &files {
+                        add(file);
+                    }
+                } else if let Some(library_path) = library_path {
+                    // Sibling modules live next to the target's root source, so its
+                    // directory is the watch unit — unless that directory is the project
+                    // root itself, which would sweep in `target/` churn. There the sibling
+                    // sources are watched as individual files instead, so editing a sibling
+                    // module alone still re-stages the package. A module added later joins
+                    // the list through the root file, which must declare it and is watched
+                    // here.
                     match library_path.parent() {
                         Some(parent) if parent != project_root.as_path() => add(parent),
                         _ => {
@@ -2056,6 +2165,21 @@ mod tests {
         vec::Vec,
     };
     use core::cell::RefCell;
+
+    #[test]
+    fn dep_info_parsing_handles_escaped_spaces_and_multiple_lines() {
+        let parsed = super::parse_dep_info(
+            "/out/a.wasm: /src/lib.rs /src/with\\ space.rs\n\n/out/b.rmeta: /src/lib.rs\n",
+        );
+        assert_eq!(
+            parsed,
+            vec![
+                std::path::PathBuf::from("/src/lib.rs"),
+                std::path::PathBuf::from("/src/with space.rs"),
+                std::path::PathBuf::from("/src/lib.rs"),
+            ]
+        );
+    }
 
     use miden_assembly::{ProjectSourceProvenanceInputs, SourceFileProvenance};
     use midenc_codegen_masm::MasmComponent;
