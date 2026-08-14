@@ -189,6 +189,11 @@ impl BenchmarkRunner {
     /// during a benchmark comparison — ignore the inherited variable and persist their
     /// packages in the project cache instead, which the legacy scan picks up.
     fn compile(&self, project_dir: &Path, debug: &str) -> Result<PathBuf> {
+        // The export directory is runner-owned and stable across invocations; recreate it so
+        // this compile's output is the only content. Without the clear, an old compiler that
+        // ignores the variable would leave the previous invocation's export in place, and
+        // its non-empty state would suppress the legacy-cache fallback in `profile`.
+        recreate_dir(&self.package_cache_dir(project_dir))?;
         let mut command = if let Some(cargo_miden) = self.cargo_miden.as_ref() {
             let mut command = Command::new(cargo_miden);
             command.arg("miden");
