@@ -1317,11 +1317,17 @@ fn collect_dependency_watch_paths(
                 }
                 add(manifest_path);
                 add(&project_root.join("Cargo.toml"));
+                // Inputs that shape the build but never appear in cargo's dep-info. For a
+                // workspace member, the lockfile and the cargo configuration live at the
+                // workspace root; `add` keeps only paths that exist, so both spellings are
+                // listed unconditionally.
                 if let Some(workspace_root) = workspace_root {
                     add(&workspace_root.join("miden-project.toml"));
                     add(&workspace_root.join("Cargo.toml"));
+                    add(&workspace_root.join("Cargo.lock"));
+                    add(&workspace_root.join(".cargo").join("config.toml"));
+                    add(&workspace_root.join(".cargo").join("config"));
                 }
-                // Inputs that shape the build but never appear in cargo's dep-info.
                 add(&project_root.join("Cargo.lock"));
                 add(&project_root.join(".cargo").join("config.toml"));
                 add(&project_root.join(".cargo").join("config"));
