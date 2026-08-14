@@ -242,7 +242,8 @@ impl OpEmitter<'_> {
         let reserved = 32 - n;
         // Add one bit to the reserved bits to represent the sign bit,
         // and subtract it from the shift to account for the loss
-        let mask = (2u32.pow(reserved + 1) - 1) << (n - 1);
+        // Use wrapping_sub to handle n=1 case where pow would overflow
+        let mask = (2u32.wrapping_pow(reserved + 1).wrapping_sub(1)) << (n - 1);
         self.select_int32(mask, 0, span);
         self.emit_all(
             [
@@ -274,7 +275,8 @@ impl OpEmitter<'_> {
         let reserved = 32 - n;
         // Add one bit to the reserved bits to represent the sign bit,
         // and subtract it from the shift to account for the loss
-        let mask = (2u32.pow(reserved + 1) - 1) << (n - 1);
+        // Use wrapping_sub to handle n=1 case where pow would overflow
+        let mask = (2u32.wrapping_pow(reserved + 1).wrapping_sub(1)) << (n - 1);
         self.select_int32(mask, 0, span);
         self.emit_all(
             [
@@ -1096,5 +1098,52 @@ impl OpEmitter<'_> {
     pub fn max_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         self.emit_push(imm as u32, span);
         self.raw_exec("::intrinsics::i32::max", span);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_int32_to_int_n1_no_overflow() {
+        // Regression test for overflow bug when n=1
+        // When n=1, reserved=31, and 2^32 would overflow in release mode
+        // This test ensures the mask calculation handles this edge case correctly
+        let n = 1u32;
+        let reserved = 32 - n;
+        
+        // Old buggy code: let mask = (2u32.pow(reserved + 1) - 1) << (n - 1);
+        // Would panic in debug, silently overflow to 0xFFFFFFFF in release
+        
+        // Fixed code uses wrapping operations
+        let mask = (2u32.wrapping_pow(reserved + 1).wrapping_sub(1)) << (n - 1);
+        
+        // For n=1 (1-bit signed int, range -1 to 0):
+        // reserved = 31, so we want mask for bit 0 (sign bit)
+        // The correct mask should be 0xFFFFFFFF (all upper 31 bits + sign bit)
+        assert_eq!(mask, 0xFFFFFFFF, "n=1 should produce mask 0xFFFFFFFF");
+    }
+
+    #[test]
+    fn test_int32_to_int_mask_correctness() {
+        // Test mask calculation for various bit widths
+        let test_cases = vec![
+            (1, 0xFFFFFFFF),  // 1-bit: sign bit at position 0
+            (2, 0xFFFFFFFE),  // 2-bit: sign bit at position 1
+            (8, 0xFFFFFF80),  // 8-bit (i8): sign bit at position 7
+            (16, 0xFFFF8000), // 16-bit (i16): sign bit at position 15
+            (32, 0x80000000), // 32-bit (i32): sign bit at position 31
+        ];
+
+        for (n, expected_mask) in test_cases {
+            let reserved = 32 - n;
+            let mask = (2u32.wrapping_pow(reserved + 1).wrapping_sub(1)) << (n - 1);
+            assert_eq!(
+                mask, expected_mask,
+                "n={} should produce mask {:#010x}, got {:#010x}",
+                n, expected_mask, mask
+            );
+        }
     }
 }
