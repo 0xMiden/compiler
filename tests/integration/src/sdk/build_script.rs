@@ -214,7 +214,7 @@ fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
     // Phase 1: the check stages the dependency package built from the original sources.
     touch_consumer_manifest();
     assert_check_succeeded("initial check", &plain_cargo_check(&consumer));
-    let cached = cached_basic_wallet(&project.root())
+    let cached = cached_basic_wallet(project.root())
         .expect("the first check must stage basic-wallet.masp under the consumer's build OUT_DIR");
     let original_package = fs::read(&cached).expect("failed to read the cached package");
 
@@ -237,7 +237,7 @@ fn rust_sdk_build_script_populates_package_cache_for_plain_cargo_check() {
     // list phase 1 staged, so the edit alone must re-run the script.
 
     assert_check_succeeded("check after dependency edit", &plain_cargo_check(&consumer));
-    let refreshed = cached_basic_wallet(&project.root())
+    let refreshed = cached_basic_wallet(project.root())
         .expect("the staging must still hold basic-wallet.masp after the dependency edit");
     let refreshed_package = fs::read(&refreshed).expect("failed to read the refreshed package");
     assert_ne!(

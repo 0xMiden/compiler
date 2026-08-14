@@ -115,8 +115,8 @@ pub(crate) fn collect_dependency_wit_sources(
                 MapResolution::LinkOnly => {
                     collected.skipped.push(SkippedDependency {
                         name: name.to_string(),
-                        reason: "the compiler recorded its package as embedding no component \
-                                 WIT; it is consumed at link time only"
+                        reason: "the compiler recorded its package as embedding no component WIT; \
+                                 it is consumed at link time only"
                             .to_string(),
                     });
                     continue;
@@ -533,7 +533,10 @@ impl DependencyArtifactMap {
             ArtifactLocation::Path(path) => path.clone(),
         };
         let package = read_package(&path)?;
-        Ok(MapResolution::Resolved(path.clone(), ResolvedDependencyPackage { path, package }))
+        Ok(MapResolution::Resolved(
+            path.clone(),
+            ResolvedDependencyPackage { path, package },
+        ))
     }
 }
 

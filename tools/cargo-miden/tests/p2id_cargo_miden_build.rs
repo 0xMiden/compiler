@@ -69,9 +69,8 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     let watch = std::fs::read_to_string(&watch_file).unwrap_or_else(|err| {
         panic!("expected the compiler-recorded watch list at {}: {err}", watch_file.display())
     });
-    let watch_has = |suffix: &str| {
-        watch.lines().any(|line| std::path::Path::new(line).ends_with(suffix))
-    };
+    let watch_has =
+        |suffix: &str| watch.lines().any(|line| std::path::Path::new(line).ends_with(suffix));
     assert!(
         watch_has("basic-wallet/src/lib.rs"),
         "expected a dep-info-derived source watch in:\n{watch}"

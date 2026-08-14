@@ -1215,7 +1215,7 @@ fn record_dependency_dep_info(consumer: &str, cache_dir: &Path, wasm: &InputFile
     };
     let path = cache_dir
         .join(package_cache::DEPENDENCY_MANIFEST_DIR)
-        .join(package_cache::dependency_dep_info_file_name(&consumer));
+        .join(package_cache::dependency_dep_info_file_name(consumer));
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -2266,8 +2266,10 @@ mod tests {
             "past the cargo build this route is run by the wasm frontend's own code, so it must \
              declare exactly what that code publishes"
         );
-        let (first_alias, shared_aliases) =
-            RUST_FRONTEND.aliases().split_first().expect("the project aliases are not empty");
+        let (first_alias, shared_aliases) = RUST_FRONTEND
+            .aliases()
+            .split_first()
+            .expect("the project aliases are not empty");
         assert_eq!(first_alias.0, "dependencies");
         assert_eq!(first_alias.1, CheckpointId::DEPENDENCIES_STAGED);
         assert_eq!(
@@ -2866,8 +2868,8 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         assert_eq!(
             observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
             project_trace(),
-            "a manifest-backed root target publishes the staging checkpoint, then what the \
-             shared tail publishes"
+            "a manifest-backed root target publishes the staging checkpoint, then what the shared \
+             tail publishes"
         );
         assert_eq!(
             RUST_FRONTEND.route().len(),
