@@ -109,17 +109,31 @@ pub(crate) fn collect_dependency_wit_sources(
         let resolved = match &artifact_map {
             // A `wit = false` entry is a link-only package (for example a base library or a
             // MASM-only dependency): the compiler recorded that there is no component WIT to
-            // read, so its (potentially large) package is never deserialized here.
+            // read, so its (potentially large) package is never deserialized here. Unless the
+            // manifest supplies a `wit` override — the escape hatch for exactly such packages
+            // — in which case the package is read for its procedure roots and the override
+            // provides the interface, like on every other path.
             Some(map) => match map.resolve(name, error_span)? {
                 MapResolution::Resolved(root, resolved) => Some((root, resolved)),
-                MapResolution::LinkOnly => {
-                    collected.skipped.push(SkippedDependency {
-                        name: name.to_string(),
-                        reason: "the compiler recorded its package as embedding no component WIT; \
-                                 it is consumed at link time only"
-                            .to_string(),
-                    });
-                    continue;
+                MapResolution::LinkOnly(path) => {
+                    if dependency_wit_override(package, name)?.is_some() {
+                        let resolved = ResolvedDependencyPackage {
+                            path: path.clone(),
+                            package: read_package(&path)?,
+                        };
+                        Some((path, resolved))
+                    } else {
+                        collected.skipped.push(SkippedDependency {
+                            name: name.to_string(),
+                            reason: "the compiler recorded its package as embedding no component \
+                                     WIT; it is consumed at link time only. If the package should \
+                                     supply an interface, set \
+                                     package.metadata.miden.dependencies.<name>.wit to a WIT file \
+                                     describing it"
+                                .to_string(),
+                        });
+                        continue;
+                    }
                 }
             },
             None => match dependency.scheme() {
@@ -507,7 +521,10 @@ enum MapResolution {
     /// The dependency's package was located and deserialized.
     Resolved(PathBuf, ResolvedDependencyPackage),
     /// The compiler recorded the package as embedding no component WIT; it was not read.
-    LinkOnly,
+    ///
+    /// The located path is carried so a `wit` manifest override — the escape hatch for
+    /// exactly such packages — can still read the package for its procedure roots.
+    LinkOnly(PathBuf),
 }
 
 impl DependencyArtifactMap {
@@ -525,13 +542,13 @@ impl DependencyArtifactMap {
                 ),
             ));
         };
-        if entry.embeds_wit == Some(false) {
-            return Ok(MapResolution::LinkOnly);
-        }
         let path = match &entry.location {
             ArtifactLocation::CacheFile(file) => self.cache_dir.join(file),
             ArtifactLocation::Path(path) => path.clone(),
         };
+        if entry.embeds_wit == Some(false) {
+            return Ok(MapResolution::LinkOnly(path));
+        }
         let package = read_package(&path)?;
         Ok(MapResolution::Resolved(
             path.clone(),
@@ -1187,6 +1204,68 @@ mod tests {
         assert_eq!(collected.sources.len(), 1);
         assert_eq!(collected.sources[0].name, "the-dep");
         assert_eq!(collected.sources[0].package_path, cache_dir.join("mapped-dep.masp"));
+
+        std::fs::remove_dir_all(temp_root).unwrap();
+    }
+
+    /// `package.metadata.miden.dependencies.<name>.wit = <path>` as a [`miden_project`]
+    /// metadata set.
+    fn wit_override_metadata(dependency_name: &str, wit_path: &str) -> miden_project::MetadataSet {
+        use miden_assembly_syntax::debuginfo::Span as MidenSpan;
+        use toml::{Value, value::Table};
+
+        let mut dependency_config = Table::new();
+        dependency_config.insert("wit".to_string(), Value::String(wit_path.to_string()));
+        let mut dependencies = Table::new();
+        dependencies.insert(dependency_name.to_string(), Value::Table(dependency_config));
+        let mut miden_metadata = miden_project::Metadata::default();
+        miden_metadata.insert(
+            MidenSpan::unknown(Arc::<str>::from("dependencies")),
+            MidenSpan::unknown(Value::Table(dependencies)),
+        );
+        let mut metadata = miden_project::MetadataSet::default();
+        metadata.insert(MidenSpan::unknown(Arc::<str>::from("miden")), miden_metadata);
+        metadata
+    }
+
+    #[test]
+    fn recorded_link_only_entry_honors_the_wit_override() {
+        // `wit = false` records that the package embeds no component WIT — which is exactly
+        // the case the `wit` manifest key exists for. The override must win over the fast
+        // path: the package is read for its procedure roots, and the key supplies the
+        // interface.
+        let temp_root = fixture_root("link-only-wit-override");
+        let cache_dir = temp_root.join("package-cache");
+        write_masp_fixture(&cache_dir.join("foreign-dep.masp"), "foreign-dep", None);
+        let override_path = temp_root.join("foreign-dep.wit");
+        std::fs::write(&override_path, MAPPED_DEP_WIT).unwrap();
+        let map_dir = cache_dir.join("miden-deps");
+        std::fs::create_dir_all(&map_dir).unwrap();
+        std::fs::write(
+            map_dir.join("consumer.deps.toml"),
+            "schema = 1\n\n[dependencies]\nthe-dep = { package = \"foreign-dep.masp\", version = \
+             \"0.1.0\", wit = false }\n",
+        )
+        .unwrap();
+        let package = consumer_with_registry_dependency("the-dep")
+            .with_metadata(wit_override_metadata("the-dep", &override_path.to_string_lossy()));
+
+        let collected = with_test_package_cache_dir(Some(&cache_dir), || {
+            collect_dependency_wit_sources(&temp_root, &package)
+        })
+        .expect("the wit override must resolve the recorded link-only dependency");
+
+        assert_eq!(collected.sources.len(), 1);
+        assert_eq!(collected.sources[0].name, "the-dep");
+        assert_eq!(collected.sources[0].package_path, cache_dir.join("foreign-dep.masp"));
+        assert_eq!(
+            collected.sources[0].wit_override_path.as_deref(),
+            // The override flow canonicalizes; canonicalize the expectation too so macOS's
+            // `/var` symlink does not fail the comparison.
+            Some(override_path.canonicalize().unwrap().as_path()),
+            "the override file must be reported as a build input"
+        );
+        assert!(collected.skipped.is_empty());
 
         std::fs::remove_dir_all(temp_root).unwrap();
     }
