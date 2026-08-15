@@ -217,6 +217,51 @@ fn inv_zero_reports_error() -> Result<(), Report> {
 }
 
 #[test]
+fn checked_mul_evaluates_product() -> Result<(), Report> {
+    let mut test = EvalTest::named("checked_mul_evaluates_product");
+    test.with_function(&[Type::U32, Type::U32], &[Type::U32]);
+
+    {
+        let mut builder = test.function_builder();
+        let lhs = builder.current_block().borrow().arguments()[0] as ValueRef;
+        let rhs = builder.current_block().borrow().arguments()[1] as ValueRef;
+        // ArithOpBuilder::mul uses Overflow::Checked
+        let product = builder.mul(lhs, rhs, SourceSpan::default())?;
+        builder.ret(Some(product), SourceSpan::default())?;
+    }
+
+    let callable = test.function().borrow();
+    let results = test.evaluator.eval_callable(&*callable, [6u32.into(), 3u32.into()])?;
+    assert_eq!(results.len(), 1);
+    // Regression: Checked mul previously called checked_sub and returned 3.
+    assert_eq!(results[0], Value::Immediate(18u32.into()));
+
+    Ok(())
+}
+
+#[test]
+fn checked_mul_reports_overflow() -> Result<(), Report> {
+    let mut test = EvalTest::named("checked_mul_reports_overflow");
+    test.with_function(&[Type::U32, Type::U32], &[Type::U32]);
+
+    {
+        let mut builder = test.function_builder();
+        let lhs = builder.current_block().borrow().arguments()[0] as ValueRef;
+        let rhs = builder.current_block().borrow().arguments()[1] as ValueRef;
+        let product = builder.mul(lhs, rhs, SourceSpan::default())?;
+        builder.ret(Some(product), SourceSpan::default())?;
+    }
+
+    let callable = test.function().borrow();
+    let _err = test
+        .evaluator
+        .eval_callable(&*callable, [u32::MAX.into(), 2u32.into()])
+        .expect_err("overflowing checked mul should produce an evaluation error");
+
+    Ok(())
+}
+
+#[test]
 fn println_collects_printed_lines() -> Result<(), Report> {
     let mut test = EvalTest::named("println_collects_printed_lines");
     test.with_function(&[], &[]);
