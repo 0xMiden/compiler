@@ -10,7 +10,7 @@ mod registry;
 use proc_macro::TokenStream;
 use syn::{ItemImpl, LitStr, parse_macro_input};
 
-/// Generates host-profile note types from the freshest package built by a Miden project.
+/// Generates host-profile note types from the package built by a Miden project.
 ///
 /// The project path is relative to `CARGO_MANIFEST_DIR`. Build the note project with
 /// `cargo miden build` before compiling the codec crate.
@@ -52,7 +52,10 @@ pub fn note_codec(args: TokenStream, input: TokenStream) -> TokenStream {
         .into()
 }
 
-/// Exports all marked note codecs through the `miden:note-codec` component world.
+/// Exports all codecs marked earlier in the crate through the `miden:note-codec` component world.
+///
+/// Place this macro after the generated schema types and every `#[note_codec]` implementation.
+/// Procedural macros register codecs in declaration order.
 #[proc_macro]
 pub fn export_codecs(input: TokenStream) -> TokenStream {
     expand::export_codecs(input.into())

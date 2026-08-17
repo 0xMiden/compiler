@@ -3193,6 +3193,7 @@ dependencies = [
  "quote",
  "semver 1.0.28",
  "syn 2.0.119",
+ "tempfile",
  "toml 1.1.4+spec-1.1.0",
  "wit-bindgen-core",
  "wit-bindgen-rust",
@@ -3644,6 +3645,7 @@ dependencies = [
  "miden-field",
  "miden-field-repr",
  "miden-note-codec-macros",
+ "miden-note-codec-wit",
  "miden-protocol",
  "tempfile",
  "wit-bindgen",
@@ -3656,6 +3658,7 @@ name = "miden-note-codec-macros"
 version = "0.14.0"
 dependencies = [
  "heck",
+ "miden-note-codec-wit",
  "miden-note-schema",
  "miden-note-schema-codegen",
  "prettyplease",
@@ -3666,6 +3669,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-note-codec-wit"
+version = "0.14.0"
+
+[[package]]
 name = "miden-note-schema"
 version = "0.14.0"
 dependencies = [
@@ -3673,11 +3680,13 @@ dependencies = [
  "miden-field",
  "miden-field-repr",
  "miden-mast-package",
+ "miden-note-codec-wit",
  "miden-protocol",
  "midenc-frontend-wasm",
  "midenc-frontend-wasm-metadata",
  "midenc-integration-test-support",
  "tempfile",
+ "toml 1.1.4+spec-1.1.0",
  "wasmtime",
  "wit-component",
  "wit-parser 0.247.0",
@@ -4151,6 +4160,7 @@ dependencies = [
  "miden-assembly",
  "miden-assembly-syntax",
  "miden-mast-package",
+ "miden-note-codec-wit",
  "miden-package-registry",
  "miden-thiserror",
  "midenc-codegen-masm",
@@ -4162,6 +4172,8 @@ dependencies = [
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
+ "sha2",
+ "tempfile",
  "toml_edit",
  "wat",
  "wit-component",

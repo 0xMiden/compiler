@@ -19,12 +19,13 @@ doctest = false
 
 [dependencies]
 heck.workspace = true
+miden-note-codec-wit.workspace = true
 miden-note-schema.workspace = true
 miden-note-schema-codegen.workspace = true
 proc-macro2.workspace = true
 proc-macro-crate = { workspace = true }
 quote.workspace = true
-syn = { workspace = true, features = ["visit-mut"] }
+syn.workspace = true
 
 [dev-dependencies]
 prettyplease = { workspace = true }

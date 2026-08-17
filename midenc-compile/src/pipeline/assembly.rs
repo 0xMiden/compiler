@@ -76,6 +76,7 @@ pub(crate) fn post_process_package(
     let has_note_codec = crate::cargo::has_project_note_codec(context.package.metadata());
     validate_note_codec_declaration(
         has_note_codec,
+        package_has_note_target(&context.package),
         context.target.ty,
         sections.note_storage_schema.is_some(),
         context.target.name.inner(),
@@ -101,7 +102,7 @@ pub(crate) fn post_process_package(
             .push(Section::new(SectionId::KERNEL, kernel_package.to_bytes()));
     }
 
-    if has_note_codec {
+    if has_note_codec && context.target.ty == TargetType::Note {
         attach_note_codec(package, context, session)?;
     }
 
@@ -111,25 +112,39 @@ pub(crate) fn post_process_package(
 /// Validates the target and schema required by an author codec declaration.
 fn validate_note_codec_declaration(
     has_note_codec: bool,
+    package_has_note_target: bool,
     target_type: midenc_session::miden_project::TargetType,
     has_note_storage_schema: bool,
     target_name: &str,
 ) -> Result<(), Report> {
     use midenc_session::miden_project::TargetType;
 
-    if has_note_codec && target_type != TargetType::Note {
+    if has_note_codec && !package_has_note_target {
         return Err(Report::msg(format!(
-            "`[package.metadata.note-codec-crate]` is only valid for note targets, but target \
-             '{target_name}' has type `{target_type}`"
+            "`[package.metadata.note-codec-crate]` requires a note target, but the package that \
+             contains target '{target_name}' defines no note target"
         )));
     }
-    if has_note_codec && !has_note_storage_schema {
+    if has_note_codec && target_type == TargetType::Note && !has_note_storage_schema {
         return Err(Report::msg(format!(
             "note target '{target_name}' declares `[package.metadata.note-codec-crate]` but \
              emitted no note storage schema; add one named-field `#[note]` struct"
         )));
     }
     Ok(())
+}
+
+/// Returns true when a package defines at least one note target.
+fn package_has_note_target(package: &midenc_session::miden_project::Package) -> bool {
+    use midenc_session::miden_project::TargetType;
+
+    package
+        .library_target()
+        .is_some_and(|target| target.inner().ty == TargetType::Note)
+        || package
+            .executable_targets()
+            .iter()
+            .any(|target| target.inner().ty == TargetType::Note)
 }
 
 /// Build and attach the note codec declared by the current project package.
@@ -245,20 +260,29 @@ mod tests {
     }
 
     #[test]
-    fn codec_metadata_requires_a_note_target_with_a_schema() {
-        let wrong_target =
-            validate_note_codec_declaration(true, TargetType::Library, true, "library")
+    fn codec_metadata_skips_non_note_target_when_package_has_note_target() {
+        validate_note_codec_declaration(true, true, TargetType::Library, false, "library").unwrap();
+    }
+
+    #[test]
+    fn codec_metadata_requires_a_note_target_in_the_package() {
+        let error =
+            validate_note_codec_declaration(true, false, TargetType::Library, false, "library")
                 .unwrap_err()
                 .to_string();
-        assert!(wrong_target.contains("only valid for note targets"));
+        assert!(error.contains("defines no note target"));
+    }
 
+    #[test]
+    fn codec_metadata_requires_a_schema_on_the_note_target() {
         let missing_schema =
-            validate_note_codec_declaration(true, TargetType::Note, false, "schema-less")
+            validate_note_codec_declaration(true, true, TargetType::Note, false, "schema-less")
                 .unwrap_err()
                 .to_string();
         assert!(missing_schema.contains("emitted no note storage schema"));
 
-        validate_note_codec_declaration(true, TargetType::Note, true, "note").unwrap();
-        validate_note_codec_declaration(false, TargetType::Library, false, "library").unwrap();
+        validate_note_codec_declaration(true, true, TargetType::Note, true, "note").unwrap();
+        validate_note_codec_declaration(false, false, TargetType::Library, false, "library")
+            .unwrap();
     }
 }

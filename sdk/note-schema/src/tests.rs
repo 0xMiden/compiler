@@ -4,8 +4,9 @@ use miden_field_repr::ToFeltRepr;
 use miden_protocol::{account::AccountId, address::NetworkId};
 
 use crate::{
-    ACCOUNT_ID_FQN, CodecRegistry, DecodedValueKind, Felt, NoteStorage, NoteStorageSchema,
-    SchemaTypeKind,
+    ACCOUNT_ID_FQN, CodecRegistry, DecodedValueKind, Felt, MAX_NOTE_STORAGE_SCHEMA_BYTES,
+    MAX_NOTE_STORAGE_SCHEMA_DEPTH, MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_TYPES,
+    NoteStorage, NoteStorageSchema, SchemaTypeKind,
 };
 
 const LAYOUT_SCHEMA: &str = r#"
@@ -337,4 +338,105 @@ fn decoder_rejects_invalid_option_and_variant_tags() {
 fn u64_layout_uses_shared_low_then_high_limb_encoding() {
     let value = 0x1234_5678_90ab_cdefu64;
     assert_eq!(value.to_felt_repr(), [Felt::from_u32(0x90ab_cdef), Felt::from_u32(0x1234_5678)]);
+}
+
+#[test]
+fn repeated_pair_schema_is_memoized_and_fails_fast_at_width_limit() {
+    let schema = NoteStorageSchema::from_wit_text(&repeated_pair_schema(8)).unwrap();
+    let SchemaTypeKind::Record(fields) = schema.root().kind() else {
+        panic!("the repeated-pair root must be a record");
+    };
+    assert!(
+        core::ptr::eq(fields[0].ty(), fields[1].ty()),
+        "both references to the completed named type must share one memoized node"
+    );
+
+    let error =
+        NoteStorageSchema::from_wit_text(&repeated_pair_schema(MAX_NOTE_STORAGE_SCHEMA_DEPTH / 2))
+            .err()
+            .expect("an over-wide repeated-pair schema must fail")
+            .to_string();
+    assert!(error.contains("maximum width"), "unexpected repeated-pair error: {error}");
+    assert!(
+        error.contains(&MAX_NOTE_STORAGE_SCHEMA_FELTS.to_string()),
+        "the protocol width must be present in the diagnostic: {error}"
+    );
+}
+
+#[test]
+fn deep_schema_chain_fails_fast_at_depth_limit() {
+    let error =
+        NoteStorageSchema::from_wit_text(&deep_chain_schema(MAX_NOTE_STORAGE_SCHEMA_DEPTH + 1))
+            .err()
+            .expect("an over-deep schema must fail")
+            .to_string();
+
+    assert!(error.contains("nesting depth"), "unexpected deep-chain error: {error}");
+    assert!(
+        error.contains(&MAX_NOTE_STORAGE_SCHEMA_DEPTH.to_string()),
+        "the nesting limit must be present in the diagnostic: {error}"
+    );
+}
+
+#[test]
+fn schema_reader_enforces_documented_byte_type_and_root_width_limits() {
+    let oversized = " ".repeat(MAX_NOTE_STORAGE_SCHEMA_BYTES + 1);
+    let byte_error = NoteStorageSchema::from_wit_text(&oversized)
+        .err()
+        .expect("an oversized schema document must fail")
+        .to_string();
+    assert!(byte_error.contains("schema section"));
+    assert!(byte_error.contains(&MAX_NOTE_STORAGE_SCHEMA_BYTES.to_string()));
+
+    let mut too_many_types =
+        String::from("package example:many-types@1.0.0; interface note-storage { ");
+    for index in 0..=MAX_NOTE_STORAGE_SCHEMA_TYPES {
+        too_many_types.push_str(&format!("type t{index} = u8; "));
+    }
+    too_many_types.push_str("record root { value: u8 } type storage = root; }");
+    let type_error = NoteStorageSchema::from_wit_text(&too_many_types)
+        .err()
+        .expect("a schema with too many types must fail")
+        .to_string();
+    assert!(type_error.contains("WIT types"), "unexpected type-count error: {type_error}");
+    assert!(type_error.contains(&MAX_NOTE_STORAGE_SCHEMA_TYPES.to_string()));
+
+    let mut wide_root =
+        String::from("package example:wide-root@1.0.0; interface note-storage { record root { ");
+    for index in 0..=MAX_NOTE_STORAGE_SCHEMA_FELTS {
+        wide_root.push_str(&format!("field-{index}: u8, "));
+    }
+    wide_root.push_str("} type storage = root; }");
+    let width_error = NoteStorageSchema::from_wit_text(&wide_root)
+        .err()
+        .expect("an over-wide schema root must fail")
+        .to_string();
+    assert!(width_error.contains("maximum width"), "unexpected width error: {width_error}");
+    assert!(width_error.contains(&MAX_NOTE_STORAGE_SCHEMA_FELTS.to_string()));
+}
+
+/// Builds a linear-size WIT DAG whose resolved layout doubles at each level.
+fn repeated_pair_schema(levels: usize) -> String {
+    let mut wit = String::from(
+        "package example:repeated-pair@1.0.0; interface note-storage { record t0 { value: u8 } ",
+    );
+    for level in 1..=levels {
+        let previous = level - 1;
+        wit.push_str(&format!("record t{level} {{ left: t{previous}, right: t{previous} }} "));
+    }
+    wit.push_str(&format!("type storage = t{levels}; }}"));
+    wit
+}
+
+/// Builds a WIT record chain with one nested named type per level.
+fn deep_chain_schema(levels: usize) -> String {
+    let mut wit = String::from(
+        "package example:deep-chain@1.0.0; interface note-storage { record t0 { value: u8 } ",
+    );
+    for level in 1..=levels {
+        let previous = level - 1;
+        wit.push_str(&format!("record t{level} {{ value: t{previous} }} "));
+    }
+    wit.push_str(&format!("type storage = t{levels}; }}"));
+    wit
 }

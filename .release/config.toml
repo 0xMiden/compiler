@@ -248,6 +248,10 @@ name = "miden-note-codec-macros"
 unit = "sdk"
 
 [[packages]]
+name = "miden-note-codec-wit"
+unit = "sdk"
+
+[[packages]]
 name = "midenc-benchmark-runner"
 unit = "private"
 

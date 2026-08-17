@@ -17,6 +17,43 @@ pub const ACCOUNT_ID_FQN: &str = "miden:base/core-types@1.0.0.account-id";
 /// The canonical WIT FQN for `asset-amount`.
 pub const ASSET_AMOUNT_FQN: &str = "miden:base/core-types@1.0.0.asset-amount";
 
+/// A protocol type whose schema leaf maps directly to an existing host type and standard codec.
+///
+/// This is the canonical standard-leaf definition used by schema traversal, Rust code generation,
+/// and author-codec registration. Named types outside this set remain schema-owned, including
+/// other records in the `miden:base/core-types` interface.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StandardLeaf {
+    /// The one-element Miden base-field type.
+    Felt,
+    /// A group of four Miden base-field elements.
+    Word,
+    /// A two-element protocol account identifier.
+    AccountId,
+    /// A validated fungible-asset amount.
+    AssetAmount,
+}
+
+impl StandardLeaf {
+    /// Every standard leaf in canonical registry order.
+    pub const ALL: [Self; 4] = [Self::Felt, Self::Word, Self::AccountId, Self::AssetAmount];
+
+    /// Returns the canonical WIT FQN for this standard leaf.
+    pub const fn fqn(self) -> &'static str {
+        match self {
+            Self::Felt => FELT_FQN,
+            Self::Word => WORD_FQN,
+            Self::AccountId => ACCOUNT_ID_FQN,
+            Self::AssetAmount => ASSET_AMOUNT_FQN,
+        }
+    }
+
+    /// Classifies a canonical WIT FQN as a standard leaf.
+    pub fn from_fqn(fqn: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|leaf| leaf.fqn() == fqn)
+    }
+}
+
 /// Parses, displays, and validates one fully-qualified WIT leaf type.
 pub trait ConsumerTypeCodec: Send + Sync {
     /// Parses a string into its structural felt representation.
@@ -52,10 +89,14 @@ impl CodecRegistry {
     /// Creates a registry containing all standard note storage codecs.
     pub fn with_standard_codecs() -> Self {
         let mut registry = Self::empty();
-        registry.register(FELT_FQN, FeltCodec);
-        registry.register(WORD_FQN, WordCodec);
-        registry.register(ACCOUNT_ID_FQN, AccountIdCodec);
-        registry.register(ASSET_AMOUNT_FQN, AssetAmountCodec);
+        for leaf in StandardLeaf::ALL {
+            match leaf {
+                StandardLeaf::Felt => registry.register(leaf.fqn(), FeltCodec),
+                StandardLeaf::Word => registry.register(leaf.fqn(), WordCodec),
+                StandardLeaf::AccountId => registry.register(leaf.fqn(), AccountIdCodec),
+                StandardLeaf::AssetAmount => registry.register(leaf.fqn(), AssetAmountCodec),
+            }
+        }
         registry
     }
 
@@ -255,11 +296,23 @@ mod tests {
     fn standard_registry_contains_canonical_versioned_fqns() {
         let registry = CodecRegistry::default();
 
-        assert!(registry.contains(FELT_FQN));
-        assert!(registry.contains(WORD_FQN));
-        assert!(registry.contains(ACCOUNT_ID_FQN));
-        assert!(registry.contains(ASSET_AMOUNT_FQN));
+        for leaf in StandardLeaf::ALL {
+            assert!(registry.contains(leaf.fqn()));
+        }
         assert!(!CodecRegistry::empty().contains(FELT_FQN));
+    }
+
+    #[test]
+    fn standard_leaf_definition_is_pinned() {
+        assert_eq!(
+            StandardLeaf::ALL.map(StandardLeaf::fqn),
+            [FELT_FQN, WORD_FQN, ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN]
+        );
+        for leaf in StandardLeaf::ALL {
+            assert_eq!(StandardLeaf::from_fqn(leaf.fqn()), Some(leaf));
+            assert!(CodecRegistry::default().contains(leaf.fqn()));
+        }
+        assert_eq!(StandardLeaf::from_fqn("miden:base/core-types@1.0.0.digest"), None);
     }
 
     #[test]

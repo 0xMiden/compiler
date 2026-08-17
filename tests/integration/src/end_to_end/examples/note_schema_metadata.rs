@@ -388,15 +388,3 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
     "#]],
     );
 }
-
-/// The pinned note-codec world WIT is duplicated into each package that embeds it, because
-/// `include_str!` paths must not escape a published package's root. This test locks the copies
-/// together; update all three files when the world changes.
-#[test]
-fn note_codec_wit_copies_are_identical() {
-    let canonical = include_str!("../../../../../sdk/note-codec/wit/note-codec.wit");
-    let macros_copy = include_str!("../../../../../sdk/note-codec/macros/wit/note-codec.wit");
-    let compiler_copy = include_str!("../../../../../midenc-compile/wit/note-codec.wit");
-    assert_eq!(canonical, macros_copy, "sdk/note-codec/macros/wit/note-codec.wit drifted");
-    assert_eq!(canonical, compiler_copy, "midenc-compile/wit/note-codec.wit drifted");
-}

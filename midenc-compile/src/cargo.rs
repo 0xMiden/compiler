@@ -1,4 +1,4 @@
-use core::str::FromStr;
+use core::{fmt::Write as _, str::FromStr};
 use std::{
     boxed::Box,
     env, fs,
@@ -10,10 +10,12 @@ use std::{
     vec::Vec,
 };
 
-use miden_assembly::SourceManager;
+use miden_assembly::{SourceManager, serde::Serializable};
 use miden_mast_package::Package as MastPackage;
+use miden_note_codec_wit::NOTE_CODEC_WIT;
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
+use sha2::{Digest, Sha256};
 use wit_component::{ComponentEncoder, DecodedWasm};
 use wit_parser::{Function, FunctionKind, Resolve, Type, TypeDefKind, TypeId, WorldId, WorldItem};
 
@@ -28,11 +30,14 @@ const NOTE_CODEC_CRATE_PATH: &str = "path";
 /// Rust target used for zero-import note codec components.
 const NOTE_CODEC_TARGET: &str = "wasm32-unknown-unknown";
 
-/// Compiler-provided path to the exact package consumed by `from_project!`.
-const NOTE_CODEC_PACKAGE_PATH_ENV: &str = "MIDENC_NOTE_CODEC_PACKAGE_PATH";
+/// Directory used to exchange Miden packages with nested Cargo builds.
+const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
 
-/// Pinned author codec interface used to validate component signatures.
-const NOTE_CODEC_WIT: &str = include_str!("../wit/note-codec.wit");
+/// One immutable staged package and its build-isolation key.
+struct StagedNotePackage {
+    cache_dir: PathBuf,
+    build_key: String,
+}
 
 /// Cargo-specific options extracted from the `Compiler` struct.
 ///
@@ -48,6 +53,10 @@ pub struct CargoOptions {
     pub workspace: bool,
     /// Packages to build
     pub packages: Vec<CargoPackageSpec>,
+    /// Require Cargo.lock to remain unchanged.
+    pub locked: bool,
+    /// Prevent Cargo from accessing the network.
+    pub offline: bool,
 }
 
 /// Represents a cargo package specifier.
@@ -119,6 +128,8 @@ impl CargoOptions {
             manifest_path: options.manifest_path.clone(),
             workspace: options.workspace,
             packages,
+            locked: options.cargo_locked,
+            offline: options.cargo_offline,
         })
     }
 }
@@ -235,6 +246,8 @@ pub(crate) fn cargo_build(
         diagnostics: options.diagnostics,
         remap_path_prefixes: options.remap_path_prefixes.clone(),
         rustflags: options.rustflags.clone(),
+        cargo_locked: options.cargo_locked,
+        cargo_offline: options.cargo_offline,
         link_libraries: vec![LinkLibrary::core()],
         ..midenc_session::Options::new(
             Some(package_name.clone()),
@@ -350,7 +363,7 @@ pub(crate) fn build_project_note_codec(
         return Ok(None);
     };
 
-    build_note_codec_component(&codec_crate_dir, note_project_dir, note_package, session).map(Some)
+    build_note_codec_component(&codec_crate_dir, note_package, session).map(Some)
 }
 
 /// Reads the optional codec crate path from Miden project metadata.
@@ -410,18 +423,16 @@ fn note_codec_crate_dir(
 /// Builds and componentizes one author-side note codec crate.
 fn build_note_codec_component(
     codec_crate_dir: &Path,
-    note_project_dir: &Path,
     note_package: &MastPackage,
     session: &Session,
 ) -> CompilerResult<Vec<u8>> {
-    sweep_legacy_note_codec_inputs(note_project_dir)?;
     let session_target_dir = if session.options.target_dir.is_absolute() {
         session.options.target_dir.clone()
     } else {
         session.options.current_dir.join(&session.options.target_dir)
     };
     let work_dir = session_target_dir.join(&session.options.profile).join("note-codec");
-    let staged_package = stage_note_package(&work_dir, note_package)?;
+    let staged_package = stage_note_package(&work_dir, codec_crate_dir, note_package)?;
     let manifest_path = codec_crate_dir.join("Cargo.toml");
     if !manifest_path.is_file() {
         return Err(Report::msg(format!(
@@ -439,7 +450,7 @@ fn build_note_codec_component(
     };
     crate::rust::install_wasm32_target("unknown-unknown", toolchain.as_deref())?;
 
-    let cargo_target_dir = work_dir.join("cargo-target");
+    let cargo_target_dir = work_dir.join("cargo-target").join(&staged_package.build_key);
     let mut cargo = Command::new(cargo_path);
     if let Some(toolchain) = toolchain.as_deref() {
         cargo.arg(format!("+{toolchain}"));
@@ -458,12 +469,13 @@ fn build_note_codec_component(
         .arg(&cargo_target_dir)
         .arg("--message-format")
         .arg("json-render-diagnostics")
-        .env(NOTE_CODEC_PACKAGE_PATH_ENV, &staged_package)
+        .env(PACKAGE_CACHE_ENV, &staged_package.cache_dir)
         .env_remove("CARGO_BUILD_TARGET")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env_remove("RUSTFLAGS")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
+    apply_cargo_policy(&mut cargo, session.options.cargo_locked, session.options.cargo_offline);
 
     let manifest_path = manifest_path.canonicalize().map_err(|error| {
         Report::msg(format!(
@@ -471,7 +483,14 @@ fn build_note_codec_component(
             manifest_path.display()
         ))
     })?;
-    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path)?;
+    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path).map_err(|error| {
+        note_codec_cargo_error(
+            error,
+            &manifest_path,
+            session.options.cargo_locked,
+            session.options.cargo_offline,
+        )
+    })?;
     let mut wasm_paths = artifacts
         .into_iter()
         .filter(|artifact| {
@@ -525,71 +544,87 @@ fn build_note_codec_component(
     Ok(component)
 }
 
-/// Stages the current in-memory note package at a stable compiler-owned path.
-fn stage_note_package(work_dir: &Path, note_package: &MastPackage) -> CompilerResult<PathBuf> {
-    let staging_dir = work_dir.join("input");
-    fs::create_dir_all(&staging_dir).map_err(|error| {
-        Report::msg(format!(
-            "failed to create note package staging directory '{}': {error}",
-            staging_dir.display()
-        ))
-    })?;
-    note_package.write_masp_file(&staging_dir).map_err(|error| {
-        Report::msg(format!(
-            "failed to stage note package {}@{} for codec generation: {error}",
-            note_package.name, note_package.version
-        ))
-    })?;
-    let package_name: &str = &note_package.name;
-    staging_dir
-        .join(package_name)
-        .with_extension(MastPackage::EXTENSION)
-        .canonicalize()
-        .map_err(|error| {
-            Report::msg(format!(
-                "failed to resolve the staged note package in '{}': {error}",
-                staging_dir.display()
-            ))
-        })
-}
+/// Stages the current package in a content-addressed package-cache directory.
+fn stage_note_package(
+    work_dir: &Path,
+    codec_crate_dir: &Path,
+    note_package: &MastPackage,
+) -> CompilerResult<StagedNotePackage> {
+    let package_bytes = note_package.to_bytes();
+    let mut hasher = Sha256::new();
+    hasher.update(&package_bytes);
+    hasher.update([0]);
+    hasher.update(codec_crate_dir.as_os_str().to_string_lossy().as_bytes());
+    let mut build_key = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        write!(&mut build_key, "{byte:02x}").expect("writing to a string cannot fail");
+    }
+    let cache_dir = work_dir.join("package-cache").join(&build_key);
+    let package_path = cache_dir.join(&*note_package.name).with_extension(MastPackage::EXTENSION);
 
-/// Removes staging directories created by the temporary-directory implementation.
-fn sweep_legacy_note_codec_inputs(note_project_dir: &Path) -> CompilerResult<()> {
-    let legacy_root = note_project_dir.join("target/miden");
-    let entries = match fs::read_dir(&legacy_root) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(error) => {
+    if package_path.is_file() {
+        let staged_bytes = fs::read(&package_path).map_err(|error| {
+            Report::msg(format!(
+                "failed to read staged note package '{}': {error}",
+                package_path.display()
+            ))
+        })?;
+        if staged_bytes != package_bytes {
             return Err(Report::msg(format!(
-                "failed to inspect legacy note codec staging root '{}': {error}",
-                legacy_root.display()
+                "content-addressed note package path '{}' contains different bytes",
+                package_path.display()
             )));
         }
-    };
-    for entry in entries {
-        let entry = entry.map_err(|error| {
+    } else {
+        write_package_atomic(note_package, &cache_dir).map_err(|error| {
             Report::msg(format!(
-                "failed to inspect legacy note codec staging root '{}': {error}",
-                legacy_root.display()
+                "failed to stage note package {}@{} for codec generation: {error}",
+                note_package.name, note_package.version
             ))
         })?;
-        let name = entry.file_name();
-        let file_type = entry.file_type().map_err(|error| {
-            Report::msg(format!(
-                "failed to inspect legacy note codec staging entry '{}': {error}",
-                entry.path().display()
-            ))
-        })?;
-        if name.to_string_lossy().starts_with("zz-note-codec-input-") && file_type.is_dir() {
-            fs::remove_dir_all(entry.path()).map_err(|error| {
-                Report::msg(format!(
-                    "failed to remove legacy note codec staging directory '{}': {error}",
-                    entry.path().display()
-                ))
-            })?;
-        }
     }
-    Ok(())
+
+    Ok(StagedNotePackage {
+        cache_dir,
+        build_key,
+    })
+}
+
+/// Applies the outer Cargo resolution policy to a nested command.
+fn apply_cargo_policy(cargo: &mut Command, locked: bool, offline: bool) {
+    if locked {
+        cargo.arg("--locked");
+    }
+    if offline {
+        cargo.arg("--offline");
+    }
+}
+
+/// Adds lockfile and network recovery guidance to a nested Cargo failure.
+fn note_codec_cargo_error(
+    error: Report,
+    manifest_path: &Path,
+    locked: bool,
+    offline: bool,
+) -> Report {
+    if !locked && !offline {
+        return error;
+    }
+
+    let mut guidance = format!(
+        "note codec build failed under the outer Cargo policy for '{}': {error}",
+        manifest_path.display()
+    );
+    if locked {
+        guidance.push_str(
+            "; update and commit the codec workspace Cargo.lock before retrying with --locked",
+        );
+    }
+    if offline {
+        guidance
+            .push_str("; fetch the codec dependencies while online before retrying with --offline");
+    }
+    Report::msg(guidance)
 }
 
 /// Verifies the component sandbox and the versioned codec interface export.
@@ -903,19 +938,34 @@ mod tests {
     }
 
     #[test]
-    fn note_codec_staging_is_stable_and_sweeps_legacy_directories() {
+    fn note_codec_staging_is_content_addressed() {
         let root = tempfile::TempDir::new().unwrap();
         let package = midenc_codegen_masm::intrinsics::load();
+        let codec_crate = root.path().join("codec");
+        fs::create_dir(&codec_crate).unwrap();
 
-        let first = stage_note_package(root.path(), &package).unwrap();
-        let second = stage_note_package(root.path(), &package).unwrap();
-        assert_eq!(first, second);
-        assert_eq!(first.parent().and_then(Path::file_name), Some("input".as_ref()));
+        let first = stage_note_package(root.path(), &codec_crate, &package).unwrap();
+        let second = stage_note_package(root.path(), &codec_crate, &package).unwrap();
+        assert_eq!(first.cache_dir, second.cache_dir);
+        assert_eq!(first.build_key, second.build_key);
+        assert_eq!(first.build_key.len(), 64);
+        let package_path =
+            first.cache_dir.join(&*package.name).with_extension(MastPackage::EXTENSION);
+        assert_eq!(fs::read(package_path).unwrap(), package.to_bytes());
+    }
 
-        let legacy = root.path().join("project/target/miden/zz-note-codec-input-old");
-        fs::create_dir_all(&legacy).unwrap();
-        sweep_legacy_note_codec_inputs(&root.path().join("project")).unwrap();
-        assert!(!legacy.exists());
+    #[test]
+    fn note_codec_cargo_policy_is_forwarded() {
+        let mut cargo = Command::new("cargo");
+        cargo.arg("build");
+        apply_cargo_policy(&mut cargo, true, true);
+        let args = cargo
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+
+        assert!(args.iter().any(|arg| arg == "--locked"));
+        assert!(args.iter().any(|arg| arg == "--offline"));
     }
 
     /// Resolves the codec interface from one complete WIT document.

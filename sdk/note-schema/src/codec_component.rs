@@ -15,8 +15,14 @@ use crate::{CodecRegistry, ConsumerTypeCodec, Error, NoteStorageSchema, Result};
 /// Maximum Wasm instructions available to one codec operation.
 const CALL_FUEL: u64 = 10_000_000;
 
+/// Maximum bytes accepted for one untrusted note codec component before Wasmtime compilation.
+const MAX_COMPONENT_BYTES: usize = 4 * 1024 * 1024;
+
 /// Maximum bytes available to one codec component linear memory.
 const MAX_COMPONENT_MEMORY_BYTES: usize = 16 * 1024 * 1024;
+
+/// Maximum elements available to each codec component table.
+const MAX_COMPONENT_TABLE_ELEMENTS: usize = 4_096;
 
 /// Maximum FQNs accepted from `supported-types`.
 const MAX_SUPPORTED_TYPES: usize = 128;
@@ -31,7 +37,7 @@ const MAX_RETURNED_FELTS: usize = 4_096;
 const MAX_RETURNED_STRING_BYTES: usize = 16 * 1024;
 
 wasmtime::component::bindgen!({
-    path: "../note-codec/wit",
+    path: "wit",
     world: "note-codec",
 });
 
@@ -84,6 +90,7 @@ struct ComponentInstance {
 impl ComponentRuntime {
     /// Compiles a component with fuel accounting enabled.
     fn new(bytes: &[u8]) -> Result<Self> {
+        ensure_component_byte_limit(bytes.len())?;
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
@@ -97,13 +104,7 @@ impl ComponentRuntime {
     /// Instantiates a zero-import component with fresh per-call limits.
     fn instantiate(&self) -> Result<ComponentInstance> {
         let linker = Linker::new(&self.engine);
-        let limits = StoreLimitsBuilder::new()
-            .memory_size(MAX_COMPONENT_MEMORY_BYTES)
-            .instances(32)
-            .tables(32)
-            .memories(1)
-            .trap_on_grow_failure(true)
-            .build();
+        let limits = component_store_limits();
         let mut store = Store::new(&self.engine, ComponentStore { limits });
         store.limiter(|state| &mut state.limits);
         store
@@ -133,6 +134,29 @@ impl ComponentRuntime {
         }
         Ok(fqns)
     }
+}
+
+/// Builds the resource limits attached to every isolated component call store.
+fn component_store_limits() -> StoreLimits {
+    StoreLimitsBuilder::new()
+        .memory_size(MAX_COMPONENT_MEMORY_BYTES)
+        .table_elements(MAX_COMPONENT_TABLE_ELEMENTS)
+        .instances(32)
+        .tables(32)
+        .memories(1)
+        .trap_on_grow_failure(true)
+        .build()
+}
+
+/// Rejects oversized component bytes before validation or JIT compilation begins.
+fn ensure_component_byte_limit(byte_len: usize) -> Result<()> {
+    if byte_len > MAX_COMPONENT_BYTES {
+        return Err(Error::new(format!(
+            "note codec component is {byte_len} bytes; the pre-compilation limit is \
+             {MAX_COMPONENT_BYTES}"
+        )));
+    }
+    Ok(())
 }
 
 /// A registry entry that dispatches one FQN through isolated component instances.
@@ -299,12 +323,14 @@ mod tests {
     };
     use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
     use tempfile::TempDir;
+    use wasmtime::ResourceLimiter;
     use wit_component::ComponentEncoder;
 
     use super::*;
 
     const WASM_TARGET: &str = "wasm32-unknown-unknown";
     const FIXTURE_FQN: &str = "example:codec-schema/note-storage@1.0.0.ratio";
+    const DIGEST_FQN: &str = "miden:base/core-types@1.0.0.digest";
     const FIXTURE_SCHEMA: &str = r#"
 package example:codec-schema@1.0.0;
 
@@ -321,6 +347,31 @@ interface note-storage {
     type storage = codec-note;
 }
 "#;
+    const EMBEDDED_CORE_SCHEMA: &str = r#"
+package example:embedded-core-schema@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface note-storage {
+    use core-types.{digest};
+    record embedded-core-note { value: digest }
+    type storage = embedded-core-note;
+}
+
+package miden:base@1.0.0 {
+    interface core-types {
+        record felt { inner: f32 }
+        record word { a: felt, b: felt, c: felt, d: felt }
+        record digest { inner: word }
+    }
+}
+"#;
+
+    #[test]
+    fn local_note_codec_wit_matches_canonical_document() {
+        let local = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/wit/note-codec.wit"));
+        assert_eq!(local, miden_note_codec_wit::NOTE_CODEC_WIT);
+    }
 
     #[test]
     fn component_boundary_rejects_noncanonical_felts() {
@@ -328,6 +379,46 @@ interface note-storage {
             component_values_to_felts("example:test/codec.value", &[Felt::ORDER]).unwrap_err();
 
         assert!(error.to_string().contains("noncanonical felt at index 0"));
+    }
+
+    #[test]
+    fn oversized_component_is_rejected_before_compilation() {
+        let bytes = vec![0; MAX_COMPONENT_BYTES + 1];
+        let error = ComponentRuntime::new(&bytes)
+            .err()
+            .expect("an oversized component must fail before compilation")
+            .to_string();
+
+        assert!(error.contains("pre-compilation limit"));
+        assert!(error.contains(&(MAX_COMPONENT_BYTES + 1).to_string()));
+        assert!(error.contains(&MAX_COMPONENT_BYTES.to_string()));
+    }
+
+    #[test]
+    fn component_store_limits_bound_table_elements() {
+        let mut limits = component_store_limits();
+        assert!(
+            ResourceLimiter::table_growing(&mut limits, 0, MAX_COMPONENT_TABLE_ELEMENTS, None,)
+                .unwrap()
+        );
+
+        let error =
+            ResourceLimiter::table_growing(&mut limits, 0, MAX_COMPONENT_TABLE_ELEMENTS + 1, None)
+                .unwrap_err()
+                .to_string();
+        assert!(error.contains("growing table"), "unexpected table-limit error: {error}");
+    }
+
+    #[test]
+    fn nonstandard_embedded_core_type_is_author_codec_eligible() {
+        let schema = NoteStorageSchema::from_wit_text(EMBEDDED_CORE_SCHEMA).unwrap();
+        let custom_types = schema.custom_type_fqns();
+
+        assert!(custom_types.contains(DIGEST_FQN));
+        assert!(!custom_types.contains(crate::FELT_FQN));
+        assert!(!custom_types.contains(crate::WORD_FQN));
+        validate_reported_fqns(&[DIGEST_FQN.to_owned()], &custom_types, &CodecRegistry::default())
+            .unwrap();
     }
 
     #[test]

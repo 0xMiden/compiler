@@ -881,6 +881,12 @@ fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
     if options.profile == "release" {
         args.push("--release".to_string());
     }
+    if options.cargo_locked {
+        args.push("--locked".to_string());
+    }
+    if options.cargo_offline {
+        args.push("--offline".to_string());
+    }
 
     args.push("--manifest-path".to_string());
     args.push(manifest_path.to_string_lossy().to_string());
@@ -2198,7 +2204,7 @@ pub(crate) mod manifest {
     }
 
     /// Builds the argument vector for the underlying `cargo build` invocation.
-    fn build_cargo_args(cargo_opts: &CargoOptions, opt_level: OptLevel) -> Vec<String> {
+    pub(super) fn build_cargo_args(cargo_opts: &CargoOptions, opt_level: OptLevel) -> Vec<String> {
         let mut args = vec!["build".to_string()];
 
         // Add build-std flags required for Miden compilation
@@ -2242,6 +2248,12 @@ pub(crate) mod manifest {
         // Forward cargo-specific options
         if cargo_opts.release {
             args.push("--release".to_string());
+        }
+        if cargo_opts.locked {
+            args.push("--locked".to_string());
+        }
+        if cargo_opts.offline {
+            args.push("--offline".to_string());
         }
 
         if let Some(ref manifest_path) = cargo_opts.manifest_path {
@@ -3948,6 +3960,20 @@ path = "lib.rs"
         // An empty plain value with no encoded variable contributes nothing.
         let merged = manifest::merge_rust_flags(&mandatory, None, Some(OsStr::new("")), None);
         assert_eq!(merged, vec!["--cfg".to_string(), "miden".to_string()]);
+    }
+
+    /// The root Cargo policy is forwarded to the manifest build command.
+    #[test]
+    fn the_cargo_resolution_policy_is_handed_to_the_nested_build() {
+        let options = crate::cargo::CargoOptions {
+            locked: true,
+            offline: true,
+            ..Default::default()
+        };
+        let args = manifest::build_cargo_args(&options, midenc_session::OptLevel::None);
+
+        assert!(args.iter().any(|arg| arg == "--locked"));
+        assert!(args.iter().any(|arg| arg == "--offline"));
     }
 
     /// A WebAssembly module with a body, for the lowering half of the entry point.

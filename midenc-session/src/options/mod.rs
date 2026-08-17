@@ -34,6 +34,10 @@ pub struct Options {
     pub workspace: bool,
     /// Build the specified packages in the current workspace (used by `cargo miden`)
     pub packages: Vec<String>,
+    /// Require Cargo.lock to remain unchanged in nested Cargo builds.
+    pub cargo_locked: bool,
+    /// Prevent network access in nested Cargo builds.
+    pub cargo_offline: bool,
     /// The name of the current project target being compiled
     pub target: Option<String>,
     /// The type of target that was requested
@@ -162,6 +166,8 @@ impl Options {
             profile: "dev".to_string(),
             workspace: false,
             packages: vec![],
+            cargo_locked: false,
+            cargo_offline: false,
             target: None,
             target_type: target,
             entrypoint: None,

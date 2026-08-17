@@ -9,8 +9,8 @@ use miden_mast_package::Package;
 
 use crate::{Error, NoteStorageSchema, Result};
 
-/// Compiler-provided path to the package staged for note codec generation.
-const NOTE_CODEC_PACKAGE_PATH_ENV: &str = "MIDENC_NOTE_CODEC_PACKAGE_PATH";
+/// Directory used to exchange Miden packages with nested Cargo builds.
+const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
 
 /// A loaded package artifact and its note storage schema.
 pub struct NotePackageArtifact {
@@ -41,12 +41,8 @@ impl<'a> NotePackageResolver<'a> {
         Self { macro_crate }
     }
 
-    /// Loads the freshest package built by a Miden project.
+    /// Loads the package built by a Miden project.
     pub fn from_project(&self, project: &str) -> Result<NotePackageArtifact> {
-        if let Some(path) = self.compiler_staged_package()? {
-            return self.load_package(path);
-        }
-
         let project_dir = self.resolve_manifest_path(project)?;
         if !project_dir.is_dir() {
             return Err(Error::new(format!(
@@ -55,7 +51,7 @@ impl<'a> NotePackageResolver<'a> {
                 project_dir.display()
             )));
         }
-        let package_path = freshest_project_package(&project_dir)
+        let package_path = resolve_project_package(&project_dir)
             .map_err(|error| Error::new(format!("{}: {error}", self.macro_crate)))?
             .ok_or_else(|| {
                 Error::new(missing_project_package_message(self.macro_crate, &project_dir))
@@ -91,24 +87,15 @@ impl<'a> NotePackageResolver<'a> {
         Ok(PathBuf::from(manifest_dir).join(path))
     }
 
-    /// Returns the compiler-staged package when one is available.
-    fn compiler_staged_package(&self) -> Result<Option<PathBuf>> {
-        let Some(path) = env::var_os(NOTE_CODEC_PACKAGE_PATH_ENV) else {
-            return Ok(None);
-        };
-        let path = PathBuf::from(path);
-        if !path.is_file() {
-            return Err(Error::new(format!(
-                "{}: {NOTE_CODEC_PACKAGE_PATH_ENV} points to missing Miden package '{}'",
-                self.macro_crate,
-                path.display()
-            )));
-        }
-        Ok(Some(path))
-    }
-
     /// Loads the package and its unique schema section.
     fn load_package(&self, path: PathBuf) -> Result<NotePackageArtifact> {
+        let path = path.canonicalize().map_err(|error| {
+            Error::new(format!(
+                "{}: failed to resolve Miden package '{}': {error}",
+                self.macro_crate,
+                path.display()
+            ))
+        })?;
         let package = Package::deserialize_from_file(&path).map_err(|error| {
             Error::new(format!(
                 "{}: failed to read Miden package '{}': {error}",
@@ -127,70 +114,173 @@ impl<'a> NotePackageResolver<'a> {
     }
 }
 
-/// Returns the newest package directly inside a Miden project profile directory.
-fn freshest_project_package(project_dir: &Path) -> Result<Option<PathBuf>> {
-    let target_dir = project_dir.join("target/miden");
-    if !target_dir.is_dir() {
+/// Resolves one project package by package identity and output-directory priority.
+fn resolve_project_package(project_dir: &Path) -> Result<Option<PathBuf>> {
+    let stems = project_package_stems(project_dir);
+
+    if let Some(cache_dir) = env::var_os(PACKAGE_CACHE_ENV) {
+        return find_project_package_in_dir(&absolutize(PathBuf::from(cache_dir))?, &stems);
+    }
+
+    let profiles = candidate_profiles();
+    for output_dir in project_output_dirs(project_dir, &profiles) {
+        if let Some(package) = find_project_package_in_dir(&output_dir, &stems)? {
+            return Ok(Some(package));
+        }
+    }
+    Ok(None)
+}
+
+/// Returns Cargo and Miden profile names in lookup order.
+fn candidate_profiles() -> Vec<String> {
+    let mut profiles = Vec::new();
+    if let Ok(profile) = env::var("PROFILE") {
+        push_profile(&mut profiles, profile);
+    }
+    push_profile(&mut profiles, "release".to_owned());
+    push_profile(&mut profiles, "debug".to_owned());
+    push_profile(&mut profiles, "dev".to_owned());
+    profiles
+}
+
+/// Returns candidate output directories for one project.
+fn project_output_dirs(project_dir: &Path, profiles: &[String]) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+
+    // Keep this policy in parity with dependency_output_dirs in base-macros/src/fpi.rs. The
+    // crates cannot share the implementation without adding the full SDK macro dependency graph.
+    push_profile_dirs(&mut dirs, project_dir.join("target"), profiles);
+    push_manifest_ancestor_target_profile_dirs(&mut dirs, project_dir, profiles);
+    push_ancestor_target_profile_dirs(&mut dirs, project_dir, profiles);
+
+    if let Some(target_dir) = env::var_os("CARGO_TARGET_DIR") {
+        push_profile_dirs(&mut dirs, PathBuf::from(target_dir), profiles);
+    }
+    if let Some(out_dir) = env::var_os("OUT_DIR") {
+        for ancestor in Path::new(&out_dir).ancestors() {
+            push_profile_dirs(&mut dirs, ancestor.to_path_buf(), profiles);
+        }
+    }
+    if let Ok(current_dir) = env::current_dir() {
+        push_profile_dirs(&mut dirs, current_dir.join("target"), profiles);
+        push_manifest_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
+        push_ancestor_target_profile_dirs(&mut dirs, &current_dir, profiles);
+    }
+    dirs
+}
+
+/// Adds `target/miden/<profile>` directories while preserving order.
+fn push_profile_dirs(dirs: &mut Vec<PathBuf>, target_root: PathBuf, profiles: &[String]) {
+    for profile in profiles {
+        let dir = target_root.join("miden").join(profile);
+        if !dirs.contains(&dir) {
+            dirs.push(dir);
+        }
+    }
+}
+
+/// Adds target directories found among the ancestors of `path`.
+fn push_ancestor_target_profile_dirs(dirs: &mut Vec<PathBuf>, path: &Path, profiles: &[String]) {
+    for ancestor in path.ancestors() {
+        if ancestor.file_name().is_some_and(|name| name == "target") {
+            push_profile_dirs(dirs, ancestor.to_path_buf(), profiles);
+        }
+    }
+}
+
+/// Adds target directories for Cargo manifest ancestors of `path`.
+fn push_manifest_ancestor_target_profile_dirs(
+    dirs: &mut Vec<PathBuf>,
+    path: &Path,
+    profiles: &[String],
+) {
+    for ancestor in path.ancestors() {
+        if ancestor.join("Cargo.toml").is_file() || ancestor.join("Cargo.lock").is_file() {
+            push_profile_dirs(dirs, ancestor.join("target"), profiles);
+        }
+    }
+}
+
+/// Finds a package in one output directory by ordered package identity.
+fn find_project_package_in_dir(dir: &Path, stems: &[String]) -> Result<Option<PathBuf>> {
+    if !dir.is_dir() {
         return Ok(None);
     }
 
-    let mut candidates = Vec::new();
-    for profile_dir in candidate_profile_dirs(&target_dir)? {
-        let entries = fs::read_dir(&profile_dir).map_err(|error| {
-            Error::new(format!("failed to read '{}': {error}", profile_dir.display()))
-        })?;
-        for entry in entries {
-            let entry = entry.map_err(|error| {
-                Error::new(format!(
-                    "failed to read an entry in '{}': {error}",
-                    profile_dir.display()
-                ))
-            })?;
-            let path = entry.path();
-            if !path.is_file() || !path.extension().is_some_and(|extension| extension == "masp") {
-                continue;
-            }
-            let modified =
-                entry.metadata().and_then(|metadata| metadata.modified()).map_err(|error| {
-                    Error::new(format!(
-                        "failed to read modification time for '{}': {error}",
-                        path.display()
-                    ))
-                })?;
-            candidates.push((modified, path));
+    let mut packages = fs::read_dir(dir)
+        .map_err(|error| Error::new(format!("failed to read '{}': {error}", dir.display())))?
+        .collect::<core::result::Result<Vec<_>, _>>()
+        .map_err(|error| {
+            Error::new(format!("failed to read an entry in '{}': {error}", dir.display()))
+        })?
+        .into_iter()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_file() && path.extension().is_some_and(|extension| extension == "masp")
+        })
+        .collect::<Vec<_>>();
+    packages.sort();
+
+    // The stems are ordered by identity. The canonical miden-project package name comes first,
+    // followed by legacy aliases. This matches base-macros/src/fpi.rs and prevents a newer legacy
+    // artifact from shadowing the canonical package.
+    for stem in stems {
+        if let Some(package) = packages
+            .iter()
+            .find(|path| path.file_stem().and_then(|value| value.to_str()) == Some(stem.as_str()))
+        {
+            return Ok(Some(package.clone()));
         }
     }
-    candidates.sort_by(|(left_time, left_path), (right_time, right_path)| {
-        left_time.cmp(right_time).then_with(|| left_path.cmp(right_path))
-    });
-    Ok(candidates.pop().map(|(_, path)| path))
+    Ok(None)
 }
 
-/// Returns project profile directories in deterministic candidate order.
-fn candidate_profile_dirs(target_dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut profiles = Vec::new();
-    push_profile(&mut profiles, "release".to_owned());
-    push_profile(&mut profiles, "debug".to_owned());
-
-    let entries = fs::read_dir(target_dir).map_err(|error| {
-        Error::new(format!("failed to read '{}': {error}", target_dir.display()))
-    })?;
-    let mut discovered = entries
-        .filter_map(core::result::Result::ok)
-        .filter(|entry| entry.path().is_dir())
-        .filter_map(|entry| entry.file_name().into_string().ok())
-        .filter(|name| name != "packages" && name != "generated-wit")
-        .collect::<Vec<_>>();
-    discovered.sort();
-    for profile in discovered {
-        push_profile(&mut profiles, profile);
+/// Returns ordered package filename stems for one project.
+fn project_package_stems(project_dir: &Path) -> Vec<String> {
+    let mut stems = Vec::new();
+    if let Some(name) = package_name_from_manifest(&project_dir.join("miden-project.toml")) {
+        push_package_stem(&mut stems, &name);
     }
+    if let Some(name) = package_name_from_manifest(&project_dir.join("Cargo.toml")) {
+        push_package_stem(&mut stems, &name);
+    }
+    if let Some(name) = project_dir.file_name().and_then(|name| name.to_str()) {
+        push_package_stem(&mut stems, name);
+    }
+    stems
+}
 
-    Ok(profiles
-        .into_iter()
-        .map(|profile| target_dir.join(profile))
-        .filter(|path| path.is_dir())
-        .collect())
+/// Reads a package name from one TOML manifest.
+fn package_name_from_manifest(manifest_path: &Path) -> Option<String> {
+    let manifest = fs::read_to_string(manifest_path).ok()?;
+    let manifest = manifest.parse::<toml::Table>().ok()?;
+    manifest
+        .get("package")
+        .and_then(toml::Value::as_table)
+        .and_then(|package| package.get("name"))
+        .and_then(toml::Value::as_str)
+        .map(ToOwned::to_owned)
+}
+
+/// Adds a package filename stem and its underscore alias.
+fn push_package_stem(stems: &mut Vec<String>, name: &str) {
+    if !name.is_empty() && !stems.iter().any(|existing| existing == name) {
+        stems.push(name.to_owned());
+    }
+    let normalized = name.replace('-', "_");
+    if !normalized.is_empty() && !stems.contains(&normalized) {
+        stems.push(normalized);
+    }
+}
+
+/// Makes a cache path absolute for generated `include_bytes!` inputs.
+fn absolutize(path: PathBuf) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path);
+    }
+    Ok(env::current_dir()
+        .map_err(|error| Error::new(format!("failed to resolve current directory: {error}")))?
+        .join(path))
 }
 
 /// Adds one profile name once.
@@ -217,23 +307,44 @@ fn missing_project_package_message(macro_crate: &str, project_dir: &Path) -> Str
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, thread, time::Duration};
+    use std::fs;
 
-    use super::{freshest_project_package, missing_project_package_message};
+    use super::{
+        find_project_package_in_dir, missing_project_package_message, project_output_dirs,
+        project_package_stems,
+    };
 
     #[test]
-    fn selects_the_freshest_package_across_profiles() {
+    fn canonical_project_identity_wins_over_legacy_aliases() {
         let temp = tempfile::tempdir().unwrap();
-        let debug = temp.path().join("target/miden/debug");
-        let release = temp.path().join("target/miden/release");
-        fs::create_dir_all(&debug).unwrap();
-        fs::create_dir_all(&release).unwrap();
-        fs::write(debug.join("note.masp"), b"old").unwrap();
-        thread::sleep(Duration::from_millis(20));
-        fs::write(release.join("note.masp"), b"new").unwrap();
+        fs::write(
+            temp.path().join("miden-project.toml"),
+            "[package]\nname='canonical-note'\nversion='0.1.0'",
+        )
+        .unwrap();
+        fs::write(temp.path().join("Cargo.toml"), "[package]\nname='legacy-note'\nversion='0.1.0'")
+            .unwrap();
+        let output = temp.path().join("output");
+        fs::create_dir(&output).unwrap();
+        fs::write(output.join("legacy-note.masp"), b"newer legacy package").unwrap();
+        fs::write(output.join("canonical-note.masp"), b"canonical package").unwrap();
 
-        let selected = freshest_project_package(temp.path()).unwrap().unwrap();
-        assert_eq!(selected, release.join("note.masp"));
+        let stems = project_package_stems(temp.path());
+        let selected = find_project_package_in_dir(&output, &stems).unwrap().unwrap();
+        assert_eq!(selected, output.join("canonical-note.masp"));
+    }
+
+    #[test]
+    fn manifest_ancestor_target_directories_are_candidates() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("Cargo.lock"), "").unwrap();
+        let project = temp.path().join("crates/note");
+        fs::create_dir_all(&project).unwrap();
+        let profiles = vec!["release".to_owned()];
+
+        let dirs = project_output_dirs(&project, &profiles);
+
+        assert!(dirs.contains(&temp.path().join("target/miden/release")));
     }
 
     #[test]

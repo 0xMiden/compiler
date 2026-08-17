@@ -6,14 +6,13 @@
 
 #![deny(missing_docs)]
 
-pub use miden_field_repr::*;
+use miden_field::Felt;
+use miden_field_repr::{FeltReader, FromFeltRepr, ToFeltRepr};
 #[doc(hidden)]
 pub use miden_note_codec_macros::from_wit_text;
 pub use miden_note_codec_macros::{export_codecs, from_package, from_project, note_codec};
+pub use miden_note_codec_wit::NOTE_CODEC_WIT;
 pub use miden_protocol::{account, asset};
-
-/// The WIT document implemented by generated note codec components.
-pub const NOTE_CODEC_WIT: &str = include_str!("../wit/note-codec.wit");
 
 /// Parses, displays, and validates one author-defined note storage type.
 pub trait AuthorTypeCodec: Sized {

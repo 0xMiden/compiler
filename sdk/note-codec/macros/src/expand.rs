@@ -1,16 +1,14 @@
 //! Macro expansion for generated author types and component dispatch.
 
+use miden_note_codec_wit::NOTE_CODEC_WIT;
 use miden_note_schema::{NotePackageArtifact, NotePackageResolver, NoteStorageSchema};
-use miden_note_schema_codegen::generate_host_types;
+use miden_note_schema_codegen::{RuntimePaths, generate_host_types};
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
-use syn::{ItemImpl, LitStr, Type, visit_mut::VisitMut};
+use syn::{ItemImpl, LitStr, Type};
 
 use crate::registry::{register_codec, register_schema, registered_codecs};
-
-/// The component world embedded in generated export glue.
-const NOTE_CODEC_WIT: &str = include_str!("../wit/note-codec.wit");
 
 /// Expands a project-relative type generation request.
 pub(crate) fn from_project(input: &LitStr) -> syn::Result<TokenStream> {
@@ -42,41 +40,20 @@ fn expand_package_artifact(artifact: &NotePackageArtifact, span: Span) -> syn::R
     Ok(quote! {
         #[doc(hidden)]
         const _: &[u8] = include_bytes!(#tracked_path);
+        #[doc(hidden)]
+        const _: Option<&str> = option_env!("MIDENC_PACKAGE_CACHE");
         #types
     })
 }
 
 /// Generates host-profile types and records their WIT identities.
 fn expand_schema(schema: &NoteStorageSchema, span: Span) -> syn::Result<TokenStream> {
-    let generated =
-        generate_host_types(schema).map_err(|error| syn::Error::new(span, error.to_string()))?;
+    let facade = note_codec_facade();
+    let runtime = RuntimePaths::through_facade(quote!(#facade));
+    let generated = generate_host_types(schema, &runtime)
+        .map_err(|error| syn::Error::new(span, error.to_string()))?;
     register_schema(schema, span)?;
-    let generated = rewrite_runtime_paths(generated.tokens().clone())?;
-    let felt_repr_alias = felt_repr_alias();
-    Ok(quote! {
-        #felt_repr_alias
-
-        #generated
-    })
-}
-
-/// Provides the fixed crate name used by the felt representation derives.
-fn felt_repr_alias() -> TokenStream {
-    match crate_name("miden-field-repr") {
-        Ok(FoundCrate::Itself) => TokenStream::new(),
-        Ok(FoundCrate::Name(name)) if name == "miden_field_repr" => TokenStream::new(),
-        Ok(FoundCrate::Name(name)) => {
-            let name = syn::Ident::new(&name, Span::call_site());
-            quote! {
-                #[doc(hidden)]
-                extern crate #name as miden_field_repr;
-            }
-        }
-        Err(_) => quote! {
-            #[doc(hidden)]
-            extern crate miden_note_codec as miden_field_repr;
-        },
-    }
+    Ok(generated.tokens().clone())
 }
 
 /// Validates and records one marked author codec implementation.
@@ -114,6 +91,7 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
         return Err(syn::Error::new_spanned(input, "export_codecs! does not accept arguments"));
     }
     let codecs = registered_codecs(Span::call_site())?;
+    let facade = note_codec_facade();
     let registrations = codecs
         .iter()
         .map(|codec| {
@@ -131,11 +109,11 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
     let parse_arms = registrations.iter().map(|(fqn, ty)| {
         quote! {
             #fqn => {
-                let value = <#ty as ::miden_note_codec::AuthorTypeCodec>::parse(value)?;
+                let value = <#ty as #facade::AuthorTypeCodec>::parse(value)?;
                 let mut felts = Vec::new();
                 <#ty as __MidenNoteEncode>::__write_note_felts(
                     &value,
-                    &mut ::miden_note_codec::__private::miden_field_repr::FeltWriter::new(
+                    &mut #facade::__private::miden_field_repr::FeltWriter::new(
                         &mut felts,
                     ),
                 )
@@ -143,16 +121,16 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
                     "failed to encode codec type `{}`: {error}",
                     #fqn,
                 ))?;
-                Ok(::miden_note_codec::felts_to_u64(&felts))
+                Ok(#facade::felts_to_u64(&felts))
             }
         }
     });
     let display_arms = registrations.iter().map(|(fqn, ty)| {
         quote! {
             #fqn => {
-                let felts = ::miden_note_codec::felts_from_u64(value)?;
+                let felts = #facade::felts_from_u64(value)?;
                 let mut reader =
-                    ::miden_note_codec::__private::miden_field_repr::FeltReader::new(&felts);
+                    #facade::__private::miden_field_repr::FeltReader::new(&felts);
                 let value = <#ty as __MidenNoteDecode>::__read_note_felts(&mut reader)
                     .map_err(|error| format!(
                         "failed to decode codec type `{}`: {error}",
@@ -162,16 +140,16 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
                     "codec type `{}` has trailing felt data: {error}",
                     #fqn,
                 ))?;
-                Ok(<#ty as ::miden_note_codec::AuthorTypeCodec>::display(&value))
+                Ok(<#ty as #facade::AuthorTypeCodec>::display(&value))
             }
         }
     });
     let validate_arms = registrations.iter().map(|(fqn, ty)| {
         quote! {
             #fqn => {
-                let felts = ::miden_note_codec::felts_from_u64(value)?;
+                let felts = #facade::felts_from_u64(value)?;
                 let mut reader =
-                    ::miden_note_codec::__private::miden_field_repr::FeltReader::new(&felts);
+                    #facade::__private::miden_field_repr::FeltReader::new(&felts);
                 let value = <#ty as __MidenNoteDecode>::__read_note_felts(&mut reader)
                     .map_err(|error| format!(
                         "failed to decode codec type `{}`: {error}",
@@ -181,11 +159,15 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
                     "codec type `{}` has trailing felt data: {error}",
                     #fqn,
                 ))?;
-                <#ty as ::miden_note_codec::AuthorTypeCodec>::validate(&value)
+                <#ty as #facade::AuthorTypeCodec>::validate(&value)
             }
         }
     });
     let wit = NOTE_CODEC_WIT;
+    let wit_runtime_path = LitStr::new(
+        &format!("{facade}::__private::wit_bindgen::rt", facade = quote!(#facade)).replace(' ', ""),
+        Span::call_site(),
+    );
 
     Ok(quote! {
         /// Native dispatch used by the note codec component adapter.
@@ -231,10 +213,10 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
 
         #[cfg(target_family = "wasm")]
         mod __miden_note_codec_component {
-            ::miden_note_codec::__private::wit_bindgen::generate!({
+            #facade::__private::wit_bindgen::generate!({
                 inline: #wit,
                 world: "note-codec",
-                runtime_path: "::miden_note_codec::__private::wit_bindgen::rt",
+                runtime_path: #wit_runtime_path,
             });
 
             struct Component;
@@ -274,37 +256,15 @@ fn rust_type_name(ty: &Type) -> syn::Result<String> {
         .ok_or_else(|| syn::Error::new_spanned(ty, "#[note_codec] type path is empty"))
 }
 
-/// Rewrites generated runtime paths through `miden-note-codec` re-exports.
-fn rewrite_runtime_paths(tokens: TokenStream) -> syn::Result<TokenStream> {
-    let mut file = syn::parse2::<syn::File>(tokens)?;
-    RuntimePathRewriter.visit_file_mut(&mut file);
-    Ok(quote!(#file))
-}
-
-/// Rewrites the four runtime crates referenced by shared host-profile codegen.
-struct RuntimePathRewriter;
-
-impl VisitMut for RuntimePathRewriter {
-    fn visit_path_mut(&mut self, path: &mut syn::Path) {
-        let Some(first) = path.segments.first() else {
-            return;
-        };
-        if path.leading_colon.is_none()
-            || !matches!(
-                first.ident.to_string().as_str(),
-                "miden_field" | "miden_field_repr" | "miden_note_schema" | "miden_protocol"
-            )
-        {
-            syn::visit_mut::visit_path_mut(self, path);
-            return;
+/// Resolves the note codec facade path in the consuming crate.
+fn note_codec_facade() -> syn::Path {
+    match crate_name("miden-note-codec") {
+        Ok(FoundCrate::Itself) => syn::parse_quote!(crate),
+        Ok(FoundCrate::Name(name)) => {
+            let ident = syn::Ident::new(&name, Span::call_site());
+            syn::parse_quote!(::#ident)
         }
-
-        let crate_name = first.ident.clone();
-        let tail = path.segments.iter().skip(1).cloned().collect::<Vec<_>>();
-        let mut rewritten: syn::Path =
-            syn::parse_quote!(::miden_note_codec::__private::#crate_name);
-        rewritten.segments.extend(tail);
-        *path = rewritten;
+        Err(_) => syn::parse_quote!(::miden_note_codec),
     }
 }
 

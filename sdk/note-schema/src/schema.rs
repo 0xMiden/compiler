@@ -1,14 +1,40 @@
 //! Resolved note storage schema model.
 
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use miden_mast_package::Package;
+use miden_protocol::MAX_NOTE_STORAGE_ITEMS;
 use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
 use crate::{
-    CodecRegistry, DecodedValue, Error, NoteStorage, NoteStorageBuilder, Result, codec::FELT_FQN,
+    CodecRegistry, DecodedValue, Error, NoteStorage, NoteStorageBuilder, Result, StandardLeaf,
+    codec::FELT_FQN,
 };
+
+/// Maximum bytes accepted in an embedded note storage schema section, including alignment padding.
+///
+/// The budget allows 64 bytes of schema description per protocol note-storage item. It is derived
+/// from [`MAX_NOTE_STORAGE_ITEMS`] so schema parsing remains bounded with the protocol surface.
+pub const MAX_NOTE_STORAGE_SCHEMA_BYTES: usize = MAX_NOTE_STORAGE_ITEMS * 64;
+
+/// Maximum number of resolved WIT type definitions in a note storage schema.
+pub const MAX_NOTE_STORAGE_SCHEMA_TYPES: usize = MAX_NOTE_STORAGE_ITEMS;
+
+/// Maximum structural nesting depth accepted while resolving a note storage schema.
+///
+/// Recursion is capped at one eighth of the protocol note-storage item limit, which leaves ample
+/// room for legitimate models without allowing an attacker-controlled parser stack to grow to the
+/// full storage width.
+pub const MAX_NOTE_STORAGE_SCHEMA_DEPTH: usize = MAX_NOTE_STORAGE_ITEMS / 8;
+
+/// Maximum number of felts in the root note storage layout.
+pub const MAX_NOTE_STORAGE_SCHEMA_FELTS: usize = MAX_NOTE_STORAGE_ITEMS;
+
+const _: () = assert!(MAX_NOTE_STORAGE_SCHEMA_DEPTH > 0);
 
 /// The minimum and maximum felt count for a schema type.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,6 +81,17 @@ impl FeltLayout {
             .maximum
             .checked_add(other.maximum)
             .ok_or_else(|| Error::new("note storage layout maximum width is too large"))?;
+        Self::bounded(minimum, maximum)
+    }
+
+    /// Creates a layout within the protocol note-storage width.
+    fn bounded(minimum: usize, maximum: usize) -> Result<Self> {
+        if maximum > MAX_NOTE_STORAGE_SCHEMA_FELTS {
+            return Err(Error::new(format!(
+                "note storage schema layout has maximum width {maximum} felts; the protocol limit \
+                 is {MAX_NOTE_STORAGE_SCHEMA_FELTS}"
+            )));
+        }
         Ok(Self { minimum, maximum })
     }
 }
@@ -82,7 +119,7 @@ pub enum SchemaTypeKind {
     /// A record with fields in declaration order.
     Record(Vec<SchemaField>),
     /// An optional payload stored after a tag felt.
-    Option(Box<SchemaType>),
+    Option(Arc<SchemaType>),
     /// A variant with declaration-ordinal cases.
     Variant(Vec<SchemaCase>),
 }
@@ -122,6 +159,11 @@ impl SchemaType {
     pub const fn layout(&self) -> FeltLayout {
         self.layout
     }
+
+    /// Classifies this type as a standard protocol leaf.
+    pub fn standard_leaf(&self) -> Option<StandardLeaf> {
+        self.fqn.as_deref().and_then(StandardLeaf::from_fqn)
+    }
 }
 
 /// A named record field in declaration order.
@@ -129,7 +171,7 @@ impl SchemaType {
 pub struct SchemaField {
     name: String,
     docs: Option<String>,
-    ty: SchemaType,
+    ty: Arc<SchemaType>,
 }
 
 impl SchemaField {
@@ -144,8 +186,8 @@ impl SchemaField {
     }
 
     /// Returns the field type.
-    pub const fn ty(&self) -> &SchemaType {
-        &self.ty
+    pub fn ty(&self) -> &SchemaType {
+        self.ty.as_ref()
     }
 }
 
@@ -154,7 +196,7 @@ impl SchemaField {
 pub struct SchemaCase {
     name: String,
     docs: Option<String>,
-    payload: Option<SchemaType>,
+    payload: Option<Arc<SchemaType>>,
 }
 
 impl SchemaCase {
@@ -169,8 +211,8 @@ impl SchemaCase {
     }
 
     /// Returns the optional case payload.
-    pub const fn payload(&self) -> Option<&SchemaType> {
-        self.payload.as_ref()
+    pub fn payload(&self) -> Option<&SchemaType> {
+        self.payload.as_deref()
     }
 }
 
@@ -178,7 +220,7 @@ impl SchemaCase {
 #[derive(Clone)]
 pub struct NoteStorageSchema {
     wit_text: String,
-    root: SchemaType,
+    root: Arc<SchemaType>,
     codecs: CodecRegistry,
 }
 
@@ -189,6 +231,7 @@ impl NoteStorageSchema {
             package,
             PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
         )?;
+        ensure_schema_byte_limit(bytes.len())?;
         let unpadded_len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
         let text = core::str::from_utf8(&bytes[..unpadded_len]).map_err(|err| {
             Error::new(format!("note storage schema section is not valid UTF-8: {err}"))
@@ -198,11 +241,19 @@ impl NoteStorageSchema {
 
     /// Resolves a note storage schema from a WIT document.
     pub fn from_wit_text(wit_text: &str) -> Result<Self> {
+        ensure_schema_byte_limit(wit_text.len())?;
         let wit_text = wit_text.trim_end_matches('\0');
         let mut resolve = Resolve::default();
         let package_id = resolve.push_str("note-storage-schema.wit", wit_text).map_err(|err| {
             Error::new(format!("failed to resolve note storage schema WIT: {err:#}"))
         })?;
+        if resolve.types.len() > MAX_NOTE_STORAGE_SCHEMA_TYPES {
+            return Err(Error::new(format!(
+                "note storage schema defines {} WIT types; the limit is \
+                 {MAX_NOTE_STORAGE_SCHEMA_TYPES}",
+                resolve.types.len()
+            )));
+        }
         let package = &resolve.packages[package_id];
         let interface_id = package.interfaces.get("note-storage").copied().ok_or_else(|| {
             Error::new(format!(
@@ -216,12 +267,13 @@ impl NoteStorageSchema {
         })?;
         validate_resolved_core_types(&resolve)?;
         let root = ModelBuilder::new(&resolve).build(Type::Id(storage_id))?;
-        if !matches!(root.kind, SchemaTypeKind::Record(_)) {
+        if !matches!(root.kind(), SchemaTypeKind::Record(_)) {
             return Err(Error::new(format!(
                 "the `note-storage.storage` alias must resolve to a record, found {}",
-                kind_name(&root.kind)
+                kind_name(root.kind())
             )));
         }
+        ensure_root_layout_limit(root.layout())?;
 
         let schema = Self {
             wit_text: wit_text.to_owned(),
@@ -238,8 +290,8 @@ impl NoteStorageSchema {
     }
 
     /// Returns the root storage record.
-    pub const fn root(&self) -> &SchemaType {
-        &self.root
+    pub fn root(&self) -> &SchemaType {
+        self.root.as_ref()
     }
 
     /// Verifies native host mappings against the pinned standard type shapes.
@@ -251,12 +303,12 @@ impl NoteStorageSchema {
     #[cfg(feature = "codec-component")]
     pub(crate) fn custom_type_fqns(&self) -> HashSet<String> {
         let mut fqns = HashSet::new();
-        collect_custom_type_fqns(&self.root, &mut fqns);
+        collect_custom_type_fqns(&self.root, &mut HashSet::new(), &mut fqns);
         fqns
     }
 
     /// Returns the root felt layout.
-    pub const fn layout(&self) -> FeltLayout {
+    pub fn layout(&self) -> FeltLayout {
         self.root.layout
     }
 
@@ -299,6 +351,29 @@ impl NoteStorageSchema {
     }
 }
 
+/// Enforces the parser input budget before WIT resolution or component work begins.
+fn ensure_schema_byte_limit(byte_len: usize) -> Result<()> {
+    if byte_len > MAX_NOTE_STORAGE_SCHEMA_BYTES {
+        return Err(Error::new(format!(
+            "note storage schema section is {byte_len} bytes; the limit is \
+             {MAX_NOTE_STORAGE_SCHEMA_BYTES}"
+        )));
+    }
+    Ok(())
+}
+
+/// Enforces the protocol storage-width limit on the resolved root.
+fn ensure_root_layout_limit(layout: FeltLayout) -> Result<()> {
+    if layout.maximum() > MAX_NOTE_STORAGE_SCHEMA_FELTS {
+        return Err(Error::new(format!(
+            "note storage schema root has maximum width {} felts; the protocol limit is \
+             {MAX_NOTE_STORAGE_SCHEMA_FELTS}",
+            layout.maximum()
+        )));
+    }
+    Ok(())
+}
+
 /// Verifies the raw embedded core-types definitions before the model applies native mappings.
 fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
     let Some((_, package_id)) = resolve.package_names.iter().find(|(name, _)| {
@@ -314,12 +389,9 @@ fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
     };
     let interface = &resolve.interfaces[interface_id];
 
-    for (name, fields) in [
-        ("felt", &["inner"][..]),
-        ("word", &["a", "b", "c", "d"][..]),
-        ("account-id", &["prefix", "suffix"][..]),
-        ("asset-amount", &["inner"][..]),
-    ] {
+    for leaf in StandardLeaf::ALL {
+        let name = standard_leaf_name(leaf);
+        let fields = standard_leaf_fields(leaf);
         let Some(type_id) = interface.types.get(name).copied() else {
             continue;
         };
@@ -336,7 +408,7 @@ fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
         {
             return Err(core_shape_error(name, fields));
         }
-        if name == "felt" {
+        if leaf == StandardLeaf::Felt {
             if !resolves_to_primitive(resolve, record.fields[0].ty, Type::F32)? {
                 return Err(core_shape_error(name, fields));
             }
@@ -401,20 +473,23 @@ fn validate_model_type_shapes(ty: &SchemaType, seen: &mut HashSet<String>) -> Re
         return Ok(());
     }
 
-    match ty.fqn() {
-        Some(crate::FELT_FQN) if !matches!(ty.kind(), SchemaTypeKind::Felt) => {
-            return Err(core_shape_error("felt", &["inner"]));
+    match ty.standard_leaf() {
+        Some(StandardLeaf::Felt) if !matches!(ty.kind(), SchemaTypeKind::Felt) => {
+            return Err(core_shape_error(
+                standard_leaf_name(StandardLeaf::Felt),
+                standard_leaf_fields(StandardLeaf::Felt),
+            ));
         }
-        Some(crate::WORD_FQN) => {
-            validate_model_record(ty, "word", &["a", "b", "c", "d"], crate::FELT_FQN)?
+        Some(StandardLeaf::Felt) => {}
+        Some(leaf) => {
+            validate_model_record(
+                ty,
+                standard_leaf_name(leaf),
+                standard_leaf_fields(leaf),
+                crate::FELT_FQN,
+            )?;
         }
-        Some(crate::ACCOUNT_ID_FQN) => {
-            validate_model_record(ty, "account-id", &["prefix", "suffix"], crate::FELT_FQN)?
-        }
-        Some(crate::ASSET_AMOUNT_FQN) => {
-            validate_model_record(ty, "asset-amount", &["inner"], crate::FELT_FQN)?
-        }
-        _ => {}
+        None => {}
     }
 
     match ty.kind() {
@@ -432,6 +507,23 @@ fn validate_model_type_shapes(ty: &SchemaType, seen: &mut HashSet<String>) -> Re
         SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => {}
     }
     Ok(())
+}
+
+/// Returns the terminal WIT name from a canonical standard-leaf FQN.
+fn standard_leaf_name(leaf: StandardLeaf) -> &'static str {
+    leaf.fqn()
+        .rsplit_once('.')
+        .expect("standard-leaf FQNs always contain an interface separator")
+        .1
+}
+
+/// Returns the canonical record field order for a standard leaf.
+fn standard_leaf_fields(leaf: StandardLeaf) -> &'static [&'static str] {
+    match leaf {
+        StandardLeaf::Felt | StandardLeaf::AssetAmount => &["inner"],
+        StandardLeaf::Word => &["a", "b", "c", "d"],
+        StandardLeaf::AccountId => &["prefix", "suffix"],
+    }
 }
 
 /// Verifies one mapped record in the owned schema model.
@@ -471,35 +563,42 @@ fn core_shape_error(name: &str, fields: &[&str]) -> Error {
     ))
 }
 
-/// Collects schema-owned types and excludes the pinned SDK core-types package.
+/// Collects schema-owned types and excludes only the canonical standard leaves.
 #[cfg(feature = "codec-component")]
-fn collect_custom_type_fqns(ty: &SchemaType, fqns: &mut HashSet<String>) {
+fn collect_custom_type_fqns(
+    ty: &SchemaType,
+    seen: &mut HashSet<*const SchemaType>,
+    fqns: &mut HashSet<String>,
+) {
+    if !seen.insert(core::ptr::from_ref(ty)) {
+        return;
+    }
     if let Some(fqn) = ty.fqn()
-        && !fqn.starts_with("miden:base/core-types@")
-        && !fqn.starts_with("miden:base/core-types.")
+        && ty.standard_leaf().is_none()
     {
         fqns.insert(fqn.to_owned());
     }
     match ty.kind() {
         SchemaTypeKind::Record(fields) => {
             for field in fields {
-                collect_custom_type_fqns(field.ty(), fqns);
+                collect_custom_type_fqns(field.ty(), seen, fqns);
             }
         }
-        SchemaTypeKind::Option(payload) => collect_custom_type_fqns(payload, fqns),
+        SchemaTypeKind::Option(payload) => collect_custom_type_fqns(payload, seen, fqns),
         SchemaTypeKind::Variant(cases) => {
             for payload in cases.iter().filter_map(SchemaCase::payload) {
-                collect_custom_type_fqns(payload, fqns);
+                collect_custom_type_fqns(payload, seen, fqns);
             }
         }
         SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => {}
     }
 }
 
-/// Builds an owned schema type tree from a resolved WIT graph.
+/// Builds a memoized schema graph from a resolved WIT graph.
 struct ModelBuilder<'a> {
     resolve: &'a Resolve,
     active: HashSet<TypeId>,
+    memo: HashMap<TypeId, Arc<SchemaType>>,
 }
 
 impl<'a> ModelBuilder<'a> {
@@ -508,18 +607,25 @@ impl<'a> ModelBuilder<'a> {
         Self {
             resolve,
             active: HashSet::new(),
+            memo: HashMap::new(),
         }
     }
 
     /// Resolves one WIT type.
-    fn build(mut self, ty: Type) -> Result<SchemaType> {
-        self.build_type(ty)
+    fn build(mut self, ty: Type) -> Result<Arc<SchemaType>> {
+        self.build_type(ty, 0)
     }
 
     /// Resolves a primitive or named type.
-    fn build_type(&mut self, ty: Type) -> Result<SchemaType> {
+    fn build_type(&mut self, ty: Type, depth: usize) -> Result<Arc<SchemaType>> {
+        if depth > MAX_NOTE_STORAGE_SCHEMA_DEPTH {
+            return Err(Error::new(format!(
+                "note storage schema nesting depth {depth} exceeds the limit of \
+                 {MAX_NOTE_STORAGE_SCHEMA_DEPTH}"
+            )));
+        }
         match ty {
-            Type::Id(id) => self.build_type_id(id),
+            Type::Id(id) => self.build_type_id(id, depth),
             Type::U64 => self.primitive(PrimitiveType::U64, None, None, None),
             Type::U32 => self.primitive(PrimitiveType::U32, None, None, None),
             Type::U8 => self.primitive(PrimitiveType::U8, None, None, None),
@@ -531,8 +637,11 @@ impl<'a> ModelBuilder<'a> {
     }
 
     /// Resolves aliases to the type definition that owns the structural type.
-    fn build_type_id(&mut self, id: TypeId) -> Result<SchemaType> {
+    fn build_type_id(&mut self, id: TypeId, depth: usize) -> Result<Arc<SchemaType>> {
         let id = self.follow_aliases(id)?;
+        if let Some(ty) = self.memo.get(&id) {
+            return Ok(Arc::clone(ty));
+        }
         if !self.active.insert(id) {
             return Err(Error::new(
                 "recursive WIT types are not supported in note storage schemas",
@@ -544,21 +653,21 @@ impl<'a> ModelBuilder<'a> {
         let docs = definition.docs.contents.clone();
         let fqn = self.type_fqn(id)?;
         let result = if fqn.as_deref() == Some(FELT_FQN) {
-            Ok(SchemaType {
+            Ok(Arc::new(SchemaType {
                 name,
                 fqn,
                 docs,
                 kind: SchemaTypeKind::Felt,
                 layout: FeltLayout::fixed(1),
-            })
+            }))
         } else {
             match definition.kind {
-                TypeDefKind::Type(ty) => self.build_named_alias(ty, name, fqn, docs),
+                TypeDefKind::Type(ty) => self.build_named_alias(ty, name, fqn, docs, depth),
                 TypeDefKind::Record(record) => {
                     let mut fields = Vec::with_capacity(record.fields.len());
                     let mut layout = FeltLayout::fixed(0);
                     for field in record.fields {
-                        let ty = self.build_type(field.ty)?;
+                        let ty = self.build_type(field.ty, depth + 1)?;
                         layout = layout.concatenate(ty.layout)?;
                         fields.push(SchemaField {
                             name: field.name,
@@ -566,29 +675,27 @@ impl<'a> ModelBuilder<'a> {
                             ty,
                         });
                     }
-                    Ok(SchemaType {
+                    Ok(Arc::new(SchemaType {
                         name,
                         fqn,
                         docs,
                         kind: SchemaTypeKind::Record(fields),
                         layout,
-                    })
+                    }))
                 }
                 TypeDefKind::Option(payload) => {
-                    let payload = Box::new(self.build_type(payload)?);
-                    let layout = FeltLayout {
-                        minimum: 1,
-                        maximum: 1usize.checked_add(payload.layout.maximum).ok_or_else(|| {
-                            Error::new("option layout maximum width is too large")
-                        })?,
-                    };
-                    Ok(SchemaType {
+                    let payload = self.build_type(payload, depth + 1)?;
+                    let maximum = 1usize
+                        .checked_add(payload.layout.maximum)
+                        .ok_or_else(|| Error::new("option layout maximum width is too large"))?;
+                    let layout = FeltLayout::bounded(1, maximum)?;
+                    Ok(Arc::new(SchemaType {
                         name,
                         fqn,
                         docs,
                         kind: SchemaTypeKind::Option(payload),
                         layout,
-                    })
+                    }))
                 }
                 TypeDefKind::Variant(variant) => {
                     let mut cases = Vec::with_capacity(variant.cases.len());
@@ -596,17 +703,20 @@ impl<'a> ModelBuilder<'a> {
                         cases.push(SchemaCase {
                             name: case.name,
                             docs: case.docs.contents,
-                            payload: case.ty.map(|ty| self.build_type(ty)).transpose()?,
+                            payload: case
+                                .ty
+                                .map(|ty| self.build_type(ty, depth + 1))
+                                .transpose()?,
                         });
                     }
                     let layout = variant_layout(&cases)?;
-                    Ok(SchemaType {
+                    Ok(Arc::new(SchemaType {
                         name,
                         fqn,
                         docs,
                         kind: SchemaTypeKind::Variant(cases),
                         layout,
-                    })
+                    }))
                 }
                 TypeDefKind::Enum(enum_) => {
                     let cases = enum_
@@ -619,13 +729,13 @@ impl<'a> ModelBuilder<'a> {
                         })
                         .collect::<Vec<_>>();
                     let layout = variant_layout(&cases)?;
-                    Ok(SchemaType {
+                    Ok(Arc::new(SchemaType {
                         name,
                         fqn,
                         docs,
                         kind: SchemaTypeKind::Variant(cases),
                         layout,
-                    })
+                    }))
                 }
                 unsupported => Err(Error::new(format!(
                     "WIT {} `{}` is not supported in note storage schemas",
@@ -635,6 +745,9 @@ impl<'a> ModelBuilder<'a> {
             }
         };
         self.active.remove(&id);
+        if let Ok(ty) = &result {
+            self.memo.insert(id, Arc::clone(ty));
+        }
         result
     }
 
@@ -645,9 +758,10 @@ impl<'a> ModelBuilder<'a> {
         name: Option<String>,
         fqn: Option<String>,
         docs: Option<String>,
-    ) -> Result<SchemaType> {
+        depth: usize,
+    ) -> Result<Arc<SchemaType>> {
         match ty {
-            Type::Id(id) => self.build_type_id(id),
+            Type::Id(id) => self.build_type_id(id, depth),
             Type::U64 => self.primitive(PrimitiveType::U64, name, fqn, docs),
             Type::U32 => self.primitive(PrimitiveType::U32, name, fqn, docs),
             Type::U8 => self.primitive(PrimitiveType::U8, name, fqn, docs),
@@ -665,18 +779,18 @@ impl<'a> ModelBuilder<'a> {
         name: Option<String>,
         fqn: Option<String>,
         docs: Option<String>,
-    ) -> Result<SchemaType> {
+    ) -> Result<Arc<SchemaType>> {
         let width = match primitive {
             PrimitiveType::U64 => 2,
             PrimitiveType::U32 | PrimitiveType::U8 | PrimitiveType::Bool => 1,
         };
-        Ok(SchemaType {
+        Ok(Arc::new(SchemaType {
             name,
             fqn,
             docs,
             kind: SchemaTypeKind::Primitive(primitive),
             layout: FeltLayout::fixed(width),
-        })
+        }))
     }
 
     /// Follows `type = id` aliases to their defining type.
@@ -739,14 +853,13 @@ fn variant_layout(cases: &[SchemaCase]) -> Result<FeltLayout> {
         .map(|case| case.payload.as_ref().map_or(0, |ty| ty.layout.maximum))
         .max()
         .unwrap_or(0);
-    Ok(FeltLayout {
-        minimum: 1usize
-            .checked_add(minimum_payload)
-            .ok_or_else(|| Error::new("variant layout minimum width is too large"))?,
-        maximum: 1usize
-            .checked_add(maximum_payload)
-            .ok_or_else(|| Error::new("variant layout maximum width is too large"))?,
-    })
+    let minimum = 1usize
+        .checked_add(minimum_payload)
+        .ok_or_else(|| Error::new("variant layout minimum width is too large"))?;
+    let maximum = 1usize
+        .checked_add(maximum_payload)
+        .ok_or_else(|| Error::new("variant layout maximum width is too large"))?;
+    FeltLayout::bounded(minimum, maximum)
 }
 
 /// Returns a stable name for a model kind.

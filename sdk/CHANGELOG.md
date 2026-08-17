@@ -12,6 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added optional `codec-component` support to the new `miden-note-schema` host crate. It can
   load author-defined note codecs from a package without adding Wasmtime to the default feature
   set or the guest SDK dependency graph.
+- Added the `miden-note-codec` author crate. Its codec-side `from_project!` and `from_package!`
+  macros generate host types from a note package, `AuthorTypeCodec` defines text conversion and
+  validation, `#[note_codec]` registers each custom type, and `export_codecs!` exports the
+  registered codecs as a component. Add this package-level metadata to `miden-project.toml` to
+  enable the codec build; `path` is relative to that manifest:
+
+  ```toml
+  [package.metadata.note-codec-crate]
+  path = "../my-note-codec"
+  ```
+- Added the dependency-free `miden-note-codec-wit` crate as the canonical source for the note
+  codec component WIT contract.
 - Added typed host note-storage bindings through the new `miden-note-bindings` macros. Bindings
   can load a built note project or an exact `.masp`, generate native Rust storage types, and convert
   typed values to and from note storage. Its facade supplies all generated runtime dependencies,
@@ -23,6 +35,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `note_storage_schema` section of the compiled `.masp`. Schema records preserve Rust doc comments
   and can include nested types declared with `#[export_type]` before the note struct. Unit structs
   emit no schema.
+
+### Fixed
+
+- Note storage schema handling now rejects conflicting `#[export_type]` registrations and local
+  types that only collide by name with SDK core types, resolves schema types through a bounded,
+  memoized graph, uses one canonical standard-leaf set across consumers, and caps untrusted author
+  codec components before compilation and during table allocation.
+- Note package macros now select artifacts by canonical package identity and support shared Cargo
+  target directories. The note codec macros support renamed facade dependencies, reject a second
+  distinct schema in one crate, and report `export_codecs!` calls that appear before all codec
+  declarations.
+- `adv_load_preimage` no longer truncates huge word counts into an undersized buffer on wasm32
+  (a potential guest heap overflow); it now traps for counts of `2^30` words or more, whose felt
+  total cannot be represented in the 32-bit address space #1291
 
 ### Migration and breaking changes
 

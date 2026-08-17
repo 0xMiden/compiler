@@ -176,7 +176,7 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
                     ::miden_note_bindings::__private::miden_note_schema::Error::new(
                         format!(
                             "failed to decode {} from note storage: {error}",
-                            stringify!(::miden_field::Felt),
+                            stringify!(::miden_note_bindings::__private::miden_field::Felt),
                         ),
                     )
                 })
@@ -209,7 +209,7 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
                     ::miden_note_bindings::__private::miden_note_schema::Error::new(
                         format!(
                             "failed to decode {} from note storage: {error}",
-                            stringify!(::miden_field::Word),
+                            stringify!(::miden_note_bindings::__private::miden_field::Word),
                         ),
                     )
                 })

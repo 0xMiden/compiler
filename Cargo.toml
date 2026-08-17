@@ -38,6 +38,7 @@ members = [
     "sdk/note-bindings/macros",
     "sdk/note-codec",
     "sdk/note-codec/macros",
+    "sdk/note-codec/wit-crate",
     "sdk/note-schema",
     "sdk/note-schema/codegen",
     "sdk/sdk",
@@ -210,6 +211,7 @@ miden-base-sys = { version = "0.14.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.14.0", path = "sdk/field-repr/repr" }
 miden-note-bindings-macros = { version = "0.14.0", path = "sdk/note-bindings/macros" }
 miden-note-codec-macros = { version = "0.14.0", path = "sdk/note-codec/macros" }
+miden-note-codec-wit = { version = "0.14.0", path = "sdk/note-codec/wit-crate" }
 miden-note-schema = { version = "0.14.0", path = "sdk/note-schema" }
 miden-note-schema-codegen = { version = "0.14.0", path = "sdk/note-schema/codegen" }
 miden-stdlib-sys = { version = "0.14.0", path = "sdk/stdlib-sys" }
