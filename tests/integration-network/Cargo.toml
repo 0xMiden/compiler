@@ -20,15 +20,11 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-tx-script-args.workspace = true
-# TEMPORARY: no released miden-client is compatible with protocol 0.16.0-rc / VM 0.29 yet, so
-# take the client's own migration PR branch (0xMiden/miden-client#2356), which pins the matching
-# node migration (0xMiden/node#2421) by git rev. Switch back to a crates.io version once a
-# compatible client release is out.
-miden-client = { git = "https://github.com/0xMiden/miden-client", branch = "jmunoz-update-miden-deps", features = ["std", "tonic", "testing"] }
+miden-client = { version = "0.16.0-rc.1", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }
-miden-testing = { version = "0.16.0-rc.3", features = ["std"] }
+miden-testing = { version = "0.16.0-rc.4", features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-expect-test.workspace = true

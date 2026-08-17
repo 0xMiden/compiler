@@ -109,8 +109,8 @@ miden-debug-types = { version = "0.29", default-features = false }
 miden-assembly-syntax = { version = "0.29", default-features = false }
 miden-assembly-syntax-cst = { version = "0.29", default-features = false }
 miden-formatting = { version = "0.1", default-features = false }
-miden-protocol = { version = "=0.16.0-rc.3", default-features = false }
-miden-standards = { version = "=0.16.0-rc.3", default-features = false }
+miden-protocol = { version = "=0.16.0-rc.4", default-features = false }
+miden-standards = { version = "=0.16.0-rc.4", default-features = false }
 miden-processor = { version = "0.29", default-features = false }
 miden-core-lib = { version = "0.29", default-features = false }
 miden-mast-package = { version = "0.29", default-features = false }
