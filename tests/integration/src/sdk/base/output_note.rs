@@ -1,3 +1,8 @@
+use miden_core_lib::CoreLibrary;
+use miden_processor::{
+    DefaultHost, ExecutionOptions, HostLibrary, StackInputs, advice::AdviceInputs, execute_sync,
+};
+
 use super::*;
 
 #[allow(clippy::uninlined_format_args)]
@@ -73,6 +78,67 @@ trim-paths = ["diagnostics", "object"]
     .build();
 
     test.compile_package();
+}
+
+/// Compiles and executes the attachment-length boundary fixture against a mocked protocol call.
+fn run_attachment_length_boundary_test(attachment_len: usize, should_succeed: bool) {
+    let name = format!("rust_sdk_output_note_attachment_length_{attachment_len}");
+    let main_fn = format!(
+        r#"() -> Felt {{
+        let idx = NoteIdx {{ inner: Felt::new(0).unwrap() }};
+        let attachment_scheme = Felt::new(1).unwrap();
+        let attachment = [Word::from([Felt::new(0).unwrap(); 4]); {attachment_len}];
+        output_note::add_attachment_from_memory(idx, attachment_scheme, &attachment);
+        Felt::new(1).unwrap()
+    }}"#
+    );
+    let extern_body = if should_succeed {
+        "drop drop drop drop"
+    } else {
+        // If an invalid length reaches the extern call instead of trapping in the Rust wrapper,
+        // this sentinel distinguishes that failure from the wrapper assertion.
+        r#"drop drop drop drop push.0 assert.err="attachment extern sentinel""#
+    };
+    let masm = format!(
+        r#"
+pub proc add_attachment_from_memory
+    {extern_body}
+end
+"#
+    );
+
+    let mut test_builder = CompilerTestBuilder::rust_fn_body_with_sdk_without_protocol(
+        name,
+        &main_fn,
+        WasmTranslationConfig::default(),
+        [],
+    );
+    test_builder.link_with_masm_module("miden::protocol::output_note", masm);
+    let mut test = test_builder.build();
+    let package = test.compile_package();
+
+    let mut host = DefaultHost::default();
+    host.load_library(HostLibrary::from(&CoreLibrary::default()))
+        .expect("failed to load core library into host");
+    let program = package.unwrap_program();
+    let result = execute_sync(
+        &program,
+        StackInputs::default(),
+        AdviceInputs::default(),
+        &mut host,
+        ExecutionOptions::default(),
+    );
+
+    if should_succeed {
+        let trace = result.expect("accepted attachment length should execute");
+        assert_eq!(trace.stack.get_num_elements(1), &[miden_core::Felt::ONE]);
+    } else {
+        let error = result.expect_err("invalid attachment length should panic in the guest");
+        assert!(
+            !error.to_string().contains("attachment extern sentinel"),
+            "invalid attachment length reached the extern call"
+        );
+    }
 }
 
 #[test]
@@ -194,6 +260,26 @@ fn rust_sdk_output_note_add_attachment_from_memory_binding() {
         Felt::new(0).unwrap()
     }",
     );
+}
+
+#[test]
+fn rust_sdk_output_note_add_attachment_from_memory_rejects_zero_words() {
+    run_attachment_length_boundary_test(0, false);
+}
+
+#[test]
+fn rust_sdk_output_note_add_attachment_from_memory_accepts_one_word() {
+    run_attachment_length_boundary_test(1, true);
+}
+
+#[test]
+fn rust_sdk_output_note_add_attachment_from_memory_accepts_256_words() {
+    run_attachment_length_boundary_test(256, true);
+}
+
+#[test]
+fn rust_sdk_output_note_add_attachment_from_memory_rejects_257_words() {
+    run_attachment_length_boundary_test(257, false);
 }
 
 #[test]
