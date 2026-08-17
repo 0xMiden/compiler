@@ -73,6 +73,9 @@ impl LinkLibrary {
             "std" | "core" | "miden-core" => {
                 return Ok(CoreLibrary::default().package());
             }
+            "precompiles" | "miden-precompiles" => {
+                return Ok(CoreLibrary::default().precompiles_package());
+            }
             "base" | "protocol" | "miden-protocol" => {
                 return Ok(miden_protocol::ProtocolLib::default().package());
             }
@@ -96,6 +99,9 @@ impl LinkLibrary {
         match self.name.as_ref() {
             "std" | "core" | "miden-core" => {
                 return Ok(CoreLibrary::default().package());
+            }
+            "precompiles" | "miden-precompiles" => {
+                return Ok(CoreLibrary::default().precompiles_package());
             }
             "base" | "protocol" | "miden-protocol" => {
                 return Ok(miden_protocol::ProtocolLib::default().package());

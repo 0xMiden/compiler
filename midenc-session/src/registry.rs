@@ -98,15 +98,7 @@ impl HybridPackageRegistry {
             }
         }
 
-        // The core library package depends on the `miden-precompiles` package, so make the
-        // bundled copy available for dependency resolution unless the local registry already
-        // provides one.
-        let precompiles = miden_core_lib::CoreLibrary::default().precompiles_package();
-        match registry.install_if_missing(precompiles) {
-            Ok(_) => (),
-            Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }) => (),
-            Err(err) => return Err(Report::msg(err.to_string())),
-        }
+        registry.seed_core_precompiles()?;
 
         Ok(registry)
     }
@@ -158,6 +150,82 @@ impl HybridPackageRegistry {
         Ok(registry)
     }
 
+    /// Seeds the registry with the `miden-precompiles` artifact that the installed core package
+    /// requires.
+    ///
+    /// The core package records its `miden-precompiles` dependency with an exact digest, so an
+    /// artifact with the right name and version but a different digest can never satisfy it.
+    /// This inspects the core package that actually won installation (the bundled one, or a
+    /// same-version copy from the local registry), and installs the bundled precompiles package
+    /// only when it is the artifact that dependency resolution will look for. When neither the
+    /// local registry nor the bundled copy can satisfy the dependency, a warning names the
+    /// mismatch instead of leaving it to fail later, far from the cause.
+    #[cfg(any(test, feature = "std"))]
+    fn seed_core_precompiles(&mut self) -> Result<(), Report> {
+        use alloc::string::ToString;
+
+        let core_library = miden_core_lib::CoreLibrary::default();
+        let bundled_core = core_library.package();
+        let bundled_precompiles = core_library.precompiles_package();
+
+        let installed_core = self
+            .artifacts
+            .get(&bundled_core.name)
+            .and_then(|versions| versions.get(&bundled_core.version));
+        let Some(required) = installed_core.and_then(|core| {
+            core.manifest
+                .dependencies()
+                .find(|dep| dep.name == bundled_precompiles.name)
+                .map(|dep| (dep.version.clone(), dep.digest))
+        }) else {
+            // No installed core package, or one without a precompiles dependency: nothing to
+            // seed.
+            return Ok(());
+        };
+        let (required_version, required_digest) = required;
+
+        let satisfied = self
+            .artifacts
+            .get(&bundled_precompiles.name)
+            .and_then(|versions| versions.get(&required_version))
+            .is_some_and(|artifact| artifact.digest() == required_digest);
+        if satisfied {
+            return Ok(());
+        }
+
+        if bundled_precompiles.version == required_version
+            && bundled_precompiles.digest() == required_digest
+        {
+            match self.install_if_missing(bundled_precompiles) {
+                Ok(_) => (),
+                Err(InstallPackageError::AlreadyInstalledWithDifferentDigest {
+                    package,
+                    version,
+                }) => {
+                    log::warn!(
+                        target: "package-registry",
+                        "the local registry provides {package}@{version} with a digest that does \
+                         not satisfy the installed core package's dependency; core-library code \
+                         may fail to resolve it"
+                    );
+                }
+                Err(err) => return Err(Report::msg(err.to_string())),
+            }
+        } else {
+            log::warn!(
+                target: "package-registry",
+                "the installed {} package requires {}@{} with digest {}, which neither the local \
+                 registry nor the bundled core library provides",
+                &bundled_core.name,
+                &bundled_precompiles.name,
+                required_version,
+                required_digest,
+            );
+        }
+
+        Ok(())
+    }
+
     fn install_if_missing(
         &mut self,
         package: Arc<Package>,
@@ -165,16 +233,6 @@ impl HybridPackageRegistry {
         use alloc::collections::btree_map::Entry as BTreeMapEntry;
 
         use hashbrown::hash_map::Entry;
-
-        #[cfg(any(test, feature = "std"))]
-        if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
-            package.write_masp_file(filesystem_cache).map_err(|err| {
-                InstallPackageError::FilesystemCacheInsertion {
-                    package: package.name.clone(),
-                    err,
-                }
-            })?;
-        }
 
         let version = miden_project::Version::new(package.version.clone(), package.digest());
         log::trace!(target: "package-registry", "preparing to install package {}@{version}", &package.name);
@@ -221,7 +279,20 @@ impl HybridPackageRegistry {
         self.artifacts
             .entry(package.name.clone())
             .or_default()
-            .insert(version.clone(), package);
+            .insert(version.clone(), Arc::clone(&package));
+
+        // Mirror the artifact into the filesystem cache only after the in-memory install
+        // succeeded: a same-version package with a different digest must not overwrite the
+        // incumbent's cached file.
+        #[cfg(any(test, feature = "std"))]
+        if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
+            package.write_masp_file(filesystem_cache).map_err(|err| {
+                InstallPackageError::FilesystemCacheInsertion {
+                    package: package.name.clone(),
+                    err,
+                }
+            })?;
+        }
 
         Ok(version)
     }
@@ -296,5 +367,99 @@ impl PackageStore for HybridPackageRegistry {
         package: Arc<Package>,
     ) -> Result<miden_project::Version, Self::Error> {
         self.install_if_missing(package).map_err(Report::from)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Returns a copy of `package` renamed to the name and version of `like`.
+    ///
+    /// The copy keeps the content digest of `package`, so it collides with `like` on
+    /// name and version while carrying a different digest.
+    fn renamed(package: &Package, like: &Package) -> Arc<Package> {
+        let mut copy = package.clone();
+        copy.name = like.name.clone();
+        copy.version = like.version.clone();
+        Arc::new(copy)
+    }
+
+    fn options(sysroot: Option<std::path::PathBuf>) -> crate::Options {
+        let dir = std::env::temp_dir();
+        crate::Options::new(None, None, dir.clone(), dir, None, sysroot)
+    }
+
+    /// A same-version install with a different digest must be rejected without
+    /// overwriting the incumbent's artifact, in memory or in the filesystem cache.
+    #[test]
+    fn rejected_install_preserves_the_cached_artifact() {
+        let core_library = miden_core_lib::CoreLibrary::default();
+        let incumbent = core_library.precompiles_package();
+        let intruder = renamed(&core_library.package(), &incumbent);
+        assert_ne!(incumbent.digest(), intruder.digest());
+
+        let cache_dir = tempfile::tempdir().unwrap();
+        let mut registry = HybridPackageRegistry::empty();
+        registry.filesystem_cache = Some(cache_dir.path().to_path_buf());
+        registry.install_if_missing(Arc::clone(&incumbent)).unwrap();
+
+        let cached = cache_dir.path().join(format!("{}.masp", &incumbent.name));
+        let before = std::fs::read(&cached).unwrap();
+
+        let err = registry.install_if_missing(intruder).unwrap_err();
+        assert!(matches!(err, InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }));
+
+        let after = std::fs::read(&cached).unwrap();
+        assert_eq!(before, after, "a rejected install must not overwrite the cached artifact");
+
+        let version = miden_project::Version::new(incumbent.version.clone(), incumbent.digest());
+        let loaded = registry.load_package(&incumbent.name, &version).unwrap();
+        assert_eq!(loaded.digest(), incumbent.digest());
+    }
+
+    /// A fresh registry must contain a precompiles artifact that satisfies the exact-digest
+    /// dependency recorded by the installed core package.
+    #[test]
+    fn seeding_provides_the_precompiles_artifact_the_core_package_requires() {
+        let registry = HybridPackageRegistry::new(&options(None)).unwrap();
+
+        let core_library = miden_core_lib::CoreLibrary::default();
+        let core = core_library.package();
+        let precompiles_name = core_library.precompiles_package().name.clone();
+        let dep = core
+            .manifest
+            .dependencies()
+            .find(|dep| dep.name == precompiles_name)
+            .expect("core package should depend on the precompiles package");
+
+        let version = miden_project::Version::new(dep.version.clone(), dep.digest);
+        let loaded = registry.load_package(&dep.name, &version).unwrap();
+        assert_eq!(loaded.digest(), dep.digest);
+    }
+
+    /// When the local registry provides a same-version precompiles package with a different
+    /// digest, seeding must keep the local copy and initialization must still succeed.
+    #[test]
+    fn seeding_keeps_a_mismatched_local_registry_copy() {
+        let core_library = miden_core_lib::CoreLibrary::default();
+        let bundled_precompiles = core_library.precompiles_package();
+        let doctored = renamed(&core_library.package(), &bundled_precompiles);
+
+        let sysroot = tempfile::tempdir().unwrap();
+        let lib_dir = sysroot.path().join("lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
+        doctored.write_masp_file(&lib_dir).unwrap();
+
+        let registry =
+            HybridPackageRegistry::new(&options(Some(sysroot.path().to_path_buf()))).unwrap();
+
+        let version = miden_project::Version::new(doctored.version.clone(), doctored.digest());
+        let loaded = registry.load_package(&doctored.name, &version).unwrap();
+        assert_eq!(
+            loaded.digest(),
+            doctored.digest(),
+            "the local registry copy must survive the bundled seeding"
+        );
     }
 }

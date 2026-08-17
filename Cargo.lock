@@ -4592,6 +4592,7 @@ dependencies = [
  "parking_lot",
  "rustc-hash",
  "smallvec",
+ "tempfile",
  "termcolor",
 ]
 
