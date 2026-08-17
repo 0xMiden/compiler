@@ -9,21 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- [BREAKING] The SDK and compiler now target Miden protocol `0.16.0-rc.4` and Miden VM `0.29`
-  #1310. Compiled packages link against the updated transaction kernel and core library, so
-  their commitments change. Hosts that execute or test the compiled packages must use matching
-  protocol `0.16.0-rc.4` crates (for example `miden-testing 0.16.0-rc.4` or
-  `miden-client 0.16.0-rc.1`). Guest code compiles unchanged: the SDK API did not change.
 - `output_note::add_attachment_from_memory` now panics with a clear message when the attachment
   is empty or contains more than 256 words. Before, such calls reached the transaction kernel
   and failed there with an opaque assertion.
-
-### Removed
-
-- [BREAKING] `output_note::set_word_attachment` and `output_note::set_array_attachment` are
-  removed. They were backward-compatibility aliases from the protocol 0.15 rename, and their
-  names promised replace semantics the transaction kernel does not have: attachments are
-  append-only. Call `output_note::add_word_attachment` / `output_note::add_attachment` instead.
 
 ### Added
 
@@ -73,6 +61,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Migration and breaking changes
 
+- [BREAKING] The SDK and compiler now target Miden protocol `0.16.0-rc.4` and Miden VM `0.29`
+  #1310. Compiled packages link against the updated transaction kernel and core library, so
+  their commitments change. Hosts that execute or test the compiled packages must use matching
+  protocol `0.16.0-rc.4` crates (for example `miden-testing 0.16.0-rc.4` or
+  `miden-client 0.16.0-rc.1`). Guest code that does not build a transaction summary and does
+  not use the removed attachment aliases compiles and behaves unchanged. Custom authentication
+  components must adopt the six-word transaction summary: the old four-word layout compiles but
+  is rejected at runtime; see [MIGRATION.md](./sdk/MIGRATION.md) #1310
+- [BREAKING] `output_note::set_word_attachment` and `output_note::set_array_attachment` are
+  removed. They were backward-compatibility aliases from the protocol 0.15 rename, and their
+  names promised replace semantics the transaction kernel does not have: attachments are
+  append-only. Call `output_note::add_word_attachment` / `output_note::add_attachment` instead;
+  see [MIGRATION.md](./sdk/MIGRATION.md).
 - `#[note]` reserves the inherent item name `get_entrypoint_root` for its generated note-script
   root accessor. Rename existing methods, note constructors, or associated constants with that
   name; see [MIGRATION.md](./sdk/MIGRATION.md).
@@ -89,6 +90,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `adv_load_preimage` no longer truncates huge word counts into an undersized buffer on wasm32
   (a potential guest heap overflow); it now traps for counts of `2^30` words or more, whose felt
   total cannot be represented in the 32-bit address space #1291
+- The `#[note]` `get_entrypoint_root()` accessor now uses a word-aligned return area like every
+  other binding, so its result no longer depends on the target-conditional alignment of
+  `miden_field::Word`. The aligned slot costs 30 cycles on the note-constructor path.
 
 ## [0.14.0-rc.1]
 

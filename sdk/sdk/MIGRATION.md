@@ -12,6 +12,72 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Transaction summaries are six words (protocol 0.16)
+
+Custom authentication components sign a commitment to the transaction summary. Protocol 0.16
+extends the summary from four words to six: it now also binds the reference block commitment,
+the transaction's expiration block delta, and seven user-defined parameters. The host rebuilds
+the summary from the advice-map preimage and rejects the signing request unless its commitment
+matches, so a component that still hashes the old four-word layout fails at runtime with
+`TransactionSummaryConstructionFailed` even though it compiles unchanged.
+
+Build the six words in this order and place the final nonce in the first user parameter, as the
+standards components do:
+
+Before:
+
+```rust
+let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
+let tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
+let msg: Word = hash_words(&tx_summary).into();
+adv_insert(msg, &tx_summary);
+```
+
+After:
+
+```rust
+let block_commit = tx::get_block_commitment();
+let expiration_delta = tx::get_expiration_block_delta();
+
+// [expiration_delta, user_param0..2] and [user_param3..6]; the first user parameter carries
+// the final nonce for replay protection.
+let params_head = Word::from([expiration_delta.into(), final_nonce.into(), felt!(0), felt!(0)]);
+let params_tail = Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]);
+
+let tx_summary = [
+    acct_delta_commit,
+    input_notes_commit,
+    output_notes_commit,
+    block_commit,
+    params_head,
+    params_tail,
+];
+let msg: Word = hash_words(&tx_summary).into();
+adv_insert(msg, &tx_summary);
+```
+
+See `examples/auth-component-rpo-falcon512` for the complete component.
+
+### Attachment setter aliases are removed
+
+`output_note::set_word_attachment` and `output_note::set_array_attachment` are removed. They
+were aliases from the protocol 0.15 rename, and their names promised replace semantics the
+transaction kernel does not have: attachments are append-only.
+
+Before:
+
+```rust
+output_note::set_word_attachment(note_idx, scheme, word);
+output_note::set_array_attachment(note_idx, scheme, &words);
+```
+
+After:
+
+```rust
+output_note::add_word_attachment(note_idx, scheme, word);
+output_note::add_attachment(note_idx, scheme, &words);
+```
+
 ### `#[note]` reserves `get_entrypoint_root`
 
 The `#[note]` macro now generates a `get_entrypoint_root()` associated method on the note type so
