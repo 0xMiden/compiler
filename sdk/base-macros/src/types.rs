@@ -5,8 +5,9 @@ use std::{
 
 static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
 
-use heck::ToKebabCase;
-use proc_macro2::Span;
+use heck::{ToKebabCase, ToUpperCamelCase};
+use proc_macro2::{Span, TokenStream};
+use quote::quote_spanned;
 use syn::{Attribute, ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
@@ -102,14 +103,207 @@ pub(crate) enum StorageFieldType {
     StorageValue,
 }
 
-pub(crate) fn register_export_type(def: ExportedTypeDef, _span: Span) -> Result<(), syn::Error> {
+/// Registers one exported type while preserving the first definition seen by the macro process.
+pub(crate) fn register_export_type(def: ExportedTypeDef, span: Span) -> Result<(), syn::Error> {
     let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()));
     let mut registry = registry.lock().expect("mutex poisoned");
-    if let Some(existing) = registry.iter_mut().find(|existing| existing.wit_name == def.wit_name) {
-        *existing = def;
-        return Ok(());
+    register_export_type_in(&mut registry, def, span)
+}
+
+/// Applies exported-type identity rules to one registry snapshot.
+fn register_export_type_in(
+    registry: &mut Vec<ExportedTypeDef>,
+    def: ExportedTypeDef,
+    span: Span,
+) -> Result<(), syn::Error> {
+    if let Some(existing) = registry.iter().find(|existing| existing.wit_name == def.wit_name) {
+        if existing.rust_name == def.rust_name && exported_type_shapes_match(existing, &def) {
+            // rust-analyzer can expand the same attribute more than once in one macro process.
+            return Ok(());
+        }
+
+        let identity = if existing.rust_name == def.rust_name {
+            format!("Rust type `{}`", def.rust_name)
+        } else {
+            format!("Rust types `{}` and `{}` both map to", existing.rust_name, def.rust_name)
+        };
+        return Err(syn::Error::new(
+            span,
+            format!(
+                "conflicting #[export_type] registration: {identity} WIT type `{}` with different \
+                 identity or shape; the earlier registration is `{}`, while this registration is \
+                 `{}`. Rename one type or make both registrations structurally identical",
+                def.wit_name,
+                describe_exported_type_shape(existing),
+                describe_exported_type_shape(&def),
+            ),
+        ));
     }
     registry.push(def);
+    Ok(())
+}
+
+/// Returns true when two definitions render the same structural WIT type.
+fn exported_type_shapes_match(left: &ExportedTypeDef, right: &ExportedTypeDef) -> bool {
+    match (&left.kind, &right.kind) {
+        (
+            ExportedTypeKind::Record {
+                fields: left_fields,
+            },
+            ExportedTypeKind::Record {
+                fields: right_fields,
+            },
+        ) => {
+            left_fields.len() == right_fields.len()
+                && left_fields.iter().zip(right_fields).all(|(left, right)| {
+                    left.name.to_kebab_case() == right.name.to_kebab_case()
+                        && type_ref_shapes_match(&left.ty, &right.ty)
+                })
+        }
+        (
+            ExportedTypeKind::Variant {
+                variants: left_variants,
+            },
+            ExportedTypeKind::Variant {
+                variants: right_variants,
+            },
+        ) => {
+            left_variants.len() == right_variants.len()
+                && left_variants.iter().zip(right_variants).all(|(left, right)| {
+                    left.wit_name == right.wit_name
+                        && match (&left.payload, &right.payload) {
+                            (Some(left), Some(right)) => type_ref_shapes_match(left, right),
+                            (None, None) => true,
+                            _ => false,
+                        }
+                })
+        }
+        _ => false,
+    }
+}
+
+/// Returns true when two references resolve to the same WIT identity and generic shape.
+fn type_ref_shapes_match(left: &TypeRef, right: &TypeRef) -> bool {
+    left.wit_name == right.wit_name
+        && left.is_custom == right.is_custom
+        && left.dependencies.len() == right.dependencies.len()
+        && left
+            .dependencies
+            .iter()
+            .zip(&right.dependencies)
+            .all(|(left, right)| type_ref_shapes_match(left, right))
+}
+
+/// Formats one exported definition for a conflicting-registration diagnostic.
+fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
+    match &def.kind {
+        ExportedTypeKind::Record { fields } => format!(
+            "record {} {{ {} }}",
+            def.wit_name,
+            fields
+                .iter()
+                .map(|field| format!("{}: {}", field.name.to_kebab_case(), field.ty.wit_name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        ExportedTypeKind::Variant { variants } => format!(
+            "variant {} {{ {} }}",
+            def.wit_name,
+            variants
+                .iter()
+                .map(|variant| match &variant.payload {
+                    Some(payload) => format!("{}({})", variant.wit_name, payload.wit_name),
+                    None => variant.wit_name.clone(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    }
+}
+
+/// Emits nominal identity checks for references classified as SDK core types by their Rust name.
+///
+/// Procedural macros cannot resolve a bare identifier such as `Word`. The generated check permits
+/// a genuine `miden::Word` import but rejects a local same-named type unless it was registered with
+/// `#[export_type]`, preventing the emitted WIT shape from drifting from the encoded Rust type.
+pub(crate) fn sdk_core_type_identity_guards(
+    definition: &ExportedTypeDef,
+    span: Span,
+) -> Result<TokenStream, syn::Error> {
+    let mut guarded = HashSet::new();
+    let mut guards = TokenStream::new();
+    visit_exported_type_refs(definition, &mut |type_ref| {
+        collect_sdk_core_type_identity_guard(type_ref, span, &mut guarded, &mut guards)
+    })?;
+    Ok(guards)
+}
+
+/// Visits every type reference contained in one exported definition.
+fn visit_exported_type_refs(
+    definition: &ExportedTypeDef,
+    visitor: &mut impl FnMut(&TypeRef) -> Result<(), syn::Error>,
+) -> Result<(), syn::Error> {
+    match &definition.kind {
+        ExportedTypeKind::Record { fields } => {
+            for field in fields {
+                visit_type_ref_dependencies(&field.ty, visitor)?;
+            }
+        }
+        ExportedTypeKind::Variant { variants } => {
+            for payload in variants.iter().filter_map(|variant| variant.payload.as_ref()) {
+                visit_type_ref_dependencies(payload, visitor)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Visits one type reference and every nested generic dependency.
+fn visit_type_ref_dependencies(
+    type_ref: &TypeRef,
+    visitor: &mut impl FnMut(&TypeRef) -> Result<(), syn::Error>,
+) -> Result<(), syn::Error> {
+    visitor(type_ref)?;
+    for dependency in &type_ref.dependencies {
+        visit_type_ref_dependencies(dependency, visitor)?;
+    }
+    Ok(())
+}
+
+/// Appends one nominal SDK identity check when a core-type path has not already been guarded.
+fn collect_sdk_core_type_identity_guard(
+    type_ref: &TypeRef,
+    span: Span,
+    guarded: &mut HashSet<(String, String)>,
+    guards: &mut TokenStream,
+) -> Result<(), syn::Error> {
+    if !type_ref.requires_core_type_import() {
+        return Ok(());
+    }
+
+    let rust_path = type_ref.path.join("::");
+    if !guarded.insert((rust_path.clone(), type_ref.wit_name.clone())) {
+        return Ok(());
+    }
+    let rust_path = syn::parse_str::<syn::Path>(&rust_path).map_err(|error| {
+        syn::Error::new(
+            span,
+            format!("failed to reconstruct SDK core-type path for an identity check: {error}"),
+        )
+    })?;
+    let sdk_ident = syn::Ident::new(&type_ref.wit_name.to_upper_camel_case(), span);
+    guards.extend(quote_spanned! {span=>
+        const _: fn() = || {
+            fn __miden_core_type_name_collision_use_sdk_type_or_add_export_type<T>(
+                _: ::core::marker::PhantomData<T>,
+                _: ::core::marker::PhantomData<T>,
+            ) {}
+            __miden_core_type_name_collision_use_sdk_type_or_add_export_type(
+                ::core::marker::PhantomData::<#rust_path>,
+                ::core::marker::PhantomData::<::miden::#sdk_ident>,
+            );
+        };
+    });
     Ok(())
 }
 

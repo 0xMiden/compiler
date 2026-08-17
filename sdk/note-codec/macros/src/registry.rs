@@ -6,10 +6,7 @@ use std::{
 };
 
 use heck::ToUpperCamelCase;
-use miden_note_schema::{
-    ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, FELT_FQN, NoteStorageSchema, SchemaCase, SchemaType,
-    SchemaTypeKind, WORD_FQN,
-};
+use miden_note_schema::{NoteStorageSchema, SchemaCase, SchemaType, SchemaTypeKind};
 use proc_macro2::Span;
 
 /// One marked author codec.
@@ -22,8 +19,8 @@ pub(crate) struct CodecRegistration {
 /// Schema types and marked codecs registered by earlier macro expansions.
 #[derive(Default)]
 struct Registry {
-    schemas: BTreeSet<String>,
-    types: BTreeMap<String, BTreeSet<String>>,
+    schema: Option<String>,
+    types: BTreeMap<String, String>,
     codecs: BTreeMap<String, CodecRegistration>,
 }
 
@@ -42,12 +39,19 @@ pub(crate) fn register_schema(schema: &NoteStorageSchema, span: Span) -> syn::Re
     let mut registry = registry()
         .lock()
         .map_err(|_| syn::Error::new(span, "note codec registry mutex is poisoned"))?;
-    if !registry.schemas.insert(schema.wit_text().to_owned()) {
-        return Ok(());
+    match registry.schema.as_deref() {
+        Some(existing) if existing == schema.wit_text() => return Ok(()),
+        Some(_) => {
+            return Err(syn::Error::new(
+                span,
+                "miden-note-codec supports one note schema per crate; remove the second distinct \
+                 from_project!, from_package!, or from_wit_text! invocation",
+            ));
+        }
+        None => {}
     }
-    for (rust_name, fqn) in bindings {
-        registry.types.entry(rust_name).or_default().insert(fqn);
-    }
+    registry.schema = Some(schema.wit_text().to_owned());
+    registry.types = bindings;
     Ok(())
 }
 
@@ -56,7 +60,7 @@ pub(crate) fn register_codec(rust_name: &str, rust_type: String, span: Span) -> 
     let mut registry = registry()
         .lock()
         .map_err(|_| syn::Error::new(span, "note codec registry mutex is poisoned"))?;
-    let fqns = registry.types.get(rust_name).ok_or_else(|| {
+    let fqn = registry.types.get(rust_name).ok_or_else(|| {
         syn::Error::new(
             span,
             format!(
@@ -65,16 +69,7 @@ pub(crate) fn register_codec(rust_name: &str, rust_type: String, span: Span) -> 
             ),
         )
     })?;
-    if fqns.len() != 1 {
-        return Err(syn::Error::new(
-            span,
-            format!(
-                "generated type `{rust_name}` is ambiguous across note schemas: {}",
-                fqns.iter().cloned().collect::<Vec<_>>().join(", ")
-            ),
-        ));
-    }
-    let fqn = fqns.first().expect("one FQN was checked above").clone();
+    let fqn = fqn.clone();
     let registration = CodecRegistration {
         fqn: fqn.clone(),
         rust_type,
@@ -96,6 +91,14 @@ pub(crate) fn registered_codecs(span: Span) -> syn::Result<Vec<CodecRegistration
     let registry = registry()
         .lock()
         .map_err(|_| syn::Error::new(span, "note codec registry mutex is poisoned"))?;
+    if registry.codecs.is_empty() {
+        return Err(syn::Error::new(
+            span,
+            "export_codecs! found no registered codecs; place it after from_project! or \
+             from_package! and after every #[note_codec] implementation because procedural macros \
+             register in declaration order",
+        ));
+    }
     Ok(registry.codecs.values().cloned().collect())
 }
 
@@ -105,7 +108,7 @@ fn collect_type_bindings(
     seen: &mut BTreeSet<String>,
     bindings: &mut BTreeMap<String, String>,
 ) -> syn::Result<()> {
-    if is_protocol_leaf(ty) {
+    if ty.standard_leaf().is_some() {
         return Ok(());
     }
     if matches!(ty.kind(), SchemaTypeKind::Record(_) | SchemaTypeKind::Variant(_)) {
@@ -139,11 +142,6 @@ fn collect_type_bindings(
         SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => {}
     }
     Ok(())
-}
-
-/// Returns true for protocol leaves mapped to existing host types.
-fn is_protocol_leaf(ty: &SchemaType) -> bool {
-    matches!(ty.fqn(), Some(FELT_FQN | WORD_FQN | ACCOUNT_ID_FQN | ASSET_AMOUNT_FQN))
 }
 
 #[cfg(test)]

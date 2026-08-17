@@ -1,4 +1,9 @@
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    env,
+    io::Write,
+    process::{Command, Output, Stdio},
+};
 
 use syn::parse_quote;
 
@@ -382,4 +387,154 @@ fn forward_reference_between_export_types_is_allowed() {
     } else {
         panic!("expected record kind");
     }
+}
+
+#[test]
+fn rejects_same_name_different_shape_export_type_registration() {
+    let first: syn::ItemStruct = parse_quote! {
+        struct Fee {
+            amount: u64,
+        }
+    };
+    let second: syn::ItemStruct = parse_quote! {
+        struct Fee {
+            amount: Word,
+        }
+    };
+    let mut registry = Vec::new();
+    register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&first).unwrap(),
+        Span::call_site(),
+    )
+    .unwrap();
+
+    let error = register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&second).unwrap(),
+        Span::call_site(),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("conflicting #[export_type] registration"));
+    assert!(error.contains("record fee { amount: u64 }"));
+    assert!(error.contains("record fee { amount: word }"));
+    assert!(error.contains("Rename one type or make both registrations structurally identical"));
+    assert_eq!(registry.len(), 1);
+}
+
+#[test]
+fn allows_same_shape_export_type_reregistration() {
+    let first: syn::ItemStruct = parse_quote! {
+        /// Documentation from rustc's expansion.
+        struct Fee {
+            amount: u64,
+        }
+    };
+    let second: syn::ItemStruct = parse_quote! {
+        /// Documentation from rust-analyzer's expansion.
+        struct Fee {
+            amount: u64,
+        }
+    };
+    let mut registry = Vec::new();
+
+    register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&first).unwrap(),
+        Span::call_site(),
+    )
+    .unwrap();
+    register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&second).unwrap(),
+        Span::call_site(),
+    )
+    .unwrap();
+
+    assert_eq!(registry.len(), 1);
+    assert_eq!(registry[0].docs, vec![" Documentation from rustc's expansion."]);
+}
+
+#[test]
+fn bare_core_type_name_collision_fails_identity_guard() {
+    let item: syn::ItemStruct = parse_quote! {
+        struct NoteFields {
+            value: Word,
+        }
+    };
+    let definition = exported_type_from_struct(&item).unwrap();
+    let guards = sdk_core_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+extern crate self as miden;
+pub struct Word;
+mod user {{
+    pub struct Word;
+    {guards}
+}}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(!output.status.success(), "a local `Word` must fail the SDK identity guard");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("__miden_core_type_name_collision_use_sdk_type_or_add_export_type"),
+        "identity diagnostic is not actionable:\n{stderr}"
+    );
+}
+
+#[test]
+fn bare_sdk_core_type_import_passes_identity_guard() {
+    let item: syn::ItemStruct = parse_quote! {
+        struct NoteFields {
+            value: Word,
+        }
+    };
+    let definition = exported_type_from_struct(&item).unwrap();
+    let guards = sdk_core_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+extern crate self as miden;
+pub struct Word;
+mod user {{
+    use crate::Word;
+    {guards}
+}}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(
+        output.status.success(),
+        "a genuine SDK import must pass the identity guard:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Compiles one standalone Rust source string for nominal identity-guard tests.
+fn compile_rust_source(source: &str) -> Output {
+    let output_dir = tempfile::tempdir().expect("failed to create rustc output directory");
+    let output_path = output_dir.path().join("identity_guard.rmeta");
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let mut child = Command::new(rustc)
+        .args(["--crate-name", "identity_guard", "--edition=2024", "--emit=metadata", "-o"])
+        .arg(output_path)
+        .arg("-")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("failed to start rustc for an identity-guard test");
+    child
+        .stdin
+        .take()
+        .expect("rustc stdin must be piped")
+        .write_all(source.as_bytes())
+        .expect("failed to write the identity-guard source");
+    child.wait_with_output().expect("failed to wait for rustc")
 }

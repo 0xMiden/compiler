@@ -112,7 +112,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-miden-note-codec = {{ path = {:?} }}
+codec-facade = {{ package = "miden-note-codec", path = {:?} }}
 
 [workspace]
 "#,
@@ -142,9 +142,9 @@ fn assert_command_succeeded(action: &str, output: &Output) {
 }
 
 const FIXTURE_SOURCE: &str = r##"
-use miden_note_codec::AuthorTypeCodec;
+use codec_facade::AuthorTypeCodec;
 
-miden_note_codec::from_wit_text!(r#"
+codec_facade::from_wit_text!(r#"
 package example:codec-schema@1.0.0;
 
 interface note-storage {
@@ -161,7 +161,7 @@ interface note-storage {
 }
 "#);
 
-#[miden_note_codec::note_codec]
+#[codec_facade::note_codec]
 impl AuthorTypeCodec for Ratio {
     fn parse(value: &str) -> Result<Self, String> {
         let (numerator, denominator) = value
@@ -186,5 +186,5 @@ impl AuthorTypeCodec for Ratio {
     }
 }
 
-miden_note_codec::export_codecs!();
+codec_facade::export_codecs!();
 "##;

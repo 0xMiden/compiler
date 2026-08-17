@@ -40,6 +40,10 @@ pub struct Options {
     /// A manifest-backed Rust build selects on this — these are the workspace members it builds
     /// — and forwards them to its nested `cargo build`.
     pub packages: Vec<String>,
+    /// Require Cargo.lock to remain unchanged in nested Cargo builds.
+    pub cargo_locked: bool,
+    /// Prevent network access in nested Cargo builds.
+    pub cargo_offline: bool,
     /// The name of the current project target being compiled
     pub target: Option<String>,
     /// The type of target that was requested
@@ -168,6 +172,8 @@ impl Options {
             profile: "dev".to_string(),
             workspace: false,
             packages: vec![],
+            cargo_locked: false,
+            cargo_offline: false,
             target: None,
             target_type: target,
             entrypoint: None,

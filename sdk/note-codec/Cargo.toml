@@ -20,6 +20,7 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-note-codec-macros.workspace = true
+miden-note-codec-wit.workspace = true
 miden-protocol.workspace = true
 wit-bindgen = { workspace = true }
 

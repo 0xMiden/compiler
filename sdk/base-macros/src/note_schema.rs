@@ -14,7 +14,7 @@ use crate::{
     manifest_paths::SDK_WIT_SOURCE,
     types::{
         ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, doc_comments,
-        map_type_to_type_ref, registered_export_types,
+        map_type_to_type_ref, registered_export_types, sdk_core_type_identity_guards,
     },
     util::NOTE_NAMED_FIELDS_ERROR,
     wit_builder::{WitBody, WitBuilder},
@@ -52,6 +52,11 @@ pub(crate) fn expand_note_storage_schema(
         &registry,
     )?;
     validate_rendered_note_storage_schema(&rendered)?;
+    let identity_guards = rendered
+        .definitions
+        .iter()
+        .map(|definition| sdk_core_type_identity_guards(definition, rendered.span))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut bytes = rendered.source.into_bytes();
     let padded_len = bytes.len().div_ceil(16) * 16;
@@ -61,6 +66,8 @@ pub(crate) fn expand_note_storage_schema(
     let encoded_bytes = Literal::byte_string(&bytes);
 
     Ok(quote! {
+        #(#identity_guards)*
+
         // Mach-O limits section names to 16 bytes. Wasm uses the canonical section name below.
         #[cfg_attr(target_os = "macos", unsafe(link_section = "rodata,miden_note_schem"))]
         #[cfg_attr(

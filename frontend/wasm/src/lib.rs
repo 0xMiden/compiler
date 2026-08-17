@@ -27,10 +27,12 @@ use alloc::rc::Rc;
 
 use component::build_ir::translate_component;
 use error::WasmResult;
-use midenc_frontend_wasm_metadata::PackageSections;
+use midenc_frontend_wasm_metadata::{
+    PackageSections, WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME,
+};
 use midenc_hir::{Context, dialects::builtin};
 use module::build_ir::translate_module_as_component;
-use wasmparser::WasmFeatures;
+use wasmparser::{Payload, WasmFeatures};
 
 #[cfg(feature = "std")]
 pub use self::emit::wasm_to_wat;
@@ -60,6 +62,26 @@ pub fn translate(
     }
 }
 
+/// Rejects note storage schema metadata from a core Wasm module.
+fn reject_core_module_note_storage_schema(wasm: &[u8]) -> WasmResult<()> {
+    for payload in wasmparser::Parser::new(0).parse_all(wasm) {
+        let payload = payload.map_err(|error| -> midenc_session::diagnostics::Report {
+            WasmError::from(error).into()
+        })?;
+        if let Payload::CustomSection(section) = payload
+            && section.name() == WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME
+        {
+            return Err(WasmError::Unsupported(
+                "a core WebAssembly module contains a note storage schema that cannot be \
+                 preserved; compile the note crate as a WebAssembly component"
+                    .to_owned(),
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
 /// The set of core WebAssembly features which we need to or wish to support
 pub(crate) fn supported_features() -> WasmFeatures {
     WasmFeatures::BULK_MEMORY
@@ -78,4 +100,27 @@ pub(crate) fn supported_features() -> WasmFeatures {
 /// Model
 pub(crate) fn supported_component_model_features() -> WasmFeatures {
     supported_features() | WasmFeatures::COMPONENT_MODEL
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `#[note]` crate compiled as a raw core module keeps its schema section: the
+    /// translation wraps the module as a component and propagates the captured sections.
+    #[test]
+    fn core_module_propagates_note_storage_schema_section() {
+        let wat = format!(
+            r#"(module (@custom "{WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME}" "schema"))"#
+        );
+        let wasm = wat::parse_str(wat).expect("core module WAT must parse");
+        let context = Rc::new(Context::default());
+        let output = translate(&wasm, &WasmTranslationConfig::default(), context)
+            .expect("a core module with a schema section must translate");
+        assert_eq!(
+            output.sections.note_storage_schema.as_deref(),
+            Some(b"schema".as_slice()),
+            "the schema section must be propagated into the frontend output"
+        );
+    }
 }

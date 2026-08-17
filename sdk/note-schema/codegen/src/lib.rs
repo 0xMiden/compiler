@@ -9,10 +9,10 @@ use std::{
 
 use heck::{ToSnakeCase, ToUpperCamelCase};
 use miden_note_schema::{
-    ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, FELT_FQN, NoteStorageSchema, PrimitiveType, SchemaCase,
-    SchemaField, SchemaType, SchemaTypeKind, WORD_FQN,
+    NoteStorageSchema, PrimitiveType, SchemaCase, SchemaField, SchemaType, SchemaTypeKind,
+    StandardLeaf,
 };
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{format_ident, quote};
 
 /// An error reported while generating Rust bindings.
@@ -68,8 +68,58 @@ impl GeneratedTypes {
     }
 }
 
+/// Runtime crate paths used by generated host-profile code.
+#[derive(Clone)]
+pub struct RuntimePaths {
+    miden_field: TokenStream,
+    miden_field_repr: TokenStream,
+    miden_note_schema: TokenStream,
+    miden_protocol: TokenStream,
+}
+
+impl RuntimePaths {
+    /// Creates a runtime path set from four crate or module paths.
+    pub fn new(
+        miden_field: TokenStream,
+        miden_field_repr: TokenStream,
+        miden_note_schema: TokenStream,
+        miden_protocol: TokenStream,
+    ) -> Self {
+        Self {
+            miden_field,
+            miden_field_repr,
+            miden_note_schema,
+            miden_protocol,
+        }
+    }
+
+    /// Creates paths through a facade crate's hidden runtime re-exports.
+    pub fn through_facade(facade: TokenStream) -> Self {
+        Self::new(
+            quote!(#facade::__private::miden_field),
+            quote!(#facade::__private::miden_field_repr),
+            quote!(#facade::__private::miden_note_schema),
+            quote!(#facade::__private::miden_protocol),
+        )
+    }
+}
+
+impl Default for RuntimePaths {
+    fn default() -> Self {
+        Self::new(
+            quote!(::miden_field),
+            quote!(::miden_field_repr),
+            quote!(::miden_note_schema),
+            quote!(::miden_protocol),
+        )
+    }
+}
+
 /// Generates Rust host-profile types and structural felt conversion helpers.
-pub fn generate_host_types(schema: &NoteStorageSchema) -> Result<GeneratedTypes, CodegenError> {
+pub fn generate_host_types(
+    schema: &NoteStorageSchema,
+    runtime: &RuntimePaths,
+) -> Result<GeneratedTypes, CodegenError> {
     schema
         .validate_native_leaf_shapes()
         .map_err(|error| CodegenError::new(error.to_string()))?;
@@ -102,10 +152,10 @@ pub fn generate_host_types(schema: &NoteStorageSchema) -> Result<GeneratedTypes,
     }
 
     let root_ident = rust_names.get(root_fqn).cloned().unwrap_or_else(|| type_ident(root_name));
-    let helper_traits = generate_helper_traits();
+    let helper_traits = generate_helper_traits(runtime);
     let items = definitions
         .iter()
-        .map(|definition| generate_type(definition, &rust_names))
+        .map(|definition| generate_type(definition, &rust_names, runtime))
         .collect::<Result<Vec<_>, _>>()?;
     let type_idents = definitions
         .iter()
@@ -137,7 +187,7 @@ fn collect_named_types<'a>(
     seen: &mut BTreeSet<String>,
     definitions: &mut Vec<&'a SchemaType>,
 ) -> Result<(), CodegenError> {
-    if mapped_leaf(ty).is_some() {
+    if ty.standard_leaf().is_some() {
         return Ok(());
     }
 
@@ -173,14 +223,20 @@ fn collect_named_types<'a>(
 }
 
 /// Generates the private traits that keep protocol-leaf order separate from foreign trait impls.
-fn generate_helper_traits() -> TokenStream {
+fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
+    let RuntimePaths {
+        miden_field,
+        miden_field_repr,
+        miden_note_schema,
+        miden_protocol,
+    } = runtime;
     let primitive_impls = [
         quote!(u64),
         quote!(u32),
         quote!(u8),
         quote!(bool),
-        quote!(::miden_field::Felt),
-        quote!(::miden_field::Word),
+        quote!(#miden_field::Felt),
+        quote!(#miden_field::Word),
     ]
     .into_iter()
     .map(|ty| {
@@ -188,19 +244,19 @@ fn generate_helper_traits() -> TokenStream {
             impl __MidenNoteEncode for #ty {
                 fn __write_note_felts(
                     &self,
-                    writer: &mut ::miden_field_repr::FeltWriter<'_>,
-                ) -> ::miden_note_schema::Result<()> {
-                    ::miden_field_repr::ToFeltRepr::write_felt_repr(self, writer);
+                    writer: &mut #miden_field_repr::FeltWriter<'_>,
+                ) -> #miden_note_schema::Result<()> {
+                    #miden_field_repr::ToFeltRepr::write_felt_repr(self, writer);
                     Ok(())
                 }
             }
 
             impl __MidenNoteDecode for #ty {
                 fn __read_note_felts(
-                    reader: &mut ::miden_field_repr::FeltReader<'_>,
-                ) -> ::miden_note_schema::Result<Self> {
-                    ::miden_field_repr::FromFeltRepr::from_felt_repr(reader).map_err(|error| {
-                        ::miden_note_schema::Error::new(format!(
+                    reader: &mut #miden_field_repr::FeltReader<'_>,
+                ) -> #miden_note_schema::Result<Self> {
+                    #miden_field_repr::FromFeltRepr::from_felt_repr(reader).map_err(|error| {
+                        #miden_note_schema::Error::new(format!(
                             "failed to decode {} from note storage: {error}",
                             stringify!(#ty),
                         ))
@@ -215,24 +271,24 @@ fn generate_helper_traits() -> TokenStream {
         trait __MidenNoteEncode {
             fn __write_note_felts(
                 &self,
-                writer: &mut ::miden_field_repr::FeltWriter<'_>,
-            ) -> ::miden_note_schema::Result<()>;
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_note_schema::Result<()>;
         }
 
         #[doc(hidden)]
         trait __MidenNoteDecode: Sized {
             fn __read_note_felts(
-                reader: &mut ::miden_field_repr::FeltReader<'_>,
-            ) -> ::miden_note_schema::Result<Self>;
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_note_schema::Result<Self>;
         }
 
         #(#primitive_impls)*
 
-        impl __MidenNoteEncode for ::miden_protocol::account::AccountId {
+        impl __MidenNoteEncode for #miden_protocol::account::AccountId {
             fn __write_note_felts(
                 &self,
-                writer: &mut ::miden_field_repr::FeltWriter<'_>,
-            ) -> ::miden_note_schema::Result<()> {
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_note_schema::Result<()> {
                 // The WIT record declares prefix before suffix.
                 writer.write(self.prefix().as_felt());
                 writer.write(self.suffix());
@@ -240,23 +296,23 @@ fn generate_helper_traits() -> TokenStream {
             }
         }
 
-        impl __MidenNoteDecode for ::miden_protocol::account::AccountId {
+        impl __MidenNoteDecode for #miden_protocol::account::AccountId {
             fn __read_note_felts(
-                reader: &mut ::miden_field_repr::FeltReader<'_>,
-            ) -> ::miden_note_schema::Result<Self> {
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_note_schema::Result<Self> {
                 let prefix = reader.read().map_err(|error| {
-                    ::miden_note_schema::Error::new(format!(
+                    #miden_note_schema::Error::new(format!(
                         "failed to decode account-id prefix: {error}"
                     ))
                 })?;
                 let suffix = reader.read().map_err(|error| {
-                    ::miden_note_schema::Error::new(format!(
+                    #miden_note_schema::Error::new(format!(
                         "failed to decode account-id suffix: {error}"
                     ))
                 })?;
-                ::miden_protocol::account::AccountId::try_from_elements(suffix, prefix).map_err(
+                #miden_protocol::account::AccountId::try_from_elements(suffix, prefix).map_err(
                     |error| {
-                        ::miden_note_schema::Error::new(format!(
+                        #miden_note_schema::Error::new(format!(
                             "invalid account-id in note storage: {error}"
                         ))
                     },
@@ -264,27 +320,27 @@ fn generate_helper_traits() -> TokenStream {
             }
         }
 
-        impl __MidenNoteEncode for ::miden_protocol::asset::AssetAmount {
+        impl __MidenNoteEncode for #miden_protocol::asset::AssetAmount {
             fn __write_note_felts(
                 &self,
-                writer: &mut ::miden_field_repr::FeltWriter<'_>,
-            ) -> ::miden_note_schema::Result<()> {
-                writer.write(::miden_field::Felt::from(*self));
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_note_schema::Result<()> {
+                writer.write(#miden_field::Felt::from(*self));
                 Ok(())
             }
         }
 
-        impl __MidenNoteDecode for ::miden_protocol::asset::AssetAmount {
+        impl __MidenNoteDecode for #miden_protocol::asset::AssetAmount {
             fn __read_note_felts(
-                reader: &mut ::miden_field_repr::FeltReader<'_>,
-            ) -> ::miden_note_schema::Result<Self> {
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_note_schema::Result<Self> {
                 let value = reader.read().map_err(|error| {
-                    ::miden_note_schema::Error::new(format!(
+                    #miden_note_schema::Error::new(format!(
                         "failed to decode asset-amount: {error}"
                     ))
                 })?;
-                ::miden_protocol::asset::AssetAmount::try_from(value).map_err(|error| {
-                    ::miden_note_schema::Error::new(format!(
+                #miden_protocol::asset::AssetAmount::try_from(value).map_err(|error| {
+                    #miden_note_schema::Error::new(format!(
                         "invalid asset-amount in note storage: {error}"
                     ))
                 })
@@ -297,12 +353,12 @@ fn generate_helper_traits() -> TokenStream {
         {
             fn __write_note_felts(
                 &self,
-                writer: &mut ::miden_field_repr::FeltWriter<'_>,
-            ) -> ::miden_note_schema::Result<()> {
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_note_schema::Result<()> {
                 match self {
-                    None => writer.write(::miden_field::Felt::ZERO),
+                    None => writer.write(#miden_field::Felt::ZERO),
                     Some(value) => {
-                        writer.write(::miden_field::Felt::ONE);
+                        writer.write(#miden_field::Felt::ONE);
                         value.__write_note_felts(writer)?;
                     }
                 }
@@ -315,17 +371,17 @@ fn generate_helper_traits() -> TokenStream {
             T: __MidenNoteDecode,
         {
             fn __read_note_felts(
-                reader: &mut ::miden_field_repr::FeltReader<'_>,
-            ) -> ::miden_note_schema::Result<Self> {
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_note_schema::Result<Self> {
                 let tag = reader.read().map_err(|error| {
-                    ::miden_note_schema::Error::new(format!(
+                    #miden_note_schema::Error::new(format!(
                         "failed to decode option tag: {error}"
                     ))
                 })?;
                 match tag.as_canonical_u64() {
                     0 => Ok(None),
                     1 => Ok(Some(T::__read_note_felts(reader)?)),
-                    tag => Err(::miden_note_schema::Error::new(format!(
+                    tag => Err(#miden_note_schema::Error::new(format!(
                         "invalid option tag {tag}; expected 0 or 1"
                     ))),
                 }
@@ -338,20 +394,24 @@ fn generate_helper_traits() -> TokenStream {
 fn generate_type(
     definition: &SchemaType,
     rust_names: &BTreeMap<String, Ident>,
+    runtime: &RuntimePaths,
 ) -> Result<TokenStream, CodegenError> {
     let fqn = definition.fqn().expect("generated type definitions always have a FQN");
     let ident = rust_names.get(fqn).expect("every generated type has a Rust identifier");
     let docs = type_docs(definition, fqn);
     let derives = if supports_native_felt_repr(definition) {
+        let miden_field_repr = &runtime.miden_field_repr;
+        let crate_path = Literal::string(&miden_field_repr.to_string().replace(' ', ""));
         quote! {
             #[derive(
                 Clone,
                 Debug,
                 PartialEq,
                 Eq,
-                ::miden_field_repr::ToFeltRepr,
-                ::miden_field_repr::FromFeltRepr,
+                #miden_field_repr::ToFeltRepr,
+                #miden_field_repr::FromFeltRepr,
             )]
+            #[felt_repr(crate_path = #crate_path)]
         }
     } else {
         quote! { #[derive(Clone, Debug, PartialEq, Eq)] }
@@ -359,10 +419,10 @@ fn generate_type(
 
     let (item, encode_impl, decode_impl) = match definition.kind() {
         SchemaTypeKind::Record(fields) => {
-            generate_record(ident, fields, rust_names, &docs, &derives)?
+            generate_record(ident, fields, rust_names, &docs, &derives, runtime)?
         }
         SchemaTypeKind::Variant(cases) => {
-            generate_variant(ident, cases, rust_names, &docs, &derives)?
+            generate_variant(ident, cases, rust_names, &docs, &derives, runtime)?
         }
         _ => {
             return Err(CodegenError::new(format!(
@@ -391,12 +451,15 @@ fn generate_record(
     rust_names: &BTreeMap<String, Ident>,
     docs: &TokenStream,
     derives: &TokenStream,
+    runtime: &RuntimePaths,
 ) -> Result<(TokenStream, TokenStream, TokenStream), CodegenError> {
+    let miden_field_repr = &runtime.miden_field_repr;
+    let miden_note_schema = &runtime.miden_note_schema;
     let rust_fields = fields
         .iter()
         .map(|field| {
             let ident = value_ident(field.name());
-            let ty = rust_type(field.ty(), rust_names)?;
+            let ty = rust_type(field.ty(), rust_names, runtime)?;
             let docs = field_docs(field);
             Ok((ident, ty, docs))
         })
@@ -419,8 +482,8 @@ fn generate_record(
         impl __MidenNoteEncode for #ident {
             fn __write_note_felts(
                 &self,
-                writer: &mut ::miden_field_repr::FeltWriter<'_>,
-            ) -> ::miden_note_schema::Result<()> {
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_note_schema::Result<()> {
                 #(self.#field_idents.__write_note_felts(writer)?;)*
                 Ok(())
             }
@@ -429,8 +492,8 @@ fn generate_record(
     let decode_impl = quote! {
         impl __MidenNoteDecode for #ident {
             fn __read_note_felts(
-                reader: &mut ::miden_field_repr::FeltReader<'_>,
-            ) -> ::miden_note_schema::Result<Self> {
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_note_schema::Result<Self> {
                 Ok(Self {
                     #(#field_idents: <#field_types as __MidenNoteDecode>::__read_note_felts(reader)?,)*
                 })
@@ -447,12 +510,17 @@ fn generate_variant(
     rust_names: &BTreeMap<String, Ident>,
     docs: &TokenStream,
     derives: &TokenStream,
+    runtime: &RuntimePaths,
 ) -> Result<(TokenStream, TokenStream, TokenStream), CodegenError> {
+    let miden_field = &runtime.miden_field;
+    let miden_field_repr = &runtime.miden_field_repr;
+    let miden_note_schema = &runtime.miden_note_schema;
     let rust_cases = cases
         .iter()
         .map(|case| {
             let ident = type_ident(case.name());
-            let payload = case.payload().map(|ty| rust_type(ty, rust_names)).transpose()?;
+            let payload =
+                case.payload().map(|ty| rust_type(ty, rust_names, runtime)).transpose()?;
             let docs = case_docs(case);
             Ok((ident, payload, docs))
         })
@@ -473,13 +541,13 @@ fn generate_variant(
         match payload {
             Some(_) => quote! {
                 Self::#case(value) => {
-                    writer.write(::miden_field::Felt::from_u32(#ordinal));
+                    writer.write(#miden_field::Felt::from_u32(#ordinal));
                     value.__write_note_felts(writer)?;
                 }
             },
             None => quote! {
                 Self::#case => {
-                    writer.write(::miden_field::Felt::from_u32(#ordinal));
+                    writer.write(#miden_field::Felt::from_u32(#ordinal));
                 }
             },
         }
@@ -508,8 +576,8 @@ fn generate_variant(
         impl __MidenNoteEncode for #ident {
             fn __write_note_felts(
                 &self,
-                writer: &mut ::miden_field_repr::FeltWriter<'_>,
-            ) -> ::miden_note_schema::Result<()> {
+                writer: &mut #miden_field_repr::FeltWriter<'_>,
+            ) -> #miden_note_schema::Result<()> {
                 match self {
                     #(#encode_arms)*
                 }
@@ -520,17 +588,17 @@ fn generate_variant(
     let decode_impl = quote! {
         impl __MidenNoteDecode for #ident {
             fn __read_note_felts(
-                reader: &mut ::miden_field_repr::FeltReader<'_>,
-            ) -> ::miden_note_schema::Result<Self> {
+                reader: &mut #miden_field_repr::FeltReader<'_>,
+            ) -> #miden_note_schema::Result<Self> {
                 let tag = reader.read_u32().map_err(|error| {
-                    ::miden_note_schema::Error::new(format!(
+                    #miden_note_schema::Error::new(format!(
                         "failed to decode {} tag: {error}",
                         stringify!(#ident),
                     ))
                 })?;
                 match tag {
                     #(#decode_arms)*
-                    tag => Err(::miden_note_schema::Error::new(format!(
+                    tag => Err(#miden_note_schema::Error::new(format!(
                         "invalid {} tag {tag}; expected a declaration ordinal below {}",
                         stringify!(#ident),
                         #case_count,
@@ -546,8 +614,9 @@ fn generate_variant(
 fn rust_type(
     ty: &SchemaType,
     rust_names: &BTreeMap<String, Ident>,
+    runtime: &RuntimePaths,
 ) -> Result<TokenStream, CodegenError> {
-    if let Some(mapped) = mapped_leaf(ty) {
+    if let Some(mapped) = mapped_leaf(ty, runtime) {
         return Ok(mapped);
     }
     if let Some(fqn) = ty.fqn()
@@ -562,31 +631,38 @@ fn rust_type(
         SchemaTypeKind::Primitive(PrimitiveType::U8) => Ok(quote!(u8)),
         SchemaTypeKind::Primitive(PrimitiveType::Bool) => Ok(quote!(bool)),
         SchemaTypeKind::Option(payload) => {
-            let payload = rust_type(payload, rust_names)?;
+            let payload = rust_type(payload, rust_names, runtime)?;
             Ok(quote!(Option<#payload>))
         }
         SchemaTypeKind::Record(_) | SchemaTypeKind::Variant(_) => Err(CodegenError::new(format!(
             "named WIT type `{}` was not collected for Rust generation",
             ty.fqn().or(ty.name()).unwrap_or("<anonymous>")
         ))),
-        SchemaTypeKind::Felt => Ok(quote!(::miden_field::Felt)),
+        SchemaTypeKind::Felt => {
+            let miden_field = &runtime.miden_field;
+            Ok(quote!(#miden_field::Felt))
+        }
     }
 }
 
 /// Returns the native Rust type for one standard WIT leaf.
-fn mapped_leaf(ty: &SchemaType) -> Option<TokenStream> {
-    match ty.fqn()? {
-        FELT_FQN => Some(quote!(::miden_field::Felt)),
-        WORD_FQN => Some(quote!(::miden_field::Word)),
-        ACCOUNT_ID_FQN => Some(quote!(::miden_protocol::account::AccountId)),
-        ASSET_AMOUNT_FQN => Some(quote!(::miden_protocol::asset::AssetAmount)),
-        _ => None,
+fn mapped_leaf(ty: &SchemaType, runtime: &RuntimePaths) -> Option<TokenStream> {
+    let RuntimePaths {
+        miden_field,
+        miden_protocol,
+        ..
+    } = runtime;
+    match ty.standard_leaf()? {
+        StandardLeaf::Felt => Some(quote!(#miden_field::Felt)),
+        StandardLeaf::Word => Some(quote!(#miden_field::Word)),
+        StandardLeaf::AccountId => Some(quote!(#miden_protocol::account::AccountId)),
+        StandardLeaf::AssetAmount => Some(quote!(#miden_protocol::asset::AssetAmount)),
     }
 }
 
 /// Returns true when all fields implement the native felt-repr traits without protocol adapters.
 fn supports_native_felt_repr(ty: &SchemaType) -> bool {
-    if matches!(ty.fqn(), Some(ACCOUNT_ID_FQN | ASSET_AMOUNT_FQN)) {
+    if matches!(ty.standard_leaf(), Some(StandardLeaf::AccountId | StandardLeaf::AssetAmount)) {
         return false;
     }
     match ty.kind() {

@@ -30,13 +30,15 @@ mod tests;
 pub use artifact::{NotePackageArtifact, NotePackageResolver};
 pub use builder::NoteStorageBuilder;
 pub use codec::{
-    ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, CodecRegistry, ConsumerTypeCodec, FELT_FQN, WORD_FQN,
+    ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, CodecRegistry, ConsumerTypeCodec, FELT_FQN, StandardLeaf,
+    WORD_FQN,
 };
 pub use error::{Error, Result};
 pub use miden_field::Felt;
 pub use miden_protocol::note::NoteStorage;
 pub use schema::{
-    FeltLayout, NoteStorageSchema, PrimitiveType, SchemaCase, SchemaField, SchemaType,
-    SchemaTypeKind,
+    FeltLayout, MAX_NOTE_STORAGE_SCHEMA_BYTES, MAX_NOTE_STORAGE_SCHEMA_DEPTH,
+    MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_TYPES, NoteStorageSchema, PrimitiveType,
+    SchemaCase, SchemaField, SchemaType, SchemaTypeKind,
 };
 pub use value::{DecodedValue, DecodedValueKind};

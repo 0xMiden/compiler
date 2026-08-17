@@ -5,16 +5,14 @@
 extern crate proc_macro;
 
 use miden_note_schema::{NotePackageArtifact, NotePackageResolver, NoteStorageSchema};
-use miden_note_schema_codegen::generate_host_types;
+use miden_note_schema_codegen::{RuntimePaths, generate_host_types};
 use proc_macro::TokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
-use syn::{
-    LitStr, Token, parse::Parser, parse_macro_input, punctuated::Punctuated, visit_mut::VisitMut,
-};
+use syn::{LitStr, parse_macro_input};
 
-/// Generates typed bindings from the freshest package built by a Miden project.
+/// Generates typed bindings from the package built by a Miden project.
 ///
 /// The project path is relative to `CARGO_MANIFEST_DIR`. Build the note project with
 /// `cargo miden build` before compiling the consumer.
@@ -74,6 +72,8 @@ fn expand_package_artifact(
     Ok(quote! {
         #[doc(hidden)]
         const _: &[u8] = include_bytes!(#tracked_path);
+        #[doc(hidden)]
+        const _: Option<&str> = option_env!("MIDENC_PACKAGE_CACHE");
         #bindings
     })
 }
@@ -91,10 +91,11 @@ fn expand_schema(
     span: Span,
     scope_key: &str,
 ) -> syn::Result<TokenStream2> {
-    let generated =
-        generate_host_types(schema).map_err(|error| syn::Error::new(span, error.to_string()))?;
     let facade_path = binding_facade();
-    let type_tokens = rewrite_runtime_paths(generated.tokens().clone(), &facade_path)?;
+    let runtime_paths = RuntimePaths::through_facade(quote!(#facade_path));
+    let generated = generate_host_types(schema, &runtime_paths)
+        .map_err(|error| syn::Error::new(span, error.to_string()))?;
+    let type_tokens = generated.tokens();
     let root_ident = generated.root_ident();
     let type_idents = generated.type_idents();
     let wit_text = schema.wit_text();
@@ -220,91 +221,6 @@ fn binding_facade() -> syn::Path {
             syn::parse_quote!(::#ident)
         }
         Err(_) => syn::parse_quote!(::miden_note_bindings),
-    }
-}
-
-/// Rewrites shared generated paths through the bindings facade.
-fn rewrite_runtime_paths(tokens: TokenStream2, facade: &syn::Path) -> syn::Result<TokenStream2> {
-    let mut file = syn::parse2::<syn::File>(tokens)?;
-    RuntimePathRewriter { facade }.visit_file_mut(&mut file);
-    Ok(quote!(#file))
-}
-
-/// Rewrites runtime crate paths in shared host-profile code generation.
-struct RuntimePathRewriter<'a> {
-    facade: &'a syn::Path,
-}
-
-impl VisitMut for RuntimePathRewriter<'_> {
-    fn visit_item_struct_mut(&mut self, item: &mut syn::ItemStruct) {
-        add_felt_repr_crate_path(&mut item.attrs, self.facade);
-        syn::visit_mut::visit_item_struct_mut(self, item);
-    }
-
-    fn visit_item_enum_mut(&mut self, item: &mut syn::ItemEnum) {
-        add_felt_repr_crate_path(&mut item.attrs, self.facade);
-        syn::visit_mut::visit_item_enum_mut(self, item);
-    }
-
-    fn visit_attribute_mut(&mut self, attribute: &mut syn::Attribute) {
-        if attribute.path().is_ident("derive") {
-            let parser = Punctuated::<syn::Path, Token![,]>::parse_terminated;
-            let mut paths = parser
-                .parse2(attribute.meta.require_list().expect("derive is a list").tokens.clone())
-                .expect("generated derive paths must parse");
-            for path in &mut paths {
-                self.visit_path_mut(path);
-            }
-            attribute.meta = syn::parse_quote!(derive(#paths));
-            return;
-        }
-        syn::visit_mut::visit_attribute_mut(self, attribute);
-    }
-
-    fn visit_path_mut(&mut self, path: &mut syn::Path) {
-        let Some(first) = path.segments.first() else {
-            return;
-        };
-        if path.leading_colon.is_none()
-            || !matches!(
-                first.ident.to_string().as_str(),
-                "miden_field" | "miden_field_repr" | "miden_note_schema" | "miden_protocol"
-            )
-        {
-            syn::visit_mut::visit_path_mut(self, path);
-            return;
-        }
-
-        let crate_name = first.ident.clone();
-        let tail = path.segments.iter().skip(1).cloned().collect::<Vec<_>>();
-        let facade = self.facade;
-        let mut rewritten: syn::Path = syn::parse_quote!(#facade::__private::#crate_name);
-        rewritten.segments.extend(tail);
-        *path = rewritten;
-    }
-}
-
-/// Selects the facade's felt representation runtime for generated derives.
-fn add_felt_repr_crate_path(attributes: &mut Vec<syn::Attribute>, facade: &syn::Path) {
-    let has_felt_repr_derive = attributes.iter().any(|attribute| {
-        if !attribute.path().is_ident("derive") {
-            return false;
-        }
-        let parser = Punctuated::<syn::Path, Token![,]>::parse_terminated;
-        parser
-            .parse2(attribute.meta.require_list().expect("derive is a list").tokens.clone())
-            .expect("generated derive paths must parse")
-            .iter()
-            .any(|path| {
-                path.segments.last().is_some_and(|segment| {
-                    matches!(segment.ident.to_string().as_str(), "ToFeltRepr" | "FromFeltRepr")
-                })
-            })
-    });
-    if has_felt_repr_derive {
-        let path = format!("{}::__private::miden_field_repr", quote!(#facade)).replace(' ', "");
-        let path = LitStr::new(&path, Span::call_site());
-        attributes.push(syn::parse_quote!(#[felt_repr(crate_path = #path)]));
     }
 }
 

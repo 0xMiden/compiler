@@ -387,6 +387,12 @@ pub struct Compiler {
         arg(long, short = 'p', value_name = "SPEC", conflicts_with("workspace"),)
     )]
     pub package: Vec<String>,
+    /// Require Cargo.lock to remain unchanged in Cargo builds.
+    #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler"))]
+    pub locked: bool,
+    /// Prevent Cargo builds from accessing the network.
+    #[cfg_attr(feature = "std", arg(long, help_heading = "Compiler"))]
+    pub offline: bool,
     /// Path to the project manifest to build
     ///
     /// Either a `miden-project.toml`, or the `Cargo.toml` beside it. This names the project when
@@ -718,6 +724,8 @@ impl Compiler {
             release: _,
             workspace,
             package,
+            locked,
+            offline,
             manifest_path,
             remap_path_prefixes,
         } = self;
@@ -785,6 +793,8 @@ impl Compiler {
         options.entrypoint = entrypoint;
         options.workspace = workspace;
         options.packages = package;
+        options.cargo_locked = locked;
+        options.cargo_offline = offline;
         options.stop_after = stop_after;
         options.parse_only = parse_only;
         options.analyze_only = analyze_only;
@@ -929,5 +939,13 @@ mod tests {
             Some(manifest),
             "`--working-dir` must not move it"
         );
+    }
+
+    /// Cargo resolution policy flags reach every nested build through the session options.
+    #[test]
+    fn cargo_resolution_policy_reaches_the_options() {
+        let options = options(&["--locked", "--offline"]);
+        assert!(options.cargo_locked);
+        assert!(options.cargo_offline);
     }
 }
