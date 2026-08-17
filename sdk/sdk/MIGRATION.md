@@ -68,15 +68,20 @@ Before:
 
 ```rust
 output_note::set_word_attachment(note_idx, scheme, word);
-output_note::set_array_attachment(note_idx, scheme, &words);
+output_note::set_array_attachment(note_idx, scheme, attachment_commitment);
 ```
 
 After:
 
 ```rust
 output_note::add_word_attachment(note_idx, scheme, word);
-output_note::add_attachment(note_idx, scheme, &words);
+output_note::add_attachment(note_idx, scheme, attachment_commitment);
 ```
+
+Both functions take a `Word`: `add_word_attachment` takes the attachment value itself, and
+`add_attachment` takes a commitment to attachment elements that the advice map holds. If your
+code holds the attachment contents as words in memory, call
+`output_note::add_attachment_from_memory(note_idx, scheme, &words)` instead.
 
 ### `#[note]` reserves `get_entrypoint_root`
 
@@ -128,12 +133,17 @@ converts the same way):
 ```rust
 // before
 let final_nonce: Felt = self.incr_nonce();
-let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
+let params = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
 
 // after
 let final_nonce: Nonce = self.incr_nonce();
-let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
+let params = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 ```
+
+This example shows only the type conversions. Do not reuse the word layout: protocol 0.16
+replaces the four-word transaction summary that packed the nonce this way — see
+[Transaction summaries are six words (protocol 0.16)](#transaction-summaries-are-six-words-protocol-016)
+at the top of this guide for the required six-word layout.
 
 Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
 attachment indexes are passed as `u32`:

@@ -175,7 +175,8 @@ pub fn add_attachment(note_idx: NoteIdx, attachment_scheme: Felt, attachment: Wo
 
 /// Adds a multi-word attachment from linear memory to the output note specified by `note_idx`.
 ///
-/// Panics if `attachment` is empty or contains more than 256 words; the kernel rejects both.
+/// Panics if `attachment` is empty or contains more than `MAX_ATTACHMENT_WORDS` (256) words;
+/// the kernel rejects both.
 pub fn add_attachment_from_memory(note_idx: NoteIdx, attachment_scheme: Felt, attachment: &[Word]) {
     assert!(!attachment.is_empty(), "note attachment cannot be empty");
     assert_attachment_word_count(attachment.len());

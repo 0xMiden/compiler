@@ -7,12 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- `output_note::add_attachment_from_memory` now panics with a clear message when the attachment
-  is empty or contains more than 256 words. Before, such calls reached the transaction kernel
-  and failed there with an opaque assertion.
-
 ### Added
 
 - `println!` supports format arguments; formatted output requires `extern crate alloc` and a
@@ -59,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   re-exports `miden_field_repr` under its own crate name, so the derives' generated code
   resolves in crates that only depend on `miden` and glob-import it #1291
 
+### Changed
+
+- `output_note::add_attachment_from_memory` now panics with a clear message when the attachment
+  is empty or contains more than 256 words. Before, such calls reached the transaction kernel
+  and failed there with an opaque assertion #1310
+
 ### Migration and breaking changes
 
 - [BREAKING] The SDK and compiler now target Miden protocol `0.16.0-rc.4` and Miden VM `0.29`
@@ -73,7 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed. They were backward-compatibility aliases from the protocol 0.15 rename, and their
   names promised replace semantics the transaction kernel does not have: attachments are
   append-only. Call `output_note::add_word_attachment` / `output_note::add_attachment` instead;
-  see [MIGRATION.md](./sdk/MIGRATION.md).
+  see [MIGRATION.md](./sdk/MIGRATION.md) #1310
 - `#[note]` reserves the inherent item name `get_entrypoint_root` for its generated note-script
   root accessor. Rename existing methods, note constructors, or associated constants with that
   name; see [MIGRATION.md](./sdk/MIGRATION.md).
@@ -92,7 +92,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   total cannot be represented in the 32-bit address space #1291
 - The `#[note]` `get_entrypoint_root()` accessor now uses a word-aligned return area like every
   other binding, so its result no longer depends on the target-conditional alignment of
-  `miden_field::Word`. The aligned slot costs 30 cycles on the note-constructor path.
+  `miden_field::Word`. The aligned slot costs 30 cycles on the note-constructor path #1310
 
 ## [0.14.0-rc.1]
 
