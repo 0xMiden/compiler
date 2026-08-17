@@ -29,22 +29,7 @@ pub use self::{
 pub fn executor_with_std(args: Vec<Felt>) -> Executor {
     let mut exec = Executor::new(args);
 
-    // Register the standard library so dependencies can be resolved at runtime.
-    let core_library = miden_core_lib::CoreLibrary::default();
-    for package in core_library.packages() {
-        exec.with_package(package).expect("failed to register core package");
-    }
-    // The debug executor path does not automatically install core-library event handlers, but
-    // integration tests execute core helpers such as `u64::div` through the VM.
-    for (event, handler) in core_library.handlers() {
-        if matches!(
-            miden_debug::Event::from(event.clone()),
-            miden_debug::Event::UserDefined(_) | miden_debug::Event::Unknown(_)
-        ) {
-            exec.register_event_handler(event, handler)
-                .expect("failed to register core library event handler");
-        }
-    }
+    register_core_packages(&mut exec).unwrap_or_else(|err| panic!("{err}"));
 
     let tx_kernel = TransactionKernel::package();
     let protocol_lib = ProtocolLib::default().package();
@@ -54,6 +39,30 @@ pub fn executor_with_std(args: Vec<Felt>) -> Executor {
         .expect("failed to register standards package");
 
     exec
+}
+
+/// Registers the core packages and user-defined event handlers needed by the debug executor.
+pub(super) fn register_core_packages(exec: &mut Executor) -> Result<(), String> {
+    let core_library = miden_core_lib::CoreLibrary::default();
+    for package in core_library.packages() {
+        let package_name = package.name.clone();
+        exec.with_package(package)
+            .map_err(|err| format!("failed to register core package '{package_name}': {err}"))?;
+    }
+
+    // The debug executor path does not automatically install core-library event handlers, but
+    // integration tests execute core helpers such as `u64::div` through the VM.
+    for (event, handler) in core_library.handlers() {
+        if matches!(
+            miden_debug::Event::from(event.clone()),
+            miden_debug::Event::UserDefined(_) | miden_debug::Event::Unknown(_)
+        ) {
+            exec.register_event_handler(event, handler)
+                .map_err(|err| format!("failed to register core library event handler: {err}"))?;
+        }
+    }
+
+    Ok(())
 }
 
 /// Pretty-print `report` to a String

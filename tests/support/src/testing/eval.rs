@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use miden_core::Felt;
-use miden_core_lib::CoreLibrary;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
@@ -163,22 +162,7 @@ where
     .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let mut exec = Executor::new(args.to_vec()).with_registry(registry);
 
-    // Register the standard library so dependencies can be resolved at runtime.
-    let core_library = CoreLibrary::default();
-    for package in core_library.packages() {
-        exec.with_package(package).map_err(|err| TestCaseError::fail(err.to_string()))?;
-    }
-    // The debug executor path does not automatically install core-library event handlers, but
-    // integration tests execute core helpers such as `u64::div` through the VM.
-    for (event, handler) in core_library.handlers() {
-        if matches!(
-            miden_debug::Event::from(event.clone()),
-            miden_debug::Event::UserDefined(_) | miden_debug::Event::Unknown(_)
-        ) {
-            exec.register_event_handler(event, handler)
-                .expect("failed to register core library event handler");
-        }
-    }
+    register_core_packages(&mut exec).map_err(TestCaseError::fail)?;
 
     let tx_kernel = TransactionKernel::package();
     let protocol_lib = ProtocolLib::default().package();

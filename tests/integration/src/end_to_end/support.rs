@@ -30,9 +30,10 @@ pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
     for package in core_library.packages() {
+        let package_name = package.name.clone();
         assembler
             .link_package(package, miden_assembly::Linkage::Dynamic)
-            .expect("failed to add core library");
+            .unwrap_or_else(|err| panic!("failed to link package '{package_name}': {err}"));
     }
 
     // Parse the intrinsics
@@ -50,9 +51,14 @@ pub(super) fn assemble_test_program(procedure_body: &str) -> Arc<Package> {
         .assemble_library("test", test_module, None::<Box<Module>>)
         .unwrap_or_else(|err| panic!("{}", PrintDiagnostic::new(err)));
 
-    Assembler::new(source_manager)
-        .with_package(core_library.package(), miden_assembly::Linkage::Dynamic)
-        .expect("failed to add core library")
+    let mut assembler = Assembler::new(source_manager);
+    for package in core_library.packages() {
+        let package_name = package.name.clone();
+        assembler
+            .link_package(package, miden_assembly::Linkage::Dynamic)
+            .unwrap_or_else(|err| panic!("failed to link package '{package_name}': {err}"));
+    }
+    assembler
         .with_package(library.into(), miden_assembly::Linkage::Static)
         .expect("failed to add library package as dependency")
         .assemble_program(
@@ -77,12 +83,9 @@ end
 pub(super) fn default_host_with_core_lib() -> DefaultHost {
     use miden_processor::HostLibrary;
     let core_library = CoreLibrary::default();
-    let mut lib = HostLibrary::from(core_library.package());
-    lib.handlers.extend(core_library.handlers());
     let mut host = DefaultHost::default();
-    host.load_library(lib).expect("failed to load core library into host");
-    host.load_library(core_library.precompiles_package())
-        .expect("failed to load precompiles library into host");
+    host.load_library(HostLibrary::from(&core_library))
+        .expect("failed to load core library into host");
     host
 }
 
