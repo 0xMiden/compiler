@@ -58,6 +58,5 @@ proptest.workspace = true
 
 [build-dependencies]
 miden-assembly = { workspace = true, features = ["std"] }
-miden-core-lib.workspace = true
 midenc-log.workspace = true
 midenc-session = { workspace = true, features = ["std"] }
