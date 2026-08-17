@@ -477,7 +477,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op_results!(op))
     }
 
-    /// Log a deferred precompile computation request.
+    /// Folds a precomputed statement digest into the rolling deferred root.
     fn log_deferred<A>(
         &mut self,
         stack: A,

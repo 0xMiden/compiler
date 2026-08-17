@@ -43,7 +43,7 @@ impl OpEmitter<'_> {
         self.felt_stack_transform(masm::Instruction::EvalCircuit, 3, 3, "crypto", span);
     }
 
-    /// Log a deferred precompile computation request.
+    /// Folds a precomputed statement digest into the rolling deferred root.
     pub fn log_deferred(&mut self, span: SourceSpan) {
         self.felt_stack_transform(masm::Instruction::LogDeferred, 12, 12, "crypto", span);
     }

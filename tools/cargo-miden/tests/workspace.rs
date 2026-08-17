@@ -2,7 +2,7 @@ use std::{assert_matches, env, fs, path::Path};
 
 use cargo_miden::run;
 
-use crate::utils::{current_dir_lock, project_template_arg, workspace_root};
+use crate::utils::{current_dir_lock, project_template_arg};
 
 /// Creates a minimal Cargo workspace at `root` with a single member named `member_name`.
 fn write_workspace_root(root: &Path, member_name: &str) {
@@ -20,8 +20,6 @@ repository = "https://example.com/test"
 "#
     );
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
-    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
-        .expect("copy workspace Cargo.lock");
 }
 
 /// Creates a minimal Cargo workspace at `root` without members array.
@@ -37,8 +35,6 @@ license = "MIT"
 repository = "https://example.com/test"
 "#;
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
-    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
-        .expect("copy workspace Cargo.lock");
 }
 
 /// Creates a minimal Cargo workspace at `root` with existing members.
@@ -58,8 +54,6 @@ repository = "https://example.com/test"
 "#
     );
     fs::write(root.join("Cargo.toml"), ws_toml).expect("write workspace Cargo.toml");
-    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
-        .expect("copy workspace Cargo.lock");
 }
 
 fn new_project_args(project_name: &str, template: &str) -> Vec<String> {

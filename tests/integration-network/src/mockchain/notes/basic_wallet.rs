@@ -109,9 +109,8 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .foreign_accounts(vec![faucet_inputs])
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx);
+    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
     expect!["3473"].assert_eq(prologue_cycles(&tx_measurements));
-    expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
     expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Alice's account has the minted asset ===");
@@ -131,7 +130,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         tx_script_package,
         &mut note_rng,
     );
-    let tx_measurements = execute_tx(&mut chain, mock_tx);
+    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
     expect!["6177"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes p2id note ===");
@@ -142,7 +141,7 @@ pub fn basic_wallet_p2id_transfers_asset_with_custom_tx_script() {
         .foreign_accounts(vec![faucet_inputs])
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx);
+    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
     expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
@@ -281,7 +280,7 @@ pub fn basic_wallet_p2ide_allows_recipient_claim() {
         .foreign_accounts(vec![faucet_inputs])
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx);
+    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
     expect!["4966"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify balances
@@ -420,7 +419,7 @@ pub fn basic_wallet_p2ide_allows_sender_reclaim() {
         .foreign_accounts(vec![faucet_inputs])
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx);
+    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
     expect!["5541"].assert_eq(single_note_cycles(&tx_measurements));
 
     // Step 5: verify Alice has her original amount back

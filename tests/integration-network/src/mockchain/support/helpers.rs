@@ -24,7 +24,7 @@ use miden_protocol::{
     },
     asset::{Asset, AssetAmount},
     note::{NoteScript, PartialNote},
-    transaction::{TransactionMeasurements, TransactionScript},
+    transaction::{ExecutedTransaction, TransactionScript},
 };
 use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
 use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
@@ -252,19 +252,14 @@ pub(crate) fn execute_tx_expect_failure(mock_tx: MockTransaction) -> String {
 
 /// Executes a mock transaction against the chain and commits it in the next block.
 ///
-/// Returns the transaction measurements captured during execution.
-pub(crate) fn execute_tx(
-    chain: &mut MockChain,
-    mock_tx: MockTransaction,
-) -> TransactionMeasurements {
+/// Returns the executed transaction for inspection.
+pub(crate) fn execute_tx(chain: &mut MockChain, mock_tx: MockTransaction) -> ExecutedTransaction {
     let executed_tx = block_on(mock_tx.execute()).unwrap_or_else(|err| panic!("{err}"));
-
-    let measurements = executed_tx.measurements().clone();
 
     chain.add_pending_executed_transaction(&executed_tx).unwrap();
     chain.prove_next_block().unwrap();
 
-    measurements
+    executed_tx
 }
 
 /// Builds a mock transaction which transfers an asset from `sender_id` to `recipient_id` using

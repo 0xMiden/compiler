@@ -378,7 +378,10 @@ pub struct EvalCircuit {
 
 infer_felt_outputs!(EvalCircuit, "hir.eval_circuit", 3, 3);
 
-/// Log a deferred precompile computation request.
+/// Folds a precomputed statement digest into the rolling deferred root.
+///
+/// Consumes 12 felts in `[_, STATEMENT, _]` and produces 12 felts in
+/// `[DEFERRED_ROOT_NEW, OUT_RATE1, OUT_CAP]`.
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,

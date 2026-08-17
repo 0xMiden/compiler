@@ -73,9 +73,9 @@ fn local_rust_templates_path() -> PathBuf {
         .clone()
 }
 
-fn write_local_test_templates(cache_root: &Path) -> anyhow::Result<()> {
+fn write_local_test_templates(templates_root: &Path) -> anyhow::Result<()> {
     for (name, cargo_toml, lib_rs) in local_template_files() {
-        write_template(cache_root, name, cargo_toml, lib_rs)?;
+        write_template(templates_root, name, cargo_toml, lib_rs)?;
     }
     Ok(())
 }
@@ -233,12 +233,12 @@ panic = "abort"
 }
 
 fn write_template(
-    cache_root: &Path,
+    templates_root: &Path,
     template: &str,
     cargo_toml: String,
     lib_rs: &str,
 ) -> anyhow::Result<()> {
-    let template_root = cache_root.join(template);
+    let template_root = templates_root.join(template);
     fs::create_dir_all(template_root.join("src"))?;
     fs::write(template_root.join("Cargo.toml"), cargo_toml)?;
     fs::write(template_root.join("src/lib.rs"), lib_rs)?;

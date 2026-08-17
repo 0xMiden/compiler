@@ -66,7 +66,7 @@ pub fn counter_note_basic_auth_increments_storage() {
         .authenticated_input_note(counter_note.id())
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx);
+    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
     expect!["8565"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).
