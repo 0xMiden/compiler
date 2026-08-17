@@ -42,7 +42,7 @@ pub fn executor_with_std(args: Vec<Felt>) -> Executor {
 }
 
 /// Registers the core packages and user-defined event handlers needed by the debug executor.
-pub(super) fn register_core_packages(exec: &mut Executor) -> Result<(), String> {
+fn register_core_packages(exec: &mut Executor) -> Result<(), String> {
     let core_library = miden_core_lib::CoreLibrary::default();
     for package in core_library.packages() {
         let package_name = package.name.clone();

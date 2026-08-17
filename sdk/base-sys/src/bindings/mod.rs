@@ -24,14 +24,14 @@ pub use types::*;
 
 /// Maximum number of attachments per note, defined by the protocol MASM source at
 /// `asm/kernels/transaction-core/src/output_note.masm`.
-pub(super) const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
+const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
 
 /// Maximum words per attachment, defined by the protocol MASM source at
 /// `asm/protocol_utils/src/note.masm`.
-pub(super) const MAX_ATTACHMENT_WORDS: usize = 256;
+const MAX_ATTACHMENT_WORDS: usize = 256;
 
 /// Asserts that a note attachment count is within the protocol limit.
-pub(super) fn assert_attachment_count(num_attachments: usize) {
+fn assert_attachment_count(num_attachments: usize) {
     assert!(
         num_attachments <= MAX_ATTACHMENTS_PER_NOTE,
         "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
@@ -39,7 +39,7 @@ pub(super) fn assert_attachment_count(num_attachments: usize) {
 }
 
 /// Asserts that an attachment word count is within the protocol limit.
-pub(super) fn assert_attachment_word_count(num_words: usize) {
+fn assert_attachment_word_count(num_words: usize) {
     assert!(
         num_words <= MAX_ATTACHMENT_WORDS,
         "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
