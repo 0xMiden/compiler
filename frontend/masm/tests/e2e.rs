@@ -227,6 +227,15 @@ fn e2e_context() -> Rc<Context> {
     Rc::new(Context::new(session))
 }
 
+/// Links the core library packages into the assembler.
+fn link_core_packages(assembler: &mut Assembler, core_library: &CoreLibrary) {
+    for package in core_library.packages() {
+        assembler
+            .link_package(package, miden_project::Linkage::Dynamic)
+            .expect("core library package should link");
+    }
+}
+
 fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
     use miden_assembly::Path as MasmPath;
 
@@ -240,11 +249,7 @@ fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
         .expect("original MASM library should assemble");
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager);
-    for package in core_library.packages() {
-        assembler
-            .link_package(package, miden_project::Linkage::Dynamic)
-            .expect("core library package should link");
-    }
+    link_core_packages(&mut assembler, &core_library);
     assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("original MASM library should link")
@@ -278,11 +283,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
     let source_manager = context.session().source_manager.clone();
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    for package in core_library.packages() {
-        assembler
-            .link_package(package, miden_project::Linkage::Dynamic)
-            .expect("core library package should link");
-    }
+    link_core_packages(&mut assembler, &core_library);
     assembler
         .link_package(intrinsics::load(), miden_project::Linkage::Static)
         .expect("intrinsics should link");
@@ -316,11 +317,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
             )
         });
     let mut assembler = Assembler::new(source_manager);
-    for package in core_library.packages() {
-        assembler
-            .link_package(package, miden_project::Linkage::Dynamic)
-            .expect("core library package should link");
-    }
+    link_core_packages(&mut assembler, &core_library);
     assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("round-tripped MASM library should link")
@@ -360,7 +357,7 @@ fn execute_program(
 ) -> Vec<Felt> {
     let stack_inputs = StackInputs::new(inputs).expect("test inputs should fit on VM stack");
     let advice_stack = AdviceStack::try_from_values(advice.iter().copied())
-        .expect("test advice inputs should fit on VM advice stack");
+        .expect("test advice inputs should be canonical field elements");
     let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
     let mut host = DefaultHost::default();
     let core_library = CoreLibrary::default();

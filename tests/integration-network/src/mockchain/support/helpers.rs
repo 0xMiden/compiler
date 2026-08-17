@@ -24,7 +24,7 @@ use miden_protocol::{
     },
     asset::{Asset, AssetAmount},
     note::{NoteScript, PartialNote},
-    transaction::{ExecutedTransaction, TransactionScript},
+    transaction::{ExecutedTransaction, TransactionMeasurements, TransactionScript},
 };
 use miden_standards::{testing::note::NoteBuilder, tx_script::SendNotesTransactionScript};
 use miden_testing::{MockChain, MockTransaction, MockTransactionBuilder};
@@ -260,6 +260,14 @@ pub(crate) fn execute_tx(chain: &mut MockChain, mock_tx: MockTransaction) -> Exe
     chain.prove_next_block().unwrap();
 
     executed_tx
+}
+
+/// Executes and commits a mock transaction, then returns its measurements.
+pub(crate) fn execute_tx_measurements(
+    chain: &mut MockChain,
+    mock_tx: MockTransaction,
+) -> TransactionMeasurements {
+    execute_tx(chain, mock_tx).measurements().clone()
 }
 
 /// Builds a mock transaction which transfers an asset from `sender_id` to `recipient_id` using

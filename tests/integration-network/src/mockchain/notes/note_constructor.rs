@@ -21,8 +21,8 @@ use midenc_expect_test::expect;
 
 use super::super::support::{
     assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
-    note_script_root, single_note_cycles, to_core_felts, transaction_script_from_package_with_deps,
-    tx_script_processing_cycles,
+    execute_tx_measurements, note_script_root, single_note_cycles, to_core_felts,
+    transaction_script_from_package_with_deps, tx_script_processing_cycles,
 };
 
 /// Tests that a transaction script can create a P2ID note through the note package's exported
@@ -172,7 +172,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .expected_output_notes(vec![RawOutputNote::Full(bob_note.clone())])
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, create_tx).measurements().clone();
+    let tx_measurements = execute_tx_measurements(&mut chain, create_tx);
     expect!["8155"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
@@ -183,7 +183,7 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         .foreign_accounts(vec![faucet_inputs])
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, consume_tx).measurements().clone();
+    let tx_measurements = execute_tx_measurements(&mut chain, consume_tx);
     expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");

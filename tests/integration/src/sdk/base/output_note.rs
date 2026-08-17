@@ -1,9 +1,13 @@
-use miden_core_lib::CoreLibrary;
-use miden_processor::{
-    DefaultHost, ExecutionOptions, HostLibrary, StackInputs, advice::AdviceInputs, execute_sync,
-};
+use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
 
 use super::*;
+use crate::end_to_end::support::default_host_with_core_lib;
+
+/// The fixed code that every guest panic reports through the VM assertion error (the same code
+/// `DECODE_PANIC_CODE` pins in the integration-network tests). The panic message is not
+/// observable at the VM level, so the empty-attachment and too-many-words asserts share this
+/// code; it still separates a wrapper panic from kernel asserts and from the extern sentinel.
+const WRAPPER_PANIC_CODE: &str = "assertion failed with error code: 10154102372021603817";
 
 #[allow(clippy::uninlined_format_args)]
 /// Compiles a minimal `miden` account component which calls the specified `output_note` method, and
@@ -117,9 +121,7 @@ end
     let mut test = test_builder.build();
     let package = test.compile_package();
 
-    let mut host = DefaultHost::default();
-    host.load_library(HostLibrary::from(&CoreLibrary::default()))
-        .expect("failed to load core library into host");
+    let mut host = default_host_with_core_lib();
     let program = package.unwrap_program();
     let result = execute_sync(
         &program,
@@ -134,9 +136,10 @@ end
         assert_eq!(trace.stack.get_num_elements(1), &[miden_core::Felt::ONE]);
     } else {
         let error = result.expect_err("invalid attachment length should panic in the guest");
+        let error = error.to_string();
         assert!(
-            !error.to_string().contains("attachment extern sentinel"),
-            "invalid attachment length reached the extern call"
+            error.contains(WRAPPER_PANIC_CODE),
+            "unexpected failure message (wanted `{WRAPPER_PANIC_CODE}`): {error}"
         );
     }
 }

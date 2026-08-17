@@ -11,7 +11,7 @@ use midenc_expect_test::expect;
 
 use super::super::support::{
     COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, compile_rust_package,
-    counter_storage_slot_name, execute_tx, note_script_root, single_note_cycles,
+    counter_storage_slot_name, execute_tx_measurements, note_script_root, single_note_cycles,
 };
 
 /// Tests the counter contract deployment and note consumption workflow on a mock chain.
@@ -66,7 +66,7 @@ pub fn counter_note_basic_auth_increments_storage() {
         .authenticated_input_note(counter_note.id())
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
+    let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     expect!["8565"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The counter contract storage value should be 2 after the note is consumed (incremented by 1).

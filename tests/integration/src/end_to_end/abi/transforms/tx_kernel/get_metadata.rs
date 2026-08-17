@@ -1,5 +1,5 @@
-use miden_debug::Executor;
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::testing::executor_with_std;
 use midenc_session::diagnostics::Report;
 
 use crate::CompilerTestBuilder;
@@ -49,10 +49,7 @@ end
 
     let package = test.compile_package();
 
-    let mut exec = Executor::new(vec![]);
-    for core_package in miden_core_lib::CoreLibrary::default().packages() {
-        exec.with_package(core_package).unwrap();
-    }
+    let exec = executor_with_std(vec![]);
 
     let _ = exec.execute(package, test.session.source_manager.clone());
     Ok(())

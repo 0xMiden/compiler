@@ -16,7 +16,7 @@ use midenc_expect_test::expect;
 use super::super::support::{
     COUNTER_CONTRACT_STORAGE_KEY, assert_counter_storage, auth_procedure_cycles,
     build_existing_counter_account_builder_with_auth_package, compile_rust_package,
-    counter_storage_slot_name, execute_tx, note_script_root, single_note_cycles,
+    counter_storage_slot_name, execute_tx_measurements, note_script_root, single_note_cycles,
 };
 
 /// Tests the counter contract with a "no-auth" authentication component.
@@ -101,7 +101,7 @@ pub fn counter_note_no_auth_increments_storage_without_signature() {
         .authenticated_input_note(counter_note.id())
         .build()
         .unwrap();
-    let tx_measurements = execute_tx(&mut chain, mock_tx).measurements().clone();
+    let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
     expect!["1992"].assert_eq(auth_procedure_cycles(&tx_measurements));
     expect!["8565"].assert_eq(single_note_cycles(&tx_measurements));
 
