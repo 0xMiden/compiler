@@ -36,4 +36,3 @@ miden-note-codec-wit.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-integration-test-support.workspace = true
 tempfile.workspace = true
-wit-component.workspace = true

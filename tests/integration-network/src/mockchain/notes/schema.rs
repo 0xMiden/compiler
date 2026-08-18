@@ -101,7 +101,7 @@ fn transfer_with_storage(
 #[test]
 fn dex_note_uses_embedded_schema_and_component_codec() {
     if !wasm_target_is_installed() {
-        eprintln!("skipping DEX note schema test: wasm32-unknown-unknown is not installed");
+        eprintln!("skipping DEX note schema test: wasm32-wasip2 is not installed");
         return;
     }
     let note_package = compile_rust_package("../../examples/dex-note", true);
@@ -165,7 +165,7 @@ fn wasm_target_is_installed() -> bool {
     };
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .any(|line| line.starts_with("wasm32-unknown-unknown") && line.contains("(installed)"))
+        .any(|line| line.starts_with("wasm32-wasip2") && line.contains("(installed)"))
 }
 
 /// Asserts that a package carries one named custom section.

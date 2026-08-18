@@ -13,9 +13,9 @@ use wit_parser::WorldItem;
 use crate::utils::{current_dir_lock, workspace_root};
 
 #[test]
-fn dex_note_build_embeds_schema_and_zero_import_codec_component() {
+fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
     if !wasm_target_is_installed() {
-        eprintln!("skipping DEX note codec build test: wasm32-unknown-unknown is not installed");
+        eprintln!("skipping DEX note codec build test: wasm32-wasip2 is not installed");
         return;
     }
     let _cwd_lock = current_dir_lock();
@@ -76,7 +76,7 @@ fn wasm_target_is_installed() -> bool {
     };
     String::from_utf8_lossy(&output.stdout)
         .lines()
-        .any(|line| line.starts_with("wasm32-unknown-unknown") && line.contains("(installed)"))
+        .any(|line| line.starts_with("wasm32-wasip2") && line.contains("(installed)"))
 }
 
 /// Verifies the sandbox and versioned interface exported by a note codec component.
@@ -87,7 +87,10 @@ fn assert_note_codec_component(component: &[u8]) {
         panic!("note codec section is not a component");
     };
     let world = &resolve.worlds[world_id];
-    assert!(world.imports.is_empty(), "note codec imports: {:#?}", world.imports);
+    for (key, _) in world.imports.iter() {
+        let name = resolve.name_world_key(key);
+        assert!(name.starts_with("wasi:"), "unexpected non-WASI import `{name}`");
+    }
     assert_eq!(world.exports.len(), 1, "unexpected note codec exports: {:#?}", world.exports);
 
     let interface = world

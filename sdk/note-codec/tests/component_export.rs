@@ -7,13 +7,13 @@ use std::{
 };
 
 use tempfile::TempDir;
-use wit_component::{ComponentEncoder, DecodedWasm};
+use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
 
-const WASM_TARGET: &str = "wasm32-unknown-unknown";
+const WASM_TARGET: &str = "wasm32-wasip2";
 
 #[test]
-fn minimal_codec_crate_encodes_to_zero_import_component() {
+fn minimal_codec_crate_builds_to_wasi_only_component() {
     if !wasm_target_is_installed() {
         eprintln!("skipping component export test: {WASM_TARGET} is not installed");
         return;
@@ -40,23 +40,20 @@ fn minimal_codec_crate_encodes_to_zero_import_component() {
         .expect("failed to run cargo for the component fixture");
     assert_command_succeeded("building the component fixture", &output);
 
-    let module = fs::read(
+    let component = fs::read(
         target_dir.join(format!("{WASM_TARGET}/release/note_codec_component_fixture.wasm")),
     )
-    .expect("component fixture did not produce a Wasm module");
-    let component = ComponentEncoder::default()
-        .module(&module)
-        .expect("the fixture is not a component-ready core module")
-        .validate(true)
-        .encode()
-        .expect("failed to encode the codec component");
+    .expect("component fixture did not produce a Wasm component");
     let DecodedWasm::Component(resolve, world_id) =
-        wit_component::decode(&component).expect("failed to decode the encoded component")
+        wit_component::decode(&component).expect("failed to decode the built component")
     else {
-        panic!("ComponentEncoder did not produce a component");
+        panic!("the fixture build did not produce a component");
     };
     let world = &resolve.worlds[world_id];
-    assert!(world.imports.is_empty(), "codec component imports: {:#?}", world.imports);
+    for (key, _) in world.imports.iter() {
+        let name = resolve.name_world_key(key);
+        assert!(name.starts_with("wasi:"), "unexpected non-WASI import `{name}`");
+    }
     assert_eq!(world.exports.len(), 1);
 
     let interface_id = world

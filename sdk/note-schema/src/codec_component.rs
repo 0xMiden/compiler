@@ -49,7 +49,7 @@ impl CodecRegistry {
         Self::load_from_component(bytes, &schema.custom_type_fqns())
     }
 
-    /// Loads a zero-import note codec component.
+    /// Loads a note codec component whose only imports are stubbed WASI interfaces.
     fn load_from_component(bytes: &[u8], custom_type_fqns: &HashSet<String>) -> Result<Self> {
         let runtime = Arc::new(ComponentRuntime::new(bytes)?);
         let supported_types = runtime.supported_types()?;
@@ -101,9 +101,14 @@ impl ComponentRuntime {
         Ok(Self { engine, component })
     }
 
-    /// Instantiates a zero-import component with fresh per-call limits.
+    /// Instantiates the component with trapping WASI stubs and fresh per-call limits.
     fn instantiate(&self) -> Result<ComponentInstance> {
-        let linker = Linker::new(&self.engine);
+        let mut linker = Linker::new(&self.engine);
+        // The wasip2 standard library imports WASI interfaces the codec never needs at
+        // runtime. Stub every import as a trap so nothing outside the component is callable.
+        linker
+            .define_unknown_imports_as_traps(&self.component)
+            .map_err(|error| component_error("stub the note codec imports", error))?;
         let limits = component_store_limits();
         let mut store = Store::new(&self.engine, ComponentStore { limits });
         store.limiter(|state| &mut state.limits);
@@ -111,7 +116,7 @@ impl ComponentRuntime {
             .set_fuel(CALL_FUEL)
             .map_err(|error| component_error("set the note codec fuel budget", error))?;
         let bindings = NoteCodec::instantiate(&mut store, &self.component, &linker)
-            .map_err(|error| component_error("instantiate the zero-import note codec", error))?;
+            .map_err(|error| component_error("instantiate the note codec", error))?;
         Ok(ComponentInstance { store, bindings })
     }
 
@@ -324,11 +329,10 @@ mod tests {
     use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
     use tempfile::TempDir;
     use wasmtime::ResourceLimiter;
-    use wit_component::ComponentEncoder;
 
     use super::*;
 
-    const WASM_TARGET: &str = "wasm32-unknown-unknown";
+    const WASM_TARGET: &str = "wasm32-wasip2";
     const FIXTURE_FQN: &str = "example:codec-schema/note-storage@1.0.0.ratio";
     const DIGEST_FQN: &str = "miden:base/core-types@1.0.0.digest";
     const FIXTURE_SCHEMA: &str = r#"
@@ -618,16 +622,10 @@ package miden:base@1.0.0 {
             .expect("failed to start fixture build");
         assert_command_succeeded("building the component adapter fixture", &output);
 
-        let module = fs::read(
+        fs::read(
             target_dir.join(format!("{WASM_TARGET}/release/note_schema_component_fixture.wasm")),
         )
-        .expect("component fixture did not produce its Wasm module");
-        ComponentEncoder::default()
-            .module(&module)
-            .expect("fixture module is not component-ready")
-            .validate(true)
-            .encode()
-            .expect("failed to encode fixture component")
+        .expect("component fixture did not produce its Wasm component")
     }
 
     /// Writes a standalone codec crate for the component adapter test.
