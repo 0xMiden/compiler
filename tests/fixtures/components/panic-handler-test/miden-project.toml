@@ -1,0 +1,7 @@
+[package]
+name = "panic-handler-test"
+version = "0.1.0"
+
+[[bin]]
+name = "panic-handler-test"
+path = "src/lib.rs"
