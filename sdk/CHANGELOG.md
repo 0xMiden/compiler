@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Note codec crates build for the `wasm32-wasip2` target, and rustc links them directly as
+  Wasm components. The standard library imports WASI interfaces, so a codec component may
+  import `wasi:*` interfaces only; consumers stub every import as a trap at instantiation,
+  so no host capability is reachable from codec code.
 - Added optional `codec-component` support to the new `miden-note-schema` host crate. It can
   load author-defined note codecs from a package without adding Wasmtime to the default feature
   set or the guest SDK dependency graph.

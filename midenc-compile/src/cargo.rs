@@ -16,7 +16,7 @@ use miden_note_codec_wit::NOTE_CODEC_WIT;
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
 use sha2::{Digest, Sha256};
-use wit_component::{ComponentEncoder, DecodedWasm};
+use wit_component::DecodedWasm;
 use wit_parser::{Function, FunctionKind, Resolve, Type, TypeDefKind, TypeId, WorldId, WorldItem};
 
 use crate::{CodegenOutput, CompilerResult};
@@ -27,8 +27,9 @@ const NOTE_CODEC_CRATE_METADATA: &str = "note-codec-crate";
 /// Metadata field that contains the codec crate directory.
 const NOTE_CODEC_CRATE_PATH: &str = "path";
 
-/// Rust target used for zero-import note codec components.
-const NOTE_CODEC_TARGET: &str = "wasm32-unknown-unknown";
+/// Rust target used to build note codec components; rustc links the cdylib as a
+/// Wasm component, so no separate encoding step is necessary.
+const NOTE_CODEC_TARGET: &str = "wasm32-wasip2";
 
 /// Directory used to exchange Miden packages with nested Cargo builds.
 const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
@@ -448,7 +449,7 @@ fn build_note_codec_component(
     } else {
         None
     };
-    crate::rust::install_wasm32_target("unknown-unknown", toolchain.as_deref())?;
+    crate::rust::install_wasm32_target("wasip2", toolchain.as_deref())?;
 
     let cargo_target_dir = work_dir.join("cargo-target").join(&staged_package.build_key);
     let mut cargo = Command::new(cargo_path);
@@ -513,28 +514,14 @@ fn build_note_codec_component(
     }
     let wasm_path = wasm_paths.pop().expect("one codec artifact was checked above");
 
-    let module = fs::read(&wasm_path).map_err(|error| {
+    // The wasm32-wasip2 target links through wasm-component-ld, so the produced
+    // cdylib artifact is already a Wasm component.
+    let component = fs::read(&wasm_path).map_err(|error| {
         Report::msg(format!(
-            "note codec build produced an unreadable cdylib '{}': {error}",
+            "note codec build produced an unreadable component '{}': {error}",
             wasm_path.display()
         ))
     })?;
-    let component = ComponentEncoder::default()
-        .module(&module)
-        .map_err(|error| {
-            Report::msg(format!(
-                "note codec module '{}' is not component-ready: {error}",
-                wasm_path.display()
-            ))
-        })?
-        .validate(true)
-        .encode()
-        .map_err(|error| {
-            Report::msg(format!(
-                "failed to encode note codec module '{}' as a component: {error}",
-                wasm_path.display()
-            ))
-        })?;
     validate_note_codec_component(&component).map_err(|error| {
         Report::msg(format!(
             "note codec crate '{}' produced an invalid component: {error}",
@@ -637,11 +624,15 @@ fn validate_note_codec_component(component: &[u8]) -> CompilerResult<()> {
         return Err(Report::msg("note codec output is not a component"));
     };
     let world = &resolve.worlds[world_id];
-    if !world.imports.is_empty() {
-        return Err(Report::msg(format!(
-            "note codec component must have zero imports, found: {:#?}",
-            world.imports
-        )));
+    // The wasm32-wasip2 standard library wires WASI interfaces into every component.
+    // Consumers stub them as trapping imports, so only `wasi:*` imports are permitted.
+    for (key, _) in world.imports.iter() {
+        let name = resolve.name_world_key(key);
+        if !name.starts_with("wasi:") {
+            return Err(Report::msg(format!(
+                "note codec component may import only `wasi:*` interfaces, found `{name}`"
+            )));
+        }
     }
     if world.exports.len() != 1 {
         return Err(Report::msg(format!(
