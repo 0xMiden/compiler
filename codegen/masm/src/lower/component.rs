@@ -1657,7 +1657,7 @@ impl MasmFunctionBuilder {
             link_info,
             invoked: &mut invoked,
             target: Default::default(),
-            debug_frame_size: Some(self.num_locals.next_multiple_of(miden_core::WORD_SIZE as u16)),
+            debug_frame_size: aligned_debug_frame_size(self.num_locals),
             stack,
             trace_target,
         };
@@ -1788,4 +1788,11 @@ fn block_has_real_instructions(block: &masm::Block) -> bool {
         } => block_has_real_instructions(body) || block_has_real_instructions(condition),
         masm::Op::Repeat { body, .. } => block_has_real_instructions(body),
     })
+}
+
+fn aligned_debug_frame_size(num_locals: u16) -> Option<u16> {
+    u32::from(num_locals)
+        .next_multiple_of(miden_core::WORD_SIZE as u32)
+        .try_into()
+        .ok()
 }
