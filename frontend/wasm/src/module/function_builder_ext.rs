@@ -202,7 +202,8 @@ impl<B: ?Sized + Builder> FunctionBuilderExt<'_, B> {
         // If DWARF didn't provide a location expression, synthesize one from the
         // logical local slot — we know this variable is stored as a function local.
         let expr = expr_opt.or_else(|| {
-            let ops = vec![ExpressionOp::LocalSlot(idx as u32)];
+            let index = u32::try_from(idx).ok()?;
+            let ops = vec![ExpressionOp::LocalSlot(index)];
             Some(Expression::with_ops(ops))
         });
 
@@ -729,7 +730,7 @@ fn operand_stack_value_from_expression(
     wasm_stack: &[ValueRef],
 ) -> Option<ValueRef> {
     let index = expression.operations.iter().find_map(|op| match op {
-        ExpressionOp::OperandStackSlot(index) => Some(*index as usize),
+        ExpressionOp::OperandStackSlot(index) => usize::try_from(*index).ok(),
         _ => None,
     })?;
     wasm_stack.iter().rev().nth(index).copied()
