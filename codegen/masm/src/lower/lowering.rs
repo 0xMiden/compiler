@@ -1866,7 +1866,9 @@ fn lower_debug_location_expression(
     if matches!(result_kind, ValueKind::ByteAddress) {
         operations.push(DebugLocationExpressionOp::DerefBytes);
     }
-    (!operations.is_empty()).then(|| DebugLocationExpression::new(operations))
+    (!operations.is_empty())
+        .then_some(operations)
+        .and_then(|operations| DebugLocationExpression::new(operations).ok())
 }
 
 fn resolve_local_slot_location(index: u32, frame_size: Option<u16>) -> masm::DebugVarLocation {
@@ -2031,11 +2033,14 @@ mod tests {
 
         assert_eq!(
             lower_debug_location_expression(&local_pointer, None, Some(8), |_| None),
-            Some(DebugLocationExpression::new(vec![
-                DebugLocationExpressionOp::ReadLocal(-6),
-                DebugLocationExpressionOp::AddUnsigned(8),
-                DebugLocationExpressionOp::DerefBytes,
-            ]))
+            Some(
+                DebugLocationExpression::new(vec![
+                    DebugLocationExpressionOp::ReadLocal(-6),
+                    DebugLocationExpressionOp::AddUnsigned(8),
+                    DebugLocationExpressionOp::DerefBytes,
+                ])
+                .unwrap(),
+            )
         );
 
         let frame_address = Expression::with_ops(vec![
@@ -2057,6 +2062,7 @@ mod tests {
                 DebugLocationExpressionOp::AddUnsigned(8),
                 DebugLocationExpressionOp::DerefBytes,
             ])
+            .unwrap()
         );
         assert_eq!(
             miden_debug::resolve_variable_value(
@@ -2074,7 +2080,10 @@ mod tests {
         ]);
         assert_eq!(
             lower_debug_location_expression(&address_value, None, Some(8), |_| None),
-            Some(DebugLocationExpression::new(vec![DebugLocationExpressionOp::ConstU64(100),]))
+            Some(
+                DebugLocationExpression::new(vec![DebugLocationExpressionOp::ConstU64(100),])
+                    .unwrap()
+            )
         );
     }
 
@@ -2084,10 +2093,13 @@ mod tests {
 
         assert_eq!(
             lower_debug_location_expression(&expression, Some(3), Some(8), |_| None),
-            Some(DebugLocationExpression::new(vec![
-                DebugLocationExpressionOp::ReadStack(3),
-                DebugLocationExpressionOp::DerefBytes,
-            ]))
+            Some(
+                DebugLocationExpression::new(vec![
+                    DebugLocationExpressionOp::ReadStack(3),
+                    DebugLocationExpressionOp::DerefBytes,
+                ])
+                .unwrap(),
+            )
         );
         assert_eq!(lower_debug_location_expression(&expression, None, Some(8), |_| None), None);
     }
