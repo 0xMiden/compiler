@@ -80,11 +80,13 @@ impl HybridPackageRegistry {
         };
         registry.filesystem_cache = filesystem_cache;
 
-        // Load link libraries
+        // Load link libraries. The precompiles library is implied because the core library
+        // depends on it; the project assembler resolves and verifies the dependency itself.
         let core = crate::LinkLibrary::core();
+        let precompiles = crate::LinkLibrary::precompiles();
         let tx_kernel = crate::LinkLibrary::tx_kernel();
         let protocol = crate::LinkLibrary::protocol();
-        let implied_libraries = vec![&core, &tx_kernel, &protocol]
+        let implied_libraries = vec![&core, &precompiles, &tx_kernel, &protocol]
             .into_iter()
             .filter(|ll| !options.link_libraries.iter().any(|oll| oll.name == ll.name));
         let link_libraries = options.link_libraries.iter().chain(implied_libraries);
@@ -97,8 +99,6 @@ impl HybridPackageRegistry {
                 Err(err) => return Err(Report::msg(err.to_string())),
             }
         }
-
-        registry.seed_bundled_dependencies()?;
 
         Ok(registry)
     }
@@ -148,86 +148,6 @@ impl HybridPackageRegistry {
         }
 
         Ok(registry)
-    }
-
-    /// Seeds the registry with bundled packages that installed packages depend on.
-    ///
-    /// Package manifests record their dependencies with exact digests, so an artifact with the
-    /// right name and version but a different digest can never satisfy one. This walks the
-    /// manifest dependencies of every installed package, including the packages it installs
-    /// along the way, and installs the bundled package that matches a missing dependency
-    /// exactly. When neither the local registry nor a bundled package can satisfy a dependency,
-    /// a warning names the mismatch instead of leaving it to fail later, far from the cause.
-    #[cfg(any(test, feature = "std"))]
-    fn seed_bundled_dependencies(&mut self) -> Result<(), Report> {
-        use alloc::{string::ToString, vec::Vec};
-
-        // The bundled packages that seeding can provide.
-        let bundled = miden_core_lib::CoreLibrary::default().packages();
-
-        let mut worklist: Vec<Arc<Package>> = self
-            .artifacts
-            .values()
-            .flat_map(|versions| versions.values())
-            .cloned()
-            .collect();
-        while let Some(package) = worklist.pop() {
-            for dep in package.manifest.dependencies() {
-                let required = miden_project::Version::new(dep.version.clone(), dep.digest);
-                if self.load_package(&dep.name, &required).is_ok() {
-                    continue;
-                }
-
-                // A same-version artifact that load_package rejected differs by digest. The
-                // local copy stays installed; the warning names both digests.
-                let incumbent = self
-                    .artifacts
-                    .get(&dep.name)
-                    .and_then(|versions| versions.get(&dep.version))
-                    .map(|artifact| artifact.digest());
-                if let Some(incumbent_digest) = incumbent {
-                    log::warn!(
-                        target: "package-registry",
-                        "the local registry provides {}@{} with digest {incumbent_digest}, which \
-                         does not satisfy the digest {} that {}@{} requires; dependent code may \
-                         fail to resolve it",
-                        &dep.name,
-                        &dep.version,
-                        &dep.digest,
-                        &package.name,
-                        &package.version,
-                    );
-                    continue;
-                }
-
-                let provider = bundled.iter().find(|provider| {
-                    provider.name == dep.name
-                        && provider.version == dep.version
-                        && provider.digest() == dep.digest
-                });
-                let Some(provider) = provider else {
-                    log::warn!(
-                        target: "package-registry",
-                        "the installed {}@{} package requires {}@{} with digest {}, which \
-                         neither the local registry nor the bundled packages provides",
-                        &package.name,
-                        &package.version,
-                        &dep.name,
-                        &dep.version,
-                        &dep.digest,
-                    );
-                    continue;
-                };
-
-                match self.install_if_missing(Arc::clone(provider)) {
-                    // The dependencies of the new package need the same check.
-                    Ok(_) => worklist.push(Arc::clone(provider)),
-                    Err(err) => return Err(Report::msg(err.to_string())),
-                }
-            }
-        }
-
-        Ok(())
     }
 
     fn install_if_missing(
@@ -460,31 +380,6 @@ mod tests {
 
         let version = miden_project::Version::new(dep.version.clone(), dep.digest);
         let loaded = registry.load_package(&dep.name, &version).unwrap();
-        assert_eq!(loaded.digest(), dep.digest);
-    }
-
-    /// Seeding must walk every installed package, not only the bundled core version: a core
-    /// package at another version must still get its precompiles dependency installed.
-    #[test]
-    fn seeding_covers_every_installed_version_of_a_package() {
-        let core_library = miden_core_lib::CoreLibrary::default();
-        let mut other_core = core_library.package().as_ref().clone();
-        other_core.version.major += 1;
-
-        let mut registry = HybridPackageRegistry::empty();
-        registry.install_if_missing(Arc::new(other_core.clone())).unwrap();
-        registry.seed_bundled_dependencies().unwrap();
-
-        let precompiles_name = core_library.precompiles_package().name.clone();
-        let dep = other_core
-            .manifest
-            .dependencies()
-            .find(|dep| dep.name == precompiles_name)
-            .expect("core package should depend on the precompiles package");
-        let version = miden_project::Version::new(dep.version.clone(), dep.digest);
-        let loaded = registry
-            .load_package(&dep.name, &version)
-            .expect("seeding must satisfy the dependency of a non-bundled core version");
         assert_eq!(loaded.digest(), dep.digest);
     }
 
