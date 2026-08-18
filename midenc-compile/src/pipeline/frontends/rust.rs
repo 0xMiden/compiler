@@ -1158,12 +1158,17 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
             ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
                 entry.insert("path", path.display().to_string().into());
             }
-            // Registry-resolved packages are published into the cache exactly like
-            // compiler-built ones, and the scheme can select an assembled component — so
-            // they are mapped like every other artifact.
-            ProjectDependencyNodeProvenance::Source(_)
-            | ProjectDependencyNodeProvenance::Registry { .. } => {
+            // Registry-resolved packages are eagerly published under version-qualified names:
+            // the registry may contain several versions of one component, and the map must name
+            // the exact artifact the graph selected.
+            ProjectDependencyNodeProvenance::Source(_) => {
                 entry.insert("package", package_cache::package_file_name(&node.name).into());
+            }
+            ProjectDependencyNodeProvenance::Registry { selected, .. } => {
+                entry.insert(
+                    "package",
+                    package_cache::registry_package_file_name(&node.name, &selected.version).into(),
+                );
             }
         }
         // No reader consults the version yet; it is recorded for the #1300 digest pin, which

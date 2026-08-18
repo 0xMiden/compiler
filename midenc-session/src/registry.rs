@@ -120,13 +120,15 @@ impl HybridPackageRegistry {
     ) -> Result<Self, Report> {
         use alloc::string::ToString;
 
-        // Load system libraries
-        let mut registry = if options.sysroot.is_some() {
-            Self::from_local_registry(options)?
-        } else {
-            Self::empty()
-        };
+        // Configure publication before loading any packages. Registry-resolved packages are
+        // part of the dependency artifact exchange just like packages assembled from source;
+        // loading the sysroot first would leave those artifacts only in memory while the
+        // compiler records cache-local paths for them.
+        let mut registry = Self::empty();
         registry.filesystem_cache = filesystem_cache;
+        if options.sysroot.is_some() {
+            registry.load_local_registry(options)?;
+        }
 
         // Load link libraries
         let core = crate::LinkLibrary::core();
@@ -138,7 +140,12 @@ impl HybridPackageRegistry {
         let link_libraries = options.link_libraries.iter().chain(implied_libraries);
         for lib in link_libraries {
             let package = lib.load(options)?;
-            match registry.install_if_missing(package) {
+            let file_name =
+                midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(
+                    &package.name,
+                    &package.version,
+                );
+            match registry.install_if_missing_as(package, Some(&file_name)) {
                 Ok(_) => (),
                 // Ignore duplicates when initializing the registry
                 Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }) => (),
@@ -161,6 +168,18 @@ impl HybridPackageRegistry {
     /// This returns an error if `--sysroot` was not provided/set.
     #[cfg(any(test, feature = "std"))]
     pub fn from_local_registry(options: &crate::Options) -> Result<Self, Report> {
+        let mut registry = Self::empty();
+        registry.load_local_registry(options)?;
+        Ok(registry)
+    }
+
+    /// Loads packages from the configured local registry into this registry.
+    ///
+    /// Unlike [`Self::from_local_registry`], this preserves the receiver's configured
+    /// filesystem cache, so callers that publish an artifact exchange can configure it before
+    /// any sysroot package is installed.
+    #[cfg(any(test, feature = "std"))]
+    fn load_local_registry(&mut self, options: &crate::Options) -> Result<(), Report> {
         use alloc::string::ToString;
 
         let Some(sysroot) = options.sysroot.as_deref() else {
@@ -174,7 +193,6 @@ impl HybridPackageRegistry {
             Report::msg(format!("cannot read from sysroot ({}): {err}", lib_dir.display()))
         })?;
 
-        let mut registry = Self::empty();
         for entry in entries {
             let Ok(entry) = entry else {
                 continue;
@@ -185,7 +203,12 @@ impl HybridPackageRegistry {
             }
 
             let package = crate::libs::load_package_from_path(&path)?;
-            match registry.install_if_missing(package) {
+            let file_name =
+                midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(
+                    &package.name,
+                    &package.version,
+                );
+            match self.install_if_missing_as(package, Some(&file_name)) {
                 Ok(_) => (),
                 // Ignore duplicates when initializing the registry
                 Err(InstallPackageError::AlreadyInstalledWithDifferentDigest { .. }) => (),
@@ -193,12 +216,25 @@ impl HybridPackageRegistry {
             }
         }
 
-        Ok(registry)
+        Ok(())
     }
 
     fn install_if_missing(
         &mut self,
         package: Arc<Package>,
+    ) -> Result<miden_project::Version, InstallPackageError> {
+        self.install_if_missing_as(package, None)
+    }
+
+    /// Installs `package`, optionally overriding the filename used in the filesystem exchange.
+    ///
+    /// Compiler-built packages use the historical name-only path. Registry packages supply a
+    /// version-qualified name because several versions can be resident and eagerly published at
+    /// once.
+    fn install_if_missing_as(
+        &mut self,
+        package: Arc<Package>,
+        published_file_name: Option<&str>,
     ) -> Result<miden_project::Version, InstallPackageError> {
         let version = miden_project::Version::new(package.version.clone(), package.digest());
         log::trace!(target: "package-registry", "preparing to install package {}@{version}", &package.name);
@@ -219,12 +255,12 @@ impl HybridPackageRegistry {
 
         #[cfg(any(test, feature = "std"))]
         if let Some(filesystem_cache) = self.filesystem_cache.as_deref() {
-            write_package_atomically(&package, filesystem_cache).map_err(|err| {
-                InstallPackageError::FilesystemCacheInsertion {
+            write_package_atomically_as(&package, filesystem_cache, published_file_name).map_err(
+                |err| InstallPackageError::FilesystemCacheInsertion {
                     package: package.name.clone(),
                     err,
-                }
-            })?;
+                },
+            )?;
         }
 
         let record = PackageRecord::new(
@@ -267,9 +303,22 @@ pub fn write_package_atomically(
     package: &Package,
     out_dir: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
+    write_package_atomically_as(package, out_dir, None)
+}
+
+/// Publishes `package` atomically, using `file_name` when one is supplied.
+#[cfg(any(test, feature = "std"))]
+fn write_package_atomically_as(
+    package: &Package,
+    out_dir: &std::path::Path,
+    file_name: Option<&str>,
+) -> std::io::Result<std::path::PathBuf> {
     std::fs::create_dir_all(out_dir)?;
-    let destination = out_dir
-        .join(midenc_frontend_wasm_metadata::package_cache::package_file_name(&package.name));
+    let destination = match file_name {
+        Some(file_name) => out_dir.join(file_name),
+        None => out_dir
+            .join(midenc_frontend_wasm_metadata::package_cache::package_file_name(&package.name)),
+    };
     persist_atomically(&destination, |temp_path| package.write_to_file(temp_path))?;
     Ok(destination)
 }
@@ -472,5 +521,83 @@ mod tests {
         assert_eq!(registry.filesystem_cache_dir(), Some(current.as_path()));
         assert!(current.is_dir(), "the configured cache directory is created");
         assert!(sibling.exists(), "a sibling directory must never be swept");
+    }
+
+    #[test]
+    fn constructor_publishes_embedded_registry_packages_under_versioned_names() {
+        let temp = TempDir::new().unwrap();
+        let cache = temp.path().join("cache");
+        let options = crate::Options::default();
+        let core = crate::LinkLibrary::core().load(&options).unwrap();
+
+        HybridPackageRegistry::new_with_filesystem_cache(&options, Some(cache.clone())).unwrap();
+
+        let published =
+            cache.join(midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(
+                &core.name,
+                &core.version,
+            ));
+        assert!(
+            published.is_file(),
+            "an embedded registry dependency must use the path recorded in dependency maps"
+        );
+    }
+
+    #[test]
+    fn constructor_publishes_preloaded_registry_packages_into_the_cache() {
+        let temp = TempDir::new().unwrap();
+        let sysroot = temp.path().join("sysroot");
+        let lib_dir = sysroot.join("lib");
+        std::fs::create_dir_all(&lib_dir).unwrap();
+
+        let mut registry_package =
+            (*crate::LinkLibrary::core().load(&crate::Options::default()).unwrap()).clone();
+        registry_package.name = "registry-component".into();
+        let mut newer_registry_package = registry_package.clone();
+        newer_registry_package.version.major += 1;
+        registry_package
+            .write_to_file(lib_dir.join("registry-component-v1.masp"))
+            .unwrap();
+        newer_registry_package
+            .write_to_file(lib_dir.join("registry-component-v2.masp"))
+            .unwrap();
+
+        let cache = temp.path().join("cache");
+        let options = crate::Options {
+            sysroot: Some(sysroot),
+            ..crate::Options::default()
+        };
+        let registry =
+            HybridPackageRegistry::new_with_filesystem_cache(&options, Some(cache.clone()))
+                .unwrap();
+
+        let published =
+            cache.join(midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(
+                &registry_package.name,
+                &registry_package.version,
+            ));
+        let newer_published =
+            cache.join(midenc_frontend_wasm_metadata::package_cache::registry_package_file_name(
+                &newer_registry_package.name,
+                &newer_registry_package.version,
+            ));
+        assert!(published.is_file(), "a registry package must be present in the exchange");
+        assert!(
+            newer_published.is_file(),
+            "each registry version must have a distinct exchange path"
+        );
+        let reloaded = crate::libs::load_package_from_path(&published).unwrap();
+        let newer_reloaded = crate::libs::load_package_from_path(&newer_published).unwrap();
+        assert_eq!(reloaded.name, registry_package.name);
+        assert_eq!(reloaded.digest(), registry_package.digest());
+        assert_eq!(newer_reloaded.version, newer_registry_package.version);
+        assert_eq!(newer_reloaded.digest(), newer_registry_package.digest());
+        assert!(
+            registry
+                .artifacts
+                .get(&registry_package.name)
+                .is_some_and(|versions| versions.contains_key(&registry_package.version)),
+            "the published package must remain available through the in-memory registry"
+        );
     }
 }

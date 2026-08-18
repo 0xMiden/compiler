@@ -86,6 +86,18 @@ pub mod package_cache {
     pub fn package_file_name(package_name: &str) -> String {
         format!("{package_name}.{}", miden_mast_package::Package::EXTENSION)
     }
+
+    /// File name of a registry package, qualified by the selected semantic version.
+    ///
+    /// A registry may hold several versions of one package at once. Keeping those artifacts at
+    /// distinct paths lets the compiler's dependency map name the exact selected version instead
+    /// of depending on filesystem iteration order during eager publication.
+    pub fn registry_package_file_name(
+        package_name: &str,
+        version: impl core::fmt::Display,
+    ) -> String {
+        format!("{package_name}@{version}.{}", miden_mast_package::Package::EXTENSION)
+    }
 }
 
 /// Returns the component WIT bytes embedded in a compiled Miden package, when present.
