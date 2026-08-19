@@ -9,7 +9,8 @@ schema-version = 1
 # released as `templates/vX.Y.Z`.
 version = "0.32.0-rc.1"
 
-# The `miden` requirement every template's generated project carries.
+# The requirement every template carries for the `miden` runtime and
+# `miden-sdk-build-script-support` crates.
 #
 # This is the coupling that makes template releases necessary: the templates
 # hardcode an SDK requirement, so an SDK *minor* release leaves generated

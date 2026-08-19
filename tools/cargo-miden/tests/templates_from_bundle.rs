@@ -92,7 +92,7 @@ fn without_test_env() -> EnvGuard {
     EnvGuard::new().unset("TEST")
 }
 
-/// The `miden` requirement the embedded bundle declares its templates carry.
+/// The SDK requirement the embedded bundle declares its templates carry.
 ///
 /// This is the discriminator that makes these tests meaningful. Directory names
 /// are the same in the external template repositories, so comparing structure
@@ -114,7 +114,7 @@ fn bundle_sdk_requirement(bundle_root: &Path) -> String {
     panic!("the bundle declares no sdk-requirement");
 }
 
-/// The SDK version required by every `miden` dependency in a generated
+/// The SDK version required by every runtime or build-support SDK dependency in a generated
 /// project's manifests.
 ///
 /// The *version* is extracted and compared for equality rather than searching
@@ -143,11 +143,14 @@ fn sdk_requirements(project: &Path) -> Vec<String> {
     found
 }
 
-/// The quoted value of a `miden = ...` dependency line, in either the plain
+/// The quoted value of an SDK dependency line, in either the plain
 /// (`miden = "0.14"`) or table (`miden = { version = "0.14" }`) form.
 fn quoted_sdk_version(line: &str) -> Option<String> {
     let line = line.trim();
-    if !line.starts_with("miden ") && !line.starts_with("miden=") {
+    let is_sdk_dependency = ["miden", "miden-sdk-build-script-support"]
+        .iter()
+        .any(|name| line.strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('=')));
+    if !is_sdk_dependency {
         return None;
     }
     let (_, rest) = line.split_once('"')?;
@@ -197,6 +200,15 @@ fn embedded_bundle_build_scripts_match_the_canonical_template() {
             "embedded build script '{}' differs from the canonical template; regenerate \
              tools/cargo-miden/templates.tar.gz",
             copy.display()
+        );
+        let manifest = copy.parent().unwrap().join("Cargo.toml");
+        let manifest_text = fs::read_to_string(&manifest)
+            .unwrap_or_else(|err| panic!("failed to read '{}': {err}", manifest.display()));
+        assert!(
+            manifest_text.contains("miden-sdk-build-script-support"),
+            "embedded manifest '{}' does not declare the support crate; regenerate \
+             tools/cargo-miden/templates.tar.gz",
+            manifest.display()
         );
     }
     let _ = fs::remove_dir_all(&dir);
@@ -286,6 +298,10 @@ fn new_with_a_named_template_renders_it_from_the_bundle() {
         manifest.contains(&required),
         "the generated manifest does not require the bundle's SDK (\"{required}\"), so it did not \
          come from the bundle:\n{manifest}"
+    );
+    assert!(
+        manifest.contains("miden-sdk-build-script-support"),
+        "the generated manifest does not install the build-script support crate:\n{manifest}"
     );
 
     let _ = fs::remove_dir_all(&dir);

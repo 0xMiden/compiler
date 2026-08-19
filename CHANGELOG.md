@@ -45,9 +45,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### `cargo-miden`
 
-- Contract templates and the repository examples now include a `build.rs` that populates the
-  package cache for builds `midenc` does not drive: outside a midenc-driven build it stages
-  package-cache generations under its `OUT_DIR`, fills a private generation with a nested
+- Contract templates and the repository examples now include a thin `build.rs` that calls the
+  new `miden-sdk-build-script-support` crate to populate the package cache for builds `midenc`
+  does not drive. Keeping the staging protocol in this SDK-versioned crate avoids exposing and
+  duplicating compiler/proc-macro infrastructure across every generated project. Outside a
+  midenc-driven build it stages package-cache generations under its `OUT_DIR`, fills a private
+  generation with a nested
   `cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports
   the same variable to macro expansion. Plain `cargo check` and IDE analysis now resolve
   dependency packages instead of reporting missing packages (#1215). Only a fully successful
@@ -55,11 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remain under `OUT_DIR` for older IDE readers until `cargo clean`; byte-identical staging reuses
   the existing generation. A staging failure fails the outer build rather than exporting stale
   packages. Complete compiler-recorded inputs are watched selectively, while opaque provenance
-  deliberately re-stages on every relevant Cargo invocation. Staging runs `cargo miden build --release
-  --stop-after=dependencies`, so the crate itself is never compiled twice and its cargo
+  deliberately re-stages on every relevant Cargo invocation. Staging runs
+  `cargo miden build --release --stop-after=dependencies`, so the crate itself is never compiled
+  twice and its cargo
   feature selection does not affect staging; the nested build's target directories live
   under the script's `OUT_DIR`, honoring the outer build's configured target directory. The
-  script uses `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN`
+  helper uses `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN`
   environment variable #1298
 - Fixed the contract templates' `miden-project.toml` manifests, which were missing the
   `[lib].path` key the VM v0.25 project model requires; projects generated from the templates

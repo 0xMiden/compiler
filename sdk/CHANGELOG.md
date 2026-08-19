@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The new `miden-sdk-build-script-support` crate owns the package-staging protocol needed by
+  plain Cargo builds and IDE analysis. Contract crates add it as a build dependency and call `prepare_package_cache()`
 - `println!` supports format arguments; formatted output requires `extern crate alloc` and a
   configured global allocator.
 - `#[note]` impl blocks generate a `get_entrypoint_root()` associated method on the note type,
@@ -85,9 +87,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removed, along with its freshest-first selection and macro-side package id and version
   checks; the cache is unique to each build and its contents are trusted.
   Builds driven by `cargo miden build` export the variable already; plain `cargo build`,
-  `cargo check`, and IDE analysis need the contract `build.rs` from the templates. An expansion
-  without a configured cache now fails with instructions instead of searching the filesystem;
-  see [MIGRATION.md](./sdk/MIGRATION.md) #1298
+  `cargo check`, and IDE analysis need the template's thin `build.rs` and its
+  `miden-sdk-build-script-support` build dependency. An expansion without a configured cache now
+  fails with instructions instead of searching the filesystem; see
+  [MIGRATION.md](./sdk/MIGRATION.md) #1298
 
 
 ### Fixed

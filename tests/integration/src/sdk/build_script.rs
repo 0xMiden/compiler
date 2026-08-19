@@ -1,11 +1,11 @@
 //! Tests for the contract `build.rs` package-cache population (#1298).
 //!
-//! The script under test is the file the templates and examples ship, included byte-for-byte
-//! from the canonical copy (the account template); [`template_build_scripts_are_identical`]
-//! pins every other copy to those bytes, so these tests cover exactly what users get. The script
-//! makes plain `cargo check`/`cargo build` and IDE analysis resolve compiled dependency
-//! packages: outside a midenc-driven build it stages a package cache under its `OUT_DIR`, fills
-//! it with a nested `cargo miden build --release` that adopts the staged directory through
+//! The templates and examples ship a thin build script that delegates to
+//! `miden-sdk-build-script-support`; [`template_build_scripts_are_identical`] pins every copy to
+//! the canonical wrapper. The support crate makes plain `cargo check`/`cargo build` and IDE
+//! analysis resolve compiled dependency packages: outside a midenc-driven build it stages a
+//! package cache under the consumer's `OUT_DIR`, fills it with a nested
+//! `cargo miden build --release` that adopts the staged directory through
 //! `MIDENC_PACKAGE_CACHE`, and exports the same variable to macro expansion.
 //! Complete compiler-produced input records let Cargo skip unchanged staging; opaque records
 //! force staging on every relevant invocation. Successful results are published into immutable,
@@ -22,7 +22,7 @@ use std::{
 use super::basic_wallet_swapp_note_project;
 use crate::cargo_proj::project;
 
-/// The canonical contract build script; every template ships these exact bytes.
+/// The canonical contract build-script wrapper; every template ships these exact bytes.
 const TEMPLATE_BUILD_SCRIPT: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../../extra/templates/rust/account/template/build.rs"
@@ -36,10 +36,14 @@ fn workspace_root() -> &'static Path {
         .expect("the integration tests live under tests/integration")
 }
 
-/// Every template and every Miden example must ship the canonical build script byte-for-byte.
+fn build_script_support_crate_path() -> PathBuf {
+    workspace_root().join("sdk").join("build-script-support")
+}
+
+/// Every template and every Miden example must ship the canonical wrapper byte-for-byte.
 ///
-/// This is what entitles the tests in this module to speak for all of them while executing
-/// one included copy.
+/// The implementation and its unit tests live in `miden-sdk-build-script-support`; the wrappers
+/// contain no protocol details that can drift independently.
 #[test]
 fn template_build_scripts_are_identical() {
     let templates = workspace_root().join("extra").join("templates");
@@ -87,45 +91,15 @@ fn template_build_scripts_are_identical() {
              copy byte-identical",
             copy_path.display()
         );
+        let manifest = copy_path.parent().unwrap().join("Cargo.toml");
+        let manifest_text = fs::read_to_string(&manifest)
+            .unwrap_or_else(|err| panic!("missing manifest '{}': {err}", manifest.display()));
+        assert!(
+            manifest_text.contains("miden-sdk-build-script-support"),
+            "'{}' must declare the support crate used by its build.rs",
+            manifest.display()
+        );
     }
-}
-
-/// The canonical script carries focused tests for its dependency-free publication protocol.
-/// Compile it as a test target explicitly: Cargo normally treats `build.rs` only as a build
-/// script, so `#[cfg(test)]` tests in that file are otherwise invisible to `cargo test`.
-#[test]
-fn template_build_script_publication_protocol_tests_pass() {
-    let scratch = std::env::temp_dir().join(format!(
-        "miden-build-script-tests-{}-{}",
-        std::process::id(),
-        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
-    ));
-    fs::create_dir(&scratch).unwrap();
-    let test_binary = scratch.join(format!("build-script-tests{}", std::env::consts::EXE_SUFFIX));
-    let source = workspace_root().join("extra/templates/rust/account/template/build.rs");
-    let compile = Command::new(std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
-        .args(["--edition", "2024", "--test"])
-        .arg(&source)
-        .arg("-o")
-        .arg(&test_binary)
-        .output()
-        .expect("failed to compile the canonical build script as a test target");
-    assert!(
-        compile.status.success(),
-        "failed to compile '{}':\n{}",
-        source.display(),
-        String::from_utf8_lossy(&compile.stderr)
-    );
-    let run = Command::new(&test_binary)
-        .arg("--nocapture")
-        .output()
-        .expect("failed to run the canonical build-script tests");
-    assert!(
-        run.status.success(),
-        "canonical build-script tests failed:\n{}",
-        String::from_utf8_lossy(&run.stdout)
-    );
-    fs::remove_dir_all(scratch).unwrap();
 }
 
 /// Builds the workspace's `cargo-miden` binary once and returns its path.
@@ -492,6 +466,21 @@ fn rust_sdk_build_script_p2id_note_plain_cargo_check() {
 /// build-script output, while an edit inside the tree must publish a new generation.
 #[test]
 fn complete_build_inputs_keep_an_unchanged_check_fresh() {
+    let member_manifest = format!(
+        r#"
+[package]
+name = "selective-inputs"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[build-dependencies]
+miden-sdk-build-script-support = {{ path = "{}" }}
+"#,
+        build_script_support_crate_path().display()
+    );
     let project = project("build_script_selective_inputs")
         .file(
             "Cargo.toml",
@@ -508,18 +497,7 @@ resolver = "3"
 members = ["member", "masm-dep", "unrelated"]
 "#,
         )
-        .file(
-            "member/Cargo.toml",
-            r#"
-[package]
-name = "selective-inputs"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-crate-type = ["rlib"]
-"#,
-        )
+        .file("member/Cargo.toml", &member_manifest)
         .file(
             "member/miden-project.toml",
             r#"
@@ -647,10 +625,8 @@ path = "lib/mod.masm"
 /// A missing `cargo-miden` is a hard build-script error with an actionable message.
 #[test]
 fn rust_sdk_build_script_fails_without_cargo_miden() {
-    let project = project("build_script_missing_tool")
-        .file(
-            "Cargo.toml",
-            r#"
+    let cargo_manifest = format!(
+        r#"
 [package]
 name = "missing-tool"
 version = "0.1.0"
@@ -658,8 +634,14 @@ edition = "2024"
 
 [lib]
 crate-type = ["rlib"]
+
+[build-dependencies]
+miden-sdk-build-script-support = {{ path = "{}" }}
 "#,
-        )
+        build_script_support_crate_path().display()
+    );
+    let project = project("build_script_missing_tool")
+        .file("Cargo.toml", &cargo_manifest)
         .file(
             "miden-project.toml",
             r#"

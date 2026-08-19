@@ -112,6 +112,7 @@ name = "basic_wallet"
 version = "0.1.0"
 dependencies = [
  "miden",
+ "miden-sdk-build-script-support",
 ]
 
 [[package]]
@@ -1394,6 +1395,10 @@ dependencies = [
 
 [[package]]
 name = "miden-sdk-alloc"
+version = "0.14.0-rc.1"
+
+[[package]]
+name = "miden-sdk-build-script-support"
 version = "0.14.0-rc.1"
 
 [[package]]

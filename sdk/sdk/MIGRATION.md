@@ -23,9 +23,11 @@ separate impl block.
 
 ### Contract crates gain a `build.rs` for IDE and plain-cargo builds
 
-New projects created by `cargo miden new` include a `build.rs` in each contract crate. The
-script makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve
-compiled dependency packages: outside a `cargo miden build`, it stages package-cache
+New projects created by `cargo miden new` include a small `build.rs` in each contract crate and a
+build dependency on `miden-sdk-build-script-support` at the same version as the SDK. The script
+delegates to [`prepare_package_cache`](https://docs.rs/miden-sdk-build-script-support/latest/miden_sdk_build_script_support/fn.prepare_package_cache.html),
+which makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve compiled
+dependency packages: outside a `cargo miden build`, it stages package-cache
 generations under its `OUT_DIR`, fills a private generation with a nested
 `cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports the
 same variable to the crate's macro expansion. Inside a midenc-driven build the script does
@@ -46,12 +48,23 @@ The build script is now required for plain cargo builds of crates with Miden sou
 dependencies. The SDK macros read dependency packages only from the `MIDENC_PACKAGE_CACHE`
 directory (or from a manifest path naming a `.masp` file directly); they no longer search
 `target/miden/<profile>` output directories, so a plain `cargo check` without the script fails
-with instructions instead of finding previously built artifacts. Copy `build.rs` from a
-freshly generated template contract (for example `cargo miden new --account demo`) or from any
-example in the compiler repository (for example `examples/p2id-note/build.rs`) into each
-contract crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PATH`; set the
-`CARGO_MIDEN` environment variable to use a specific `cargo-miden` binary instead. A missing
-tool fails the build script with an install hint.
+with instructions instead of finding previously built artifacts. Add the support crate and the
+following wrapper to every contract crate (using the same version requirement as `miden`):
+
+```toml
+[build-dependencies]
+miden-sdk-build-script-support = "0.14.0-rc.1"
+```
+
+```rust
+fn main() {
+    miden_sdk_build_script_support::prepare_package_cache();
+}
+```
+
+The helper needs `cargo miden` on `PATH`; set the `CARGO_MIDEN` environment variable to use a
+specific `cargo-miden` binary instead. A missing tool fails the build script with an install
+hint.
 
 Each successful staging run publishes an immutable content-addressed generation. Changed
 generations remain until Cargo removes `OUT_DIR`, so an IDE expansion that still references an

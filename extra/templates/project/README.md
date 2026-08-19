@@ -92,10 +92,11 @@ cd contracts/counter-account
 miden build
 ```
 
-Each contract also has a `build.rs` that keeps plain `cargo check` and IDE analysis working:
-it populates the Miden package cache with the contract's compiled dependencies, so the SDK
-macros resolve them without a manual build. The script needs `cargo miden` on `PATH` (or a
-binary named by the `CARGO_MIDEN` environment variable).
+Each contract also has a thin `build.rs` that delegates to
+`miden-sdk-build-script-support`, keeping plain `cargo check` and IDE analysis working. The
+helper populates the Miden package cache with the contract's compiled dependencies, so the SDK
+macros resolve them without a manual build. It needs `cargo miden` on `PATH` (or a binary named
+by the `CARGO_MIDEN` environment variable).
 
 ### Run a Binary
 

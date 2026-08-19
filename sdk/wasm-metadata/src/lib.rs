@@ -39,10 +39,9 @@ pub fn package_wit_section_id() -> miden_mast_package::SectionId {
 ///
 /// The compiler publishes compiled dependency packages — and its recorded dependency
 /// resolution — into the directory named by [`package_cache::PACKAGE_CACHE_ENV`]; the SDK
-/// macros and the contract build script consume them. Every spelling of that contract lives
-/// here so the producer and the consumers cannot drift apart. (The contract build script is
-/// the one deliberate exception: it is dependency-free by design and spells the same values
-/// inline.)
+/// macros and the build-script support crate consume them. Every spelling of that contract lives
+/// here so the producer and the consumers cannot drift apart. (The support crate is the one
+/// deliberate exception: it is dependency-free by design and spells the same values inline.)
 pub mod package_cache {
     use alloc::{format, string::String};
 

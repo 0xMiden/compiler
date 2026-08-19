@@ -15,6 +15,9 @@ crate-type = ["cdylib"]
 # and transaction kernel API for the Miden rollup
 miden = { path = "../../sdk/sdk" }
 
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../../sdk/build-script-support" }
+
 [package.metadata.component]
 package = "miden:p2id-tx-script"
 

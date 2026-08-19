@@ -157,6 +157,13 @@ fn basic_wallet_swapp_note_project(
     swapp_note_build_script: Option<&str>,
 ) -> crate::Project {
     let sdk_path = sdk_crate_path();
+    let build_script_dependency = swapp_note_build_script.map_or_else(String::new, |_| {
+        let support_path = sdk_path.parent().unwrap().join("build-script-support");
+        format!(
+            "\n[build-dependencies]\nmiden-sdk-build-script-support = {{ path = \"{}\" }}\n",
+            support_path.display()
+        )
+    });
     let workspace_manifest = r#"
 [workspace]
 members = ["basic-wallet", "swapp-note"]
@@ -207,8 +214,10 @@ package = "miden:swapp-note"
 
 [package.metadata.miden.dependencies]
 "miden:basic-wallet" = {{ path = "../basic-wallet" }}
+{build_script_dependency}
 "#,
         sdk_path.display(),
+        build_script_dependency = build_script_dependency,
     );
     let swapp_note_miden_manifest = r#"
 [package]

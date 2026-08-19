@@ -12,3 +12,6 @@ crate-type = ["cdylib"]
 # Miden SDK consists of a stdlib (intrinsic functions for VM ops, stdlib functions and types)
 # and transaction kernel API for the Miden rollup
 #miden = { git = "https://github.com/0xMiden/compiler" }
+
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../../sdk/build-script-support" }
