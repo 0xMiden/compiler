@@ -670,10 +670,16 @@ trim-paths = [\"diagnostics\", \"object\"]
     if let Some(toolchain) = toolchain.as_deref() {
         cargo.arg(format!("+{toolchain}"));
     }
+    let cargo_target_dir =
+        manifest::configured_nested_cargo_target_dir(&options.current_dir, &options.target_dir);
     // Both rustflags spellings, so an inherited encoded value cannot override the composed
-    // list. No package cache: a standalone-file session has none.
+    // list. No package cache: a standalone-file session has none. A custom compiler target still
+    // owns the temporary Cargo project's artifacts, under the same policy as a manifest build.
     for (key, value) in manifest::cargo_env(None, &extra_rust_flags) {
         cargo.env(key, value);
+    }
+    if let Some(cargo_target_dir) = cargo_target_dir.as_deref() {
+        cargo.env("CARGO_TARGET_DIR", cargo_target_dir);
     }
     // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
     // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
@@ -2047,9 +2053,18 @@ pub(crate) mod manifest {
             "wasip1"
         };
 
+        let cargo_target_dir = configured_nested_cargo_target_dir(
+            &compiler_opts.current_dir,
+            &compiler_opts.target_dir,
+        );
         let env = cargo_env(filesystem_cache_dir, &extra_rust_flags);
-        let mut wasm_outputs =
-            run_cargo(wasi, rustup_toolchain.as_deref(), &cargo_build_args, env)?;
+        let mut wasm_outputs = run_cargo(
+            wasi,
+            rustup_toolchain.as_deref(),
+            &cargo_build_args,
+            env,
+            cargo_target_dir.as_deref(),
+        )?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.pop().expect("expected at least one Wasm artifact");
@@ -2092,6 +2107,43 @@ pub(crate) mod manifest {
             ));
         }
         env
+    }
+
+    /// Selects the nested Cargo target directory implied by the Midenc target policy.
+    ///
+    /// `cargo_target_is_configured` represents either Cargo target-directory environment
+    /// spelling. The values themselves are deliberately left unread so relative and non-Unicode
+    /// caller configuration passes through to Cargo unchanged.
+    pub(super) fn nested_cargo_target_dir(
+        current_dir: &Path,
+        midenc_target_dir: &Path,
+        cargo_target_is_configured: bool,
+    ) -> Option<PathBuf> {
+        if cargo_target_is_configured {
+            return None;
+        }
+
+        let default_target_dir = current_dir.join("target");
+        let cli_default_target_dir = default_target_dir.join("miden");
+        if midenc_target_dir == default_target_dir || midenc_target_dir == cli_default_target_dir {
+            None
+        } else {
+            Some(midenc_target_dir.join("cargo"))
+        }
+    }
+
+    /// Applies [`nested_cargo_target_dir`] to the Cargo target configuration inherited by the
+    /// current process.
+    pub(super) fn configured_nested_cargo_target_dir(
+        current_dir: &Path,
+        midenc_target_dir: &Path,
+    ) -> Option<PathBuf> {
+        nested_cargo_target_dir(
+            current_dir,
+            midenc_target_dir,
+            std::env::var_os("CARGO_TARGET_DIR").is_some()
+                || std::env::var_os("CARGO_BUILD_TARGET_DIR").is_some(),
+        )
     }
 
     /// Composes the rustc flag list for the nested cargo build.
@@ -2198,6 +2250,7 @@ pub(crate) mod manifest {
         toolchain: Option<&str>,
         spawn_args: &[String],
         env: E,
+        cargo_target_dir: Option<&Path>,
     ) -> CompilerResult<Vec<PathBuf>>
     where
         E: IntoIterator<Item = (&'static str, String)>,
@@ -2207,6 +2260,10 @@ pub(crate) mod manifest {
 
         let mut cargo = std::process::Command::new(cargo_path);
         cargo.envs(env);
+        if let Some(cargo_target_dir) = cargo_target_dir {
+            // Preserve non-Unicode custom paths rather than serializing them lossily.
+            cargo.env("CARGO_TARGET_DIR", cargo_target_dir);
+        }
         if cargo_env.is_none() {
             cargo.arg(format!("+{}", toolchain.unwrap_or("nightly")));
         }
@@ -3737,7 +3794,6 @@ path = "lib.rs"
             .find(|(key, _)| *key == package_cache::PACKAGE_CACHE_ENV)
             .expect("a cache directory must be delivered to the nested build");
         assert_eq!(found, &cache.display().to_string());
-
         let without = manifest::cargo_env(None, &rustflags);
         assert!(
             !without.iter().any(|(key, _)| *key == package_cache::PACKAGE_CACHE_ENV),
@@ -3748,6 +3804,60 @@ path = "lib.rs"
                 .iter()
                 .any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags.join(" ")),
             "and the rust flags are handed over either way: {without:?}"
+        );
+    }
+
+    #[test]
+    fn only_a_custom_midenc_target_redirects_nested_cargo() {
+        let current_dir = std::path::Path::new("/project");
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/writable/miden"),
+                false,
+            ),
+            Some(std::path::PathBuf::from("/writable/miden/cargo"))
+        );
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/project/target/miden"),
+                false,
+            ),
+            None,
+            "the CLI default must preserve Cargo's own workspace/config target"
+        );
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/project/target"),
+                false,
+            ),
+            None,
+            "the programmatic Options default must preserve Cargo's default target"
+        );
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/writable/miden"),
+                true,
+            ),
+            None,
+            "caller-provided Cargo target configuration remains authoritative"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_unicode_custom_target_is_preserved_losslessly() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let custom = std::path::PathBuf::from(std::ffi::OsString::from_vec(
+            b"/writable/miden-\xff".to_vec(),
+        ));
+        assert_eq!(
+            manifest::nested_cargo_target_dir(std::path::Path::new("/project"), &custom, false),
+            Some(custom.join("cargo"))
         );
     }
 
