@@ -370,12 +370,6 @@ pub fn build_manifest_to_wasm(
             manifest_path.display()
         ))
     })?;
-    // This is the one choke point every consumer's cargo build passes — the root through its
-    // frontend, dependencies through `compile_manifest` — so the dep-info record is made
-    // here, where the artifact path is in hand.
-    if let Some(cache_dir) = filesystem_cache_dir {
-        record_dependency_dep_info(session.name.as_str(), cache_dir, &wasm);
-    }
     Ok(wasm)
 }
 
@@ -1126,13 +1120,10 @@ impl RustProjectFrontend {
 ///   `version` (unread until the #1300 digest pin extends it) and `wit` — whether the
 ///   artifact embeds component WIT, which lets the macros skip link-only packages without
 ///   deserializing them.
-/// - `<consumer>.watch` — root consumer only: the source inputs of every resolved
-///   dependency in the graph, one absolute path per line. A contract build script turns the
-///   list into `cargo:rerun-if-changed` directives, so editing a dependency re-stages its
-///   package on the next check. Rust dependencies' inputs come from the cargo dep-info their
-///   own builds record beside this file.
-/// - `<consumer>.dep-info` — written by the consumer's own cargo build, not here; see
-///   [`record_dependency_dep_info`].
+/// - `build-inputs` — root consumer only: a versioned declaration of the dependency inputs the
+///   frontends can enumerate completely, plus explicit opacity reasons for the ones they cannot.
+///   The contract build script turns a complete record into selective Cargo change directives;
+///   any opaque reason makes it stage dependencies on every Cargo invocation instead.
 fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> CompilerResult<()> {
     use midenc_session::miden_project::{self, ProjectDependencyNodeProvenance};
 
@@ -1209,211 +1200,296 @@ fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> Compil
     )?;
 
     if cx.role().is_root() {
-        let watch_list = collect_dependency_watch_paths(cx, cache_dir);
-        let mut contents = String::new();
-        for path in watch_list {
-            contents.push_str(&path.display().to_string());
-            contents.push('\n');
-        }
-        write_atomically(&manifest_dir.join(package_cache::watch_file_name(&consumer)), contents)?;
+        let build_inputs = collect_dependency_build_inputs(cx);
+        write_atomically(
+            &manifest_dir.join(package_cache::BUILD_INPUTS_FILE),
+            build_inputs.encode(),
+        )?;
     }
     Ok(())
 }
 
-/// Copies this consumer's cargo dep-info into the package cache.
+/// The dependency inputs known to affect one staged package generation.
 ///
-/// Cargo writes a consolidated dep-info file next to the built artifact, listing every
-/// local file the build actually consumed — the sources of the whole path-dependency
-/// closure, build scripts included; immutable registry and toolchain inputs are already
-/// excluded by cargo. The root consumer's watch list is assembled from these records, so
-/// the watch set is what cargo used rather than a prediction. Dependencies build before
-/// the root's watch list is written, which is what makes the records available in time.
-///
-/// Best-effort: without a record, the watch collector falls back to watching the
-/// dependency's source directory.
-fn record_dependency_dep_info(consumer: &str, cache_dir: &Path, wasm: &InputFile) {
-    let Some(artifact) = wasm.as_path() else {
+/// `opaque` is a set rather than a boolean so completeness is derived: once any frontend says
+/// that it cannot describe its provenance using Cargo change directives, no later merge can
+/// accidentally make the aggregate selective again. Version 1 deliberately treats every Rust
+/// source dependency as opaque. Cargo's stable interfaces do not expose build-script change
+/// directives, configuration includes, or future conventionally discovered inputs, so a rustc
+/// dep-info snapshot cannot justify a complete invalidation claim.
+#[derive(Debug, Default, Eq, PartialEq)]
+struct DependencyBuildInputs {
+    files: alloc::collections::BTreeSet<PathBuf>,
+    trees: alloc::collections::BTreeSet<PathBuf>,
+    environment: alloc::collections::BTreeSet<String>,
+    opaque: alloc::collections::BTreeSet<&'static str>,
+}
+
+impl DependencyBuildInputs {
+    fn add_file(&mut self, path: PathBuf) {
+        if representable_build_input_path(&path) {
+            self.files.insert(path);
+        } else {
+            self.opaque.insert("unrepresentable-path");
+        }
+    }
+
+    fn add_tree(&mut self, path: PathBuf) {
+        if representable_build_input_path(&path) {
+            self.trees.insert(path);
+        } else {
+            self.opaque.insert("unrepresentable-path");
+        }
+    }
+
+    fn add_existing_file(&mut self, path: PathBuf) {
+        self.add_file(path.clone());
+        match path.canonicalize() {
+            Ok(canonical) => self.add_file(canonical),
+            Err(_) => self.mark_opaque("input-identity-unavailable"),
+        }
+    }
+
+    fn add_existing_tree(&mut self, path: PathBuf) {
+        self.add_tree(path.clone());
+        match path.canonicalize() {
+            Ok(canonical) => self.add_tree(canonical),
+            Err(_) => self.mark_opaque("input-identity-unavailable"),
+        }
+    }
+
+    fn mark_opaque(&mut self, reason: &'static str) {
+        self.opaque.insert(reason);
+    }
+
+    fn encode(&self) -> String {
+        use core::fmt::Write;
+
+        let mut encoded = format!("miden-build-inputs\t{}\n", package_cache::BUILD_INPUTS_SCHEMA);
+        for path in &self.files {
+            writeln!(encoded, "file\t{}", path.display()).expect("writing to a String cannot fail");
+        }
+        for path in &self.trees {
+            writeln!(encoded, "tree\t{}", path.display()).expect("writing to a String cannot fail");
+        }
+        for name in &self.environment {
+            writeln!(encoded, "env\t{name}").expect("writing to a String cannot fail");
+        }
+        for reason in &self.opaque {
+            writeln!(encoded, "opaque\t{reason}").expect("writing to a String cannot fail");
+        }
+        encoded
+    }
+}
+
+fn representable_build_input_path(path: &Path) -> bool {
+    path.is_absolute() && path.to_str().is_some_and(|path| !path.contains(['\t', '\r', '\n']))
+}
+
+/// Returns true when no unwatched directory can later introduce a nearer Miden workspace.
+fn workspace_boundary_is_closed(project_root: &Path, workspace_root: &Path) -> bool {
+    project_root == workspace_root || project_root.parent() == Some(workspace_root)
+}
+
+fn launcher_uses_path_search(launcher: &Path) -> bool {
+    !launcher.is_absolute() && launcher.components().count() == 1
+}
+
+/// Records every manifest eagerly consumed when miden-project loads one workspace.
+fn add_workspace_build_inputs(
+    inputs: &mut DependencyBuildInputs,
+    workspace_root: &Path,
+    source_manager: &dyn miden_assembly::SourceManager,
+) {
+    use midenc_hir::diagnostics::SourceManagerExt;
+
+    let manifest_path = workspace_root.join("miden-project.toml");
+    inputs.add_existing_file(manifest_path.clone());
+    let Ok(source) = source_manager.load_file(&manifest_path) else {
+        inputs.mark_opaque("workspace-metadata-unavailable");
         return;
     };
-    let dep_info = artifact.with_extension("d");
-    let contents = match std::fs::read_to_string(&dep_info) {
-        Ok(contents) => contents,
-        Err(err) => {
-            log::debug!(
-                target: "package-cache",
-                "no cargo dep-info at '{}': {err}",
-                dep_info.display()
-            );
-            return;
-        }
+    let Ok(workspace) = midenc_session::miden_project::Workspace::load(source, source_manager)
+    else {
+        inputs.mark_opaque("workspace-metadata-unavailable");
+        return;
     };
-    let path = cache_dir
-        .join(package_cache::DEPENDENCY_MANIFEST_DIR)
-        .join(package_cache::dependency_dep_info_file_name(consumer));
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Err(err) = write_atomically(&path, contents) {
-        log::debug!(
-            target: "package-cache",
-            "failed to record the dep-info of '{consumer}': {err}"
-        );
-    }
-}
-
-/// Reads the file list a consumer's build recorded from cargo's dep-info, when present.
-fn recorded_dep_info_files(cache_dir: &Path, consumer: &str) -> Option<Vec<PathBuf>> {
-    let path = cache_dir
-        .join(package_cache::DEPENDENCY_MANIFEST_DIR)
-        .join(package_cache::dependency_dep_info_file_name(consumer));
-    let contents = std::fs::read_to_string(path).ok()?;
-    Some(parse_dep_info(&contents))
-}
-
-/// Parses the file list out of a Makefile-syntax cargo dep-info payload.
-///
-/// Each line is `target: input input...`; spaces inside paths are escaped as `\ `.
-fn parse_dep_info(contents: &str) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for line in contents.lines() {
-        let Some((_, inputs)) = line.split_once(": ") else {
-            continue;
-        };
-        let mut current = String::new();
-        let mut chars = inputs.chars().peekable();
-        while let Some(ch) = chars.next() {
-            match ch {
-                '\\' if chars.peek() == Some(&' ') => {
-                    current.push(' ');
-                    chars.next();
-                }
-                ' ' => {
-                    if !current.is_empty() {
-                        files.push(PathBuf::from(core::mem::take(&mut current)));
-                    }
-                }
-                _ => current.push(ch),
-            }
-        }
-        if !current.is_empty() {
-            files.push(PathBuf::from(current));
+    for member in workspace.members() {
+        match member.manifest_path() {
+            Some(manifest_path) => inputs.add_existing_file(manifest_path.to_path_buf()),
+            None => inputs.mark_opaque("workspace-member-unavailable"),
         }
     }
-    files
 }
 
-/// Collects the watched source inputs of every resolved dependency in the graph.
+/// Collects a conservative invalidation contract for the root's resolved dependency graph.
 ///
-/// A Rust dependency's inputs come from the cargo dep-info its own build recorded — the
-/// files cargo actually consumed, rather than a predicted closure — plus the inputs
-/// dep-info does not cover: the project manifests, `Cargo.lock`, and `.cargo` config.
-/// A dependency without a record (a MASM library builds without cargo) falls back to
-/// watching its source directory.
-///
-/// The root project's own sources are excluded: its package is not read back by its own
-/// macro expansion, and watching them would re-run the nested build on every edit. Git
-/// checkouts are excluded too — their content changes only when the declaration changes,
-/// which the consumer's manifest watch already covers. Registry dependencies have no local
-/// sources. Only existing paths are listed, because cargo re-runs a build script
-/// unconditionally while a watched path is missing.
-fn collect_dependency_watch_paths(
-    cx: &TargetContext<'_>,
-    cache_dir: &Path,
-) -> alloc::collections::BTreeSet<PathBuf> {
+/// Local non-Rust source trees are complete when watched recursively: edits, removals, and newly
+/// created conventional inputs are all visible to Cargo. Preassembled artifacts and the selected
+/// sysroot registry are likewise concrete local inputs. Rust source builds and Git checkouts are
+/// opaque in schema version 1; the build script responds by re-staging on every Cargo invocation,
+/// delegating their provenance and invalidation back to Cargo and the compiler that consume them.
+fn collect_dependency_build_inputs(cx: &TargetContext<'_>) -> DependencyBuildInputs {
     use midenc_session::miden_project::{
         ProjectDependencyNodeProvenance, ProjectSource, ProjectSourceOrigin,
     };
 
     let assembly = cx.assembly();
     let graph = assembly.dependency_graph;
-    let mut watch = alloc::collections::BTreeSet::new();
-    let mut add = |path: &Path| {
-        if path.exists() {
-            watch.insert(path.to_path_buf());
-        }
-    };
+    let mut inputs = DependencyBuildInputs::default();
+    let mut recorded_workspaces = alloc::collections::BTreeSet::new();
 
+    match std::env::current_exe() {
+        Ok(executable) => inputs.add_existing_file(executable),
+        Err(_) => inputs.mark_opaque("tool-identity-unavailable"),
+    }
+    if let Some(launcher) = std::env::var_os("CARGO_MIDEN") {
+        let launcher = PathBuf::from(launcher);
+        let launcher = if launcher_uses_path_search(&launcher) {
+            inputs.mark_opaque("tool-resolution-via-path");
+            PathBuf::new()
+        } else if launcher.is_absolute() {
+            launcher
+        } else {
+            match std::env::current_dir() {
+                Ok(current_dir) => current_dir.join(launcher),
+                Err(_) => {
+                    inputs.mark_opaque("tool-launcher-unavailable");
+                    PathBuf::new()
+                }
+            }
+        };
+        if !launcher.as_os_str().is_empty() {
+            inputs.add_existing_file(launcher);
+        }
+    } else {
+        // `cargo miden` resolves its plugin by searching PATH. The selected executable is known,
+        // but a new same-named tool can later appear in an earlier existing PATH directory without
+        // changing either PATH's value or that old executable. Until the launcher supplies an
+        // authoritative path, this resolution mode is not selectively invalidatable.
+        inputs.mark_opaque("tool-resolution-via-path");
+    }
+
+    inputs.add_existing_file(assembly.manifest_path.to_path_buf());
+
+    let mut has_registry_dependency = false;
     for (name, node) in graph.nodes() {
         if name == graph.root() {
+            if let ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
+                project_root,
+                workspace_root,
+                ..
+            }) = &node.provenance
+            {
+                match workspace_root {
+                    Some(workspace_root) => {
+                        if recorded_workspaces.insert(workspace_root.clone()) {
+                            add_workspace_build_inputs(
+                                &mut inputs,
+                                workspace_root,
+                                assembly.source_manager.as_ref(),
+                            );
+                        }
+                        if !workspace_boundary_is_closed(project_root, workspace_root) {
+                            inputs.mark_opaque("workspace-discovery");
+                        }
+                    }
+                    // Workspace discovery searches ancestor manifests. A future parent manifest
+                    // cannot appear in an exact snapshot, so a standalone root is opaque in v1.
+                    None => inputs.mark_opaque("workspace-discovery"),
+                }
+            }
             continue;
         }
         match &node.provenance {
             ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
                 origin,
-                manifest_path,
                 project_root,
                 workspace_root,
                 library_path,
                 ..
             }) => {
                 if matches!(origin, ProjectSourceOrigin::Git { .. }) {
+                    inputs.mark_opaque("git-source");
                     continue;
                 }
-                add(manifest_path);
-                add(&project_root.join("Cargo.toml"));
-                // Inputs that shape the build but never appear in cargo's dep-info. For a
-                // workspace member, the lockfile and the cargo configuration live at the
-                // workspace root; `add` keeps only paths that exist, so both spellings are
-                // listed unconditionally.
-                if let Some(workspace_root) = workspace_root {
-                    add(&workspace_root.join("miden-project.toml"));
-                    add(&workspace_root.join("Cargo.toml"));
-                    add(&workspace_root.join("Cargo.lock"));
-                    add(&workspace_root.join(".cargo").join("config.toml"));
-                    add(&workspace_root.join(".cargo").join("config"));
+                if !workspace_root.as_deref().is_some_and(|workspace_root| {
+                    workspace_boundary_is_closed(project_root, workspace_root)
+                }) {
+                    inputs.mark_opaque("workspace-discovery");
                 }
-                add(&project_root.join("Cargo.lock"));
-                add(&project_root.join(".cargo").join("config.toml"));
-                add(&project_root.join(".cargo").join("config"));
-                if let Some(files) = recorded_dep_info_files(cache_dir, &node.name) {
-                    for file in &files {
-                        add(file);
-                    }
-                } else if let Some(library_path) = library_path {
-                    // Sibling modules live next to the target's root source, so its
-                    // directory is the watch unit — unless that directory is the project
-                    // root itself, which would sweep in `target/` churn. There the sibling
-                    // sources are watched as individual files instead, so editing a sibling
-                    // module alone still re-stages the package. A module added later joins
-                    // the list through the root file, which must declare it and is watched
-                    // here.
-                    match library_path.parent() {
-                        Some(parent) if parent != project_root.as_path() => add(parent),
-                        _ => {
-                            add(library_path);
-                            add_sibling_sources(&mut add, library_path);
+                let Some(extension) = library_path
+                    .as_deref()
+                    .and_then(Path::extension)
+                    .and_then(|extension| extension.to_str())
+                else {
+                    inputs.mark_opaque("source-frontend-unavailable");
+                    continue;
+                };
+                if extension.eq_ignore_ascii_case("rs") {
+                    inputs.mark_opaque("cargo-fingerprint");
+                    continue;
+                }
+                if !["masm", "wasm", "wat", "hir"]
+                    .iter()
+                    .any(|supported| extension.eq_ignore_ascii_case(supported))
+                {
+                    inputs.mark_opaque("unsupported-source-frontend");
+                    continue;
+                }
+                inputs.add_existing_tree(project_root.clone());
+                let Some(library_path) = library_path.as_deref() else {
+                    inputs.mark_opaque("source-path-unavailable");
+                    continue;
+                };
+                let Some(source_dir) = library_path.parent() else {
+                    inputs.mark_opaque("source-tree-unavailable");
+                    continue;
+                };
+                // A target path may legally escape the directory containing its manifest, and a
+                // file symlink inside the project may resolve to a module tree outside it. Watch
+                // the lexical target and source directory to observe retargeting, plus the
+                // canonical target's parent to observe edits and newly added sibling modules.
+                inputs.add_existing_file(library_path.to_path_buf());
+                inputs.add_existing_tree(source_dir.to_path_buf());
+                match library_path.canonicalize() {
+                    Ok(canonical_library) => match canonical_library.parent() {
+                        Some(canonical_source_dir) => {
+                            inputs.add_existing_tree(canonical_source_dir.to_path_buf());
                         }
-                    }
+                        None => inputs.mark_opaque("source-tree-unavailable"),
+                    },
+                    Err(_) => inputs.mark_opaque("source-identity-unavailable"),
                 }
-                add(&project_root.join("wit"));
+                if let Some(workspace_root) = workspace_root
+                    && recorded_workspaces.insert(workspace_root.clone())
+                {
+                    add_workspace_build_inputs(
+                        &mut inputs,
+                        workspace_root,
+                        assembly.source_manager.as_ref(),
+                    );
+                }
             }
-            ProjectDependencyNodeProvenance::Preassembled { path, .. } => add(path),
-            ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. })
-            | ProjectDependencyNodeProvenance::Registry { .. } => {}
+            ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
+                inputs.add_existing_file(path.clone());
+            }
+            ProjectDependencyNodeProvenance::Registry { .. } => {
+                has_registry_dependency = true;
+            }
+            ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. }) => {
+                inputs.mark_opaque("virtual-source");
+            }
         }
     }
-    watch
-}
 
-/// Adds every file next to `library_path` that shares its extension.
-///
-/// Used when a library target's root source sits in the project root itself. A directory
-/// read failure leaves the sibling sources unwatched; the root file stays watched either
-/// way.
-fn add_sibling_sources(add: &mut impl FnMut(&Path), library_path: &Path) {
-    let (Some(directory), Some(extension)) = (library_path.parent(), library_path.extension())
-    else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() && path.extension() == Some(extension) {
-            add(&path);
-        }
+    // Without a sysroot, the standard registry packages are embedded in the compiler executable
+    // already recorded above.
+    if has_registry_dependency && let Some(sysroot) = cx.session().options.sysroot.as_deref() {
+        inputs.add_existing_tree(sysroot.join("lib"));
     }
+
+    inputs
 }
 
 /// Writes `contents` to `path` through a temporary sibling and an atomic rename.
@@ -2253,18 +2329,52 @@ mod tests {
     };
 
     #[test]
-    fn dep_info_parsing_handles_escaped_spaces_and_multiple_lines() {
-        let parsed = super::parse_dep_info(
-            "/out/a.wasm: /src/lib.rs /src/with\\ space.rs\n\n/out/b.rmeta: /src/lib.rs\n",
-        );
+    fn dependency_build_inputs_have_a_stable_versioned_encoding() {
+        let mut inputs = DependencyBuildInputs::default();
+        inputs.add_tree(PathBuf::from("/source/with spaces"));
+        inputs.add_file(PathBuf::from("/packages/dependency.masp"));
+        inputs.environment.insert("MIDDEN_FIXTURE_MODE".to_string());
+        inputs.mark_opaque("cargo-fingerprint");
+
         assert_eq!(
-            parsed,
-            vec![
-                std::path::PathBuf::from("/src/lib.rs"),
-                std::path::PathBuf::from("/src/with space.rs"),
-                std::path::PathBuf::from("/src/lib.rs"),
-            ]
+            inputs.encode(),
+            "miden-build-inputs\t1\nfile\t/packages/dependency.masp\ntree\t/source/with \
+             spaces\nenv\tMIDDEN_FIXTURE_MODE\nopaque\tcargo-fingerprint\n"
         );
+    }
+
+    #[test]
+    fn an_unrepresentable_build_input_makes_the_whole_record_opaque() {
+        let mut inputs = DependencyBuildInputs::default();
+        inputs.add_file(PathBuf::from("/source/line\nbreak.masm"));
+        inputs.add_file(PathBuf::from("relative/source.masm"));
+        inputs.add_tree(PathBuf::from("/source/ordinary"));
+
+        assert!(
+            inputs.files.is_empty(),
+            "lossy or context-dependent paths must never be encoded"
+        );
+        assert_eq!(inputs.opaque, alloc::collections::BTreeSet::from(["unrepresentable-path"]));
+        assert!(inputs.encode().contains("opaque\tunrepresentable-path\n"));
+    }
+
+    #[test]
+    fn only_a_direct_workspace_member_has_a_closed_discovery_boundary() {
+        let workspace = Path::new("/workspace");
+        assert!(super::workspace_boundary_is_closed(Path::new("/workspace/member"), workspace));
+        assert!(super::workspace_boundary_is_closed(workspace, workspace));
+        assert!(!super::workspace_boundary_is_closed(
+            Path::new("/workspace/contracts/member"),
+            workspace
+        ));
+    }
+
+    #[test]
+    fn only_a_bare_launcher_name_uses_path_search() {
+        assert!(super::launcher_uses_path_search(Path::new("cargo-miden-wrapper")));
+        assert!(!super::launcher_uses_path_search(Path::new("./cargo-miden-wrapper")));
+        assert!(!super::launcher_uses_path_search(Path::new("tools/cargo-miden-wrapper")));
+        assert!(!super::launcher_uses_path_search(Path::new("/tools/cargo-miden-wrapper")));
     }
 
     /// The project route *is* the WebAssembly route, and this is what holds it to that.

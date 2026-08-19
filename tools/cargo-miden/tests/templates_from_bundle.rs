@@ -13,6 +13,11 @@ use cargo_miden::{bundle, run};
 
 use crate::utils::current_dir_lock;
 
+const CANONICAL_BUILD_SCRIPT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../extra/templates/rust/account/template/build.rs"
+));
+
 fn scratch(label: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "cargo-miden-bundle-{label}-{}-{:?}",
@@ -161,6 +166,40 @@ fn directories(root: &Path) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+/// The checked-in release bundle must carry the same build-script protocol as its source
+/// templates. Source-copy tests cannot catch a stale `templates.tar.gz`, which is what users of
+/// the released cargo-miden binary actually render.
+#[test]
+fn embedded_bundle_build_scripts_match_the_canonical_template() {
+    let dir = scratch("build-script-pin");
+    let root = bundle::extract(&dir.join("bundle")).expect("extract the embedded bundle");
+    let mut pending = vec![root];
+    let mut copies = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).expect("read an embedded template directory") {
+            let path = entry.expect("read an embedded template entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.file_name().is_some_and(|name| name == "build.rs") {
+                copies.push(path);
+            }
+        }
+    }
+    assert!(copies.len() >= 7, "the embedded bundle must contain the contract build scripts");
+    for copy in copies {
+        assert_eq!(
+            fs::read(&copy).unwrap_or_else(|err| {
+                panic!("failed to read embedded build script '{}': {err}", copy.display())
+            }),
+            CANONICAL_BUILD_SCRIPT,
+            "embedded build script '{}' differs from the canonical template; regenerate \
+             tools/cargo-miden/templates.tar.gz",
+            copy.display()
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
 }
 
 /// The default scaffold comes from the bundle's `project/`, compared against the

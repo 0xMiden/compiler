@@ -62,21 +62,22 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     );
     crate::utils::assert_written_by_this_build(&dep_package, build_started_at);
 
-    // The root's watch list must carry the Rust dependency's inputs from its recorded
-    // cargo dep-info — a source file cargo actually consumed — plus the lockfile, which
-    // dep-info does not cover.
-    let watch_file = export_dir.join("miden-deps").join("p2id.watch");
-    let watch = std::fs::read_to_string(&watch_file).unwrap_or_else(|err| {
-        panic!("expected the compiler-recorded watch list at {}: {err}", watch_file.display())
+    // Cargo's stable interfaces cannot express the Rust dependency's complete provenance, so
+    // the root record must say so explicitly. The outer template build script responds by
+    // staging on every Cargo invocation rather than trusting an incomplete file snapshot.
+    let inputs_file = export_dir.join("miden-deps").join("build-inputs");
+    let inputs = std::fs::read_to_string(&inputs_file).unwrap_or_else(|err| {
+        panic!(
+            "expected the compiler-recorded build inputs at {}: {err}",
+            inputs_file.display()
+        )
     });
-    let watch_has =
-        |suffix: &str| watch.lines().any(|line| std::path::Path::new(line).ends_with(suffix));
     assert!(
-        watch_has("basic-wallet/src/lib.rs"),
-        "expected a dep-info-derived source watch in:\n{watch}"
+        inputs.lines().any(|line| line == "miden-build-inputs\t1"),
+        "expected the versioned build-input header in:\n{inputs}"
     );
     assert!(
-        watch_has("basic-wallet/Cargo.lock"),
-        "expected the dependency lockfile watch in:\n{watch}"
+        inputs.lines().any(|line| line == "opaque\tcargo-fingerprint"),
+        "expected Rust/Cargo provenance to be explicitly opaque in:\n{inputs}"
     );
 }

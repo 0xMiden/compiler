@@ -64,9 +64,9 @@ path = "lib/mod.masm"
 
 /// Write the same Miden Assembly project into `dir`, with its sources at the project root.
 ///
-/// The `[lib] path` names `mod.masm` directly in the project root — the layout where the
-/// compiler-recorded watch list cannot watch the source directory (that would sweep in
-/// `target/` churn) and must list the sibling module files individually.
+/// The `[lib] path` names `mod.masm` directly in the project root. The complete-input contract
+/// watches the whole local project tree, so this layout also proves a sibling module is covered
+/// without predicting its individual path.
 fn write_masm_dependency_at_root(dir: &Path, name: &str) {
     fs::create_dir_all(dir).expect("create masm dependency dir");
     fs::write(
@@ -87,6 +87,62 @@ path = "mod.masm"
     fs::write(dir.join("mod.masm"), DEPENDENCY_ROOT).expect("write masm dependency root");
     fs::write(dir.join("support.masm"), DEPENDENCY_SUPPORT)
         .expect("write masm dependency submodule");
+}
+
+/// Write a MASM project whose declared library target lives outside its manifest directory.
+fn write_masm_dependency_with_external_sources(project_dir: &Path, source_dir: &Path, name: &str) {
+    fs::create_dir_all(project_dir).expect("create external-source project dir");
+    fs::create_dir_all(source_dir).expect("create external source dir");
+    let relative_source = Path::new("..").join(source_dir.file_name().unwrap()).join("mod.masm");
+    fs::write(
+        project_dir.join("miden-project.toml"),
+        format!(
+            r#"[package]
+name = "{name}"
+version = "0.1.0"
+
+[lib]
+path = "{}"
+
+[dependencies]
+"#,
+            relative_source.display()
+        ),
+    )
+    .expect("write external-source dependency manifest");
+    fs::write(source_dir.join("mod.masm"), DEPENDENCY_ROOT)
+        .expect("write external dependency root");
+    fs::write(source_dir.join("support.masm"), DEPENDENCY_SUPPORT)
+        .expect("write external dependency submodule");
+}
+
+/// Write a MASM project whose declared root is a file symlink into an external module tree.
+#[cfg(unix)]
+fn write_masm_dependency_with_symlinked_sources(project_dir: &Path, source_dir: &Path, name: &str) {
+    use std::os::unix::fs::symlink;
+
+    fs::create_dir_all(project_dir).expect("create symlink-source project dir");
+    fs::create_dir_all(source_dir).expect("create symlink source dir");
+    fs::write(
+        project_dir.join("miden-project.toml"),
+        format!(
+            r#"[package]
+name = "{name}"
+version = "0.1.0"
+
+[lib]
+path = "mod.masm"
+
+[dependencies]
+"#,
+        ),
+    )
+    .expect("write symlink-source dependency manifest");
+    fs::write(source_dir.join("mod.masm"), DEPENDENCY_ROOT).expect("write symlink dependency root");
+    fs::write(source_dir.join("support.masm"), DEPENDENCY_SUPPORT)
+        .expect("write symlink dependency submodule");
+    symlink(source_dir.join("mod.masm"), project_dir.join("mod.masm"))
+        .expect("symlink dependency root into its project");
 }
 
 /// Rewrite the Miden manifest of the scaffolded project in `project_dir` as a plain Rust
@@ -134,6 +190,16 @@ path = "src/lib.rs"
 /// A Rust project with a Miden Assembly path dependency builds, and the dependency is assembled.
 #[test]
 fn build_rust_project_with_masm_path_dependency() {
+    struct RestoreCargoMiden(Option<std::ffi::OsString>);
+    impl Drop for RestoreCargoMiden {
+        fn drop(&mut self) {
+            match self.0.take() {
+                Some(value) => unsafe { env::set_var("CARGO_MIDEN", value) },
+                None => unsafe { env::remove_var("CARGO_MIDEN") },
+            }
+        }
+    }
+
     let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
@@ -142,6 +208,13 @@ fn build_rust_project_with_masm_path_dependency() {
     // signal integration tests to the cargo-miden code path
     unsafe {
         env::set_var("TEST", "1");
+    }
+    // The test invokes cargo-miden in-process, so provide the collector an explicit stable
+    // launcher identity rather than making this otherwise-complete MASM graph opaque because a
+    // future `cargo miden` plugin could shadow the current executable in PATH.
+    let _restore_cargo_miden = RestoreCargoMiden(env::var_os("CARGO_MIDEN"));
+    unsafe {
+        env::set_var("CARGO_MIDEN", env::current_exe().unwrap());
     }
 
     // The dependency package is materialized under the *root project's* target directory, which
@@ -167,10 +240,25 @@ fn build_rust_project_with_masm_path_dependency() {
 
     let dependency_name = "masm-dep";
     write_masm_dependency(&root.join("masm_dep"), dependency_name);
-    // A second dependency with its sources directly in the project root, so one build pins
-    // both watch-list shapes.
+    // A second dependency with its sources directly in the project root.
     let flat_dependency_name = "masm-dep-flat";
     write_masm_dependency_at_root(&root.join("masm_dep_flat"), flat_dependency_name);
+    // And a third whose target escapes its manifest directory, so the invalidation record must
+    // include the resolved source tree rather than assuming every target is contained.
+    let external_dependency_name = "masm-dep-external";
+    write_masm_dependency_with_external_sources(
+        &root.join("masm_dep_external"),
+        &root.join("shared_masm"),
+        external_dependency_name,
+    );
+    #[cfg(unix)]
+    let symlink_dependency_name = "masm-dep-symlink";
+    #[cfg(unix)]
+    write_masm_dependency_with_symlinked_sources(
+        &root.join("masm_dep_symlink"),
+        &root.join("shared_symlink_masm"),
+        symlink_dependency_name,
+    );
 
     let project_name = "masm_dep_root";
     let output = run([
@@ -189,11 +277,26 @@ fn build_rust_project_with_masm_path_dependency() {
         other => panic!("Expected NewCommandOutput, got {other:?}"),
     };
 
-    write_library_manifest(
-        &project_path,
-        project_name,
-        &[(dependency_name, "../masm_dep"), (flat_dependency_name, "../masm_dep_flat")],
-    );
+    let mut dependencies = vec![
+        (dependency_name, "../masm_dep"),
+        (flat_dependency_name, "../masm_dep_flat"),
+        (external_dependency_name, "../masm_dep_external"),
+    ];
+    #[cfg(unix)]
+    dependencies.push((symlink_dependency_name, "../masm_dep_symlink"));
+    write_library_manifest(&project_path, project_name, &dependencies);
+
+    let mut workspace_members =
+        vec!["masm_dep", "masm_dep_flat", "masm_dep_external", "masm_dep_root"];
+    #[cfg(unix)]
+    workspace_members.push("masm_dep_symlink");
+    let members = workspace_members
+        .iter()
+        .map(|member| format!("\"{member}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    fs::write(root.join("miden-project.toml"), format!("[workspace]\nmembers = [{members}]\n"))
+        .expect("write the Miden workspace manifest");
 
     env::set_current_dir(&project_path).unwrap();
     let build_started_at = SystemTime::now();
@@ -234,23 +337,54 @@ fn build_rust_project_with_masm_path_dependency() {
         "expected the root-level masm dependency to be assembled and materialized at {}",
         flat_dependency_package.display()
     );
-
-    // The compiler-recorded watch list drives dependency re-staging for plain-cargo and IDE
-    // builds. The two dependency layouts pin both watch shapes: a source subdirectory is
-    // watched as a directory, while a root-level library's sibling modules are watched as
-    // individual files (watching the project root itself would sweep in `target/` churn).
-    let watch_file = export_dir.join("miden-deps").join(format!("{project_name}.watch"));
-    let watch = fs::read_to_string(&watch_file).unwrap_or_else(|err| {
-        panic!("expected the compiler-recorded watch list at {}: {err}", watch_file.display())
-    });
-    let watch_has = |suffix: &str| watch.lines().any(|line| Path::new(line).ends_with(suffix));
+    let external_dependency_package = export_dir.join(format!("{external_dependency_name}.masp"));
     assert!(
-        watch_has("masm_dep/lib"),
-        "expected the subdirectory dependency's source directory to be watched in:\n{watch}"
+        external_dependency_package.exists(),
+        "expected the external-source masm dependency to be assembled and materialized at {}",
+        external_dependency_package.display()
+    );
+    #[cfg(unix)]
+    assert!(
+        export_dir.join(format!("{symlink_dependency_name}.masp")).exists(),
+        "expected the symlink-source MASM dependency to be assembled and materialized"
+    );
+
+    // Local MASM project trees are complete, selectively watchable inputs. Recording each
+    // project root recursively observes edits, removals, new sibling modules, and a newly created
+    // WIT directory without reconstructing the assembler's individual file reads.
+    let inputs_file = export_dir.join("miden-deps").join("build-inputs");
+    let inputs = fs::read_to_string(&inputs_file).unwrap_or_else(|err| {
+        panic!(
+            "expected the compiler-recorded build inputs at {}: {err}",
+            inputs_file.display()
+        )
+    });
+    let tree_has = |suffix: &str| {
+        inputs.lines().any(|line| {
+            line.strip_prefix("tree\t")
+                .is_some_and(|path| Path::new(path).ends_with(suffix))
+        })
+    };
+    assert!(
+        tree_has("masm_dep"),
+        "expected the subdirectory dependency's project tree in:\n{inputs}"
     );
     assert!(
-        watch_has("masm_dep_flat/support.masm"),
-        "expected the root-level dependency's sibling module to be watched in:\n{watch}"
+        tree_has("masm_dep_flat"),
+        "expected the root-level dependency's project tree in:\n{inputs}"
+    );
+    assert!(
+        tree_has("shared_masm"),
+        "expected the dependency's external source tree in:\n{inputs}"
+    );
+    #[cfg(unix)]
+    assert!(
+        tree_has("shared_symlink_masm"),
+        "expected the dependency's canonical symlink source tree in:\n{inputs}"
+    );
+    assert!(
+        !inputs.lines().any(|line| line.starts_with("opaque\t")),
+        "local MASM dependencies must remain selectively invalidated:\n{inputs}"
     );
 
     fs::remove_dir_all(&root).unwrap();

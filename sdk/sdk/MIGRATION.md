@@ -26,16 +26,21 @@ separate impl block.
 New projects created by `cargo miden new` include a `build.rs` in each contract crate. The
 script makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve
 compiled dependency packages: outside a `cargo miden build`, it stages package-cache
-generations under its `OUT_DIR`, fills the next generation with a nested
+generations under its `OUT_DIR`, fills a private generation with a nested
 `cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports the
 same variable to the crate's macro expansion. Inside a midenc-driven build the script does
 nothing: the compiler exchanges packages with its nested builds through a directory of its
 own, which it deletes when the build ends.
 
-The nested build runs whenever cargo re-runs the script. The script watches the crate's
-manifests and, through the watch lists the compiler writes next to the staged packages, the
-source inputs of every resolved dependency — so editing a dependency re-stages its package on
-the next check.
+The nested build runs whenever Cargo re-runs the script. The compiler writes a versioned input
+record next to the staged packages. Inputs a frontend can enumerate completely — local MASM
+source trees and preassembled packages, for example — become selective Cargo change directives
+when the cargo-miden launcher and Miden workspace boundary are also explicit. Rust/Cargo source
+dependencies, launchers resolved through `PATH`, and packages whose future parent workspace
+cannot be watched completely are marked opaque; those graphs deliberately re-stage dependencies
+on every relevant Cargo invocation instead of risking stale metadata. Set `CARGO_MIDEN` to an
+explicit binary path and build from an established Miden workspace to enable selective behavior
+for an otherwise-complete dependency graph.
 
 The build script is now required for plain cargo builds of crates with Miden source
 dependencies. The SDK macros read dependency packages only from the `MIDENC_PACKAGE_CACHE`
@@ -48,12 +53,11 @@ contract crate, next to its `Cargo.toml`. The script needs `cargo miden` on `PAT
 `CARGO_MIDEN` environment variable to use a specific `cargo-miden` binary instead. A missing
 tool fails the build script with an install hint.
 
-One transient failure mode is accepted by design and heals on the next successful build: when
-the nested `cargo miden build` fails (for example, a dependency is mid-edit and broken), the
-script emits a cargo warning and keeps exporting the previous generation whole — never a mix
-of new and old packages — so the editor keeps analyzing against the last successfully built
-dependency set instead of failing outright. If no good generation exists yet, the script
-fails the build with the nested build's error.
+Each successful staging run publishes an immutable content-addressed generation. Changed
+generations remain until Cargo removes `OUT_DIR`, so an IDE expansion that still references an
+older path continues to see one coherent dependency set; byte-identical staging reuses the
+existing generation. If the nested `cargo miden build` fails, the outer check fails with its error
+rather than compiling against stale dependency metadata.
 
 One sharing caveat: cargo keys build-script output by crate name and version, not by project
 path. Two different projects that contain a contract crate with the same package name and
