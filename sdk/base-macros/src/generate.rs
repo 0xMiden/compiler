@@ -948,6 +948,26 @@ mod tests {
         assert_eq!(sanitize_wit_filename_component(""), "generated");
     }
 
+    /// Preserves escaped WIT selector syntax through world detection and binding generation.
+    #[test]
+    fn escaped_inline_world_selectors_reach_wit_bindgen() {
+        let inline = "package test:escaped; world %interface {}";
+        let world = manifest_paths::extract_world_name(inline)
+            .expect("the escaped inline world must be detected");
+        assert_eq!(world, "%interface");
+
+        let config = manifest_paths::ResolvedWit {
+            prelude_dir: None,
+            dependency_sources: vec![],
+            dependency_artifact_map: None,
+            local_wit_root: None,
+            world: None,
+            embeddable_local_wit: None,
+        };
+        generate_inline_import_bindings(&config, inline, &world, &[])
+            .expect("wit-bindgen must accept the preserved escaped selector");
+    }
+
     /// Includes synthetic FPI interfaces when rendering the resolved inline binding world.
     #[test]
     fn resolved_inline_wit_contains_injected_fpi_functions() {

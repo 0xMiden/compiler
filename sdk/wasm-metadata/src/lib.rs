@@ -152,11 +152,13 @@ pub fn top_level_wit_packages(wit: &str) -> Vec<String> {
     packages
 }
 
-/// The name of the first top-level `world <name>` declaration in WIT source, when present.
+/// The selector spelling of the first top-level `world <name>` declaration in WIT source, when
+/// present.
 ///
 /// Token-based like [`top_level_wit_packages`]: comments are stripped first, and only
 /// declarations at brace depth zero count — a world inside the nested package notation
-/// (`package <id> { world w { ... } }`) is not a top-level world of the file.
+/// (`package <id> { world w { ... } }`) is not a top-level world of the file. The leading `%` of
+/// an escaped identifier is retained because downstream WIT selectors must parse it again.
 pub fn first_top_level_wit_world(wit: &str) -> Option<String> {
     let stripped = strip_wit_comments(wit);
     let bytes = stripped.as_bytes();
@@ -175,12 +177,19 @@ pub fn first_top_level_wit_world(wit: &str) -> Option<String> {
                     || bytes[index - 1].is_ascii_whitespace();
                 let followed = bytes.get(end).is_some_and(u8::is_ascii_whitespace);
                 if preceded && followed {
-                    let name: String = stripped[end..]
-                        .trim_start()
+                    let rest = stripped[end..].trim_start();
+                    let (escaped, identifier) = match rest.strip_prefix('%') {
+                        Some(identifier) => (true, identifier),
+                        None => (false, rest),
+                    };
+                    let mut name: String = identifier
                         .chars()
                         .take_while(|ch| ch.is_alphanumeric() || *ch == '-' || *ch == '_')
                         .collect();
                     if !name.is_empty() {
+                        if escaped {
+                            name.insert(0, '%');
+                        }
                         return Some(name);
                     }
                 }
@@ -483,6 +492,15 @@ package miden:new@0.1.0;
             first_top_level_wit_world("interface world-like { f: func(); }\n"),
             None,
             "identifiers containing the keyword are not declarations"
+        );
+        assert_eq!(
+            first_top_level_wit_world(
+                "// world %commented {}\npackage miden:nested { world %resource {} }\nworld \
+                 %interface {}\n"
+            )
+            .as_deref(),
+            Some("%interface"),
+            "escaped world selectors must retain the percent required to reparse them"
         );
     }
 
