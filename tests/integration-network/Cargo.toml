@@ -20,11 +20,11 @@ doctest = false
 miden-field.workspace = true
 miden-field-repr.workspace = true
 miden-tx-script-args.workspace = true
-miden-client = { version = "0.16.0-alpha.1", features = ["std", "tonic", "testing"] }
+miden-client = { version = "0.16.0-rc.1", features = ["std", "tonic", "testing"] }
 miden-core.workspace = true
 miden-protocol = { workspace = true, features = ["std", "testing"] }
 miden-standards = { workspace = true, features = ["std", "testing"] }
-miden-testing = { version = "0.16.0-alpha.2", features = ["std"] }
+miden-testing = { version = "0.16.0-rc.4", features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-expect-test.workspace = true

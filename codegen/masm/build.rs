@@ -4,8 +4,6 @@ use std::{
 };
 
 use miden_assembly::{Assembler, Report, diagnostics::IntoDiagnostic};
-use miden_core_lib::CoreLibrary;
-use midenc_session::miden_package_registry::PackageCache;
 
 fn main() -> Result<(), Report> {
     use miden_assembly::diagnostics::reporting::ReportHandlerOpts;
@@ -31,9 +29,6 @@ fn main() -> Result<(), Report> {
         midenc_session::Options::new(None, None, cwd, target_dir.clone(), None, toolchain_dir);
 
     let mut registry = midenc_session::registry::HybridPackageRegistry::new(&options)?;
-    // Extend the registry with the built-in core library, in case the midenup toolchain is not
-    // available
-    registry.cache_package(CoreLibrary::default().package())?;
 
     let assembler = Assembler::default();
     let mut project_assembler =

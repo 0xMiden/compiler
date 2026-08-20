@@ -1,6 +1,6 @@
 use core::panic;
 
-use miden_core::{Word, advice::AdviceStackBuilder};
+use miden_core::{Word, advice::AdviceStack};
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
 use proptest::{
@@ -51,7 +51,7 @@ fn pipe_words_to_memory() {
             let expected_sum = flat_felts.iter().copied().fold(Felt::ZERO, |acc, v| acc + v);
             let expected_digest = miden_core::crypto::hash::Poseidon2::hash_elements(&flat_felts);
 
-            let mut advice_builder = AdviceStackBuilder::new();
+            let mut advice_builder = AdviceStack::new();
 
             // `pipe_words_to_memory` consumes words via `adv_pipe` in pairs, then (if needed)
             // consumes a final word via `adv_loadw`.
@@ -67,12 +67,12 @@ fn pipe_words_to_memory() {
                 for w in raw_words.iter().take(pairs_len_words) {
                     pipe_elems.extend_from_slice(w);
                 }
-                advice_builder.push_for_adv_pipe(&pipe_elems);
+                advice_builder.append_for_adv_pipe(&pipe_elems);
             }
 
             if has_odd_word {
                 let last = raw_words.last().expect("raw_words is non-empty when has_odd_word");
-                advice_builder.push_word(Word::new(*last));
+                advice_builder.append_word(Word::new(*last));
             }
 
             let advice_stack = advice_builder.into_elements();

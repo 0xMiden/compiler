@@ -4,11 +4,12 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::{AccountId, NoteType, RawAccountId, RawAttachmentLocation, Recipient, Tag};
+use super::{
+    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, RawAccountId,
+    RawAttachmentLocation, Recipient, Tag, assert_attachment_count, assert_attachment_word_count,
+};
 
 const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
-const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
-const MAX_ATTACHMENT_WORDS: usize = 256;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -148,9 +149,9 @@ unsafe extern "C" {
 #[doc(hidden)]
 pub fn __entrypoint_root() -> Word {
     unsafe {
-        let mut ret_area = ::core::mem::MaybeUninit::<Word>::uninit();
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
         extern_note_script_root(ret_area.as_mut_ptr());
-        ret_area.assume_init()
+        ret_area.into_inner().assume_init()
     }
 }
 
@@ -251,10 +252,7 @@ pub fn write_attachment_commitments_to_memory(attachments_commitment: Word) -> V
             ptr as *mut Felt,
         )
     };
-    assert!(
-        num_attachments <= MAX_ATTACHMENTS_PER_NOTE,
-        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
-    );
+    assert_attachment_count(num_attachments);
     unsafe {
         commitments.set_len(num_attachments);
     }
@@ -276,10 +274,7 @@ pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
             ptr as *mut Felt,
         )
     };
-    assert!(
-        num_words <= MAX_ATTACHMENT_WORDS,
-        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
-    );
+    assert_attachment_word_count(num_words);
     unsafe {
         attachment.set_len(num_words);
     }
@@ -293,10 +288,7 @@ pub fn write_indexed_attachment_to_memory(
     attachment_commitments: &[Word],
     attachment_idx: u32,
 ) -> Vec<Word> {
-    assert!(
-        attachment_commitments.len() <= MAX_ATTACHMENTS_PER_NOTE,
-        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
-    );
+    assert_attachment_count(attachment_commitments.len());
 
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
@@ -313,10 +305,7 @@ pub fn write_indexed_attachment_to_memory(
             dest_ptr as *mut Felt,
         )
     };
-    assert!(
-        num_words <= MAX_ATTACHMENT_WORDS,
-        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
-    );
+    assert_attachment_word_count(num_words);
     unsafe {
         attachment.set_len(num_words);
     }

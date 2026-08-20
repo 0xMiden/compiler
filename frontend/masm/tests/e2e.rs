@@ -5,7 +5,9 @@ use miden_assembly_syntax::{ast::ModuleKind, debuginfo::Uri};
 use miden_core_lib::CoreLibrary;
 use miden_mast_package::Package;
 use miden_processor::{
-    DefaultHost, ExecutionOptions, Felt, StackInputs, advice::AdviceInputs, execute_sync,
+    DefaultHost, ExecutionOptions, Felt, StackInputs,
+    advice::{AdviceInputs, AdviceStack},
+    execute_sync,
 };
 use midenc_codegen_masm::{ToMasmComponent, intrinsics};
 use midenc_frontend_masm::{DisassemblerConfig, disassemble_source};
@@ -225,6 +227,15 @@ fn e2e_context() -> Rc<Context> {
     Rc::new(Context::new(session))
 }
 
+/// Links the core library packages into the assembler.
+fn link_core_packages(assembler: &mut Assembler, core_library: &CoreLibrary) {
+    for package in core_library.packages() {
+        assembler
+            .link_package(package, miden_project::Linkage::Dynamic)
+            .expect("core library package should link");
+    }
+}
+
 fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
     use miden_assembly::Path as MasmPath;
 
@@ -237,9 +248,9 @@ fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
         .map(Arc::from)
         .expect("original MASM library should assemble");
     let core_library = CoreLibrary::default();
-    Assembler::new(source_manager)
-        .with_package(core_library.package(), miden_project::Linkage::Dynamic)
-        .expect("failed to link core library")
+    let mut assembler = Assembler::new(source_manager);
+    link_core_packages(&mut assembler, &core_library);
+    assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("original MASM library should link")
         .assemble_program(
@@ -272,9 +283,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
     let source_manager = context.session().source_manager.clone();
     let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    assembler
-        .link_package(core_library.package(), miden_project::Linkage::Dynamic)
-        .expect("core library should link");
+    link_core_packages(&mut assembler, &core_library);
     assembler
         .link_package(intrinsics::load(), miden_project::Linkage::Static)
         .expect("intrinsics should link");
@@ -307,9 +316,9 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
                  MASM\n{masm_component}"
             )
         });
-    Assembler::new(source_manager)
-        .with_package(core_library.package(), miden_project::Linkage::Dynamic)
-        .expect("Miden core library should link")
+    let mut assembler = Assembler::new(source_manager);
+    link_core_packages(&mut assembler, &core_library);
+    assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("round-tripped MASM library should link")
         .assemble_program(
@@ -347,16 +356,13 @@ fn execute_program(
     num_outputs: usize,
 ) -> Vec<Felt> {
     let stack_inputs = StackInputs::new(inputs).expect("test inputs should fit on VM stack");
-    let advice_inputs = AdviceInputs::default()
-        .with_stack_values(advice.iter().copied())
-        .expect("test advice inputs should fit on VM advice stack");
+    let advice_stack = AdviceStack::try_from_values(advice.iter().copied())
+        .expect("test advice inputs should be canonical field elements");
+    let advice_inputs = AdviceInputs::default().with_advice_stack(advice_stack);
     let mut host = DefaultHost::default();
-    let core_lib = CoreLibrary::default();
-    host.load_library(core_lib.package()).expect("failed to load core library");
-    for (event, handler) in core_lib.handlers() {
-        host.register_handler(event, handler)
-            .expect("could not register core library event handler");
-    }
+    let core_library = CoreLibrary::default();
+    host.load_library(miden_processor::HostLibrary::from(&core_library))
+        .expect("failed to load core library");
     let program = program.unwrap_program();
     let trace =
         execute_sync(&program, stack_inputs, advice_inputs, &mut host, ExecutionOptions::default())

@@ -21,8 +21,8 @@ use midenc_expect_test::expect;
 
 use super::super::support::{
     assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
-    note_script_root, single_note_cycles, to_core_felts, transaction_script_from_package_with_deps,
-    tx_script_processing_cycles,
+    execute_tx_measurements, note_script_root, single_note_cycles, to_core_felts,
+    transaction_script_from_package_with_deps, tx_script_processing_cycles,
 };
 
 /// Tests that a transaction script can create a P2ID note through the note package's exported
@@ -97,20 +97,23 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
     let faucet_account = chain.committed_account(faucet_id).unwrap().clone();
     let mint_tx_script =
         build_send_notes_script(&faucet_account, std::slice::from_ref(&p2id_note_mint));
-    let mint_tx_context_builder = chain
-        .build_tx_context(faucet_id, &[], &[])
-        .unwrap()
-        .tx_script(mint_tx_script.into())
-        .extend_expected_output_notes(vec![RawOutputNote::Full(p2id_note_mint.clone())]);
-    execute_tx(&mut chain, mint_tx_context_builder);
+    let mint_tx = chain
+        .build_transaction(faucet_id)
+        .send_notes_script(&mint_tx_script)
+        .expected_output_notes(vec![RawOutputNote::Full(p2id_note_mint.clone())])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mint_tx);
 
     eprintln!("\n=== Step 2: Alice consumes mint note ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
-    let consume_tx_context_builder = chain
-        .build_tx_context(alice_id, &[p2id_note_mint.id()], &[])
-        .unwrap()
-        .foreign_accounts(vec![faucet_inputs]);
-    execute_tx(&mut chain, consume_tx_context_builder);
+    let consume_tx = chain
+        .build_transaction(alice_id)
+        .authenticated_input_note(p2id_note_mint.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, consume_tx);
 
     let alice_account = chain.committed_account(alice_id).unwrap();
     assert_account_has_fungible_asset(alice_account, faucet_id, mint_amount);
@@ -160,25 +163,28 @@ pub fn tx_script_creates_p2id_note_via_note_constructor() {
         miden_core::crypto::hash::Poseidon2::hash_elements(&commitment_input);
 
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
-    let create_tx_context_builder = chain
-        .build_tx_context(alice_id, &[], &[])
-        .unwrap()
+    let create_tx = chain
+        .build_transaction(alice_id)
         .foreign_accounts(vec![faucet_inputs])
         .tx_script(tx_script)
         .tx_script_args(commitment_key)
-        .extend_advice_map([(commitment_key, commitment_input)])
-        .extend_expected_output_notes(vec![RawOutputNote::Full(bob_note.clone())]);
-    let tx_measurements = execute_tx(&mut chain, create_tx_context_builder);
-    expect!["8078"].assert_eq(tx_script_processing_cycles(&tx_measurements));
+        .add_advice_map_entry(commitment_key, commitment_input)
+        .expected_output_notes(vec![RawOutputNote::Full(bob_note.clone())])
+        .build()
+        .unwrap();
+    let tx_measurements = execute_tx_measurements(&mut chain, create_tx);
+    expect!["8155"].assert_eq(tx_script_processing_cycles(&tx_measurements));
 
     eprintln!("\n=== Step 4: Bob consumes the note created by the constructor ===");
     let faucet_inputs = chain.get_foreign_account_inputs(faucet_id).unwrap();
-    let consume_tx_context_builder = chain
-        .build_tx_context(bob_id, &[bob_note.id()], &[])
-        .unwrap()
-        .foreign_accounts(vec![faucet_inputs]);
-    let tx_measurements = execute_tx(&mut chain, consume_tx_context_builder);
-    expect!["4535"].assert_eq(single_note_cycles(&tx_measurements));
+    let consume_tx = chain
+        .build_transaction(bob_id)
+        .authenticated_input_note(bob_note.id())
+        .foreign_accounts(vec![faucet_inputs])
+        .build()
+        .unwrap();
+    let tx_measurements = execute_tx_measurements(&mut chain, consume_tx);
+    expect!["4558"].assert_eq(single_note_cycles(&tx_measurements));
 
     eprintln!("\n=== Checking Bob's account has the transferred asset ===");
     let bob_account = chain.committed_account(bob_id).unwrap();

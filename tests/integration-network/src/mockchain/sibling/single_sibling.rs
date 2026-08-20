@@ -80,8 +80,12 @@ fn single_sibling() {
         314,
     );
 
-    let tx_context_builder = chain.build_tx_context(account.clone(), &[note.id()], &[]).unwrap();
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(note.id())
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mock_tx);
 
     assert_counter_storage_at_key(
         chain.committed_account(account.id()).unwrap().storage(),

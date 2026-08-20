@@ -283,7 +283,7 @@ define_instruction_semantics! {
         Instruction::HornerBase,
         Instruction::HornerExt,
         Instruction::EvalCircuit,
-        Instruction::LogPrecompile,
+        Instruction::LogDeferred,
     ],
     infer_only: [
         Instruction::ProcRef(_),

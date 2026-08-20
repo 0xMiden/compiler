@@ -48,6 +48,16 @@ impl LinkLibrary {
         }
     }
 
+    /// Construct a LinkLibrary for the Miden precompiles library, a dependency of the core
+    /// library
+    pub fn precompiles() -> Self {
+        LinkLibrary {
+            name: "miden-precompiles".into(),
+            path: None,
+            linkage: Linkage::Dynamic,
+        }
+    }
+
     /// Construct a LinkLibrary for the Miden transaction kernel library
     pub fn tx_kernel() -> Self {
         LinkLibrary {
@@ -73,6 +83,9 @@ impl LinkLibrary {
             "std" | "core" | "miden-core" => {
                 return Ok(CoreLibrary::default().package());
             }
+            "precompiles" | "miden-precompiles" => {
+                return Ok(CoreLibrary::default().precompiles_package());
+            }
             "base" | "protocol" | "miden-protocol" => {
                 return Ok(miden_protocol::ProtocolLib::default().package());
             }
@@ -96,6 +109,9 @@ impl LinkLibrary {
         match self.name.as_ref() {
             "std" | "core" | "miden-core" => {
                 return Ok(CoreLibrary::default().package());
+            }
+            "precompiles" | "miden-precompiles" => {
+                return Ok(CoreLibrary::default().precompiles_package());
             }
             "base" | "protocol" | "miden-protocol" => {
                 return Ok(miden_protocol::ProtocolLib::default().package());
