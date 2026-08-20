@@ -26,6 +26,10 @@ use core::fmt;
 pub struct CheckpointId(&'static str);
 
 impl CheckpointId {
+    /// Every dependency of a consumer project resolved, assembled, and published into the
+    /// package cache, together with the compiler-recorded resolution — before the consumer
+    /// itself is built.
+    pub const DEPENDENCIES_STAGED: Self = Self("dependencies.staged");
     /// HIR after semantic analysis and lints.
     pub const HIR_ANALYZED: Self = Self("hir.analyzed");
     /// HIR as first produced by a frontend, before any analysis or rewrites.

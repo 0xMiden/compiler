@@ -15,6 +15,9 @@ crate-type = ["cdylib"]
 # and transaction kernel API for the Miden rollup
 miden = { path = "../../sdk/sdk" }
 
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../../sdk/build-script-support" }
+
 [package.metadata.component]
 package = "miden:p2id-tx-script"
 
@@ -25,10 +28,6 @@ project-kind = "transaction-script"
 [package.metadata.miden.dependencies]
 "miden:basic-wallet" = { path = "../basic-wallet" }
 "miden:p2id" = { path = "../p2id-note" }
-
-[package.metadata.component.target.dependencies]
-"miden:basic-wallet" = { path = "../basic-wallet/target/generated-wit/" }
-"miden:p2id" = { path = "../p2id-note/target/generated-wit/" }
 
 [profile.release]
 trim-paths = ["diagnostics", "object"]

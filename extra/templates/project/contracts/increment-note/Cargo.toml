@@ -8,3 +8,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 miden = "0.14.0-rc.1"
+
+[build-dependencies]
+miden-sdk-build-script-support = "0.14.0-rc.1"

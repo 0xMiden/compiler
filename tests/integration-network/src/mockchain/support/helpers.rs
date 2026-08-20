@@ -112,6 +112,7 @@ pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
 // COMPILATION
 // ================================================================================================
 
+/// Compiles a Rust project and returns its Miden package.
 pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool) -> Arc<Package> {
     let project_path = project_path.as_ref();
     let config = WasmTranslationConfig::default();
@@ -122,13 +123,7 @@ pub(crate) fn compile_rust_package(project_path: impl AsRef<Path>, release: bool
     }
 
     let mut test = builder.build();
-    let package = test.compile_package();
-    let profile = if release { "release" } else { "debug" };
-    package
-        .write_masp_file(project_path.join("target").join("miden").join(profile))
-        .expect("failed to persist compiled Miden package");
-
-    package
+    test.compile_package()
 }
 
 /// Returns the root of the note script exported by the compiled package.

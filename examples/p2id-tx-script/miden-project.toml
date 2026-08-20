@@ -12,7 +12,3 @@ miden-core = "*"
 miden-protocol = "*"
 basic-wallet = { path = "../basic-wallet" }
 p2id = { path = "../p2id-note" }
-
-[package.metadata.miden.dependencies]
-basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
-p2id = { wit = "../p2id-note/target/generated-wit/" }
