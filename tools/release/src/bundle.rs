@@ -28,7 +28,7 @@ pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 pub struct Bundle {
     pub schema_version: u32,
     pub version: Version,
-    /// The `miden` requirement the templates carry.
+    /// The SDK requirement the templates carry for both runtime and build-support crates.
     pub sdk_requirement: String,
     pub templates: BTreeMap<String, TemplateEntry>,
 }
@@ -221,7 +221,15 @@ pub fn archive(root: &Path, bundle: &Bundle) -> Result<(Vec<u8>, String)> {
     Ok((bytes, digest))
 }
 
-/// The `miden` requirement templates should carry for a given SDK version.
+const SDK_TEMPLATE_PACKAGES: [&str; 2] = ["miden", "miden-sdk-build-script-support"];
+
+fn is_sdk_template_dependency(line: &str) -> bool {
+    SDK_TEMPLATE_PACKAGES
+        .iter()
+        .any(|name| line.strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('=')))
+}
+
+/// The SDK requirement templates should carry for a given SDK version.
 ///
 /// Stable releases get a minor-level requirement, so a later SDK patch needs no
 /// template change. Prereleases get the exact version: a caret requirement never
@@ -260,8 +268,7 @@ pub fn set_sdk_requirement(root: &Path, requirement: &str) -> Result<Vec<PathBuf
                 .lines()
                 .map(|line| {
                     let trimmed = line.trim();
-                    let is_miden_version = (trimmed.starts_with("miden ")
-                        || trimmed.starts_with("miden="))
+                    let is_miden_version = is_sdk_template_dependency(trimmed)
                         && !trimmed.contains("path")
                         && !trimmed.contains("git")
                         && trimmed.contains(&old);
@@ -318,10 +325,10 @@ pub fn check_sdk_requirements(root: &Path, bundle: &Bundle) -> Result<Vec<String
             let text = std::fs::read_to_string(&manifest)?;
             for (number, line) in text.lines().enumerate() {
                 let trimmed = line.trim();
-                // `miden = "0.13"` or `miden = { version = "0.13" }`. Lines
-                // selecting a path or git source are development escape hatches
-                // and carry no version.
-                if !trimmed.starts_with("miden ") && !trimmed.starts_with("miden=") {
+                // `miden = "0.13"`, `miden-sdk-build-script-support = "0.13"`, or their
+                // inline-table forms. Lines selecting a path or git source are development
+                // escape hatches and carry no version.
+                if !is_sdk_template_dependency(trimmed) {
                     continue;
                 }
                 if !trimmed.contains("version") && !trimmed.contains('"') {
@@ -393,7 +400,7 @@ account = { path = "rust/account" }
         write(
             &dir.join("rust/account/template/Cargo.toml"),
             "[package]\nname = \"{{crate_name}}\"\n\n[dependencies]\nmiden = { version = \"0.13\" \
-             }\n",
+             }\n\n[build-dependencies]\nmiden-sdk-build-script-support = { version = \"0.13\" }\n",
         );
         write(&dir.join("rust/account/template/src/lib.rs"), "");
         // Repository furniture that must not ship.
@@ -504,6 +511,22 @@ account = { path = "rust/account" }
     }
 
     #[test]
+    fn a_sdk_bump_updates_runtime_and_build_support_requirements() {
+        let dir = fixture("sdk-bump");
+        set_sdk_requirement(&dir, "0.14").unwrap();
+
+        let manifest =
+            std::fs::read_to_string(dir.join("rust/account/template/Cargo.toml")).unwrap();
+        assert!(manifest.contains("miden = { version = \"0.14\" }"), "{manifest}");
+        assert!(
+            manifest.contains("miden-sdk-build-script-support = { version = \"0.14\" }"),
+            "{manifest}"
+        );
+        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        assert!(check_sdk_requirements(&dir, &bundle).unwrap().is_empty());
+    }
+
+    #[test]
     fn a_template_left_behind_by_an_sdk_bump_is_reported() {
         let dir = fixture("drift");
         // The bundle moved to 0.14; the template did not.
@@ -520,9 +543,16 @@ account = { path = "rust/account" }
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
 
         let problems = check_sdk_requirements(&dir, &bundle).unwrap();
-        assert_eq!(problems.len(), 1, "{problems:?}");
-        assert!(problems[0].contains("0.14"), "{}", problems[0]);
-        assert!(problems[0].contains("account"), "{}", problems[0]);
+        assert_eq!(problems.len(), 2, "{problems:?}");
+        assert!(problems.iter().all(|problem| problem.contains("0.14")), "{problems:?}");
+        assert!(problems.iter().all(|problem| problem.contains("account")), "{problems:?}");
+        assert!(problems.iter().any(|problem| problem.contains("miden =")), "{problems:?}");
+        assert!(
+            problems
+                .iter()
+                .any(|problem| problem.contains("miden-sdk-build-script-support")),
+            "{problems:?}"
+        );
     }
 
     #[test]
@@ -531,7 +561,10 @@ account = { path = "rust/account" }
         write(
             &dir.join("rust/account/template/Cargo.toml"),
             "[dependencies]\n{% if compiler_path %}\nmiden = { path = \"{{ compiler_path \
-             }}/sdk/sdk\" }\n{% else %}\nmiden = { version = \"0.13\" }\n{% endif %}\n",
+             }}/sdk/sdk\" }\n{% else %}\nmiden = { version = \"0.13\" }\n{% endif \
+             %}\n\n[build-dependencies]\n{% if compiler_path %}\nmiden-sdk-build-script-support = \
+             { path = \"{{ compiler_path }}/sdk/build-script-support\" }\n{% else \
+             %}\nmiden-sdk-build-script-support = { version = \"0.13\" }\n{% endif %}\n",
         );
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
         assert!(

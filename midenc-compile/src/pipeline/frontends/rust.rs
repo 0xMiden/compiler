@@ -34,6 +34,7 @@ use std::{
 
 use miden_assembly::{ProjectSourceInputs, ProjectSourceProvenanceInputs, SourceFileProvenance};
 use miden_mast_package::Package as MastPackage;
+use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::{Context, formatter::DisplayMany};
 use midenc_session::{FileType, InputFile, InputType, Options, Session, diagnostics::Report};
 
@@ -65,8 +66,10 @@ use crate::{
 /// `.wasm` target publishes, because it is run by that code. As a *dependency* it publishes
 /// nothing, and nothing asks it to.
 ///
-/// The route is therefore [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s, held to that by
-/// `the_project_route_is_the_wasm_route`.
+/// The route is therefore [`WASM_FRONTEND`](super::wasm::WASM_FRONTEND)'s, with one
+/// project-only checkpoint ahead of it: `dependencies.staged`, published before the root's
+/// cargo build so `--stop-after=dependencies` stages a consumer's dependencies without
+/// compiling the consumer. Held to that by `the_project_route_is_the_wasm_route`.
 ///
 /// # Why there are still two Rust registrations
 ///
@@ -86,6 +89,7 @@ pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
     FrontendId::new("rust"),
     &["rs"],
     &[
+        CheckpointId::DEPENDENCIES_STAGED,
         CheckpointId::WASM_PARSED,
         CheckpointId::HIR_INITIAL,
         CheckpointId::HIR_ANALYZED,
@@ -94,6 +98,7 @@ pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
         CheckpointId::PACKAGE_ASSEMBLED,
     ],
     &[
+        ("dependencies", CheckpointId::DEPENDENCIES_STAGED),
         ("parse", CheckpointId::WASM_PARSED),
         ("analyze", CheckpointId::HIR_ANALYZED),
         ("transform", CheckpointId::HIR_TRANSFORMED),
@@ -101,6 +106,13 @@ pub const RUST_FRONTEND: FrontendRegistration = FrontendRegistration::new(
         ("assemble", CheckpointId::PACKAGE_ASSEMBLED),
     ],
     &[
+        // The staged dependency exchange is directories and TOML records on disk already;
+        // there is no document to render. See [`unrendered`].
+        ArtifactDecl {
+            checkpoint: CheckpointId::DEPENDENCIES_STAGED,
+            id: ArtifactId::DEPENDENCIES,
+            render: unrendered,
+        },
         // `--emit=wat` is written by `WasmFrontend::emit_wat`, which this route reaches through
         // [`WasmFrontend::compile_wasm`](super::wasm::WasmFrontend). See [`unrendered`].
         ArtifactDecl {
@@ -352,12 +364,13 @@ pub fn build_manifest_to_wasm(
 ) -> CompilerResult<InputFile> {
     let options = session.options.clone();
     let mut outputs = manifest::cargo_build(manifest_path, filesystem_cache_dir, options)?;
-    outputs.pop().ok_or_else(|| {
+    let wasm = outputs.pop().ok_or_else(|| {
         Report::msg(format!(
             "`cargo build` of '{}' produced no WebAssembly artifact",
             manifest_path.display()
         ))
-    })
+    })?;
+    Ok(wasm)
 }
 
 /// Lower the WebAssembly a manifest build produced, through to Miden Assembly.
@@ -624,29 +637,14 @@ trim-paths = [\"diagnostics\", \"object\"]
 
     let cargo_build_args = build_cargo_args(&manifest_path, options);
 
-    // Enable memcopy and 128-bit arithmetic ops
-    let mut rustflags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
-    // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
-    // cfg-based dependency selection.
-    rustflags.push_str(" --cfg miden");
-    // Enable errors on missing stub functions
-    rustflags.push_str(" -C link-args=--fatal-warnings");
-    // Remove the source file paths in the data segment for panics
-    // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-    rustflags.push_str(" -Zlocation-detail=none");
-    // Build with panic=immediate-abort
-    rustflags.push_str(" -Zunstable-options");
-    rustflags.push_str(" -Cpanic=immediate-abort");
-    if let Ok(inherited) = std::env::var("RUSTFLAGS")
-        && !inherited.is_empty()
-    {
-        rustflags.push(' ');
-        rustflags.push_str(&inherited);
-    }
-    if let Some(explicit) = options.rustflags.as_deref() {
-        rustflags.push(' ');
-        rustflags.push_str(explicit);
-    }
+    // The same mandatory set and inherited-flag precedence as the manifest route: a present
+    // `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
+    let extra_rust_flags = manifest::merge_rust_flags(
+        manifest::MANDATORY_RUST_FLAGS,
+        std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
+        std::env::var_os("RUSTFLAGS").as_deref(),
+        options.rustflags.as_deref(),
+    );
 
     let wasi = if options.target_requires_protocol() {
         "wasip2"
@@ -672,7 +670,17 @@ trim-paths = [\"diagnostics\", \"object\"]
     if let Some(toolchain) = toolchain.as_deref() {
         cargo.arg(format!("+{toolchain}"));
     }
-    cargo.env("RUSTFLAGS", rustflags);
+    let cargo_target_dir =
+        manifest::configured_nested_cargo_target_dir(&options.current_dir, &options.target_dir);
+    // Both rustflags spellings, so an inherited encoded value cannot override the composed
+    // list. No package cache: a standalone-file session has none. A custom compiler target still
+    // owns the temporary Cargo project's artifacts, under the same policy as a manifest build.
+    for (key, value) in manifest::cargo_env(None, &extra_rust_flags) {
+        cargo.env(key, value);
+    }
+    if let Some(cargo_target_dir) = cargo_target_dir.as_deref() {
+        cargo.env("CARGO_TARGET_DIR", cargo_target_dir);
+    }
     // This env var is used by crates (e.g. `miden-field`) to distinguish compiling to Wasm for a
     // "real" Wasm runtime vs compiling to Wasm as an intermediate artifact that will be compiled
     // to Miden VM code by `midenc`.
@@ -742,23 +750,22 @@ fn rustc(
         command.stderr(std::process::Stdio::piped());
     }
 
-    // If `RUSTFLAGS` is present, convert them to `rustc` flags
-    let mut rustflags = std::env::var("RUSTFLAGS").ok().unwrap_or_default();
-    if let Some(explicit) = options.rustflags.as_deref() {
-        if !rustflags.is_empty() {
-            rustflags.push(' ');
-        }
-        rustflags.push_str(explicit);
-    }
-    let rustflags = rustflags.split_ascii_whitespace().collect::<Vec<_>>();
-    let mut rustc_flags = Vec::with_capacity(rustflags.len());
+    // Convert the inherited rustflags to `rustc` flags, with cargo's own precedence: a
+    // present `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
+    let rustflags = manifest::merge_rust_flags(
+        &[],
+        std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
+        std::env::var_os("RUSTFLAGS").as_deref(),
+        options.rustflags.as_deref(),
+    );
+    let mut rustc_flags: Vec<String> = Vec::with_capacity(rustflags.len());
     let mut rustflags = rustflags.into_iter();
     let mut target = None;
     while let Some(flag) = rustflags.next() {
         if flag == "--target"
             && let Some(value) = rustflags.next()
         {
-            target = Some(value.to_string());
+            target = Some(value);
             continue;
         } else if flag == "-C"
             && let Some(value) = rustflags.next()
@@ -933,6 +940,12 @@ pub struct RustProjectFrontend {
     /// WebAssembly and `compile` lowers it — and a `cargo` build is the most expensive thing
     /// this frontend does.
     built: RefCell<BTreeMap<TargetKey, WasmSource>>,
+    /// The targets whose resolution records are already written into the package cache.
+    ///
+    /// A root target reaches [`write_dependency_manifest`] twice — from `compile` ahead of
+    /// the staging checkpoint, and from `built_for_root`, which a provenance-first call
+    /// reaches without passing through `compile` — and the records are identical both times.
+    dependency_manifests_written: RefCell<alloc::collections::BTreeSet<TargetKey>>,
     /// The WebAssembly half of the **root** arm, which is everything past the cargo build.
     ///
     /// Held rather than reimplemented, exactly as [`RustStandaloneFrontend`] holds one: the two
@@ -949,6 +962,7 @@ impl RustProjectFrontend {
             session,
             compiled: RefCell::new(BTreeMap::new()),
             built: RefCell::new(BTreeMap::new()),
+            dependency_manifests_written: RefCell::new(alloc::collections::BTreeSet::new()),
             wasm: WasmFrontend::default(),
         }
     }
@@ -977,6 +991,7 @@ impl RustProjectFrontend {
             session,
             compiled: RefCell::new(BTreeMap::from([(key, output)])),
             built: RefCell::new(BTreeMap::new()),
+            dependency_manifests_written: RefCell::new(alloc::collections::BTreeSet::new()),
             wasm: WasmFrontend::default(),
         }
     }
@@ -984,9 +999,9 @@ impl RustProjectFrontend {
     /// Where the nested builds publish and look for compiled dependency packages.
     ///
     /// Derived from `self.session` — the session the project `cargo` is invoked *in* — rather
-    /// than from `cx.session()`: the cache lives under the root project's `target/` directory
+    /// than from `cx.session()`: the per-build package exchange belongs to the root project
     /// and must be the same for every target of the build.
-    fn filesystem_cache_dir(&self) -> Option<PathBuf> {
+    fn filesystem_cache_dir(&self) -> CompilerResult<Option<PathBuf>> {
         self.session.filesystem_package_cache_dir()
     }
 
@@ -1013,6 +1028,23 @@ impl RustProjectFrontend {
     /// `MasmComponent::source_inputs` then emitted a *library* root module for an executable
     /// target — which `load_target_sources` rejects with "requested target type is executable,
     /// but root module provided to assembler ... is library".
+    /// Writes the consumer's resolution records once per target.
+    ///
+    /// See the `dependency_manifests_written` field for why two arrivals are normal.
+    fn write_dependency_manifest_once(
+        &self,
+        cx: &TargetContext<'_>,
+        cache_dir: &Path,
+    ) -> CompilerResult<()> {
+        let key = cx.target_key();
+        if self.dependency_manifests_written.borrow().contains(&key) {
+            return Ok(());
+        }
+        write_dependency_manifest(cx, cache_dir)?;
+        self.dependency_manifests_written.borrow_mut().insert(key);
+        Ok(())
+    }
+
     fn built_for_root(&self, cx: &TargetContext<'_>) -> CompilerResult<WasmSource> {
         let key = cx.target_key();
         if let Some(found) = self.built.borrow().get(&key) {
@@ -1020,9 +1052,13 @@ impl RustProjectFrontend {
         }
 
         let cargo_manifest_path = cx.assembly().manifest_path.with_file_name("Cargo.toml");
+        let filesystem_cache_dir = self.filesystem_cache_dir()?;
+        if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
+            self.write_dependency_manifest_once(cx, cache_dir)?;
+        }
         let wasm = build_manifest_to_wasm(
             &cargo_manifest_path,
-            self.filesystem_cache_dir().as_deref(),
+            filesystem_cache_dir.as_deref(),
             &cx.session(),
         )?;
         let source = WasmFrontend::read_input(&wasm)?;
@@ -1052,11 +1088,15 @@ impl RustProjectFrontend {
         let assembly = cx.assembly();
         let cargo_opts = crate::cargo::CargoOptions::from_compiler(&self.session.options)?;
         let source_manager = self.session.source_manager.clone();
+        let filesystem_cache_dir = self.filesystem_cache_dir()?;
+        if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
+            self.write_dependency_manifest_once(cx, cache_dir)?;
+        }
         crate::cargo::cargo_build(
             assembly.package.name().to_string(),
             assembly.target,
             assembly.manifest_path.with_file_name("Cargo.toml"),
-            self.filesystem_cache_dir().as_deref(),
+            filesystem_cache_dir.as_deref(),
             &self.session.options,
             &cargo_opts,
             source_manager,
@@ -1070,6 +1110,402 @@ impl RustProjectFrontend {
     fn lowered(&self, key: &TargetKey) -> Option<CodegenOutput> {
         self.compiled.borrow().get(key).cloned().or_else(|| self.wasm.lowered_for(key))
     }
+}
+
+/// Records the compiler-selected dependency artifacts for `cx`'s project in the package cache.
+///
+/// Written before the project's nested cargo build spawns — at which point every dependency
+/// is already resolved and published (the assembler resolves depth-first) — so the SDK macros
+/// expanding inside that build consume the same resolution the compiler made, independent of
+/// the dependency's source scheme, instead of re-deriving it from the manifests.
+///
+/// The consumer's files under `miden-deps/`, each replaced atomically:
+/// - `<consumer>.deps.toml` — for each declared dependency, the artifact selected for it: a
+///   `package` file name inside the cache for compiler-published artifacts, or an absolute
+///   `path` for preassembled `.masp` dependencies consumed in place. Each entry also records
+///   `version` (unread until the #1300 digest pin extends it) and `wit` — whether the
+///   artifact embeds component WIT, which lets the macros skip link-only packages without
+///   deserializing them.
+/// - `build-inputs` — root consumer only: a versioned declaration of the dependency inputs the
+///   frontends can enumerate completely, plus explicit opacity reasons for the ones they cannot.
+///   The contract build script turns a complete record into selective Cargo change directives;
+///   any opaque reason makes it stage dependencies on every Cargo invocation instead.
+fn write_dependency_manifest(cx: &TargetContext<'_>, cache_dir: &Path) -> CompilerResult<()> {
+    use midenc_session::miden_project::{self, ProjectDependencyNodeProvenance};
+
+    if cx.is_virtual_project() {
+        return Ok(());
+    }
+    let assembly = cx.assembly();
+    let package = &assembly.package;
+    let graph = assembly.dependency_graph;
+    let registry = assembly.package_registry;
+    let consumer = package.name().to_string();
+
+    let mut dependencies = toml_edit::Table::new();
+    for dependency in package.dependencies() {
+        let name = dependency.name();
+        let Some(node) = graph.get(&name.clone().into()) else {
+            // Every declared dependency resolves into the graph; a miss here means the
+            // resolver rejected it earlier, so there is nothing to record.
+            continue;
+        };
+        let mut entry = toml_edit::InlineTable::new();
+        match &node.provenance {
+            ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
+                entry.insert("path", path.display().to_string().into());
+            }
+            // Registry-resolved packages are eagerly published under version-qualified names:
+            // the registry may contain several versions of one component, and the map must name
+            // the exact artifact the graph selected.
+            ProjectDependencyNodeProvenance::Source(_) => {
+                entry.insert("package", package_cache::package_file_name(&node.name).into());
+            }
+            ProjectDependencyNodeProvenance::Registry { selected, .. } => {
+                entry.insert(
+                    "package",
+                    package_cache::registry_package_file_name(&node.name, &selected.version).into(),
+                );
+            }
+        }
+        // No reader consults the version yet; it is recorded for the #1300 digest pin, which
+        // extends these entries with the artifact identity to verify on read.
+        entry.insert("version", node.version.to_string().into());
+        // The assembler's registry holds every resolved artifact. Recording whether it
+        // embeds component WIT lets the macros skip a link-only package — a base library,
+        // a MASM-only dependency — without deserializing it. An absent key means unknown,
+        // and the reader reads the package to find out.
+        let package_id: midenc_session::miden_package_registry::PackageId = name.clone().into();
+        let embeds_wit = registry
+            .get_by_semver(&package_id, &node.version)
+            .and_then(|record| record.digest().copied())
+            .map(|digest| miden_project::Version::new(node.version.clone(), digest))
+            .and_then(|version| registry.load_package(&package_id, &version).ok())
+            .map(|package| midenc_frontend_wasm_metadata::package_wit(&package).is_some());
+        if let Some(embeds_wit) = embeds_wit {
+            entry.insert("wit", embeds_wit.into());
+        }
+        dependencies
+            .insert(name.as_ref(), toml_edit::Item::Value(toml_edit::Value::InlineTable(entry)));
+    }
+
+    let mut doc = toml_edit::DocumentMut::new();
+    doc["schema"] = toml_edit::value(package_cache::DEPENDENCY_MAP_SCHEMA);
+    doc["dependencies"] = toml_edit::Item::Table(dependencies);
+
+    let manifest_dir = cache_dir.join(package_cache::DEPENDENCY_MANIFEST_DIR);
+    std::fs::create_dir_all(&manifest_dir).map_err(|err| {
+        Report::msg(format!(
+            "failed to create the dependency manifest directory '{}': {err}",
+            manifest_dir.display()
+        ))
+    })?;
+    write_atomically(
+        &manifest_dir.join(package_cache::dependency_map_file_name(&consumer)),
+        doc.to_string(),
+    )?;
+
+    if cx.role().is_root() {
+        let build_inputs = collect_dependency_build_inputs(cx);
+        write_atomically(
+            &manifest_dir.join(package_cache::BUILD_INPUTS_FILE),
+            build_inputs.encode(),
+        )?;
+    }
+    Ok(())
+}
+
+/// The dependency inputs known to affect one staged package generation.
+///
+/// `opaque` is a set rather than a boolean so completeness is derived: once any frontend says
+/// that it cannot describe its provenance using Cargo change directives, no later merge can
+/// accidentally make the aggregate selective again. Version 1 deliberately treats every Rust
+/// source dependency as opaque. Cargo's stable interfaces do not expose build-script change
+/// directives, configuration includes, or future conventionally discovered inputs, so a rustc
+/// dep-info snapshot cannot justify a complete invalidation claim.
+#[derive(Debug, Default, Eq, PartialEq)]
+struct DependencyBuildInputs {
+    files: alloc::collections::BTreeSet<PathBuf>,
+    trees: alloc::collections::BTreeSet<PathBuf>,
+    environment: alloc::collections::BTreeSet<String>,
+    opaque: alloc::collections::BTreeSet<&'static str>,
+}
+
+impl DependencyBuildInputs {
+    fn add_file(&mut self, path: PathBuf) {
+        if representable_build_input_path(&path) {
+            self.files.insert(path);
+        } else {
+            self.opaque.insert("unrepresentable-path");
+        }
+    }
+
+    fn add_tree(&mut self, path: PathBuf) {
+        if representable_build_input_path(&path) {
+            self.trees.insert(path);
+        } else {
+            self.opaque.insert("unrepresentable-path");
+        }
+    }
+
+    fn add_existing_file(&mut self, path: PathBuf) {
+        self.add_file(path.clone());
+        match path.canonicalize() {
+            Ok(canonical) => self.add_file(canonical),
+            Err(_) => self.mark_opaque("input-identity-unavailable"),
+        }
+    }
+
+    fn add_existing_tree(&mut self, path: PathBuf) {
+        self.add_tree(path.clone());
+        match path.canonicalize() {
+            Ok(canonical) => self.add_tree(canonical),
+            Err(_) => self.mark_opaque("input-identity-unavailable"),
+        }
+    }
+
+    fn mark_opaque(&mut self, reason: &'static str) {
+        self.opaque.insert(reason);
+    }
+
+    fn encode(&self) -> String {
+        use core::fmt::Write;
+
+        let mut encoded = format!("miden-build-inputs\t{}\n", package_cache::BUILD_INPUTS_SCHEMA);
+        for path in &self.files {
+            writeln!(encoded, "file\t{}", path.display()).expect("writing to a String cannot fail");
+        }
+        for path in &self.trees {
+            writeln!(encoded, "tree\t{}", path.display()).expect("writing to a String cannot fail");
+        }
+        for name in &self.environment {
+            writeln!(encoded, "env\t{name}").expect("writing to a String cannot fail");
+        }
+        for reason in &self.opaque {
+            writeln!(encoded, "opaque\t{reason}").expect("writing to a String cannot fail");
+        }
+        encoded
+    }
+}
+
+fn representable_build_input_path(path: &Path) -> bool {
+    path.is_absolute() && path.to_str().is_some_and(|path| !path.contains(['\t', '\r', '\n']))
+}
+
+/// Returns true when no unwatched directory can later introduce a nearer Miden workspace.
+fn workspace_boundary_is_closed(project_root: &Path, workspace_root: &Path) -> bool {
+    project_root == workspace_root || project_root.parent() == Some(workspace_root)
+}
+
+fn launcher_uses_path_search(launcher: &Path) -> bool {
+    !launcher.is_absolute() && launcher.components().count() == 1
+}
+
+/// Records every manifest eagerly consumed when miden-project loads one workspace.
+fn add_workspace_build_inputs(
+    inputs: &mut DependencyBuildInputs,
+    workspace_root: &Path,
+    source_manager: &dyn miden_assembly::SourceManager,
+) {
+    use midenc_hir::diagnostics::SourceManagerExt;
+
+    let manifest_path = workspace_root.join("miden-project.toml");
+    inputs.add_existing_file(manifest_path.clone());
+    let Ok(source) = source_manager.load_file(&manifest_path) else {
+        inputs.mark_opaque("workspace-metadata-unavailable");
+        return;
+    };
+    let Ok(workspace) = midenc_session::miden_project::Workspace::load(source, source_manager)
+    else {
+        inputs.mark_opaque("workspace-metadata-unavailable");
+        return;
+    };
+    for member in workspace.members() {
+        match member.manifest_path() {
+            Some(manifest_path) => inputs.add_existing_file(manifest_path.to_path_buf()),
+            None => inputs.mark_opaque("workspace-member-unavailable"),
+        }
+    }
+}
+
+/// Collects a conservative invalidation contract for the root's resolved dependency graph.
+///
+/// Local non-Rust source trees are complete when watched recursively: edits, removals, and newly
+/// created conventional inputs are all visible to Cargo. Preassembled artifacts and the selected
+/// sysroot registry are likewise concrete local inputs. Rust source builds and Git checkouts are
+/// opaque in schema version 1; the build script responds by re-staging on every Cargo invocation,
+/// delegating their provenance and invalidation back to Cargo and the compiler that consume them.
+fn collect_dependency_build_inputs(cx: &TargetContext<'_>) -> DependencyBuildInputs {
+    use midenc_session::miden_project::{
+        ProjectDependencyNodeProvenance, ProjectSource, ProjectSourceOrigin,
+    };
+
+    let assembly = cx.assembly();
+    let graph = assembly.dependency_graph;
+    let mut inputs = DependencyBuildInputs::default();
+    let mut recorded_workspaces = alloc::collections::BTreeSet::new();
+
+    match std::env::current_exe() {
+        Ok(executable) => inputs.add_existing_file(executable),
+        Err(_) => inputs.mark_opaque("tool-identity-unavailable"),
+    }
+    if let Some(launcher) = std::env::var_os("CARGO_MIDEN") {
+        let launcher = PathBuf::from(launcher);
+        let launcher = if launcher_uses_path_search(&launcher) {
+            inputs.mark_opaque("tool-resolution-via-path");
+            PathBuf::new()
+        } else if launcher.is_absolute() {
+            launcher
+        } else {
+            match std::env::current_dir() {
+                Ok(current_dir) => current_dir.join(launcher),
+                Err(_) => {
+                    inputs.mark_opaque("tool-launcher-unavailable");
+                    PathBuf::new()
+                }
+            }
+        };
+        if !launcher.as_os_str().is_empty() {
+            inputs.add_existing_file(launcher);
+        }
+    } else {
+        // `cargo miden` resolves its plugin by searching PATH. The selected executable is known,
+        // but a new same-named tool can later appear in an earlier existing PATH directory without
+        // changing either PATH's value or that old executable. Until the launcher supplies an
+        // authoritative path, this resolution mode is not selectively invalidatable.
+        inputs.mark_opaque("tool-resolution-via-path");
+    }
+
+    inputs.add_existing_file(assembly.manifest_path.to_path_buf());
+
+    let mut has_registry_dependency = false;
+    for (name, node) in graph.nodes() {
+        if name == graph.root() {
+            if let ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
+                project_root,
+                workspace_root,
+                ..
+            }) = &node.provenance
+            {
+                match workspace_root {
+                    Some(workspace_root) => {
+                        if recorded_workspaces.insert(workspace_root.clone()) {
+                            add_workspace_build_inputs(
+                                &mut inputs,
+                                workspace_root,
+                                assembly.source_manager.as_ref(),
+                            );
+                        }
+                        if !workspace_boundary_is_closed(project_root, workspace_root) {
+                            inputs.mark_opaque("workspace-discovery");
+                        }
+                    }
+                    // Workspace discovery searches ancestor manifests. A future parent manifest
+                    // cannot appear in an exact snapshot, so a standalone root is opaque in v1.
+                    None => inputs.mark_opaque("workspace-discovery"),
+                }
+            }
+            continue;
+        }
+        match &node.provenance {
+            ProjectDependencyNodeProvenance::Source(ProjectSource::Real {
+                origin,
+                project_root,
+                workspace_root,
+                library_path,
+                ..
+            }) => {
+                if matches!(origin, ProjectSourceOrigin::Git { .. }) {
+                    inputs.mark_opaque("git-source");
+                    continue;
+                }
+                if !workspace_root.as_deref().is_some_and(|workspace_root| {
+                    workspace_boundary_is_closed(project_root, workspace_root)
+                }) {
+                    inputs.mark_opaque("workspace-discovery");
+                }
+                let Some(extension) = library_path
+                    .as_deref()
+                    .and_then(Path::extension)
+                    .and_then(|extension| extension.to_str())
+                else {
+                    inputs.mark_opaque("source-frontend-unavailable");
+                    continue;
+                };
+                if extension.eq_ignore_ascii_case("rs") {
+                    inputs.mark_opaque("cargo-fingerprint");
+                    continue;
+                }
+                if !["masm", "wasm", "wat", "hir"]
+                    .iter()
+                    .any(|supported| extension.eq_ignore_ascii_case(supported))
+                {
+                    inputs.mark_opaque("unsupported-source-frontend");
+                    continue;
+                }
+                inputs.add_existing_tree(project_root.clone());
+                let Some(library_path) = library_path.as_deref() else {
+                    inputs.mark_opaque("source-path-unavailable");
+                    continue;
+                };
+                let Some(source_dir) = library_path.parent() else {
+                    inputs.mark_opaque("source-tree-unavailable");
+                    continue;
+                };
+                // A target path may legally escape the directory containing its manifest, and a
+                // file symlink inside the project may resolve to a module tree outside it. Watch
+                // the lexical target and source directory to observe retargeting, plus the
+                // canonical target's parent to observe edits and newly added sibling modules.
+                inputs.add_existing_file(library_path.to_path_buf());
+                inputs.add_existing_tree(source_dir.to_path_buf());
+                match library_path.canonicalize() {
+                    Ok(canonical_library) => match canonical_library.parent() {
+                        Some(canonical_source_dir) => {
+                            inputs.add_existing_tree(canonical_source_dir.to_path_buf());
+                        }
+                        None => inputs.mark_opaque("source-tree-unavailable"),
+                    },
+                    Err(_) => inputs.mark_opaque("source-identity-unavailable"),
+                }
+                if let Some(workspace_root) = workspace_root
+                    && recorded_workspaces.insert(workspace_root.clone())
+                {
+                    add_workspace_build_inputs(
+                        &mut inputs,
+                        workspace_root,
+                        assembly.source_manager.as_ref(),
+                    );
+                }
+            }
+            ProjectDependencyNodeProvenance::Preassembled { path, .. } => {
+                inputs.add_existing_file(path.clone());
+            }
+            ProjectDependencyNodeProvenance::Registry { .. } => {
+                has_registry_dependency = true;
+            }
+            ProjectDependencyNodeProvenance::Source(ProjectSource::Virtual { .. }) => {
+                inputs.mark_opaque("virtual-source");
+            }
+        }
+    }
+
+    // Without a sysroot, the standard registry packages are embedded in the compiler executable
+    // already recorded above.
+    if has_registry_dependency && let Some(sysroot) = cx.session().options.sysroot.as_deref() {
+        inputs.add_existing_tree(sysroot.join("lib"));
+    }
+
+    inputs
+}
+
+/// Writes `contents` to `path` through a temporary sibling and an atomic rename.
+///
+/// Delegates to the session's shared cache writer, which also widens the file mode: these
+/// files are read by the same processes that read the packages beside them, and a map the
+/// macros cannot read is a hard expansion error.
+fn write_atomically(path: &Path, contents: String) -> CompilerResult<()> {
+    midenc_session::registry::write_file_atomically(path, contents.as_bytes())
+        .map_err(|err| Report::msg(format!("failed to write '{}': {err}", path.display())))
 }
 
 impl Frontend for RustProjectFrontend {
@@ -1117,6 +1553,24 @@ impl Frontend for RustProjectFrontend {
         }
 
         if cx.role().is_root() {
+            // Everything a consumer's dependencies produce exists before the root's own
+            // build: the assembler resolved, assembled, and published each of them already.
+            // Writing the resolution records and publishing the checkpoint here — before the
+            // root's cargo build — is what lets `--stop-after=dependencies` stage a
+            // consumer's dependencies without compiling the consumer itself. (The records
+            // are also written on the `built_for_root` path, which a provenance-first call
+            // reaches without passing through here.)
+            let filesystem_cache_dir = self.filesystem_cache_dir()?;
+            if let Some(cache_dir) = filesystem_cache_dir.as_deref() {
+                self.write_dependency_manifest_once(cx, cache_dir)?;
+            }
+            if let Flow::Break(stopped) = cx.checkpoint(
+                CheckpointId::DEPENDENCIES_STAGED,
+                ArtifactId::DEPENDENCIES,
+                filesystem_cache_dir,
+            )? {
+                return Ok(Flow::Break(stopped));
+            }
             return self.wasm.compile_wasm(cx, self.built_for_root(cx)?);
         }
 
@@ -1183,7 +1637,7 @@ impl Frontend for RustProjectFrontend {
         crate::pipeline::assembly::post_process_package(
             package,
             &found.component,
-            found.account_component_metadata_bytes.as_deref(),
+            &found.sections,
             cx.assembly().target,
             cx.assembly().package_registry,
         )
@@ -1356,6 +1810,27 @@ pub(crate) mod manifest {
     use midenc_session::{InputFile, OptLevel, ProjectManifest, miden_project};
 
     use crate::{CompilerResult, cargo::CargoOptions};
+
+    /// The rustc flags every Miden build needs, shared by the manifest-driven and the
+    /// standalone-file cargo routes so the two cannot drift apart.
+    pub(super) const MANDATORY_RUST_FLAGS: &[&str] = &[
+        // Enable memcopy and 128-bit arithmetic ops
+        "-C",
+        "target-feature=+bulk-memory,+wide-arithmetic",
+        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
+        // for cfg-based dependency selection.
+        "--cfg",
+        "miden",
+        // Enable errors on missing stub functions
+        "-C",
+        "link-args=--fatal-warnings",
+        // Remove the source file paths in the data segment for panics
+        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+        "-Zlocation-detail=none",
+        // Build with panic=immediate-abort
+        "-Zunstable-options",
+        "-Cpanic=immediate-abort",
+    ];
 
     /// Executes a Cargo-based build with the provided compiler options and package registry
     pub(crate) fn cargo_build(
@@ -1563,29 +2038,14 @@ pub(crate) mod manifest {
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
 
-        // Enable memcopy and 128-bit arithmetic ops
-        let mut extra_rust_flags = String::from("-C target-feature=+bulk-memory,+wide-arithmetic");
-        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it for
-        // cfg-based dependency selection.
-        extra_rust_flags.push_str(" --cfg miden");
-        // Enable errors on missing stub functions
-        extra_rust_flags.push_str(" -C link-args=--fatal-warnings");
-        // Remove the source file paths in the data segment for panics
-        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-        extra_rust_flags.push_str(" -Zlocation-detail=none");
-        // Build with panic=immediate-abort
-        extra_rust_flags.push_str(" -Zunstable-options");
-        extra_rust_flags.push_str(" -Cpanic=immediate-abort");
-        if let Ok(inherited) = std::env::var("RUSTFLAGS")
-            && !inherited.is_empty()
-        {
-            extra_rust_flags.push(' ');
-            extra_rust_flags.push_str(&inherited);
-        }
-        if let Some(explicit) = compiler_opts.rustflags.as_deref() {
-            extra_rust_flags.push(' ');
-            extra_rust_flags.push_str(explicit);
-        }
+        let inherited_encoded = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
+        let inherited_plain = std::env::var_os("RUSTFLAGS");
+        let extra_rust_flags = merge_rust_flags(
+            MANDATORY_RUST_FLAGS,
+            inherited_encoded.as_deref(),
+            inherited_plain.as_deref(),
+            compiler_opts.rustflags.as_deref(),
+        );
 
         let wasi = if compiler_opts.target_requires_protocol() {
             "wasip2"
@@ -1593,9 +2053,18 @@ pub(crate) mod manifest {
             "wasip1"
         };
 
-        let env = cargo_env(filesystem_cache_dir, extra_rust_flags);
-        let mut wasm_outputs =
-            run_cargo(wasi, rustup_toolchain.as_deref(), &cargo_build_args, env)?;
+        let cargo_target_dir = configured_nested_cargo_target_dir(
+            &compiler_opts.current_dir,
+            &compiler_opts.target_dir,
+        );
+        let env = cargo_env(filesystem_cache_dir, &extra_rust_flags);
+        let mut wasm_outputs = run_cargo(
+            wasi,
+            rustup_toolchain.as_deref(),
+            &cargo_build_args,
+            env,
+            cargo_target_dir.as_deref(),
+        )?;
 
         assert_eq!(wasm_outputs.len(), 1, "expected only one Wasm artifact");
         let wasm_output = wasm_outputs.pop().expect("expected at least one Wasm artifact");
@@ -1607,24 +2076,106 @@ pub(crate) mod manifest {
     ///
     /// `MIDENC_PACKAGE_CACHE` is the whole reason `filesystem_cache_dir` is threaded down from
     /// the entry point: it tells the nested `midenc` invocations where to publish the packages
-    /// they compile and where to look for the ones their own dependencies already produced.
-    /// Absent a cache directory the variable is *unset* rather than set to an empty path, which
-    /// is what makes the nested build fall back to its own default.
+    /// they compile and where to look for the ones their own dependencies already produced. The
+    /// directory is the root session's cache — its per-build lease, or a caller-provided
+    /// directory the root adopted through this same variable — so every participant in one
+    /// build exchanges packages through one directory. Absent a cache directory (non-project
+    /// inputs) the variable is *unset* rather than set to an empty path; every reader treats
+    /// an empty value as unset.
+    ///
+    /// The composed rust flags are emitted twice: as `RUSTFLAGS` (space-joined, lossy for
+    /// arguments that contain spaces) and, authoritatively, as `CARGO_ENCODED_RUSTFLAGS`
+    /// (0x1f-joined). Cargo prefers the encoded variable, so emitting it explicitly is what keeps
+    /// the mandatory Miden flags — `--cfg miden`, the target features, the panic strategy — from
+    /// being replaced by an inherited value; the caller's own flags survive because
+    /// [`merge_rust_flags`] folds them into the composed list first.
     ///
     /// Named — rather than left inline where it was — so that this can be asserted without
     /// spawning `cargo -Z build-std` against the SDK.
     pub(super) fn cargo_env(
         filesystem_cache_dir: Option<&Path>,
-        extra_rust_flags: String,
+        extra_rust_flags: &[String],
     ) -> Vec<(&'static str, String)> {
+        let mut env = vec![
+            ("RUSTFLAGS", extra_rust_flags.join(" ")),
+            ("CARGO_ENCODED_RUSTFLAGS", extra_rust_flags.join("\x1f")),
+        ];
         if let Some(filesystem_cache_dir) = filesystem_cache_dir {
-            vec![
-                ("RUSTFLAGS", extra_rust_flags),
-                ("MIDENC_PACKAGE_CACHE", filesystem_cache_dir.to_string_lossy().into_owned()),
-            ]
-        } else {
-            vec![("RUSTFLAGS", extra_rust_flags)]
+            env.push((
+                midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV,
+                filesystem_cache_dir.to_string_lossy().into_owned(),
+            ));
         }
+        env
+    }
+
+    /// Selects the nested Cargo target directory implied by the Midenc target policy.
+    ///
+    /// `cargo_target_is_configured` represents either Cargo target-directory environment
+    /// spelling. The values themselves are deliberately left unread so relative and non-Unicode
+    /// caller configuration passes through to Cargo unchanged.
+    pub(super) fn nested_cargo_target_dir(
+        current_dir: &Path,
+        midenc_target_dir: &Path,
+        cargo_target_is_configured: bool,
+    ) -> Option<PathBuf> {
+        if cargo_target_is_configured {
+            return None;
+        }
+
+        let default_target_dir = current_dir.join("target");
+        let cli_default_target_dir = default_target_dir.join("miden");
+        if midenc_target_dir == default_target_dir || midenc_target_dir == cli_default_target_dir {
+            None
+        } else {
+            Some(midenc_target_dir.join("cargo"))
+        }
+    }
+
+    /// Applies [`nested_cargo_target_dir`] to the Cargo target configuration inherited by the
+    /// current process.
+    pub(super) fn configured_nested_cargo_target_dir(
+        current_dir: &Path,
+        midenc_target_dir: &Path,
+    ) -> Option<PathBuf> {
+        nested_cargo_target_dir(
+            current_dir,
+            midenc_target_dir,
+            std::env::var_os("CARGO_TARGET_DIR").is_some()
+                || std::env::var_os("CARGO_BUILD_TARGET_DIR").is_some(),
+        )
+    }
+
+    /// Composes the rustc flag list for the nested cargo build.
+    ///
+    /// Inherited flags follow cargo's own precedence: a *present* `CARGO_ENCODED_RUSTFLAGS`
+    /// (0x1f-separated; arguments may contain spaces) replaces plain `RUSTFLAGS`
+    /// (whitespace-split) even when its value is empty — cargo treats an empty encoded value
+    /// as "no inherited flags", not as an absent variable. Inherited flags are folded in after
+    /// the mandatory set and before the explicit `--rustflags`, preserving the pre-existing
+    /// override order — nothing a caller passes is dropped.
+    pub(super) fn merge_rust_flags(
+        mandatory: &[&str],
+        inherited_encoded: Option<&std::ffi::OsStr>,
+        inherited_plain: Option<&std::ffi::OsStr>,
+        explicit: Option<&str>,
+    ) -> Vec<String> {
+        let mut args: Vec<String> = mandatory.iter().map(|flag| flag.to_string()).collect();
+        // Present-but-empty encoded flags are authoritative: cargo itself suppresses
+        // RUSTFLAGS whenever CARGO_ENCODED_RUSTFLAGS is set, whatever its value.
+        let encoded = inherited_encoded.and_then(|value| value.to_str());
+        let plain = inherited_plain
+            .and_then(|value| value.to_str())
+            .filter(|value| !value.is_empty());
+        if let Some(encoded) = encoded {
+            args.extend(encoded.split('\x1f').filter(|arg| !arg.is_empty()).map(str::to_string));
+        } else if let Some(plain) = plain {
+            args.extend(plain.split_whitespace().map(str::to_string));
+        }
+        if let Some(explicit) = explicit {
+            args.extend(explicit.split_whitespace().map(str::to_string));
+        }
+        args
     }
 
     /// Returns the Cargo profile value for a compiler optimization level.
@@ -1699,6 +2250,7 @@ pub(crate) mod manifest {
         toolchain: Option<&str>,
         spawn_args: &[String],
         env: E,
+        cargo_target_dir: Option<&Path>,
     ) -> CompilerResult<Vec<PathBuf>>
     where
         E: IntoIterator<Item = (&'static str, String)>,
@@ -1708,6 +2260,10 @@ pub(crate) mod manifest {
 
         let mut cargo = std::process::Command::new(cargo_path);
         cargo.envs(env);
+        if let Some(cargo_target_dir) = cargo_target_dir {
+            // Preserve non-Unicode custom paths rather than serializing them lossily.
+            cargo.env("CARGO_TARGET_DIR", cargo_target_dir);
+        }
         if cargo_env.is_none() {
             cargo.arg(format!("+{}", toolchain.unwrap_or("nightly")));
         }
@@ -1829,6 +2385,55 @@ mod tests {
         testing::{self, VirtualProject, wat_fixture},
     };
 
+    #[test]
+    fn dependency_build_inputs_have_a_stable_versioned_encoding() {
+        let mut inputs = DependencyBuildInputs::default();
+        inputs.add_tree(PathBuf::from("/source/with spaces"));
+        inputs.add_file(PathBuf::from("/packages/dependency.masp"));
+        inputs.environment.insert("MIDDEN_FIXTURE_MODE".to_string());
+        inputs.mark_opaque("cargo-fingerprint");
+
+        assert_eq!(
+            inputs.encode(),
+            "miden-build-inputs\t1\nfile\t/packages/dependency.masp\ntree\t/source/with \
+             spaces\nenv\tMIDDEN_FIXTURE_MODE\nopaque\tcargo-fingerprint\n"
+        );
+    }
+
+    #[test]
+    fn an_unrepresentable_build_input_makes_the_whole_record_opaque() {
+        let mut inputs = DependencyBuildInputs::default();
+        inputs.add_file(PathBuf::from("/source/line\nbreak.masm"));
+        inputs.add_file(PathBuf::from("relative/source.masm"));
+        inputs.add_tree(PathBuf::from("/source/ordinary"));
+
+        assert!(
+            inputs.files.is_empty(),
+            "lossy or context-dependent paths must never be encoded"
+        );
+        assert_eq!(inputs.opaque, alloc::collections::BTreeSet::from(["unrepresentable-path"]));
+        assert!(inputs.encode().contains("opaque\tunrepresentable-path\n"));
+    }
+
+    #[test]
+    fn only_a_direct_workspace_member_has_a_closed_discovery_boundary() {
+        let workspace = Path::new("/workspace");
+        assert!(super::workspace_boundary_is_closed(Path::new("/workspace/member"), workspace));
+        assert!(super::workspace_boundary_is_closed(workspace, workspace));
+        assert!(!super::workspace_boundary_is_closed(
+            Path::new("/workspace/contracts/member"),
+            workspace
+        ));
+    }
+
+    #[test]
+    fn only_a_bare_launcher_name_uses_path_search() {
+        assert!(super::launcher_uses_path_search(Path::new("cargo-miden-wrapper")));
+        assert!(!super::launcher_uses_path_search(Path::new("./cargo-miden-wrapper")));
+        assert!(!super::launcher_uses_path_search(Path::new("tools/cargo-miden-wrapper")));
+        assert!(!super::launcher_uses_path_search(Path::new("/tools/cargo-miden-wrapper")));
+    }
+
     /// The project route *is* the WebAssembly route, and this is what holds it to that.
     ///
     /// A route is what `--stop-after`, the `-C` stop flags and `--emit` are validated against,
@@ -1854,14 +2459,28 @@ mod tests {
             &["rs"],
             "dispatch is by target-root extension, and a Rust target is rooted at a `.rs` file"
         );
+        let (first, shared_tail) =
+            RUST_FRONTEND.route().split_first().expect("the project route is not empty");
         assert_eq!(
-            RUST_FRONTEND.route(),
+            *first,
+            CheckpointId::DEPENDENCIES_STAGED,
+            "the one project-only checkpoint precedes the cargo build; everything after is the \
+             wasm frontend's"
+        );
+        assert_eq!(
+            shared_tail,
             WASM_FRONTEND.route(),
             "past the cargo build this route is run by the wasm frontend's own code, so it must \
              declare exactly what that code publishes"
         );
+        let (first_alias, shared_aliases) = RUST_FRONTEND
+            .aliases()
+            .split_first()
+            .expect("the project aliases are not empty");
+        assert_eq!(first_alias.0, "dependencies");
+        assert_eq!(first_alias.1, CheckpointId::DEPENDENCIES_STAGED);
         assert_eq!(
-            RUST_FRONTEND.aliases(),
+            shared_aliases,
             WASM_FRONTEND.aliases(),
             "and `--stop-after` must name the same points on both, since the same phases produce \
              them"
@@ -2133,7 +2752,7 @@ mod tests {
                 stack_pointer: None,
                 modules: Vec::new(),
             }),
-            account_component_metadata_bytes: None,
+            sections: Default::default(),
             source_provenance: ProjectSourceProvenanceInputs {
                 root: SourceFileProvenance {
                     path: std::path::PathBuf::from("seeded.wat").into_boxed_path(),
@@ -2357,6 +2976,14 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         ]
     }
 
+    /// The manifest-backed route's published trace: the project-only dependency staging
+    /// checkpoint, then the shared tail.
+    fn project_trace() -> Vec<CheckpointId> {
+        let mut trace = vec![CheckpointId::DEPENDENCIES_STAGED];
+        trace.extend(rust_trace());
+        trace
+    }
+
     /// A standalone `.rs` target reaches every checkpoint its route declares.
     #[test]
     fn a_standalone_rust_target_publishes_its_whole_route() {
@@ -2447,12 +3074,13 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         assert!(!flow.is_break(), "package.assembled is the orchestrator's to publish, not ours");
         assert_eq!(
             observer.borrow().records().iter().map(|(c, _)| *c).collect::<Vec<_>>(),
-            rust_trace(),
-            "a manifest-backed root target publishes what the shared tail publishes"
+            project_trace(),
+            "a manifest-backed root target publishes the staging checkpoint, then what the shared \
+             tail publishes"
         );
         assert_eq!(
             RUST_FRONTEND.route().len(),
-            rust_trace().len() + 1,
+            project_trace().len() + 1,
             "and the route declares exactly those, plus the terminal checkpoint the driver \
              publishes"
         );
@@ -2467,7 +3095,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
     /// stopped only at its first would satisfy a single-goal test.
     #[test]
     fn a_manifest_backed_root_target_stops_at_each_goal_on_its_route() {
-        for goal in rust_trace() {
+        for goal in project_trace() {
             let project = library("rust_project_root_stops");
             let assembly = project.assembly_context().expect("assembly context");
             let context = context();
@@ -2570,7 +3198,7 @@ pub extern "C" fn add(a: u32, b: u32) -> u32 {
         let frontend = already_built(context.session_rc(), cx.target_key());
         let _ = frontend.compile(&cx).expect("the first callback lowers the built WebAssembly");
         let after_first = observer.borrow().records().len();
-        assert_eq!(after_first, rust_trace().len(), "the first callback publishes the route");
+        assert_eq!(after_first, project_trace().len(), "the first callback publishes the route");
 
         let _ = frontend.compile(&cx).expect("the second callback must be served, not rebuilt");
         assert_eq!(
@@ -3152,29 +3780,157 @@ path = "lib.rs"
     /// which is minutes of work and a network fetch.
     #[test]
     fn the_filesystem_cache_directory_is_handed_to_the_nested_cargo_build() {
-        let rustflags = String::from("-C target-feature=+bulk-memory");
+        let rustflags = vec!["-C".to_string(), "target-feature=+bulk-memory".to_string()];
         let cache = std::path::Path::new("/tmp/midenc-package-cache");
 
-        let with = manifest::cargo_env(Some(cache), rustflags.clone());
+        let with = manifest::cargo_env(Some(cache), &rustflags);
         assert!(
-            with.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
+            with.iter()
+                .any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags.join(" ")),
             "the rust flags must survive the cache directory being added: {with:?}"
         );
         let (_, found) = with
             .iter()
-            .find(|(key, _)| *key == "MIDENC_PACKAGE_CACHE")
+            .find(|(key, _)| *key == package_cache::PACKAGE_CACHE_ENV)
             .expect("a cache directory must be delivered to the nested build");
         assert_eq!(found, &cache.display().to_string());
-
-        let without = manifest::cargo_env(None, rustflags.clone());
+        let without = manifest::cargo_env(None, &rustflags);
         assert!(
-            !without.iter().any(|(key, _)| *key == "MIDENC_PACKAGE_CACHE"),
+            !without.iter().any(|(key, _)| *key == package_cache::PACKAGE_CACHE_ENV),
             "no cache directory means the variable is unset, not set to nothing: {without:?}"
         );
         assert!(
-            without.iter().any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags),
+            without
+                .iter()
+                .any(|(key, value)| *key == "RUSTFLAGS" && *value == rustflags.join(" ")),
             "and the rust flags are handed over either way: {without:?}"
         );
+    }
+
+    #[test]
+    fn only_a_custom_midenc_target_redirects_nested_cargo() {
+        let current_dir = std::path::Path::new("/project");
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/writable/miden"),
+                false,
+            ),
+            Some(std::path::PathBuf::from("/writable/miden/cargo"))
+        );
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/project/target/miden"),
+                false,
+            ),
+            None,
+            "the CLI default must preserve Cargo's own workspace/config target"
+        );
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/project/target"),
+                false,
+            ),
+            None,
+            "the programmatic Options default must preserve Cargo's default target"
+        );
+        assert_eq!(
+            manifest::nested_cargo_target_dir(
+                current_dir,
+                std::path::Path::new("/writable/miden"),
+                true,
+            ),
+            None,
+            "caller-provided Cargo target configuration remains authoritative"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_non_unicode_custom_target_is_preserved_losslessly() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let custom = std::path::PathBuf::from(std::ffi::OsString::from_vec(
+            b"/writable/miden-\xff".to_vec(),
+        ));
+        assert_eq!(
+            manifest::nested_cargo_target_dir(std::path::Path::new("/project"), &custom, false),
+            Some(custom.join("cargo"))
+        );
+    }
+
+    #[test]
+    fn the_encoded_rustflags_override_inherited_values_with_the_same_flags() {
+        let rustflags = vec![
+            "-C".to_string(),
+            "target-feature=+bulk-memory".to_string(),
+            "--cfg".to_string(),
+            "miden".to_string(),
+        ];
+
+        let env = manifest::cargo_env(None, &rustflags);
+        let (_, encoded) = env
+            .iter()
+            .find(|(key, _)| *key == "CARGO_ENCODED_RUSTFLAGS")
+            .expect("the encoded variable must be set so an inherited value cannot override it");
+        // 0x1f-separated units, one per argument.
+        assert_eq!(*encoded, "-C\x1ftarget-feature=+bulk-memory\x1f--cfg\x1fmiden");
+    }
+
+    #[test]
+    fn merged_rust_flags_preserve_inherited_encoded_arguments() {
+        use std::ffi::OsStr;
+
+        let mandatory = ["--cfg", "miden"];
+
+        // A non-empty encoded value wins over the plain spelling, mirroring cargo's precedence,
+        // and its 0x1f-separated arguments survive verbatim — including ones with spaces.
+        let merged = manifest::merge_rust_flags(
+            &mandatory,
+            Some(OsStr::new("-C\x1flink-args=--flag one --flag two")),
+            Some(OsStr::new("--cfg plain_ignored")),
+            Some("--cfg explicit"),
+        );
+        assert_eq!(
+            merged,
+            vec![
+                "--cfg".to_string(),
+                "miden".to_string(),
+                "-C".to_string(),
+                "link-args=--flag one --flag two".to_string(),
+                "--cfg".to_string(),
+                "explicit".to_string(),
+            ]
+        );
+
+        // Without an encoded value the plain spelling is whitespace-split, as cargo does.
+        let merged =
+            manifest::merge_rust_flags(&mandatory, None, Some(OsStr::new("-C opt-level=3")), None);
+        assert_eq!(
+            merged,
+            vec![
+                "--cfg".to_string(),
+                "miden".to_string(),
+                "-C".to_string(),
+                "opt-level=3".to_string(),
+            ]
+        );
+
+        // A present-but-empty encoded value is authoritative: cargo suppresses RUSTFLAGS
+        // whenever CARGO_ENCODED_RUSTFLAGS is set, so the plain flags must not leak in.
+        let merged = manifest::merge_rust_flags(
+            &mandatory,
+            Some(OsStr::new("")),
+            Some(OsStr::new("-C opt-level=3")),
+            None,
+        );
+        assert_eq!(merged, vec!["--cfg".to_string(), "miden".to_string()]);
+
+        // An empty plain value with no encoded variable contributes nothing.
+        let merged = manifest::merge_rust_flags(&mandatory, None, Some(OsStr::new("")), None);
+        assert_eq!(merged, vec!["--cfg".to_string(), "miden".to_string()]);
     }
 
     /// A WebAssembly module with a body, for the lowering half of the entry point.

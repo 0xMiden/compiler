@@ -1479,6 +1479,10 @@ name = "miden-sdk-alloc"
 version = "0.14.0-rc.1"
 
 [[package]]
+name = "miden-sdk-build-script-support"
+version = "0.14.0-rc.1"
+
+[[package]]
 name = "miden-serde-utils"
 version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1594,6 +1598,7 @@ dependencies = [
 name = "midenc-frontend-wasm-metadata"
 version = "0.14.0-rc.1"
 dependencies = [
+ "miden-mast-package",
  "serde",
  "serde_json",
 ]
@@ -1731,6 +1736,7 @@ name = "p2ide"
 version = "0.1.0"
 dependencies = [
  "miden",
+ "miden-sdk-build-script-support",
 ]
 
 [[package]]

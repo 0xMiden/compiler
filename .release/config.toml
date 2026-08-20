@@ -195,6 +195,12 @@ publish = true
 version-source = "sdk"
 
 [[packages]]
+name = "miden-sdk-build-script-support"
+unit = "sdk"
+publish = true
+version-source = "sdk"
+
+[[packages]]
 name = "miden-field-repr"
 unit = "sdk"
 publish = true

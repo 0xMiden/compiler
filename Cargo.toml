@@ -33,6 +33,7 @@ members = [
     "sdk/base",
     "sdk/base-macros",
     "sdk/base-sys",
+    "sdk/build-script-support",
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/tx-script-args",

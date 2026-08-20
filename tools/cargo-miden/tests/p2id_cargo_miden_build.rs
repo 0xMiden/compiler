@@ -1,15 +1,16 @@
-use std::{env, fs};
+use std::{env, time::SystemTime};
 
 use cargo_miden::run;
 
 use crate::utils::{current_dir_lock, workspace_root};
 
-/// Building a project materializes its compiled Miden dependencies on disk.
+/// A caller-provided `MIDENC_PACKAGE_CACHE` materializes a build's Miden dependencies on disk.
 ///
 /// The `p2id-note` example depends on the `basic-wallet` example as a Miden dependency. When
-/// `cargo miden build` compiles `p2id-note`, it compiles `basic-wallet` as a dependency. The
-/// resulting dependency package must be materialized to `basic-wallet/target/miden/release` rather
-/// than only living in the in-memory package registry.
+/// `cargo miden build` compiles `p2id-note`, it compiles `basic-wallet` as a dependency and
+/// publishes it into its package cache. A cache the compiler mints itself is deleted when the
+/// build ends; a caller-provided one must be adopted and left in place, so consumers that run
+/// after the compiler exits can read the packages.
 #[test]
 fn p2id_build_materializes_basic_wallet_dependency() {
     let _cwd_lock = current_dir_lock();
@@ -29,24 +30,14 @@ fn p2id_build_materializes_basic_wallet_dependency() {
     let examples = workspace_root().join("examples");
     let p2id_note_dir = examples.join("p2id-note");
 
-    // The materialized dependency package we expect `cargo miden build` to produce on disk.
-    let dep_release_dir = p2id_note_dir.join("target").join("miden").join("packages");
-    let dep_package = dep_release_dir.join("basic-wallet.masp");
-
-    // Make sure the basic-wallet dependency package is not already materialized on disk, so that we
-    // can attribute its presence after the build to the p2id-note build alone.
-    if dep_release_dir.exists() {
-        fs::remove_dir_all(&dep_release_dir).unwrap();
-    }
-    assert!(
-        !dep_package.exists(),
-        "basic-wallet dependency package should not be materialized before the build"
-    );
-
     // Build the p2id-note project, which pulls in basic-wallet as a Miden dependency.
     let restore_dir = env::current_dir().unwrap();
     env::set_current_dir(&p2id_note_dir).unwrap();
-    let result = run(["cargo", "miden", "build", "--release"].into_iter().map(|s| s.to_string()));
+    let build_started_at = SystemTime::now();
+    let export_dir = crate::utils::exported_packages_dir(&p2id_note_dir);
+    let result = crate::utils::with_package_cache_env(&export_dir, || {
+        run(["cargo", "miden", "build", "--release"].into_iter().map(|s| s.to_string()))
+    });
     env::set_current_dir(&restore_dir).unwrap();
 
     // Restore `CARGO_TARGET_DIR` before asserting, so a build failure doesn't leak the unset state.
@@ -61,10 +52,32 @@ fn p2id_build_materializes_basic_wallet_dependency() {
         .unwrap_build_output();
     assert_eq!(output.len(), 1, "expected a single p2id-note package artifact, got {output:?}");
 
-    // The build must have materialized the basic-wallet dependency package on disk.
+    // The build must have published the basic-wallet dependency package into the adopted
+    // stable directory and left it in place.
+    let dep_package = export_dir.join("basic-wallet.masp");
     assert!(
         dep_package.exists(),
         "expected basic-wallet dependency package to be materialized at {}",
         dep_package.display()
+    );
+    crate::utils::assert_written_by_this_build(&dep_package, build_started_at);
+
+    // Cargo's stable interfaces cannot express the Rust dependency's complete provenance, so
+    // the root record must say so explicitly. The outer template build script responds by
+    // staging on every Cargo invocation rather than trusting an incomplete file snapshot.
+    let inputs_file = export_dir.join("miden-deps").join("build-inputs");
+    let inputs = std::fs::read_to_string(&inputs_file).unwrap_or_else(|err| {
+        panic!(
+            "expected the compiler-recorded build inputs at {}: {err}",
+            inputs_file.display()
+        )
+    });
+    assert!(
+        inputs.lines().any(|line| line == "miden-build-inputs\t1"),
+        "expected the versioned build-input header in:\n{inputs}"
+    );
+    assert!(
+        inputs.lines().any(|line| line == "opaque\tcargo-fingerprint"),
+        "expected Rust/Cargo provenance to be explicitly opaque in:\n{inputs}"
     );
 }

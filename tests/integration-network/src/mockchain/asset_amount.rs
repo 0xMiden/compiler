@@ -117,7 +117,7 @@ impl AssetAmountNote {
 /// Generates and compiles the wallet account component project.
 ///
 /// The returned [`Project`] keeps the generated directory alive: the dependent note project
-/// resolves the wallet dependency (and its `target/generated-wit`) from that path.
+/// resolves the wallet dependency from that path.
 fn build_wallet_project() -> (Project, Arc<Package>) {
     let wallet_project = project(WALLET_NAME)
         .file(

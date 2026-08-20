@@ -67,7 +67,8 @@ jobs:
             --cargo-miden target/benchmark-next/release/cargo-miden \
             --commit "$(git rev-parse origin/next)" \
             --output-dir target/example-benchmarks/baseline \
-            --build-dir target/example-benchmark-build/baseline
+            --build-dir target/example-benchmark-build/baseline \
+            --skip-failed-builds
 
       - name: Benchmark candidate
         run: |

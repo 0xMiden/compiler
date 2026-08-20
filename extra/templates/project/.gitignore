@@ -30,6 +30,11 @@ local-node-data/
 # Ignore contract build artifacts
 contracts/**/target/
 
+# Contract crates are cdylib libraries: they do not ship a lockfile, matching the
+# single-contract templates. A committed lockfile here can only go stale against the
+# SDK requirement in their manifests.
+contracts/**/Cargo.lock
+
 # cargo-miden writes the compiled package here when tests build contracts
 # from the integration crate's working directory
 integration/target/

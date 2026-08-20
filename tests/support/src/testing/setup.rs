@@ -86,7 +86,7 @@ pub fn build_empty_component_for_test(context: Rc<Context>) -> MidenComponent {
     MidenComponent {
         world,
         component: Some(component),
-        account_component_metadata_bytes: None,
+        sections: Default::default(),
         source_provenance: miden_assembly::ProjectSourceProvenanceInputs {
             root: miden_assembly::SourceFileProvenance {
                 path: Path::new("mod.rs").to_path_buf().into_boxed_path(),

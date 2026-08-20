@@ -22,6 +22,8 @@ std = [
     "dep:termcolor",
     "dep:parking_lot",
     "dep:clap",
+    "dep:tempfile",
+    "dep:midenc-frontend-wasm-metadata",
     "anyhow/std",
     "miden-debug-types/std",
     "miden-protocol/std",
@@ -43,14 +45,17 @@ miden-debug-types.workspace = true
 miden-mast-package.workspace = true
 miden-project.workspace = true
 miden-package-registry.workspace = true
+midenc-frontend-wasm-metadata = { workspace = true, optional = true }
 midenc-hir-symbol.workspace = true
 midenc-hir-macros.workspace = true
 miden-protocol.workspace = true
 rustc-hash.workspace = true
 smallvec.workspace = true
 parking_lot = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 termcolor = { version = "1.4.1", optional = true }
 thiserror.workspace = true
 
 [dev-dependencies]
+midenc-frontend-wasm-metadata.workspace = true
 tempfile.workspace = true

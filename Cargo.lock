@@ -3268,6 +3268,7 @@ name = "miden-base-macros"
 version = "0.14.0-rc.1"
 dependencies = [
  "heck",
+ "miden-assembly",
  "miden-assembly-syntax",
  "miden-debug-types",
  "miden-field",
@@ -3902,6 +3903,10 @@ name = "miden-sdk-alloc"
 version = "0.14.0-rc.1"
 
 [[package]]
+name = "miden-sdk-build-script-support"
+version = "0.14.0-rc.1"
+
+[[package]]
 name = "miden-serde-utils"
 version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4173,6 +4178,7 @@ dependencies = [
  "midenc-dialect-scf",
  "midenc-frontend-masm",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-transform",
  "midenc-session",
@@ -4319,6 +4325,7 @@ dependencies = [
 name = "midenc-frontend-wasm-metadata"
 version = "0.14.0-rc.1"
 dependencies = [
+ "miden-mast-package",
  "serde",
  "serde_json",
 ]
@@ -4498,6 +4505,7 @@ dependencies = [
  "midenc-compile",
  "midenc-expect-test",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-session",
  "proptest",
@@ -4528,6 +4536,7 @@ dependencies = [
  "midenc-dialect-wasm",
  "midenc-expect-test",
  "midenc-frontend-wasm",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-eval",
  "midenc-integration-test-support",
@@ -4586,6 +4595,7 @@ dependencies = [
  "miden-project",
  "miden-protocol",
  "miden-thiserror",
+ "midenc-frontend-wasm-metadata",
  "midenc-hir-macros",
  "midenc-hir-symbol",
  "parking_lot",

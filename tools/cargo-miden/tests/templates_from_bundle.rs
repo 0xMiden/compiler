@@ -13,6 +13,11 @@ use cargo_miden::{bundle, run};
 
 use crate::utils::current_dir_lock;
 
+const CANONICAL_BUILD_SCRIPT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../extra/templates/rust/account/template/build.rs"
+));
+
 fn scratch(label: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "cargo-miden-bundle-{label}-{}-{:?}",
@@ -87,7 +92,7 @@ fn without_test_env() -> EnvGuard {
     EnvGuard::new().unset("TEST")
 }
 
-/// The `miden` requirement the embedded bundle declares its templates carry.
+/// The SDK requirement the embedded bundle declares its templates carry.
 ///
 /// This is the discriminator that makes these tests meaningful. Directory names
 /// are the same in the external template repositories, so comparing structure
@@ -109,7 +114,7 @@ fn bundle_sdk_requirement(bundle_root: &Path) -> String {
     panic!("the bundle declares no sdk-requirement");
 }
 
-/// The SDK version required by every `miden` dependency in a generated
+/// The SDK version required by every runtime or build-support SDK dependency in a generated
 /// project's manifests.
 ///
 /// The *version* is extracted and compared for equality rather than searching
@@ -138,11 +143,14 @@ fn sdk_requirements(project: &Path) -> Vec<String> {
     found
 }
 
-/// The quoted value of a `miden = ...` dependency line, in either the plain
+/// The quoted value of an SDK dependency line, in either the plain
 /// (`miden = "0.14"`) or table (`miden = { version = "0.14" }`) form.
 fn quoted_sdk_version(line: &str) -> Option<String> {
     let line = line.trim();
-    if !line.starts_with("miden ") && !line.starts_with("miden=") {
+    let is_sdk_dependency = ["miden", "miden-sdk-build-script-support"]
+        .iter()
+        .any(|name| line.strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('=')));
+    if !is_sdk_dependency {
         return None;
     }
     let (_, rest) = line.split_once('"')?;
@@ -161,6 +169,49 @@ fn directories(root: &Path) -> Vec<String> {
         .collect();
     names.sort();
     names
+}
+
+/// The checked-in release bundle must carry the same build-script protocol as its source
+/// templates. Source-copy tests cannot catch a stale `templates.tar.gz`, which is what users of
+/// the released cargo-miden binary actually render.
+#[test]
+fn embedded_bundle_build_scripts_match_the_canonical_template() {
+    let dir = scratch("build-script-pin");
+    let root = bundle::extract(&dir.join("bundle")).expect("extract the embedded bundle");
+    let mut pending = vec![root];
+    let mut copies = Vec::new();
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).expect("read an embedded template directory") {
+            let path = entry.expect("read an embedded template entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.file_name().is_some_and(|name| name == "build.rs") {
+                copies.push(path);
+            }
+        }
+    }
+    assert!(copies.len() >= 7, "the embedded bundle must contain the contract build scripts");
+    for copy in copies {
+        assert_eq!(
+            fs::read(&copy).unwrap_or_else(|err| {
+                panic!("failed to read embedded build script '{}': {err}", copy.display())
+            }),
+            CANONICAL_BUILD_SCRIPT,
+            "embedded build script '{}' differs from the canonical template; regenerate \
+             tools/cargo-miden/templates.tar.gz",
+            copy.display()
+        );
+        let manifest = copy.parent().unwrap().join("Cargo.toml");
+        let manifest_text = fs::read_to_string(&manifest)
+            .unwrap_or_else(|err| panic!("failed to read '{}': {err}", manifest.display()));
+        assert!(
+            manifest_text.contains("miden-sdk-build-script-support"),
+            "embedded manifest '{}' does not declare the support crate; regenerate \
+             tools/cargo-miden/templates.tar.gz",
+            manifest.display()
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
 }
 
 /// The default scaffold comes from the bundle's `project/`, compared against the
@@ -247,6 +298,10 @@ fn new_with_a_named_template_renders_it_from_the_bundle() {
         manifest.contains(&required),
         "the generated manifest does not require the bundle's SDK (\"{required}\"), so it did not \
          come from the bundle:\n{manifest}"
+    );
+    assert!(
+        manifest.contains("miden-sdk-build-script-support"),
+        "the generated manifest does not install the build-script support crate:\n{manifest}"
     );
 
     let _ = fs::remove_dir_all(&dir);

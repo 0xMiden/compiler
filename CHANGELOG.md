@@ -5,6 +5,112 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Compiler and `midenc`
+
+- The filesystem package cache is now per-build. When the calling process already exported
+  `MIDENC_PACKAGE_CACHE`, the compiler adopts that directory as its package cache and leaves
+  it in place — the caller owns its location and lifetime, which is how packages stay
+  readable after the compiler exits. Otherwise the compiler creates a globally unique lease
+  directory under the configured target directory (`<target-dir>/packages`, by default the
+  project's `target/miden/packages/`), exchanges dependency packages with
+  its nested builds through it, and deletes it when the compilation ends. A directory that is
+  never shared between builds cannot go stale, so the fingerprint derivation, permanent lock
+  files, and stale-cache pruning of the earlier design are removed. A killed build can leave
+  a remnant lease behind; remnants are inert and `cargo clean` removes them #1302
+- The compiler records its dependency resolution in the package cache: for every Rust project
+  it builds, a `miden-deps/<consumer>.deps.toml` maps each declared dependency — registry-resolved
+  components included — to the artifact the resolver selected, with a flag naming whether it
+  embeds component WIT so the macros can skip link-only packages without deserializing them.
+  The root consumer's versioned `miden-deps/build-inputs` record distinguishes dependency
+  inputs the frontends can enumerate completely from opaque provenance. Local non-Rust source
+  trees and preassembled artifacts can use selective Cargo change directives when the launcher
+  and Miden workspace boundary are also explicit; Rust/Cargo source builds, PATH-resolved
+  launchers, and undiscovered workspace boundaries remain opaque and are re-staged on every
+  relevant Cargo invocation rather than trusting an incomplete dep-info snapshot. The SDK macros
+  and the contract build script consume these records instead of re-deriving resolution #1328
+- `--stop-after=dependencies` stops a manifest-backed build after every dependency is
+  resolved, assembled, and published into the package cache together with the recorded
+  resolution — before the consumer project itself is compiled #1328
+- Package-cache leases and the compiled artifacts of nested builds are created under the
+  session's configured target directory (`--target-dir`/`MIDENC_TARGET_DIR`), so building from
+  a read-only checkout works with a writable target directory; the default location is
+  unchanged #1328
+- Nested cargo builds now treat a present-but-empty `CARGO_ENCODED_RUSTFLAGS` the way cargo
+  does — as authoritative suppression of `RUSTFLAGS` — instead of falling back to the plain
+  variable. The standalone-file route (`midenc` on a `.rs` file or stdin) composes its rustflags
+  through the same helper, so an inherited encoded value can no longer delete the mandatory
+  Miden flags there, and both routes share one mandatory-flag list #1328
+
+### `cargo-miden`
+
+- Contract templates and the repository examples now include a thin `build.rs` that calls the
+  new `miden-sdk-build-script-support` crate to populate the package cache for builds `midenc`
+  does not drive. Keeping the staging protocol in this SDK-versioned crate avoids exposing and
+  duplicating compiler/proc-macro infrastructure across every generated project. Outside a
+  midenc-driven build it stages package-cache generations under its `OUT_DIR`, fills a private
+  generation with a nested
+  `cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports
+  the same variable to macro expansion. Plain `cargo check` and IDE analysis now resolve
+  dependency packages instead of reporting missing packages (#1215). Only a fully successful
+  nested build publishes an immutable content-addressed generation, and changed generations
+  remain under `OUT_DIR` for older IDE readers until `cargo clean`; byte-identical staging reuses
+  the existing generation. A staging failure fails the outer build rather than exporting stale
+  packages. Complete compiler-recorded inputs are watched selectively, while opaque provenance
+  deliberately re-stages on every relevant Cargo invocation; a build-input record the script
+  cannot read — missing, or written to a schema it does not know — is treated as opaque with a
+  `cargo:warning`, so a compiler and a build-script crate at different versions degrade to
+  always-re-stage instead of failing the build. Staging runs
+  `cargo miden build --release --stop-after=dependencies`, so the crate itself is never compiled
+  twice and its cargo
+  feature selection does not affect staging; the nested build's target directories live
+  under the script's `OUT_DIR`, honoring the outer build's configured target directory. The
+  helper uses `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN`
+  environment variable #1298
+- Fixed the contract templates' `miden-project.toml` manifests, which were missing the
+  `[lib].path` key the VM v0.25 project model requires; projects generated from the templates
+  failed both `cargo miden build` and macro expansion with "unable to parse project manifest:
+  missing field `path`"
+
+### Rust SDK
+
+- The FPI macro diagnostic for a dependency package missing from a midenc-driven build now names
+  the searched `MIDENC_PACKAGE_CACHE` directory and the expected package file names, instead of
+  an empty candidate list and a `target/miden/<profile>` hint that the cache lookup never
+  consults #1302
+- FPI expansions record `option_env!("MIDENC_PACKAGE_CACHE")`, so a consumer crate recompiles —
+  and re-reads its dependency procedure roots — whenever the package-cache path changes. Every
+  `cargo miden build` uses a fresh per-build directory, so a midenc-driven build always
+  re-expands its consumers; builds against a stable exported directory re-expand only when
+  package contents change #1302
+- BREAKING: The component WIT generated by `#[component]` is now embedded in the compiled Miden
+  package (a `wit` section of the `.masp`) instead of being written to `target/generated-wit/`,
+  and the SDK macros read dependency WIT from the dependency's compiled package. The
+  `wit = "..."` keys in `miden-project.toml` are now only a fallback for dependency packages
+  without embedded WIT (e.g. produced by other toolchains): setting the key for a package that
+  embeds WIT is an error, and a package built by an older Miden toolchain is skipped unless the
+  key supplies its WIT — only a macro that references it reports the missing interface. See the [migration guide](./sdk/sdk/MIGRATION.md) for the manifest
+  edits and rebuild steps #1248
+- BREAKING: The SDK macros now read dependency packages only from the `MIDENC_PACKAGE_CACHE`
+  directory (or from a manifest path that names a `.masp` file directly). The previous search
+  of `target/miden/<profile>` output directories — the dependency's own, surrounding
+  workspaces', and ambient (`CARGO_TARGET_DIR`, `OUT_DIR`, working-directory) targets — was
+  removed, along with its freshest-first selection and macro-side package id and version
+  checks; the cache is unique to each build and its contents are trusted.
+  Builds driven by `cargo miden build` export the variable already; plain `cargo build`,
+  `cargo check`, and IDE analysis need the contract `build.rs`. An expansion without a
+  configured cache now fails with instructions instead of searching the filesystem #1298
+- The SDK macros resolve dependencies through the artifact map the compiler writes into the
+  package cache, so workspace, workspace-path, git, and registry dependencies now resolve
+  during macro expansion exactly as the compiler resolved them. Entries the compiler records
+  as embedding no component WIT — the base link libraries, MASM-only dependencies — are
+  skipped without deserializing their packages. The name-probing of `.masp` files remains
+  only as a fallback for hand-assembled caches without a map #1328
+- A dependency whose package embeds no component WIT (and has no `wit` key) — for example a
+  link-only MASM library — no longer fails every macro expansion; it is skipped, and only a
+  macro that actually references it reports the missing WIT, at the reference site #1328
+
 ## [0.10.0-rc.1]
 
 ### Compiler and `midenc`
