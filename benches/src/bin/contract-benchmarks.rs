@@ -4,16 +4,16 @@ use clap::Parser;
 use midenc_benchmark_runner::{BenchmarkRunner, git_commit};
 
 #[derive(Debug, Parser)]
-#[command(about = "Benchmark compiler examples by MAST size and VM cycles")]
+#[command(about = "Run compiler contract examples through deterministic MockChain scenarios")]
 struct Args {
-    /// Compiler workspace containing the examples directory.
+    /// Compiler workspace containing the contract example projects.
     #[arg(long, default_value = env!("CARGO_MANIFEST_DIR"))]
     workspace_root: PathBuf,
-    /// Directory in which results, packages, and flamegraphs are written.
-    #[arg(long, default_value = "target/example-benchmarks")]
+    /// Directory in which results, packages, replays, and flamegraphs are written.
+    #[arg(long, default_value = "target/contract-benchmarks")]
     output_dir: PathBuf,
     /// Directory used for intermediate Cargo and compiler artifacts.
-    #[arg(long, default_value = "target/example-benchmark-build")]
+    #[arg(long, default_value = "target/contract-benchmark-build")]
     build_dir: PathBuf,
     /// Explicit cargo-miden binary to use instead of `cargo miden`.
     #[arg(long, env = "CARGO_MIDEN")]
@@ -21,12 +21,6 @@ struct Args {
     /// Commit recorded in results.json; defaults to workspace HEAD.
     #[arg(long)]
     commit: Option<String>,
-    /// Skip examples whose build fails instead of failing the whole run.
-    ///
-    /// Allows partial reports when testing a compiler against incompatible example sources.
-    /// CI leaves this disabled for both revisions.
-    #[arg(long)]
-    skip_failed_builds: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -40,17 +34,10 @@ fn main() -> anyhow::Result<()> {
         &args.output_dir,
         &args.build_dir,
         args.cargo_miden,
-        args.skip_failed_builds,
+        false,
     )?
-    .run(commit)?;
+    .run_contracts(commit)?;
 
-    println!("| example | cycles | MAST size |");
-    println!("| --- | ---: | ---: |");
-    for benchmark in report.benchmarks {
-        let cycles = benchmark.cycles.map(|cycles| cycles.to_string()).unwrap_or("n/a".into());
-        println!("| {} | {} | {} B |", benchmark.name, cycles, benchmark.mast_size);
-    }
-    println!();
     println!("| MockChain scenario | cycles |");
     println!("| --- | ---: |");
     for benchmark in report.transactions {
@@ -63,19 +50,5 @@ fn resolve_commit(commit: Option<String>, workspace_root: &Path) -> anyhow::Resu
     match commit {
         Some(commit) => Ok(commit),
         None => git_commit(workspace_root),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::resolve_commit;
-
-    #[test]
-    fn explicit_commit_does_not_require_git_workspace() {
-        let workspace_root = tempfile::tempdir().unwrap().path().join("missing");
-
-        let commit = resolve_commit(Some("explicit-commit".into()), &workspace_root).unwrap();
-
-        assert_eq!(commit, "explicit-commit");
     }
 }
