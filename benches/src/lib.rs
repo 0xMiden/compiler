@@ -14,6 +14,8 @@ use miden_debug::{ExecutionConfig, Executor, flamegraph::FlamegraphProfile};
 use miden_mast_package::Package;
 use serde::{Deserialize, Serialize};
 
+mod mockchain;
+
 pub const RESULTS_FILE: &str = "results.json";
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -21,6 +23,7 @@ pub struct BenchmarkReport {
     pub schema_version: u32,
     pub commit: String,
     pub benchmarks: Vec<BenchmarkResult>,
+    pub transactions: Vec<TransactionBenchmarkResult>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -31,6 +34,14 @@ pub struct BenchmarkResult {
     pub cycles: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flamegraph: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
+pub struct TransactionBenchmarkResult {
+    pub name: String,
+    pub cycles: usize,
+    pub flamegraph: String,
+    pub replay: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -97,6 +108,7 @@ impl BenchmarkRunner {
     pub fn run(&self, commit: String) -> Result<BenchmarkReport> {
         recreate_dir(&self.output_dir.join("packages"))?;
         recreate_dir(&self.output_dir.join("flamegraphs"))?;
+        recreate_dir(&self.output_dir.join("replays"))?;
 
         let cases = discover_cases(&self.workspace_root)?;
         let mut benchmarks = Vec::with_capacity(cases.len());
@@ -114,17 +126,47 @@ impl BenchmarkRunner {
             }
         }
 
+        let transactions = match self.run_transaction_benchmarks() {
+            Ok(transactions) => transactions,
+            Err(err) if self.skip_failed_builds && err.is::<BuildFailure>() => {
+                eprintln!("Skipping MockChain transaction benchmarks: {err:#}");
+                Vec::new()
+            }
+            Err(err) => return Err(err),
+        };
+
         let report = BenchmarkReport {
-            schema_version: 1,
+            schema_version: 2,
             commit,
             benchmarks,
+            transactions,
         };
+        self.write_report(&report)?;
+        Ok(report)
+    }
+
+    /// Run only the MockChain-backed contract scenarios.
+    pub fn run_contracts(&self, commit: String) -> Result<BenchmarkReport> {
+        recreate_dir(&self.output_dir.join("packages"))?;
+        recreate_dir(&self.output_dir.join("flamegraphs"))?;
+        recreate_dir(&self.output_dir.join("replays"))?;
+
+        let report = BenchmarkReport {
+            schema_version: 2,
+            commit,
+            benchmarks: Vec::new(),
+            transactions: self.run_transaction_benchmarks()?,
+        };
+        self.write_report(&report)?;
+        Ok(report)
+    }
+
+    fn write_report(&self, report: &BenchmarkReport) -> Result<()> {
         let output = self.output_dir.join(RESULTS_FILE);
-        let mut contents = serde_json::to_vec_pretty(&report)?;
+        let mut contents = serde_json::to_vec_pretty(report)?;
         contents.push(b'\n');
         fs::write(&output, contents)
-            .with_context(|| format!("failed to write {}", output.display()))?;
-        Ok(report)
+            .with_context(|| format!("failed to write {}", output.display()))
     }
 
     fn run_case(&self, case: &BenchmarkCase) -> Result<BenchmarkResult> {

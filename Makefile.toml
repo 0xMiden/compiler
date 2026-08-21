@@ -183,13 +183,15 @@ args = ["bloat", "${@}"]
 
 [tasks.bench]
 category = "Benchmarks"
-description = "Benchmarks example package sizes and VM cycles, with SVG flamegraphs"
+description = "Benchmarks example sizes and standalone/MockChain VM cycles, with SVG flamegraphs"
 command = "cargo"
 args = [
     "run",
     "@@remove-empty(CARGO_MAKE_CARGO_VERBOSE_FLAGS)",
     "-p",
     "midenc-benchmark-runner",
+    "--bin",
+    "example-benchmarks",
     "${@}",
 ]
 

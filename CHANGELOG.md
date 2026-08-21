@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- The compiler benchmark workflow now executes contract examples through deterministic MockChain
+  scenarios, reports transaction cycle deltas against `next`, and retains replay snapshots and
+  cycle-weighted flamegraphs alongside package-size artifacts.
 - The filesystem package cache is now per-build. When the calling process already exported
   `MIDENC_PACKAGE_CACHE`, the compiler adopts that directory as its package cache and leaves
   it in place — the caller owns its location and lifetime, which is how packages stay
