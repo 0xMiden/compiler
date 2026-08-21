@@ -42,6 +42,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variable. The standalone-file route (`midenc` on a `.rs` file or stdin) composes its rustflags
   through the same helper, so an inherited encoded value can no longer delete the mandatory
   Miden flags there, and both routes share one mandatory-flag list #1328
+- Support duplicate function names in the Wasm name section, which might occur for Wasm generated
+  by rustc for the Miden target.
 
 ### `cargo-miden`
 

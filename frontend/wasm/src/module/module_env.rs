@@ -352,6 +352,7 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         for payload in parser.parse_all(data) {
             self.parse_payload(payload.into_diagnostic()?, diagnostics)?;
         }
+        self.result.module.sanitize_duplicate_func_names(diagnostics)?;
         Ok(self.result)
     }
 

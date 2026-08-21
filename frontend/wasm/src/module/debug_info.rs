@@ -128,7 +128,7 @@ pub fn collect_function_debug_info(
 
     for (defined_idx, body) in parsed_module.function_body_inputs.iter() {
         let func_index = module.func_index(defined_idx);
-        let func_name = module.func_name(func_index);
+        let func_name = module.source_func_name(func_index);
         if let Some(info) = build_function_debug_info(
             parsed_module,
             module_types,
@@ -167,7 +167,8 @@ fn build_function_debug_info(
     dwarf_locals: Option<&FxHashMap<u32, DwarfLocalData>>,
     scheduled_vars: Option<&Vec<DwarfLocalData>>,
 ) -> Option<FunctionDebugInfo> {
-    let func_name = module.func_name(func_index);
+    let source_name = module.source_func_name(func_index);
+    let linkage_name = module.func_name(func_index);
 
     let dwarf_offset = parsed_module.wasm_file.dwarf_offset(body.body_offset);
     let (file_symbol, directory_symbol) =
@@ -178,8 +179,13 @@ fn build_function_debug_info(
     compile_unit.directory = directory_symbol;
     compile_unit.producer = Some(Symbol::intern("midenc-frontend-wasm"));
 
-    let mut subprogram = Subprogram::new(func_name, compile_unit.file, line, column);
+    // Name the subprogram after the source name and set the linkage name if it differs,
+    // mirroring `DW_AT_name` and `DW_AT_linkage_name`.
+    let mut subprogram = Subprogram::new(source_name, compile_unit.file, line, column);
     subprogram.is_definition = true;
+    if source_name != linkage_name {
+        subprogram.linkage_name = Some(linkage_name);
+    }
 
     let wasm_signature = module_types[module.functions[func_index].signature].clone();
     let locals = build_local_debug_info(
@@ -442,7 +448,25 @@ fn collect_dwarf_local_data(
 
     let mut func_by_name = FxHashMap::default();
     for (func_index, _) in module.functions.iter() {
-        let name = module.func_name(func_index).as_str().to_owned();
+        // DWARF subprogram names are emitted by the producer and contain original source names.
+        // For debug builds for the Miden target, rustc can produce duplicate function names in
+        // the Wasm `name` section. A function with duplicate source name cannot be correctly
+        // resolved via the source name. So we don't add it to the `func_by_name` map, thereby
+        // delegating resolution to `low_pc`.
+        //
+        // TODO skip name as described above and add test to verify `low_pc` resolution works
+        // in that case. Implementation plan:
+        // - add a method like `Module::is_duplicate_source_func_name` to not leak Module internals
+        // - use that here to determine which functions to skip
+        // - try to reproduce #1341 to check/verify it puts duplicate names in the name section and these funcs have `low_pc`
+        // - do the same steps in a test and then verify the things mentioned in the previous point and that this resolves debug info correctly via `low_pc`
+        //
+        // If that works out, mark the PR of these changes as closing #1343 too
+        //
+        // A name duplicated in the name section clobbers earlier entries, so all DWARF
+        // subprograms with that name resolve to the last function of the duplicate group; see
+        // https://github.com/0xMiden/compiler/issues/1343 for the proper resolution.
+        let name = module.source_func_name(func_index).as_str().to_owned();
         func_by_name.insert(name, func_index);
     }
 

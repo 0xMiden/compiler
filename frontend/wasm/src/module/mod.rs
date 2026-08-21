@@ -1,15 +1,18 @@
 //! Data structures for representing parsed Wasm modules.
 
 use alloc::{borrow::Cow, collections::BTreeMap};
-use core::{fmt, ops::Range};
+use core::{fmt, ops::Range, str::FromStr};
 
 use cranelift_entity::{EntityRef, PrimaryMap, packed_option::ReservedValue};
 use indexmap::IndexMap;
-use midenc_hir::{FxHashMap, Ident, interner::Symbol};
+use midenc_hir::{FunctionIdent, FxHashMap, FxHashSet, Ident, SymbolPath, interner::Symbol};
 use midenc_session::DiagnosticsHandler;
 
 use self::types::*;
-use crate::{component::SignatureIndex, error::WasmResult, unsupported_diag};
+use crate::{
+    component::SignatureIndex, error::WasmResult, intrinsics::Intrinsic,
+    miden_abi::is_miden_abi_module, unsupported_diag,
+};
 
 pub mod build_ir;
 pub mod debug_info;
@@ -150,7 +153,17 @@ pub struct Module {
     pub memories: PrimaryMap<MemoryIndex, Memory>,
 
     /// Parsed names section.
+    ///
+    /// Wasm's [name section] may contain duplicate names. Deduplication can be achieved with
+    /// [`Self::linkage_renames`].
+    ///
+    /// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
     name_section: NameSection,
+
+    /// Deduplicated names for functions whose name is not unique in the name section.
+    ///
+    /// Only names that are duplicated in the name section receive a linkage rename.
+    linkage_renames: FxHashMap<FuncIndex, Symbol>,
 
     /// The fallback name of this module, used if there is no module name in the name section,
     /// and there is no override specified
@@ -314,13 +327,101 @@ impl Module {
             .expect("No module name in the name section and no fallback name is set")
     }
 
-    /// Returns the name of the given function
+    /// Returns the unique name of the given function
     pub fn func_name(&self, index: FuncIndex) -> Symbol {
+        // If `index` is not in `linkage_renames`, its name is unique in the name section.
+        self.linkage_renames
+            .get(&index)
+            .or_else(|| self.name_section.func_names.get(&index))
+            .cloned()
+            .unwrap_or(Symbol::intern(format!("func{}", index.as_u32())))
+    }
+
+    /// Returns the name according to the name section.
+    ///
+    /// Use this when referring to the original source code, e.g. in diagnostics or debug info.
+    ///
+    /// The returned name might not be unique, see `Self::name_section`.
+    pub fn source_func_name(&self, index: FuncIndex) -> Symbol {
         self.name_section
             .func_names
             .get(&index)
             .cloned()
             .unwrap_or(Symbol::intern(format!("func{}", index.as_u32())))
+    }
+
+    /// Ensures each function in the module has a unique linkage name.
+    ///
+    /// WebAssembly function names in the [name section] are not guaranteed to be unique. This
+    /// method computes a unique name for every function whose name-section name is duplicated
+    /// and records it as the function's linkage name.
+    ///
+    /// Intrinsics and Miden ABI linker stubs are recognized by their function name (see
+    /// [`maybe_lower_linker_stub`]), so a duplicated name that identifies a known stub is an error
+    /// rather than a silent rename that would break that recognition.
+    ///
+    /// The rename target `{name}_func{index}` is unique among renamed functions (the index suffix
+    /// differs per function), but can collide with a name that survives unchanged or with another
+    /// module-level symbol; in that case `_` is appended until the name is free.
+    ///
+    /// This method is idempotent as it computes renames based on the original name section.
+    ///
+    /// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
+    /// [`maybe_lower_linker_stub`]: linker_stubs::maybe_lower_linker_stub
+    pub fn sanitize_duplicate_func_names(
+        &mut self,
+        diagnostics: &DiagnosticsHandler,
+    ) -> WasmResult<()> {
+        let mut counts: FxHashMap<Symbol, usize> = FxHashMap::default();
+        for name in self.name_section.func_names.values() {
+            *counts.entry(*name).or_default() += 1;
+        }
+        let mut duplicates = FxHashSet::default();
+        let mut survivors = FxHashSet::default();
+        for (name, count) in counts {
+            if count > 1 {
+                duplicates.insert(name);
+            } else {
+                survivors.insert(name);
+            }
+        }
+        if duplicates.is_empty() {
+            return Ok(());
+        }
+
+        // Symbol names a renamed function may not take: survivor function names plus the names
+        // of the module's global variables (same symbol table as functions).
+        let mut taken: FxHashSet<Symbol> = survivors;
+        for index in self.globals.keys() {
+            taken.insert(self.global_name(index));
+        }
+
+        for (index, name) in self.name_section.func_names.iter() {
+            if !duplicates.contains(name) {
+                continue;
+            }
+            let name_str = name.as_str();
+            if let Ok(func_id) = FunctionIdent::from_str(name_str) {
+                let path = SymbolPath::from_masm_function_id(func_id);
+                if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                    unsupported_diag!(
+                        diagnostics,
+                        "duplicated function name '{name_str}' identifies an intrinsic or Miden \
+                         ABI linker stub, which midenc recognizes by name, so it cannot renamed"
+                    );
+                }
+            }
+            // The index suffix makes renames of distinct functions mutually unique, but the result
+            // can still collide with a name in `taken`. Append `_` until the name is free.
+            let mut candidate = format!("{name_str}_func{}", index.as_u32());
+            while taken.contains(&Symbol::intern(candidate.as_str())) {
+                candidate.push('_');
+            }
+            let unique = Symbol::intern(candidate);
+            taken.insert(unique);
+            self.linkage_renames.insert(*index, unique);
+        }
+        Ok(())
     }
 
     /// Returns the name of the given data segment.
@@ -387,6 +488,9 @@ impl FunctionTypeInfo {
 pub struct FuncRefIndex(u32);
 cranelift_entity::entity_impl!(FuncRefIndex);
 
+/// Parsed names from the Wasm [name section].
+///
+/// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
 #[derive(Debug, Default)]
 pub struct NameSection {
     pub module_name: Option<Ident>,
