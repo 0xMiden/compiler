@@ -11,26 +11,29 @@ class CompareExampleBenchmarksTests(unittest.TestCase):
 
     def test_report_supports_build_only_examples(self):
         current = {
-            "schema_version": 1,
+            "schema_version": 2,
             "commit": "candidate123456789",
             "benchmarks": [
                 {"name": "fibonacci", "cycles": 90, "mast_size": 200},
                 {"name": "basic-wallet", "mast_size": 300},
             ],
+            "transactions": [{"name": "counter-note-no-auth", "cycles": 500}],
         }
         baseline = {
-            "schema_version": 1,
+            "schema_version": 2,
             "commit": "baseline123456789",
             "benchmarks": [
                 {"name": "fibonacci", "cycles": 100, "mast_size": 180},
                 {"name": "basic-wallet", "mast_size": 300},
             ],
+            "transactions": [{"name": "counter-note-no-auth", "cycles": 550}],
         }
 
         report = render_report(current, baseline)
 
         self.assertIn("| fibonacci | 90 (✅ -10.00%) | 200B (❌ +11.11%) |", report)
         self.assertIn("| basic-wallet | n/a | 300B (~0%) |", report)
+        self.assertIn("| counter-note-no-auth | 500 (✅ -9.09%) |", report)
         self.assertIn("`next` `baseline1234`", report)
 
 
