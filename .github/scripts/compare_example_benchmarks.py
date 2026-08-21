@@ -13,10 +13,13 @@ from typing import Any
 def load_report(path: Path) -> dict[str, Any]:
     with path.open() as file:
         report = json.load(file)
-    if report.get("schema_version") != 1:
+    if report.get("schema_version") not in (1, 2):
         raise ValueError(f"unsupported benchmark schema in {path}")
     if not isinstance(report.get("benchmarks"), list):
         raise ValueError(f"benchmark list is missing from {path}")
+    report.setdefault("transactions", [])
+    if not isinstance(report["transactions"], list):
+        raise ValueError(f"transaction benchmark list is missing from {path}")
     return report
 
 
@@ -68,22 +71,47 @@ def render_report(current: dict[str, Any], baseline: dict[str, Any]) -> str:
             + " |"
         )
 
+    transaction_baseline_by_name = {
+        benchmark["name"]: benchmark for benchmark in baseline.get("transactions", [])
+    }
+    transaction_rows = []
+    for benchmark in current.get("transactions", []):
+        previous = transaction_baseline_by_name.get(benchmark["name"], {})
+        transaction_rows.append(
+            f"| {benchmark['name']} | "
+            f"{format_measurement(benchmark.get('cycles'), previous.get('cycles'))} |"
+        )
+
     current_commit = str(current.get("commit", "unknown"))[:12]
     baseline_commit = str(baseline.get("commit", "unknown"))[:12]
-    return "\n".join(
+    report = [
+        "## Miden examples benchmark",
+        "",
+        f"Candidate `{current_commit}` compared with `next` `{baseline_commit}`. Lower is better.",
+        "",
+        "| example | VM cycles (vs next) | MAST size (vs next) |",
+        "| --- | ---: | ---: |",
+        *rows,
+        "",
+    ]
+    if transaction_rows:
+        report.extend(
+            [
+                "### MockChain contract transactions",
+                "",
+                "| scenario | VM cycles (vs next) |",
+                "| --- | ---: |",
+                *transaction_rows,
+                "",
+            ]
+        )
+    report.extend(
         [
-            "## Miden examples benchmark",
-            "",
-            f"Candidate `{current_commit}` compared with `next` `{baseline_commit}`. Lower is better.",
-            "",
-            "| example | VM cycles (vs next) | MAST size (vs next) |",
-            "| --- | ---: | ---: |",
-            *rows,
-            "",
-            "SVG flamegraphs and compiled packages are attached to the workflow run.",
+            "SVG flamegraphs, replay snapshots, and compiled packages are attached to the workflow run.",
             "",
         ]
     )
+    return "\n".join(report)
 
 
 def append_step_summary(report: str) -> None:

@@ -1,4 +1,4 @@
-name: Examples benchmark
+name: Examples and contracts benchmark
 
 permissions:
   contents: read
@@ -17,9 +17,9 @@ env:
 
 jobs:
   compare:
-    name: Compare example cycles and sizes
+    name: Compare example and contract metrics
     runs-on: warp-ubuntu-latest-x64-8x
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
