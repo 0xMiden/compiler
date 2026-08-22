@@ -239,11 +239,7 @@ impl OpEmitter<'_> {
         self.is_signed_int32(span);
         // Pop the is_signed flag, and replace it with a selected mask
         // for the upper reserved bits of the N-bit range
-        let reserved = 32 - n;
-        // Add one bit to the reserved bits to represent the sign bit,
-        // and subtract it from the shift to account for the loss
-        let mask = (2u32.pow(reserved + 1) - 1) << (n - 1);
-        self.select_int32(mask, 0, span);
+        self.select_int32(signed_reserved_mask(n), 0, span);
         self.emit_all(
             [
                 // Copy the input to the top of the stack for the masking op
@@ -271,11 +267,7 @@ impl OpEmitter<'_> {
         self.is_signed_int32(span);
         // Pop the is_signed flag, and replace it with a selected mask
         // for the upper reserved bits of the N-bit range
-        let reserved = 32 - n;
-        // Add one bit to the reserved bits to represent the sign bit,
-        // and subtract it from the shift to account for the loss
-        let mask = (2u32.pow(reserved + 1) - 1) << (n - 1);
-        self.select_int32(mask, 0, span);
+        self.select_int32(signed_reserved_mask(n), 0, span);
         self.emit_all(
             [
                 // Copy the input to the top of the stack for the masking op
@@ -297,8 +289,7 @@ impl OpEmitter<'_> {
     pub fn int32_to_uint(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
         // Mask the value and ensure that the unused bits above the N-bit range are 0
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
+        let mask = unsigned_reserved_mask(n);
         // Copy the input
         self.emit(masm::Instruction::Dup1, span);
         // Apply the mask
@@ -320,8 +311,7 @@ impl OpEmitter<'_> {
     pub fn try_int32_to_uint(&mut self, n: u32, span: SourceSpan) {
         assert_valid_integer_size!(n, 1, 32);
         // Mask the value and ensure that the unused bits above the N-bit range are 0
-        let reserved = 32 - n;
-        let mask = (2u32.pow(reserved) - 1) << n;
+        let mask = unsigned_reserved_mask(n);
         // Copy the input
         self.emit(masm::Instruction::Dup1, span);
         // Apply the mask
@@ -1096,5 +1086,66 @@ impl OpEmitter<'_> {
     pub fn max_imm_i32(&mut self, imm: i32, span: SourceSpan) {
         self.emit_push(imm as u32, span);
         self.raw_exec("::intrinsics::i32::max", span);
+    }
+}
+
+/// Returns the mask covering the bits a signed `n`-bit value may not use, i.e. the `32 - n`
+/// reserved high bits plus the sign bit at position `n - 1`.
+///
+/// `n` must be in `1..=32`.
+fn signed_reserved_mask(n: u32) -> u32 {
+    debug_assert!((1..=32).contains(&n), "invalid signed integer size: {n}");
+    u32::MAX << (n - 1)
+}
+
+/// Returns the mask covering the `32 - n` reserved high bits an unsigned `n`-bit value may not
+/// use.
+///
+/// `n` must be in `1..=32`.
+fn unsigned_reserved_mask(n: u32) -> u32 {
+    debug_assert!((1..=32).contains(&n), "invalid unsigned integer size: {n}");
+    !(u32::MAX >> (32 - n))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{signed_reserved_mask, unsigned_reserved_mask};
+
+    /// The masks the emitter used to compute inline, evaluated in `u64` so the intended
+    /// arithmetic is expressible for every `n` without overflowing.
+    fn reference_masks(n: u32) -> (u32, u32) {
+        let reserved = u64::from(32 - n);
+        let signed = ((2u64.pow(reserved as u32 + 1) - 1) << (n - 1)) as u32;
+        let unsigned = ((2u64.pow(reserved as u32) - 1) << n) as u32;
+        (signed, unsigned)
+    }
+
+    #[test]
+    fn reserved_masks_match_reference_over_the_whole_range() {
+        for n in 1..=32 {
+            let (signed, unsigned) = reference_masks(n);
+            assert_eq!(signed_reserved_mask(n), signed, "signed reserved mask diverges at n={n}");
+            assert_eq!(
+                unsigned_reserved_mask(n),
+                unsigned,
+                "unsigned reserved mask diverges at n={n}"
+            );
+        }
+    }
+
+    #[test]
+    fn signed_reserved_mask_covers_sign_bit_and_reserved_bits() {
+        // n=1 and n=32 are the edges where the previous inline arithmetic overflowed.
+        assert_eq!(signed_reserved_mask(1), 0xffff_ffff);
+        assert_eq!(signed_reserved_mask(8), 0xffff_ff80);
+        assert_eq!(signed_reserved_mask(32), 0x8000_0000);
+    }
+
+    #[test]
+    fn unsigned_reserved_mask_covers_reserved_bits_only() {
+        assert_eq!(unsigned_reserved_mask(1), 0xffff_fffe);
+        assert_eq!(unsigned_reserved_mask(8), 0xffff_ff00);
+        // A full-width value reserves nothing, so no bit may be rejected.
+        assert_eq!(unsigned_reserved_mask(32), 0x0000_0000);
     }
 }
