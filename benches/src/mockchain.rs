@@ -5,9 +5,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, ensure};
 use miden_core::{Felt, Word, serde::Serializable};
-use miden_debug::{
-    ReplaySnapshot, clone_advice_mutations, flamegraph::FlamegraphProfile,
-};
+use miden_debug::{ReplaySnapshot, clone_advice_mutations, flamegraph::FlamegraphProfile};
 use miden_mast_package::Package;
 use miden_processor::{
     BaseHost, ExecutionError, ExecutionOptions, ExecutionOutput, FastProcessor, FutureMaybeSend,
