@@ -227,7 +227,7 @@ fn run(_arg: Word) {}
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
-    loop {}
+    core::arch::wasm32::unreachable()
 }
 
 #[cfg(not(test))]
