@@ -131,6 +131,7 @@ pretty_assertions = "1.4"
 proptest = "1.11"
 proc-macro2 = "1.0"
 quote = "1.0"
+rand = "0.10"
 rustc-hash = { version = "2.1", default-features = false }
 semver = { version = "1.0", default-features = false }
 sha2 = "0.11"

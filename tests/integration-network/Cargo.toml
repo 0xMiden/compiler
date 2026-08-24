@@ -28,7 +28,7 @@ miden-testing = { workspace = true, features = ["std"] }
 miden-mast-package.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-expect-test.workspace = true
-rand = "0.10"
+rand.workspace = true
 tokio.workspace = true
 
 # For accessing shared compiler test builders and helpers

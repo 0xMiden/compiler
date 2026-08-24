@@ -1,0 +1,23 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "storage-benchmark-tx-script"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../../sdk/sdk" }
+
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../../../sdk/build-script-support" }
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]
+
+[workspace]

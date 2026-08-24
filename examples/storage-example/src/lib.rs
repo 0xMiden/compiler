@@ -7,12 +7,7 @@
 //
 // extern crate alloc;
 
-use miden::{Asset, AssetAmount, StorageMap, StorageValue, Word, component_storage};
-
-use crate::bindings::exports::miden::storage_example::*;
-
-miden::generate!();
-bindings::export!(MyAccount);
+use miden::{Asset, AssetAmount, StorageMap, StorageValue, Word, component, component_storage};
 
 /// An example account demonstrating storage value and map usage.
 #[component_storage]
@@ -26,19 +21,30 @@ struct MyAccount {
     asset_qty_map: StorageMap<Word, AssetAmount>,
 }
 
-impl foo::Guest for MyAccount {
+/// API of the storage example account component.
+#[component]
+trait Foo {
     /// Sets the quantity for `asset` if `pub_key` matches the stored owner key.
-    fn set_asset_qty(pub_key: Word, asset: Asset, qty: AssetAmount) {
-        let mut my_account = MyAccount::default();
-        let owner_key: Word = my_account.owner_public_key.get();
+    #[account_procedure]
+    fn set_asset_qty(&mut self, pub_key: Word, asset: Asset, qty: AssetAmount);
+
+    /// Returns the stored quantity for `asset`, or 0 if not present.
+    #[account_procedure]
+    fn get_asset_qty(&self, asset: Asset) -> AssetAmount;
+}
+
+#[component]
+impl Foo for MyAccount {
+    /// Sets the quantity for `asset` if `pub_key` matches the stored owner key.
+    fn set_asset_qty(&mut self, pub_key: Word, asset: Asset, qty: AssetAmount) {
+        let owner_key: Word = self.owner_public_key.get();
         if pub_key == owner_key {
-            my_account.asset_qty_map.set(asset.key, qty);
+            self.asset_qty_map.set(asset.key, qty);
         }
     }
 
     /// Returns the stored quantity for `asset`, or 0 if not present.
-    fn get_asset_qty(asset: Asset) -> AssetAmount {
-        let my_account = MyAccount::default();
-        my_account.asset_qty_map.get(asset.key)
+    fn get_asset_qty(&self, asset: Asset) -> AssetAmount {
+        self.asset_qty_map.get(asset.key)
     }
 }

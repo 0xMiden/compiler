@@ -51,12 +51,6 @@ fn main() -> anyhow::Result<()> {
         let cycles = benchmark.cycles.map(|cycles| cycles.to_string()).unwrap_or("n/a".into());
         println!("| {} | {} | {} B |", benchmark.name, cycles, benchmark.mast_size);
     }
-    println!();
-    println!("| MockChain scenario | cycles |");
-    println!("| --- | ---: |");
-    for benchmark in report.transactions {
-        println!("| {} | {} |", benchmark.name, benchmark.cycles);
-    }
     Ok(())
 }
 

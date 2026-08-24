@@ -1,6 +1,7 @@
 //! End-to-end benchmarks for compiler example projects.
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -23,7 +24,6 @@ pub struct BenchmarkReport {
     pub schema_version: u32,
     pub commit: String,
     pub benchmarks: Vec<BenchmarkResult>,
-    pub transactions: Vec<TransactionBenchmarkResult>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
@@ -34,14 +34,16 @@ pub struct BenchmarkResult {
     pub cycles: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flamegraph: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replay: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Eq, PartialEq)]
-pub struct TransactionBenchmarkResult {
-    pub name: String,
-    pub cycles: usize,
-    pub flamegraph: String,
-    pub replay: String,
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct TransactionBenchmarkResult {
+    name: String,
+    cycles: usize,
+    flamegraph: String,
+    replay: String,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -134,12 +136,18 @@ impl BenchmarkRunner {
             }
             Err(err) => return Err(err),
         };
+        merge_transaction_benchmarks(&mut benchmarks, transactions)?;
+        if !self.skip_failed_builds {
+            ensure!(
+                benchmarks.iter().all(|benchmark| benchmark.cycles.is_some()),
+                "every benchmark must have an executable scenario"
+            );
+        }
 
         let report = BenchmarkReport {
-            schema_version: 2,
+            schema_version: 3,
             commit,
             benchmarks,
-            transactions,
         };
         self.write_report(&report)?;
         Ok(report)
@@ -151,11 +159,20 @@ impl BenchmarkRunner {
         recreate_dir(&self.output_dir.join("flamegraphs"))?;
         recreate_dir(&self.output_dir.join("replays"))?;
 
+        let mut benchmarks = discover_cases(&self.workspace_root)?
+            .into_iter()
+            .filter(|case| !case.execute)
+            .map(|case| self.run_case(&case))
+            .collect::<Result<Vec<_>>>()?;
+        merge_transaction_benchmarks(&mut benchmarks, self.run_transaction_benchmarks()?)?;
+        ensure!(
+            benchmarks.iter().all(|benchmark| benchmark.cycles.is_some()),
+            "every contract benchmark must have an executable scenario"
+        );
         let report = BenchmarkReport {
-            schema_version: 2,
+            schema_version: 3,
             commit,
-            benchmarks: Vec::new(),
-            transactions: self.run_transaction_benchmarks()?,
+            benchmarks,
         };
         self.write_report(&report)?;
         Ok(report)
@@ -220,6 +237,7 @@ impl BenchmarkRunner {
             mast_size,
             cycles,
             flamegraph,
+            replay: None,
         })
     }
 
@@ -325,6 +343,35 @@ impl BenchmarkRunner {
         }
         Ok(profile)
     }
+}
+
+fn merge_transaction_benchmarks(
+    benchmarks: &mut [BenchmarkResult],
+    transactions: Vec<TransactionBenchmarkResult>,
+) -> Result<()> {
+    let mut transactions = transactions
+        .into_iter()
+        .map(|benchmark| (benchmark.name.clone(), benchmark))
+        .collect::<BTreeMap<_, _>>();
+    for benchmark in benchmarks {
+        let Some(transaction) = transactions.remove(&benchmark.name) else {
+            continue;
+        };
+        ensure!(
+            benchmark.cycles.is_none(),
+            "{} has multiple execution scenarios",
+            benchmark.name
+        );
+        benchmark.cycles = Some(transaction.cycles);
+        benchmark.flamegraph = Some(transaction.flamegraph);
+        benchmark.replay = Some(transaction.replay);
+    }
+    ensure!(
+        transactions.is_empty(),
+        "transaction benchmark has no matching example: {}",
+        transactions.keys().next().expect("map is not empty")
+    );
+    Ok(())
 }
 
 /// Collects the legacy-layout dependency packages that the executor must load for an example.
@@ -458,7 +505,7 @@ fn command_output(output: &Output) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::process::ExitStatus;
+    use std::{collections::BTreeSet, process::ExitStatus};
 
     use miden_assembly::Assembler;
 
@@ -509,6 +556,22 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn every_non_program_example_has_one_transaction_scenario() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let expected = discover_cases(workspace)
+            .unwrap()
+            .into_iter()
+            .filter(|case| !case.execute)
+            .map(|case| case.name)
+            .collect::<BTreeSet<_>>();
+        let scenarios = mockchain::transaction_scenario_examples();
+        let actual = scenarios.iter().copied().map(str::to_owned).collect::<BTreeSet<_>>();
+
+        assert_eq!(scenarios.len(), actual.len(), "an example has multiple scenarios");
+        assert_eq!(actual, expected);
     }
 
     #[test]
