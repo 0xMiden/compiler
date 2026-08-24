@@ -13,13 +13,10 @@ from typing import Any
 def load_report(path: Path) -> dict[str, Any]:
     with path.open() as file:
         report = json.load(file)
-    if report.get("schema_version") not in (1, 2):
+    if report.get("schema_version") not in (1, 2, 3):
         raise ValueError(f"unsupported benchmark schema in {path}")
     if not isinstance(report.get("benchmarks"), list):
         raise ValueError(f"benchmark list is missing from {path}")
-    report.setdefault("transactions", [])
-    if not isinstance(report["transactions"], list):
-        raise ValueError(f"transaction benchmark list is missing from {path}")
     return report
 
 
@@ -71,17 +68,6 @@ def render_report(current: dict[str, Any], baseline: dict[str, Any]) -> str:
             + " |"
         )
 
-    transaction_baseline_by_name = {
-        benchmark["name"]: benchmark for benchmark in baseline.get("transactions", [])
-    }
-    transaction_rows = []
-    for benchmark in current.get("transactions", []):
-        previous = transaction_baseline_by_name.get(benchmark["name"], {})
-        transaction_rows.append(
-            f"| {benchmark['name']} | "
-            f"{format_measurement(benchmark.get('cycles'), previous.get('cycles'))} |"
-        )
-
     current_commit = str(current.get("commit", "unknown"))[:12]
     baseline_commit = str(baseline.get("commit", "unknown"))[:12]
     report = [
@@ -94,17 +80,6 @@ def render_report(current: dict[str, Any], baseline: dict[str, Any]) -> str:
         *rows,
         "",
     ]
-    if transaction_rows:
-        report.extend(
-            [
-                "### MockChain contract transactions",
-                "",
-                "| scenario | VM cycles (vs next) |",
-                "| --- | ---: |",
-                *transaction_rows,
-                "",
-            ]
-        )
     report.extend(
         [
             "SVG flamegraphs, replay snapshots, and compiled packages are attached to the workflow run.",
