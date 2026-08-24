@@ -9,31 +9,30 @@ class CompareExampleBenchmarksTests(unittest.TestCase):
         self.assertEqual(format_delta(110, 100), "❌ +10.00%")
         self.assertEqual(format_delta(100, 100), "~0%")
 
-    def test_report_supports_build_only_examples(self):
+    def test_report_renders_one_table_for_all_examples(self):
         current = {
-            "schema_version": 2,
+            "schema_version": 3,
             "commit": "candidate123456789",
             "benchmarks": [
                 {"name": "fibonacci", "cycles": 90, "mast_size": 200},
-                {"name": "basic-wallet", "mast_size": 300},
+                {"name": "basic-wallet", "cycles": 500, "mast_size": 300},
             ],
-            "transactions": [{"name": "counter-note-no-auth", "cycles": 500}],
         }
         baseline = {
-            "schema_version": 2,
+            "schema_version": 3,
             "commit": "baseline123456789",
             "benchmarks": [
                 {"name": "fibonacci", "cycles": 100, "mast_size": 180},
-                {"name": "basic-wallet", "mast_size": 300},
+                {"name": "basic-wallet", "cycles": 550, "mast_size": 300},
             ],
-            "transactions": [{"name": "counter-note-no-auth", "cycles": 550}],
         }
 
         report = render_report(current, baseline)
 
         self.assertIn("| fibonacci | 90 (✅ -10.00%) | 200B (❌ +11.11%) |", report)
-        self.assertIn("| basic-wallet | n/a | 300B (~0%) |", report)
-        self.assertIn("| counter-note-no-auth | 500 (✅ -9.09%) |", report)
+        self.assertIn("| basic-wallet | 500 (✅ -9.09%) | 300B (~0%) |", report)
+        self.assertEqual(report.count("| example | VM cycles (vs next) |"), 1)
+        self.assertNotIn("MockChain", report)
         self.assertIn("`next` `baseline1234`", report)
 
 

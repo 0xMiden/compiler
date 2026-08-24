@@ -3,11 +3,10 @@
 This suite builds every project under `examples/` with maximum optimization, then records the
 serialized MAST forest size. Executable examples (`collatz`, `fibonacci`, and
 `is-prime`) are also executed with their checked-in `inputs.toml`; their exact VM cycle count is
-recorded and a debug build is used to generate an SVG flamegraph. Contract examples are exercised
-through deterministic MockChain scenarios; the initial `counter-note-no-auth` scenario instantiates
-the compiled counter and no-auth components, commits a compiled counter note, and consumes it. The
-optimized transaction provides the cycle metric, while a debug build produces a replay snapshot
-and SVG flamegraph. Package metadata and instrumented debug builds are not measured.
+recorded and a debug build is used to generate an SVG flamegraph. Every account component, note,
+and transaction-script example is exercised by a deterministic transaction. The optimized
+execution provides the cycle metric, while a debug build produces a replay snapshot and SVG
+flamegraph. Package metadata and instrumented debug builds are not measured.
 
 ## Running locally
 
@@ -22,7 +21,7 @@ Results are written to `target/example-benchmarks/`:
 
 - `results.json` contains machine-readable MAST sizes and VM cycles.
 - `packages/` contains the optimized packages whose MAST forests were measured.
-- `flamegraphs/` contains cycle-weighted SVG flamegraphs for executable examples and transactions.
+- `flamegraphs/` contains cycle-weighted SVG flamegraphs for every example.
 - `replays/` contains self-contained transaction snapshots accepted by `miden-debug --replay`.
 
 To run only the MockChain-backed contract scenarios:
