@@ -1814,11 +1814,9 @@ pub(crate) mod manifest {
     /// The rustc flags every Miden build needs, shared by the manifest-driven and the
     /// standalone-file cargo routes so the two cannot drift apart.
     ///
-    /// The panic strategy is whatever `midenc` was invoked with (`-Cpanic=...`), rather than a
-    /// hardcoded one. The `-Cpanic` entry sits in `RUSTFLAGS`, which cargo appends *after* the
-    /// profile's own flags, so it wins over the `panic = "abort"` the cargo invocations' profile
-    /// settings hardcode — the same precedence the old hardcoded `-Cpanic=immediate-abort`
-    /// already relied on to override those profiles.
+    /// The panic strategy is whatever `midenc` was invoked with (`-Cpanic=...`). The `-Cpanic`
+    /// entry sits in `RUSTFLAGS`, which cargo appends *after* the profile's own flags, so it wins
+    /// over `panic = "..."` hardcoded in profiles.
     pub(super) fn mandatory_rust_flags(panic_strategy: PanicStrategy) -> Vec<&'static str> {
         vec![
             // Enable memcopy and 128-bit arithmetic ops

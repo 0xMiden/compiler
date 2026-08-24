@@ -1,8 +1,7 @@
 //! Tests that a custom `#[panic_handler]` is *not* invoked under the `-Cpanic=immediate-abort`
 //! strategy.
 //!
-//! TODO use panic infra once its added
-//! Handler invocation would be observable through the `PrintLn` event the handler emits.
+//! *Not* observing `PANIC_HANDLER_MESSAGE` after trap confirms the panic handler was not invoked.
 
 mod common;
 

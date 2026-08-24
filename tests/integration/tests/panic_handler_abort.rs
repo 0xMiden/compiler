@@ -1,8 +1,7 @@
 //! Tests that a custom `#[panic_handler]` is invoked when the fixture is compiled with
 //! `-Cpanic=abort`.
 //!
-//! TODO use panic infra once its added
-//! Handler invocation is observed through the `PrintLn` event the handler emits.
+//! Handler invocation is confirmed by observing `PANIC_HANDLER_MESSAGE`.
 mod common;
 
 use common::{PANIC_HANDLER_MESSAGE, PanicStrategy, info_messages_since};

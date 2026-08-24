@@ -340,7 +340,7 @@ pub enum OptLevel {
     SizeMin,
 }
 
-/// Enables configuring the panic strategy used compiling Rust for the Miden target
+/// Enables configuring the panic strategy used when compiling Rust for the Miden target
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "std", derive(clap::ValueEnum))]
 pub enum PanicStrategy {

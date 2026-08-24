@@ -18,29 +18,12 @@ use midenc_integration_tests::{
     CompilerTest, CompilerTestBuilder,
     testing::{executor_with_std, stripped_mast_size_str},
 };
+pub use midenc_session::PanicStrategy;
 
 const PANIC_HANDLER_FIXTURE: &str = "../fixtures/components/panic-handler-test";
 
 /// The message the fixture's custom `#[panic_handler]` prints when invoked.
 pub const PANIC_HANDLER_MESSAGE: &str = "custom panic handler invoked";
-
-/// The Rust panic strategy a fixture is compiled with.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PanicStrategy {
-    /// Panics are routed through the crate's `#[panic_handler]`, then abort.
-    Abort,
-    /// a panic traps immediately, so the `#[panic_handler]` is never invoked.
-    ImmediateAbort,
-}
-
-impl PanicStrategy {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            PanicStrategy::Abort => "abort",
-            PanicStrategy::ImmediateAbort => "immediate-abort",
-        }
-    }
-}
 
 /// Compile the `panic-handler-test` fixture with the given panic strategy.
 pub fn compile_panic_handler_fixture(strategy: PanicStrategy) -> CompilerTest {
@@ -85,9 +68,6 @@ pub fn execute_expecting_trap(
         Ok(_) => {
             panic!("expected execution to trap but it did not, input_stack = {input_stack_debug}")
         }
-        // TODO look into `miden_debug` to see how it builds the error/panic message for a trap
-        // then below assert that part if this message is contained in `payload`
-        // Goal: verify panic is due to vm trap, not some other issue
         Err(payload) => {
             if let Some(s) = payload.downcast_ref::<String>() {
                 s.clone()

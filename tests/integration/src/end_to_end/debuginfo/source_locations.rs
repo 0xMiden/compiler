@@ -74,7 +74,3 @@ fn rust_assert_macro_source_location_with_panic_immediate_abort() {
         }
     }
 }
-
-// TODO add test similar to the above which builds the fixture with `panic=abort`
-// It asserts that source location is *not* in the panic message
-// It contains a TODO to fix that
