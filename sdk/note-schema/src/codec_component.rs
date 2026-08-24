@@ -631,6 +631,9 @@ package miden:base@1.0.0 {
     /// Writes a standalone codec crate for the component adapter test.
     fn write_fixture(root: &Path) {
         fs::create_dir(root.join("src")).unwrap();
+        // Seed the workspace lockfile so the offline build resolves to the versions that the
+        // workspace already downloaded instead of racing the registry index.
+        fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock")).unwrap();
         let codec_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../note-codec");
         let manifest = format!(
             r#"[package]

@@ -98,6 +98,10 @@ fn wasm_target_is_installed() -> bool {
 /// Writes the minimal author codec crate used by the componentization test.
 fn write_fixture(root: &Path) {
     fs::create_dir(root.join("src")).expect("failed to create fixture source directory");
+    // Seed the workspace lockfile so the offline build resolves to the versions that the
+    // workspace already downloaded instead of racing the registry index.
+    fs::copy(workspace_root().join("Cargo.lock"), root.join("Cargo.lock"))
+        .expect("failed to seed the fixture with the workspace lockfile");
     let codec_path = Path::new(env!("CARGO_MANIFEST_DIR"));
     let manifest = format!(
         r#"[package]
