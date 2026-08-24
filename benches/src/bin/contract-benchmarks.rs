@@ -38,10 +38,11 @@ fn main() -> anyhow::Result<()> {
     )?
     .run_contracts(commit)?;
 
-    println!("| MockChain scenario | cycles |");
-    println!("| --- | ---: |");
-    for benchmark in report.transactions {
-        println!("| {} | {} |", benchmark.name, benchmark.cycles);
+    println!("| example | cycles | MAST size |");
+    println!("| --- | ---: | ---: |");
+    for benchmark in report.benchmarks {
+        let cycles = benchmark.cycles.map(|cycles| cycles.to_string()).unwrap_or("n/a".into());
+        println!("| {} | {} | {} B |", benchmark.name, cycles, benchmark.mast_size);
     }
     Ok(())
 }
