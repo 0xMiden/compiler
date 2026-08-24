@@ -5,7 +5,6 @@
 #![allow(dead_code)]
 
 use std::{
-    borrow::Cow,
     panic::{self, AssertUnwindSafe},
     sync::Arc,
 };
@@ -45,18 +44,17 @@ impl PanicStrategy {
 
 /// Compile the `panic-handler-test` fixture with the given panic strategy.
 pub fn compile_panic_handler_fixture(strategy: PanicStrategy) -> CompilerTest {
-    // TODO use the new `CodegenOpt.panic_strategy` once it was added
-    let rustflags = match strategy {
-        PanicStrategy::Abort => vec![Cow::Borrowed("-C"), Cow::Borrowed("panic=abort")],
-        PanicStrategy::ImmediateAbort => Vec::new(),
-    };
-    let mut builder = CompilerTestBuilder::rust_source_cargo_miden(
+    CompilerTestBuilder::rust_source_cargo_miden(
         PANIC_HANDLER_FIXTURE,
         WasmTranslationConfig::default(),
-        ["--entrypoint".to_string(), "panic_handler_test::entrypoint".to_string()],
-    );
-    builder.with_rustflags(rustflags);
-    builder.build()
+        [
+            "--entrypoint".to_string(),
+            "panic_handler_test::entrypoint".to_string(),
+            "-C".to_string(),
+            format!("panic={}", strategy.as_str()),
+        ],
+    )
+    .build()
 }
 
 /// The `Info`-level messages captured since `before` (a snapshot taken after compilation).

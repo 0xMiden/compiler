@@ -9,13 +9,18 @@ use midenc_frontend_wasm::WasmTranslationConfig;
 use crate::{CompilerTest, testing::executor_with_std};
 
 #[test]
-fn rust_assert_macro_source_location_with_debug_executor() {
+fn rust_assert_macro_source_location_with_panic_immediate_abort() {
     let config = WasmTranslationConfig::default();
 
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../fixtures/components/assert-debug-test",
         config,
-        ["--entrypoint".to_string(), "assert_debug_test::entrypoint".to_string()],
+        [
+            "--entrypoint".to_string(),
+            "assert_debug_test::entrypoint".to_string(),
+            "-C".to_string(),
+            "panic=immediate-abort".to_string(),
+        ],
     );
 
     let package = test.compile_package();
@@ -69,3 +74,7 @@ fn rust_assert_macro_source_location_with_debug_executor() {
         }
     }
 }
+
+// TODO add test similar to the above which builds the fixture with `panic=abort`
+// It asserts that source location is *not* in the panic message
+// It contains a TODO to fix that

@@ -640,7 +640,7 @@ trim-paths = [\"diagnostics\", \"object\"]
     // The same mandatory set and inherited-flag precedence as the manifest route: a present
     // `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
     let extra_rust_flags = manifest::merge_rust_flags(
-        manifest::MANDATORY_RUST_FLAGS,
+        &manifest::mandatory_rust_flags(options.panic_strategy),
         std::env::var_os("CARGO_ENCODED_RUSTFLAGS").as_deref(),
         std::env::var_os("RUSTFLAGS").as_deref(),
         options.rustflags.as_deref(),
@@ -1807,30 +1807,38 @@ pub(crate) mod manifest {
         Report,
         diagnostics::{IntoDiagnostic, SourceManagerExt},
     };
-    use midenc_session::{InputFile, OptLevel, ProjectManifest, miden_project};
+    use midenc_session::{InputFile, OptLevel, PanicStrategy, ProjectManifest, miden_project};
 
     use crate::{CompilerResult, cargo::CargoOptions};
 
     /// The rustc flags every Miden build needs, shared by the manifest-driven and the
     /// standalone-file cargo routes so the two cannot drift apart.
-    pub(super) const MANDATORY_RUST_FLAGS: &[&str] = &[
-        // Enable memcopy and 128-bit arithmetic ops
-        "-C",
-        "target-feature=+bulk-memory,+wide-arithmetic",
-        // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
-        // for cfg-based dependency selection.
-        "--cfg",
-        "miden",
-        // Enable errors on missing stub functions
-        "-C",
-        "link-args=--fatal-warnings",
-        // Remove the source file paths in the data segment for panics
-        // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
-        "-Zlocation-detail=none",
-        // Build with panic=immediate-abort
-        "-Zunstable-options",
-        "-Cpanic=immediate-abort",
-    ];
+    ///
+    /// The panic strategy is whatever `midenc` was invoked with (`-Cpanic=...`), rather than a
+    /// hardcoded one. The `-Cpanic` entry sits in `RUSTFLAGS`, which cargo appends *after* the
+    /// profile's own flags, so it wins over the `panic = "abort"` the cargo invocations' profile
+    /// settings hardcode — the same precedence the old hardcoded `-Cpanic=immediate-abort`
+    /// already relied on to override those profiles.
+    pub(super) fn mandatory_rust_flags(panic_strategy: PanicStrategy) -> Vec<&'static str> {
+        vec![
+            // Enable memcopy and 128-bit arithmetic ops
+            "-C",
+            "target-feature=+bulk-memory,+wide-arithmetic",
+            // Propagate the Miden VM target signal to the entire crate graph so Cargo can use it
+            // for cfg-based dependency selection.
+            "--cfg",
+            "miden",
+            // Enable errors on missing stub functions
+            "-C",
+            "link-args=--fatal-warnings",
+            // Remove the source file paths in the data segment for panics
+            // https://doc.rust-lang.org/beta/unstable-book/compiler-flags/location-detail.html
+            "-Zlocation-detail=none",
+            // Build with the requested panic strategy
+            "-Zunstable-options",
+            panic_strategy.as_rustc_arg(),
+        ]
+    }
 
     /// Executes a Cargo-based build with the provided compiler options and package registry
     pub(crate) fn cargo_build(
@@ -2041,7 +2049,7 @@ pub(crate) mod manifest {
         let inherited_encoded = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
         let inherited_plain = std::env::var_os("RUSTFLAGS");
         let extra_rust_flags = merge_rust_flags(
-            MANDATORY_RUST_FLAGS,
+            &mandatory_rust_flags(compiler_opts.panic_strategy),
             inherited_encoded.as_deref(),
             inherited_plain.as_deref(),
             compiler_opts.rustflags.as_deref(),

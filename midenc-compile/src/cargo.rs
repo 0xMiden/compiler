@@ -208,6 +208,7 @@ pub(crate) fn cargo_build(
         target: Some(target.name.to_string()),
         optimize: options.optimize,
         debug: options.debug,
+        panic_strategy: options.panic_strategy,
         search_paths: options.search_paths.clone(),
         midenup_home: options.midenup_home.clone(),
         toolchain: options.toolchain.clone(),

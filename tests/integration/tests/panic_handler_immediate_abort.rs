@@ -11,7 +11,7 @@ use miden_core::Felt;
 use miden_debug::logger::DebugLogger;
 
 #[test]
-fn panic_handler_not_invoked_with_default_immediate_abort() {
+fn panic_handler_not_invoked_with_immediate_abort() {
     DebugLogger::init_for_tests()
         .expect("each test using DebugLogger should run in its own process");
     log::set_max_level(log::LevelFilter::Warn);
