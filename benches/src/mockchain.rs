@@ -6,7 +6,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use miden_core::{Felt, Word, serde::Serializable};
 use miden_debug::{
-    Executor, ReplaySnapshot, clone_advice_mutations, flamegraph::FlamegraphProfile,
+    ReplaySnapshot, clone_advice_mutations, flamegraph::FlamegraphProfile,
 };
 use miden_mast_package::Package;
 use miden_processor::{
@@ -84,7 +84,7 @@ impl BenchmarkRunner {
             .write_to_file(self.output_dir.join(&relative_replay))
             .context("failed to write transaction replay snapshot")?;
 
-        let profile = collect_replay_profile(snapshot)
+        let profile = FlamegraphProfile::collect_replay(snapshot)
             .context("failed to collect transaction replay flamegraph")?;
         let relative_flamegraph = format!("flamegraphs/{COUNTER_NOTE_NO_AUTH}.svg");
         profile
@@ -203,27 +203,6 @@ fn block_on<F: std::future::Future>(future: F) -> F::Output {
         .build()
         .expect("failed to build MockChain benchmark runtime")
         .block_on(future)
-}
-
-fn collect_replay_profile(snapshot: ReplaySnapshot) -> Result<FlamegraphProfile, ExecutionError> {
-    let ReplaySnapshot {
-        package,
-        stack_inputs,
-        advice_inputs,
-        options,
-        mast_forests,
-        event_log,
-    } = snapshot;
-    let source_manager: Arc<dyn miden_assembly::SourceManager> =
-        Arc::new(miden_assembly::DefaultSourceManager::default());
-    let executor = Executor::from_config(miden_debug::ExecutionConfig {
-        inputs: stack_inputs,
-        advice_inputs,
-        options,
-    });
-    let mut executor =
-        executor.into_debug_with_replay(package, source_manager, mast_forests, event_log.into());
-    FlamegraphProfile::collect(&mut executor)
 }
 
 #[derive(Clone, Default)]
