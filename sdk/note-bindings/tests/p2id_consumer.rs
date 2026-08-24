@@ -81,6 +81,9 @@ fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
 
     let temp = tempfile::tempdir().unwrap();
     fs::create_dir_all(temp.path().join("src")).unwrap();
+    // Seed the workspace lockfile so the offline build resolves to the versions that the
+    // workspace already downloaded instead of racing the registry index.
+    fs::copy(workspace.join("Cargo.lock"), temp.path().join("Cargo.lock")).unwrap();
     let second_package_dir = temp.path().join("packages/counter");
     fs::create_dir_all(&second_package_dir).unwrap();
     let mut second_package = (*p2id).clone();
