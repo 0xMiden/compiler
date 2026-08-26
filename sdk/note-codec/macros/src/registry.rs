@@ -155,7 +155,7 @@ pub(crate) fn registered_codecs(span: Span) -> syn::Result<Vec<CodecRegistration
             span,
             "export_codecs! found no registered codecs; place it after from_project! or \
              from_package! and after every #[note_codec] implementation because procedural macros \
-             register in declaration order",
+             register as they expand; supported types are exported in canonical FQN order",
         ));
     }
     Ok(registry.codecs.values().map(|codec| codec.registration.clone()).collect())

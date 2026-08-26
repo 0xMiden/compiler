@@ -17,6 +17,9 @@ use crate::manifest_paths::SDK_WIT_SOURCE;
 static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
     OnceLock::new();
 
+#[cfg(test)]
+static EXPORTED_TYPES_TEST_LOCK: Mutex<()> = Mutex::new(());
+
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
@@ -278,16 +281,96 @@ pub(crate) fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
 /// Procedural macros cannot resolve a bare identifier such as `Word`. The generated check permits
 /// a genuine `miden::Word` import but rejects a local same-named type unless it was registered with
 /// `#[export_type]`, preventing the emitted WIT shape from drifting from the encoded Rust type.
-pub(crate) fn sdk_core_type_identity_guards(
+pub(crate) fn nominal_type_identity_guards(
     definition: &ExportedTypeDef,
     span: Span,
 ) -> Result<TokenStream, syn::Error> {
     let mut guarded = HashSet::new();
     let mut guards = TokenStream::new();
     visit_exported_type_refs(definition, &mut |type_ref| {
-        collect_sdk_core_type_identity_guard(type_ref, span, &mut guarded, &mut guards)
+        collect_sdk_core_type_identity_guard(type_ref, span, &mut guarded, &mut guards)?;
+        collect_builtin_type_identity_guard(type_ref, span, &mut guarded, &mut guards)
     })?;
     Ok(guards)
+}
+
+/// Appends one nominal builtin identity check when a builtin-named reference is not guarded.
+///
+/// `Option`, `Result`, and the primitive names are classified by their last path segment, so
+/// a same-named foreign or shadowing type could silently change the encoded layout. The check
+/// proves the written type IS the `::core` builtin, mirroring the SDK core-type guard.
+fn collect_builtin_type_identity_guard(
+    type_ref: &TypeRef,
+    span: Span,
+    guarded: &mut HashSet<(String, String)>,
+    guards: &mut TokenStream,
+) -> Result<(), syn::Error> {
+    let Some(canonical) = builtin_canonical_type_text(type_ref) else {
+        return Ok(());
+    };
+    let written = written_type_text(type_ref);
+    if !guarded.insert((written.clone(), canonical.clone())) {
+        return Ok(());
+    }
+    let written = parse_reconstructed_type(&written, span)?;
+    let canonical = parse_reconstructed_type(&canonical, span)?;
+    guards.extend(quote_spanned! {span=>
+        const _: fn() = || {
+            fn __miden_builtin_type_name_collision_use_the_core_type<T>(
+                _: ::core::marker::PhantomData<T>,
+                _: ::core::marker::PhantomData<T>,
+            ) {}
+            __miden_builtin_type_name_collision_use_the_core_type(
+                ::core::marker::PhantomData::<#written>,
+                ::core::marker::PhantomData::<#canonical>,
+            );
+        };
+    });
+    Ok(())
+}
+
+/// Returns the `::core` spelling of a builtin-named reference, or None for other types.
+fn builtin_canonical_type_text(type_ref: &TypeRef) -> Option<String> {
+    if type_ref.is_custom {
+        return None;
+    }
+    let last = type_ref.path.last()?;
+    match (last.as_str(), type_ref.dependencies.as_slice()) {
+        ("Option", [inner]) => {
+            Some(format!("::core::option::Option<{}>", written_type_text(inner)))
+        }
+        ("Result", [ok, err]) => Some(format!(
+            "::core::result::Result<{}, {}>",
+            written_type_text(ok),
+            written_type_text(err)
+        )),
+        (ident, []) if rust_type_to_wit_type(ident).is_some() => {
+            Some(format!("::core::primitive::{ident}"))
+        }
+        _ => None,
+    }
+}
+
+/// Reconstructs the Rust source text of a reference as it was written.
+fn written_type_text(type_ref: &TypeRef) -> String {
+    let path = type_ref.path.join("::");
+    match (type_ref.path.last().map(String::as_str), type_ref.dependencies.as_slice()) {
+        (Some("Option"), [inner]) => format!("{path}<{}>", written_type_text(inner)),
+        (Some("Result"), [ok, err]) => {
+            format!("{path}<{}, {}>", written_type_text(ok), written_type_text(err))
+        }
+        _ => path,
+    }
+}
+
+/// Parses one reconstructed type text back into a type for guard emission.
+fn parse_reconstructed_type(text: &str, span: Span) -> Result<syn::Type, syn::Error> {
+    syn::parse_str::<syn::Type>(text).map_err(|error| {
+        syn::Error::new(
+            span,
+            format!("failed to reconstruct type `{text}` for an identity check: {error}"),
+        )
+    })
 }
 
 /// Visits every type reference contained in one exported definition.
@@ -850,6 +933,14 @@ pub(crate) fn ensure_custom_type_defined(
         ensure_custom_type_defined(dependency, exported_type_names, span)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+/// Serializes tests that mutate the process-global exported-type registry.
+pub(crate) fn lock_export_type_registry_for_tests() -> std::sync::MutexGuard<'static, ()> {
+    EXPORTED_TYPES_TEST_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 #[cfg(test)]

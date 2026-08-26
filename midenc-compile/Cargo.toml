@@ -25,6 +25,9 @@ std = [
     "midenc-session/std",
     "dep:cargo_metadata",
     "dep:clap",
+    "dep:miden-note-schema",
+    "dep:sha2",
+    "dep:tempfile",
     "dep:toml_edit",
     "dep:wat",
     "dep:wit-component",
@@ -40,7 +43,7 @@ miden-assembly.workspace = true
 miden-assembly-syntax.workspace = true
 miden-mast-package.workspace = true
 miden-note-codec-wit.workspace = true
-miden-note-schema.workspace = true
+miden-note-schema = { workspace = true, optional = true }
 miden-package-registry.workspace = true
 midenc-frontend-wasm.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
@@ -50,7 +53,7 @@ midenc-dialect-hir.workspace = true
 midenc-hir.workspace = true
 midenc-hir-transform.workspace = true
 midenc-session.workspace = true
-sha2.workspace = true
+sha2 = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 toml_edit = { workspace = true, optional = true, features = ["parse", "display"] }
 thiserror.workspace = true

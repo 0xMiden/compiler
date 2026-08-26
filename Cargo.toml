@@ -147,7 +147,9 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 heck = "0.5"
 prettyplease = "0.2"
 proc-macro-crate = "3.5"
-# Deliberate skew: WIT emission uses wit-parser 0.233; attach and consume use 0.247.
+# Deliberate skew: WIT emission (wit-bindgen-core 0.57) and attach/consume validation
+# (workspace wit-parser/wit-component) parse with 0.247; 0.233 enters only through wasmtime's
+# component bindgen macros on the codec-consumption path.
 wit-bindgen-core = "0.57"
 wit-bindgen-rust = { version = "0.57", default-features = false }
 wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }

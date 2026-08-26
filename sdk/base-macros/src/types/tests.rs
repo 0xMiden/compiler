@@ -11,6 +11,7 @@ use super::*;
 
 #[test]
 fn emits_hint_for_missing_export_type() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("LocalType").unwrap();
     let exported = HashMap::new();
@@ -26,6 +27,7 @@ fn emits_hint_for_missing_export_type() {
 
 #[test]
 fn allows_sdk_type_without_export_attribute() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("Asset").unwrap();
     let exported = HashMap::new();
@@ -40,6 +42,7 @@ fn allows_sdk_type_without_export_attribute() {
 
 #[test]
 fn allows_block_number_without_export_attribute() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("BlockNumber").unwrap();
     let exported = HashMap::new();
@@ -54,6 +57,7 @@ fn allows_block_number_without_export_attribute() {
 
 #[test]
 fn allows_nonce_without_export_attribute() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("Nonce").unwrap();
     let exported = HashMap::new();
@@ -68,6 +72,7 @@ fn allows_nonce_without_export_attribute() {
 
 #[test]
 fn allows_asset_amount_without_export_attribute() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("AssetAmount").unwrap();
     let exported = HashMap::new();
@@ -82,6 +87,7 @@ fn allows_asset_amount_without_export_attribute() {
 
 #[test]
 fn allows_wit_primitive_type_without_export_attribute() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let ty: Type = syn::parse_str("u64").unwrap();
     let exported = HashMap::new();
@@ -96,6 +102,7 @@ fn allows_wit_primitive_type_without_export_attribute() {
 
 #[test]
 fn struct_fields_allow_wit_primitive_types() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let item: syn::ItemStruct = parse_quote! {
         struct Foo {
@@ -120,6 +127,7 @@ fn struct_fields_allow_wit_primitive_types() {
 
 #[test]
 fn exported_types_capture_doc_attributes() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let item_struct: syn::ItemStruct = parse_quote! {
         /// Record documentation.
@@ -152,6 +160,7 @@ fn exported_types_capture_doc_attributes() {
 
 #[test]
 fn maps_rust_primitive_types_to_wit_types() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let exported_names = HashSet::new();
@@ -181,6 +190,7 @@ fn maps_rust_primitive_types_to_wit_types() {
 
 #[test]
 fn rejects_unsupported_component_primitives() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
 
@@ -198,6 +208,7 @@ fn rejects_unsupported_component_primitives() {
 
 #[test]
 fn rejects_unsupported_component_primitives_nested_in_option_or_result() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
 
@@ -215,6 +226,7 @@ fn rejects_unsupported_component_primitives_nested_in_option_or_result() {
 
 #[test]
 fn maps_rust_option_type_to_wit_option() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let exported_names = HashSet::new();
@@ -230,6 +242,7 @@ fn maps_rust_option_type_to_wit_option() {
 
 #[test]
 fn option_type_tracks_nested_core_type_imports() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let ty: Type = syn::parse_str("Option<Word>").unwrap();
@@ -244,6 +257,7 @@ fn option_type_tracks_nested_core_type_imports() {
 
 #[test]
 fn option_type_validates_nested_custom_type() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let ty: Type = syn::parse_str("Option<LocalType>").unwrap();
@@ -260,6 +274,7 @@ fn option_type_validates_nested_custom_type() {
 
 #[test]
 fn maps_rust_result_type_to_wit_result() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let exported_names = HashSet::new();
@@ -275,6 +290,7 @@ fn maps_rust_result_type_to_wit_result() {
 
 #[test]
 fn result_type_tracks_nested_core_type_imports() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let ty: Type = syn::parse_str("Result<Word, Felt>").unwrap();
@@ -289,6 +305,7 @@ fn result_type_tracks_nested_core_type_imports() {
 
 #[test]
 fn result_type_validates_nested_custom_type() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let ty: Type = syn::parse_str("Result<u64, LocalType>").unwrap();
@@ -305,6 +322,7 @@ fn result_type_validates_nested_custom_type() {
 
 #[test]
 fn result_type_maps_unit_argument_to_wit_placeholder() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let exported = HashMap::new();
     let ty: Type = syn::parse_str("Result<(), Felt>").unwrap();
@@ -315,6 +333,7 @@ fn result_type_maps_unit_argument_to_wit_placeholder() {
 
 #[test]
 fn struct_field_missing_export_type_hint() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let item: syn::ItemStruct = parse_quote! {
         struct Foo {
@@ -337,6 +356,7 @@ fn struct_field_missing_export_type_hint() {
 
 #[test]
 fn enum_payload_missing_export_type_hint() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
     let item: syn::ItemEnum = parse_quote! {
         enum Foo {
@@ -363,6 +383,7 @@ fn enum_payload_missing_export_type_hint() {
 
 #[test]
 fn forward_reference_between_export_types_is_allowed() {
+    let _registry_guard = lock_export_type_registry_for_tests();
     reset_export_type_registry_for_tests();
 
     let first: syn::ItemStruct = parse_quote! {
@@ -505,7 +526,7 @@ fn bare_core_type_name_collision_fails_identity_guard() {
         }
     };
     let definition = exported_type_from_struct(&item).unwrap();
-    let guards = sdk_core_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let guards = nominal_type_identity_guards(&definition, Span::call_site()).unwrap();
     let source = format!(
         r#"
 extern crate self as miden;
@@ -535,7 +556,7 @@ fn bare_sdk_core_type_import_passes_identity_guard() {
         }
     };
     let definition = exported_type_from_struct(&item).unwrap();
-    let guards = sdk_core_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let guards = nominal_type_identity_guards(&definition, Span::call_site()).unwrap();
     let source = format!(
         r#"
 extern crate self as miden;
@@ -685,6 +706,98 @@ fn main() {{}}
     assert!(
         output.status.success(),
         "the registered type must pass the shape check:
+{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn foreign_option_type_fails_the_builtin_identity_guard() {
+    let item: syn::ItemStruct = parse_quote! {
+        struct NoteFields {
+            value: fake::Option<u64>,
+        }
+    };
+    let definition = exported_type_from_struct(&item).unwrap();
+    let guards = nominal_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod fake {{
+    #[allow(dead_code)]
+    pub struct Option<T>(pub T);
+}}
+mod user {{
+    use crate::fake;
+    {guards}
+}}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(!output.status.success(), "a foreign `Option` must fail the builtin guard");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("__miden_builtin_type_name_collision_use_the_core_type"),
+        "builtin diagnostic is not actionable:
+{stderr}"
+    );
+}
+
+#[test]
+fn a_shadowed_primitive_fails_the_builtin_identity_guard() {
+    let item: syn::ItemStruct = parse_quote! {
+        struct NoteFields {
+            value: u64,
+        }
+    };
+    let definition = exported_type_from_struct(&item).unwrap();
+    let guards = nominal_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod user {{
+    #[allow(non_camel_case_types, dead_code)]
+    pub struct u64;
+    {guards}
+}}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(!output.status.success(), "a shadowed primitive must fail the builtin guard");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("__miden_builtin_type_name_collision_use_the_core_type"),
+        "builtin diagnostic is not actionable:
+{stderr}"
+    );
+}
+
+#[test]
+fn genuine_builtin_types_pass_the_builtin_identity_guard() {
+    let item: syn::ItemStruct = parse_quote! {
+        struct NoteFields {
+            maybe: Option<u64>,
+            either: core::result::Result<u32, u8>,
+            flag: bool,
+        }
+    };
+    let definition = exported_type_from_struct(&item).unwrap();
+    let guards = nominal_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod user {{
+    {guards}
+}}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(
+        output.status.success(),
+        "genuine builtins must pass the builtin guard:
 {}",
         String::from_utf8_lossy(&output.stderr)
     );

@@ -143,7 +143,8 @@ fn export_requires_earlier_codec_declarations() {
     let error = expand::export_codecs(quote!()).unwrap_err().to_string();
 
     assert!(error.contains("found no registered codecs"));
-    assert!(error.contains("declaration order"));
+    assert!(error.contains("register as they expand"));
+    assert!(error.contains("canonical FQN order"));
     assert!(error.contains("#[note_codec]"));
 }
 

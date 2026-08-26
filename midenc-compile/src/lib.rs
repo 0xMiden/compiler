@@ -14,21 +14,21 @@ pub mod pipeline;
 #[cfg(feature = "std")]
 pub mod rust;
 
+#[cfg(feature = "std")]
 use alloc::rc::Rc;
 
 pub use midenc_hir::Context;
+#[cfg(feature = "std")]
 use midenc_hir::Op;
 #[cfg(feature = "std")]
 use midenc_session::{OutputFile, OutputType};
-use midenc_session::{
-    OutputMode, PathBuf,
-    diagnostics::{Diagnostic, Report, WrapErr, miette},
-};
+use midenc_session::diagnostics::{Diagnostic, Report, miette};
+#[cfg(feature = "std")]
+use midenc_session::{OutputMode, PathBuf, diagnostics::WrapErr};
 
-pub use self::{
-    compiler::Compiler,
-    pipeline::artifacts::{CodegenOutput, CompiledArtifact, MidenComponent},
-};
+pub use self::compiler::Compiler;
+#[cfg(feature = "std")]
+pub use self::pipeline::artifacts::{CodegenOutput, CompiledArtifact, MidenComponent};
 
 pub type CompilerResult<T> = Result<T, Report>;
 
@@ -44,6 +44,7 @@ pub struct CompilerStopped(&'static str);
 /// file the "Compiled …" line names, unless `--quiet` suppressed that line. A package emitted to
 /// standard output, a session that asked for no `masp` output, and a run stopped before assembly
 /// all leave nothing to name.
+#[cfg(feature = "std")]
 pub fn compile(context: Rc<Context>) -> CompilerResult<Option<PathBuf>> {
     use midenc_hir::formatter::DisplayHex;
 
@@ -95,15 +96,8 @@ fn announce_package(session: &midenc_session::Session, name: &str) -> Option<Pat
     }
 }
 
-/// Announce where the assembled package named `name` went, and hand back the file it went to.
-///
-/// Without `std` there are no output files to name, and nothing to print to.
-#[cfg(not(feature = "std"))]
-fn announce_package(_session: &midenc_session::Session, _name: &str) -> Option<PathBuf> {
-    None
-}
-
 /// Same as `compile`, but return compiled artifacts to the caller
+#[cfg(feature = "std")]
 pub fn compile_to_memory(context: Rc<Context>) -> CompilerResult<CompiledArtifact> {
     let session = context.session_rc();
     let input = session.input.clone().ok_or_else(|| Report::msg("no inputs"))?;
@@ -138,6 +132,7 @@ pub fn compile_to_memory(context: Rc<Context>) -> CompilerResult<CompiledArtifac
 /// allocated in. The context is recovered from the component here and held for the duration of
 /// the request, so a caller need only keep its own handle alive *up to* this call — but it must
 /// do that much. See [`pipeline::Start::At`].
+#[cfg(feature = "std")]
 pub fn compile_link_output_to_masm_with_pre_assembly_stage<F>(
     link_output: MidenComponent,
     pre_assembly_stage: F,
@@ -184,6 +179,7 @@ where
 /// emitted is nonetheless decided by the session: `Pipeline::compile` attaches an observer that
 /// renders the selected target's artifacts through the route's own declarations, and
 /// `Session::emit` writes only the output types the session asked for.
+#[cfg(feature = "std")]
 fn run_pipeline(
     session: Rc<midenc_session::Session>,
     input: midenc_session::InputFile,
@@ -214,6 +210,7 @@ fn run_pipeline(
 ///
 /// `CompiledArtifact::Lowered` is therefore unreachable from here. It survives because it is
 /// part of a public enum with an external consumer, and narrowing that is a separate change.
+#[cfg(feature = "std")]
 fn artifact_from_outcome(
     outcome: pipeline::Outcome,
     stop: Option<pipeline::StopFlag>,
@@ -236,6 +233,7 @@ fn artifact_from_outcome(
     Ok(CompiledArtifact::Assembled(package))
 }
 
+#[cfg(feature = "std")]
 pub(crate) fn emit_hir_if_requested(
     op: &midenc_hir::Operation,
     context: Rc<Context>,
