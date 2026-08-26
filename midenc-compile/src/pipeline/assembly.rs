@@ -22,6 +22,8 @@ use miden_mast_package::Package;
 use midenc_codegen_masm::{MasmComponent, intrinsics};
 use midenc_session::{Session, diagnostics::Report};
 
+use crate::cargo::NOTE_CODEC_CRATE_METADATA;
+
 /// Apply the session's link inputs to `assembler` before a project is assembled with it.
 pub(crate) fn prepare_assembler(
     assembler: &mut miden_assembly::Assembler,
@@ -120,14 +122,15 @@ fn validate_note_codec_declaration(
 
     if has_note_codec && !package_has_note_target {
         return Err(Report::msg(format!(
-            "`[package.metadata.note-codec-crate]` requires a note target, but the package that \
-             contains target '{target_name}' defines no note target"
+            "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}]` requires a note target, but the \
+             package that contains target '{target_name}' defines no note target"
         )));
     }
     if has_note_codec && target_type == TargetType::Note && !has_note_storage_schema {
         return Err(Report::msg(format!(
-            "note target '{target_name}' declares `[package.metadata.note-codec-crate]` but \
-             emitted no note storage schema; add one named-field `#[note]` struct"
+            "note target '{target_name}' declares \
+             `[package.metadata.{NOTE_CODEC_CRATE_METADATA}]` but emitted no note storage schema; \
+             add one named-field `#[note]` struct"
         )));
     }
     Ok(())

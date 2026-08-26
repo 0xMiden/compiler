@@ -881,12 +881,10 @@ fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
     if options.profile == "release" {
         args.push("--release".to_string());
     }
-    if options.cargo_locked {
-        args.push("--locked".to_string());
-    }
-    if options.cargo_offline {
-        args.push("--offline".to_string());
-    }
+    args.extend(
+        crate::cargo::apply_cargo_policy(options.cargo_locked, options.cargo_offline)
+            .map(ToString::to_string),
+    );
 
     args.push("--manifest-path".to_string());
     args.push(manifest_path.to_string_lossy().to_string());
@@ -2250,12 +2248,10 @@ pub(crate) mod manifest {
         if cargo_opts.release {
             args.push("--release".to_string());
         }
-        if cargo_opts.locked {
-            args.push("--locked".to_string());
-        }
-        if cargo_opts.offline {
-            args.push("--offline".to_string());
-        }
+        args.extend(
+            crate::cargo::apply_cargo_policy(cargo_opts.locked, cargo_opts.offline)
+                .map(ToString::to_string),
+        );
 
         if let Some(ref manifest_path) = cargo_opts.manifest_path {
             args.push("--manifest-path".to_string());

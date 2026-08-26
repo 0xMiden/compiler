@@ -236,6 +236,62 @@ fn decoder_uses_structural_fallback_without_a_codec() {
 }
 
 #[test]
+fn builder_validates_codec_records_assembled_from_child_paths() {
+    let schema = NoteStorageSchema::from_wit_text(LAYOUT_SCHEMA).unwrap();
+    let (account_id, _) = account_id();
+
+    // Child-path values that form no valid account id must fail the codec, not encode raw.
+    let error = schema
+        .builder()
+        .set("bedrock", "5")
+        .unwrap()
+        .set("nested.wide_count", "1")
+        .unwrap()
+        .set("nested.small-count", "1")
+        .unwrap()
+        .set("maybe_enabled", "none")
+        .unwrap()
+        .set("selected", "count(1)")
+        .unwrap()
+        .set("target_account_id.prefix", "1")
+        .unwrap()
+        .set("target_account_id.suffix", "1")
+        .unwrap()
+        .build()
+        .err()
+        .unwrap()
+        .to_string();
+    assert!(error.contains("validation failed"), "unexpected error: {error}");
+    assert!(error.contains("target-account-id"), "the path is not named: {error}");
+
+    // Valid child-path values pass the codec and encode like the whole-value assignment.
+    let storage = schema
+        .builder()
+        .set("bedrock", "5")
+        .unwrap()
+        .set("nested.wide_count", "1")
+        .unwrap()
+        .set("nested.small-count", "1")
+        .unwrap()
+        .set("maybe_enabled", "none")
+        .unwrap()
+        .set("selected", "count(1)")
+        .unwrap()
+        .set(
+            "target_account_id.prefix",
+            account_id.prefix().as_felt().as_canonical_u64().to_string(),
+        )
+        .unwrap()
+        .set("target_account_id.suffix", account_id.suffix().as_canonical_u64().to_string())
+        .unwrap()
+        .build()
+        .unwrap();
+    let felts = storage.to_elements();
+    assert_eq!(felts[felts.len() - 2], account_id.prefix().as_felt());
+    assert_eq!(felts[felts.len() - 1], account_id.suffix());
+}
+
+#[test]
 fn builder_reports_missing_unknown_conflicting_and_range_errors() {
     let schema = NoteStorageSchema::from_wit_text(LAYOUT_SCHEMA).unwrap();
     let (_, bech32) = account_id();
@@ -379,6 +435,20 @@ fn deep_schema_chain_fails_fast_at_depth_limit() {
 }
 
 #[test]
+fn memoized_subtree_reuse_still_enforces_the_depth_limit() {
+    let error = NoteStorageSchema::from_wit_text(&memoized_reuse_depth_schema())
+        .err()
+        .expect("deep reuse of a memoized subtree must fail")
+        .to_string();
+
+    assert!(error.contains("nesting depth"), "unexpected memoized-depth error: {error}");
+    assert!(
+        error.contains(&MAX_NOTE_STORAGE_SCHEMA_DEPTH.to_string()),
+        "the nesting limit must be present in the diagnostic: {error}"
+    );
+}
+
+#[test]
 fn schema_reader_enforces_documented_byte_type_and_root_width_limits() {
     let oversized = " ".repeat(MAX_NOTE_STORAGE_SCHEMA_BYTES + 1);
     let byte_error = NoteStorageSchema::from_wit_text(&oversized)
@@ -438,5 +508,28 @@ fn deep_chain_schema(levels: usize) -> String {
         wit.push_str(&format!("record t{level} {{ value: t{previous} }} "));
     }
     wit.push_str(&format!("type storage = t{levels}; }}"));
+    wit
+}
+
+/// Builds two individually valid chains whose composition exceeds the depth limit only on reuse.
+fn memoized_reuse_depth_schema() -> String {
+    let levels = MAX_NOTE_STORAGE_SCHEMA_DEPTH / 2;
+    let mut wit = String::from(
+        "package example:memoized-depth@1.0.0; interface note-storage { record shared0 { value: \
+         u8 } ",
+    );
+    for level in 1..=levels {
+        let previous = level - 1;
+        wit.push_str(&format!("record shared{level} {{ value: shared{previous} }} "));
+    }
+    wit.push_str(&format!("record wrapper0 {{ value: shared{levels} }} "));
+    for level in 1..=levels {
+        let previous = level - 1;
+        wit.push_str(&format!("record wrapper{level} {{ value: wrapper{previous} }} "));
+    }
+    wit.push_str(&format!(
+        "record root {{ cached: shared{levels}, too-deep: wrapper{levels} }} type storage = root; \
+         }}"
+    ));
     wit
 }

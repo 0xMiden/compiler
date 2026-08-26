@@ -1956,6 +1956,7 @@ dependencies = [
  "miden-note-codec-wit",
  "miden-note-schema",
  "miden-note-schema-codegen",
+ "midenc-frontend-wasm-metadata",
  "proc-macro-crate",
  "proc-macro2",
  "quote",

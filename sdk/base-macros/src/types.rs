@@ -115,6 +115,8 @@ struct RegisteredExportType {
 ///
 /// The location tells a stale re-expansion of an edited item (same location) from a real
 /// conflict between two items (different locations).
+// Keep this registry identity/replacement policy aligned with
+// sdk/note-codec/macros/src/registry.rs; changes must land in both.
 type ExpansionLocation = (String, usize, usize);
 
 /// Returns the (file, line, column) location of one expansion span.

@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use miden_field_repr::FeltWriter;
 
 use crate::{
-    CodecRegistry, Error, Felt, NoteStorage, NoteStorageSchema, PrimitiveType, Result, SchemaType,
-    SchemaTypeKind,
+    CodecRegistry, Error, Felt, NoteStorage, NoteStorageSchema, PrimitiveType, Result, SchemaField,
+    SchemaType, SchemaTypeKind,
     codec::{parse_felt, parse_unsigned, write_repr},
     schema::normalize_name,
     value::validate_encoding,
@@ -167,13 +167,22 @@ fn encode_type(
     }
 
     if let SchemaTypeKind::Record(fields) = ty.kind() {
-        for field in fields {
-            let field_path = if path.is_empty() {
-                field.name().to_owned()
-            } else {
-                format!("{path}.{}", field.name())
-            };
-            encode_type(field.ty(), &field_path, values, registry, writer)?;
+        let Some((fqn, codec)) = ty.fqn().and_then(|fqn| Some((fqn, registry.codec(fqn)?))) else {
+            return encode_record_fields(fields, path, values, registry, writer);
+        };
+        // A record assembled from child-path values must still satisfy its registered
+        // codec, or the builder would produce storage that the same registry rejects on
+        // decode. Encode the subtree separately so the codec can validate it as one value.
+        let mut subtree = Vec::new();
+        encode_record_fields(fields, path, values, registry, &mut FeltWriter::new(&mut subtree))?;
+        codec.validate(&subtree).map_err(|err| {
+            err.context(format!(
+                "codec `{fqn}` validation failed for the values assigned under `{}`",
+                if path.is_empty() { "<root>" } else { path }
+            ))
+        })?;
+        for felt in subtree {
+            writer.write(felt);
         }
         return Ok(());
     }
@@ -182,6 +191,25 @@ fn encode_type(
         "missing note storage value for `{}`",
         if path.is_empty() { "<root>" } else { path }
     )))
+}
+
+/// Encodes every field of a record from complete path assignments.
+fn encode_record_fields(
+    fields: &[SchemaField],
+    path: &str,
+    values: &BTreeMap<String, String>,
+    registry: &CodecRegistry,
+    writer: &mut FeltWriter<'_>,
+) -> Result<()> {
+    for field in fields {
+        let field_path = if path.is_empty() {
+            field.name().to_owned()
+        } else {
+            format!("{path}.{}", field.name())
+        };
+        encode_type(field.ty(), &field_path, values, registry, writer)?;
+    }
+    Ok(())
 }
 
 /// Encodes one direct string value.
