@@ -11,7 +11,7 @@ use midenc_integration_test_support::wasm_target_is_installed;
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
 
-use crate::utils::{current_dir_lock, workspace_root};
+use crate::utils::{RestoreEnvironment, current_dir_lock, workspace_root};
 
 #[test]
 fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
@@ -19,13 +19,15 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         eprintln!("skipping DEX note codec build test: wasm32-wasip2 is not installed");
         return;
     }
+    // The command reads the process working directory, so serialize cwd changes.
     let _cwd_lock = current_dir_lock();
     let _ = midenc_log::Builder::from_env("MIDENC_TRACE")
         .is_test(true)
         .format_timestamp(None)
         .try_init();
 
-    let restore_target_dir = env::var_os("CARGO_TARGET_DIR");
+    // Clear the outer override so the nested example build uses its own target layout.
+    let _restore_environment = RestoreEnvironment::new(["CARGO_TARGET_DIR"]);
     unsafe {
         env::remove_var("CARGO_TARGET_DIR");
     }
@@ -33,11 +35,6 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
     let note_dir = workspace_root().join("examples/dex-note");
     env::set_current_dir(&note_dir).unwrap();
     let result = run(["cargo", "miden", "build", "--release"].into_iter().map(str::to_owned));
-
-    match restore_target_dir {
-        Some(value) => unsafe { env::set_var("CARGO_TARGET_DIR", value) },
-        None => unsafe { env::remove_var("CARGO_TARGET_DIR") },
-    }
 
     let output = result
         .expect("cargo miden build for dex-note failed")

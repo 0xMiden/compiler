@@ -6,7 +6,6 @@ use std::{
     process::{Command, Output},
 };
 
-use midenc_integration_test_support::wasm_target_is_installed;
 use tempfile::TempDir;
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
@@ -123,6 +122,24 @@ fn assert_command_succeeded(action: &str, output: &Output) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );
+}
+
+/// Returns true when rustup reports the codec component target as installed.
+fn wasm_target_is_installed() -> bool {
+    let output = match Command::new("rustup").args(["target", "list"]).output() {
+        Ok(output) if output.status.success() => output,
+        Ok(output) => {
+            eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
+            return false;
+        }
+        Err(error) => {
+            eprintln!("could not run `rustup target list`: {error}");
+            return false;
+        }
+    };
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.starts_with(WASM_TARGET) && line.contains("(installed)"))
 }
 
 const FIXTURE_SOURCE: &str = r##"

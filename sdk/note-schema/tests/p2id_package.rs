@@ -2,12 +2,12 @@
 
 use miden_note_schema::{NoteStorage, NoteStorageSchema};
 use miden_protocol::{account::AccountId, address::NetworkId};
-use midenc_integration_test_support::{compile_project, p2id_build_lock, workspace_root};
+use midenc_integration_test_support::{compile_project, example_build_lock, workspace_root};
 
 #[test]
 fn p2id_schema_builds_and_decodes_account_id_storage() {
     let workspace = workspace_root();
-    let _build_lock = p2id_build_lock(&workspace);
+    let _build_lock = example_build_lock(&workspace);
     let examples = workspace.join("examples");
     let wallet_dir = examples.join("basic-wallet");
     let wallet = compile_project(&wallet_dir);
