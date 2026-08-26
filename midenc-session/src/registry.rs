@@ -1,5 +1,6 @@
 use alloc::{collections::BTreeMap, format, sync::Arc};
 
+use anyhow::{Context, anyhow};
 #[cfg(feature = "std")]
 use miden_assembly_syntax::Report;
 use miden_assembly_syntax::diagnostics::{Diagnostic, miette};
@@ -24,7 +25,7 @@ enum InstallPackageError {
     #[error("failed to write {package} to filesystem cache: {err}")]
     FilesystemCacheInsertion {
         package: PackageId,
-        err: std::io::Error,
+        err: anyhow::Error,
     },
 }
 
@@ -308,7 +309,7 @@ impl HybridPackageRegistry {
 pub fn write_package_atomically(
     package: &Package,
     out_dir: &std::path::Path,
-) -> std::io::Result<std::path::PathBuf> {
+) -> anyhow::Result<std::path::PathBuf> {
     write_package_atomically_as(package, out_dir, None)
 }
 
@@ -318,14 +319,18 @@ fn write_package_atomically_as(
     package: &Package,
     out_dir: &std::path::Path,
     file_name: Option<&str>,
-) -> std::io::Result<std::path::PathBuf> {
-    std::fs::create_dir_all(out_dir)?;
+) -> anyhow::Result<std::path::PathBuf> {
+    std::fs::create_dir_all(out_dir).context("could not create output directory")?;
     let destination = match file_name {
         Some(file_name) => out_dir.join(file_name),
         None => out_dir
             .join(midenc_frontend_wasm_metadata::package_cache::package_file_name(&package.name)),
     };
-    persist_atomically(&destination, |temp_path| package.write_to_file(temp_path))?;
+    persist_atomically(&destination, |temp_path| {
+        package
+            .write_to_file(temp_path)
+            .map_err(|err| anyhow!("failed to write package to file: {err}"))
+    })?;
     Ok(destination)
 }
 
@@ -336,8 +341,10 @@ fn write_package_atomically_as(
 /// cache directory — the recorded dependency resolution, whose readers are the same
 /// population as the packages'.
 #[cfg(any(test, feature = "std"))]
-pub fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    persist_atomically(path, |temp_path| std::fs::write(temp_path, bytes))
+pub fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> anyhow::Result<()> {
+    persist_atomically(path, |temp_path| {
+        std::fs::write(temp_path, bytes).map_err(|err| anyhow!("failed to write to file: {err}"))
+    })
 }
 
 /// Writes through a temporary sibling of `path` and renames it over the final name.
@@ -346,16 +353,15 @@ pub fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> std::io::R
 /// other build processes that share the cache directory, so the mode is widened to 0o666
 /// (the process umask still applies).
 #[cfg(any(test, feature = "std"))]
-fn persist_atomically(
+pub fn persist_atomically(
     path: &std::path::Path,
-    write: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
-) -> std::io::Result<()> {
-    let directory = path.parent().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("path '{}' has no parent directory", path.display()),
-        )
-    })?;
+    write: impl FnOnce(&std::path::Path) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    use anyhow::Context;
+
+    let directory = path
+        .parent()
+        .ok_or_else(|| anyhow!("path '{}' has no parent directory", path.display()))?;
     let mut builder = tempfile::Builder::new();
     builder.prefix(".").suffix(".tmp");
     #[cfg(unix)]
@@ -363,9 +369,15 @@ fn persist_atomically(
         use std::os::unix::fs::PermissionsExt;
         builder.permissions(std::fs::Permissions::from_mode(0o666));
     }
-    let temp_path = builder.tempfile_in(directory)?.into_temp_path();
+    let temp_path = builder
+        .tempfile_in(directory)
+        .context("failed to create temp file")?
+        .into_temp_path();
     write(&temp_path)?;
-    temp_path.persist(path).map_err(|err| err.error)?;
+    temp_path
+        .persist(path)
+        .map_err(|err| err.error)
+        .context("failed to persist temp file")?;
     Ok(())
 }
 

@@ -55,8 +55,10 @@ impl<T: ?Sized + Emit> EmitExt for T {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let file = std::fs::File::create(path)?;
-        self.write_to(file, mode, session)
+        crate::registry::persist_atomically(path, |temp_path| {
+            let file = std::fs::File::create(temp_path)?;
+            self.write_to(file, mode, session)
+        })
     }
 }
 
