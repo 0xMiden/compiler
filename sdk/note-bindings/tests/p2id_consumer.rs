@@ -4,7 +4,7 @@ use std::{env, fs, path::Path, process::Command};
 
 use miden_mast_package::Section;
 use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
-use midenc_integration_test_support::{compile_project, p2id_build_lock, workspace_root};
+use midenc_integration_test_support::{compile_project, example_build_lock, workspace_root};
 
 /// Returns the native rustc host target.
 fn host_target() -> String {
@@ -45,7 +45,7 @@ fn workspace_patch_section(workspace: &Path) -> String {
 #[test]
 fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
     let workspace = workspace_root();
-    let _build_lock = p2id_build_lock(&workspace);
+    let _build_lock = example_build_lock(&workspace);
     let examples = workspace.join("examples");
     let wallet_dir = examples.join("basic-wallet");
     let wallet = compile_project(&wallet_dir);

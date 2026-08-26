@@ -45,8 +45,8 @@ pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
 }
 
-/// Locks the shared p2id example outputs for the full build and consume span.
-pub fn p2id_build_lock(workspace: &Path) -> File {
+/// Locks shared example outputs for the full build and consume span.
+pub fn example_build_lock(workspace: &Path) -> File {
     let target_dir = workspace.join("target");
     fs::create_dir_all(&target_dir).expect("failed to create the workspace target directory");
     let lock = File::options()
@@ -54,9 +54,9 @@ pub fn p2id_build_lock(workspace: &Path) -> File {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(target_dir.join("p2id-end-to-end-build.lock"))
-        .expect("failed to open the p2id end-to-end build lock");
-    lock.lock().expect("failed to lock the p2id end-to-end build");
+        .open(target_dir.join("example-build.lock"))
+        .expect("failed to open the example build lock");
+    lock.lock().expect("failed to lock example builds");
     lock
 }
 

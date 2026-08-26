@@ -1,29 +1,10 @@
 //! Integration tests for note storage schemas stored in Miden packages.
 
-use std::sync::Arc;
-
 use miden_mast_package::Package;
 use midenc_expect_test::{Expect, expect};
-use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_frontend_wasm_metadata::{package_note_storage_schema_section_id, trim_trailing_nuls};
+use midenc_integration_test_support::{compile_project, example_build_lock, workspace_root};
 use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
-
-use crate::CompilerTest;
-
-/// Disables debug output so compiled package content is stable.
-fn no_debug_flags() -> [String; 2] {
-    ["--debug".to_string(), "none".to_string()]
-}
-
-/// Compiles one project with the Cargo Miden frontend.
-fn compile_project(project_path: &str) -> Arc<Package> {
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        project_path,
-        WasmTranslationConfig::default(),
-        no_debug_flags(),
-    );
-    test.compile_package()
-}
 
 /// Returns the unpadded note storage schema text from a package.
 fn note_storage_schema(package: &Package) -> &str {
@@ -60,7 +41,9 @@ fn assert_note_storage_schema(package: &Package, expected_root: &str, expected: 
 
 #[test]
 fn note_packages_carry_resolvable_storage_schema_metadata() {
-    let p2id = compile_project("../../examples/p2id-note");
+    let workspace = workspace_root();
+    let _build_lock = example_build_lock(&workspace);
+    let p2id = compile_project(&workspace.join("examples/p2id-note"));
     assert_note_storage_schema(
         &p2id,
         "p2id-note",
@@ -215,7 +198,7 @@ fn note_packages_carry_resolvable_storage_schema_metadata() {
     "#]],
     );
 
-    let swapp = compile_project("../fixtures/components/swapp-note");
+    let swapp = compile_project(&workspace.join("tests/fixtures/components/swapp-note"));
     assert_note_storage_schema(
         &swapp,
         "swapp-note",

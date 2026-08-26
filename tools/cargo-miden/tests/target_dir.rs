@@ -2,7 +2,7 @@ use std::{env, fs};
 
 use cargo_miden::run;
 
-use crate::utils::{current_dir_lock, project_template_arg};
+use crate::utils::{RestoreEnvironment, current_dir_lock, project_template_arg};
 
 /// A custom Midenc target is an umbrella for every artifact the compiler-owned build writes.
 ///
@@ -11,35 +11,13 @@ use crate::utils::{current_dir_lock, project_template_arg};
 /// manifest frontend redirects its nested Cargo invocation beneath the custom target.
 #[test]
 fn a_custom_midenc_target_contains_nested_cargo_artifacts() {
-    struct RestoreEnvironment {
-        cargo_target_dir: Option<std::ffi::OsString>,
-        cargo_build_target_dir: Option<std::ffi::OsString>,
-        midenc_target_dir: Option<std::ffi::OsString>,
-        test: Option<std::ffi::OsString>,
-    }
-    impl Drop for RestoreEnvironment {
-        fn drop(&mut self) {
-            for (name, value) in [
-                ("CARGO_TARGET_DIR", self.cargo_target_dir.take()),
-                ("CARGO_BUILD_TARGET_DIR", self.cargo_build_target_dir.take()),
-                ("MIDENC_TARGET_DIR", self.midenc_target_dir.take()),
-                ("TEST", self.test.take()),
-            ] {
-                match value {
-                    Some(value) => unsafe { env::set_var(name, value) },
-                    None => unsafe { env::remove_var(name) },
-                }
-            }
-        }
-    }
-
     let _cwd = current_dir_lock();
-    let _restore_environment = RestoreEnvironment {
-        cargo_target_dir: env::var_os("CARGO_TARGET_DIR"),
-        cargo_build_target_dir: env::var_os("CARGO_BUILD_TARGET_DIR"),
-        midenc_target_dir: env::var_os("MIDENC_TARGET_DIR"),
-        test: env::var_os("TEST"),
-    };
+    let _restore_environment = RestoreEnvironment::new([
+        "CARGO_TARGET_DIR",
+        "CARGO_BUILD_TARGET_DIR",
+        "MIDENC_TARGET_DIR",
+        "TEST",
+    ]);
     unsafe {
         env::remove_var("CARGO_TARGET_DIR");
         env::remove_var("CARGO_BUILD_TARGET_DIR");

@@ -25,7 +25,6 @@ miden-protocol.workspace = true
 wit-bindgen = { workspace = true }
 
 [dev-dependencies]
-midenc-integration-test-support.workspace = true
 tempfile.workspace = true
 wit-component.workspace = true
 wit-parser.workspace = true
