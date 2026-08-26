@@ -1,3 +1,3 @@
-# Per-crate copy: keeps this host-side crate on the host target; sdk/ has no directory-wide config.
+# Per-crate copy: check-each builds run in each member crate and default to the Miden Wasm target.
 [build]
 target = "wasm32-wasip1"
