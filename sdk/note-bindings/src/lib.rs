@@ -1,4 +1,14 @@
 //! Typed host bindings for Miden note storage schemas.
+//!
+//! Generate bindings from a built package, and then use the generated storage type.
+//!
+//! ```ignore
+//! miden_note_bindings::from_package!("../p2id-note/target/miden/release/p2id.masp");
+//!
+//! fn decode(storage: &miden_note_bindings::NoteStorage) -> P2idNote {
+//!     P2idNote::from_note_storage(storage).unwrap()
+//! }
+//! ```
 
 #![deny(missing_docs)]
 

@@ -45,21 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Note storage schema handling now rejects conflicting `#[export_type]` registrations and local
   types that only collide by name with SDK core types, resolves schema types through a bounded,
   memoized graph, uses one canonical standard-leaf set across consumers, and caps untrusted author
-  codec components before compilation and during table allocation.
+  codec components before compilation and during table allocation. (#1307)
 - Note package macros now select artifacts by canonical package identity and support shared Cargo
   target directories. The note codec macros support renamed facade dependencies, reject a second
   distinct schema in one crate, and report `export_codecs!` calls that appear before all codec
-  declarations.
-- `adv_load_preimage` no longer truncates huge word counts into an undersized buffer on wasm32
-  (a potential guest heap overflow); it now traps for counts of `2^30` words or more, whose felt
-  total cannot be represented in the 32-bit address space #1291
+  declarations. (#1307)
 
 ### Migration and breaking changes
 
 - `#[note]` storage types now require named-field or unit structs. Tuple structs no longer compile,
   and note storage fields no longer accept `Vec`. Follow the
   [migration guidance](./sdk/MIGRATION.md#rewrite-tuple-note-and-vec-storage-layouts) to preserve
-  field order with named fields and replace dynamic vectors with a fixed schema.
+  field order with named fields and replace dynamic vectors with a fixed schema. (#1307)
 
 ## [0.14.0]
 
