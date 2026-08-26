@@ -7,12 +7,14 @@ use std::{
     rc::Rc,
     string::{String, ToString},
     sync::Arc,
+    time::Duration,
     vec::Vec,
 };
 
 use miden_assembly::{SourceManager, serde::Serializable};
 use miden_mast_package::Package as MastPackage;
 use miden_note_codec_wit::NOTE_CODEC_WIT;
+use midenc_frontend_wasm_metadata::package_cache;
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
 use sha2::{Digest, Sha256};
@@ -31,13 +33,12 @@ const NOTE_CODEC_CRATE_PATH: &str = "path";
 /// Wasm component, so no separate encoding step is necessary.
 const NOTE_CODEC_TARGET: &str = "wasm32-wasip2";
 
-/// Directory used to exchange Miden packages with nested Cargo builds.
-const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
+/// Maximum age of an unused staged note package.
+const NOTE_PACKAGE_CACHE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
-/// One immutable staged package and its build-isolation key.
+/// One immutable staged package.
 struct StagedNotePackage {
     cache_dir: PathBuf,
-    build_key: String,
 }
 
 /// Cargo-specific options extracted from the `Compiler` struct.
@@ -449,9 +450,13 @@ fn build_note_codec_component(
     } else {
         None
     };
-    crate::rust::install_wasm32_target("wasip2", toolchain.as_deref())?;
+    crate::rust::install_wasm32_target(
+        "wasip2",
+        toolchain.as_deref(),
+        session.options.cargo_offline,
+    )?;
 
-    let cargo_target_dir = work_dir.join("cargo-target").join(&staged_package.build_key);
+    let cargo_target_dir = work_dir.join("cargo-target");
     let mut cargo = Command::new(cargo_path);
     if let Some(toolchain) = toolchain.as_deref() {
         cargo.arg(format!("+{toolchain}"));
@@ -461,16 +466,16 @@ fn build_note_codec_component(
         .arg("build")
         .arg("--manifest-path")
         .arg(&manifest_path)
-        .arg("--lib")
-        .arg("--profile")
-        .arg(&session.options.profile)
+        .arg("--lib");
+    apply_note_codec_profile(&mut cargo, &session.options.profile);
+    cargo
         .arg("--target")
         .arg(NOTE_CODEC_TARGET)
         .arg("--target-dir")
         .arg(&cargo_target_dir)
         .arg("--message-format")
         .arg("json-render-diagnostics")
-        .env(PACKAGE_CACHE_ENV, &staged_package.cache_dir)
+        .env(package_cache::PACKAGE_CACHE_ENV, &staged_package.cache_dir)
         .env_remove("CARGO_BUILD_TARGET")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env_remove("RUSTFLAGS")
@@ -528,6 +533,7 @@ fn build_note_codec_component(
             codec_crate_dir.display()
         ))
     })?;
+    gc_staged_note_packages(&staged_package.cache_dir);
     Ok(component)
 }
 
@@ -571,10 +577,43 @@ fn stage_note_package(
         })?;
     }
 
-    Ok(StagedNotePackage {
-        cache_dir,
-        build_key,
-    })
+    Ok(StagedNotePackage { cache_dir })
+}
+
+/// Removes staged note packages that have not changed for more than seven days.
+fn gc_staged_note_packages(current_cache_dir: &Path) {
+    let Some(cache_parent) = current_cache_dir.parent() else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(cache_parent) else {
+        return;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path == current_cache_dir {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        let Ok(age) = modified.elapsed() else {
+            continue;
+        };
+        if metadata.is_dir() && age > NOTE_PACKAGE_CACHE_MAX_AGE {
+            let _ = fs::remove_dir_all(path);
+        }
+    }
+}
+
+/// Maps a Miden build profile to the independent codec Cargo workspace.
+fn apply_note_codec_profile(cargo: &mut Command, profile: &str) {
+    if profile == "release" {
+        cargo.arg("--release");
+    }
 }
 
 /// Applies the outer Cargo resolution policy to a nested command.
@@ -938,8 +977,8 @@ mod tests {
         let first = stage_note_package(root.path(), &codec_crate, &package).unwrap();
         let second = stage_note_package(root.path(), &codec_crate, &package).unwrap();
         assert_eq!(first.cache_dir, second.cache_dir);
-        assert_eq!(first.build_key, second.build_key);
-        assert_eq!(first.build_key.len(), 64);
+        assert_eq!(first.cache_dir.parent(), Some(root.path().join("package-cache").as_path()));
+        assert_eq!(first.cache_dir.file_name().unwrap().len(), 64);
         let package_path =
             first.cache_dir.join(&*package.name).with_extension(MastPackage::EXTENSION);
         assert_eq!(fs::read(package_path).unwrap(), package.to_bytes());
@@ -957,6 +996,21 @@ mod tests {
 
         assert!(args.iter().any(|arg| arg == "--locked"));
         assert!(args.iter().any(|arg| arg == "--offline"));
+    }
+
+    #[test]
+    fn note_codec_profile_maps_release_and_custom_profiles() {
+        let mut release = Command::new("cargo");
+        release.arg("build");
+        apply_note_codec_profile(&mut release, "release");
+        let release_args = release.get_args().collect::<Vec<_>>();
+        assert_eq!(release_args, ["build", "--release"]);
+
+        let mut custom = Command::new("cargo");
+        custom.arg("build");
+        apply_note_codec_profile(&mut custom, "size-optimized");
+        let custom_args = custom.get_args().collect::<Vec<_>>();
+        assert_eq!(custom_args, ["build"]);
     }
 
     /// Resolves the codec interface from one complete WIT document.
