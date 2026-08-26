@@ -73,6 +73,8 @@ fn parse_part(value: &str, name: &str) -> Result<u64, String> {
 /// Displays finite fractions as decimals and other fractions as ratios.
 fn display_limit_price(value: &LimitPrice) -> String {
     if value.denominator == 0 {
+        // Guard the factor loop against a parsed-but-unvalidated zero denominator: it would
+        // otherwise never terminate.
         return format!("{}/{}", value.numerator, value.denominator);
     }
     let divisor = greatest_common_divisor(value.numerator, value.denominator);

@@ -159,18 +159,19 @@ fn register_export_type_in(
     if let Some(existing) =
         registry.iter_mut().find(|existing| existing.def.wit_name == def.wit_name)
     {
-        if existing.def.rust_name == def.rust_name
-            && exported_type_shapes_match(&existing.def, &def)
-        {
-            // rust-analyzer can expand the same attribute more than once in one macro process.
-            return Ok(());
-        }
-
         if existing.location == location {
+            if existing.def.rust_name == def.rust_name
+                && exported_type_shapes_match(&existing.def, &def)
+            {
+                // rust-analyzer can expand the same attribute more than once in one process.
+                return Ok(());
+            }
             // A long-lived macro host re-expanded an edited item; replace the stale shape.
             existing.def = def;
             return Ok(());
         }
+        // Two different items that map to one WIT name are ambiguous even with equal
+        // shapes: a note field referring to the shared name cannot say which one it means.
 
         let identity = if existing.def.rust_name == def.rust_name {
             format!("Rust type `{}`", def.rust_name)
@@ -276,11 +277,13 @@ pub(crate) fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
     }
 }
 
-/// Emits nominal identity checks for references classified as SDK core types by their Rust name.
+/// Emits nominal identity checks for names the classifier trusts without resolution.
 ///
-/// Procedural macros cannot resolve a bare identifier such as `Word`. The generated check permits
-/// a genuine `miden::Word` import but rejects a local same-named type unless it was registered with
-/// `#[export_type]`, preventing the emitted WIT shape from drifting from the encoded Rust type.
+/// Procedural macros cannot resolve identifiers. Two classes of names are pinned:
+/// SDK core-type names (a genuine `miden::Word` import passes, a local same-named type
+/// fails unless registered with `#[export_type]`), and the builtin names `Option`,
+/// `Result`, and the primitives (proven to BE the `::core` definitions). Both checks stop
+/// the emitted WIT shape from drifting from the encoded Rust type.
 pub(crate) fn nominal_type_identity_guards(
     definition: &ExportedTypeDef,
     span: Span,
@@ -353,6 +356,11 @@ fn builtin_canonical_type_text(type_ref: &TypeRef) -> Option<String> {
 
 /// Reconstructs the Rust source text of a reference as it was written.
 fn written_type_text(type_ref: &TypeRef) -> String {
+    // The unit type is recorded with an empty path (see the tuple arm of
+    // `map_type_to_type_ref`); render it as `()` so reconstructed generics parse.
+    if type_ref.path.is_empty() {
+        return "()".to_string();
+    }
     let path = type_ref.path.join("::");
     match (type_ref.path.last().map(String::as_str), type_ref.dependencies.as_slice()) {
         (Some("Option"), [inner]) => format!("{path}<{}>", written_type_text(inner)),

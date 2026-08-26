@@ -635,7 +635,14 @@ trim-paths = [\"diagnostics\", \"object\"]
     std::fs::write(&manifest_path, &cargo_toml)
         .map_err(|err| Report::msg(format!("failed to generate temporary Cargo.toml: {err}")))?;
 
-    let cargo_build_args = build_cargo_args(&manifest_path, options);
+    let cargo_build_args = build_cargo_args(
+        Some(&manifest_path),
+        options.profile == "release",
+        options.workspace,
+        &options.packages,
+        (options.cargo_locked, options.cargo_offline),
+        "\"s\"",
+    );
 
     // The same mandatory set and inherited-flag precedence as the manifest route: a present
     // `CARGO_ENCODED_RUSTFLAGS` is authoritative over plain `RUSTFLAGS`.
@@ -836,7 +843,15 @@ fn rustc(
     Ok(output_file)
 }
 
-fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
+/// Builds the shared argument vector for a nested `cargo build` invocation.
+pub(super) fn build_cargo_args<P: core::fmt::Display>(
+    manifest_path: Option<&Path>,
+    release: bool,
+    workspace: bool,
+    packages: &[P],
+    cargo_policy: (bool, bool),
+    release_opt_level: &str,
+) -> Vec<String> {
     let mut args = vec!["build".to_string()];
 
     // Add build-std flags required for Miden compilation
@@ -858,7 +873,7 @@ fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
         ("profile.dev.overflow-checks", "false"),
         ("profile.dev.debug", "true"),
         ("profile.dev.debug-assertions", "false"),
-        ("profile.release.opt-level", "\"s\""),
+        ("profile.release.opt-level", release_opt_level),
         ("profile.release.lto", "true"),
         ("profile.release.codegen-units", "1"),
         ("profile.release.panic", "\"abort\""),
@@ -878,22 +893,23 @@ fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
     }
 
     // Forward cargo-specific options
-    if options.profile == "release" {
+    if release {
         args.push("--release".to_string());
     }
     args.extend(
-        crate::cargo::apply_cargo_policy(options.cargo_locked, options.cargo_offline)
-            .map(ToString::to_string),
+        crate::cargo::apply_cargo_policy(cargo_policy.0, cargo_policy.1).map(ToString::to_string),
     );
 
-    args.push("--manifest-path".to_string());
-    args.push(manifest_path.to_string_lossy().to_string());
+    if let Some(manifest_path) = manifest_path {
+        args.push("--manifest-path".to_string());
+        args.push(manifest_path.to_string_lossy().to_string());
+    }
 
-    if options.workspace {
+    if workspace {
         args.push("--workspace".to_string());
     }
 
-    for package in &options.packages {
+    for package in packages {
         args.push("--package".to_string());
         args.push(package.to_string());
     }
@@ -2048,7 +2064,14 @@ pub(crate) mod manifest {
          */
 
         let rustup_toolchain = crate::rust::rustup_toolchain();
-        let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
+        let cargo_build_args = super::build_cargo_args(
+            cargo_opts.manifest_path.as_deref(),
+            cargo_opts.release,
+            cargo_opts.workspace,
+            &cargo_opts.packages,
+            (cargo_opts.locked, cargo_opts.offline),
+            cargo_profile_opt_level(compiler_opts.optimize),
+        );
 
         let inherited_encoded = std::env::var_os("CARGO_ENCODED_RUSTFLAGS");
         let inherited_plain = std::env::var_os("RUSTFLAGS");
@@ -2200,74 +2223,6 @@ pub(crate) mod manifest {
             OptLevel::Size => "\"s\"",
             OptLevel::SizeMin => "\"z\"",
         }
-    }
-
-    /// Builds the argument vector for the underlying `cargo build` invocation.
-    pub(super) fn build_cargo_args(cargo_opts: &CargoOptions, opt_level: OptLevel) -> Vec<String> {
-        let mut args = vec!["build".to_string()];
-
-        // Add build-std flags required for Miden compilation
-        args.extend(
-            [
-                "-Z",
-                "build-std=core,alloc,panic_abort",
-                "-Z",
-                "build-std-features=optimize_for_size",
-            ]
-            .into_iter()
-            .map(|s| s.to_string()),
-        );
-
-        // Configure profile settings
-        let cfg_pairs: Vec<(&str, &str)> = vec![
-            ("profile.dev.panic", "\"abort\""),
-            ("profile.dev.opt-level", "1"),
-            ("profile.dev.overflow-checks", "false"),
-            ("profile.dev.debug", "true"),
-            ("profile.dev.debug-assertions", "false"),
-            ("profile.release.opt-level", cargo_profile_opt_level(opt_level)),
-            ("profile.release.lto", "true"),
-            ("profile.release.codegen-units", "1"),
-            ("profile.release.panic", "\"abort\""),
-            // The guest Wasm needs DWARF (`debug = true` above) so the compiler can turn
-            // it into Miden debug information — but the host-side units of this nested
-            // build (build scripts, proc macros, and their whole native Miden dependency
-            // cone) do not. When a profile sets `debug` explicitly, the host units
-            // inherit it, which was measured at ~94% of a 310 MB proc-macro artifact,
-            // repeated in every build directory a test suite uses.
-            ("profile.dev.build-override.debug", "false"),
-            ("profile.release.build-override.debug", "false"),
-        ];
-
-        for (key, value) in cfg_pairs {
-            args.push("--config".to_string());
-            args.push(format!("{key}={value}"));
-        }
-
-        // Forward cargo-specific options
-        if cargo_opts.release {
-            args.push("--release".to_string());
-        }
-        args.extend(
-            crate::cargo::apply_cargo_policy(cargo_opts.locked, cargo_opts.offline)
-                .map(ToString::to_string),
-        );
-
-        if let Some(ref manifest_path) = cargo_opts.manifest_path {
-            args.push("--manifest-path".to_string());
-            args.push(manifest_path.to_string_lossy().to_string());
-        }
-
-        if cargo_opts.workspace {
-            args.push("--workspace".to_string());
-        }
-
-        for package in &cargo_opts.packages {
-            args.push("--package".to_string());
-            args.push(package.to_string());
-        }
-
-        args
     }
 
     fn run_cargo<E>(
@@ -3968,7 +3923,14 @@ path = "lib.rs"
             offline: true,
             ..Default::default()
         };
-        let args = manifest::build_cargo_args(&options, midenc_session::OptLevel::None);
+        let args = build_cargo_args(
+            options.manifest_path.as_deref(),
+            options.release,
+            options.workspace,
+            &options.packages,
+            (options.locked, options.offline),
+            "2",
+        );
 
         assert!(args.iter().any(|arg| arg == "--locked"));
         assert!(args.iter().any(|arg| arg == "--offline"));

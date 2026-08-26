@@ -330,7 +330,9 @@ mod tests {
         PackageExport, PackageId, PathBuf as MastPathBuf, ProcedureExport, Section, TargetType,
         Version,
     };
-    use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
+    use midenc_frontend_wasm_metadata::{
+        NESTED_CARGO_SCRUB_ENV, package_note_storage_schema_section_id,
+    };
     use midenc_integration_test_support::wasm_target_is_installed;
     use tempfile::TempDir;
     use wasmtime::ResourceLimiter;
@@ -606,7 +608,8 @@ package miden:base@1.0.0 {
         let fixture = TempDir::new().expect("failed to create component fixture directory");
         write_fixture(fixture.path());
         let target_dir = workspace_root().join("target/note-schema-component-test");
-        let output = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+        let mut command = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+        command
             .args([
                 "build",
                 "--manifest-path",
@@ -616,15 +619,11 @@ package miden:base@1.0.0 {
                 WASM_TARGET,
                 "--offline",
             ])
-            .env("CARGO_TARGET_DIR", &target_dir)
-            // Outer Miden target settings and flags would poison this nested wasip2 codec build.
-            .env_remove("CARGO_BUILD_RUSTFLAGS")
-            .env_remove("CARGO_BUILD_TARGET")
-            .env_remove("CARGO_ENCODED_RUSTFLAGS")
-            .env_remove("CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS")
-            .env_remove("RUSTFLAGS")
-            .output()
-            .expect("failed to start fixture build");
+            .env("CARGO_TARGET_DIR", &target_dir);
+        for &variable in NESTED_CARGO_SCRUB_ENV {
+            command.env_remove(variable);
+        }
+        let output = command.output().expect("failed to start fixture build");
         assert_command_succeeded("building the component adapter fixture", &output);
 
         fs::read(
