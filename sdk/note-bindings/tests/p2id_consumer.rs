@@ -2,14 +2,15 @@
 
 use std::{
     env, fs,
+    fs::File,
     path::{Path, PathBuf},
     process::Command,
     sync::Arc,
 };
 
-use miden_mast_package::{Package, Section, SectionId};
+use miden_mast_package::{Package, Section};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
+use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
 use midenc_integration_test_support::CompilerTest;
 
 /// Compiles one Cargo Miden project without debug output.
@@ -25,6 +26,21 @@ fn compile_project(project_path: &Path) -> Arc<Package> {
 /// Returns the compiler workspace root.
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+}
+
+/// Locks the shared p2id example outputs for the full build and consume span.
+fn p2id_build_lock(workspace: &Path) -> File {
+    let target_dir = workspace.join("target");
+    fs::create_dir_all(&target_dir).expect("failed to create the workspace target directory");
+    let lock = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(target_dir.join("p2id-end-to-end-build.lock"))
+        .expect("failed to open the p2id end-to-end build lock");
+    lock.lock().expect("failed to lock the p2id end-to-end build");
+    lock
 }
 
 /// Returns the native rustc host target.
@@ -66,6 +82,7 @@ fn workspace_patch_section(workspace: &Path) -> String {
 #[test]
 fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
     let workspace = workspace_root();
+    let _build_lock = p2id_build_lock(&workspace);
     let examples = workspace.join("examples");
     let wallet_dir = examples.join("basic-wallet");
     let wallet = compile_project(&wallet_dir);
@@ -87,7 +104,7 @@ fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
     let second_package_dir = temp.path().join("packages/counter");
     fs::create_dir_all(&second_package_dir).unwrap();
     let mut second_package = (*p2id).clone();
-    let schema_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).unwrap();
+    let schema_id = package_note_storage_schema_section_id();
     second_package.sections.retain(|section| section.id != schema_id);
     second_package.sections.push(Section::new(
         schema_id,

@@ -1,6 +1,10 @@
 //! End-to-end test for a schema embedded in the p2id note package.
 
-use std::{path::Path, sync::Arc};
+use std::{
+    fs::{self, File},
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use miden_mast_package::Package;
 use miden_note_schema::{NoteStorage, NoteStorageSchema};
@@ -18,9 +22,31 @@ fn compile_project(project_path: &Path) -> Arc<Package> {
     test.compile_package()
 }
 
+/// Returns the compiler workspace root.
+fn workspace_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+}
+
+/// Locks the shared p2id example outputs for the full build and consume span.
+fn p2id_build_lock(workspace: &Path) -> File {
+    let target_dir = workspace.join("target");
+    fs::create_dir_all(&target_dir).expect("failed to create the workspace target directory");
+    let lock = File::options()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(target_dir.join("p2id-end-to-end-build.lock"))
+        .expect("failed to open the p2id end-to-end build lock");
+    lock.lock().expect("failed to lock the p2id end-to-end build");
+    lock
+}
+
 #[test]
 fn p2id_schema_builds_and_decodes_account_id_storage() {
-    let examples = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+    let workspace = workspace_root();
+    let _build_lock = p2id_build_lock(&workspace);
+    let examples = workspace.join("examples");
     let wallet_dir = examples.join("basic-wallet");
     let wallet = compile_project(&wallet_dir);
     wallet
