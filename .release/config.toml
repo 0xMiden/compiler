@@ -217,12 +217,6 @@ unit = "sdk"
 name = "midenc-frontend-wasm-metadata"
 unit = "sdk"
 
-# --- private: repository infrastructure, never published ----------------------
-
-[[packages]]
-name = "miden-field-repr-tests"
-unit = "private"
-
 [[packages]]
 name = "miden-note-schema"
 unit = "sdk"
@@ -250,6 +244,12 @@ unit = "sdk"
 [[packages]]
 name = "miden-note-codec-wit"
 unit = "sdk"
+
+# --- private: repository infrastructure, never published ----------------------
+
+[[packages]]
+name = "miden-field-repr-tests"
+unit = "private"
 
 [[packages]]
 name = "midenc-benchmark-runner"

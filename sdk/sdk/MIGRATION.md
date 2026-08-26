@@ -90,12 +90,12 @@ constructors can commit to the note script's MAST root. Rename any inherent item
 including methods, `#[note_constructor]` methods, associated constants, and items declared in a
 separate impl block.
 
-### Keep duplicate `#[export_type]` registrations shape-compatible
+### Keep duplicate `#[export_type]` registrations nominally unique and shape-compatible
 
-Two `#[export_type]` registrations that map to the same WIT type are now a compile error when
-their record fields or enum cases differ. Previously, the last registration silently replaced the
-first. Rename one Rust type so it maps to a different WIT name, or make both registered shapes
-identical.
+Two different Rust types that map to the same WIT name are now a compile error, even when their
+record fields or enum cases are identical. Shape-identical duplicate registrations of the same Rust
+type remain allowed, while conflicting shapes do not. Previously, the last registration silently
+replaced the first. Rename one Rust type so it maps to a different WIT name.
 
 ### `#[export_type]` reserves `__MIDEN_EXPORT_TYPE_SHAPE`
 
