@@ -3,6 +3,22 @@
 //! Codec components exchange field elements as canonical `u64` values. This crate checks every
 //! integer before it enters [`Felt`], so a component cannot introduce a reduced or ambiguous field
 //! representation.
+//!
+//! Call `from_project!` or `from_package!` first. Then declare every `#[note_codec]`
+//! implementation. Call `export_codecs!` last. These macros register items in declaration order.
+//!
+//! ```ignore
+//! use miden_note_codec::AuthorTypeCodec;
+//!
+//! miden_note_codec::from_project!("../my-note");
+//!
+//! #[miden_note_codec::note_codec]
+//! impl AuthorTypeCodec for Ratio {
+//!     // Implement parse, display, and validate.
+//! }
+//!
+//! miden_note_codec::export_codecs!();
+//! ```
 
 #![deny(missing_docs)]
 
