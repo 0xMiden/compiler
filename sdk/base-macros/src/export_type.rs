@@ -24,6 +24,7 @@ fn export_type_identity_items(
     Ok(quote! { #guards #shape_const #assertions })
 }
 
+/// Expands `#[export_type]` and registers the annotated record or enum for schema emission.
 pub(crate) fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     if !attr.is_empty() {
         return syn::Error::new_spanned(

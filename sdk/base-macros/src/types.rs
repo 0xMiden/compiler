@@ -1,10 +1,9 @@
+//! Rust-to-WIT type mapping and per-crate export registration.
+
 use std::{
     collections::{HashMap, HashSet},
     sync::{Mutex, OnceLock},
 };
-
-static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
-    OnceLock::new();
 
 use heck::{ToKebabCase, ToUpperCamelCase};
 use proc_macro2::{Span, TokenStream};
@@ -13,6 +12,10 @@ use syn::{Attribute, ItemStruct, Type, spanned::Spanned};
 use wit_bindgen_core::wit_parser::Type as WitType;
 
 use crate::manifest_paths::SDK_WIT_SOURCE;
+
+/// Exported types grouped by the crate currently being expanded.
+static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
+    OnceLock::new();
 
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {

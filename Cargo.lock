@@ -3688,7 +3688,6 @@ dependencies = [
  "miden-mast-package",
  "miden-note-codec-wit",
  "miden-protocol",
- "midenc-frontend-wasm",
  "midenc-frontend-wasm-metadata",
  "midenc-integration-test-support",
  "tempfile",

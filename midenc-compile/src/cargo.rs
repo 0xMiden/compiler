@@ -40,6 +40,7 @@ const NOTE_PACKAGE_CACHE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 6
 
 /// One immutable staged package.
 struct StagedNotePackage {
+    /// Content-addressed directory exposed to codec macro expansion as its package cache.
     cache_dir: PathBuf,
 }
 
@@ -440,6 +441,7 @@ fn build_note_codec_component(
         session.options.cargo_offline,
     )?;
 
+    // Give nested Cargo a separate target directory. Sharing the outer lock can deadlock.
     let cargo_target_dir = work_dir.join("cargo-target");
     let mut cargo = Command::new(cargo_path);
     if let Some(toolchain) = toolchain.as_deref() {
@@ -460,10 +462,13 @@ fn build_note_codec_component(
         .arg(&cargo_target_dir)
         .arg("--message-format")
         .arg("json-render-diagnostics")
+        // Let `from_project!` find the staged note package during codec macro expansion.
         .env(package_cache::PACKAGE_CACHE_ENV, &staged_package.cache_dir)
         // Outer Miden target settings and flags would poison this nested wasip2 codec build.
+        .env_remove("CARGO_BUILD_RUSTFLAGS")
         .env_remove("CARGO_BUILD_TARGET")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS")
         .env_remove("RUSTFLAGS")
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit());
@@ -475,7 +480,7 @@ fn build_note_codec_component(
             manifest_path.display()
         ))
     })?;
-    let artifacts = crate::rust::spawn_cargo(cargo, cargo_path).map_err(|error| {
+    let artifacts = crate::rust::run_cargo(cargo, cargo_path).map_err(|error| {
         note_codec_cargo_error(
             error,
             &manifest_path,
@@ -555,6 +560,9 @@ fn stage_note_package(
                 package_path.display()
             )));
         }
+        // Refresh the entry mtime on reuse, or the age-based GC of a concurrent build
+        // could remove an actively used entry that was staged long ago.
+        touch_directory(&cache_dir);
     } else {
         write_package_atomic(note_package, &cache_dir).map_err(|error| {
             Report::msg(format!(
@@ -567,7 +575,14 @@ fn stage_note_package(
     Ok(StagedNotePackage { cache_dir })
 }
 
-/// Removes staged note packages that have not changed for more than seven days.
+/// Sets a directory's modification time to now; failures are ignored.
+fn touch_directory(dir: &Path) {
+    if let Ok(handle) = fs::File::open(dir) {
+        let _ = handle.set_modified(std::time::SystemTime::now());
+    }
+}
+
+/// Removes staged note packages that have not been used for more than seven days.
 fn gc_staged_note_packages(current_cache_dir: &Path) {
     let Some(cache_parent) = current_cache_dir.parent() else {
         return;
@@ -590,8 +605,13 @@ fn gc_staged_note_packages(current_cache_dir: &Path) {
         let Ok(age) = modified.elapsed() else {
             continue;
         };
-        if metadata.is_dir() && age > NOTE_PACKAGE_CACHE_MAX_AGE {
-            let _ = fs::remove_dir_all(path);
+        if age > NOTE_PACKAGE_CACHE_MAX_AGE {
+            if metadata.is_dir() {
+                let _ = fs::remove_dir_all(path);
+            } else {
+                // A stray file under the cache parent is not a staged package; collect it too.
+                let _ = fs::remove_file(path);
+            }
         }
     }
 }
@@ -975,6 +995,24 @@ mod tests {
         assert!(error.contains(".parse` has signature"));
         assert!(error.contains("value: u64"));
         assert!(error.contains("value: string"));
+    }
+
+    #[test]
+    fn staged_package_reuse_refreshes_the_entry_age() {
+        let root = tempfile::TempDir::new().unwrap();
+        let package = midenc_codegen_masm::intrinsics::load();
+        let codec_crate = root.path().join("codec");
+        fs::create_dir(&codec_crate).unwrap();
+
+        let staged = stage_note_package(root.path(), &codec_crate, &package).unwrap();
+        let old = std::time::SystemTime::now() - (NOTE_PACKAGE_CACHE_MAX_AGE * 2);
+        fs::File::open(&staged.cache_dir).unwrap().set_modified(old).unwrap();
+
+        // A cache hit must refresh the mtime so the GC never collects an active entry.
+        let reused = stage_note_package(root.path(), &codec_crate, &package).unwrap();
+        assert_eq!(reused.cache_dir, staged.cache_dir);
+        let age = fs::metadata(&staged.cache_dir).unwrap().modified().unwrap().elapsed().unwrap();
+        assert!(age < NOTE_PACKAGE_CACHE_MAX_AGE, "the entry age was not refreshed: {age:?}");
     }
 
     #[test]
