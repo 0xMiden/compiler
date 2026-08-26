@@ -3,7 +3,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-static EXPORTED_TYPES: OnceLock<Mutex<Vec<ExportedTypeDef>>> = OnceLock::new();
+static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
+    OnceLock::new();
 
 use heck::{ToKebabCase, ToUpperCamelCase};
 use proc_macro2::{Span, TokenStream};
@@ -103,43 +104,86 @@ pub(crate) enum StorageFieldType {
     StorageValue,
 }
 
+/// One exported-type registration together with the source location that produced it.
+#[derive(Clone, Debug)]
+struct RegisteredExportType {
+    def: ExportedTypeDef,
+    location: ExpansionLocation,
+}
+
+/// Source location of one macro expansion.
+///
+/// The location tells a stale re-expansion of an edited item (same location) from a real
+/// conflict between two items (different locations).
+type ExpansionLocation = (String, usize, usize);
+
+/// Returns the (file, line, column) location of one expansion span.
+fn expansion_location(span: Span) -> ExpansionLocation {
+    let start = span.start();
+    (span.file(), start.line, start.column)
+}
+
+/// Returns the key of the crate whose macro expansion is running.
+///
+/// Long-lived macro hosts such as the rust-analyzer proc-macro server expand many crates in
+/// one process; the key keeps their registrations apart.
+fn macro_invocation_crate_key() -> String {
+    std::env::var("CARGO_MANIFEST_DIR")
+        .or_else(|_| std::env::var("CARGO_PKG_NAME"))
+        .unwrap_or_default()
+}
+
 /// Registers one exported type while preserving the first definition seen by the macro process.
 pub(crate) fn register_export_type(def: ExportedTypeDef, span: Span) -> Result<(), syn::Error> {
-    let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()));
+    let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(HashMap::new()));
     let mut registry = registry.lock().expect("mutex poisoned");
-    register_export_type_in(&mut registry, def, span)
+    let entries = registry.entry(macro_invocation_crate_key()).or_default();
+    register_export_type_in(entries, def, span, expansion_location(span))
 }
 
 /// Applies exported-type identity rules to one registry snapshot.
 fn register_export_type_in(
-    registry: &mut Vec<ExportedTypeDef>,
+    registry: &mut Vec<RegisteredExportType>,
     def: ExportedTypeDef,
     span: Span,
+    location: ExpansionLocation,
 ) -> Result<(), syn::Error> {
-    if let Some(existing) = registry.iter().find(|existing| existing.wit_name == def.wit_name) {
-        if existing.rust_name == def.rust_name && exported_type_shapes_match(existing, &def) {
+    if let Some(existing) =
+        registry.iter_mut().find(|existing| existing.def.wit_name == def.wit_name)
+    {
+        if existing.def.rust_name == def.rust_name
+            && exported_type_shapes_match(&existing.def, &def)
+        {
             // rust-analyzer can expand the same attribute more than once in one macro process.
             return Ok(());
         }
 
-        let identity = if existing.rust_name == def.rust_name {
+        if existing.location == location {
+            // A long-lived macro host re-expanded an edited item; replace the stale shape.
+            existing.def = def;
+            return Ok(());
+        }
+
+        let identity = if existing.def.rust_name == def.rust_name {
             format!("Rust type `{}`", def.rust_name)
         } else {
-            format!("Rust types `{}` and `{}` both map to", existing.rust_name, def.rust_name)
+            format!("Rust types `{}` and `{}` both map to", existing.def.rust_name, def.rust_name)
         };
         return Err(syn::Error::new(
             span,
             format!(
                 "conflicting #[export_type] registration: {identity} WIT type `{}` with different \
                  identity or shape; the earlier registration is `{}`, while this registration is \
-                 `{}`. Rename one type or make both registrations structurally identical",
+                 `{}`. Rename one type or make both registrations structurally identical. If this \
+                 error appears in your IDE after an edit, restart the rust-analyzer proc-macro \
+                 server",
                 def.wit_name,
-                describe_exported_type_shape(existing),
+                describe_exported_type_shape(&existing.def),
                 describe_exported_type_shape(&def),
             ),
         ));
     }
-    registry.push(def);
+    registry.push(RegisteredExportType { def, location });
     Ok(())
 }
 
@@ -194,8 +238,11 @@ fn type_ref_shapes_match(left: &TypeRef, right: &TypeRef) -> bool {
             .all(|(left, right)| type_ref_shapes_match(left, right))
 }
 
-/// Formats one exported definition for a conflicting-registration diagnostic.
-fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
+/// Formats the canonical structural shape of one exported definition.
+///
+/// The text serves conflict diagnostics and the compile-time shape checks that pin a written
+/// type to its `#[export_type]` registration, so it must stay stable and structural.
+pub(crate) fn describe_exported_type_shape(def: &ExportedTypeDef) -> String {
     match &def.kind {
         ExportedTypeKind::Record { fields } => format!(
             "record {} {{ {} }}",
@@ -307,9 +354,110 @@ fn collect_sdk_core_type_identity_guard(
     Ok(())
 }
 
+/// Emits the hidden constant that records the structural shape of an exported type.
+///
+/// Compile-time checks read this constant through a written type path, so a type that only
+/// shares the registered name cannot pass for the registered type.
+pub(crate) fn export_type_shape_const(
+    def: &ExportedTypeDef,
+    generics: &syn::Generics,
+    span: Span,
+) -> TokenStream {
+    let ident = syn::Ident::new(&def.rust_name, span);
+    let shape = describe_exported_type_shape(def);
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+    quote_spanned! {span=>
+        impl #impl_generics #ident #ty_generics #where_clause {
+            #[doc(hidden)]
+            pub const __MIDEN_EXPORT_TYPE_SHAPE: &'static str = #shape;
+        }
+    }
+}
+
+/// Emits compile-time checks that pin written custom types to their registrations.
+///
+/// Each check reads the shape constant through the type path as it is written at the
+/// expansion site. A type that is not the registered type fails to compile, either because
+/// it has no shape constant or because its shape text differs.
+pub(crate) fn custom_type_shape_assertions(
+    definition: &ExportedTypeDef,
+    registry: &HashMap<String, ExportedTypeDef>,
+    span: Span,
+) -> Result<TokenStream, syn::Error> {
+    let mut asserted = HashSet::new();
+    let mut checks = TokenStream::new();
+    visit_exported_type_refs(definition, &mut |type_ref| {
+        collect_custom_type_shape_assertion(type_ref, registry, span, &mut asserted, &mut checks)
+    })?;
+    Ok(checks)
+}
+
+/// Appends one shape check when a custom type path has not already been checked.
+fn collect_custom_type_shape_assertion(
+    type_ref: &TypeRef,
+    registry: &HashMap<String, ExportedTypeDef>,
+    span: Span,
+    asserted: &mut HashSet<String>,
+    checks: &mut TokenStream,
+) -> Result<(), syn::Error> {
+    if !type_ref.is_custom {
+        return Ok(());
+    }
+    let written_path = type_ref.path.join("::");
+    if !asserted.insert(written_path.clone()) {
+        return Ok(());
+    }
+    let Some(rust_name) = type_ref.path.last() else {
+        return Ok(());
+    };
+    let Some(registered) = registry.get(rust_name) else {
+        // The schema resolution path reports unregistered custom types with full context.
+        return Ok(());
+    };
+    let expected = describe_exported_type_shape(registered);
+    let path = syn::parse_str::<syn::Path>(&written_path).map_err(|error| {
+        syn::Error::new(
+            span,
+            format!("failed to reconstruct the path of custom type `{written_path}`: {error}"),
+        )
+    })?;
+    let message = format!(
+        "type `{written_path}` does not match the #[export_type] registration named `{}`; write \
+         the registered type here or rename one of the types",
+        registered.rust_name
+    );
+    checks.extend(quote_spanned! {span=>
+        const _: () = {
+            const fn __miden_shape_text_eq(left: &str, right: &str) -> bool {
+                let (left, right) = (left.as_bytes(), right.as_bytes());
+                if left.len() != right.len() {
+                    return false;
+                }
+                let mut index = 0;
+                while index < left.len() {
+                    if left[index] != right[index] {
+                        return false;
+                    }
+                    index += 1;
+                }
+                true
+            }
+            assert!(
+                __miden_shape_text_eq(<#path>::__MIDEN_EXPORT_TYPE_SHAPE, #expected),
+                #message
+            );
+        };
+    });
+    Ok(())
+}
+
 pub(crate) fn registered_export_types() -> Vec<ExportedTypeDef> {
-    let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(Vec::new()));
-    registry.lock().expect("mutex poisoned").clone()
+    let registry = EXPORTED_TYPES.get_or_init(|| Mutex::new(HashMap::new()));
+    let registry = registry.lock().expect("mutex poisoned");
+    registry
+        .get(&macro_invocation_crate_key())
+        .map(|entries| entries.iter().map(|entry| entry.def.clone()).collect())
+        .unwrap_or_default()
 }
 
 pub(crate) fn registered_export_type_map() -> HashMap<String, ExportedTypeDef> {

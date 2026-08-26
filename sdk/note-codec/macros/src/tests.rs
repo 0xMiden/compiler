@@ -94,17 +94,46 @@ fn schema_and_codec_registration_generate_native_and_wasm_dispatch() {
 fn a_crate_cannot_register_two_distinct_schemas() {
     let _guard = lock_registry();
     reset_for_tests();
-    let first = LitStr::new(SCHEMA, Span::call_site());
+    let (first_span, second_span) = distinct_expansion_spans();
+    let first = LitStr::new(SCHEMA, first_span);
     expand::from_wit_text(&first).unwrap();
 
     let second_schema = SCHEMA
         .replace("example:codec-schema", "example:other-schema")
         .replace("codec-note", "other-note");
-    let second = LitStr::new(&second_schema, Span::call_site());
+    let second = LitStr::new(&second_schema, second_span);
     let error = expand::from_wit_text(&second).unwrap_err().to_string();
 
     assert!(error.contains("one note schema per crate"));
     assert!(error.contains("second distinct"));
+}
+
+#[test]
+fn same_location_reregistration_replaces_a_stale_schema() {
+    let _guard = lock_registry();
+    reset_for_tests();
+    let first = LitStr::new(SCHEMA, Span::call_site());
+    expand::from_wit_text(&first).unwrap();
+
+    // A long-lived macro host re-expands the edited invocation from the same location.
+    let second_schema = SCHEMA
+        .replace("example:codec-schema", "example:other-schema")
+        .replace("codec-note", "other-note");
+    let second = LitStr::new(&second_schema, Span::call_site());
+    expand::from_wit_text(&second).unwrap();
+}
+
+/// Returns two spans with distinct source locations.
+fn distinct_expansion_spans() -> (Span, Span) {
+    let tokens: proc_macro2::TokenStream = "first
+second"
+        .parse()
+        .expect("the span fixture must parse");
+    let mut tokens = tokens.into_iter();
+    let first = tokens.next().expect("first fixture token").span();
+    let second = tokens.next().expect("second fixture token").span();
+    assert_ne!(first.start().line, second.start().line, "fixture spans must differ");
+    (first, second)
 }
 
 #[test]

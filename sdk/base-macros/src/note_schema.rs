@@ -3,7 +3,9 @@
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 use heck::ToKebabCase;
-use midenc_frontend_wasm_metadata::WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME;
+use midenc_frontend_wasm_metadata::{
+    WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, pad_to_link_section_alignment,
+};
 use proc_macro2::{Literal, Span, TokenStream as TokenStream2};
 use quote::quote;
 use semver::Version;
@@ -13,8 +15,8 @@ use wit_bindgen_core::wit_parser::Resolve;
 use crate::{
     manifest_paths::SDK_WIT_SOURCE,
     types::{
-        ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, doc_comments,
-        map_type_to_type_ref, registered_export_types, sdk_core_type_identity_guards,
+        ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, custom_type_shape_assertions,
+        doc_comments, map_type_to_type_ref, registered_export_types, sdk_core_type_identity_guards,
     },
     util::NOTE_NAMED_FIELDS_ERROR,
     wit_builder::{WitBody, WitBuilder},
@@ -52,24 +54,34 @@ pub(crate) fn expand_note_storage_schema(
         &registry,
     )?;
     validate_rendered_note_storage_schema(&rendered)?;
-    let identity_guards = rendered
+    // Identity items reference types as they are written at this `#[note]` site, so only the
+    // root definition (whose field types are in scope here) is checked. Registry definitions
+    // carry their own identity items at their `#[export_type]` sites.
+    let root_definition = rendered
         .definitions
+        .last()
+        .expect("a rendered schema always contains its root definition");
+    let identity_guards = sdk_core_type_identity_guards(root_definition, rendered.span)?;
+    let registry_by_rust_name = registry
         .iter()
-        .map(|definition| sdk_core_type_identity_guards(definition, rendered.span))
-        .collect::<Result<Vec<_>, _>>()?;
+        .cloned()
+        .map(|definition| (definition.rust_name.clone(), definition))
+        .collect();
+    let shape_assertions =
+        custom_type_shape_assertions(root_definition, &registry_by_rust_name, rendered.span)?;
 
-    let mut bytes = rendered.source.into_bytes();
-    let padded_len = bytes.len().div_ceil(16) * 16;
-    bytes.resize(padded_len, 0);
+    let bytes = pad_to_link_section_alignment(rendered.source.into_bytes());
 
     let bytes_len = bytes.len();
     let encoded_bytes = Literal::byte_string(&bytes);
+    let macos_link_section = macos_note_storage_schema_link_section();
 
     Ok(quote! {
-        #(#identity_guards)*
+        #identity_guards
+        #shape_assertions
 
         // Mach-O limits section names to 16 bytes. Wasm uses the canonical section name below.
-        #[cfg_attr(target_os = "macos", unsafe(link_section = "rodata,miden_note_schem"))]
+        #[cfg_attr(target_os = "macos", unsafe(link_section = #macos_link_section))]
         #[cfg_attr(
             not(target_os = "macos"),
             unsafe(link_section = #WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME)
@@ -78,6 +90,17 @@ pub(crate) fn expand_note_storage_schema(
         #[allow(clippy::octal_escapes)]
         pub static __MIDEN_NOTE_STORAGE_SCHEMA_BYTES: [u8; #bytes_len] = *#encoded_bytes;
     })
+}
+
+/// Derives the Mach-O link-section name from the canonical Wasm custom-section name.
+fn macos_note_storage_schema_link_section() -> String {
+    let (segment, section) = WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME
+        .split_once(',')
+        .expect("the note storage schema section name must include a segment");
+    let section = section
+        .get(..section.len().min(16))
+        .expect("the note storage schema section name must be ASCII");
+    format!("{segment},{section}")
 }
 
 /// Emits a fixed linker symbol that permits one note struct per crate.
@@ -649,6 +672,11 @@ mod tests {
         let tokens = note_storage_schema_uniqueness_guard().to_string();
 
         expect![[r#"const _ : () = { # [doc (hidden)] # [used] # [unsafe (export_name = "__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD")] static __miden_note_storage_schema_uniqueness_guard : u8 = 0 ; } ;"#]].assert_eq(&tokens);
+    }
+
+    #[test]
+    fn derives_macos_note_storage_schema_link_section() {
+        assert_eq!(macos_note_storage_schema_link_section(), "rodata,miden_note_schem");
     }
 
     #[test]
