@@ -1,3 +1,4 @@
+// Keep this as a separate file because one crate may hold only one #[note] struct.
 //! Tests trailing-data rejection for unit note structs.
 
 use core::convert::TryFrom;
