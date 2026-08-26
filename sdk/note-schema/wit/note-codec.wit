@@ -1,3 +1,5 @@
+// Mirror note: the wit-crate file is canonical; sdk/note-schema/wit/note-codec.wit exists because
+// Wasmtime bindgen!(path:) needs package-local WIT, and an equality test guards both files.
 package miden:note-codec@1.0.0;
 
 /// Parses, displays, and validates custom note storage types.

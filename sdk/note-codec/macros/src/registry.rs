@@ -37,6 +37,8 @@ static REGISTRY: OnceLock<Mutex<BTreeMap<String, Registry>>> = OnceLock::new();
 ///
 /// The location tells a stale re-expansion of an edited invocation (same location) from a
 /// real conflict between two invocations (different locations).
+// Keep this registry identity/replacement policy aligned with sdk/base-macros/src/types.rs;
+// changes must land in both.
 type ExpansionLocation = (String, usize, usize);
 
 /// Returns the (file, line, column) location of one expansion span.

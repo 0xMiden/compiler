@@ -269,6 +269,7 @@ fn read_account_id(felts: &[Felt]) -> Result<AccountId> {
     reader
         .ensure_eof()
         .map_err(|err| Error::new(format!("invalid account-id representation: {err}")))?;
+    // WIT declares prefix before suffix, but the constructor takes suffix first.
     AccountId::try_from_elements(suffix, prefix)
         .map_err(|err| Error::new(format!("invalid account-id representation: {err}")))
 }

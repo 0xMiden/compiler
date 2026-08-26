@@ -37,6 +37,12 @@ pub const MAX_NOTE_STORAGE_SCHEMA_DEPTH: usize = MAX_NOTE_STORAGE_ITEMS / 8;
 /// Maximum number of felts in the root note storage layout.
 pub const MAX_NOTE_STORAGE_SCHEMA_FELTS: usize = MAX_NOTE_STORAGE_ITEMS;
 
+/// Maximum bytes accepted for one note codec component before Wasmtime compilation.
+///
+/// The compiler enforces the same limit when it attaches a codec, so a package that
+/// builds is a package that consumers accept.
+pub const MAX_NOTE_CODEC_COMPONENT_BYTES: usize = 4 * 1024 * 1024;
+
 const _: () = assert!(MAX_NOTE_STORAGE_SCHEMA_DEPTH > 0);
 
 /// The minimum and maximum felt count for a schema type.
@@ -412,6 +418,7 @@ fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
             return Err(core_shape_error(name, fields));
         }
         if leaf == StandardLeaf::Felt {
+            // Miden's canonical felt uses `f32` as its WIT-level placeholder representation.
             if !resolves_to_primitive(resolve, record.fields[0].ty, Type::F32)? {
                 return Err(core_shape_error(name, fields));
             }
@@ -573,6 +580,7 @@ fn collect_custom_type_fqns(
     seen: &mut HashSet<*const SchemaType>,
     fqns: &mut HashSet<String>,
 ) {
+    // Pointer identity is sufficient because ModelBuilder memoizes exactly one Arc per TypeId.
     if !seen.insert(core::ptr::from_ref(ty)) {
         return;
     }
@@ -597,11 +605,18 @@ fn collect_custom_type_fqns(
     }
 }
 
+/// One memoized schema node and its maximum depth below that node.
+#[derive(Clone)]
+struct MemoizedSchemaType {
+    ty: Arc<SchemaType>,
+    maximum_subtree_depth: usize,
+}
+
 /// Builds a memoized schema graph from a resolved WIT graph.
 struct ModelBuilder<'a> {
     resolve: &'a Resolve,
     active: HashSet<TypeId>,
-    memo: HashMap<TypeId, Arc<SchemaType>>,
+    memo: HashMap<TypeId, MemoizedSchemaType>,
 }
 
 impl<'a> ModelBuilder<'a> {
@@ -616,11 +631,11 @@ impl<'a> ModelBuilder<'a> {
 
     /// Resolves one WIT type.
     fn build(mut self, ty: Type) -> Result<Arc<SchemaType>> {
-        self.build_type(ty, 0)
+        self.build_type(ty, 0).map(|memoized| memoized.ty)
     }
 
     /// Resolves a primitive or named type.
-    fn build_type(&mut self, ty: Type, depth: usize) -> Result<Arc<SchemaType>> {
+    fn build_type(&mut self, ty: Type, depth: usize) -> Result<MemoizedSchemaType> {
         if depth > MAX_NOTE_STORAGE_SCHEMA_DEPTH {
             return Err(Error::new(format!(
                 "note storage schema nesting depth {depth} exceeds the limit of \
@@ -640,10 +655,17 @@ impl<'a> ModelBuilder<'a> {
     }
 
     /// Resolves aliases to the type definition that owns the structural type.
-    fn build_type_id(&mut self, id: TypeId, depth: usize) -> Result<Arc<SchemaType>> {
+    fn build_type_id(&mut self, id: TypeId, depth: usize) -> Result<MemoizedSchemaType> {
         let id = self.follow_aliases(id)?;
-        if let Some(ty) = self.memo.get(&id) {
-            return Ok(Arc::clone(ty));
+        if let Some(memoized) = self.memo.get(&id) {
+            let maximum_depth = depth.saturating_add(memoized.maximum_subtree_depth);
+            if maximum_depth > MAX_NOTE_STORAGE_SCHEMA_DEPTH {
+                return Err(Error::new(format!(
+                    "note storage schema nesting depth {maximum_depth} exceeds the limit of \
+                     {MAX_NOTE_STORAGE_SCHEMA_DEPTH}"
+                )));
+            }
+            return Ok(memoized.clone());
         }
         if !self.active.insert(id) {
             return Err(Error::new(
@@ -656,70 +678,92 @@ impl<'a> ModelBuilder<'a> {
         let docs = definition.docs.contents.clone();
         let fqn = self.type_fqn(id)?;
         let result = if fqn.as_deref() == Some(FELT_FQN) {
-            Ok(Arc::new(SchemaType {
-                name,
-                fqn,
-                docs,
-                kind: SchemaTypeKind::Felt,
-                layout: FeltLayout::fixed(1),
-            }))
+            Ok(MemoizedSchemaType {
+                ty: Arc::new(SchemaType {
+                    name,
+                    fqn,
+                    docs,
+                    kind: SchemaTypeKind::Felt,
+                    layout: FeltLayout::fixed(1),
+                }),
+                maximum_subtree_depth: 0,
+            })
         } else {
             match definition.kind {
                 TypeDefKind::Type(ty) => self.build_named_alias(ty, name, fqn, docs, depth),
                 TypeDefKind::Record(record) => {
                     let mut fields = Vec::with_capacity(record.fields.len());
                     let mut layout = FeltLayout::fixed(0);
+                    let mut maximum_subtree_depth = 0;
                     for field in record.fields {
-                        let ty = self.build_type(field.ty, depth + 1)?;
-                        layout = layout.concatenate(ty.layout)?;
+                        let memoized = self.build_type(field.ty, depth + 1)?;
+                        maximum_subtree_depth =
+                            maximum_subtree_depth.max(1 + memoized.maximum_subtree_depth);
+                        layout = layout.concatenate(memoized.ty.layout)?;
                         fields.push(SchemaField {
                             name: field.name,
                             docs: field.docs.contents,
-                            ty,
+                            ty: memoized.ty,
                         });
                     }
-                    Ok(Arc::new(SchemaType {
-                        name,
-                        fqn,
-                        docs,
-                        kind: SchemaTypeKind::Record(fields),
-                        layout,
-                    }))
+                    Ok(MemoizedSchemaType {
+                        ty: Arc::new(SchemaType {
+                            name,
+                            fqn,
+                            docs,
+                            kind: SchemaTypeKind::Record(fields),
+                            layout,
+                        }),
+                        maximum_subtree_depth,
+                    })
                 }
                 TypeDefKind::Option(payload) => {
                     let payload = self.build_type(payload, depth + 1)?;
                     let maximum = 1usize
-                        .checked_add(payload.layout.maximum)
+                        .checked_add(payload.ty.layout.maximum)
                         .ok_or_else(|| Error::new("option layout maximum width is too large"))?;
                     let layout = FeltLayout::bounded(1, maximum)?;
-                    Ok(Arc::new(SchemaType {
-                        name,
-                        fqn,
-                        docs,
-                        kind: SchemaTypeKind::Option(payload),
-                        layout,
-                    }))
+                    Ok(MemoizedSchemaType {
+                        maximum_subtree_depth: 1 + payload.maximum_subtree_depth,
+                        ty: Arc::new(SchemaType {
+                            name,
+                            fqn,
+                            docs,
+                            kind: SchemaTypeKind::Option(payload.ty),
+                            layout,
+                        }),
+                    })
                 }
                 TypeDefKind::Variant(variant) => {
                     let mut cases = Vec::with_capacity(variant.cases.len());
+                    let mut maximum_subtree_depth = 0;
                     for case in variant.cases {
+                        let payload = match case.ty {
+                            Some(ty) => {
+                                let memoized = self.build_type(ty, depth + 1)?;
+                                maximum_subtree_depth =
+                                    maximum_subtree_depth.max(1 + memoized.maximum_subtree_depth);
+                                Some(memoized.ty)
+                            }
+                            None => None,
+                        };
                         cases.push(SchemaCase {
                             name: case.name,
                             docs: case.docs.contents,
-                            payload: case
-                                .ty
-                                .map(|ty| self.build_type(ty, depth + 1))
-                                .transpose()?,
+                            payload,
                         });
                     }
                     let layout = variant_layout(&cases)?;
-                    Ok(Arc::new(SchemaType {
-                        name,
-                        fqn,
-                        docs,
-                        kind: SchemaTypeKind::Variant(cases),
-                        layout,
-                    }))
+                    Ok(MemoizedSchemaType {
+                        ty: Arc::new(SchemaType {
+                            name,
+                            fqn,
+                            docs,
+                            kind: SchemaTypeKind::Variant(cases),
+                            layout,
+                        }),
+                        maximum_subtree_depth,
+                    })
                 }
                 TypeDefKind::Enum(enum_) => {
                     let cases = enum_
@@ -732,13 +776,16 @@ impl<'a> ModelBuilder<'a> {
                         })
                         .collect::<Vec<_>>();
                     let layout = variant_layout(&cases)?;
-                    Ok(Arc::new(SchemaType {
-                        name,
-                        fqn,
-                        docs,
-                        kind: SchemaTypeKind::Variant(cases),
-                        layout,
-                    }))
+                    Ok(MemoizedSchemaType {
+                        ty: Arc::new(SchemaType {
+                            name,
+                            fqn,
+                            docs,
+                            kind: SchemaTypeKind::Variant(cases),
+                            layout,
+                        }),
+                        maximum_subtree_depth: 0,
+                    })
                 }
                 unsupported => Err(Error::new(format!(
                     "WIT {} `{}` is not supported in note storage schemas",
@@ -748,13 +795,14 @@ impl<'a> ModelBuilder<'a> {
             }
         };
         self.active.remove(&id);
-        if let Ok(ty) = &result {
-            self.memo.insert(id, Arc::clone(ty));
+        if let Ok(memoized) = &result {
+            self.memo.insert(id, memoized.clone());
         }
         result
     }
 
-    /// Resolves a named alias whose target is a primitive.
+    /// Resolves a primitive alias with its metadata, or follows an ID alias while discarding that
+    /// alias's name, FQN, and documentation.
     fn build_named_alias(
         &mut self,
         ty: Type,
@@ -762,7 +810,7 @@ impl<'a> ModelBuilder<'a> {
         fqn: Option<String>,
         docs: Option<String>,
         depth: usize,
-    ) -> Result<Arc<SchemaType>> {
+    ) -> Result<MemoizedSchemaType> {
         match ty {
             Type::Id(id) => self.build_type_id(id, depth),
             Type::U64 => self.primitive(PrimitiveType::U64, name, fqn, docs),
@@ -782,18 +830,21 @@ impl<'a> ModelBuilder<'a> {
         name: Option<String>,
         fqn: Option<String>,
         docs: Option<String>,
-    ) -> Result<Arc<SchemaType>> {
+    ) -> Result<MemoizedSchemaType> {
         let width = match primitive {
             PrimitiveType::U64 => 2,
             PrimitiveType::U32 | PrimitiveType::U8 | PrimitiveType::Bool => 1,
         };
-        Ok(Arc::new(SchemaType {
-            name,
-            fqn,
-            docs,
-            kind: SchemaTypeKind::Primitive(primitive),
-            layout: FeltLayout::fixed(width),
-        }))
+        Ok(MemoizedSchemaType {
+            ty: Arc::new(SchemaType {
+                name,
+                fqn,
+                docs,
+                kind: SchemaTypeKind::Primitive(primitive),
+                layout: FeltLayout::fixed(width),
+            }),
+            maximum_subtree_depth: 0,
+        })
     }
 
     /// Follows `type = id` aliases to their defining type.

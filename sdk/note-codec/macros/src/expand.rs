@@ -6,7 +6,7 @@ use miden_note_schema_codegen::{RuntimePaths, generate_host_types};
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, quote};
-use syn::{ItemImpl, LitStr, Type};
+use syn::{ItemImpl, LitStr, Type, spanned::Spanned};
 
 use crate::registry::{register_codec, register_schema, registered_codecs};
 
@@ -37,11 +37,11 @@ pub(crate) fn from_wit_text(input: &LitStr) -> syn::Result<TokenStream> {
 fn expand_package_artifact(artifact: &NotePackageArtifact, span: Span) -> syn::Result<TokenStream> {
     let types = expand_schema(artifact.schema(), span)?;
     let tracked_path = artifact.path().to_string_lossy();
+    let package_cache_env = midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV;
     Ok(quote! {
-        #[doc(hidden)]
-        const _: &[u8] = include_bytes!(#tracked_path);
-        #[doc(hidden)]
-        const _: Option<&str> = option_env!("MIDENC_PACKAGE_CACHE");
+        // These constants exist only to register the package file and cache path as proc-macro rebuild inputs.
+        const _: &[u8] = ::core::include_bytes!(#tracked_path);
+        const _: ::core::option::Option<&str> = ::core::option_env!(#package_cache_env);
         #types
     })
 }
@@ -267,5 +267,3 @@ fn note_codec_facade() -> syn::Path {
         Err(_) => syn::parse_quote!(::miden_note_codec),
     }
 }
-
-use syn::spanned::Spanned;

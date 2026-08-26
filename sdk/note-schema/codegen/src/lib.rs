@@ -310,6 +310,7 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
                         "failed to decode account-id suffix: {error}"
                     ))
                 })?;
+                // WIT declares prefix before suffix, but the constructor takes suffix first.
                 #miden_protocol::account::AccountId::try_from_elements(suffix, prefix).map_err(
                     |error| {
                         #miden_note_schema::Error::new(format!(

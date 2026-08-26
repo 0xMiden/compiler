@@ -16,7 +16,7 @@ use crate::{CodecRegistry, ConsumerTypeCodec, Error, NoteStorageSchema, Result};
 const CALL_FUEL: u64 = 10_000_000;
 
 /// Maximum bytes accepted for one untrusted note codec component before Wasmtime compilation.
-const MAX_COMPONENT_BYTES: usize = 4 * 1024 * 1024;
+const MAX_COMPONENT_BYTES: usize = crate::schema::MAX_NOTE_CODEC_COMPONENT_BYTES;
 
 /// Maximum bytes available to one codec component linear memory.
 const MAX_COMPONENT_MEMORY_BYTES: usize = 16 * 1024 * 1024;
@@ -331,6 +331,7 @@ mod tests {
         Version,
     };
     use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
+    use midenc_integration_test_support::wasm_target_is_installed;
     use tempfile::TempDir;
     use wasmtime::ResourceLimiter;
 
@@ -616,6 +617,7 @@ package miden:base@1.0.0 {
                 "--offline",
             ])
             .env("CARGO_TARGET_DIR", &target_dir)
+            // Outer Miden target settings and flags would poison this nested wasip2 codec build.
             .env_remove("CARGO_BUILD_TARGET")
             .env_remove("CARGO_ENCODED_RUSTFLAGS")
             .env_remove("RUSTFLAGS")
@@ -653,18 +655,7 @@ miden-note-codec = {{ path = {:?} }}
             codec_path
         );
         fs::write(root.join("Cargo.toml"), manifest).unwrap();
-        fs::write(root.join("src/lib.rs"), FIXTURE_SOURCE).unwrap();
-    }
-
-    /// Returns true when rustup reports the component target as installed.
-    fn wasm_target_is_installed() -> bool {
-        let Ok(output) = Command::new("rustup").args(["target", "list"]).output() else {
-            return false;
-        };
-        output.status.success()
-            && String::from_utf8_lossy(&output.stdout)
-                .lines()
-                .any(|line| line.starts_with(WASM_TARGET) && line.contains("(installed)"))
+        fs::write(root.join("src/lib.rs"), fixture_source()).unwrap();
     }
 
     /// Returns the compiler workspace root.
@@ -686,25 +677,15 @@ miden-note-codec = {{ path = {:?} }}
         );
     }
 
-    const FIXTURE_SOURCE: &str = r##"
+    /// Builds the fixture source around the schema shared with host-side assertions.
+    fn fixture_source() -> String {
+        [
+            r##"
 use miden_note_codec::AuthorTypeCodec;
 
-miden_note_codec::from_wit_text!(r#"
-package example:codec-schema@1.0.0;
-
-interface note-storage {
-    record ratio {
-        numerator: u64,
-        denominator: u64,
-    }
-
-    record codec-note {
-        ratio: ratio,
-    }
-
-    type storage = codec-note;
-}
-"#);
+miden_note_codec::from_wit_text!(r#""##,
+            FIXTURE_SCHEMA,
+            r##""#);
 
 #[miden_note_codec::note_codec]
 impl AuthorTypeCodec for Ratio {
@@ -740,5 +721,8 @@ impl AuthorTypeCodec for Ratio {
 }
 
 miden_note_codec::export_codecs!();
-"##;
+"##,
+        ]
+        .concat()
+    }
 }

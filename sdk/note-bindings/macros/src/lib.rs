@@ -69,11 +69,11 @@ fn expand_package_artifact(
     let scope_key = artifact.path().to_string_lossy();
     let bindings = expand_schema(artifact.schema(), span, &scope_key)?;
     let tracked_path = artifact.path().to_string_lossy();
+    let package_cache_env = midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV;
     Ok(quote! {
-        #[doc(hidden)]
-        const _: &[u8] = include_bytes!(#tracked_path);
-        #[doc(hidden)]
-        const _: Option<&str> = option_env!("MIDENC_PACKAGE_CACHE");
+        // These constants exist only to register the package file and cache path as proc-macro rebuild inputs.
+        const _: &[u8] = ::core::include_bytes!(#tracked_path);
+        const _: ::core::option::Option<&str> = ::core::option_env!(#package_cache_env);
         #bindings
     })
 }
@@ -224,7 +224,7 @@ fn binding_facade() -> syn::Path {
     }
 }
 
-/// Returns a deterministic scope suffix for one macro input.
+/// Returns a deterministic FNV-1a scope suffix for one macro input.
 fn stable_hash(value: &str) -> u64 {
     value.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
