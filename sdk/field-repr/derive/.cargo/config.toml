@@ -1,3 +1,3 @@
-# Per-crate copy: check-each builds run in each member crate and default to the Miden Wasm target.
+# Per-crate copy: per-member check-each builds run in this directory and default to the Miden Wasm target (a no-op for proc-macro roots, which always build for the host). sdk/ has no directory-wide config so host-side crates build natively.
 [build]
 target = "wasm32-wasip1"
