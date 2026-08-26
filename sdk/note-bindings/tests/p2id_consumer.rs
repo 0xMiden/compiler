@@ -1,47 +1,10 @@
 //! End-to-end test for package discovery and generated p2id consumer bindings.
 
-use std::{
-    env, fs,
-    fs::File,
-    path::{Path, PathBuf},
-    process::Command,
-    sync::Arc,
-};
+use std::{env, fs, path::Path, process::Command};
 
-use miden_mast_package::{Package, Section};
-use midenc_frontend_wasm::WasmTranslationConfig;
+use miden_mast_package::Section;
 use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
-use midenc_integration_test_support::CompilerTest;
-
-/// Compiles one Cargo Miden project without debug output.
-fn compile_project(project_path: &Path) -> Arc<Package> {
-    let mut test = CompilerTest::rust_source_cargo_miden(
-        project_path,
-        WasmTranslationConfig::default(),
-        ["--debug".to_owned(), "none".to_owned()],
-    );
-    test.compile_package()
-}
-
-/// Returns the compiler workspace root.
-fn workspace_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
-}
-
-/// Locks the shared p2id example outputs for the full build and consume span.
-fn p2id_build_lock(workspace: &Path) -> File {
-    let target_dir = workspace.join("target");
-    fs::create_dir_all(&target_dir).expect("failed to create the workspace target directory");
-    let lock = File::options()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(target_dir.join("p2id-end-to-end-build.lock"))
-        .expect("failed to open the p2id end-to-end build lock");
-    lock.lock().expect("failed to lock the p2id end-to-end build");
-    lock
-}
+use midenc_integration_test_support::{compile_project, p2id_build_lock, workspace_root};
 
 /// Returns the native rustc host target.
 fn host_target() -> String {

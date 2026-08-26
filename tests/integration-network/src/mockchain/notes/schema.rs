@@ -1,6 +1,6 @@
 //! Schema-driven note storage tests on the mock chain.
 
-use std::{process::Command, sync::Arc};
+use std::sync::Arc;
 
 use miden_client::{
     account::{AccountComponent, component::InitStorageData},
@@ -21,6 +21,7 @@ use midenc_frontend_wasm_metadata::{
     PACKAGE_NOTE_CODEC_SECTION_ID, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
     package_note_codec_section_id, package_note_storage_schema_section_id,
 };
+use midenc_integration_test_support::wasm_target_is_installed;
 
 use super::super::support::{
     assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
@@ -157,24 +158,6 @@ fn p2id_note_builds_storage_without_a_component_codec() {
         decoded.field("target_account_id").unwrap().to_string(),
         recipient_id.to_bech32(NetworkId::Mainnet)
     );
-}
-
-/// Returns true when rustup reports the codec component target as installed.
-fn wasm_target_is_installed() -> bool {
-    let output = match Command::new("rustup").args(["target", "list"]).output() {
-        Ok(output) if output.status.success() => output,
-        Ok(output) => {
-            eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
-            return false;
-        }
-        Err(error) => {
-            eprintln!("could not run `rustup target list`: {error}");
-            return false;
-        }
-    };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .any(|line| line.starts_with("wasm32-wasip2") && line.contains("(installed)"))
 }
 
 /// Asserts that a package carries one named custom section.

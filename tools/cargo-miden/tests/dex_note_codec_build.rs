@@ -7,6 +7,7 @@ use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
     package_note_codec_section_id, package_note_storage_schema_section_id,
 };
+use midenc_integration_test_support::wasm_target_is_installed;
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
 
@@ -59,24 +60,6 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         .find(|section| section.id == codec_id)
         .expect("dex-note package has no note codec section");
     assert_note_codec_component(codec.data.as_ref());
-}
-
-/// Returns true when rustup reports the codec component target as installed.
-fn wasm_target_is_installed() -> bool {
-    let output = match std::process::Command::new("rustup").args(["target", "list"]).output() {
-        Ok(output) if output.status.success() => output,
-        Ok(output) => {
-            eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
-            return false;
-        }
-        Err(error) => {
-            eprintln!("could not run `rustup target list`: {error}");
-            return false;
-        }
-    };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .any(|line| line.starts_with("wasm32-wasip2") && line.contains("(installed)"))
 }
 
 /// Verifies the sandbox and versioned interface exported by a note codec component.
