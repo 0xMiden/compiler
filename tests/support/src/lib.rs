@@ -11,6 +11,7 @@ use std::{
 
 use miden_mast_package::Package;
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_frontend_wasm_metadata::NESTED_CARGO_SCRUB_ENV;
 
 /// Utilities for generating on-disk Cargo projects for tests.
 pub mod cargo_proj;
@@ -61,52 +62,39 @@ pub fn example_build_lock(workspace: &Path) -> File {
     lock
 }
 
-/// Writes a Miden package through a same-directory temporary file and atomic rename.
+/// Writes a Miden package through the production atomic package publisher.
 pub fn write_masp_file_atomic(
     package: &Package,
     output_dir: impl AsRef<Path>,
 ) -> std::io::Result<()> {
-    let output_dir = output_dir.as_ref();
-    fs::create_dir_all(output_dir)?;
-    let temporary = tempfile::Builder::new()
-        .prefix(".miden-package-")
-        .tempfile_in(output_dir)?
-        .into_temp_path();
-    package.write_to_file(&temporary)?;
-    let package_name: &str = &package.name;
-    let destination = output_dir.join(package_name).with_extension(Package::EXTENSION);
-    fs::rename(&temporary, destination)
+    midenc_session::registry::write_package_atomically(package, output_dir.as_ref()).map(|_| ())
 }
 
 /// Removes outer build settings that would poison a nested Cargo invocation.
 pub fn scrub_nested_cargo_env(cmd: &mut Command) {
-    for variable in [
-        "CARGO_BUILD_RUSTFLAGS",
-        "CARGO_BUILD_TARGET",
-        "CARGO_ENCODED_RUSTFLAGS",
-        "CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS",
-        "RUSTFLAGS",
-    ] {
+    for &variable in NESTED_CARGO_SCRUB_ENV {
         cmd.env_remove(variable);
     }
 }
 
-/// Returns true when rustup reports the codec component target as installed.
+/// Returns true when the active Rust sysroot contains the codec component target.
 pub fn wasm_target_is_installed() -> bool {
     const WASM_TARGET: &str = "wasm32-wasip2";
 
-    let output = match Command::new("rustup").args(["target", "list"]).output() {
+    let output = match Command::new("rustc").args(["--print", "sysroot"]).output() {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
-            eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "`rustc --print sysroot` failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
             return false;
         }
         Err(error) => {
-            eprintln!("could not run `rustup target list`: {error}");
+            eprintln!("could not run `rustc --print sysroot` (rustup may be unavailable): {error}");
             return false;
         }
     };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .any(|line| line.starts_with(WASM_TARGET) && line.contains("(installed)"))
+    let sysroot = Path::new(String::from_utf8_lossy(&output.stdout).trim()).to_path_buf();
+    sysroot.join("lib").join("rustlib").join(WASM_TARGET).exists()
 }

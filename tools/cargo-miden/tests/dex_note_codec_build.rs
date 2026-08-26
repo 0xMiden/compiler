@@ -7,11 +7,13 @@ use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
     package_note_codec_section_id, package_note_storage_schema_section_id,
 };
-use midenc_integration_test_support::{example_build_lock, wasm_target_is_installed};
+use midenc_integration_test_support::{
+    example_build_lock, wasm_target_is_installed, workspace_root,
+};
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
 
-use crate::utils::{RestoreEnvironment, current_dir_lock, workspace_root};
+use crate::utils::{RestoreEnvironment, current_dir_lock};
 
 #[test]
 fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
