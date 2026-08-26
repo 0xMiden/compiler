@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use clap::Args;
 use toml_edit::{DocumentMut, Item, Value};
 
@@ -160,6 +160,9 @@ impl NewCommand {
 
         let mut define = vec![];
         if let Some(compiler_path) = self.compiler_path.as_deref() {
+            let compiler_path = compiler_path
+                .canonicalize()
+                .map_err(|err| anyhow!("failed to canonicalize --compiler-path: {err}"))?;
             define.push(format!("compiler_path={}", compiler_path.display()));
         }
         if let Some(compiler_rev) = self.compiler_rev.as_deref() {
