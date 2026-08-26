@@ -37,4 +37,5 @@ midenc-session.workspace = true
 midenc-compile.workspace = true
 proptest.workspace = true
 sha2.workspace = true
+tempfile.workspace = true
 walkdir = "2.5.0"

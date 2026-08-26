@@ -2,17 +2,15 @@
 
 use miden_note_schema::{NoteStorage, NoteStorageSchema};
 use miden_protocol::{account::AccountId, address::NetworkId};
-use midenc_integration_test_support::{compile_project, example_build_lock, workspace_root};
+use midenc_integration_test_support::{compile_project, workspace_root, write_masp_file_atomic};
 
 #[test]
 fn p2id_schema_builds_and_decodes_account_id_storage() {
     let workspace = workspace_root();
-    let _build_lock = example_build_lock(&workspace);
     let examples = workspace.join("examples");
     let wallet_dir = examples.join("basic-wallet");
     let wallet = compile_project(&wallet_dir);
-    wallet
-        .write_masp_file(wallet_dir.join("target/miden/release"))
+    write_masp_file_atomic(&wallet, wallet_dir.join("target/miden/release"))
         .expect("failed to persist the basic-wallet dependency package");
 
     let p2id = compile_project(&examples.join("p2id-note"));

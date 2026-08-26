@@ -21,9 +21,7 @@ use midenc_frontend_wasm_metadata::{
     PACKAGE_NOTE_CODEC_SECTION_ID, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
     package_note_codec_section_id, package_note_storage_schema_section_id,
 };
-use midenc_integration_test_support::{
-    example_build_lock, wasm_target_is_installed, workspace_root,
-};
+use midenc_integration_test_support::wasm_target_is_installed;
 
 use super::super::support::{
     assert_account_has_fungible_asset, build_send_notes_script, compile_rust_package, execute_tx,
@@ -108,8 +106,6 @@ fn dex_note_uses_embedded_schema_and_component_codec() {
         eprintln!("skipping DEX note schema test: wasm32-wasip2 is not installed");
         return;
     }
-    let workspace = workspace_root();
-    let _build_lock = example_build_lock(&workspace);
     let note_package = compile_rust_package("../../examples/dex-note", true);
     assert_package_section(
         &note_package,
@@ -145,8 +141,6 @@ fn dex_note_uses_embedded_schema_and_component_codec() {
 
 #[test]
 fn p2id_note_builds_storage_without_a_component_codec() {
-    let workspace = workspace_root();
-    let _build_lock = example_build_lock(&workspace);
     let note_package = compile_rust_package("../../examples/p2id-note", true);
     let schema = NoteStorageSchema::from_package(&note_package).unwrap();
 
