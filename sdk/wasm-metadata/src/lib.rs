@@ -13,6 +13,15 @@ use alloc::{string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
 
+/// Environment variables that must not leak into nested Cargo builds.
+pub const NESTED_CARGO_SCRUB_ENV: &[&str] = &[
+    "CARGO_BUILD_RUSTFLAGS",
+    "CARGO_BUILD_TARGET",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS",
+    "RUSTFLAGS",
+];
+
 /// Name of the Wasm custom section used to store frontend metadata bytes.
 pub const WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME: &str =
     "rodata,miden_account_component_frontend";
@@ -81,8 +90,7 @@ pub fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
 /// The compiler publishes compiled dependency packages — and its recorded dependency
 /// resolution — into the directory named by [`package_cache::PACKAGE_CACHE_ENV`]; the SDK
 /// macros and the build-script support crate consume them. Every spelling of that contract lives
-/// here so the producer and the consumers cannot drift apart. (The support crate is the one
-/// deliberate exception: it is dependency-free by design and spells the same values inline.)
+/// here so the producer and the consumers cannot drift apart.
 pub mod package_cache {
     use alloc::{format, string::String};
 

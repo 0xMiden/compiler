@@ -14,7 +14,7 @@ use std::{
 use miden_assembly::{SourceManager, serde::Serializable};
 use miden_mast_package::Package as MastPackage;
 use miden_note_codec_wit::NOTE_CODEC_WIT;
-use midenc_frontend_wasm_metadata::package_cache;
+use midenc_frontend_wasm_metadata::{NESTED_CARGO_SCRUB_ENV, package_cache};
 use midenc_hir::Report;
 use midenc_session::{InputFile, LinkLibrary, Session, miden_project};
 use sha2::{Digest, Sha256};
@@ -463,15 +463,11 @@ fn build_note_codec_component(
         .arg("--message-format")
         .arg("json-render-diagnostics")
         // Let `from_project!` find the staged note package during codec macro expansion.
-        .env(package_cache::PACKAGE_CACHE_ENV, &staged_package.cache_dir)
-        // Outer Miden target settings and flags would poison this nested wasip2 codec build.
-        .env_remove("CARGO_BUILD_RUSTFLAGS")
-        .env_remove("CARGO_BUILD_TARGET")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env_remove("CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS")
-        .env_remove("RUSTFLAGS")
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit());
+        .env(package_cache::PACKAGE_CACHE_ENV, &staged_package.cache_dir);
+    for &variable in NESTED_CARGO_SCRUB_ENV {
+        cargo.env_remove(variable);
+    }
+    cargo.stdout(Stdio::piped()).stderr(Stdio::inherit());
     cargo.args(apply_cargo_policy(session.options.cargo_locked, session.options.cargo_offline));
 
     let manifest_path = manifest_path.canonicalize().map_err(|error| {

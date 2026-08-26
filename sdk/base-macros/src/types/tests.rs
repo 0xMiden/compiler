@@ -475,12 +475,47 @@ fn allows_same_shape_export_type_reregistration() {
         &mut registry,
         exported_type_from_struct(&second).unwrap(),
         Span::call_site(),
-        ("tests.rs".to_string(), 2, 0),
+        ("tests.rs".to_string(), 1, 0),
     )
     .unwrap();
 
     assert_eq!(registry.len(), 1);
     assert_eq!(registry[0].def.docs, vec![" Documentation from rustc's expansion."]);
+}
+
+#[test]
+fn same_shape_registrations_from_different_locations_conflict() {
+    let first: syn::ItemStruct = parse_quote! {
+        struct Fee {
+            amount: u64,
+        }
+    };
+    let second: syn::ItemStruct = parse_quote! {
+        struct Fee {
+            amount: u64,
+        }
+    };
+    let mut registry = Vec::new();
+
+    register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&first).unwrap(),
+        Span::call_site(),
+        ("tests.rs".to_string(), 1, 0),
+    )
+    .unwrap();
+    // A second item with the same name is ambiguous even when the shapes are equal.
+    let error = register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&second).unwrap(),
+        Span::call_site(),
+        ("tests.rs".to_string(), 2, 0),
+    )
+    .unwrap_err()
+    .to_string();
+
+    assert!(error.contains("conflicting #[export_type] registration"));
+    assert_eq!(registry.len(), 1);
 }
 
 #[test]
@@ -771,6 +806,34 @@ fn main() {{}}
         stderr.contains("__miden_builtin_type_name_collision_use_the_core_type"),
         "builtin diagnostic is not actionable:
 {stderr}"
+    );
+}
+
+#[test]
+fn unit_result_shapes_pass_the_builtin_identity_guard() {
+    let item: syn::ItemStruct = parse_quote! {
+        struct NoteFields {
+            done: Result<(), u32>,
+            partial: Result<u32, ()>,
+        }
+    };
+    let definition = exported_type_from_struct(&item).unwrap();
+    let guards = nominal_type_identity_guards(&definition, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod user {{
+    {guards}
+}}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(
+        output.status.success(),
+        "unit result shapes must pass the builtin guard:
+{}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

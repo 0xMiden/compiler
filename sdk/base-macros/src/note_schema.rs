@@ -805,9 +805,6 @@ mod tests {
                 	suffix: felt
                     }
 
-                    /// Creates a new account ID from a field element.
-                    //account-id-from-felt: func(felt: felt) -> account-id;
-
                     /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)
                     record recipient {
                         inner: word
@@ -1033,9 +1030,6 @@ mod tests {
                     	prefix: felt,
                 	suffix: felt
                     }
-
-                    /// Creates a new account ID from a field element.
-                    //account-id-from-felt: func(felt: felt) -> account-id;
 
                     /// Recipient of the note, i.e., hash(hash(hash(serial_num, [0; 4]), note_script_hash), input_hash)
                     record recipient {
