@@ -400,9 +400,8 @@ fn expand_component_storage(
 
     let component_metadata = acc_builder.build(call_site_span.into())?;
 
-    let mut metadata_bytes = component_metadata.to_bytes();
-    let padded_len = metadata_bytes.len().div_ceil(16) * 16;
-    metadata_bytes.resize(padded_len, 0);
+    let metadata_bytes =
+        midenc_frontend_wasm_metadata::pad_to_link_section_alignment(component_metadata.to_bytes());
 
     let link_section = generate_link_section(&metadata_bytes);
     let runtime_boilerplate = runtime_boilerplate();

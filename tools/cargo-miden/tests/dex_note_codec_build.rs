@@ -3,9 +3,9 @@
 use std::env;
 
 use cargo_miden::run;
-use miden_mast_package::{Package, SectionId};
+use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
-    PACKAGE_NOTE_CODEC_SECTION_ID, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
+    package_note_codec_section_id, package_note_storage_schema_section_id,
 };
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
@@ -46,13 +46,13 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
     let package = Package::deserialize_from_file(&output[0])
         .expect("failed to read the built dex-note package");
 
-    let schema_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).unwrap();
+    let schema_id = package_note_storage_schema_section_id();
     assert!(
         package.sections.iter().any(|section| section.id == schema_id),
         "dex-note package has no note storage schema section"
     );
 
-    let codec_id = SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID).unwrap();
+    let codec_id = package_note_codec_section_id();
     let codec = package
         .sections
         .iter()

@@ -19,6 +19,7 @@ use miden_standards::testing::note::NoteBuilder;
 use miden_testing::{Auth, MockChain};
 use midenc_frontend_wasm_metadata::{
     PACKAGE_NOTE_CODEC_SECTION_ID, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
+    package_note_codec_section_id, package_note_storage_schema_section_id,
 };
 
 use super::super::support::{
@@ -105,8 +106,16 @@ fn dex_note_uses_embedded_schema_and_component_codec() {
         return;
     }
     let note_package = compile_rust_package("../../examples/dex-note", true);
-    assert_package_section(&note_package, PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID);
-    assert_package_section(&note_package, PACKAGE_NOTE_CODEC_SECTION_ID);
+    assert_package_section(
+        &note_package,
+        package_note_storage_schema_section_id(),
+        PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
+    );
+    assert_package_section(
+        &note_package,
+        package_note_codec_section_id(),
+        PACKAGE_NOTE_CODEC_SECTION_ID,
+    );
     let schema = NoteStorageSchema::from_package(&note_package).unwrap();
     let codecs = CodecRegistry::load_from_package(&note_package).unwrap();
 
@@ -169,8 +178,7 @@ fn wasm_target_is_installed() -> bool {
 }
 
 /// Asserts that a package carries one named custom section.
-fn assert_package_section(package: &Package, name: &str) {
-    let id = SectionId::custom(name).unwrap();
+fn assert_package_section(package: &Package, id: SectionId, name: &str) {
     assert!(
         package.sections.iter().any(|section| section.id == id),
         "package does not contain the `{name}` section"
