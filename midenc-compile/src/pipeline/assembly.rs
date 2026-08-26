@@ -20,7 +20,6 @@ use alloc::vec::Vec;
 use miden_assembly::TargetAssemblyContext;
 use miden_mast_package::Package;
 use midenc_codegen_masm::{MasmComponent, intrinsics};
-use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
 use midenc_session::{Session, diagnostics::Report};
 
 /// Apply the session's link inputs to `assembler` before a project is assembled with it.
@@ -82,8 +81,8 @@ pub(crate) fn post_process_package(
         context.target.name.inner(),
     )?;
 
-    attach_account_component_metadata(package, sections.account_component_metadata.as_deref());
-    attach_component_wit(package, sections.component_wit.as_deref());
+    attach_account_component_metadata(package, sections.account_component_metadata.as_deref())?;
+    attach_component_wit(package, sections.component_wit.as_deref())?;
     attach_note_storage_schema(package, sections.note_storage_schema.as_deref())?;
     extend_rodata_advice_map(package, &component.rodata);
 
@@ -164,11 +163,7 @@ fn attach_note_codec(
         return Ok(());
     };
 
-    use miden_mast_package::SectionId;
-    let section_id =
-        SectionId::custom(midenc_frontend_wasm_metadata::PACKAGE_NOTE_CODEC_SECTION_ID).map_err(
-            |error| Report::msg(format!("the note codec package section id is invalid: {error}")),
-        )?;
+    let section_id = midenc_frontend_wasm_metadata::package_note_codec_section_id();
     set_unique_section(package, section_id, component, "note codec")
 }
 
@@ -177,13 +172,25 @@ fn attach_note_storage_schema(
     package: &mut Package,
     note_storage_schema: Option<&[u8]>,
 ) -> Result<(), Report> {
-    use miden_mast_package::SectionId;
-
     if let Some(bytes) = note_storage_schema {
-        let section_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID)
-            .map_err(|err| Report::msg(format!("invalid note storage schema section id: {err}")))?;
+        validate_note_storage_schema(bytes)?;
+        let section_id = midenc_frontend_wasm_metadata::package_note_storage_schema_section_id();
         set_unique_section(package, section_id, bytes.to_vec(), "note storage schema")?;
     }
+    Ok(())
+}
+
+/// Validates a note storage schema with the rules every consumer applies on read.
+///
+/// The check makes the producer build fail with the consumer diagnostic. Without it, a
+/// package could publish a schema that every reader rejects, and the author would learn
+/// about the defect from a consumer instead of the build.
+fn validate_note_storage_schema(bytes: &[u8]) -> Result<(), Report> {
+    let text = core::str::from_utf8(bytes)
+        .map_err(|error| Report::msg(format!("the note storage schema is not UTF-8: {error}")))?;
+    miden_note_schema::NoteStorageSchema::from_wit_text(text).map_err(|error| {
+        Report::msg(format!("the note storage schema fails consumer validation: {error}"))
+    })?;
     Ok(())
 }
 
@@ -209,22 +216,29 @@ fn set_unique_section(
 fn attach_account_component_metadata(
     package: &mut Package,
     account_component_metadata_bytes: Option<&[u8]>,
-) {
-    use miden_mast_package::{Section, SectionId};
+) -> Result<(), Report> {
+    use miden_mast_package::SectionId;
     if let Some(bytes) = account_component_metadata_bytes {
-        package
-            .sections
-            .push(Section::new(SectionId::ACCOUNT_COMPONENT_METADATA, bytes.to_vec()));
+        set_unique_section(
+            package,
+            SectionId::ACCOUNT_COMPONENT_METADATA,
+            bytes.to_vec(),
+            "account component metadata",
+        )?;
     }
+    Ok(())
 }
 
 /// Attach the component's public WIT source to the assembled package.
-fn attach_component_wit(package: &mut Package, component_wit_bytes: Option<&[u8]>) {
-    use miden_mast_package::Section;
+fn attach_component_wit(
+    package: &mut Package,
+    component_wit_bytes: Option<&[u8]>,
+) -> Result<(), Report> {
     if let Some(bytes) = component_wit_bytes {
         let id = midenc_frontend_wasm_metadata::package_wit_section_id();
-        package.sections.push(Section::new(id, bytes.to_vec()));
+        set_unique_section(package, id, bytes.to_vec(), "component WIT")?;
     }
+    Ok(())
 }
 
 /// Extend the package advice map with the component's rodata segments.
@@ -245,6 +259,37 @@ mod tests {
     use midenc_session::miden_project::TargetType;
 
     use super::*;
+
+    #[test]
+    fn attach_rejects_a_schema_that_consumers_cannot_read() {
+        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+
+        let error = attach_note_storage_schema(&mut package, Some(b"not wit at all"))
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("fails consumer validation"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn attach_accepts_a_schema_that_consumers_can_read() {
+        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let schema = b"package test:note-schema@1.0.0;
+
+interface note-storage {
+    record note {
+        value: u64,
+    }
+
+    type storage = note;
+}
+";
+
+        attach_note_storage_schema(&mut package, Some(schema.as_slice())).unwrap();
+
+        let id = midenc_frontend_wasm_metadata::package_note_storage_schema_section_id();
+        assert!(package.sections.iter().any(|section| section.id == id));
+    }
 
     #[test]
     fn unique_sections_reject_an_existing_identifier() {
