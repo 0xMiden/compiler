@@ -2,19 +2,18 @@
 
 use std::{path::Path, sync::Arc};
 
-use anyhow::{bail, Context, Result};
-use cargo_miden::run;
+use anyhow::{Context, Result, anyhow, bail};
 use miden_client::{
+    Client, Felt, Word,
     account::{
-        component::{BasicWallet, InitStorageData, NoAuth},
         Account, AccountBuilder, AccountComponent, AccountType, StorageSlotName,
+        component::{BasicWallet, InitStorageData, NoAuth},
     },
     auth::{AuthSchemeId, AuthSecretKey, AuthSingleSig},
     builder::ClientBuilder,
     keystore::{FilesystemKeyStore, Keystore},
     rpc::{Endpoint, GrpcClient},
     utils::Deserializable,
-    Client, Felt, Word,
 };
 use miden_client_sqlite_store::ClientBuilderSqliteExt;
 use miden_mast_package::Package;
@@ -75,34 +74,28 @@ pub async fn setup_client() -> Result<ClientSetup> {
 /// Returns an error if compilation fails or if the output is not in the expected format
 pub fn build_project_in_dir(dir: &Path, release: bool) -> Result<Package> {
     let profile = if release { "--release" } else { "--debug" };
+    let profile_name = if release { "release" } else { "debug" };
     let manifest_path = dir.join("Cargo.toml");
-    let manifest_arg = manifest_path.to_string_lossy();
+    let artifact_path = dir.join("target").join("miden").join(profile_name).join("out.masp");
 
     let args = vec![
-        "cargo",
-        "miden",
-        "build",
-        profile,
-        "--manifest-path",
-        &manifest_arg,
+        profile.to_string(),
+        "-o".to_string(),
+        artifact_path.display().to_string(),
+        "--manifest-path".to_string(),
+        manifest_path.display().to_string(),
     ];
 
-    let output = run(args.into_iter().map(String::from))
+    let status = miden_build(args)
         .context("Failed to compile project")?
-        .context("Cargo miden build returned None")?;
+        .context("miden build returned None")?;
 
-    let artifact_path = match output {
-        cargo_miden::CommandOutput::BuildCommandOutput { output } => output
-            .into_iter()
-            .next()
-            .context("cargo miden build produced no artifact")?,
-        other => bail!("Expected BuildCommandOutput, got {:?}", other),
-    };
+    if !status.success() {
+        bail!("Failed to compile project package. See output for details.");
+    }
 
-    let package_bytes = std::fs::read(&artifact_path).context(format!(
-        "Failed to read compiled package from {}",
-        artifact_path.display()
-    ))?;
+    let package_bytes = std::fs::read(&artifact_path)
+        .context(format!("Failed to read compiled package from {}", artifact_path.display()))?;
 
     Package::read_from_bytes(&package_bytes).context("Failed to deserialize package from bytes")
 }
@@ -208,9 +201,7 @@ pub async fn create_basic_wallet_account(
         ))
         .with_component(BasicWallet);
 
-    let account = builder
-        .build()
-        .context("Failed to build basic wallet account")?;
+    let account = builder.build().context("Failed to build basic wallet account")?;
 
     client
         .add_account(&account, false)
@@ -223,4 +214,23 @@ pub async fn create_basic_wallet_account(
         .context("Failed to add key to keystore")?;
 
     Ok(account)
+}
+
+fn miden_build(args: impl IntoIterator<Item = String>) -> anyhow::Result<std::process::ExitStatus> {
+    let mut cmd = match std::env::var_os("MIDENUP_HOME") {
+        Some(_) => std::process::Command::new("miden"),
+        None => match std::env::var_os("CARGO_MIDEN") {
+            Some(cargo_miden) => std::process::Command::new(cargo_miden),
+            None => {
+                let mut cmd = std::process::Command::new("cargo");
+                cmd.arg("miden");
+                cmd
+            }
+        },
+    };
+    cmd.arg("build").args(args);
+
+    let mut child = cmd.spawn().map_err(|err| anyhow!("Failed to spawn build command: {err}"))?;
+
+    child.wait().map_err(|err| anyhow!("Build command failed: {err}"))
 }

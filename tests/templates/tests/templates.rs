@@ -5,7 +5,9 @@
 //! The bundle declares a sixth, `project`, which is the default scaffold rather
 //! than a single contract and is not covered here.
 
-use midenc_template_tests::build_new_project_from_template;
+use midenc_template_tests::{
+    build_new_project_from_project_template, build_new_project_from_template,
+};
 
 #[test]
 fn account() {
@@ -30,4 +32,9 @@ fn tx_script() {
 #[test]
 fn program() {
     build_new_project_from_template("program");
+}
+
+#[test]
+fn project() {
+    build_new_project_from_project_template("test_project");
 }

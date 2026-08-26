@@ -286,8 +286,8 @@ fn prepare_template(template_path: &TemplatePath) -> Result<TemplateSource> {
             crate::bundle::Fetch::IfAvailable
         };
         let resolved = crate::bundle::resolve(temp_dir.path(), fetch)?;
-        // Worth saying out loud: which templates a project was generated from
-        // is the first thing anyone asks when a generated project misbehaves.
+        // Notify the user where the template was generated from, in case anything goes wrong
+        // with the generated project.
         if let crate::bundle::Source::Released { version } = &resolved.source {
             println!("Using templates {version} from GitHub");
         }
