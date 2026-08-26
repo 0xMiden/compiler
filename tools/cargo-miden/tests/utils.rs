@@ -323,11 +323,3 @@ fn write_template(
     fs::write(template_root.join("src/lib.rs"), lib_rs)?;
     Ok(())
 }
-
-pub(crate) fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("cargo-miden should live under tools/cargo-miden")
-        .to_path_buf()
-}

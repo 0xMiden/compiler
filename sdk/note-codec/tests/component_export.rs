@@ -6,6 +6,7 @@ use std::{
     process::{Command, Output},
 };
 
+use midenc_frontend_wasm_metadata::NESTED_CARGO_SCRUB_ENV;
 use tempfile::TempDir;
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
@@ -22,7 +23,8 @@ fn minimal_codec_crate_builds_to_wasi_only_component() {
     let fixture = TempDir::new().expect("failed to create temporary codec crate");
     write_fixture(fixture.path());
     let target_dir = workspace_root().join("target/note-codec-component-test");
-    let output = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+    let mut command = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    command
         .args([
             "build",
             "--manifest-path",
@@ -32,15 +34,11 @@ fn minimal_codec_crate_builds_to_wasi_only_component() {
             WASM_TARGET,
             "--offline",
         ])
-        .env("CARGO_TARGET_DIR", &target_dir)
-        // Keep this aligned with production nested builds in midenc-compile and miden-note-schema.
-        .env_remove("CARGO_BUILD_RUSTFLAGS")
-        .env_remove("CARGO_BUILD_TARGET")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env_remove("CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS")
-        .env_remove("RUSTFLAGS")
-        .output()
-        .expect("failed to run cargo for the component fixture");
+        .env("CARGO_TARGET_DIR", &target_dir);
+    for &variable in NESTED_CARGO_SCRUB_ENV {
+        command.env_remove(variable);
+    }
+    let output = command.output().expect("failed to run cargo for the component fixture");
     assert_command_succeeded("building the component fixture", &output);
 
     let component = fs::read(
@@ -127,22 +125,24 @@ fn assert_command_succeeded(action: &str, output: &Output) {
     );
 }
 
-/// Returns true when rustup reports the codec component target as installed.
+/// Local copy of the sysroot probe in tests/support to keep this test dependency-light.
 fn wasm_target_is_installed() -> bool {
-    let output = match Command::new("rustup").args(["target", "list"]).output() {
+    let output = match Command::new("rustc").args(["--print", "sysroot"]).output() {
         Ok(output) if output.status.success() => output,
         Ok(output) => {
-            eprintln!("`rustup target list` failed:\n{}", String::from_utf8_lossy(&output.stderr));
+            eprintln!(
+                "`rustc --print sysroot` failed:\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
             return false;
         }
         Err(error) => {
-            eprintln!("could not run `rustup target list`: {error}");
+            eprintln!("could not run `rustc --print sysroot` (rustup may be unavailable): {error}");
             return false;
         }
     };
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .any(|line| line.starts_with(WASM_TARGET) && line.contains("(installed)"))
+    let sysroot = Path::new(String::from_utf8_lossy(&output.stdout).trim()).to_path_buf();
+    sysroot.join("lib").join("rustlib").join(WASM_TARGET).exists()
 }
 
 const FIXTURE_SOURCE: &str = r##"
