@@ -551,23 +551,39 @@ impl Session {
     #[cfg(feature = "std")]
     pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> anyhow::Result<()> {
         let output_type = item.output_type(mode);
-        if self.should_emit(output_type) {
-            let name = item.name().map(|n| n.as_str());
-            match self.output_files.output_file(output_type, name) {
-                OutputFile::Real(path) => {
-                    item.write_to_file(&path, mode, self)?;
-                }
-                OutputFile::Directory(_) => {
-                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
-                }
-                OutputFile::Stdout => {
-                    let stdout = std::io::stdout().lock();
-                    item.write_to(stdout, mode, self)?;
-                }
+        let name = item.name().map(|n| n.as_str());
+        match self.output_path_for(output_type, name) {
+            Some(OutputFile::Real(path)) => {
+                item.write_to_file(&path, mode, self)?;
             }
+            Some(OutputFile::Directory(_)) => {
+                unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+            }
+            Some(OutputFile::Stdout) => {
+                let stdout = std::io::stdout().lock();
+                item.write_to(stdout, mode, self)?;
+            }
+            None => (),
         }
 
         Ok(())
+    }
+
+    /// Given an [OutputType] and an optional name, return the output file path that would be
+    /// written to.
+    ///
+    /// Returns `Some` if the specified output type should be emitted, and `None` if it should not.
+    #[cfg(feature = "std")]
+    pub fn output_path_for(
+        &self,
+        output_type: OutputType,
+        name: Option<&str>,
+    ) -> Option<OutputFile> {
+        if self.should_emit(output_type) {
+            Some(self.output_files.output_file(output_type, name))
+        } else {
+            None
+        }
     }
 
     #[cfg(not(feature = "std"))]

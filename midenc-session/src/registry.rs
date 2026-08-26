@@ -315,7 +315,7 @@ pub fn write_package_atomically(
 
 /// Publishes `package` atomically, using `file_name` when one is supplied.
 #[cfg(any(test, feature = "std"))]
-fn write_package_atomically_as(
+pub fn write_package_atomically_as(
     package: &Package,
     out_dir: &std::path::Path,
     file_name: Option<&str>,

@@ -1,9 +1,9 @@
 #![no_std]
 #![deny(warnings)]
 
-#[macro_use]
 extern crate alloc;
 #[cfg(feature = "std")]
+#[macro_use]
 extern crate std;
 
 #[cfg(feature = "std")]
@@ -18,6 +18,8 @@ use alloc::rc::Rc;
 
 pub use midenc_hir::Context;
 use midenc_hir::Op;
+#[cfg(feature = "std")]
+use midenc_session::{OutputFile, OutputType};
 use midenc_session::{
     OutputMode,
     diagnostics::{Diagnostic, Report, WrapErr, miette},
@@ -57,7 +59,25 @@ pub fn compile(context: Rc<Context>) -> CompilerResult<()> {
             session
                 .emit(OutputMode::Binary, package)
                 .map_err(Report::msg)
-                .wrap_err("failed to serialize 'mast' artifact")
+                .wrap_err("failed to serialize 'mast' artifact")?;
+
+            #[cfg(feature = "std")]
+            if let Some(output_file) =
+                session.output_path_for(OutputType::Masp, Some(package.name.as_ref()))
+                && !session.options.quiet()
+            {
+                match output_file {
+                    OutputFile::Real(path) => {
+                        println!("Compiled {}", path.display());
+                    }
+                    OutputFile::Directory(path) => {
+                        println!("Compiled to {}", path.display());
+                    }
+                    OutputFile::Stdout => {}
+                }
+            }
+
+            Ok(())
         }
         CompiledArtifact::Lowered(_) => {
             log::debug!("no outputs requested by user: pipeline stopped before assembly");

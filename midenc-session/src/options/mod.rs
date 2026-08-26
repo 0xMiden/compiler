@@ -311,6 +311,11 @@ impl Options {
             Some(TargetType::Kernel | TargetType::Executable | TargetType::Library) | None
         )
     }
+
+    /// Returns true if the requested verbosity level is silent
+    pub fn quiet(&self) -> bool {
+        matches!(self.diagnostics.verbosity, Verbosity::Silent)
+    }
 }
 
 /// This enum describes the degree to which compiled programs will be optimized

@@ -2,7 +2,7 @@ pub mod build;
 pub mod new_project;
 pub mod test;
 
-use std::{path::PathBuf, rc::Rc};
+use std::rc::Rc;
 
 use anyhow::anyhow;
 pub use build::BuildCommand;
@@ -15,12 +15,10 @@ pub use test::TestCommand;
 ///
 /// Returns the session together with the metadata output directory
 /// (`<target-dir>/<profile>`).
-pub(crate) fn session_from_args(args: &[String]) -> anyhow::Result<(Rc<Session>, PathBuf)> {
+pub(crate) fn session_from_args(args: &[String]) -> anyhow::Result<Rc<Session>> {
     let cwd = std::env::current_dir()?;
     let compiler_opts =
         Compiler::try_parse_from(cwd.clone(), args).unwrap_or_else(|err| err.exit());
-
-    let metadata_out_dir = compiler_opts.target_dir.join(&compiler_opts.profile);
 
     let manifest_path = match compiler_opts.manifest_path.as_deref() {
         Some(manifest_path) => manifest_path.to_path_buf(),
@@ -36,5 +34,5 @@ pub(crate) fn session_from_args(args: &[String]) -> anyhow::Result<(Rc<Session>,
             .into_session(input, None, None)
             .map_err(|err| anyhow!("{}", PrintDiagnostic::new(err)))?,
     );
-    Ok((session, metadata_out_dir))
+    Ok(session)
 }
