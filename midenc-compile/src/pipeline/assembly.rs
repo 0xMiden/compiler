@@ -63,6 +63,7 @@ pub(crate) fn prepare_assembler(
     Ok(())
 }
 
+/// Attaches frontend metadata, advice-map data, and target-specific package sections.
 pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
@@ -104,6 +105,7 @@ pub(crate) fn post_process_package(
     }
 
     if has_note_codec && context.target.ty == TargetType::Note {
+        // Run after schema and kernel attachment. The codec stages this package state and hashes it.
         attach_note_codec(package, context, session)?;
     }
 

@@ -33,8 +33,8 @@ syn.workspace = true
 heck.workspace = true
 miden-formatting.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
-wit-bindgen-core = "0.57"
-wit-bindgen-rust = { version = "0.57", default-features = false }
+wit-bindgen-core.workspace = true
+wit-bindgen-rust.workspace = true
 wit-component = { workspace = true, optional = true }
 
 [dev-dependencies]

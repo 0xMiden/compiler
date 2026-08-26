@@ -249,6 +249,9 @@ fn ensure_no_explicit_discriminants(
 /// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
 /// followed by the selected variant payload encoded in declaration order.
 ///
+/// Use `#[felt_repr(crate_path = "path::to::felt_repr")]` on the type to override the generated
+/// runtime crate path.
+///
 /// # Example
 ///
 /// ```ignore
@@ -408,6 +411,9 @@ fn derive_from_felt_repr_impl(
 ///
 /// Enums are encoded as a `u32` tag (variant ordinal, starting from `0`)
 /// followed by the selected variant payload encoded in declaration order.
+///
+/// Use `#[felt_repr(crate_path = "path::to::felt_repr")]` on the type to override the generated
+/// runtime crate path.
 ///
 /// # Example
 ///

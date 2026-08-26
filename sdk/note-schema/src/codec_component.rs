@@ -618,8 +618,10 @@ package miden:base@1.0.0 {
             ])
             .env("CARGO_TARGET_DIR", &target_dir)
             // Outer Miden target settings and flags would poison this nested wasip2 codec build.
+            .env_remove("CARGO_BUILD_RUSTFLAGS")
             .env_remove("CARGO_BUILD_TARGET")
             .env_remove("CARGO_ENCODED_RUSTFLAGS")
+            .env_remove("CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS")
             .env_remove("RUSTFLAGS")
             .output()
             .expect("failed to start fixture build");

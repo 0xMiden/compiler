@@ -14,6 +14,9 @@ use midenc_hir::Report;
 use crate::CompilerResult;
 
 /// Ensures that the requested Wasm target is installed for the selected Rust toolchain.
+///
+/// When `offline` is true, this only detects the target and fails if it is absent; it never tries
+/// to install the target.
 pub fn install_wasm32_target(
     wasi: &str,
     toolchain: Option<&str>,
@@ -119,7 +122,38 @@ pub fn get_sysroot(toolchain: Option<&str>) -> CompilerResult<PathBuf> {
     Ok(sysroot)
 }
 
-pub fn spawn_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
+/// Runs a Cargo command and exits the process with Cargo's status when the build fails.
+///
+/// The frontend build paths use this so a failed user build ends the tool with Cargo's own
+/// exit code. Callers that must report the failure themselves use [`run_cargo`].
+pub fn spawn_cargo(cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
+    let (status, artifacts) = run_cargo_inner(cmd, cargo)?;
+    if !status.success() {
+        std::process::exit(status.code().unwrap_or(1));
+    }
+    Ok(artifacts)
+}
+
+/// Runs a Cargo command and returns an error when the build fails.
+///
+/// Nested builds such as the note codec build use this so their error context and recovery
+/// guidance reach the user instead of the process ending with Cargo's status.
+pub fn run_cargo(cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifact>> {
+    let (status, artifacts) = run_cargo_inner(cmd, cargo)?;
+    if !status.success() {
+        return Err(Report::msg(format!(
+            "`{cargo}` failed with {status}",
+            cargo = cargo.display()
+        )));
+    }
+    Ok(artifacts)
+}
+
+/// Spawns a Cargo command and collects its Wasm artifacts together with the exit status.
+fn run_cargo_inner(
+    mut cmd: Command,
+    cargo: &Path,
+) -> CompilerResult<(std::process::ExitStatus, Vec<Artifact>)> {
     use std::io::BufRead;
 
     log::debug!(target: "driver", "spawning command {cmd:?}");
@@ -163,11 +197,7 @@ pub fn spawn_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifac
         ))
     })?;
 
-    if !status.success() {
-        std::process::exit(status.code().unwrap_or(1));
-    }
-
-    Ok(artifacts)
+    Ok((status, artifacts))
 }
 
 pub fn rustup_toolchain() -> Option<String> {
@@ -246,5 +276,20 @@ impl BuildOutput {
         match self {
             Self::Masm { artifact_path } | Self::Wasm { artifact_path, .. } => artifact_path,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn run_cargo_reports_a_failed_status_instead_of_exiting() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "exit 3"]).stdout(std::process::Stdio::piped());
+
+        let error = run_cargo(cmd, Path::new("sh")).unwrap_err().to_string();
+
+        assert!(error.contains("failed with"), "unexpected error: {error}");
     }
 }

@@ -690,7 +690,7 @@ impl<'a> ModelBuilder<'a> {
             })
         } else {
             match definition.kind {
-                TypeDefKind::Type(ty) => self.build_named_alias(ty, name, fqn, docs, depth),
+                TypeDefKind::Type(ty) => self.build_named_alias(ty, name, fqn, docs),
                 TypeDefKind::Record(record) => {
                     let mut fields = Vec::with_capacity(record.fields.len());
                     let mut layout = FeltLayout::fixed(0);
@@ -801,18 +801,18 @@ impl<'a> ModelBuilder<'a> {
         result
     }
 
-    /// Resolves a primitive alias with its metadata, or follows an ID alias while discarding that
-    /// alias's name, FQN, and documentation.
+    /// Resolves a primitive alias while preserving its name, FQN, and documentation.
+    ///
+    /// [`Self::build_type_id`] follows ID aliases before dispatching here.
     fn build_named_alias(
         &mut self,
         ty: Type,
         name: Option<String>,
         fqn: Option<String>,
         docs: Option<String>,
-        depth: usize,
     ) -> Result<MemoizedSchemaType> {
         match ty {
-            Type::Id(id) => self.build_type_id(id, depth),
+            Type::Id(_) => unreachable!("build_type_id must follow ID aliases first"),
             Type::U64 => self.primitive(PrimitiveType::U64, name, fqn, docs),
             Type::U32 => self.primitive(PrimitiveType::U32, name, fqn, docs),
             Type::U8 => self.primitive(PrimitiveType::U8, name, fqn, docs),

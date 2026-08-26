@@ -147,6 +147,9 @@ serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 heck = "0.5"
 prettyplease = "0.2"
 proc-macro-crate = "3.5"
+# Deliberate skew: WIT emission uses wit-parser 0.233; attach and consume use 0.247.
+wit-bindgen-core = "0.57"
+wit-bindgen-rust = { version = "0.57", default-features = false }
 wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
 smallvec = { version = "1.15", default-features = false, features = [
     "union",

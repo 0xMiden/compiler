@@ -23,10 +23,15 @@ use crate::{
     wit_world::ManifestPackage,
 };
 
+/// Fully qualified SDK core-types interface imported by generated schemas.
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
+/// SDK core-types package name used for the embedded dependency package.
 const CORE_TYPES_PACKAGE_NAME: &str = "miden:base";
+/// SDK interface copied into generated schemas.
 const CORE_TYPES_INTERFACE: &str = "core-types";
+/// Source name reported for generated schema validation errors.
 const NOTE_STORAGE_SCHEMA_SOURCE_NAME: &str = "note-storage-schema.wit";
+/// Storage types accepted by the note schema diagnostic.
 const NOTE_STORAGE_SUPPORTED_TYPES: &str = "`u64`, `u32`, `u8`, `bool`, SDK core-type records, \
                                             `#[export_type]` records or enums, and `Option<T>` \
                                             over a supported type";
@@ -614,10 +619,44 @@ fn extract_interface_body<'a>(source: &'a str, interface_name: &str) -> Option<&
     let header = format!("interface {interface_name} {{");
     let body_start = source.find(&header)? + header.len();
     let mut depth = 1usize;
-    for (offset, ch) in source[body_start..].char_indices() {
-        match ch {
-            '{' => depth += 1,
-            '}' => {
+    let body = &source[body_start..];
+    let bytes = body.as_bytes();
+    let mut offset = 0usize;
+    let mut in_line_comment = false;
+    let mut block_comment_depth = 0usize;
+    while offset < bytes.len() {
+        if in_line_comment {
+            if bytes[offset] == b'\n' {
+                in_line_comment = false;
+            }
+            offset += 1;
+            continue;
+        }
+        if block_comment_depth > 0 {
+            if bytes[offset..].starts_with(b"/*") {
+                block_comment_depth += 1;
+                offset += 2;
+            } else if bytes[offset..].starts_with(b"*/") {
+                block_comment_depth -= 1;
+                offset += 2;
+            } else {
+                offset += 1;
+            }
+            continue;
+        }
+        if bytes[offset..].starts_with(b"//") {
+            in_line_comment = true;
+            offset += 2;
+            continue;
+        }
+        if bytes[offset..].starts_with(b"/*") {
+            block_comment_depth = 1;
+            offset += 2;
+            continue;
+        }
+        match bytes[offset] {
+            b'{' => depth += 1,
+            b'}' => {
                 depth -= 1;
                 if depth == 0 {
                     return Some(&source[body_start..body_start + offset]);
@@ -625,6 +664,7 @@ fn extract_interface_body<'a>(source: &'a str, interface_name: &str) -> Option<&
             }
             _ => {}
         }
+        offset += 1;
     }
     None
 }
@@ -665,6 +705,22 @@ mod tests {
             Some("\n    record nested {\n        value: u32,\n    }\n")
         );
         assert!(extract_interface_body(SDK_WIT_SOURCE, CORE_TYPES_INTERFACE).is_some());
+    }
+
+    #[test]
+    fn ignores_comment_braces_while_extracting_interface_body() {
+        let source =
+            "package test:a;\ninterface core-types {\n    /// A closing } before { opening \
+             brace.\n    /* Another } before { pair. */\n    record nested {\n        value: \
+             u32,\n    }\n}\n";
+        let source_without_braces = source.replace("} before {", "before");
+        let body = extract_interface_body(source, CORE_TYPES_INTERFACE).unwrap();
+        let body_without_braces =
+            extract_interface_body(&source_without_braces, CORE_TYPES_INTERFACE).unwrap();
+
+        assert_eq!(body.replace("} before {", "before"), body_without_braces);
+        assert!(body.contains("/// A closing } before { opening brace."));
+        assert!(body.contains("/* Another } before { pair. */"));
     }
 
     #[test]

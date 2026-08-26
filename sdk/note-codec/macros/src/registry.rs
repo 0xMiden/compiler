@@ -12,7 +12,9 @@ use proc_macro2::Span;
 /// One marked author codec.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CodecRegistration {
+    /// Fully qualified WIT name implemented by the codec.
     pub(crate) fqn: String,
+    /// Rust type path that implements the codec.
     pub(crate) rust_type: String,
 }
 
@@ -26,8 +28,11 @@ struct RegisteredCodec {
 /// Schema types and marked codecs registered by earlier macro expansions.
 #[derive(Default)]
 struct Registry {
+    /// Registered schema source and the expansion that supplied it.
     schema: Option<(String, ExpansionLocation)>,
+    /// Generated Rust upper-camel type name to WIT FQN, used by `#[note_codec]` lookup.
     types: BTreeMap<String, String>,
+    /// Marked codecs keyed by the WIT FQN they implement.
     codecs: BTreeMap<String, RegisteredCodec>,
 }
 

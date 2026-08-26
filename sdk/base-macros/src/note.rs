@@ -124,6 +124,7 @@ fn expand_method_marker_attr(
     quote!(#item_fn)
 }
 
+/// Expands a note input struct with felt encoding, decoding, and schema metadata.
 fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
     let struct_ident = &item_struct.ident;
     let uniqueness_guard = note_storage_schema_uniqueness_guard();
@@ -134,6 +135,9 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             "`#[note]` does not support generic note input structs",
         )
         .into_compile_error();
+    }
+    if let syn::Fields::Unnamed(fields) = &item_struct.fields {
+        return syn::Error::new(fields.span(), NOTE_NAMED_FIELDS_ERROR).into_compile_error();
     }
 
     let to_felt_repr_impl = note_storage_encoding(&item_struct);
@@ -181,9 +185,7 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             };
             (from_impl, schema_static)
         }
-        syn::Fields::Unnamed(fields) => {
-            return syn::Error::new(fields.span(), NOTE_NAMED_FIELDS_ERROR).into_compile_error();
-        }
+        syn::Fields::Unnamed(_) => unreachable!("tuple note structs are rejected above"),
     };
 
     quote! {
@@ -217,17 +219,9 @@ fn note_storage_encoding(item_struct: &ItemStruct) -> TokenStream2 {
                 }
             })
             .collect(),
-        syn::Fields::Unnamed(fields) => fields
-            .unnamed
-            .iter()
-            .enumerate()
-            .map(|(index, _)| {
-                let index = syn::Index::from(index);
-                quote! {
-                    ::miden::felt_repr::ToFeltRepr::write_felt_repr(&self.#index, writer);
-                }
-            })
-            .collect(),
+        syn::Fields::Unnamed(_) => {
+            unreachable!("tuple note structs are rejected before storage encoding")
+        }
     };
 
     let writer_ident = if field_writes.is_empty() {
