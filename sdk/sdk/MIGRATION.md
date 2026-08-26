@@ -90,6 +90,19 @@ constructors can commit to the note script's MAST root. Rename any inherent item
 including methods, `#[note_constructor]` methods, associated constants, and items declared in a
 separate impl block.
 
+### Keep duplicate `#[export_type]` registrations shape-compatible
+
+Two `#[export_type]` registrations that map to the same WIT type are now a compile error when
+their record fields or enum cases differ. Previously, the last registration silently replaced the
+first. Rename one Rust type so it maps to a different WIT name, or make both registered shapes
+identical.
+
+### `#[export_type]` reserves `__MIDEN_EXPORT_TYPE_SHAPE`
+
+The `#[export_type]` macro now emits an inherent public associated constant named
+`__MIDEN_EXPORT_TYPE_SHAPE` on the annotated type. Rename any user-defined associated item with
+that exact name.
+
 ### Contract crates gain a `build.rs` for IDE and plain-cargo builds
 
 New projects created by `cargo miden new` include a small `build.rs` in each contract crate and a
