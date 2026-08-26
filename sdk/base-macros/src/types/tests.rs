@@ -406,6 +406,7 @@ fn rejects_same_name_different_shape_export_type_registration() {
         &mut registry,
         exported_type_from_struct(&first).unwrap(),
         Span::call_site(),
+        ("tests.rs".to_string(), 1, 0),
     )
     .unwrap();
 
@@ -413,6 +414,7 @@ fn rejects_same_name_different_shape_export_type_registration() {
         &mut registry,
         exported_type_from_struct(&second).unwrap(),
         Span::call_site(),
+        ("tests.rs".to_string(), 2, 0),
     )
     .unwrap_err()
     .to_string();
@@ -421,6 +423,7 @@ fn rejects_same_name_different_shape_export_type_registration() {
     assert!(error.contains("record fee { amount: u64 }"));
     assert!(error.contains("record fee { amount: word }"));
     assert!(error.contains("Rename one type or make both registrations structurally identical"));
+    assert!(error.contains("restart the rust-analyzer proc-macro server"));
     assert_eq!(registry.len(), 1);
 }
 
@@ -444,17 +447,54 @@ fn allows_same_shape_export_type_reregistration() {
         &mut registry,
         exported_type_from_struct(&first).unwrap(),
         Span::call_site(),
+        ("tests.rs".to_string(), 1, 0),
     )
     .unwrap();
     register_export_type_in(
         &mut registry,
         exported_type_from_struct(&second).unwrap(),
         Span::call_site(),
+        ("tests.rs".to_string(), 2, 0),
     )
     .unwrap();
 
     assert_eq!(registry.len(), 1);
-    assert_eq!(registry[0].docs, vec![" Documentation from rustc's expansion."]);
+    assert_eq!(registry[0].def.docs, vec![" Documentation from rustc's expansion."]);
+}
+
+#[test]
+fn same_location_reregistration_replaces_a_stale_shape() {
+    let first: syn::ItemStruct = parse_quote! {
+        struct Fee {
+            amount: u64,
+        }
+    };
+    let second: syn::ItemStruct = parse_quote! {
+        struct Fee {
+            amount: u32,
+        }
+    };
+    let mut registry = Vec::new();
+    let location = ("tests.rs".to_string(), 1, 0);
+
+    register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&first).unwrap(),
+        Span::call_site(),
+        location.clone(),
+    )
+    .unwrap();
+    // A long-lived macro host re-expands the edited item from the same location.
+    register_export_type_in(
+        &mut registry,
+        exported_type_from_struct(&second).unwrap(),
+        Span::call_site(),
+        location,
+    )
+    .unwrap();
+
+    assert_eq!(registry.len(), 1);
+    assert_eq!(describe_exported_type_shape(&registry[0].def), "record fee { amount: u32 }");
 }
 
 #[test]
@@ -512,6 +552,140 @@ fn main() {{}}
     assert!(
         output.status.success(),
         "a genuine SDK import must pass the identity guard:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn unregistered_same_named_type_fails_the_shape_check() {
+    let registered: syn::ItemStruct = parse_quote! {
+        struct Price {
+            amount: u64,
+        }
+    };
+    let registered_def = exported_type_from_struct(&registered).unwrap();
+    let root: syn::ItemStruct = parse_quote! {
+        struct Root {
+            price: other::Price,
+        }
+    };
+    let root_def = exported_type_from_struct(&root).unwrap();
+    let registry = HashMap::from([("Price".to_string(), registered_def.clone())]);
+    let shape_const =
+        export_type_shape_const(&registered_def, &syn::Generics::default(), Span::call_site());
+    let assertions = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod registered {{
+    pub struct Price {{ pub amount: u64 }}
+    {shape_const}
+}}
+mod other {{
+    pub struct Price {{ pub amount: u32 }}
+}}
+{assertions}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(
+        !output.status.success(),
+        "a type without #[export_type] must fail the shape check"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("__MIDEN_EXPORT_TYPE_SHAPE"),
+        "the missing shape constant is not reported:
+{stderr}"
+    );
+}
+
+#[test]
+fn same_named_type_with_a_different_shape_fails_the_shape_check() {
+    let registered: syn::ItemStruct = parse_quote! {
+        struct Price {
+            amount: u64,
+        }
+    };
+    let impostor: syn::ItemStruct = parse_quote! {
+        struct Price {
+            amount: u32,
+        }
+    };
+    let registered_def = exported_type_from_struct(&registered).unwrap();
+    let impostor_def = exported_type_from_struct(&impostor).unwrap();
+    let root: syn::ItemStruct = parse_quote! {
+        struct Root {
+            price: other::Price,
+        }
+    };
+    let root_def = exported_type_from_struct(&root).unwrap();
+    let registry = HashMap::from([("Price".to_string(), registered_def.clone())]);
+    let registered_const =
+        export_type_shape_const(&registered_def, &syn::Generics::default(), Span::call_site());
+    let impostor_const =
+        export_type_shape_const(&impostor_def, &syn::Generics::default(), Span::call_site());
+    let assertions = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod registered {{
+    pub struct Price {{ pub amount: u64 }}
+    {registered_const}
+}}
+mod other {{
+    pub struct Price {{ pub amount: u32 }}
+    {impostor_const}
+}}
+{assertions}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(!output.status.success(), "a different shape must fail the shape check");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not match the #[export_type] registration"),
+        "the shape diagnostic is not actionable:
+{stderr}"
+    );
+}
+
+#[test]
+fn the_registered_type_passes_the_shape_check() {
+    let registered: syn::ItemStruct = parse_quote! {
+        struct Price {
+            amount: u64,
+        }
+    };
+    let registered_def = exported_type_from_struct(&registered).unwrap();
+    let root: syn::ItemStruct = parse_quote! {
+        struct Root {
+            price: registered::Price,
+        }
+    };
+    let root_def = exported_type_from_struct(&root).unwrap();
+    let registry = HashMap::from([("Price".to_string(), registered_def.clone())]);
+    let shape_const =
+        export_type_shape_const(&registered_def, &syn::Generics::default(), Span::call_site());
+    let assertions = custom_type_shape_assertions(&root_def, &registry, Span::call_site()).unwrap();
+    let source = format!(
+        r#"
+mod registered {{
+    pub struct Price {{ pub amount: u64 }}
+    {shape_const}
+}}
+{assertions}
+fn main() {{}}
+"#
+    );
+
+    let output = compile_rust_source(&source);
+    assert!(
+        output.status.success(),
+        "the registered type must pass the shape check:
+{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
