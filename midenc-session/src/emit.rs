@@ -260,11 +260,22 @@ impl Emit for miden_mast_package::Package {
         mode: OutputMode,
         _session: &Session,
     ) -> anyhow::Result<()> {
-        use miden_core::serde::Serializable;
+        use miden_core::{mast::MastNodeExt, serde::Serializable};
+        use miden_mast_package::PackageExport;
         match mode {
             OutputMode::Text => {
-                let bytes = self.to_bytes();
-                writer.write_all(bytes.as_slice())
+                writer.write_fmt(format_args!("# package: {}@{}\n", &self.name, &self.version))?;
+                writer.write_fmt(format_args!("# kind:    {}\n\n", &self.kind))?;
+                let forest = self.mast_forest();
+                for export in self.manifest.exports() {
+                    if let PackageExport::Procedure(proc) = export
+                        && let Some(node_id) = self.get_export_node(proc)
+                    {
+                        let node = forest[node_id].to_display(forest);
+                        writer.write_fmt(format_args!("# {}\n\n{node}\n\n", proc.path))?;
+                    }
+                }
+                Ok(())
             }
             OutputMode::Binary => {
                 let bytes = self.to_bytes();
