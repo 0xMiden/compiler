@@ -32,6 +32,7 @@ pub use self::{
 
 /// Compiles one Cargo Miden project without debug output.
 pub fn compile_project(project_path: &Path) -> Arc<Package> {
+    let _build_lock = example_build_lock(&workspace_root());
     let mut test = CompilerTest::rust_source_cargo_miden(
         project_path,
         WasmTranslationConfig::default(),
@@ -45,7 +46,7 @@ pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
 }
 
-/// Locks shared example outputs for the full build and consume span.
+/// Locks shared example outputs while one build is running.
 pub fn example_build_lock(workspace: &Path) -> File {
     let target_dir = workspace.join("target");
     fs::create_dir_all(&target_dir).expect("failed to create the workspace target directory");
@@ -58,6 +59,36 @@ pub fn example_build_lock(workspace: &Path) -> File {
         .expect("failed to open the example build lock");
     lock.lock().expect("failed to lock example builds");
     lock
+}
+
+/// Writes a Miden package through a same-directory temporary file and atomic rename.
+pub fn write_masp_file_atomic(
+    package: &Package,
+    output_dir: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    let output_dir = output_dir.as_ref();
+    fs::create_dir_all(output_dir)?;
+    let temporary = tempfile::Builder::new()
+        .prefix(".miden-package-")
+        .tempfile_in(output_dir)?
+        .into_temp_path();
+    package.write_to_file(&temporary)?;
+    let package_name: &str = &package.name;
+    let destination = output_dir.join(package_name).with_extension(Package::EXTENSION);
+    fs::rename(&temporary, destination)
+}
+
+/// Removes outer build settings that would poison a nested Cargo invocation.
+pub fn scrub_nested_cargo_env(cmd: &mut Command) {
+    for variable in [
+        "CARGO_BUILD_RUSTFLAGS",
+        "CARGO_BUILD_TARGET",
+        "CARGO_ENCODED_RUSTFLAGS",
+        "CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS",
+        "RUSTFLAGS",
+    ] {
+        cmd.env_remove(variable);
+    }
 }
 
 /// Returns true when rustup reports the codec component target as installed.

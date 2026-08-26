@@ -4,7 +4,9 @@ use std::{env, fs, path::Path, process::Command};
 
 use miden_mast_package::Section;
 use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
-use midenc_integration_test_support::{compile_project, example_build_lock, workspace_root};
+use midenc_integration_test_support::{
+    compile_project, scrub_nested_cargo_env, workspace_root, write_masp_file_atomic,
+};
 
 /// Returns the native rustc host target.
 fn host_target() -> String {
@@ -45,18 +47,16 @@ fn workspace_patch_section(workspace: &Path) -> String {
 #[test]
 fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
     let workspace = workspace_root();
-    let _build_lock = example_build_lock(&workspace);
     let examples = workspace.join("examples");
     let wallet_dir = examples.join("basic-wallet");
     let wallet = compile_project(&wallet_dir);
-    wallet
-        .write_masp_file(wallet_dir.join("target/miden/release"))
+    write_masp_file_atomic(&wallet, wallet_dir.join("target/miden/release"))
         .expect("failed to persist the basic-wallet dependency package");
 
     let p2id_dir = examples.join("p2id-note");
     let p2id = compile_project(&p2id_dir);
     let package_dir = p2id_dir.join("target/miden/release");
-    p2id.write_masp_file(&package_dir).expect("failed to persist the p2id package");
+    write_masp_file_atomic(&p2id, &package_dir).expect("failed to persist the p2id package");
     let package_path = package_dir.join("p2id.masp");
 
     let temp = tempfile::tempdir().unwrap();
@@ -80,8 +80,7 @@ interface note-storage {
 "#
         .to_vec(),
     ));
-    second_package
-        .write_masp_file(&second_package_dir)
+    write_masp_file_atomic(&second_package, &second_package_dir)
         .expect("failed to persist the second schema package");
     let second_package_path = second_package_dir.join("p2id.masp");
 
@@ -159,17 +158,17 @@ fn main() {{
     );
     fs::write(temp.path().join("src/main.rs"), source).unwrap();
 
-    let output = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()))
+    let mut cargo = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    cargo
         .args(["run", "--quiet", "--target"])
         .arg(host_target())
         .arg("--manifest-path")
         .arg(temp.path().join("Cargo.toml"))
         .current_dir(temp.path())
         .env("CARGO_TARGET_DIR", workspace.join("target/note-bindings-consumer"))
-        .env("CARGO_NET_OFFLINE", "true")
-        .env_remove("CARGO_BUILD_TARGET")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
-        .env_remove("RUSTFLAGS")
+        .env("CARGO_NET_OFFLINE", "true");
+    scrub_nested_cargo_env(&mut cargo);
+    let output = cargo
         .output()
         .expect("failed to spawn Cargo for the generated bindings consumer");
     assert!(

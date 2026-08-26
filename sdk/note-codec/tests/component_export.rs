@@ -33,8 +33,11 @@ fn minimal_codec_crate_builds_to_wasi_only_component() {
             "--offline",
         ])
         .env("CARGO_TARGET_DIR", &target_dir)
+        // Keep this aligned with production nested builds in midenc-compile and miden-note-schema.
+        .env_remove("CARGO_BUILD_RUSTFLAGS")
         .env_remove("CARGO_BUILD_TARGET")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
+        .env_remove("CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS")
         .env_remove("RUSTFLAGS")
         .output()
         .expect("failed to run cargo for the component fixture");

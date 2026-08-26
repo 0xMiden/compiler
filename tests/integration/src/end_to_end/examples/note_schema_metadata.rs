@@ -3,7 +3,7 @@
 use miden_mast_package::Package;
 use midenc_expect_test::{Expect, expect};
 use midenc_frontend_wasm_metadata::{package_note_storage_schema_section_id, trim_trailing_nuls};
-use midenc_integration_test_support::{compile_project, example_build_lock, workspace_root};
+use midenc_integration_test_support::{compile_project, workspace_root};
 use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
 
 /// Returns the unpadded note storage schema text from a package.
@@ -42,7 +42,6 @@ fn assert_note_storage_schema(package: &Package, expected_root: &str, expected: 
 #[test]
 fn note_packages_carry_resolvable_storage_schema_metadata() {
     let workspace = workspace_root();
-    let _build_lock = example_build_lock(&workspace);
     let p2id = compile_project(&workspace.join("examples/p2id-note"));
     assert_note_storage_schema(
         &p2id,

@@ -7,7 +7,7 @@ use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{
     package_note_codec_section_id, package_note_storage_schema_section_id,
 };
-use midenc_integration_test_support::wasm_target_is_installed;
+use midenc_integration_test_support::{example_build_lock, wasm_target_is_installed};
 use wit_component::DecodedWasm;
 use wit_parser::WorldItem;
 
@@ -32,9 +32,13 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         env::remove_var("CARGO_TARGET_DIR");
     }
 
-    let note_dir = workspace_root().join("examples/dex-note");
+    let workspace = workspace_root();
+    let note_dir = workspace.join("examples/dex-note");
     env::set_current_dir(&note_dir).unwrap();
-    let result = run(["cargo", "miden", "build", "--release"].into_iter().map(str::to_owned));
+    let result = {
+        let _build_lock = example_build_lock(&workspace);
+        run(["cargo", "miden", "build", "--release"].into_iter().map(str::to_owned))
+    };
 
     let output = result
         .expect("cargo miden build for dex-note failed")
