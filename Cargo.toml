@@ -59,7 +59,6 @@ exclude = [
     # `name = "{{crate_name}}"`, and a nested workspace, neither of which Cargo
     # should ever try to interpret as part of this workspace.
     "extra",
-    "sdk/.cargo",
     "tests/",
     "examples",
     "tools/fuzza-agent",
