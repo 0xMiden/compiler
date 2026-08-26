@@ -560,9 +560,9 @@ fn stage_note_package(
                 package_path.display()
             )));
         }
-        // Refresh the entry mtime on reuse, or the age-based GC of a concurrent build
+        // Refresh the package mtime on reuse, or the age-based GC of a concurrent build
         // could remove an actively used entry that was staged long ago.
-        touch_directory(&cache_dir);
+        touch_file(&package_path);
     } else {
         write_package_atomic(note_package, &cache_dir).map_err(|error| {
             Report::msg(format!(
@@ -575,11 +575,37 @@ fn stage_note_package(
     Ok(StagedNotePackage { cache_dir })
 }
 
-/// Sets a directory's modification time to now; failures are ignored.
-fn touch_directory(dir: &Path) {
-    if let Ok(handle) = fs::File::open(dir) {
+/// Sets a file's modification time to now; failures are ignored.
+fn touch_file(file: &Path) {
+    if let Ok(handle) = fs::File::options().append(true).open(file) {
         let _ = handle.set_modified(std::time::SystemTime::now());
     }
+}
+
+/// Returns the newest modification time of a cache entry and its direct child files.
+fn newest_cache_entry_mtime(path: &Path, metadata: &fs::Metadata) -> Option<std::time::SystemTime> {
+    let mut newest = metadata.modified().ok();
+    if !metadata.is_dir() {
+        return newest;
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return newest;
+    };
+    for entry in entries.flatten() {
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if !metadata.is_file() {
+            continue;
+        }
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if newest.is_none_or(|current| modified > current) {
+            newest = Some(modified);
+        }
+    }
+    newest
 }
 
 /// Removes staged note packages that have not been used for more than seven days.
@@ -599,7 +625,7 @@ fn gc_staged_note_packages(current_cache_dir: &Path) {
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
-        let Ok(modified) = metadata.modified() else {
+        let Some(modified) = newest_cache_entry_mtime(&path, &metadata) else {
             continue;
         };
         let Ok(age) = modified.elapsed() else {
@@ -626,29 +652,27 @@ pub(crate) fn apply_cargo_policy(
         .flatten()
 }
 
-/// Adds lockfile and network recovery guidance to a nested Cargo failure.
+/// Attributes a nested Cargo failure and adds applicable lockfile and network guidance.
 fn note_codec_cargo_error(
     error: Report,
     manifest_path: &Path,
     locked: bool,
     offline: bool,
 ) -> Report {
-    if !locked && !offline {
-        return error;
-    }
-
-    let mut guidance = format!(
-        "note codec build failed under the outer Cargo policy for '{}': {error}",
-        manifest_path.display()
-    );
-    if locked {
-        guidance.push_str(
-            "; update and commit the codec workspace Cargo.lock before retrying with --locked",
-        );
-    }
-    if offline {
-        guidance
-            .push_str("; fetch the codec dependencies while online before retrying with --offline");
+    let mut guidance =
+        format!("the nested note codec build for '{}' failed: {error}", manifest_path.display());
+    if locked || offline {
+        guidance.push_str(". If this failure is about the lockfile or the network:");
+        if locked {
+            guidance.push_str(
+                " update and commit the codec workspace Cargo.lock before retrying with --locked.",
+            );
+        }
+        if offline {
+            guidance.push_str(
+                " fetch the codec dependencies while online before retrying with --offline.",
+            );
+        }
     }
     Report::msg(guidance)
 }
@@ -1005,14 +1029,71 @@ mod tests {
         fs::create_dir(&codec_crate).unwrap();
 
         let staged = stage_note_package(root.path(), &codec_crate, &package).unwrap();
+        let package_path = staged.cache_dir.join(package_cache::package_file_name(&package.name));
         let old = std::time::SystemTime::now() - (NOTE_PACKAGE_CACHE_MAX_AGE * 2);
-        fs::File::open(&staged.cache_dir).unwrap().set_modified(old).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&package_path)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
 
-        // A cache hit must refresh the mtime so the GC never collects an active entry.
+        // A cache hit must refresh the package mtime used by the GC freshness rule.
         let reused = stage_note_package(root.path(), &codec_crate, &package).unwrap();
         assert_eq!(reused.cache_dir, staged.cache_dir);
-        let age = fs::metadata(&staged.cache_dir).unwrap().modified().unwrap().elapsed().unwrap();
+        let package_age =
+            fs::metadata(&package_path).unwrap().modified().unwrap().elapsed().unwrap();
+        assert!(
+            package_age < NOTE_PACKAGE_CACHE_MAX_AGE,
+            "the package age was not refreshed: {package_age:?}"
+        );
+        let metadata = fs::metadata(&staged.cache_dir).unwrap();
+        let age = newest_cache_entry_mtime(&staged.cache_dir, &metadata)
+            .unwrap()
+            .elapsed()
+            .unwrap();
         assert!(age < NOTE_PACKAGE_CACHE_MAX_AGE, "the entry age was not refreshed: {age:?}");
+    }
+
+    #[test]
+    fn note_codec_cargo_errors_are_always_attributed() {
+        let error = note_codec_cargo_error(
+            Report::msg("rustc failed"),
+            Path::new("/codec/Cargo.toml"),
+            false,
+            false,
+        )
+        .to_string();
+
+        assert_eq!(
+            error,
+            "the nested note codec build for '/codec/Cargo.toml' failed: rustc failed"
+        );
+    }
+
+    #[test]
+    fn note_codec_cargo_error_guidance_is_conditional() {
+        let locked = note_codec_cargo_error(
+            Report::msg("resolution failed"),
+            Path::new("/codec/Cargo.toml"),
+            true,
+            false,
+        )
+        .to_string();
+        assert!(locked.contains("If this failure is about the lockfile or the network:"));
+        assert!(locked.contains("retrying with --locked"));
+        assert!(!locked.contains("retrying with --offline"));
+
+        let offline = note_codec_cargo_error(
+            Report::msg("resolution failed"),
+            Path::new("/codec/Cargo.toml"),
+            false,
+            true,
+        )
+        .to_string();
+        assert!(offline.contains("If this failure is about the lockfile or the network:"));
+        assert!(!offline.contains("retrying with --locked"));
+        assert!(offline.contains("retrying with --offline"));
     }
 
     #[test]

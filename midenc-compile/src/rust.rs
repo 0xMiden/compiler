@@ -15,8 +15,9 @@ use crate::CompilerResult;
 
 /// Ensures that the requested Wasm target is installed for the selected Rust toolchain.
 ///
-/// When `offline` is true, this only detects the target and fails if it is absent; it never tries
-/// to install the target.
+/// The target is detected directly in the selected toolchain's sysroot. When `offline` is true,
+/// this fails with installation guidance if the target is absent; it never invokes rustup to
+/// install the target.
 pub fn install_wasm32_target(
     wasi: &str,
     toolchain: Option<&str>,
@@ -33,37 +34,16 @@ pub fn install_wasm32_target(
     log::info!(target: "driver", "verifying wasm32-{wasi} target is installed for the {toolchain} toolchain..");
 
     let target = format!("wasm32-{wasi}");
-    if offline {
-        let output = Command::new("rustup")
-            .arg("target")
-            .arg("list")
-            .arg("--installed")
-            .args(["--toolchain", toolchain.as_str()])
-            .output()
-            .map_err(|err| Report::msg(format!("failed to execute rustup: {err}")))?;
-        if !output.status.success() {
-            return Err(Report::msg(format!(
-                "failed to list installed targets for the `{toolchain}` toolchain"
-            )));
-        }
-        if output
-            .stdout
-            .split(|byte| byte.is_ascii_whitespace())
-            .any(|installed| installed == target.as_bytes())
-        {
-            log::info!(target: "driver", "{target} is available");
-            return Ok(());
-        }
-        return Err(Report::msg(format!(
-            "the `{target}` target is not installed for the `{toolchain}` toolchain; install it \
-             with `rustup target add --toolchain {toolchain} {target}` or drop `--offline`"
-        )));
-    }
-
     let sysroot = get_sysroot(Some(&toolchain))?;
     if sysroot.join(format!("lib/rustlib/wasm32-{wasi}")).exists() {
         log::info!(target: "driver", "wasm32-{wasi} is available");
         return Ok(());
+    }
+    if offline {
+        return Err(Report::msg(format!(
+            "the `{target}` target is not installed for the `{toolchain}` toolchain; install it \
+             with `rustup target add --toolchain {toolchain} {target}` or drop `--offline`"
+        )));
     }
 
     log::info!(target: "driver", "installing wasm32-{wasi} target");
@@ -284,6 +264,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg(unix)]
     fn run_cargo_reports_a_failed_status_instead_of_exiting() {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", "exit 3"]).stdout(std::process::Stdio::piped());

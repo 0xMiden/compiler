@@ -55,7 +55,8 @@ pub fn note_codec(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Exports all codecs marked earlier in the crate through the `miden:note-codec` component world.
 ///
 /// Place this macro after the generated schema types and every `#[note_codec]` implementation.
-/// Procedural macros register codecs in declaration order.
+/// Procedural macros register codecs as they expand; supported types are exported in canonical FQN
+/// order.
 #[proc_macro]
 pub fn export_codecs(input: TokenStream) -> TokenStream {
     expand::export_codecs(input.into())

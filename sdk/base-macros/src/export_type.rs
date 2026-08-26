@@ -5,8 +5,8 @@ use syn::{Item, parse_macro_input};
 
 use crate::types::{
     ExportedTypeDef, custom_type_shape_assertions, export_type_shape_const,
-    exported_type_from_enum, exported_type_from_struct, register_export_type,
-    registered_export_type_map, sdk_core_type_identity_guards,
+    exported_type_from_enum, exported_type_from_struct, nominal_type_identity_guards,
+    register_export_type, registered_export_type_map,
 };
 
 /// Builds the guard and identity items emitted next to one exported type.
@@ -15,7 +15,7 @@ fn export_type_identity_items(
     generics: &syn::Generics,
     span: proc_macro2::Span,
 ) -> Result<TokenStream2, syn::Error> {
-    let guards = sdk_core_type_identity_guards(def, span)?;
+    let guards = nominal_type_identity_guards(def, span)?;
     register_export_type(def.clone(), span)?;
     // The registry lookup runs after registration so a self-referential type sees itself.
     let registry = registered_export_type_map();

@@ -16,7 +16,7 @@ use crate::{
     manifest_paths::SDK_WIT_SOURCE,
     types::{
         ExportedField, ExportedTypeDef, ExportedTypeKind, TypeRef, custom_type_shape_assertions,
-        doc_comments, map_type_to_type_ref, registered_export_types, sdk_core_type_identity_guards,
+        doc_comments, map_type_to_type_ref, nominal_type_identity_guards, registered_export_types,
     },
     util::NOTE_NAMED_FIELDS_ERROR,
     wit_builder::{WitBody, WitBuilder},
@@ -66,7 +66,7 @@ pub(crate) fn expand_note_storage_schema(
         .definitions
         .last()
         .expect("a rendered schema always contains its root definition");
-    let identity_guards = sdk_core_type_identity_guards(root_definition, rendered.span)?;
+    let identity_guards = nominal_type_identity_guards(root_definition, rendered.span)?;
     let registry_by_rust_name = registry
         .iter()
         .cloned()
@@ -677,8 +677,8 @@ mod tests {
 
     use super::*;
     use crate::types::{
-        ExportedVariant, exported_type_from_struct, map_type_to_type_ref,
-        reset_export_type_registry_for_tests,
+        ExportedVariant, exported_type_from_struct, lock_export_type_registry_for_tests,
+        map_type_to_type_ref, reset_export_type_registry_for_tests,
     };
 
     /// Checks that the schema package contains the expected root alias.
@@ -737,6 +737,7 @@ mod tests {
 
     #[test]
     fn renders_p2id_shaped_schema() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             struct P2idNote {
@@ -900,6 +901,7 @@ mod tests {
 
     #[test]
     fn renders_nested_record_and_enum_schema() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let destination: syn::ItemStruct = parse_quote! {
             /// Destination details.
@@ -1128,6 +1130,7 @@ mod tests {
 
     #[test]
     fn renders_multiline_doc_attributes_as_separate_wit_comments() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             #[doc = " First note line.\n Second note line."]
@@ -1165,6 +1168,7 @@ mod tests {
 
     #[test]
     fn rejects_other_types_outside_the_storage_allow_list() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             struct FloatNote {
@@ -1192,6 +1196,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_fields_in_nested_records() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let nested: syn::ItemStruct = parse_quote! {
             struct Nested {
@@ -1219,6 +1224,7 @@ mod tests {
 
     #[test]
     fn expansion_surfaces_wit_parser_errors_with_type_context() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             struct Type {
@@ -1235,6 +1241,7 @@ mod tests {
 
     #[test]
     fn expansion_surfaces_wit_parser_errors_with_field_context() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             struct InvalidFieldNote {
@@ -1251,6 +1258,7 @@ mod tests {
 
     #[test]
     fn rejects_tuple_note_structs() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote!(
             struct TupleNote(Felt);
@@ -1263,6 +1271,7 @@ mod tests {
 
     #[test]
     fn rejects_vec_fields() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             struct VecNote {
@@ -1277,6 +1286,7 @@ mod tests {
 
     #[test]
     fn rejects_custom_types_registered_after_the_note() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct = parse_quote! {
             struct CustomNote {
@@ -1293,6 +1303,7 @@ mod tests {
 
     /// Checks one Rust field type against the note-specific allow-list diagnostic.
     fn assert_unsupported_note_field_type(rust_type: &str, expected_wit_type: &str) {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let note: ItemStruct =
             syn::parse_str(&format!("struct UnsupportedNote {{ value: {rust_type}, }}"))

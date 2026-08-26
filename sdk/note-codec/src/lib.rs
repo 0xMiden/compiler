@@ -1,11 +1,12 @@
 //! Author-side support for typed note storage codecs.
 //!
 //! Codec components exchange field elements as canonical `u64` values. This crate checks every
-//! integer before it enters [`Felt`], so a component cannot introduce a reduced or ambiguous field
-//! representation.
+//! integer before it enters [`Felt`], so a component cannot introduce a non-canonical (unreduced)
+//! or ambiguous field representation.
 //!
 //! Call `from_project!` or `from_package!` first. Then declare every `#[note_codec]`
-//! implementation. Call `export_codecs!` last. These macros register items in declaration order.
+//! implementation. Call `export_codecs!` last. Macros register as they expand, while supported
+//! types are exported in canonical FQN order.
 //!
 //! ```ignore
 //! use miden_note_codec::AuthorTypeCodec;

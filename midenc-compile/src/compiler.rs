@@ -1,6 +1,8 @@
 #[cfg(feature = "std")]
+use alloc::sync::Arc;
+#[cfg(feature = "std")]
 use alloc::{borrow::ToOwned, format, string::ToString, vec};
-use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 #[cfg(feature = "std")]
 use std::ffi::OsString;
 
@@ -8,10 +10,11 @@ use std::ffi::OsString;
 use clap::{Parser, builder::ArgPredicate};
 use miden_mast_package::TargetType;
 use midenc_session::{
-    ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
-    OutputTypeSpec, OutputTypes, PathBuf, RemapPathPrefix, Session, Verbosity, Warnings,
-    add_target_link_libraries, diagnostics::Emitter,
+    ColorChoice, DebugInfo, IrFilter, LinkLibrary, OptLevel, Options, OutputFile, OutputTypeSpec,
+    OutputTypes, PathBuf, RemapPathPrefix, Verbosity, Warnings, add_target_link_libraries,
 };
+#[cfg(feature = "std")]
+use midenc_session::{InputFile, Session, diagnostics::Emitter};
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
 #[derive(Debug, Clone)]
@@ -816,6 +819,7 @@ impl Compiler {
     }
 
     /// Use this configuration to obtain a [Session] used for compilation
+    #[cfg(feature = "std")]
     fn into_session(
         options: Box<Options>,
         input: Option<InputFile>,
@@ -857,9 +861,11 @@ fn format_error<I: clap::CommandFactory>(err: clap::Error) -> clap::Error {
     err.format(&mut cmd)
 }
 
+#[cfg(feature = "std")]
 #[derive(Clone)]
 struct TargetTypeValueParser;
 
+#[cfg(feature = "std")]
 impl clap::builder::TypedValueParser for TargetTypeValueParser {
     type Value = TargetType;
 

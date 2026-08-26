@@ -1180,10 +1180,11 @@ mod tests {
     use syn::parse_quote;
 
     use super::*;
-    use crate::types::reset_export_type_registry_for_tests;
+    use crate::types::{lock_export_type_registry_for_tests, reset_export_type_registry_for_tests};
 
     #[test]
     fn named_note_struct_emits_storage_schema_static() {
+        let _registry_guard = lock_export_type_registry_for_tests();
         reset_export_type_registry_for_tests();
         let item_struct: ItemStruct = parse_quote! {
             struct PaymentNote {
