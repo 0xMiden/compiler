@@ -6,11 +6,9 @@ use std::{
 };
 
 use miden_mast_package::Package;
+use midenc_frontend_wasm_metadata::package_cache;
 
 use crate::{Error, NoteStorageSchema, Result};
-
-/// Directory used to exchange Miden packages with nested Cargo builds.
-const PACKAGE_CACHE_ENV: &str = "MIDENC_PACKAGE_CACHE";
 
 /// A loaded package artifact and its note storage schema.
 pub struct NotePackageArtifact {
@@ -51,10 +49,18 @@ impl<'a> NotePackageResolver<'a> {
                 project_dir.display()
             )));
         }
-        let package_path = resolve_project_package(&project_dir)
+        let stems = project_package_stems(&project_dir);
+        let cache_dir = package_cache_dir()
+            .map_err(|error| Error::new(format!("{}: {error}", self.macro_crate)))?;
+        let package_path = resolve_project_package(&project_dir, &stems, cache_dir.as_deref())
             .map_err(|error| Error::new(format!("{}: {error}", self.macro_crate)))?
             .ok_or_else(|| {
-                Error::new(missing_project_package_message(self.macro_crate, &project_dir))
+                Error::new(missing_project_package_message(
+                    self.macro_crate,
+                    &project_dir,
+                    cache_dir.as_deref(),
+                    &stems,
+                ))
             })?;
         self.load_package(package_path)
     }
@@ -115,20 +121,30 @@ impl<'a> NotePackageResolver<'a> {
 }
 
 /// Resolves one project package by package identity and output-directory priority.
-fn resolve_project_package(project_dir: &Path) -> Result<Option<PathBuf>> {
-    let stems = project_package_stems(project_dir);
-
-    if let Some(cache_dir) = env::var_os(PACKAGE_CACHE_ENV) {
-        return find_project_package_in_dir(&absolutize(PathBuf::from(cache_dir))?, &stems);
+fn resolve_project_package(
+    project_dir: &Path,
+    stems: &[String],
+    cache_dir: Option<&Path>,
+) -> Result<Option<PathBuf>> {
+    if let Some(cache_dir) = cache_dir {
+        return Ok(find_project_package_in_cache(cache_dir, stems));
     }
 
     let profiles = candidate_profiles();
     for output_dir in project_output_dirs(project_dir, &profiles) {
-        if let Some(package) = find_project_package_in_dir(&output_dir, &stems)? {
+        if let Some(package) = find_project_package_in_dir(&output_dir, stems)? {
             return Ok(Some(package));
         }
     }
     Ok(None)
+}
+
+/// Returns the configured package cache directory, treating an empty value as unset.
+fn package_cache_dir() -> Result<Option<PathBuf>> {
+    env::var_os(package_cache::PACKAGE_CACHE_ENV)
+        .filter(|value| !value.is_empty())
+        .map(|value| absolutize(PathBuf::from(value)))
+        .transpose()
 }
 
 /// Returns Cargo and Miden profile names in lookup order.
@@ -147,8 +163,8 @@ fn candidate_profiles() -> Vec<String> {
 fn project_output_dirs(project_dir: &Path, profiles: &[String]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
 
-    // Keep this policy in parity with dependency_output_dirs in base-macros/src/fpi.rs. The
-    // crates cannot share the implementation without adding the full SDK macro dependency graph.
+    // Keep this policy in parity with base-macros/src/dependency_package.rs. The crates cannot
+    // share the implementation without adding the full SDK macro dependency graph.
     push_profile_dirs(&mut dirs, project_dir.join("target"), profiles);
     push_manifest_ancestor_target_profile_dirs(&mut dirs, project_dir, profiles);
     push_ancestor_target_profile_dirs(&mut dirs, project_dir, profiles);
@@ -201,6 +217,14 @@ fn push_manifest_ancestor_target_profile_dirs(
     }
 }
 
+/// Finds a project package in the build-owned package cache.
+fn find_project_package_in_cache(dir: &Path, stems: &[String]) -> Option<PathBuf> {
+    stems
+        .iter()
+        .map(|stem| dir.join(package_cache::package_file_name(stem)))
+        .find(|path| path.is_file())
+}
+
 /// Finds a package in one output directory by ordered package identity.
 fn find_project_package_in_dir(dir: &Path, stems: &[String]) -> Result<Option<PathBuf>> {
     if !dir.is_dir() {
@@ -222,8 +246,8 @@ fn find_project_package_in_dir(dir: &Path, stems: &[String]) -> Result<Option<Pa
     packages.sort();
 
     // The stems are ordered by identity. The canonical miden-project package name comes first,
-    // followed by legacy aliases. This matches base-macros/src/fpi.rs and prevents a newer legacy
-    // artifact from shadowing the canonical package.
+    // followed by legacy aliases. This matches base-macros/src/dependency_package.rs and prevents
+    // a newer legacy artifact from shadowing the canonical package.
     for stem in stems {
         if let Some(package) = packages
             .iter()
@@ -291,13 +315,33 @@ fn push_profile(profiles: &mut Vec<String>, profile: String) {
 }
 
 /// Formats the diagnostic for a project without a built package.
-fn missing_project_package_message(macro_crate: &str, project_dir: &Path) -> String {
+fn missing_project_package_message(
+    macro_crate: &str,
+    project_dir: &Path,
+    cache_dir: Option<&Path>,
+    stems: &[String],
+) -> String {
     let manifest = project_dir.join("Cargo.toml");
     let build = if manifest.is_file() {
         format!("cargo miden build --manifest-path {} --release", manifest.display())
     } else {
         "cargo miden build --release".to_owned()
     };
+    if let Some(cache_dir) = cache_dir {
+        let expected_files = stems
+            .iter()
+            .map(|stem| format!("'{}'", package_cache::package_file_name(stem)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!(
+            "{macro_crate} could not find a built `.masp` package for note project '{}'. Expected \
+             one of these package names: {expected_files}. Searched {} directory '{}'. Build the \
+             note project first with `{build}` so the package is available during macro expansion.",
+            project_dir.display(),
+            package_cache::PACKAGE_CACHE_ENV,
+            cache_dir.display(),
+        );
+    }
     format!(
         "{macro_crate} could not find a built `.masp` package under '{}'. Build the note project \
          first with `{build}`.",
@@ -310,8 +354,8 @@ mod tests {
     use std::fs;
 
     use super::{
-        find_project_package_in_dir, missing_project_package_message, project_output_dirs,
-        project_package_stems,
+        find_project_package_in_cache, find_project_package_in_dir,
+        missing_project_package_message, project_output_dirs, project_package_stems,
     };
 
     #[test]
@@ -352,9 +396,42 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         fs::write(temp.path().join("Cargo.toml"), "[package]\nname='note'\nversion='0.1.0'")
             .unwrap();
-        let message = missing_project_package_message("test-note-macro", temp.path());
+        let stems = project_package_stems(temp.path());
+        let message = missing_project_package_message("test-note-macro", temp.path(), None, &stems);
         assert!(message.contains("test-note-macro"));
         assert!(message.contains("cargo miden build --manifest-path"));
         assert!(message.contains("--release"));
+    }
+
+    #[test]
+    fn missing_cached_package_diagnostic_names_cache_and_expected_files() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("Cargo.toml"), "[package]\nname='test-note'\nversion='0.1.0'")
+            .unwrap();
+        let cache_dir = temp.path().join("package-cache");
+        let stems = project_package_stems(temp.path());
+
+        let message = missing_project_package_message(
+            "test-note-macro",
+            temp.path(),
+            Some(&cache_dir),
+            &stems,
+        );
+
+        assert!(message.contains(&cache_dir.display().to_string()));
+        assert!(message.contains("'test-note.masp'"));
+        assert!(message.contains("MIDENC_PACKAGE_CACHE"));
+        assert!(!message.contains("target/miden/<profile>"));
+    }
+
+    #[test]
+    fn cache_lookup_uses_the_shared_package_file_name() {
+        let temp = tempfile::tempdir().unwrap();
+        let package = temp.path().join("note.with.dot.masp");
+        fs::write(&package, b"package").unwrap();
+
+        let found = find_project_package_in_cache(temp.path(), &["note.with.dot".to_owned()]);
+
+        assert_eq!(found, Some(package));
     }
 }

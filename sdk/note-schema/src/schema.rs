@@ -7,7 +7,10 @@ use std::{
 
 use miden_mast_package::Package;
 use miden_protocol::MAX_NOTE_STORAGE_ITEMS;
-use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
+use midenc_frontend_wasm_metadata::{
+    PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID, package_note_storage_schema_section_id,
+    trim_trailing_nuls,
+};
 use wit_parser::{Resolve, Type, TypeDefKind, TypeId, TypeOwner};
 
 use crate::{
@@ -229,11 +232,11 @@ impl NoteStorageSchema {
     pub fn from_package(package: &Package) -> Result<Self> {
         let bytes = crate::section::unique_package_section(
             package,
+            package_note_storage_schema_section_id(),
             PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID,
         )?;
         ensure_schema_byte_limit(bytes.len())?;
-        let unpadded_len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
-        let text = core::str::from_utf8(&bytes[..unpadded_len]).map_err(|err| {
+        let text = core::str::from_utf8(trim_trailing_nuls(bytes)).map_err(|err| {
             Error::new(format!("note storage schema section is not valid UTF-8: {err}"))
         })?;
         Self::from_wit_text(text)

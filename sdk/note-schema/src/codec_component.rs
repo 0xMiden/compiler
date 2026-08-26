@@ -4,7 +4,7 @@ use std::{collections::HashSet, sync::Arc};
 
 use miden_field::Felt;
 use miden_mast_package::Package;
-use midenc_frontend_wasm_metadata::PACKAGE_NOTE_CODEC_SECTION_ID;
+use midenc_frontend_wasm_metadata::{PACKAGE_NOTE_CODEC_SECTION_ID, package_note_codec_section_id};
 use wasmtime::{
     Config, Engine, Store, StoreLimits, StoreLimitsBuilder,
     component::{Component, Linker},
@@ -45,7 +45,11 @@ impl CodecRegistry {
     /// Loads the note codec component from a package and registers all reported types.
     pub fn load_from_package(package: &Package) -> Result<Self> {
         let schema = NoteStorageSchema::from_package(package)?;
-        let bytes = crate::section::unique_package_section(package, PACKAGE_NOTE_CODEC_SECTION_ID)?;
+        let bytes = crate::section::unique_package_section(
+            package,
+            package_note_codec_section_id(),
+            PACKAGE_NOTE_CODEC_SECTION_ID,
+        )?;
         Self::load_from_component(bytes, &schema.custom_type_fqns())
     }
 
@@ -323,10 +327,10 @@ mod tests {
         operations::Operation,
     };
     use miden_mast_package::{
-        PackageExport, PackageId, PathBuf as MastPathBuf, ProcedureExport, Section, SectionId,
-        TargetType, Version,
+        PackageExport, PackageId, PathBuf as MastPathBuf, ProcedureExport, Section, TargetType,
+        Version,
     };
-    use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
+    use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
     use tempfile::TempDir;
     use wasmtime::ResourceLimiter;
 
@@ -435,13 +439,10 @@ package miden:base@1.0.0 {
         let component = build_fixture_component();
         let mut package = test_package();
         package.sections.push(Section::new(
-            SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).unwrap(),
+            package_note_storage_schema_section_id(),
             FIXTURE_SCHEMA.as_bytes().to_vec(),
         ));
-        package.sections.push(Section::new(
-            SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID).unwrap(),
-            component,
-        ));
+        package.sections.push(Section::new(package_note_codec_section_id(), component));
 
         let registry = CodecRegistry::load_from_package(&package).unwrap();
         let codec = registry.codec(FIXTURE_FQN).expect("fixture ratio codec was not registered");
@@ -533,8 +534,8 @@ package miden:base@1.0.0 {
 
     #[test]
     fn package_readers_reject_duplicate_schema_and_codec_sections() {
-        let schema_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).unwrap();
-        let codec_id = SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID).unwrap();
+        let schema_id = package_note_storage_schema_section_id();
+        let codec_id = package_note_codec_section_id();
         let mut duplicate_schema = test_package();
         duplicate_schema
             .sections
@@ -552,7 +553,7 @@ package miden:base@1.0.0 {
 
         let mut duplicate_codec = test_package();
         duplicate_codec.sections.push(Section::new(
-            SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID).unwrap(),
+            package_note_storage_schema_section_id(),
             FIXTURE_SCHEMA.as_bytes().to_vec(),
         ));
         duplicate_codec.sections.push(Section::new(codec_id.clone(), Vec::new()));

@@ -7,6 +7,7 @@ use midenc_frontend_wasm_metadata::{
     FrontendMetadata, PackageSections, WASM_ACCOUNT_COMPONENT_METADATA_CUSTOM_SECTION_NAME,
     WASM_COMPONENT_WIT_CUSTOM_SECTION_NAME, WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME,
     WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME, count_top_level_wit_packages, decode_section,
+    trim_trailing_nuls,
 };
 use midenc_hir::{FxHashMap, FxHashSet, Ident, interner::Symbol};
 use midenc_session::diagnostics::{DiagnosticsHandler, IntoDiagnostic, Report, Severity};
@@ -1124,10 +1125,4 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
         }
         Ok(())
     }
-}
-
-/// Removes the zero padding from a metadata section payload.
-fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
-    let len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
-    &bytes[..len]
 }

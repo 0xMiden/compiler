@@ -41,8 +41,40 @@ pub const WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME: &str = "rodata,miden_not
 /// Name of the Miden package section that stores a note storage schema.
 pub const PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID: &str = "note_storage_schema";
 
+/// Returns the Miden package section id that stores a note storage schema.
+///
+/// One accessor keeps every producer and consumer on the same section contract.
+pub fn package_note_storage_schema_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID)
+        .expect("the note storage schema section id must be a valid custom section id")
+}
+
 /// Name of the Miden package section that stores a note codec.
 pub const PACKAGE_NOTE_CODEC_SECTION_ID: &str = "note_codec";
+
+/// Returns the Miden package section id that stores a note codec.
+///
+/// One accessor keeps every producer and consumer on the same section contract.
+pub fn package_note_codec_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID)
+        .expect("the note codec section id must be a valid custom section id")
+}
+
+/// Pads metadata bytes with NUL bytes to the 16-byte link-section alignment.
+///
+/// Account-component-metadata link sections use this 16-byte padding. Note storage schema link
+/// sections use the same contract.
+pub fn pad_to_link_section_alignment(mut bytes: Vec<u8>) -> Vec<u8> {
+    let padded_len = bytes.len().div_ceil(16) * 16;
+    bytes.resize(padded_len, 0);
+    bytes
+}
+
+/// Removes NUL padding from the end of a link-section payload.
+pub fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
+    let len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
+    &bytes[..len]
+}
 
 /// The filesystem package-cache exchange contract.
 ///
@@ -367,6 +399,16 @@ mod tests {
     use alloc::{format, string::ToString};
 
     use super::*;
+
+    /// Ensures shared link-section padding is reversible and aligned.
+    #[test]
+    fn link_section_padding_round_trips() {
+        let source = b"note schema";
+        let padded = pad_to_link_section_alignment(source.to_vec());
+
+        assert_eq!(padded.len() % 16, 0);
+        assert_eq!(trim_trailing_nuls(&padded), source);
+    }
 
     /// Ensures a single embedded component WIT source is recognized as one package.
     #[test]

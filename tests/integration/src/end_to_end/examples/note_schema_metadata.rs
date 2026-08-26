@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use miden_mast_package::{Package, SectionId};
+use miden_mast_package::Package;
 use midenc_expect_test::{Expect, expect};
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_frontend_wasm_metadata::PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID;
+use midenc_frontend_wasm_metadata::{package_note_storage_schema_section_id, trim_trailing_nuls};
 use wit_bindgen_core::wit_parser::{Resolve, Type as WitType, TypeDefKind};
 
 use crate::CompilerTest;
@@ -27,8 +27,7 @@ fn compile_project(project_path: &str) -> Arc<Package> {
 
 /// Returns the unpadded note storage schema text from a package.
 fn note_storage_schema(package: &Package) -> &str {
-    let section_id = SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID)
-        .expect("schema section id must be valid");
+    let section_id = package_note_storage_schema_section_id();
     let bytes = package
         .sections
         .iter()
@@ -37,8 +36,7 @@ fn note_storage_schema(package: &Package) -> &str {
         .data
         .as_ref();
     assert_eq!(bytes.len() % 16, 0, "schema payload must use 16-byte padding");
-    let len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
-    str::from_utf8(&bytes[..len]).expect("note storage schema must be UTF-8")
+    str::from_utf8(trim_trailing_nuls(bytes)).expect("note storage schema must be UTF-8")
 }
 
 /// Checks a schema golden and resolves its root storage alias with wit-parser.
