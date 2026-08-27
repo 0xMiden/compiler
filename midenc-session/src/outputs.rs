@@ -153,6 +153,7 @@ pub enum OutputFile {
     Directory(PathBuf),
     Stdout,
 }
+
 impl OutputFile {
     pub fn parent(&self) -> Option<&Path> {
         match self {
@@ -218,6 +219,7 @@ impl OutputFile {
         }
     }
 }
+
 impl fmt::Display for OutputFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -234,12 +236,18 @@ pub struct OutputFiles {
     /// The compiler working directory
     pub cwd: PathBuf,
     /// The directory in which to place temporaries or intermediate artifacts
+    ///
+    /// This is set to the effective `--target-dir`, i.e. `<target_dir>/<profile>`
     pub tmp_dir: PathBuf,
     /// The directory in which to place objects produced by the current compiler operation
     ///
     /// This directory is intended for non-intermediate artifacts, though it may be used
     /// to derive `tmp_dir` elsewhere. You should prefer to use `tmp_dir` for files which
     /// are internal details of the compiler.
+    ///
+    /// This is set to `--output-dir`, or if that is unset, the parent of `--output-file`, and if
+    /// that too is unset, then it is set to the effective `--target-dir`
+    /// (i.e. `<target_dir>/<profile>`).
     pub out_dir: PathBuf,
     /// If specified, the specific path at which to write the compiler output.
     ///
@@ -248,6 +256,7 @@ pub struct OutputFiles {
     /// The raw output types requested by the user on the command line
     pub outputs: OutputTypes,
 }
+
 impl OutputFiles {
     pub fn new(
         stem: String,
@@ -297,8 +306,8 @@ impl OutputFiles {
             Some(OutputFile::Stdout) => OutputFile::Stdout,
             None => {
                 // If the user requested an output type without specifying a destination, default to
-                // the session output directory (i.e. the working directory by default). Only
-                // compiler-internal temporaries use `tmp_dir`.
+                // the session output directory. Only compiler-internal temporaries use `tmp_dir`,
+                // except when the session output directory and `--target-dir` are the same.
                 let out = if ty.is_intermediate() {
                     if requested {
                         self.with_directory_and_extension(&self.out_dir, ty.extension())
@@ -385,6 +394,7 @@ impl OutputFiles {
 
 #[derive(Debug, Clone, Default)]
 pub struct OutputTypes(BTreeMap<OutputType, Option<OutputFile>>);
+
 impl OutputTypes {
     #[cfg(feature = "std")]
     pub fn new<I: IntoIterator<Item = OutputTypeSpec>>(entries: I) -> Result<Self, clap::Error> {

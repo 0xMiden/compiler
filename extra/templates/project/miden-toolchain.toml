@@ -1,0 +1,5 @@
+[toolchain]
+channel = "0.16.0"
+# Only the toolchain components needed for testing
+profile = "empty"
+components = ["midenc", "cargo-miden", "core", "protocol"]

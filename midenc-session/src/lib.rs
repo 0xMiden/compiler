@@ -273,18 +273,18 @@ impl Session {
             emitter.unwrap_or_else(|| options.default_emitter()),
         ));
 
+        let profile_target_dir = options.target_dir.join(&options.profile);
+        create_target_dir(&profile_target_dir);
+
         let output_dir = options
             .output_dir
             .as_deref()
             .or_else(|| options.output_file.as_ref().and_then(|of| of.parent()))
-            .map(|path| path.to_path_buf());
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| profile_target_dir.clone());
+        create_target_dir(&output_dir);
 
-        if let Some(output_dir) = output_dir.as_deref() {
-            log::debug!(target: "driver", " | output dir = {}", output_dir.display());
-        } else {
-            log::debug!(target: "driver", " | output dir = <unset>");
-        }
-
+        log::debug!(target: "driver", " | output dir = {}", output_dir.display());
         log::debug!(target: "driver", " | target = {}", options.target_type.map(|tt| tt.to_string()).unwrap_or("none specified".to_string()));
         if log::log_enabled!(target: "driver", log::Level::Debug) {
             for lib in options.link_libraries.iter() {
@@ -299,14 +299,11 @@ impl Session {
         let output_files = OutputFiles::new(
             name.clone(),
             options.current_dir.clone(),
-            options.output_dir.clone().unwrap_or_else(|| options.current_dir.clone()),
+            output_dir.clone(),
             options.output_file.clone(),
-            options.target_dir.clone(),
+            profile_target_dir.clone(),
             options.output_types.clone(),
         );
-
-        create_target_dir(options.target_dir.as_path());
-        create_target_dir(&options.target_dir.as_path().join(&options.profile));
 
         // Link against implicitly required libraries
         let requires_protocol = options.target_requires_protocol();
@@ -554,23 +551,39 @@ impl Session {
     #[cfg(feature = "std")]
     pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> anyhow::Result<()> {
         let output_type = item.output_type(mode);
-        if self.should_emit(output_type) {
-            let name = item.name().map(|n| n.as_str());
-            match self.output_files.output_file(output_type, name) {
-                OutputFile::Real(path) => {
-                    item.write_to_file(&path, mode, self)?;
-                }
-                OutputFile::Directory(_) => {
-                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
-                }
-                OutputFile::Stdout => {
-                    let stdout = std::io::stdout().lock();
-                    item.write_to(stdout, mode, self)?;
-                }
+        let name = item.name().map(|n| n.as_str());
+        match self.output_path_for(output_type, name) {
+            Some(OutputFile::Real(path)) => {
+                item.write_to_file(&path, mode, self)?;
             }
+            Some(OutputFile::Directory(_)) => {
+                unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+            }
+            Some(OutputFile::Stdout) => {
+                let stdout = std::io::stdout().lock();
+                item.write_to(stdout, mode, self)?;
+            }
+            None => (),
         }
 
         Ok(())
+    }
+
+    /// Given an [OutputType] and an optional name, return the output file path that would be
+    /// written to.
+    ///
+    /// Returns `Some` if the specified output type should be emitted, and `None` if it should not.
+    #[cfg(feature = "std")]
+    pub fn output_path_for(
+        &self,
+        output_type: OutputType,
+        name: Option<&str>,
+    ) -> Option<OutputFile> {
+        if self.should_emit(output_type) {
+            Some(self.output_files.output_file(output_type, name))
+        } else {
+            None
+        }
     }
 
     #[cfg(not(feature = "std"))]

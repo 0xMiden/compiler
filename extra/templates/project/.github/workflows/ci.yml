@@ -17,6 +17,11 @@ jobs:
       run: |
         rustup update --no-self-update
         rustc --version
+    - name: Install midenup and stable compiler components
+      run: |
+        cargo install --locked midenup && midenup init && midenup install 0.16.0 && midenc --version
+        echo "MIDENUP_HOME=$(midenup show home)" >> "$GITHUB_ENV"
     - name: Run integration tests
       working-directory: integration
-      run: cargo test
+      run: |
+        cargo test

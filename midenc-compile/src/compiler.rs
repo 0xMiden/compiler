@@ -18,7 +18,7 @@ use midenc_session::{
 #[cfg_attr(feature = "std", derive(Parser))]
 #[cfg_attr(feature = "std", command(name = "midenc"))]
 pub struct Compiler {
-    /// Write all intermediate compiler artifacts to `<dir>`
+    /// Write all intermediate compiler artifacts to `<target_dir>/<profile>`
     ///
     /// Defaults to a directory named `target/miden` in the current working directory
     #[cfg_attr(
@@ -69,10 +69,12 @@ pub struct Compiler {
     /// toolchain is availabe.
     #[cfg_attr(
         feature = "std",
-        arg(long, value_name = "NAME", env = "MIDEN_SYSROOT", hide = true)
+        arg(long, value_name = "NAME", env = "MIDENUP_TOOLCHAIN", hide = true)
     )]
     pub toolchain: Option<String>,
     /// Write compiled output to compiler-chosen filename in `<dir>`
+    ///
+    /// If not specified, the output directory is determined from `--target-dir`
     #[cfg_attr(
         feature = "std",
         arg(
@@ -85,15 +87,28 @@ pub struct Compiler {
     )]
     pub output_dir: Option<PathBuf>,
     /// Write compiled output to `<filename>`
+    ///
+    /// This overrides the default output location given by `--target-dir`.
     #[cfg_attr(
         feature = "std",
-        arg(long, short = 'o', value_name = "FILENAME", help_heading = "Output")
+        arg(
+            long,
+            short = 'o',
+            value_name = "FILENAME",
+            conflicts_with("output_dir"),
+            help_heading = "Output"
+        )
     )]
     pub output_file: Option<PathBuf>,
     /// Write output to stdout
     #[cfg_attr(
         feature = "std",
-        arg(long, conflicts_with("output_file"), help_heading = "Output")
+        arg(
+            long,
+            conflicts_with("output_file"),
+            conflicts_with("output_dir"),
+            help_heading = "Output"
+        )
     )]
     pub stdout: bool,
     /// Specify the name of the project target being compiled
@@ -370,7 +385,8 @@ pub struct Compiler {
     pub package: Vec<String>,
     /// Path to the package/project manifest
     ///
-    /// If unspecified, the compiler will create a virtual manifest for the given input
+    /// If unspecified, the compiler will create a virtual manifest for the given input file, if
+    /// the input is not a manifest path itself.
     #[cfg_attr(feature = "std", arg(long, value_name = "PATH",))]
     pub manifest_path: Option<PathBuf>,
     /// Specify path prefixes to remap for any file paths encoded in debug info
@@ -723,9 +739,6 @@ impl Compiler {
             None => None,
         };
 
-        // Initialize output types
-        let output_types = OutputTypes::new(output_types).unwrap_or_else(|err| err.exit());
-
         let cwd = working_dir.unwrap_or(cwd);
 
         // Establish --target-dir
@@ -734,6 +747,9 @@ impl Compiler {
         } else {
             cwd.join(&target_dir)
         };
+
+        // Initialize output types
+        let output_types = OutputTypes::new(output_types).unwrap_or_else(|err| err.exit());
 
         // Consolidate all compiler options
         let mut options = Box::new(Options::new(

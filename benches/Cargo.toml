@@ -23,7 +23,7 @@ anyhow.workspace = true
 clap.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
-miden-debug = { workspace = true, features = ["flamegraph"] }
+miden-debug = { workspace = true, features = ["std", "flamegraph"] }
 miden-mast-package.workspace = true
 serde.workspace = true
 serde_json.workspace = true
