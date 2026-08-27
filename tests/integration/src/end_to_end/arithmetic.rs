@@ -272,7 +272,7 @@ macro_rules! test_checked_arith {
 }
 
 macro_rules! test_shift {
-    ($fn_name:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
         $(
             concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
                 #[test]
@@ -281,7 +281,43 @@ macro_rules! test_shift {
                     test_binary_fn(
                         $op_ty::$fn_name,
                         stringify!($fn_name),
-                        (any::<$op_ty>(), any::<u32>())
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_checked_shift {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_checked_arith(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_overflowing_shift {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_overflowing_arith(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
                     );
                 }
             });
@@ -463,17 +499,153 @@ test_saturating_arith!(
 test_saturating_arith!(saturating_div, div_unsigned_overflowing, u8, u16, u32, u64, u128);
 test_saturating_arith!(saturating_div, div_signed_overflowing, i8, i16, i32, i64, i128);
 
-fn test_overflowing_arith<T>(
-    op: fn(T, T) -> (T, bool),
+test_bool_op_total!(ge, >=, u64);
+test_bool_op_total!(ge, >=, i64);
+test_bool_op_total!(ge, >=, u32);
+test_bool_op_total!(ge, >=, i32);
+test_bool_op_total!(ge, >=, u16);
+test_bool_op_total!(ge, >=, u8);
+//test_bool_op_total!(ge, >=, i16);
+//test_bool_op_total!(ge, >=, i8);
+
+test_bool_op_total!(gt, >, u64);
+test_bool_op_total!(gt, >, i64);
+test_bool_op_total!(gt, >, u32);
+test_bool_op_total!(gt, >, u16);
+test_bool_op_total!(gt, >, i32);
+test_bool_op_total!(gt, >, u8);
+//test_bool_op_total!(gt, >, i16);
+//test_bool_op_total!(gt, >, i8);
+
+test_bool_op_total!(le, <=, u64);
+test_bool_op_total!(le, <=, i64);
+test_bool_op_total!(le, <=, u32);
+test_bool_op_total!(le, <=, i32);
+test_bool_op_total!(le, <=, u16);
+test_bool_op_total!(le, <=, u8);
+//test_bool_op_total!(le, <=, i16);
+//test_bool_op_total!(le, <=, i8);
+
+test_bool_op_total!(lt, <, u64);
+test_bool_op_total!(lt, <, i64);
+test_bool_op_total!(lt, <, u32);
+test_bool_op_total!(lt, <, i32);
+test_bool_op_total!(lt, <, u16);
+test_bool_op_total!(lt, <, u8);
+//test_bool_op_total!(lt, <, i16);
+//test_bool_op_total!(lt, <, i8);
+
+test_bool_op_total!(eq, ==, u64);
+test_bool_op_total!(eq, ==, u32);
+test_bool_op_total!(eq, ==, u16);
+test_bool_op_total!(eq, ==, u8);
+test_bool_op_total!(eq, ==, i64);
+test_bool_op_total!(eq, ==, i32);
+test_bool_op_total!(eq, ==, i16);
+test_bool_op_total!(eq, ==, i8);
+
+// Logical ops
+
+test_bool_op_total!(and, &&, bool);
+test_bool_op_total!(or, ||, bool);
+test_bool_op_total!(xor, ^, bool);
+
+// Bitwise ops
+
+test_int_op_total!(band, &, u8);
+test_int_op_total!(band, &, u16);
+test_int_op_total!(band, &, u32);
+test_int_op_total!(band, &, u64);
+test_int_op_total!(band, &, i8);
+test_int_op_total!(band, &, i16);
+test_int_op_total!(band, &, i32);
+test_int_op_total!(band, &, i64);
+
+test_int_op_total!(bor, |, u8);
+test_int_op_total!(bor, |, u16);
+test_int_op_total!(bor, |, u32);
+test_int_op_total!(bor, |, u64);
+test_int_op_total!(bor, |, i8);
+test_int_op_total!(bor, |, i16);
+test_int_op_total!(bor, |, i32);
+test_int_op_total!(bor, |, i64);
+
+test_int_op_total!(bxor, ^, u8);
+test_int_op_total!(bxor, ^, u16);
+test_int_op_total!(bxor, ^, u32);
+test_int_op_total!(bxor, ^, u64);
+test_int_op_total!(bxor, ^, i8);
+test_int_op_total!(bxor, ^, i16);
+test_int_op_total!(bxor, ^, i32);
+test_int_op_total!(bxor, ^, i64);
+
+test_int_op!(shl, <<, u64, 0..=u64::MAX, 0u64..=63);
+test_int_op!(shl, <<, u32, 0..u32::MAX, 0u32..32);
+test_int_op!(shl, <<, u16, 0..u16::MAX, 0u16..16);
+test_int_op!(shl, <<, u8, 0..u8::MAX, 0u8..8);
+test_int_op!(shl, <<, i64, i64::MIN..=i64::MAX, 0u64..=63);
+test_int_op!(shl, <<, i32, 0..i32::MAX, 0u32..32);
+test_int_op!(shl, <<, i16, 0..i16::MAX, 0u16..16);
+test_int_op!(shl, <<, i8, 0..i8::MAX, 0u8..8);
+
+test_int_op!(shr, >>, i64, i64::MIN..=i64::MAX, 0u64..=63);
+test_int_op!(shr, >>, u64, 0..=u64::MAX, 0u64..=63);
+test_int_op!(shr, >>, u32, 0..u32::MAX, 0u32..32);
+test_int_op!(shr, >>, u16, 0..u16::MAX, 0u32..16);
+test_int_op!(shr, >>, u8, 0..u8::MAX, 0u32..8);
+// # The following tests use small signed operands which we don't fully support yet
+//test_int_op!(shr, >>, i8, i8::MIN..=i8::MAX, 0..=7);
+//test_int_op!(shr, >>, i16, i16::MIN..=i16::MAX, 0..=15);
+//test_int_op!(shr, >>, i32, i32::MIN..=i32::MAX, 0..=31);
+
+test_shift!(wrapping_shl, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(wrapping_shl, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(wrapping_shr, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(wrapping_shr, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(rotate_left, rotate_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(rotate_left, rotate_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(rotate_right, rotate_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(rotate_right, rotate_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(unbounded_shl, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(unbounded_shl, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(unbounded_shr, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(unbounded_shr, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_checked_shift!(checked_shl, checked_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_checked_shift!(checked_shl, checked_shift_signed_u32, i8, i16, i32, i64, i128);
+test_checked_shift!(checked_shr, checked_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_checked_shift!(checked_shr, checked_shift_signed_u32, i8, i16, i32, i64, i128);
+test_overflowing_shift!(overflowing_shl, overflowing_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_overflowing_shift!(overflowing_shl, overflowing_shift_signed_u32, i8, i16, i32, i64, i128);
+test_overflowing_shift!(overflowing_shr, overflowing_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_overflowing_shift!(overflowing_shr, overflowing_shift_signed_u32, i8, i16, i32, i64, i128);
+
+test_unary_op!(neg, -, i32, (i32::MIN + 1)..=i32::MAX);
+test_unary_op!(neg, -, i16, (i16::MIN + 1)..=i16::MAX);
+test_unary_op!(neg, -, i8, (i8::MIN + 1)..=i8::MAX);
+
+test_unary_op_total!(bnot, !, i64);
+test_unary_op_total!(bnot, !, i32);
+test_unary_op_total!(bnot, !, i16);
+test_unary_op_total!(bnot, !, i8);
+test_unary_op_total!(bnot, !, u64);
+test_unary_op_total!(bnot, !, u32);
+test_unary_op_total!(bnot, !, u16);
+test_unary_op_total!(bnot, !, u8);
+test_unary_op_total!(bnot, !, bool);
+
+fn test_overflowing_arith<T, U>(
+    op: fn(T, U) -> (T, bool),
     fn_name: &str,
-    strategy: impl Strategy<Value = (T, T)>,
+    strategy: impl Strategy<Value = (T, U)>,
 ) where
     T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
+    U: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
 {
     // The return value of `type_name` isn't stable, but it's good enough for this test.
-    let ty_name = type_name::<T>();
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
     let main_fn = format!(
-        r#"(a: {ty_name}, b: {ty_name}, addr: *mut {ty_name}) -> bool {{
+        r#"(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs_ty_name}) -> bool {{
         let (value, flag) = a.{fn_name}(b);
         unsafe {{ *addr = value; }}
         flag
@@ -523,15 +695,17 @@ fn test_overflowing_arith<T>(
     }
 }
 
-fn test_checked_arith<T>(
-    op: fn(T, T) -> Option<T>,
+fn test_checked_arith<T, U>(
+    op: fn(T, U) -> Option<T>,
     fn_name: &str,
-    strategy: impl Strategy<Value = (T, T)>,
+    strategy: impl Strategy<Value = (T, U)>,
 ) where
     T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
+    U: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
 {
     // The return value of `type_name` isn't stable, but it's good enough for this test.
-    let ty_name = type_name::<T>();
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
     let source_code = format!(
         r#"
 #![no_std]
@@ -549,7 +723,7 @@ fn my_alloc_error(_info: core::alloc::Layout) -> ! {{
 }}
 
 #[unsafe(no_mangle)]
-pub extern "C" fn entrypoint(a: {ty_name}, b: {ty_name}, addr: *mut {ty_name}) -> bool {{
+pub extern "C" fn entrypoint(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs_ty_name}) -> bool {{
     match a.{fn_name}(b) {{
         Some(value) => {{
             unsafe {{ *addr = value; }}
@@ -660,118 +834,3 @@ where
         _ => panic!("Unexpected test result: {:?}", res),
     }
 }
-test_bool_op_total!(ge, >=, u64);
-test_bool_op_total!(ge, >=, i64);
-test_bool_op_total!(ge, >=, u32);
-test_bool_op_total!(ge, >=, i32);
-test_bool_op_total!(ge, >=, u16);
-test_bool_op_total!(ge, >=, u8);
-//test_bool_op_total!(ge, >=, i16);
-//test_bool_op_total!(ge, >=, i8);
-
-test_bool_op_total!(gt, >, u64);
-test_bool_op_total!(gt, >, i64);
-test_bool_op_total!(gt, >, u32);
-test_bool_op_total!(gt, >, u16);
-test_bool_op_total!(gt, >, i32);
-test_bool_op_total!(gt, >, u8);
-//test_bool_op_total!(gt, >, i16);
-//test_bool_op_total!(gt, >, i8);
-
-test_bool_op_total!(le, <=, u64);
-test_bool_op_total!(le, <=, i64);
-test_bool_op_total!(le, <=, u32);
-test_bool_op_total!(le, <=, i32);
-test_bool_op_total!(le, <=, u16);
-test_bool_op_total!(le, <=, u8);
-//test_bool_op_total!(le, <=, i16);
-//test_bool_op_total!(le, <=, i8);
-
-test_bool_op_total!(lt, <, u64);
-test_bool_op_total!(lt, <, i64);
-test_bool_op_total!(lt, <, u32);
-test_bool_op_total!(lt, <, i32);
-test_bool_op_total!(lt, <, u16);
-test_bool_op_total!(lt, <, u8);
-//test_bool_op_total!(lt, <, i16);
-//test_bool_op_total!(lt, <, i8);
-
-test_bool_op_total!(eq, ==, u64);
-test_bool_op_total!(eq, ==, u32);
-test_bool_op_total!(eq, ==, u16);
-test_bool_op_total!(eq, ==, u8);
-test_bool_op_total!(eq, ==, i64);
-test_bool_op_total!(eq, ==, i32);
-test_bool_op_total!(eq, ==, i16);
-test_bool_op_total!(eq, ==, i8);
-
-// Logical ops
-
-test_bool_op_total!(and, &&, bool);
-test_bool_op_total!(or, ||, bool);
-test_bool_op_total!(xor, ^, bool);
-
-// Bitwise ops
-
-test_int_op_total!(band, &, u8);
-test_int_op_total!(band, &, u16);
-test_int_op_total!(band, &, u32);
-test_int_op_total!(band, &, u64);
-test_int_op_total!(band, &, i8);
-test_int_op_total!(band, &, i16);
-test_int_op_total!(band, &, i32);
-test_int_op_total!(band, &, i64);
-
-test_int_op_total!(bor, |, u8);
-test_int_op_total!(bor, |, u16);
-test_int_op_total!(bor, |, u32);
-test_int_op_total!(bor, |, u64);
-test_int_op_total!(bor, |, i8);
-test_int_op_total!(bor, |, i16);
-test_int_op_total!(bor, |, i32);
-test_int_op_total!(bor, |, i64);
-
-test_int_op_total!(bxor, ^, u8);
-test_int_op_total!(bxor, ^, u16);
-test_int_op_total!(bxor, ^, u32);
-test_int_op_total!(bxor, ^, u64);
-test_int_op_total!(bxor, ^, i8);
-test_int_op_total!(bxor, ^, i16);
-test_int_op_total!(bxor, ^, i32);
-test_int_op_total!(bxor, ^, i64);
-
-test_int_op!(shl, <<, u64, 0..=u64::MAX, 0u64..=63);
-test_int_op!(shl, <<, u32, 0..u32::MAX, 0u32..32);
-test_int_op!(shl, <<, u16, 0..u16::MAX, 0u16..16);
-test_int_op!(shl, <<, u8, 0..u8::MAX, 0u8..8);
-test_int_op!(shl, <<, i64, i64::MIN..=i64::MAX, 0u64..=63);
-test_int_op!(shl, <<, i32, 0..i32::MAX, 0u32..32);
-test_int_op!(shl, <<, i16, 0..i16::MAX, 0u16..16);
-test_int_op!(shl, <<, i8, 0..i8::MAX, 0u8..8);
-
-test_int_op!(shr, >>, i64, i64::MIN..=i64::MAX, 0u64..=63);
-test_int_op!(shr, >>, u64, 0..=u64::MAX, 0u64..=63);
-test_int_op!(shr, >>, u32, 0..u32::MAX, 0u32..32);
-test_int_op!(shr, >>, u16, 0..u16::MAX, 0u32..16);
-test_int_op!(shr, >>, u8, 0..u8::MAX, 0u32..8);
-// # The following tests use small signed operands which we don't fully support yet
-//test_int_op!(shr, >>, i8, i8::MIN..=i8::MAX, 0..=7);
-//test_int_op!(shr, >>, i16, i16::MIN..=i16::MAX, 0..=15);
-//test_int_op!(shr, >>, i32, i32::MIN..=i32::MAX, 0..=31);
-
-test_shift!(wrapping_shl, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128);
-test_shift!(wrapping_shr, u8, i8, u16, i16, u32, i32, u64, i64, u128, i128);
-
-test_unary_op!(neg, -, i32, (i32::MIN + 1)..=i32::MAX);
-test_unary_op!(neg, -, i16, (i16::MIN + 1)..=i16::MAX);
-test_unary_op!(neg, -, i8, (i8::MIN + 1)..=i8::MAX);
-
-test_unary_op_total!(bnot, !, i64);
-test_unary_op_total!(bnot, !, i32);
-test_unary_op_total!(bnot, !, i16);
-test_unary_op_total!(bnot, !, i8);
-test_unary_op_total!(bnot, !, u64);
-test_unary_op_total!(bnot, !, u32);
-test_unary_op_total!(bnot, !, u16);
-test_unary_op_total!(bnot, !, u8);
-test_unary_op_total!(bnot, !, bool);
