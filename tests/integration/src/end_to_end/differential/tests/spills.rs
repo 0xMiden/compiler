@@ -47,8 +47,6 @@ fn spill_twin() {
 /// then yields it, so the spilled value crosses the control-flow edge as the
 /// arm's result. A second shape (nested wide diamonds) hits the same panic.
 #[test]
-#[ignore = "compile-time compiler panic: TransformSpills convert_reload_to_load unwraps None \
-            (dialects/hir/src/transforms/spill.rs:157); gates the edge-split spill cluster"]
 fn spill_edge() {
     run_case("spill_edge", include_str!("../cases/case_spill_edge.rs"));
 }
