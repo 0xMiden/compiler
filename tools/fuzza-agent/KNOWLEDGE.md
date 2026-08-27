@@ -331,6 +331,88 @@ pipeline in midenc-compile/src/stages/rewrite.rs):
   stack-resident value used twice on one exit edge — killed by the locals
   argument.
 
+## cf/scf canonicalization & cfg-to-scf closures (verified 2026-08-27)
+
+Region-level audit of everything still cold under
+`dialects/cf/,dialects/scf/,hir-transform/src/cfg_to_scf` (control-flow
+gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
+
+- **Returns are always per-site.** The LLVM wasm backend emits an explicit
+  (tail-duplicated) `return` at every return site and never branches to the
+  outermost frame; probe- and corpus-wat-verified, it also never emits
+  result-typed `block`/`loop` frames — no `br`/`br_if` in our pipeline ever
+  carries a value on the wasm stack (div-bearing two/three-arm tail merges
+  and early-return+loop shapes all come out as per-site `return`s).
+  Value-carrying HIR successor args therefore exist only in cfg-to-scf's own
+  synthesized dispatch (e.g. the residual `cf.cond_br .. ^ret(%v)` exit).
+- Consequences, all structurally closed for wasm-derived IR: the function's
+  ret-only exit block (`^exit(%v): builtin.ret %v`, built by the final
+  reachable `End`) always has exactly ONE unconditional-br predecessor, and
+  `SimplifyBrToBlockWithSinglePred` (registered before `SimplifyBrToReturn`
+  on cf.br, equal MAX benefit) always claims it — `SimplifyBrToReturn`'s
+  interior, `collapse_branch`'s block-arg check/remap paths (a passthrough
+  block with arguments needs back-to-back result-typed frame ends), and the
+  branch-region entry-argument replacement in
+  `transform_to_structured_cf_branches` (transform.rs ~725) are all
+  unproducible.
+- **`SimplifyPassthroughCondBr` can never rewrite**: collapsing an arm of a
+  multi-successor predecessor requires the passthrough's target to have a
+  UNIQUE predecessor (critical-edge guard), but a wasm frame is emitted only
+  because something branches to it — a target whose only pred is the
+  passthrough block would be a frame nothing branches to. The plain-br
+  variant (`SimplifyPassthroughBr`) fires routinely (1-successor preds skip
+  the guard). A frame-end passthrough to a *self-loop* is producible: a bare
+  `loop {}` behind an impossible guard leaves a header block containing only
+  its own back-edge `cf.br`, taking `collapse_branch`'s
+  collapse-into-self-loop bail (`case_spin_guard.rs`; `unreachable_exits`
+  deliberately keeps its infinite loop body non-empty, which hides this
+  shape).
+- **`cf.Switch`/`cf.CondBr::get_successor_for_operands` interiors are
+  closed**: the only callers workspace-wide are DCA's
+  `visit_branch_operation` (dce.rs) and the spill analysis'
+  single-successor resolution (spills.rs), both passing SCCP-lattice
+  constants — a cf selector/condition is never a lattice constant (SCCP
+  cannot out-prove LLVM pre-lift; the post-lift residual dispatch selects on
+  scf results, which are runtime).
+- **`cf.Select::fold` interior is closed**: it folds only on a constant
+  BoolAttr condition; wasm `select` conditions are LLVM-pre-folded and
+  `ConvertTrivialIfToSelect`-created discriminator selects have runtime
+  compare conditions; nothing post-lift constant-ifies an i1 (SCCP is
+  pre-lift only, and no cf constant-condition pattern exists).
+- **`FoldConstantIndexSwitch` is closed**: an `scf.index_switch` selector is
+  either a user `br_table` selector (LLVM deletes constant-selector
+  br_tables) or a cfg-to-scf discriminator (multiplexer block-arg/op-result
+  by construction). `FoldRedundantYields` (the only use-replacer that could
+  constant-ify one) needs ALL regions to yield the same SSA value in the
+  selector column, but discriminator columns carry distinct per-continuation
+  constants by construction — an all-same column would mean a single
+  continuation, for which no dispatch switch is synthesized. Note
+  `builtin.ret_imm` has NO pipeline producer (frontend always emits
+  `builtin.ret`; ret_imm appears only in unit tests and global-variable
+  initializers), so exit kinds are exactly {ret, unreachable}, the combined
+  exit dispatch is at most one `cf.cond_br`, and a 3+-way residual exit
+  switch cannot exist.
+- **cfg-to-scf transform cold interiors are logs/errors or recorded
+  closures**: `combine_exit` and `EdgeMultiplexer::redirect_edge` are fully
+  warm except `log::trace!` bodies and `?` error edges; `check_value`'s
+  nested-region grandparent walk needs an SSA value crossing sibling loops
+  (locals argument); the undef-threading arm and `loop_block_dominates`
+  cache need an escaping value not defined in the latch (latch-multiplexer
+  construction, recorded); the latch→header carried-values loop
+  (transform.rs ~891) and prior latch/header-arg checks need loop-header
+  block args (irreducible/multi-entry CFG, unproducible from wasm); the
+  reduce-time successor-swap arm is dead by the
+  `create_single_exiting_latch` invariant (recorded). The
+  `<_ as CFGToSCFInterface>` builder rows are duplicate unresolved-receiver
+  monomorphs of warm concrete impls. `LiftControlFlowToSCF`'s
+  World/Component/Module recursion arms never run (FUNCTION pass manager).
+- The remaining cold cf/scf rows are OpParser/OpPrinter impls (textual HIR),
+  SwitchCase KeyedSuccessor rewrite-API, rewriter-instantiated scf builder
+  monomorphs of the closed canonicalization interiors, and the
+  `get_region_invocation_bounds`/`get_entry_successor_regions`/
+  `get_successor_regions` region-analysis arms (liveness/DCA-adjacent —
+  candidates for a spill-focused area, not for CF cases).
+
 ## Block-emitter operand-drop facts (codegen/masm emitter.rs / emit/mod.rs / stack.rs)
 
 Verified 2026-07-23 (three probed cases — fresh-valued multi-exit loops,
@@ -385,17 +467,22 @@ linker.rs, cfg_to_scf); the corpus's scale cases are `case_chain300` (~400-op
 single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
 `case_seg24`.
 
-- **The solver has no fallback scheduler and no reachable failure arm.**
-  Production fuel is always the default 40, charged once per tactic tried
-  (cost 1 for the four pattern tactics, `max(num_copies,1)` for
-  CopyAll/Linear/LinearStackWindow; chains are ≤5 tactics). Exhausted fuel
-  only stops the search for a *better* solution — with no solution yet, the
-  remaining tactics run regardless (regression-test-pinned). Reaching the
-  exhaustion break needs ≥14 Copy-constrained operands in one problem;
-  all-tactics-fail (`NoSolution` → compile panic) needs >16 felts of live
-  operands below the problem. Both are forbidden by the locals argument +
-  SpillAnalysis (K=16) + block-entry dead-operand drops → closed from
-  wasm-derived IR (the solver's own unit tests cover them with fuel 0/10).
+- **The solver has no fallback scheduler.** Production fuel is always the
+  default 40, charged once per tactic tried (cost 1 for the four pattern
+  tactics, `max(num_copies,1)` for CopyAll/Linear/LinearStackWindow; chains
+  are ≤5 tactics). Exhausted fuel only stops the search for a *better*
+  solution — with no solution yet, the remaining tactics run regardless
+  (regression-test-pinned). Reaching the exhaustion break needs ≥14
+  Copy-constrained operands in one problem (still no known producer). The
+  2026-07-23 claim that all-tactics-fail (`NoSolution` → compile panic) is
+  closed from wasm-derived IR was WRONG (struck 2026-08-27): LLVM
+  runtime-unrolls a `% 97`-bounded `acc = acc.wrapping_mul(33) ^ i` loop 8x
+  into a single block interleaving eight mul/xor rounds with eight distinct
+  `i+k` operands, and scheduling that block panics with `NoSolution` on safe
+  Rust (`unroll_chain`, kept `#[ignore]`d; specifics at the test). The
+  mul-only and xor-only bodies of the same loop collapse when unrolled and
+  pass, so the trigger is the unroll-produced *interleaved* chain — plain
+  chain length is fine (`case_chain300`).
 - **No size-gated compiler path exists at single-block scale**: a ~400-op
   non-reassociable chain (139 spill locals, 267 stack-motion ops in MASM)
   compiles in about a second and passes differentially — no cliff, no

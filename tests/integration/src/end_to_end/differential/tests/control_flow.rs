@@ -140,3 +140,33 @@ fn unreachable_exits() {
 fn switch_loop_mix() {
     run_case("switch_loop_mix", include_str!("../cases/case_switch_loop_mix.rs"));
 }
+
+/// Bare `loop {}` behind an impossible cross-modulus guard — the loop header
+/// is a block containing only its own back-edge br, exercising the
+/// collapse-into-self-loop bail of the passthrough-branch canonicalizations.
+#[test]
+fn spin_guard() {
+    run_case("spin_guard", include_str!("../cases/case_spin_guard.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
+/// panics in the MASM operand scheduler with `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109. Trigger: LLVM runtime-unrolls the
+/// `% 97`-bounded loop 8x into a single block computing the interleaved
+/// non-reassociable chain `((((acc*33)^i)*33)^(i+1))*33 ...` (eight
+/// mul/xor rounds with eight distinct `i+k` operands live at once); the
+/// scheduling problem defeats every solver tactic, and NoSolution is a
+/// panic, not a diagnostic. Bounded by: the xor-only (`acc ^= i`) and
+/// mul-only (`acc *= 33`) bodies of the identical loop compile and pass
+/// (their unrolled chains collapse), and `case_chain300`'s straight-line
+/// ~400-op chain passes, so the bug is specific to the unroll-produced
+/// interleaved shape, not to chain length. Also invalidates the earlier
+/// "NoSolution unreachable from wasm-derived IR" closure (KNOWLEDGE.md).
+/// Un-ignore when the scheduler solves (or cleanly diagnoses) the unrolled
+/// mul-xor chain — i.e. when this case compiles.
+#[test]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 while \
+            scheduling the 8x-unrolled mul-xor loop chain (compile-time, no inputs involved)"]
+fn unroll_chain() {
+    run_case("unroll_chain", include_str!("../cases/case_unroll_chain.rs"));
+}
