@@ -118,15 +118,37 @@ Maintenance rules:
   except `eq/lt/gt/lte_imm`, which switch lowering calls with **U32 selectors
   only**. `shr_imm_*` is dead: `arith::Shr` lowering always calls `shr()`;
   constant shift counts are materialized as pushed operands.
-- Memory-op immediate/typed arms: the `load_imm` family has only unit-test
-  callers; `store_imm` non-u32 arms require GlobalVariables (only
-  `__stack_pointer` exists); felt load/store has no in-scope producer
-  (f32 bit transport is out of scope by decision — see "Out-of-scope
-  surfaces" — and LLVM int-ifies plain from_bits/to_bits memory traffic
-  anyway); `repr(packed)` / dynamically-unaligned access adds
-  nothing (dynamic-pointer load/store delegates wholesale to intrinsics —
-  alignment branching is imm-pointer-only); wasm `memory.copy` is always
-  u8-typed (typed memcpy arms dead).
+- Memory-op immediate/typed arms (re-verified 2026-08-27 on the
+  element-address-space rewrite of emit/mem.rs): the `load_imm` family has
+  only unit-test callers; `store_imm`'s sole producer is the
+  GlobalVariable-initializer lowering (lower/component.rs), and the only
+  global in a plain no_std module is the element-aligned I32
+  `__stack_pointer` — so every non-I32/unaligned `Some(imm)` arm
+  (`store_small_imm`, `store/load_double/quad_word_imm`, the felt `_imm`s,
+  `store_word_imm`'s unaligned else, `push_native_ptr`) is unreachable.
+  Constant-address user stores do NOT reach `store_imm`: no HIR
+  constant-address store/load canonicalization exists — the frontend always
+  materializes a pointer value through `prepare_addr`. Felt load/store has
+  no in-scope producer (f32 bit transport is out of scope by decision — see
+  "Out-of-scope surfaces" — and LLVM int-ifies plain from_bits/to_bits
+  memory traffic anyway); `repr(packed)` / dynamically-unaligned access
+  adds nothing (dynamic-pointer load/store delegates wholesale to
+  intrinsics — alignment branching is imm-pointer-only); wasm `memory.copy`
+  is always u8-typed, so the byte-`memcpy` runtime element-alignment split
+  (memcopy_elements fast path vs fallback loop) is the ONLY reachable
+  memcpy fork (both arms warm), and the word-sized `memcopy_words` fast
+  paths (pointee size 16 / multiple of 16), the other-size fallback call,
+  and `emit_word_aligned_element_addr_from_byte_ptr` (called only from
+  those paths) are dead; `realign_double_word`/`realign_quad_word` remain
+  zero-caller dead API; `OpEmitter::mem_stream` is dead in this pipeline
+  (HIR MemStream is built only by the MASM-frontend lifter);
+  `store_array`/`store_struct` are todo!() stubs with no producer (wasm
+  stores are scalar-only). `prepare_addr`/`enforce_alignment` are WARM via
+  the frontend `FunctionBuilderExt` monomorph (their cold remainder is the
+  assert message + `?` error edges); their two fully-cold report rows are
+  the `FunctionBuilder<OpBuilder>` instantiation (used only by the
+  aligned_memory.rs unit tests) plus a `<_, _>` phantom row — do not
+  re-read them as a coverage regression.
 - Wasm has no 128-bit memory ops: `[u128; N]` array (runtime-indexed,
   loads AND stores) and u128-static traffic all legalize to `i64.load`/
   `i64.store` PAIRS (wat+masm probe-verified 2026-07-23, deleted `u128_arr`
@@ -204,6 +226,50 @@ Maintenance rules:
   are never branch targets and `br` never carries values (locals argument) —
   so a dead `end` never resumes at a following block WITH arguments (the
   next_block_args closure is unproducible).
+
+## Local2Reg & data-segment layout (verified 2026-08-27, memory gap-check)
+
+The pass lives at `dialects/hir/src/transforms/local2reg.rs` (NOT
+hir-transform/) — scope FUZZA_AREA accordingly.
+
+- **Every function parameter gets an unconditional `hir.store_local` at
+  entry** (frontend/wasm func_translator.rs `declare_parameters`); wasm
+  local.get/set/tee are the only other load/store_local producers.
+  Consequences (`case_local_shapes.rs`): an UNUSED parameter of a kept
+  function (`#[no_mangle]` defeats dead-arg elimination, `#[inline(never)]`
+  keeps the call) is a stored-but-never-loaded local and reaches the pass's
+  dead-store-erasure arm; a zero-param/zero-local helper reaches the
+  no-locals early return; a by-value aggregate param (passed indirectly)
+  gives a promotable single-use pointer local.
+- **Harness debug info is frontend-synthesized, not DWARF**: cargo-miden
+  differential builds carry no DWARF, so the frontend synthesizes plain
+  `[DW_OP_WASM_local(N)]` `di.debug_value` records itself (probe: HIR shows
+  `producer = midenc-frontend-wasm`, file "unknown"). `di.debug_declare`
+  and non-trivial expressions (Deref, FrameBase) are emitted only from real
+  DWARF location schedules (function_builder_ext.rs
+  `emit_scheduled_dbg_value`) — the declare-conversion loop,
+  `declares_are_safe`, the FrameBase matcher arm, and the
+  unsafe-expression preserve/return-false paths of
+  `convert_debug_references_for_local` are pipeline-gated. The
+  `di.debug_value` rewrite path is warm.
+- Other closed Local2Reg arms: ExecFpi prefix-local pinning (SDK-only
+  producer); the loaded-but-never-stored "poison" arm (no safe-Rust
+  producer of a read-before-any-write wasm local — LLVM materializes
+  constants for known-zero and deletes unreachable-path merges); the
+  neither-loaded-nor-stored else (structurally dead — candidates come from
+  the load/store maps); `is_declaration` (import-less harness modules have
+  no function declarations); log bodies.
+- **Data-segment layout arms are toolchain-bounded**: wasm-ld emits active
+  segments sorted by offset, unique, non-overlapping, so
+  `DataSegmentLayout::insert` always takes the push_back path
+  (middle-insert / same-offset-dedup / Mismatch / Overlapping arms
+  unproducible) and `validate_no_overlaps`' error interior is a backstop
+  behind it. The end-of-address-space edges (insert's OutOfBounds,
+  `next_available_offset`'s overflow Nones) need a segment ending at/past
+  2^32 — covered by the linker.rs unit test
+  `link_fails_when_data_segments_fill_the_address_space`, and inherently a
+  link error, not differential material. `DataSegmentLayout::len`/
+  `pop_front`/`Segment::alloc_default` are dead API (no pipeline callers).
 
 ## Indirect calls / funcref tables (verified 2026-08-27)
 
@@ -763,6 +829,12 @@ at the test site.
 - The report's `Area delta` line inflates by a constant when duplicate
   monomorphized `(file, name)` rows exist — judge productivity by the
   difference of the area *headline* between steps.
+- Generic compiler functions can appear as SEVERAL rows: the pipeline's
+  live instantiation, unit-test-only instantiations, and `<_, _>`
+  unresolved-receiver phantom rows. A "fully untouched" row does not mean
+  the function is cold — check the partially-covered table (and
+  report.json) for a warm sibling monomorph before treating it as a target
+  (2026-08-27: prepare_addr/enforce_alignment read as untouched this way).
 - A `fuzza-cov-step` launched immediately after a backgrounded `fuzza-cov` can
   produce an empty report (0 tests, 0 regions) — rerun the step; note the
   `report.prev.json` delta chain is polluted for that step.

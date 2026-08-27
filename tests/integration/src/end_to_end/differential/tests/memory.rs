@@ -89,3 +89,12 @@ fn loadwiden() {
 fn static_bss() {
     run_case("static_bss", include_str!("../cases/case_static_bss.rs"));
 }
+
+/// Wasm-local shapes for the `Local2Reg` pass: an unused parameter (its entry
+/// `store_local` is a dead store to erase), a zero-parameter zero-local helper
+/// (the no-locals early return), and a by-value array parameter whose
+/// single-use pointer local is promoted.
+#[test]
+fn local_shapes() {
+    run_case("local_shapes", include_str!("../cases/case_local_shapes.rs"));
+}
