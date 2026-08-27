@@ -1,6 +1,6 @@
 use alloc::{collections::BTreeMap, format, sync::Arc};
 
-use anyhow::{Context, anyhow};
+use anyhow::anyhow;
 #[cfg(feature = "std")]
 use miden_assembly_syntax::Report;
 use miden_assembly_syntax::diagnostics::{Diagnostic, miette};
@@ -320,7 +320,6 @@ pub fn write_package_atomically_as(
     out_dir: &std::path::Path,
     file_name: Option<&str>,
 ) -> anyhow::Result<std::path::PathBuf> {
-    std::fs::create_dir_all(out_dir).context("could not create output directory")?;
     let destination = match file_name {
         Some(file_name) => out_dir.join(file_name),
         None => out_dir
@@ -362,6 +361,8 @@ pub fn persist_atomically(
     let directory = path
         .parent()
         .ok_or_else(|| anyhow!("path '{}' has no parent directory", path.display()))?;
+    std::fs::create_dir_all(directory)
+        .with_context(|| format!("failed to create directory '{}'", directory.display()))?;
     let mut builder = tempfile::Builder::new();
     builder.prefix(".").suffix(".tmp");
     #[cfg(unix)]
