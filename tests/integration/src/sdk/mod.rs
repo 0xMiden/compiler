@@ -173,6 +173,13 @@ resolver = "3"
 opt-level = "z"
 panic = "abort"
 debug = false
+
+# The plain-Cargo checks in these tests build the project natively, where full
+# DWARF for the proc macros and build scripts of the Miden dependency cone
+# costs gigabytes. A `cargo miden build` is not affected: its `--config
+# profile.dev.debug=true` overrides this value for the guest Wasm.
+[profile.dev]
+debug = "line-tables-only"
 "#;
     let basic_wallet_cargo = format!(
         r#"

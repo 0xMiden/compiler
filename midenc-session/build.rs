@@ -3,8 +3,11 @@ use std::{env, str};
 fn main() {
     println!("cargo::rerun-if-env-changed=MIDENC_BUILD_VERSION");
     println!("cargo::rerun-if-env-changed=MIDENC_BUILD_REV");
-    println!("cargo::rerun-if-env-changed=CARGO_PKG_VERSION");
-    println!("cargo::rerun-if-env-changed=PROFILE");
+    // Do not declare `rerun-if-env-changed` for Cargo-controlled variables such as
+    // `CARGO_PKG_VERSION` or `PROFILE`. Cargo compares them against its own ambient
+    // environment, where they are normally unset — but a test or a build script that
+    // spawns `cargo` against this target directory has them set, which flips the stored
+    // value and forces a full rebuild of every dependent crate on each alternation.
 
     if let Some(sha) = git_describe() {
         println!("cargo::rustc-env=MIDENC_BUILD_REV={sha}");

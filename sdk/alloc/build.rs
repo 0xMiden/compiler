@@ -29,7 +29,10 @@ fn main() {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
 
-    println!("cargo:rerun-if-env-changed=TARGET");
+    // Do not declare `rerun-if-env-changed=TARGET`: Cargo controls that variable, and it
+    // is unset in Cargo's own environment but set inside build-script environments, so
+    // the declaration makes the fingerprint flip between the two. Cargo already runs
+    // this script once for each target platform.
     println!("cargo:rerun-if-env-changed=RUSTUP_TOOLCHAIN");
     println!("cargo:rerun-if-env-changed=RUSTFLAGS");
     println!("cargo:rerun-if-changed={}", manifest_dir.join("stubs/heap_base.rs").display());
