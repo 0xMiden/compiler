@@ -165,8 +165,8 @@ fn spin_guard() {
 /// Un-ignore when the scheduler solves (or cleanly diagnoses) the unrolled
 /// mul-xor chain — i.e. when this case compiles.
 #[test]
-#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 while \
-            scheduling the 8x-unrolled mul-xor loop chain (compile-time, no inputs involved)"]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
+            while scheduling the 8x-unrolled mul-xor loop chain (compile-time, no inputs involved)"]
 fn unroll_chain() {
     run_case("unroll_chain", include_str!("../cases/case_unroll_chain.rs"));
 }
