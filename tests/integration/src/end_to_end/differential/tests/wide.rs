@@ -24,6 +24,15 @@ fn u64_ucmp() {
     run_case("u64_ucmp", include_str!("../cases/case_u64_ucmp.rs"));
 }
 
+/// Non-strict unsigned comparisons materialized as VALUES via
+/// `#[inline(never)]` helpers — the only producer of `i64.ge_u` (the
+/// `gte_u64` emitter arm); branch/select position is always canonicalized
+/// to strict compares.
+#[test]
+fn ucmp_ge() {
+    run_case("ucmp_ge", include_str!("../cases/case_ucmp_ge.rs"));
+}
+
 /// Unsigned u64 division/remainder with dynamic non-zero divisors —
 /// `checked_div_u64`/`checked_mod_u64` emitter arms (miden-core-lib
 /// `u64::div`/`u64::mod`).
