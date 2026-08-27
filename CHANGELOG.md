@@ -43,7 +43,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through the same helper, so an inherited encoded value can no longer delete the mandatory
   Miden flags there, and both routes share one mandatory-flag list #1328
 - Support duplicate function names in the Wasm name section, which might occur for Wasm generated
-  by rustc for the Miden target.
+  by rustc for the Miden target. Functions with a duplicated name get a unique linkage name while
+  debug info keeps the original source name. DWARF subprograms with a duplicated name resolve to
+  their function through `DW_AT_low_pc` instead of the ambiguous name
 
 ### `cargo-miden`
 

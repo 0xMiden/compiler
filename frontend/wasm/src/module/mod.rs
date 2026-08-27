@@ -350,6 +350,15 @@ impl Module {
             .unwrap_or(Symbol::intern(format!("func{}", index.as_u32())))
     }
 
+    /// Returns true if the function's name-section name is shared with at least one other function.
+    ///
+    /// Requires [`Self::sanitize_duplicate_func_names`] to have run, which the Wasm frontend
+    /// does during parsing.
+    pub fn is_duplicate_source_func_name(&self, index: FuncIndex) -> bool {
+        // the functions carrying a duplicated name receive a linkage rename
+        self.linkage_renames.contains_key(&index)
+    }
+
     /// Ensures each function in the module has a unique linkage name.
     ///
     /// WebAssembly function names in the [name section] are not guaranteed to be unique. This
