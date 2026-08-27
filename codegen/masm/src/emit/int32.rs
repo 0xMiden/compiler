@@ -291,7 +291,7 @@ impl OpEmitter<'_> {
         // Mask the value and ensure that the unused bits above the N-bit range are 0
         let mask = unsigned_reserved_mask(n);
         // Copy the input
-        self.emit(masm::Instruction::Dup1, span);
+        self.emit(masm::Instruction::Dup0, span);
         // Apply the mask
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
@@ -313,7 +313,7 @@ impl OpEmitter<'_> {
         // Mask the value and ensure that the unused bits above the N-bit range are 0
         let mask = unsigned_reserved_mask(n);
         // Copy the input
-        self.emit(masm::Instruction::Dup1, span);
+        self.emit(masm::Instruction::Dup0, span);
         // Apply the mask
         self.emit_push(mask, span);
         self.emit(masm::Instruction::U32And, span);
