@@ -1092,7 +1092,7 @@ impl Eval for arith::Mul {
         let result = match *self.get_overflow() {
             Overflow::Unchecked => binop!(self, evaluator, mul),
             Overflow::Checked => {
-                let result = binop_checked!(self, evaluator, checked_sub, mul);
+                let result = binop_checked!(self, evaluator, checked_mul, mul);
                 let Some(result) = result else {
                     return Err(evaluator.report(
                         "evaluation failed",
