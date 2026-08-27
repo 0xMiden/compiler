@@ -654,8 +654,9 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected mod operands to be the same type");
         match &ty {
             Type::U64 => self.checked_mod_u64(span),
-            Type::I32 => self.checked_mod_i32(span),
+            Type::I64 => self.checked_mod_i64(span),
             Type::U32 => self.checked_mod_u32(span),
+            Type::I32 => self.checked_mod_i32(span),
             ty @ (Type::U16 | Type::U8) => {
                 self.checked_mod_uint(ty.size_in_bits() as u32, span);
             }
@@ -678,8 +679,9 @@ impl OpEmitter<'_> {
                 self.push_immediate(imm, span);
                 self.checked_mod_u64(span);
             }
-            Type::I32 => self.checked_mod_imm_i32(imm.as_i32().unwrap(), span),
+            Type::I64 => self.checked_mod_imm_i64(imm.as_i64().unwrap(), span),
             Type::U32 => self.checked_mod_imm_u32(imm.as_u32().unwrap(), span),
+            Type::I32 => self.checked_mod_imm_i32(imm.as_i32().unwrap(), span),
             ty @ (Type::U16 | Type::U8) => {
                 self.checked_mod_imm_uint(imm.as_u32().unwrap(), ty.size_in_bits() as u32, span);
             }

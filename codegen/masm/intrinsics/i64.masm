@@ -253,6 +253,40 @@ pub proc checked_div # [b_lo, b_hi, a_lo, a_hi]
     end
 end
 
+# Computes `a % b`, asserting that both inputs are valid i64 values (u32 limbs).
+#
+# Execution traps on division by zero, and on `i64::MIN % -1` (the underlying division overflows).
+pub proc checked_mod # [b_lo, b_hi, a_lo, a_hi]
+    u32assertw
+
+    # Trap on i64::MIN % -1, since the underlying division overflows.
+    dup.1 dup.1                                                    # [b_lo, b_hi, b_lo, b_hi, a_lo, a_hi]
+    push.NEG1_HI push.NEG1_LO exec.::miden::core::math::u64::eq    # [b == -1, b_lo, b_hi, a_lo, a_hi]
+    dup.4 dup.4                                                    # [a_lo, a_hi, b == -1, b_lo, b_hi, a_lo, a_hi]
+    push.MIN_HI push.MIN_LO exec.::miden::core::math::u64::eq      # [a == MIN, b == -1, b_lo, b_hi, a_lo, a_hi]
+    and assertz                                                    # [b_lo, b_hi, a_lo, a_hi]
+
+    # The remainder takes the sign of the dividend `a`, so `is_signed_a` will be needed later.
+    dup.3 push.SIGN_BIT u32and push.SIGN_BIT eq                    # [is_a_signed, b_lo, b_hi, a_lo, a_hi]
+    movdn.4                                                        # [b_lo, b_hi, a_lo, a_hi, is_a_signed]
+
+    # abs(a)
+    movup.3 movup.3                                                # [a_lo, a_hi, b_lo, b_hi, is_a_signed]
+    dup.4 movdn.2                                                  # [a_lo, a_hi, is_a_signed, b_lo, b_hi, is_a_signed]
+    exec.cneg_u64                                                  # [abs_a_lo, abs_a_hi, b_lo, b_hi, is_a_signed]
+
+    # abs(b)
+    movup.3 movup.3                                                # [b_lo, b_hi, abs_a_lo, abs_a_hi, is_a_signed]
+    dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq                    # [is_b_signed, b_lo, b_hi, abs_a_lo, abs_a_hi, is_a_signed]
+    movdn.2 exec.cneg_u64                                          # [abs_b_lo, abs_b_hi, abs_a_lo, abs_a_hi, is_a_signed]
+
+    # r = abs(a) % abs(b); traps on division by zero.
+    exec.::miden::core::math::u64::mod                             # [r_lo, r_hi, is_a_signed]
+
+    # Apply the dividend's sign to the remainder.
+    exec.cneg_u64                                                  # [result_lo, result_hi]
+end
+
 # Given two i64 values in two's complement representation, compare them,
 # returning -1 if `a` < `b`, 0 if equal, and 1 if `a` > `b`.
 pub proc icmp # [b_lo, b_hi, a_lo, a_hi]

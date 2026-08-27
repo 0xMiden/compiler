@@ -670,7 +670,6 @@ fn overflowing_rem_i32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
 fn overflowing_rem_i64() {
     test_overflowing_arith(
         i64::overflowing_rem,
@@ -891,7 +890,6 @@ fn checked_rem_i32() {
 }
 
 #[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
 fn checked_rem_i64() {
     test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
 }
