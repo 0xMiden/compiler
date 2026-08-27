@@ -90,9 +90,11 @@ Maintenance rules:
   to wasm `unreachable`. To get a genuine trap edge, plant
   `core::arch::wasm32::unreachable()` behind an impossible cross-modulus guard
   (`case_unreachable_exits.rs`).
-- `Operator::CallIndirect` is `todo!()` in the frontend — function-pointer /
-  dyn-dispatch cases panic the compiler. Recursion (self or mutual) is a clean
-  "found a cycle in the call graph" linker error. Neither is testable.
+- `Operator::CallIndirect` is fully supported (PR #1251 + signature-tag-check
+  follow-up, 2026-08): function-pointer and dyn-dispatch cases compile and run
+  — see the "Indirect calls / funcref tables" section for the verified facts.
+  Recursion (self or mutual) remains a clean "found a cycle in the call graph"
+  linker error and is untestable.
 - Flat function signatures are capped at **16 stack felts** (16×u32 or 8×u64 is
   the at-limit case, `case_wide_calls.rs`); one felt more currently fails the
   build inside the spill analysis — treat wider signatures as unwritable, not
@@ -195,6 +197,79 @@ Maintenance rules:
   are never branch targets and `br` never carries values (locals argument) —
   so a dead `end` never resumes at a following block WITH arguments (the
   next_block_args closure is unproducible).
+
+## Indirect calls / funcref tables (verified 2026-08-27)
+
+Corpus cases: `case_call_indirect`, `case_indirect_sigs`,
+`case_indirect_collision`, `case_dyn_trait`, `case_fnptr_value`,
+`case_indirect_chain`, `case_indirect_wide`; all probe- and/or
+region-verified.
+
+- **Pipeline**: wasm funcref table → `builtin.function_table` (two words of
+  linear memory per slot: MAST-root digest word + signature-tag word) →
+  linker allocates the table word-aligned in the page after the globals;
+  component `init` fills initialized slots via `procref`; each
+  `call_indirect` becomes `hir.exec_indirect` → bounds check + signature-tag
+  check + `dynexec`. Tables are lowered lazily on the first dispatching
+  `call_indirect`. The runtime failure modes (OOB index, null slot,
+  tag-mismatched slot) are UB natively and are asserted NON-differentially in
+  `end_to_end/indirect_call_traps.rs` — differential cases must stay on safe
+  dispatches and never duplicate them.
+- **Tag interning**: tag = structurally-interned wasm signature index + 1
+  (`signature_type_tag`; 0 reserved for null slots). Structurally-equal fn
+  types share one tag; distinct fn-ptr types in one program produce distinct
+  tags inside the ONE shared table (`case_indirect_sigs`, entries tag 1 + 2).
+  A multi-tag table is also what reaches the tag-mismatch skip arms of
+  `ExecIndirect::verify` and `possible_callees`.
+- **Toolchain shape**: rustc + wasm-ld emit exactly one funcref table
+  (`__indirect_function_table`), slot 0 = reserved null pointer, all live
+  address-taken functions contiguous from slot 1, initialized by a single
+  active element segment at offset 1 with no `ref.null` holes. Hence
+  `collect_table_image`'s FuncRef-whole-table-initializer, `precomputed`
+  Null-image, global-relative(PIC)-base, and null-hole arms, plus every
+  multi-table shape, are toolchain-unproducible.
+- **Devirtualization** (the enemy): a provably-single-target fn ptr or a
+  constant table index is devirtualized to a direct call. What survives as
+  `call_indirect`: runtime-indexed loads from a `static` fn-ptr array
+  (`OPS[(x & 3) as usize]`), runtime-indexed `[&dyn Trait; N]` selection, and
+  fn-ptr values crossing `#[inline(never)]` boundaries (returned from or
+  passed to noinline helpers, incl. loop-carried fn-ptr state machines) —
+  LLVM does not do indirect-call promotion without PGO.
+- **dyn Trait**: vtables are `.rodata` arrays of funcref-table indices; each
+  method dispatch loads its vtable slot and `call_indirect`s with the
+  method's own wasm signature (receiver pointer + args → its own tag)
+  (`case_dyn_trait`, 3 dispatch sites, tags 1/2).
+- **Non-capturing closures** coerced to `fn` become anonymous
+  `FnOnce::call_once` shim entries in the table; **fn-ptr `==`** compiles to
+  `i32.eq` on table indices, agreeing with native address comparison for
+  distinct-bodied functions (`case_fnptr_value`; wasm-ld does no ICF, which
+  also closes `possible_callees`' duplicate-callee dedup arm).
+- **Table symbol collisions**: the generated table symbol is
+  `__indirect_function_table_<idx>`, probed against the module symbol table
+  with a counter bump — a user `#[no_mangle]` fn named exactly that forces
+  the rename path (`case_indirect_collision`, table becomes `..._0_1`).
+- **Width cap**: the lowering schedules the arguments plus the table index in
+  Miden's 16-felt operand-stack window ⇒ at most 15 argument felts. 7×u64
+  (14 felts) dispatches end-to-end (`case_indirect_wide`); one felt more is a
+  clean translation-time diagnostic (code_translator/mod.rs `unsupported
+  call_indirect ... operand stack window`), not a panic.
+- **Verified dead ends**: `add_table_entry`'s Intrinsic arm
+  (`CallableFunction::Intrinsic` is unconstructible today — the only
+  `register_linker_stub` caller pre-filters on `is_operation()`) and
+  Instruction arm (an intrinsic in a table = linker-stub surface, out of
+  scope); `live_entries`' empty-entries arm (a lazily-built table always
+  holds ≥1 entry — safe Rust cannot dispatch without an address-taken
+  function); `exec_indirect`'s argument-extension assert (indirect
+  signatures come from `sig_from_func_type`/`AbiParam::new`, which never set
+  extension attrs — extension attrs exist only on `Signature::new` canon-ABI
+  component paths); the legalization illegal arms for
+  FunctionTable/FunctionTableEntry/ExecIndirect (invalid-IR backstops; the
+  frontend pre-diagnoses the producible ones at translation).
+- `OpEmitter::assert`/`assert_eq` have only felt-intrinsic (SDK) HIR
+  producers (`frontend/wasm/src/intrinsics/felt.rs`); `assert_eq_imm` has
+  only `#[cfg(test)]` callers; `assertz`'s harness producer is only the
+  `prepare_addr` align-hint — their cold arms are closed for plain-Rust
+  cases.
 
 ## Rewrite-pass scope closures (CSE / SCCP / DCE / folder / scf patterns)
 
@@ -355,11 +430,16 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   irreducible CFG (wasm is reducible by construction). The latch's
   successor 0 is always the loop header (create_single_exiting_latch
   construction invariant), so the reduce-time successor-swap arm is dead.
-- **codegen/masm/src/linker.rs is data-layout only** (segments + globals —
-  call-graph/MAST ordering lives in the assembler, not here) and closed:
-  its cold surface is error paths, disabled log bodies, the multi-module
-  `__stack_pointer` dedup (the harness always links exactly one HIR
-  module), the page_size=0 arm, and dead accessors.
+- **codegen/masm/src/linker.rs is data-layout only** (segments + globals +
+  function-table bases — call-graph/MAST ordering lives in the assembler,
+  not here) and closed: its cold surface is error paths, disabled log
+  bodies, the multi-module `__stack_pointer` dedup (the harness always links
+  exactly one HIR module), the page_size=0 arm, and dead accessors —
+  including `FunctionTableLayout::is_empty` (sole caller
+  `has_function_tables` sits behind `requires_init`'s `has_globals()`
+  short-circuit, and `__stack_pointer` makes has_globals always true) and
+  `element_addr_of`'s None edge (2026-08-27; the table layout loop itself is
+  warm from the call_indirect cases).
 
 ## Case-writing tricks that work
 
