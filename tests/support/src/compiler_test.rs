@@ -516,6 +516,22 @@ impl CompilerTestBuilder {
         CompilerTestBuilder::new(RustcTest::new(name, rust_source))
     }
 
+    /// Set the Rust source code to compile, to be executed with the given entrypoint
+    pub fn rust_source_program_with_entrypoint(
+        rust_source: impl Into<Cow<'static, str>>,
+        entrypoint: &str,
+    ) -> Self {
+        let rust_source = rust_source.into();
+        let name = format!("test_rust_{}", hash_string(&rust_source));
+        let module_name = Ident::with_empty_span(Symbol::intern(&name));
+        let mut builder = CompilerTestBuilder::new(RustcTest::new(name, rust_source));
+        builder.with_entrypoint(FunctionIdent {
+            module: module_name,
+            function: Ident::with_empty_span(Symbol::intern(entrypoint)),
+        });
+        builder
+    }
+
     /// Set the Rust source code to compile and add a binary operation test
     pub fn rust_fn_body(rust_source: &str, midenc_flags: impl IntoIterator<Item = String>) -> Self {
         let name = format!("test_rust_{}", hash_string(rust_source));
@@ -948,6 +964,14 @@ impl CompilerTest {
     /// Set the Rust source code to compile
     pub fn rust_source_program(rust_source: impl Into<Cow<'static, str>>) -> Self {
         CompilerTestBuilder::rust_source_program(rust_source).build()
+    }
+
+    /// Set the Rust source code to compile, with the given entrypoint
+    pub fn rust_source_program_with_entrypoint(
+        rust_source: impl Into<Cow<'static, str>>,
+        entrypoint: &str,
+    ) -> Self {
+        CompilerTestBuilder::rust_source_program_with_entrypoint(rust_source, entrypoint).build()
     }
 
     /// Set the Rust source code to compile and add a binary operation test
