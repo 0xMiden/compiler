@@ -70,28 +70,51 @@ fn current_dir_lock() -> CurrentDirGuard {
 ///
 /// It must not simply inherit the ambient `CARGO_TARGET_DIR` either, since
 /// `cargo make` points that at the workspace's own target directory.
-struct TargetDirGuard(Option<String>);
+///
+/// Only the name-keyed *final* artifacts need this separation. The hash-keyed
+/// intermediates — the whole dependency cone, identical across every template —
+/// go to the one shared build cache (`CARGO_BUILD_BUILD_DIR`), following the
+/// `target/miden_build_cache` convention that `tests/support` establishes.
+struct TargetDirGuard {
+    target_dir: Option<String>,
+    build_dir: Option<String>,
+}
 
 impl TargetDirGuard {
     fn for_template(template: &str) -> Self {
-        let previous = env::var("CARGO_TARGET_DIR").ok();
+        let previous_target = env::var("CARGO_TARGET_DIR").ok();
+        let previous_build = env::var("CARGO_BUILD_BUILD_DIR").ok();
         let dir = workspace_root()
             .join("target/miden_test_template_projects")
             .join(template.replace('-', "_"));
         fs::create_dir_all(&dir).expect("create the template build directory");
+        let cache = workspace_root().join("target/miden_build_cache");
+        fs::create_dir_all(&cache).expect("create the shared build cache");
         // Safety: `set_var` is unsafe because of threads elsewhere in the
         // process; under nextest each test is its own process, and this is set
         // once before any subprocess is spawned.
-        unsafe { env::set_var("CARGO_TARGET_DIR", &dir) };
-        Self(previous)
+        unsafe {
+            env::set_var("CARGO_TARGET_DIR", &dir);
+            env::set_var("CARGO_BUILD_BUILD_DIR", &cache);
+        }
+        Self {
+            target_dir: previous_target,
+            build_dir: previous_build,
+        }
     }
 }
 
 impl Drop for TargetDirGuard {
     fn drop(&mut self) {
-        match self.0.take() {
-            Some(previous) => unsafe { env::set_var("CARGO_TARGET_DIR", previous) },
-            None => unsafe { env::remove_var("CARGO_TARGET_DIR") },
+        unsafe {
+            match self.target_dir.take() {
+                Some(previous) => env::set_var("CARGO_TARGET_DIR", previous),
+                None => env::remove_var("CARGO_TARGET_DIR"),
+            }
+            match self.build_dir.take() {
+                Some(previous) => env::set_var("CARGO_BUILD_BUILD_DIR", previous),
+                None => env::remove_var("CARGO_BUILD_BUILD_DIR"),
+            }
         }
     }
 }

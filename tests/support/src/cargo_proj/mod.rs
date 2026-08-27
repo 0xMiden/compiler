@@ -584,6 +584,25 @@ pub fn shared_build_dir() -> PathBuf {
     test_target_dir().join("miden_test_shared")
 }
 
+/// The one Cargo *build* directory (`CARGO_BUILD_BUILD_DIR`) every nested build shares —
+/// including the builds that must keep separate target directories.
+///
+/// Cargo splits build output in two: hash-keyed intermediate artifacts go to the build
+/// directory, while the final artifacts a consumer reads (the `.wasm`, the uplifted
+/// binaries) go to the target directory, keyed by package name alone. The name-keyed
+/// final artifacts are the only reason this suite keeps some target directories apart
+/// (identically named generated packages would overwrite each other); the hash-keyed
+/// intermediates never collide. Sharing one build directory therefore deduplicates the
+/// heavy dependency cones — measured at 6.7 GB of byte-identical files across the
+/// separate directories — without giving up the per-purpose target directories.
+///
+/// The same convention (`target/miden_build_cache`) is used by the test entry points
+/// outside this crate that manage their own target directories (`tests/templates`,
+/// the sdk component and consumer tests).
+pub fn shared_build_cache_dir() -> PathBuf {
+    test_target_dir().join("miden_build_cache")
+}
+
 /// Point this process's nested `cargo` invocations at [`shared_build_dir`].
 ///
 /// The environment is the only means we have to reache them: the nested `cargo` is spawned by the
@@ -610,6 +629,14 @@ pub fn use_shared_build_dir() {
             panic!("failed to create the shared build directory {}: {e}", dir.display())
         });
         unsafe { std::env::set_var("CARGO_TARGET_DIR", &dir) };
+        // Route the hash-keyed intermediates of every nested build this process spawns —
+        // including the spawns that override or drop `CARGO_TARGET_DIR` — into the one
+        // shared build cache ([`shared_build_cache_dir`]).
+        let cache = shared_build_cache_dir();
+        std::fs::create_dir_all(&cache).unwrap_or_else(|e| {
+            panic!("failed to create the shared build cache {}: {e}", cache.display())
+        });
+        unsafe { std::env::set_var("CARGO_BUILD_BUILD_DIR", &cache) };
     });
 }
 

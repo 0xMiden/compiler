@@ -172,12 +172,19 @@ fn main() {
 }
 
 /// Runs a plain (non-midenc) `cargo check` of `consumer`, the way an IDE does.
+///
+/// The check must not inherit the suite's shared build cache
+/// (`CARGO_BUILD_BUILD_DIR`): an IDE has no such variable, these tests assert
+/// on the persisted build-script output below the project's own `target/`, and
+/// concurrent tests reuse the fixture package names, so a shared cache would
+/// let one test observe another's generations.
 fn plain_cargo_check(consumer: &Path) -> Output {
     Command::new("cargo")
         .arg("check")
         .env("CARGO_MIDEN", cargo_miden_binary())
         .env_remove("MIDENC_PACKAGE_CACHE")
         .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_BUILD_BUILD_DIR")
         .env_remove("RUSTFLAGS")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .current_dir(consumer)
@@ -193,6 +200,7 @@ fn counted_plain_cargo_check(consumer: &Path, counter: &Path) -> Output {
         .env("MIDENC_TEST_CARGO_MIDEN_COUNT", counter)
         .env_remove("MIDENC_PACKAGE_CACHE")
         .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_BUILD_BUILD_DIR")
         .env_remove("RUSTFLAGS")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .current_dir(consumer)
@@ -664,6 +672,7 @@ path = "src/lib.rs"
         .env("CARGO_MIDEN", project.root().join("definitely-missing-cargo-miden"))
         .env_remove("MIDENC_PACKAGE_CACHE")
         .env_remove("CARGO_TARGET_DIR")
+        .env_remove("CARGO_BUILD_BUILD_DIR")
         .current_dir(project.root())
         .output()
         .expect("failed to spawn cargo check");
