@@ -10,6 +10,12 @@ pub mod felt_repr {
     pub use miden_field_repr::{FeltReader, FeltReprError, FeltWriter, FromFeltRepr, ToFeltRepr};
 }
 
+pub mod active_note {
+    /// Minimal stand-in for the SDK `ActiveNote` trait implemented by the `#[note]` struct
+    /// expansion.
+    pub trait ActiveNote {}
+}
+
 #[derive(Debug)]
 #[note]
 struct UnitNote;

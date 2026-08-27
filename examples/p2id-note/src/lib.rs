@@ -2,7 +2,7 @@
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{AccountId, Recipient, Word, account, active_note, felt_repr::ToFeltRepr, note};
+use miden::{AccountId, Recipient, Word, account, felt_repr::ToFeltRepr, note};
 
 /// Native account of the note: exposes the `basic-wallet` component methods (e.g.
 /// `receive_asset`) gathered from the `basic_wallet` package.
@@ -40,7 +40,7 @@ impl P2idNote {
         let current_account = account.get_id();
         assert_eq!(current_account, self.target_account_id);
 
-        let assets = active_note::get_initial_assets();
+        let assets = self.get_initial_assets();
         for asset in assets {
             account.receive_asset(asset);
         }
