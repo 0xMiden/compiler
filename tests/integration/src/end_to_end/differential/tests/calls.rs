@@ -39,3 +39,56 @@ fn call_mix() {
 fn call_indirect() {
     run_case("call_indirect", include_str!("../cases/case_call_indirect.rs"));
 }
+
+/// Two fn-pointer arrays of different fn types dispatched at runtime — the one
+/// funcref table holds entries with two distinct signature tags, so each
+/// `hir.exec_indirect` call site must tag-filter the other signature's entries
+/// (verifier/possible_callees skip arms) and the runtime tag check passes only
+/// for its own; also the first u64-carrying indirect signature.
+#[test]
+fn indirect_sigs() {
+    run_case("indirect_sigs", include_str!("../cases/case_indirect_sigs.rs"));
+}
+
+/// A user `#[no_mangle]` function named exactly `__indirect_function_table_0`
+/// collides with the symbol the frontend generates for the lowered funcref
+/// table, forcing the collision-rename (counter-bump) path in
+/// `get_or_build_table` while dispatch still works through the renamed table.
+#[test]
+fn indirect_collision() {
+    run_case("indirect_collision", include_str!("../cases/case_indirect_collision.rs"));
+}
+
+/// `dyn Trait` dispatch through runtime-selected trait objects: vtables are
+/// `.rodata` arrays of funcref-table indices, each method call loads its
+/// vtable slot and dispatches via `call_indirect` — a dispatch shape (vtable
+/// slot load + receiver pointer argument) no fn-pointer-array sibling covers.
+#[test]
+fn dyn_trait() {
+    run_case("dyn_trait", include_str!("../cases/case_dyn_trait.rs"));
+}
+
+/// Function pointers as first-class values: returned from / passed to
+/// `#[inline(never)]` helpers, a loop-carried fn-pointer state machine, a
+/// non-capturing closure coerced to `fn` (anonymous table entry), and fn-ptr
+/// `==` (funcref-index comparison) — table-index data flow no sibling covers.
+#[test]
+fn fnptr_value() {
+    run_case("fnptr_value", include_str!("../cases/case_fnptr_value.rs"));
+}
+
+/// Chained indirect dispatch — an indirect callee that itself dispatches
+/// through a second fn-pointer array (nested `dynexec` frames) — plus
+/// dispatch inside a loop and in a single branch arm.
+#[test]
+fn indirect_chain() {
+    run_case("indirect_chain", include_str!("../cases/case_indirect_chain.rs"));
+}
+
+/// The widest accepted indirect signature — 7 u64 parameters (14 felts) plus
+/// the table index fills 15 of the 16-element operand-stack window — dynexec
+/// with a full argument window and u64 values crossing the dispatch boundary.
+#[test]
+fn indirect_wide() {
+    run_case("indirect_wide", include_str!("../cases/case_indirect_wide.rs"));
+}
