@@ -64,19 +64,24 @@ fn trap_branch() {
 /// Four-exit loop plus eq-chains that canonicalize into contiguous-at-7 and
 /// sparse cf.switch ops — exercises binary-search (interval guard) and
 /// linear-search switch lowering.
+///
+/// Formerly `#[ignore]`d: the frontend re-typed the `br_table` selector with
+/// a checked I32->U32 cast, but LLVM rebases contiguous switches by
+/// wrapping-subtracting the smallest case, so a selector below the minimum
+/// wrapped negative and the VM aborted with 'value does not fit in i32'
+/// (issues #1235/#1243, fixed by PR #1245: `pop1_bitcasted` in
+/// `translate_br_table`). Re-verified passing 2026-08-27.
 #[test]
-#[ignore = "flaky native/MASM divergence: mismatch on inputs (1669775643, 1062584501); separate \
-            run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("../cases/case_switch_shapes.rs"));
 }
 
-/// Deterministic reproducer for the `switch_shapes` divergence: pins the
-/// exact `(input1, input2)` pair the fuzzer flagged, so the bug fails
-/// reliably on that input rather than only when proptest happens to draw it.
+/// Pinned regression guard for the fixed #1235/#1243 `br_table` selector
+/// wrap: input pair (1669775643, 1062584501) makes the rebased selector wrap
+/// below the smallest case, which must dispatch to the default arm (random
+/// draws hit an `h < 7` pair only ~7/251 of the time, so the pin keeps the
+/// wrap path exercised on every run).
 #[test]
-#[ignore = "MASM VM aborts on pinned input (1669775643, 1062584501): 'value does not fit in i32'; \
-            deterministic reproducer for the switch_shapes divergence"]
 fn switch_shapes_repro() {
     run_case_with_inputs(
         "switch_shapes_repro",

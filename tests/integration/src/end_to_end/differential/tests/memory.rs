@@ -19,8 +19,11 @@ fn mem_copy() {
 /// Overlapping `copy_within` (dst > src) — wasm `memory.copy` memmove
 /// semantics vs forward-copying MASM lowering.
 #[test]
-#[ignore = "native/MASM divergence: memory.copy with overlapping dst > src ranges (original repro: \
-            inputs (91264998, 3811523388) in pre-split mem_copy)"]
+#[ignore = "native/MASM divergence: memory.copy with overlapping dst > src ranges; the VM now \
+            hard-aborts via the miden-core-lib memcopy overlap assert (hash-coded error \
+            14467508661128000855, re-verified 2026-08-27; e.g. inputs (4294967295, 194795201) — \
+            original repro (91264998, 3811523388) in pre-split mem_copy). Un-ignore when the \
+            lowering handles overlapping copies with memmove semantics"]
 fn mem_overlap() {
     run_case("mem_overlap", include_str!("../cases/case_mem_overlap.rs"));
 }

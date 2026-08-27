@@ -42,13 +42,17 @@ fn spill_twin() {
     run_case("spill_twin", include_str!("../cases/case_spill_twin.rs"));
 }
 
-/// Reproducer for a compile-time spill-transform panic: each arm calls a
-/// non-inlinable helper, spills the call result under wide-tree pressure,
-/// then yields it, so the spilled value crosses the control-flow edge as the
-/// arm's result. A second shape (nested wide diamonds) hits the same panic.
+/// Each arm calls a non-inlinable helper, spills the call result under
+/// wide-tree pressure, then yields it, so the spilled value crosses the
+/// control-flow edge as the arm's result. A second shape (nested wide
+/// diamonds) exercises the same edge-split path.
+///
+/// Formerly `#[ignore]`d as a compile-time panic reproducer (i1289:
+/// TransformSpills `convert_reload_to_load` unwrapped None on a spilled
+/// value crossing a CF edge as a successor arg / scf.yield operand);
+/// re-verified compiling and passing differentially 2026-08-27 — kept as
+/// the regression guard for the edge-split spill cluster.
 #[test]
-#[ignore = "compile-time compiler panic: TransformSpills convert_reload_to_load unwraps None \
-            (dialects/hir/src/transforms/spill.rs:157); gates the edge-split spill cluster"]
 fn spill_edge() {
     run_case("spill_edge", include_str!("../cases/case_spill_edge.rs"));
 }
