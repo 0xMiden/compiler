@@ -252,8 +252,18 @@ pub fn build_new_project_from_project_template(project_name: &str) {
     let integration_test_dir = project_dir.join("integration");
 
     {
+        let cargo_miden_bin =
+            PathBuf::from(std::env::var_os("MIDENC_BIN_DIR").expect("MIDENC_BIN_DIR was unset"))
+                .join("cargo-miden");
+        assert!(
+            cargo_miden_bin.exists(),
+            "cargo-miden binary is missing: {}",
+            cargo_miden_bin.display()
+        );
         let mut cmd = std::process::Command::new("cargo");
-        cmd.arg("test").current_dir(&integration_test_dir);
+        cmd.arg("test")
+            .current_dir(&integration_test_dir)
+            .env("CARGO_MIDEN", cargo_miden_bin.as_os_str());
         let mut child = cmd.spawn().expect("failed to spawn 'cargo test'");
         let exit_status = child.wait().expect("'cargo test' failed");
         assert!(exit_status.success(), "expected 'cargo test' to succeed, got {exit_status}");

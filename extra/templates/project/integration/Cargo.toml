@@ -10,5 +10,5 @@ miden-standards = { version = "0.16.0-rc.4", features = ["testing"] }
 miden-testing = "0.16.0-rc.4"
 miden-mast-package = { version = "0.29", default-features = false }
 tokio = { version = "1.48", features = ["rt-multi-thread", "net", "macros", "fs"] }
-rand = { version = "0.9" }
+rand = { version = "0.10" }
 anyhow = "1.0"

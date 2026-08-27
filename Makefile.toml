@@ -763,5 +763,6 @@ description = "Scaffold a project from every template and build it, dev and rele
 # profile and lockfile with every other test. Each test generates a project and
 # builds it, which takes minutes -- hence its own task and its own CI job rather
 # than running inside the general test task.
+dependencies = ["cargo-miden"]
 command = "cargo"
 args = ["make", "test", "-E", "package(midenc-template-tests)", "${@}"]
