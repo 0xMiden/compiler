@@ -34,12 +34,77 @@ fn spill_loop() {
     run_case("spill_loop", include_str!("../cases/case_spill_loop.rs"));
 }
 
+/// Sixteen masked rotate counts shared between pre-loop code and rotates of
+/// the loop-carried accumulator (CSE merges the translator's count bands
+/// into cross-block SSA values) — 18 felts alive at the loop header drive
+/// the W^entry over-capacity arm, with edge splits on the preheader edge
+/// and the loop backedge; a second light loop carries two more shared
+/// counts across it.
+#[test]
+fn spill_loop_mix() {
+    run_case("spill_loop_mix", include_str!("../cases/case_spill_loop_mix.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
+/// panics with `attempt to subtract with overflow` in `Stack::movdn` at
+/// codegen/masm/src/opt/operands/stack.rs:80 (`len - (n + 1)` with
+/// n+1 > len) — the operand-scheduler solver produced a solution whose
+/// application moves an operand past the end of the model stack. Trigger:
+/// LLVM runtime-unrolls the `% 97`-bounded round
+/// `acc = (acc.wrapping_mul(33) ^ i).rotate_left(5)` 4x into one block of
+/// interleaved mul/xor/rotl rounds. Compile-time — no inputs involved.
+/// Bounded by: the xor-rotl round (`(acc ^ i).rotate_left(5)`) and the
+/// mul-rotl round (`acc.wrapping_mul(33).rotate_left(5)`) of the identical
+/// loop both compile and pass, and the rotate-less mul-xor round is the
+/// separate known NoSolution panic (`unroll_chain`, lowering.rs:109) — same
+/// unroll-produced interleaved-chain family, distinct failure site: here a
+/// solution IS found but is applied out of bounds. Un-ignore when this case
+/// compiles (solver rejects or correctly applies the out-of-range move).
+#[test]
+#[ignore = "compiler panic: 'attempt to subtract with overflow' in Stack::movdn at \
+            codegen/masm/src/opt/operands/stack.rs:80 while applying the scheduler solution for \
+            the 4x-unrolled mul-xor-rotl loop chain (compile-time, no inputs involved)"]
+fn unroll_rotmix() {
+    run_case("unroll_rotmix", include_str!("../cases/case_unroll_rotmix.rs"));
+}
+
+/// Six shared masked rotate counts crossing a dense 6-way `match` inside a
+/// `% 97`-bounded loop — spilled values crossing scf.index_switch arm
+/// edges, per-arm edge reconciliation, and multi-region successor
+/// traversals under TransformSpills' liveness walks. (The ten-count version
+/// of this shape hits the known NoSolution panic on an arity-2 rotl —
+/// see the scratch log; unroll_chain is the documented reproducer.)
+#[test]
+fn spill_switch() {
+    run_case("spill_switch", include_str!("../cases/case_spill_switch.rs"));
+}
+
+/// u32 variant of the unrolled mul-xor-rotate round — schedulable single-
+/// felt interleaved chains pressing the scheduler tactic interiors (the u64
+/// twins are the ignored unroll_chain / unroll_rotmix panics).
+#[test]
+fn unroll_u32() {
+    run_case("unroll_u32", include_str!("../cases/case_unroll_u32.rs"));
+}
+
 /// Two sequential diamonds with wide mixed-width (u64/u32) arm trees over the
 /// same locals — spill uses inside two scf regions, sibling-arm reloads
 /// joined by phis at two joins, and size tie-breaking among spill candidates.
 #[test]
 fn spill_twin() {
     run_case("spill_twin", include_str!("../cases/case_spill_twin.rs"));
+}
+
+/// Asymmetric-pressure diamond: cross-edge SSA values (CSE-merged masked
+/// rotate-count bands shared by both arms and the join) are spilled in the
+/// heavy arm only, so control-flow edge reconciliation records edge splits
+/// — a reload split on the heavy edge and a compensating spill split on the
+/// cheap edge — driving `SpillAnalysis::split` and the transform's
+/// split-materialization loop (`Placement::Split` insertion and branch
+/// redirection).
+#[test]
+fn spill_split() {
+    run_case("spill_split", include_str!("../cases/case_spill_split.rs"));
 }
 
 /// Each arm calls a non-inlinable helper, spills the call result under

@@ -72,9 +72,16 @@ Maintenance rules:
     discriminators thread as SSA).
   - The five scf while/switch arg-and-result canonicalization interiors and
     cfg-to-scf undef/latch threading are structurally unproducible.
-  - Spill-analysis W at any block/region boundary holds at most one value →
-    proactive block-arg spilling, `spill_trailing_until_fits`, loop-header
-    `w_used >= K` arms, and region-branch spill arms are unproducible.
+  - Spill-analysis W at a block/region boundary carries no USER values
+    (locals are reloaded per block; Local2Reg promotes only same-block
+    store/load pairs with no control flow between them — local2reg.rs). The
+    2026-07 corollary that W <= 1 at every boundary was WRONG (struck
+    2026-08-27): midenc-CSE'd masked shift/rotate-count bands cross edges
+    as SSA and can carry 16+ felts — see "Spill analysis & the edge-split
+    cluster". `spill_trailing_until_fits` and proactive block-arg spilling
+    remain unproducible (>16-felt block params have no producer), but the
+    loop-header `w_used >= K` arm and the CFG edge-split machinery are
+    reachable.
   - The >16-felt pressure differential cases trigger is largely
     *self-inflicted*: the frontend batches `load_local`s at block tops and
     `SinkOperandDefs` sinks arithmetic but not loads (original wasm operand
@@ -489,16 +496,29 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   fuel/scale arm. Scale DID warm `TwoArgs::move_copy`'s commutative
   sub-arms (non-strict scheduling of commutative binops under reload
   interleavings) — the only tactic interior that responded to scale.
-- **MoveDownAndSwap's evict arms and MoveUpAndSwap's final NotApplicable
-  arm remain unproducible**: they need a live non-operand value on top of
-  the stack at an arity≥3 no-copy problem, but RegStackify moves every
-  single-use def to its use and SinkOperandDefs sinks the whole operand
-  cluster together, so operands stay adjacent to their op; the 400-op storm
-  never produced the shape. CopyAll's success loop and SwapAndMoveUp's real
-  arms likewise have no plain-Rust producer in this corpus (campaign-2
-  verdict: no deterministic lever) — the four tactics' *precondition* arms
-  are structurally dead (each tactic is only pushed when its precondition
-  already holds).
+- **MoveDownAndSwap's FIRST evict arm and MoveUpAndSwap's final
+  NotApplicable arm remain unproducible**: they need a live non-operand
+  value on top of the stack at an arity≥3 no-copy problem, but RegStackify
+  moves every single-use def to its use and SinkOperandDefs sinks the whole
+  operand cluster together, so operands stay adjacent to their op; the
+  400-op storm never produced the shape. Refinement (2026-08-27):
+  MoveDownAndSwap's SECOND evict arm (the post-move eviction) IS warm in
+  the current corpus, so the old "evict arms unproducible" plural was too
+  strong. CopyAll's success loop and SwapAndMoveUp's real arms still have
+  no plain-Rust producer — the four tactics' *precondition* arms are
+  structurally dead (each tactic is only pushed when its precondition
+  already holds). The unroll-interleave lever (2026-08-27) DOES reopen the
+  solver interiors, but every u64 trigger found so far panics before
+  contributing coverage (NoSolution at lowering.rs:109 — also producible
+  WITHOUT unrolling by an arity-2 rotl with a copy-constrained shared
+  count band under ~10 felts of crossing-band freight — and a second
+  unroll-family panic in `Stack::movdn`; both live as ignored reproducers
+  in the spills test module). The schedulable u32 twin (`case_unroll_u32`)
+  adds no new interior regions. `preemptively_move_endangered_operands_to_
+  top`'s interior is closed-in-practice: it needs missing-copy felts plus
+  a deep move operand in one problem, but exec args are always fresh
+  single-use loads (no aliases) and alias-bearing small ops have
+  SinkOperandDefs-adjacent operands.
 - **Switch lowering is width-insensitive past 8 arms**: a 64-arm dense
   `match` survives as one 65-target `br_table` (structurally-varied arm
   bodies defeat LLVM's lookup-table and arm-merging transforms), and adds
@@ -527,6 +547,78 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   short-circuit, and `__stack_pointer` makes has_globals always true) and
   `element_addr_of`'s None edge (2026-08-27; the table layout loop itself is
   warm from the call_indirect cases).
+
+## Spill analysis & the edge-split cluster (verified 2026-08-27)
+
+Corpus cases: `case_spill_split` (asymmetric diamond, both split flavors),
+`case_spill_loop_mix` (loop-header over-capacity + backedge splits),
+`case_spill_switch` (dispatch under crossing freight), plus the revived
+`case_spill_edge`. All trace-verified with `MIDENC_TRACE=
+'analysis:spills=trace,pass:spills=trace'` — the spill pass/analysis logs
+(edge splits, W^entry sets, loop pressure) are the cheapest way to check a
+spill shape BEFORE paying a coverage step.
+
+- **The only plain-Rust producer of cross-block W traffic is the
+  masked-count band**: the translator wraps every shift/rotate count in
+  `arith.band(count, mask)`; the canonicalizer's folder dedups the constant
+  operands function-wide and CSE merges the structurally-identical bands
+  into the dominating occurrence — so a count CONSTANT reused in two blocks
+  becomes ONE u32 SSA value (one felt) live across the edges between them.
+  User values never cross in W (locals are reloaded per block; Local2Reg is
+  same-block-only). N shared counts = N felts of freight across any chosen
+  edge; CSE needs the first use to dominate the later ones (e.g. a do-while
+  body dominates the post-loop code, a `while` body does not dominate its
+  exit).
+- **Edge splits (`SpillAnalysis::split`, the transform's split loop,
+  `Placement::Split`) fire on ASYMMETRIC pressure**: a value in W^entry(B)
+  that is missing from one predecessor's W^exit gets a reload split on that
+  edge, and the compensating spill lands as a split on the other edge —
+  produced by a diamond whose arms differ in pressure while shared bands
+  cross both (`case_spill_split`); symmetric-pressure shapes (spill_branch/
+  twin/edge) spill the value in BOTH arms and never trigger reconciliation
+  (that is why the cluster stayed cold until now). Loop preheader and
+  BACKEDGE splits come from over-capacity loop headers the same way.
+- **Loop-header `w_used >= K`** (the over-capacity arm incl. its sort and
+  take_while closures) is reachable with 16+ shared counts used both before
+  the loop and on the loop-carried accumulator inside it (LICM cannot hoist
+  rotates of a loop-carried value; rotates of loop-invariant operands DO
+  get hoisted and defeat the shape).
+- **Pre-lift spilling bounds the post-lift pass**: the first TransformSpills
+  caps SSA values crossing any CFG edge at <= K felts and rewrites spilled
+  values' downstream uses to reloads placed at those uses, so after
+  cfg-to-scf no scf op can have >16 felts of results and no post-lift
+  block boundary exceeds K. Consequently `spill_trailing_until_fits`, the
+  w_exit>K result-spill arm of `compute_w_exit_region_branch_op`, the
+  region-branch entry-spill arm of `visit_region_branch_operation` (min()
+  also caps W right before every op, and scf operands — if conditions,
+  switch selectors — are always freshly computed there), and the loop-LIKE
+  over-capacity closures are all unproducible.
+- **Terminator operands are always fresh**: yield/condition/ret operands
+  are constants, local loads, or tail-computed values, never
+  spilled-and-unreloaded — MIN's terminator-reload interiors are closed.
+  Splits carrying successor ARGUMENTS are likewise unproducible (arg
+  sources are computed immediately before the terminator).
+- **Pre-lift "live through loop" is always empty** (three shapes): the
+  loop-exit +LOOP_EXIT_DISTANCE increment never survives into the header's
+  next-use set, so post-loop-used values arrive classified as in-loop
+  candidates; the pre-lift live-through sort closure is out of reach (the
+  post-lift loop-LIKE counterpart does fire).
+- **`max_block_pressure`'s region-branch arm is empirically unproducible**:
+  the loop-pressure walk only visits the scf.while's own region-graph
+  entries, and top-test, light-header, and bottom-test diamond-in-loop
+  variants never place the nested scf.if in a walked block.
+- **`get_region_invocation_bounds` (and the entry-successor arms it feeds)
+  is pass-config-gated**: its sole caller is ControlFlowSink
+  (hir-transform/src/sink.rs), which is registered but never scheduled in
+  the pipeline. (This refutes the 2026-08 CF-iteration lead that
+  liveness/DCA under TransformSpills reach it.)
+- **Test-only API**: `is_spilled_at`/`is_reloaded_at`/`is_spilled_in_split`/
+  `is_reloaded_in_split`/`set_materialized_split`/`get_split` are called
+  only from the analysis' own unit tests.
+- The spill freight has a scheduler ceiling: crossing-band freight around
+  10 felts combined with an in-loop multi-arm dispatch currently fails to
+  schedule (see the ignored reproducers in the spills test module); keep
+  deliberate freight around 6-8 felts in cases that must pass.
 
 ## Case-writing tricks that work
 
@@ -569,6 +661,14 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   (`u32mod`, `u64::mod`, `i32::wrapping_mod`) never execute. Give remainders a
   mirrored/rotated operand pair with no matching div (masm-verified both ways,
   `case_udiv_bounds.rs`, `case_sdiv_bounds.rs`).
+- **Pure defs (and pure `#[inline(never)]` calls!) sink to their use**:
+  LLVM infers readnone on internal helpers and moves the computation into
+  the use's block, destroying any "defined before the branch, used after
+  the join" liveness you were counting on. Pin a call in place by giving
+  the helper an opaque atomic side effect that never changes state:
+  `PIN.fetch_add(0, Ordering::Relaxed)` folded into the result
+  (`case_spill_split`) — deterministic across the 16 reused native
+  invocations, unfoldable, and unsinkable.
 - An **opaquely-zero value** (impossible cross-modulus guard `as usize`, times
   an input-derived factor) keeps a copy alive that LLVM would elide when it
   can prove `len == 0` or `src == dst` — how a len-0 same-position
