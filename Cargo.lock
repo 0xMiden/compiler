@@ -3227,9 +3227,9 @@ dependencies = [
 
 [[package]]
 name = "miden-field"
-version = "0.29.1"
+version = "0.29.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41be9f7f5c0ef020bcedf526afe54b3a97244e207a5385e4453ca47799fe2afe"
+checksum = "58cf9de55b88ec86ad272ff4224d76b3e0cbda49e242e78776b0037ba9b0e857"
 dependencies = [
  "miden-serde-utils",
  "num-bigint 0.5.1",
@@ -6338,7 +6338,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
