@@ -285,6 +285,41 @@ description = "Clean build artifacts"
 command = "cargo"
 args = ["clean", "${@}"]
 
+[tasks.sweep]
+category = "Build"
+description = "Garbage-collect the target directory: mark the live units by replaying the workspace build/test graphs, keep unmarked units younger than --age days (default 1; --cache-age 14 for directories the marks never reach), delete the rest; pass --dry-run to only report"
+command = "python3"
+args = [
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/sweep-target.py",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target",
+    "${@}",
+]
+
+[tasks.sweep-deep]
+category = "Build"
+description = "Garbage-collect the target directory with no age guards: keep only the units the workspace build/test graphs mark live. Run after switching branch bases (a rebase orphans a whole build generation at once). Deletes IDE/clippy checker layers and the nested build caches; the next test run rebuilds them"
+command = "python3"
+args = [
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/sweep-target.py",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target",
+    "--age",
+    "0",
+    "--cache-age",
+    "0",
+    "${@}",
+]
+
+# Runs at the end of `cargo make test-all`, the one flow after which the mark
+# step compiles nothing (the whole graph was just built). Skips any directory a
+# running build holds locked, and a failure (for example, no `python3` on the
+# machine) never fails the flow. Set `MIDEN_SKIP_SWEEP` to disable it, for
+# example when alternating between branches that supersede each other's builds.
+[tasks.sweep-flow]
+extend = "sweep"
+private = true
+ignore_errors = true
+condition = { env_not_set = ["MIDEN_SKIP_SWEEP"] }
+
 [tasks.update]
 category = "Dependencies"
 description = "Update dependencies to latest semver-compatible version"
@@ -361,7 +396,7 @@ args = ["audit"]
 [tasks.test-all]
 category = "Test"
 description = "Runs the complete set of compiler tests"
-dependencies = ["test-rust", "test-lit"]
+dependencies = ["test-rust", "test-lit", "sweep-flow"]
 
 [tasks.test]
 category = "Test"
