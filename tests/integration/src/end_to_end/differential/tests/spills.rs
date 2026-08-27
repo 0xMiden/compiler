@@ -102,9 +102,9 @@ fn spill_switch() {
 /// this case compiles (binary problems get a window-aware fallback tactic).
 #[test]
 #[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
-            scheduling an arity-2 arith.rotl with a Copy-constrained count at the bottom of a \
-            full 15-felt window (TwoArgs-only tactic list, no window-aware fallback; \
-            compile-time, no inputs involved)"]
+            scheduling an arity-2 arith.rotl with a Copy-constrained count at the bottom of a full \
+            15-felt window (TwoArgs-only tactic list, no window-aware fallback; compile-time, no \
+            inputs involved)"]
 fn rotl_window() {
     run_case("rotl_window", include_str!("../cases/case_rotl_window.rs"));
 }
