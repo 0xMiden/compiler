@@ -47,19 +47,22 @@ fn spill_loop_mix() {
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
 /// panics with `attempt to subtract with overflow` in `Stack::movdn` at
-/// codegen/masm/src/opt/operands/stack.rs:80 (`len - (n + 1)` with
-/// n+1 > len) — the operand-scheduler solver produced a solution whose
-/// application moves an operand past the end of the model stack. Trigger:
-/// LLVM runtime-unrolls the `% 97`-bounded round
-/// `acc = (acc.wrapping_mul(33) ^ i).rotate_left(5)` 4x into one block of
-/// interleaved mul/xor/rotl rounds. Compile-time — no inputs involved.
-/// Bounded by: the xor-rotl round (`(acc ^ i).rotate_left(5)`) and the
-/// mul-rotl round (`acc.wrapping_mul(33).rotate_left(5)`) of the identical
-/// loop both compile and pass, and the rotate-less mul-xor round is the
-/// separate known NoSolution panic (`unroll_chain`, lowering.rs:109) — same
-/// unroll-produced interleaved-chain family, distinct failure site: here a
-/// solution IS found but is applied out of bounds. Un-ignore when this case
-/// compiles (solver rejects or correctly applies the out-of-range move).
+/// codegen/masm/src/opt/operands/stack.rs:80. Trigger: LLVM runtime-unrolls
+/// the `% 97`-bounded round `acc = (acc.wrapping_mul(33) ^ i).rotate_left(5)`
+/// 4x, whose live state spills. Root cause (triage 2026-08-27): the SAME
+/// TransformSpills defect as `unroll_chain` (control_flow.rs) —
+/// `insert_required_phis` seeds the loop-bypass edge with non-dominating
+/// spilled values, leaving SSA-invalid IR that cfg-to-scf threads into a
+/// sibling-region `scf.yield %310, %309, %342` of which only `%342` is on
+/// the operand stack; the scheduler is handed this UNSATISFIABLE arity-3
+/// problem and `MoveDownAndSwap` runs `movdn` past the end of its stack
+/// model. Not a solver defect and provably not a miscompile risk (a live
+/// use of the poisoned phi args would have been invalid SSA before the
+/// pass, so they are always dead; the solver matches values by identity and
+/// validates accepted solutions). Bounded by: the xor-rotl and mul-rotl
+/// rounds of the identical loop compile and pass; the rotate-less round is
+/// the arity-2 symptom (`unroll_chain`, NoSolution at lowering.rs:109).
+/// Compile-time — no inputs involved. Un-ignore when this case compiles.
 #[test]
 #[ignore = "compiler panic: 'attempt to subtract with overflow' in Stack::movdn at \
             codegen/masm/src/opt/operands/stack.rs:80 while applying the scheduler solution for \
@@ -77,6 +80,33 @@ fn unroll_rotmix() {
 #[test]
 fn spill_switch() {
     run_case("spill_switch", include_str!("../cases/case_spill_switch.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
+/// panics with `NoSolution` at codegen/masm/src/lower/lowering.rs:109 while
+/// scheduling `arith.rotl %167, %397` (constraints `[Move, Copy]`) over a
+/// 15-felt operand stack. Root cause (triage 2026-08-27, distinct from
+/// `unroll_chain`): for arity-2 problems the solver pushes ONLY the
+/// `TwoArgs` tactic (codegen/masm/src/opt/operands/solver.rs, the
+/// `is_binary` branch); its fixed `dup(copy)` + `movup(move)` pattern here
+/// requires a 17-felt stack access, the solution is rejected by the 16-felt
+/// MASM window check, and there is no fallback tactic — although a valid
+/// in-window schedule exists (`MoveUp(7), Copy(7), Swap(1)`, exactly what
+/// `LinearStackWindow` + `Linear` produce for the same problem at other
+/// arities). The problem is in-contract: spill analysis correctly capped
+/// live pressure at 15 felts <= K=16. This is the ten-count variant of the
+/// passing `spill_switch` (six counts) — the boundary is copy-constraint
+/// depth, not unrolling; no unrolled chain and no invalid IR are involved
+/// (unlike `unroll_chain`/`unroll_rotmix`, whose panics stem from
+/// TransformSpills-produced non-dominating phi operands). Un-ignore when
+/// this case compiles (binary problems get a window-aware fallback tactic).
+#[test]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
+            scheduling an arity-2 arith.rotl with a Copy-constrained count at the bottom of a \
+            full 15-felt window (TwoArgs-only tactic list, no window-aware fallback; \
+            compile-time, no inputs involved)"]
+fn rotl_window() {
+    run_case("rotl_window", include_str!("../cases/case_rotl_window.rs"));
 }
 
 /// u32 variant of the unrolled mul-xor-rotate round — schedulable single-

@@ -153,17 +153,24 @@ fn spin_guard() {
 /// panics in the MASM operand scheduler with `NoSolution` at
 /// codegen/masm/src/lower/lowering.rs:109. Trigger: LLVM runtime-unrolls the
 /// `% 97`-bounded loop 8x into a single block computing the interleaved
-/// non-reassociable chain `((((acc*33)^i)*33)^(i+1))*33 ...` (eight
-/// mul/xor rounds with eight distinct `i+k` operands live at once); the
-/// scheduling problem defeats every solver tactic, and NoSolution is a
-/// panic, not a diagnostic. Bounded by: the xor-only (`acc ^= i`) and
-/// mul-only (`acc *= 33`) bodies of the identical loop compile and pass
-/// (their unrolled chains collapse), and `case_chain300`'s straight-line
-/// ~400-op chain passes, so the bug is specific to the unroll-produced
-/// interleaved shape, not to chain length. Also invalidates the earlier
-/// "NoSolution unreachable from wasm-derived IR" closure (KNOWLEDGE.md).
-/// Un-ignore when the scheduler solves (or cleanly diagnoses) the unrolled
-/// mul-xor chain — i.e. when this case compiles.
+/// non-reassociable chain `((((acc*33)^i)*33)^(i+1))*33 ...`, whose live
+/// state spills. Root cause (triage 2026-08-27): NOT a hard scheduling
+/// problem — TransformSpills' `insert_required_phis`
+/// (hir-transform/src/spill.rs) seeds EVERY predecessor edge of a
+/// dominance-frontier join with the spilled value itself; on the loop-BYPASS
+/// edge (this zero-trip-capable `while`) the definition does not dominate,
+/// the seed is never rewritten (the pass warns "unused phi"; dead-phi
+/// removal is an open TODO), no verifier checks SSA dominance, and
+/// cfg-to-scf threads the dead phi args into a sibling-region `scf.yield` —
+/// so the scheduler receives an UNSATISFIABLE problem (an operand that is
+/// not on the operand stack). With yield arity 2 the TwoArgs-only tactic
+/// list returns NotApplicable and NoSolution panics; the arity-3 twin of
+/// the same defect is `unroll_rotmix` (spills.rs), and the independent
+/// in-contract arity-2 solver gap is `rotl_window` (spills.rs). Bounded by:
+/// the xor-only and mul-only bodies of the identical loop compile and pass,
+/// and `case_chain300`'s ~400-op straight-line chain passes. Un-ignore when
+/// this case compiles (after a spills fix it may still hit the rotl_window
+/// gap — then re-triage).
 #[test]
 #[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
             while scheduling the 8x-unrolled mul-xor loop chain (compile-time, no inputs involved)"]

@@ -489,7 +489,28 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   Rust (`unroll_chain`, kept `#[ignore]`d; specifics at the test). The
   mul-only and xor-only bodies of the same loop collapse when unrolled and
   pass, so the trigger is the unroll-produced *interleaved* chain — plain
-  chain length is fine (`case_chain300`).
+  chain length is fine (`case_chain300`). ROOT-CAUSED 2026-08-27: the
+  unroll-family panics (`unroll_chain`, `unroll_rotmix`) are NOT solver
+  limitations — the unroll forces spilling, and TransformSpills hands the
+  solver SSA-invalid IR (see the spill section's phi-insertion fact); the
+  scheduling problems are *unsatisfiable* (an expected operand absent from
+  the operand stack), not hard. Panic site depends only on arity: arity-2 →
+  `TwoArgs` NotApplicable → `NoSolution` at lowering.rs:109; arity≥3 →
+  `MoveDownAndSwap` walks the model past its end → subtract-with-overflow
+  in `Stack::movdn` (stack.rs:80). The solver never validates that expected
+  Move operands exist on the stack, so out-of-contract input surfaces as
+  these arbitrary panics.
+- **Arity-2 problems are TwoArgs-only** (`solver.rs` `is_binary` branch):
+  no other tactic is pushed for binary ops, so when TwoArgs' fixed
+  dup/movup pattern needs a stack access past the 16-felt MASM window (a
+  Copy-constrained operand near the bottom of a full 15-felt window — copy
+  materialization adds transient depth the K=16 spill cap does not model),
+  the window check rejects the solution and there is no fallback →
+  `NoSolution` on an *in-contract, solvable* problem
+  (`LinearStackWindow`+`Linear` produce a valid in-window schedule for the
+  same shape at other arities). Reproducer: `rotl_window` (ten shared
+  count bands + u64 rotl; the six-count `spill_switch` passes) — a
+  root-cause distinct from the unroll-family panics above.
 - **No size-gated compiler path exists at single-block scale**: a ~400-op
   non-reassociable chain (139 spill locals, 267 stack-motion ops in MASM)
   compiles in about a second and passes differentially — no cliff, no
@@ -619,6 +640,22 @@ spill shape BEFORE paying a coverage step.
   10 felts combined with an in-loop multi-arm dispatch currently fails to
   schedule (see the ignored reproducers in the spills test module); keep
   deliberate freight around 6-8 felts in cases that must pass.
+- **`insert_required_phis` seeds every predecessor edge with the spilled
+  value itself** (hir-transform/src/spill.rs, phi-insertion for DF+ of the
+  reload blocks): for a join reachable via a path the definition does not
+  dominate (e.g. a loop-bypass edge when the spill lives in the loop body),
+  no reaching definition exists on that edge, so the seeded successor
+  argument is never rewritten and the function leaves the pass SSA-invalid;
+  the phi is provably dead on such edges (a real use would have been
+  invalid pre-pass), the pass itself warns "unused phi ... encountered
+  during rewrite phase" (removal is an open TODO in `rewrite_inserted_phi_
+  uses`), and nothing downstream verifies dominance (the per-op verifier
+  has no SSA-dominance check). cfg-to-scf then threads the dead phi args
+  into sibling-region scf.yield operands, and codegen panics scheduling an
+  operand that is not on the operand stack — the mechanism behind the
+  ignored unroll-family reproducers (specifics at the test sites). Because
+  the poisoned phi can never feed a live use, this defect cannot silently
+  miscompile; it always surfaces as a compile-time panic.
 
 ## Case-writing tricks that work
 
