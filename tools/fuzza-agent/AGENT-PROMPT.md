@@ -87,9 +87,10 @@ Each new case is a single `.rs` file at
   determinism unless you restore it before returning. (Statics are still a
   useful tool: non-zero initializers are how you reach the data-segment code.)
 - Stay away from known compile-breakers unless they are your target: flat
-  signatures over 16 stack felts, function pointers, and recursion (see
-  `KNOWLEDGE.md`), plus the shapes behind the `#[ignore]`d compiler-panic
-  reproducers in the test modules.
+  signatures over 16 stack felts and recursion (see `KNOWLEDGE.md`), plus
+  the shapes behind the `#[ignore]`d compiler-panic reproducers in the test
+  modules. (Function pointers / `dyn` dispatch are supported and covered —
+  see KNOWLEDGE.md's indirect-calls section.)
 
 Wire the new case into the thematic module under
 `tests/integration/src/end_to_end/differential/tests/` that matches what the
