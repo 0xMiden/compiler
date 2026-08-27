@@ -93,6 +93,11 @@ Maintenance rules:
   always turned into a strict compare with inverted arms. `le_s`/`ge_s` (and
   the `lte`/`gte` emitter arms) are reachable **only** by materializing the
   boolean as a value inside a `#[inline(never)]` helper (`case_scmp_bool.rs`).
+  The same holds for the UNSIGNED non-strict compares: `i64.ge_u` (the
+  `gte_u64` emitter arm) has no producer besides a materialized
+  `(a >= b) as u32` helper (`case_ucmp_ge.rs`, 2026-08-27) — the u128
+  compare legalization only ever materializes an inline `i64.le_u` pair
+  (which is what keeps `lte_u64` warm), never `ge_u`.
 - The harness prepends a `loop {}` panic handler, so `panic!` **never** lowers
   to wasm `unreachable`. To get a genuine trap edge, plant
   `core::arch::wasm32::unreachable()` behind an impossible cross-modulus guard
@@ -226,6 +231,27 @@ Maintenance rules:
   are never branch targets and `br` never carries values (locals argument) —
   so a dead `end` never resumes at a following block WITH arguments (the
   next_block_args closure is unproducible).
+
+## Module-structure payload closure (verified 2026-08-27, global mop-up)
+
+The cold remainder of `module_env.rs::parse_payload` and its section handlers
+is toolchain-gated for cargo-miden no_std cdylib builds — not case-producible:
+
+- `import_section`/`declare_import` (0-cov): harness modules are import-less;
+  an undefined import is a clean link error, and intrinsic/stub imports are
+  the out-of-scope linker-stub surface.
+- `start_section` (0-cov): rustc/wasm-ld never emit a wasm start section for
+  a no_std cdylib (no life-before-main in Rust).
+- `dwarf_section` (0-cov): differential builds carry no DWARF (see the
+  Local2Reg section's synthesized-debug-info fact).
+- `TagSection` is `unreachable!()` (exceptions feature disabled).
+- Partials: `global_section` (the I32 `__stack_pointer` is the only wasm
+  global this toolchain emits), `data_section` (no passive-segment producer
+  without shared-memory init), `element_section`/`table_section` (multi-table
+  / passive / null-hole / PIC-base shapes — see the indirect-calls section),
+  `name_section` (subsections beyond function names are not emitted).
+  The remaining error arms (Encoding::Component, duplicate custom sections)
+  are diagnostics backstops.
 
 ## Local2Reg & data-segment layout (verified 2026-08-27, memory gap-check)
 
@@ -380,6 +406,17 @@ pipeline in midenc-compile/src/stages/rewrite.rs):
   arms are dead (fresh folder per driver iteration, each op visited once),
   and `notify_removal`'s main body is dead (nothing erases a folder-owned
   constant while its folder lives).
+- Greedy-driver region simplification runs at `RegionSimplificationLevel::
+  Normal` everywhere (the driver default; the one pipeline config-setter,
+  midenc-compile backend.rs, also sets Normal). `merge_identical_blocks` and
+  `drop_redundant_arguments`/`drop_redundant_block_arguments` run only under
+  `Aggressive` — config-gated, no case producer (2026-08-27).
+- The MASM legalization pass (codegen/masm/src/legalization.rs) runs
+  `apply_full_conversion` on every compile, but wasm-derived HIR arrives
+  already-legal, so `FullConversionDriver::legalize_operation` only verifies
+  legality: its pattern-rewrite/materialization interiors and
+  `reconcile_unrealized_conversion_casts` are invalid-IR backstops
+  (2026-08-27).
 - `DeadCodeAnalysis` has exactly two pipeline loaders — SCCP's solver
   (pre-lift) and `LivenessAnalysis` inside TransformSpills (pre- AND
   post-lift; the latter is what warms the scf region-branch/terminator arms)
@@ -527,6 +564,11 @@ corroborate each closure below):
   `OpEmitter::bnot` and its `emit_repeat`/`emit_template` 64/128-bit arms are
   unreachable; `emit_all::<[_;13]>/<[_;14]>` likewise (callers are the
   checked/overflowing `mul_u64` arms the frontend never builds).
+- **Dead emit-helper API** (zero callers workspace-wide, 2026-08-27):
+  `dup_select_int32`/`mov_select_int32` (int32.rs); `zext_int64` and
+  `move_int64_up` (int64.rs) are called only from the dead cast/felt/i128
+  paths. `LoopForest::verify`/`compare_loops`/`verify_loop` (hir ir/loops.rs)
+  are self-check API with no pipeline caller.
 - **`OperandStack::get` is SDK-only** (emit/events.rs, emit/merkle.rs);
   `IndexMut` remains closed with the same-value-operand-pair fact. Refinement:
   cfg-to-scf DOES synthesize repeated-operand lists (`scf.yield %v, %v, %v,
@@ -851,6 +893,11 @@ at the test site.
   cold (that is how translate_unreachable_operator's warm End-of-Loop arm
   read as a target). Before betting a case on a specific arm, verify at
   region level — `report.json` carries exact `line:col` spans per region.
+  Even REGION-level cold on a dispatch arm can be attribution noise: the
+  `OpEmitter::shr` U64 arm's region reads count-0 while its unique callee
+  `shr_u64` is 6/6 warm and the corpus HIR provably contains u64 `arith.shr`
+  (2026-08-27). When a cold arm has a dedicated callee, check the callee's
+  coverage before treating the arm as a gap.
 - `MIDENC_EMIT` paths must be ABSOLUTE `kind=DIR` specs: bare kinds dump into
   the test process CWD (that is how stray `.masm`/`.hir` files end up in the
   source tree), and *relative* dirs silently vanish into the ephemeral

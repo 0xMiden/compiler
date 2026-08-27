@@ -48,6 +48,12 @@ closed by an unreachability argument).
   case budget and a bias toward the unreachability exit.
 - An area blocked by a known bug is a *re-run candidate*, not a dead area —
   the blocking test's comment names the unblock condition.
+- When composing a brief from the report's cold tables, read the untouched
+  AND partially-covered tables together: an untouched row for a generic
+  function may be a unit-test-only or phantom `<_, _>` monomorph whose real
+  instantiation sits warm in the partial table, and a cold dispatch ARM can
+  be llvm-cov attribution noise — verify via its dedicated callee's coverage
+  before making it an iteration's headline target.
 
 ## Per-iteration subagent prompt skeleton
 
