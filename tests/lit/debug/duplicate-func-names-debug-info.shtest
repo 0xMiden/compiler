@@ -1,0 +1,25 @@
+# RUN: midenc %S/duplicate-func-names-debug-info.wasm --entrypoint=test --emit=hir=- -Canalyze-only 2>&1 | filecheck %s
+
+# Operates on a Wasm fixture that contains two functions whose name-section name is duplicated
+# (`foo`) and real DWARFwith two subprograms also named `foo`, distinguishable only through their
+# `DW_AT_low_pc`
+#
+# The prebuilt fixture can be regenerated with:
+#
+# `cargo test -p midenc-frontend-wasm --lib -- --ignored write_duplicate_names_dwarf_fixture`
+
+# The first duplicate keeps its source name in the subprogram and records the unique name as the
+# linkage name. Its parameter `a` was resolved via `low_pc` and verifies that the function was
+# resolved correctly. The parameter of the other `foo` function is called `b`.
+# CHECK-LABEL: builtin.function private extern("C") @foo_func0(
+# CHECK: di.debug_declare <{ variable = #di.variable<{ name = "a", file = "unknown", line = 0, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+# CHECK: di.subprogram = #di.subprogram<{ name = "foo", file = "unknown", line = 0, linkage = "foo_func0", definition = true, local = false }>
+
+# The second duplicate resolves its own parameter `b`
+# CHECK-LABEL: builtin.function private extern("C") @foo_func1(
+# CHECK: di.debug_declare <{ variable = #di.variable<{ name = "b", file = "unknown", line = 0, arg = 0, ty = i32 }>, expression = #di.expression<[DW_OP_WASM_local(0)]> }>;
+# CHECK: di.subprogram = #di.subprogram<{ name = "foo", file = "unknown", line = 0, linkage = "foo_func1", definition = true, local = false }>
+
+# The function with unique name still resolves by name and carries no linkage name
+# CHECK-LABEL: builtin.function public extern("C") @test(
+# CHECK: di.subprogram = #di.subprogram<{ name = "test", file = "unknown", line = 0, definition = true, local = false }>
