@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Compiler and `midenc`
 
+- Naming an operation in a dialect that is not registered now reports an unknown dialect,
+  which is a separate diagnostic from an unrecognised operation inside a dialect that does
+  exist. The dialect half of the name comes from the source, so it can name anything; it
+  previously reached a direct map index and aborted.
+
 - The filesystem package cache is now per-build. When the calling process already exported
   `MIDENC_PACKAGE_CACHE`, the compiler adopts that directory as its package cache and leaves
   it in place — the caller owns its location and lifetime, which is how packages stay
