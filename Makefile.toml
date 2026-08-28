@@ -315,10 +315,14 @@ args = [
 # machine) never fails the flow. Set `MIDEN_SKIP_SWEEP` to disable it, for
 # example when alternating between branches that supersede each other's builds.
 [tasks.sweep-flow]
-extend = "sweep"
 private = true
 ignore_errors = true
 condition = { env_not_set = ["MIDEN_SKIP_SWEEP"] }
+command = "python3"
+args = [
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/sweep-target.py",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/target",
+]
 
 [tasks.update]
 category = "Dependencies"
