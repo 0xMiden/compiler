@@ -28,6 +28,9 @@ struct Args {
     /// baseline value.
     #[arg(long)]
     skip_failed_builds: bool,
+    /// Print metrics to stdout without writing reports or benchmark artifacts.
+    #[arg(long)]
+    stdout_only: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -36,14 +39,17 @@ fn main() -> anyhow::Result<()> {
         args.workspace_root.pop();
     }
     let commit = resolve_commit(args.commit, &args.workspace_root)?;
-    let report = BenchmarkRunner::new(
+    let mut runner = BenchmarkRunner::new(
         &args.workspace_root,
         &args.output_dir,
         &args.build_dir,
         args.cargo_miden,
         args.skip_failed_builds,
-    )?
-    .run(commit)?;
+    )?;
+    if args.stdout_only {
+        runner = runner.without_artifacts();
+    }
+    let report = runner.run(commit)?;
 
     println!("| example | cycles | MAST size |");
     println!("| --- | ---: | ---: |");

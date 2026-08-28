@@ -17,6 +17,14 @@ cargo build -p cargo-miden
 cargo make bench -- --cargo-miden target/debug/cargo-miden
 ```
 
+For agent-friendly output without reports, packages, replays, or flamegraphs, run:
+
+```bash
+cargo make bench-agent
+```
+
+This task builds and uses the workspace's `cargo-miden` automatically.
+
 Results are written to `target/example-benchmarks/`:
 
 - `results.json` contains machine-readable MAST sizes and VM cycles.

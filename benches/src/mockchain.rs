@@ -4,7 +4,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
+use miden_assembly::ast::{Attribute, Ident};
 use miden_core::{Felt, Word, crypto::hash::Poseidon2, mast::MastForest, serde::Serializable};
 use miden_debug::{ReplaySnapshot, clone_advice_mutations, flamegraph::FlamegraphProfile};
 use miden_field_repr::{FromFeltRepr, ToFeltRepr};
@@ -52,6 +53,7 @@ const P2ID_TX_SCRIPT: &str = "p2id-tx-script";
 const P2IDE_NOTE: &str = "p2ide-note";
 const STORAGE_EXAMPLE: &str = "storage-example";
 const STORAGE_TX_SCRIPT: &str = "storage-tx-script";
+const STORAGE_ACCOUNT_PROCEDURES: &[&str] = &["get-asset-qty", "set-asset-qty"];
 const COUNTER_STORAGE_KEY: Word = Word::new([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]);
 const STORAGE_OWNER_KEY: Word = Word::new([Felt::ONE, Felt::ZERO, Felt::ZERO, Felt::ZERO]);
 
@@ -138,7 +140,9 @@ impl BenchmarkRunner {
         let mut optimized_packages = ScenarioPackages::new();
         let mut debug_packages = ScenarioPackages::new();
         for scenario in TRANSACTION_SCENARIOS {
-            eprintln!("Benchmarking {}", scenario.name);
+            if self.write_artifacts {
+                eprintln!("Benchmarking {}", scenario.name);
+            }
             match self.run_transaction_scenario(
                 scenario,
                 &mut optimized_packages,
@@ -160,33 +164,42 @@ impl BenchmarkRunner {
         optimized_cache: &mut ScenarioPackages,
         debug_cache: &mut ScenarioPackages,
     ) -> Result<Vec<TransactionBenchmarkResult>> {
-        let optimized_packages =
-            self.load_scenario_packages(scenario.packages, "none", true, optimized_cache)?;
+        let optimized_packages = self.load_scenario_packages(
+            scenario.packages,
+            "none",
+            self.write_artifacts,
+            optimized_cache,
+        )?;
         let optimized_tx = (scenario.build)(&optimized_packages)?;
         let optimized_tx = block_on(optimized_tx.execute())
             .with_context(|| format!("optimized {} transaction execution failed", scenario.name))?;
         let cycles = optimized_tx.measurements().total_cycles();
 
-        let debug_packages =
-            self.load_scenario_packages(scenario.packages, "full", false, debug_cache)?;
-        let debug_tx = (scenario.build)(&debug_packages)?;
-        let capture = ReplayCapture::default();
-        execute_with_replay_capture(debug_tx, capture.clone())?;
+        let (flamegraph, replay) = if self.write_artifacts {
+            let debug_packages =
+                self.load_scenario_packages(scenario.packages, "full", false, debug_cache)?;
+            let debug_tx = (scenario.build)(&debug_packages)?;
+            let capture = ReplayCapture::default();
+            execute_with_replay_capture(debug_tx, capture.clone())?;
 
-        let snapshot = capture
-            .take()
-            .ok_or_else(|| anyhow!("transaction execution did not produce a replay snapshot"))?;
-        let relative_replay = format!("replays/{}.mdsnap", scenario.name);
-        snapshot
-            .write_to_file(self.output_dir.join(&relative_replay))
-            .context("failed to write transaction replay snapshot")?;
+            let snapshot = capture.take().ok_or_else(|| {
+                anyhow!("transaction execution did not produce a replay snapshot")
+            })?;
+            let replay = format!("replays/{}.mdsnap", scenario.name);
+            snapshot
+                .write_to_file(self.output_dir.join(&replay))
+                .context("failed to write transaction replay snapshot")?;
 
-        let profile = FlamegraphProfile::collect_replay(snapshot)
-            .context("failed to collect transaction replay flamegraph")?;
-        let relative_flamegraph = format!("flamegraphs/{}.svg", scenario.name);
-        profile
-            .write_svg(self.output_dir.join(&relative_flamegraph))
-            .map_err(|err| anyhow!(err.to_string()))?;
+            let profile = FlamegraphProfile::collect_replay(snapshot)
+                .context("failed to collect transaction replay flamegraph")?;
+            let flamegraph = format!("flamegraphs/{}.svg", scenario.name);
+            profile
+                .write_svg(self.output_dir.join(&flamegraph))
+                .map_err(|err| anyhow!(err.to_string()))?;
+            (Some(flamegraph), Some(replay))
+        } else {
+            (None, None)
+        };
 
         Ok(scenario
             .examples
@@ -194,8 +207,8 @@ impl BenchmarkRunner {
             .map(|name| TransactionBenchmarkResult {
                 name: (*name).into(),
                 cycles,
-                flamegraph: relative_flamegraph.clone(),
-                replay: relative_replay.clone(),
+                flamegraph: flamegraph.clone(),
+                replay: replay.clone(),
             })
             .collect())
     }
@@ -622,8 +635,11 @@ fn transaction_script_with_dependencies(
 fn build_storage_transaction(packages: &ScenarioPackages) -> Result<MockTransaction> {
     let mut storage = InitStorageData::default();
     storage.insert_value("storage_example::foo::owner_public_key", STORAGE_OWNER_KEY)?;
-    let component =
-        AccountComponent::from_package(required_package(packages, STORAGE_EXAMPLE)?, &storage)?;
+    let storage_package = with_account_procedure_exports(
+        required_package(packages, STORAGE_EXAMPLE)?,
+        STORAGE_ACCOUNT_PROCEDURES,
+    )?;
+    let component = AccountComponent::from_package(&storage_package, &storage)?;
     let wallet = AccountComponent::from_package(
         required_package(packages, BASIC_WALLET)?,
         &InitStorageData::default(),
@@ -647,6 +663,45 @@ fn build_storage_transaction(packages: &ScenarioPackages) -> Result<MockTransact
         &[required_package(packages, STORAGE_EXAMPLE)?.as_ref()],
     )?;
     chain.build_transaction(account).tx_script(script).build()
+}
+
+fn with_account_procedure_exports(package: &Package, names: &[&str]) -> Result<Package> {
+    let marker = Attribute::Marker(
+        Ident::new("account_procedure").expect("account_procedure is a valid attribute name"),
+    );
+    let mut matched = 0;
+    let exports = package
+        .manifest
+        .exports()
+        .cloned()
+        .map(|mut export| {
+            if let PackageExport::Procedure(procedure) = &mut export
+                && procedure.path.last().is_some_and(|name| names.contains(&name))
+            {
+                procedure.attributes.insert(marker.clone());
+                matched += 1;
+            }
+            export
+        })
+        .collect::<Vec<_>>();
+    ensure!(
+        matched == names.len(),
+        "expected {} storage account procedures, found {matched}",
+        names.len()
+    );
+
+    let mut adapted = Package::create_with_modules(
+        package.name.clone(),
+        package.version.clone(),
+        package.kind,
+        package.mast_forest().clone(),
+        exports,
+        package.manifest.modules().cloned(),
+        package.manifest.dependencies().cloned(),
+    )?;
+    adapted.description.clone_from(&package.description);
+    adapted.sections.clone_from(&package.sections);
+    Ok(adapted)
 }
 
 fn block_on<F: std::future::Future>(future: F) -> F::Output {
