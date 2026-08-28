@@ -71,12 +71,219 @@ def unit_hash(name):
     return match.group(1) if match else None
 
 
+class UnresolvedExecutableError(Exception):
+    """Raised when a Cargo executable cannot be mapped to its hashed cache unit."""
+
+
+def unhashed_artifact_name(name):
+    """Remove Cargo's unit hash from an artifact file name."""
+    stem, separator, suffix = name.partition(".")
+    match = HASH_RE.search(stem)
+    if not match:
+        return name
+    name = stem[:match.start()]
+    return f"{name}{separator}{suffix}" if separator else name
+
+
+def cargo_path_components(path, target_dir=None, build_dir=None):
+    """Return path components below Cargo's target or build directory."""
+    if target_dir is None or build_dir is None:
+        return tuple(path.split(os.sep))
+
+    absolute = os.path.abspath(path)
+    matching_roots = []
+    for root in {os.path.abspath(target_dir), os.path.abspath(build_dir)}:
+        try:
+            if os.path.commonpath((absolute, root)) == root:
+                matching_roots.append(root)
+        except ValueError:
+            continue
+    if not matching_roots:
+        return ()
+
+    # Prefer the most specific root when one is nested under the other.
+    root = max(matching_roots, key=len)
+    relative = os.path.relpath(absolute, root)
+    return tuple(relative.split(os.sep)) if relative != os.curdir else ()
+
+
+def artifact_hashes(path, target_dir=None, build_dir=None):
+    """Return unit hashes encoded in a Cargo artifact path.
+
+    Normal artifacts carry the hash in their basename. Build-script artifacts
+    instead use a hashless basename below `build/<crate>-<hash>`. Restricting
+    the search to those Cargo-owned positions avoids mistaking a workspace or
+    target-directory component for a live unit hash.
+    """
+    components = cargo_path_components(path, target_dir, build_dir)
+    if not components:
+        return set()
+
+    found = set()
+    marked = unit_hash(components[-1])
+    if marked:
+        found.add(marked)
+    for index, component in enumerate(components[:-1]):
+        if component == "build":
+            marked = unit_hash(components[index + 1])
+            if marked:
+                found.add(marked)
+    return found
+
+
+def files_equal(first, second):
+    """Return whether two regular files are byte-identical."""
+    if os.path.samefile(first, second):
+        return True
+    if os.path.getsize(first) != os.path.getsize(second):
+        return False
+    with open(first, "rb") as lhs, open(second, "rb") as rhs:
+        while True:
+            lhs_chunk = lhs.read(1024 * 1024)
+            rhs_chunk = rhs.read(1024 * 1024)
+            if lhs_chunk != rhs_chunk:
+                return False
+            if not lhs_chunk:
+                return True
+
+
+def uplifted_executable_hashes(message, target_dir, build_dir):
+    """Resolve an uplifted executable to its byte-identical hashed cache unit.
+
+    Cargo's JSON messages name ordinary binaries only by their final, unhashed
+    path (for example, `target/debug/midenc`). The build cache keeps the same
+    executable as `target/debug/deps/midenc-<hash>`. Compare the uplifted file
+    with same-named cache candidates so the live unit hash is not swept.
+
+    Multiple byte-identical candidates are all live for sweep purposes. That
+    deliberately favors retaining a duplicate over guessing which one Cargo
+    uplifted and deleting a live unit.
+    """
+    executable = message["executable"]
+    target = message.get("target", {})
+    crate_name = target.get("name")
+    if not crate_name:
+        raise UnresolvedExecutableError(
+            f"Cargo did not report a target name for uplifted executable: {executable}"
+        )
+
+    # Cargo normalizes hyphens in package target names to underscores in the
+    # rustc crate name used for cached artifacts. The uplifted executable keeps
+    # the original target name (for example, `cargo-miden` versus
+    # `deps/cargo_miden-<hash>`).
+    executable_suffix = os.path.splitext(executable)[1]
+    cached_name = f"{crate_name.replace('-', '_')}{executable_suffix}"
+
+    profile_dir = os.path.dirname(os.path.abspath(executable))
+    cache_subdir = "deps"
+    if "example" in target.get("kind", []):
+        cache_subdir = "examples"
+        if os.path.basename(profile_dir) == "examples":
+            profile_dir = os.path.dirname(profile_dir)
+    try:
+        relative_profile = os.path.relpath(profile_dir, os.path.abspath(target_dir))
+    except ValueError as err:
+        raise UnresolvedExecutableError(
+            f"uplifted executable is outside Cargo's target directory: {executable}"
+        ) from err
+    if relative_profile == os.pardir or relative_profile.startswith(os.pardir + os.sep):
+        raise UnresolvedExecutableError(
+            f"uplifted executable is outside Cargo's target directory: {executable}"
+        )
+    cache_dir = os.path.join(os.path.abspath(build_dir), relative_profile, cache_subdir)
+    try:
+        candidates = os.scandir(cache_dir)
+    except OSError as err:
+        raise UnresolvedExecutableError(
+            f"cannot inspect cache for uplifted executable {executable}: {err}"
+        ) from err
+
+    resolved = set()
+    try:
+        with candidates:
+            for entry in candidates:
+                marked = unit_hash(entry.name)
+                if marked is None or unhashed_artifact_name(entry.name) != cached_name:
+                    continue
+                try:
+                    matches = entry.is_file(follow_symlinks=False) and files_equal(
+                        executable, entry.path
+                    )
+                except OSError as err:
+                    raise UnresolvedExecutableError(
+                        f"cannot compare uplifted executable {executable} with {entry.path}: {err}"
+                    ) from err
+                if matches:
+                    resolved.add(marked)
+    except OSError as err:
+        raise UnresolvedExecutableError(
+            f"cannot inspect cache for uplifted executable {executable}: {err}"
+        ) from err
+
+    if not resolved:
+        raise UnresolvedExecutableError(
+            f"cannot resolve uplifted executable to a hashed cache unit: {executable}"
+        )
+    return resolved
+
+
+def live_hashes_from_message(message, target_dir=None, build_dir=None):
+    """Return every live unit hash represented by one Cargo JSON message."""
+    live = set()
+    paths = list(message.get("filenames", []))
+    if message.get("out_dir"):
+        paths.append(message["out_dir"])
+    for path in paths:
+        live.update(artifact_hashes(path, target_dir, build_dir))
+
+    executable = message.get("executable")
+    executable_hashes = (
+        artifact_hashes(executable, target_dir, build_dir) if executable else set()
+    )
+    live.update(executable_hashes)
+    if executable and not executable_hashes:
+        if target_dir is None or build_dir is None:
+            raise UnresolvedExecutableError(
+                "Cargo target and build directories are required to resolve "
+                f"uplifted executable: {executable}"
+            )
+        live.update(uplifted_executable_hashes(message, target_dir, build_dir))
+    return live
+
+
+def cargo_output_directories(workspace_root):
+    """Return Cargo's final-artifact and cache roots for the workspace."""
+    result = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version=1"],
+        cwd=workspace_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        metadata = json.loads(result.stdout)
+        target_dir = metadata["target_directory"]
+        # `build_directory` was added after `target_directory`. On older Cargo
+        # versions they are necessarily the same directory.
+        build_dir = metadata.get("build_directory", target_dir)
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return None
+    return target_dir, build_dir
+
+
 def mark_live_units(workspace_root):
     """Replay the workspace invocations and collect the live unit hashes.
 
     Returns the set of hashes, or None when an invocation fails — the caller
     must not sweep with an incomplete live set.
     """
+    output_dirs = cargo_output_directories(workspace_root)
+    if output_dirs is None:
+        print("mark failed, not sweeping: cargo metadata failed", file=sys.stderr)
+        return None
+    target_dir, build_dir = output_dirs
+
     live = set()
     for invocation in MARK_INVOCATIONS:
         result = subprocess.run(
@@ -93,18 +300,15 @@ def mark_live_units(workspace_root):
                 message = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            # Harvest the hash from every path component: a library carries it
-            # in the file name, but a build-script executable is reported as a
-            # hashless `.../build/<crate>-<hash>/build-script-build`, and a
-            # build-script run only as its `.../build/<crate>-<hash>/out`.
-            paths = list(message.get("filenames", []))
-            if message.get("out_dir"):
-                paths.append(message["out_dir"])
-            for path in paths:
-                for component in path.split(os.sep):
-                    marked = unit_hash(component)
-                    if marked:
-                        live.add(marked)
+            # Harvest hashes from every path component: libraries carry one in
+            # the file name, while build scripts carry one in a parent directory.
+            # Ordinary binaries require resolving their unhashed uplifted copy
+            # back to the hashed cache artifact.
+            try:
+                live.update(live_hashes_from_message(message, target_dir, build_dir))
+            except UnresolvedExecutableError as err:
+                print(f"mark failed, not sweeping: {err}", file=sys.stderr)
+                return None
     return live
 
 
