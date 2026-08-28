@@ -260,6 +260,13 @@ pub enum ParserError {
         span: SourceSpan,
         name: BlockId,
     },
+    #[error("redefinition of symbol {name}")]
+    #[diagnostic()]
+    SymbolAlreadyDefined {
+        #[label]
+        span: SourceSpan,
+        name: interner::Symbol,
+    },
     #[error("too many arguments specified in argument list")]
     #[diagnostic()]
     TooManyBlockArguments {

@@ -96,7 +96,7 @@ impl AsmParserState {
         at: SourceSpan,
         end: SourceSpan,
         result_groups: &[(usize, SourceSpan)],
-    ) {
+    ) -> Result<(), super::ParserError> {
         let PartialOpDef {
             symbol_uses,
             is_symbol_table,
@@ -119,7 +119,8 @@ impl AsmParserState {
             // Populate symbol table first
             {
                 let mut op = op.borrow_mut();
-                let symbol_table = SymbolMap::build(&op);
+                let symbol_table = SymbolMap::try_build(&op)
+                    .map_err(|name| super::ParserError::SymbolAlreadyDefined { span: at, name })?;
                 if let Some(op_symbol_table) = op.as_trait_mut::<dyn SymbolTable>() {
                     **op_symbol_table.symbol_manager_mut().symbols_mut() = symbol_table;
                 }
@@ -132,6 +133,7 @@ impl AsmParserState {
                 .or_default()
                 .extend(symbol_uses.drain().flat_map(|(_, uses)| uses));
         }
+        Ok(())
     }
 
     /// Start a definition for a region nested under the current operation.

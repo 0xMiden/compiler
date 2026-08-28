@@ -132,22 +132,39 @@ impl SymbolMap {
     /// It is assumed that the given operation is a [SymbolTable] op, but this is not checked, and
     /// does not affect the correctness - however, it has limited utility for non-symbol table ops.
     pub fn build(op: &Operation) -> Self {
+        Self::try_build(op).expect("expected region to contain uniquely named symbol operations")
+    }
+
+    /// Like [`SymbolMap::build`], but reports the offending name instead of panicking when the
+    /// same symbol is defined twice.
+    ///
+    /// Callers handling parsed text must use this: a duplicate there is something the author
+    /// wrote, not a broken invariant. An operation with no region, or whose region has no blocks,
+    /// defines no symbols and yields an empty map.
+    pub fn try_build(op: &Operation) -> Result<Self, SymbolName> {
         let mut symbols = FxHashMap::default();
 
-        let region = op.regions().front().get().unwrap();
-        for op in region.entry().body() {
-            if let Some(symbol_ref) = op.as_symbol_ref() {
-                let name = symbol_ref.borrow().name();
-                symbols
-                    .try_insert(name, symbol_ref)
-                    .expect("expected region to contain uniquely named symbol operations");
+        let Some(region) = op.regions().front().get() else {
+            return Ok(Self {
+                symbols,
+                uniquing_count: 0,
+            });
+        };
+        if !region.is_empty() {
+            for op in region.entry().body() {
+                if let Some(symbol_ref) = op.as_symbol_ref() {
+                    let name = symbol_ref.borrow().name();
+                    if symbols.try_insert(name, symbol_ref).is_err() {
+                        return Err(name);
+                    }
+                }
             }
         }
 
-        Self {
+        Ok(Self {
             symbols,
             uniquing_count: 0,
-        }
+        })
     }
 
     /// Get the symbol named `name`, or `None` if undefined.

@@ -777,7 +777,7 @@ where
                 }
             }
         } else if let Some(asm_state) = self.state_mut().asm_state.as_deref_mut() {
-            asm_state.finalize_operation_definition(op, name_span, end, &[]);
+            asm_state.finalize_operation_definition(op, name_span, end, &[])?;
         }
 
         Ok(op)

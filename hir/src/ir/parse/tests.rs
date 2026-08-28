@@ -488,3 +488,29 @@ fn an_unknown_operation_in_a_known_dialect_still_reports_separately() {
         "a known dialect must not be reported as unknown, got: {rendered}"
     );
 }
+
+/// A module with an empty body defines no symbols; building its symbol table must not unwrap the
+/// missing entry block.
+#[test]
+fn an_empty_module_body_parses() {
+    let test = ParserTest::default();
+    test.parse_any("empty.hir", "builtin.module public @t {};")
+        .expect("an empty module body should parse");
+}
+
+/// Two symbols with one name is something the author wrote, so it must be reported rather than
+/// tripping the uniqueness assertion inside the symbol table.
+#[test]
+fn a_duplicate_symbol_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.module public @t {
+    builtin.function internal extern(\"C\") @f(%a: i32) -> i32 {
+        builtin.ret %a : (i32);
+    };
+    builtin.function internal extern(\"C\") @f(%b: i32) -> i32 {
+        builtin.ret %b : (i32);
+    };
+};";
+    assert!(test.parse_any("dup.hir", source).is_err(), "a duplicate symbol must not parse");
+}
