@@ -195,6 +195,25 @@ args = [
     "${@}",
 ]
 
+[tasks.bench-agent]
+category = "Benchmarks"
+description = "Print example size and cycle benchmark metrics for agent consumption"
+dependencies = ["cargo-miden"]
+command = "cargo"
+args = [
+    "run",
+    "--quiet",
+    "-p",
+    "midenc-benchmark-runner",
+    "--bin",
+    "example-benchmarks",
+    "--",
+    "--stdout-only",
+    "--cargo-miden",
+    "${MIDENC_BIN_DIR}/cargo-miden",
+    "${@}",
+]
+
 [tasks.midenc]
 category = "Build"
 description = "Builds midenc and installs it to the bin folder"
