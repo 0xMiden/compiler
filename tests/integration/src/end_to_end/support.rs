@@ -12,7 +12,7 @@ use midenc_hir::diagnostics::PrintDiagnostic;
 use num_traits::{PrimInt, Unsigned};
 use proptest::{
     prelude::*,
-    test_runner::{Config, TestRunner},
+    test_runner::{Config, TestError, TestRunner},
 };
 
 use crate::compiler_test::{sdk_alloc_crate_path, sdk_crate_path};
@@ -188,32 +188,48 @@ pub(super) fn miden_project_toml(name: &str) -> String {
     )
 }
 
-/// A strategy for generating pairs of numeric values, biased toward edge cases like
-/// zero, one, max, min, half, etc. Particularly useful for testing overflowing,
-/// checked, and wrapping arithmetic operations.
+/// The number of randomly generated cases run after the enumerated edge cases.
 ///
-/// Associated strategies should distribute weights such that each edge case is likely to be
-/// executed when run with a runner created by [`Self::test_runner`].
-pub struct NumericStrategy<T> {
-    _marker: PhantomData<T>,
+/// The edge cases in a [`NumericCases`] run exhaustively, once each, so the random
+/// tail only has to cover behavior away from the edges. The previous scheme ran 512
+/// random cases because that count made one run likely (~94%) to hit every
+/// enumerated edge case; enumeration makes that guarantee exact and much cheaper.
+pub const RANDOM_TAIL_CASES: u32 = 64;
+
+/// A numeric test plan: enumerated edge cases plus a strategy for the random tail.
+pub struct NumericCases<V> {
+    /// Edge cases; each runs exactly once.
+    pub edges: Vec<V>,
+    /// The strategy for the random tail; runs [`RANDOM_TAIL_CASES`] times.
+    pub random: BoxedStrategy<V>,
 }
 
-impl<T> NumericStrategy<T> {
-    /// Returns a test runner that generates enough cases to make each [`NumericStrategy`] edge case
-    /// likely to be exercised.
-    ///
-    /// With 512 generated cases, each individual weight-1 edge case in the largest strategy is hit
-    /// with ~99.9% probability. For the largest current strategy (71 weight-1 edge cases plus a
-    /// weight-2 random arm), the chance of hitting all edge cases in one run is ~94%. For a smaller
-    /// 20-edge-case strategy with the same weight-2 random arm, the chance of hitting all edge
-    /// cases is >99.99%.
-    ///
-    /// Intuition: a specific edge case is very unlikely to be missed, but there are many edge
-    /// cases that could be the one missed. The expected number of missed edge cases in the largest
-    /// strategy is about 71 * (72 / 73)^512 = 0.06.
-    pub(super) fn test_runner() -> TestRunner {
-        TestRunner::new(Config::with_cases(512))
+impl<V: core::fmt::Debug + Clone> NumericCases<V> {
+    /// Runs `test` once for each edge case, then for the random tail.
+    pub fn run(self, test: impl Fn(V) -> Result<(), TestCaseError>) {
+        for case in &self.edges {
+            if let Err(err) = test(case.clone()) {
+                panic!("edge case {case:?} failed: {err}");
+            }
+        }
+        match TestRunner::new(Config::with_cases(RANDOM_TAIL_CASES)).run(&self.random, test) {
+            Ok(()) => (),
+            Err(TestError::Fail(reason, value)) => {
+                panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
+            }
+            Err(err) => panic!("Unexpected test result: {err:?}"),
+        }
     }
+}
+
+/// Builds numeric test plans that are biased toward edge cases like zero, one, max, min,
+/// half, etc. Particularly useful for testing overflowing, checked, and wrapping arithmetic
+/// operations.
+///
+/// Each associated function returns a [`NumericCases`] whose edge cases run exactly once and
+/// whose random tail covers the values between the edges.
+pub struct NumericStrategy<T> {
+    _marker: PhantomData<T>,
 }
 
 impl<T> NumericStrategy<T>
@@ -221,142 +237,152 @@ where
     T: PrimInt + Arbitrary + 'static,
     std::ops::RangeInclusive<T>: Strategy<Value = T>,
 {
-    pub fn add_unsigned() -> impl Strategy<Value = (T, T)>
+    pub fn add_unsigned() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.half, v.half)),
-            1 => Just((v.half, v.half_plus_one)),
-            1 => Just((v.half_plus_one, v.half)),
-            1 => Just((v.half_plus_one, v.half_plus_one)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.zero)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.two, v.max)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.three, v.three)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.one, v.max),
+                (v.max, v.max),
+                (v.half, v.half),
+                (v.half, v.half_plus_one),
+                (v.half_plus_one, v.half),
+                (v.half_plus_one, v.half_plus_one),
+                (v.max, v.zero),
+                (v.zero, v.max),
+                (v.zero, v.zero),
+                (v.one, v.zero),
+                (v.zero, v.one),
+                (v.two, v.max),
+                (v.max, v.two),
+                (v.three, v.three),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn add_signed() -> impl Strategy<Value = (T, T)>
+    pub fn add_signed() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((neg_one, v.min)),
-            1 => Just((v.min, v.min)),
-            1 => Just((v.half, v.half_plus_one)),
-            1 => Just((v.half_plus_one, v.half)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((neg_one, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.one, v.max),
+                (v.max, v.max),
+                (v.min, neg_one),
+                (neg_one, v.min),
+                (v.min, v.min),
+                (v.half, v.half_plus_one),
+                (v.half_plus_one, v.half),
+                (v.zero, v.zero),
+                (v.max, v.zero),
+                (v.min, v.zero),
+                (v.zero, v.max),
+                (v.zero, v.min),
+                (v.max, neg_one),
+                (neg_one, v.max),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn sub_unsigned() -> impl Strategy<Value = (T, T)>
+    pub fn sub_unsigned() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.half, v.half)),
-            1 => Just((v.half_plus_one, v.half)),
-            1 => Just((v.half, v.half_plus_one)),
-            1 => Just((v.one, v.one)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.two, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.zero, v.one),
+                (v.zero, v.max),
+                (v.max, v.max),
+                (v.max, v.zero),
+                (v.max, v.one),
+                (v.half, v.half),
+                (v.half_plus_one, v.half),
+                (v.half, v.half_plus_one),
+                (v.one, v.one),
+                (v.zero, v.zero),
+                (v.one, v.max),
+                (v.two, v.max),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn sub_signed() -> impl Strategy<Value = (T, T)>
+    pub fn sub_signed() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, v.max)),
-            1 => Just((v.max, v.min)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((neg_one, v.max)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.min, v.min)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.zero, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, v.one),
+                (v.min, v.max),
+                (v.max, v.min),
+                (v.max, neg_one),
+                (neg_one, v.max),
+                (v.min, neg_one),
+                (v.zero, v.min),
+                (v.max, v.max),
+                (v.min, v.min),
+                (v.zero, v.zero),
+                (v.max, v.zero),
+                (v.min, v.zero),
+                (v.zero, v.max),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn mul_unsigned() -> impl Strategy<Value = (T, T)>
+    pub fn mul_unsigned() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            2 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.two, v.max)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.half, v.two)),
-            1 => Just((v.two, v.half)),
-            1 => Just((v.half_plus_one, v.two)),
-            1 => Just((v.two, v.half_plus_one)),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.one)),
-            1 => Just((v.two, v.two)),
-            1 => Just((v.three, v.three)),
-            1 => Just((v.half, v.half)),
-            1 => Just((v.sqrt_max, v.sqrt_max)),
-            1 => Just((v.sqrt_max, v.sqrt_max_plus_one)),
-            1 => Just((v.sqrt_max_plus_one, v.sqrt_max)),
-            1 => Just((v.sqrt_max_plus_one, v.sqrt_max_plus_one)),
-            1 => Just((v.max_div_three, v.three)),
-            1 => Just((v.three, v.max_div_three)),
-            1 => Just((v.max_div_three_plus_one, v.three)),
-            1 => Just((v.three, v.max_div_three_plus_one)),
-            1 => Just((v.max_div_four, v.four)),
-            1 => Just((v.four, v.max_div_four)),
-            1 => Just((v.max_div_four_plus_one, v.four)),
-            1 => Just((v.four, v.max_div_four_plus_one)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.two),
+                (v.two, v.max),
+                (v.max, v.max),
+                (v.half, v.two),
+                (v.two, v.half),
+                (v.half_plus_one, v.two),
+                (v.two, v.half_plus_one),
+                (v.max, v.one),
+                (v.one, v.max),
+                (v.max, v.zero),
+                (v.zero, v.max),
+                (v.zero, v.zero),
+                (v.one, v.one),
+                (v.two, v.two),
+                (v.three, v.three),
+                (v.half, v.half),
+                (v.sqrt_max, v.sqrt_max),
+                (v.sqrt_max, v.sqrt_max_plus_one),
+                (v.sqrt_max_plus_one, v.sqrt_max),
+                (v.sqrt_max_plus_one, v.sqrt_max_plus_one),
+                (v.max_div_three, v.three),
+                (v.three, v.max_div_three),
+                (v.max_div_three_plus_one, v.three),
+                (v.three, v.max_div_three_plus_one),
+                (v.max_div_four, v.four),
+                (v.four, v.max_div_four),
+                (v.max_div_four_plus_one, v.four),
+                (v.four, v.max_div_four_plus_one),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn mul_signed() -> impl Strategy<Value = (T, T)>
+    pub fn mul_signed() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -379,330 +405,344 @@ where
         let min_div_three_minus_one = min_div_three - v.one;
         let min_div_four = v.min / v.four;
         let min_div_four_minus_one = min_div_four - v.one;
-        prop_oneof![
-            2 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.two, v.max)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.half, v.two)),
-            1 => Just((v.two, v.half)),
-            1 => Just((v.half_plus_one, v.two)),
-            1 => Just((v.two, v.half_plus_one)),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.one, v.min)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.one)),
-            1 => Just((v.two, v.two)),
-            1 => Just((v.three, v.three)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((neg_one, v.min)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((neg_one, v.max)),
-            1 => Just((v.min, v.two)),
-            1 => Just((v.two, v.min)),
-            1 => Just((v.min, neg_two)),
-            1 => Just((neg_two, v.min)),
-            1 => Just((v.min, v.three)),
-            1 => Just((v.min, neg_three)),
-            1 => Just((v.max, neg_two)),
-            1 => Just((neg_two, v.max)),
-            1 => Just((v.sqrt_max, v.sqrt_max)),
-            1 => Just((v.sqrt_max, v.sqrt_max_plus_one)),
-            1 => Just((v.sqrt_max_plus_one, v.sqrt_max)),
-            1 => Just((v.sqrt_max_plus_one, v.sqrt_max_plus_one)),
-            1 => Just((neg_sqrt_max, neg_sqrt_max)),
-            1 => Just((neg_sqrt_max, neg_sqrt_max_plus_one)),
-            1 => Just((neg_sqrt_max_plus_one, neg_sqrt_max)),
-            1 => Just((neg_sqrt_max_plus_one, neg_sqrt_max_plus_one)),
-            1 => Just((v.max_div_three, v.three)),
-            1 => Just((v.three, v.max_div_three)),
-            1 => Just((v.max_div_three_plus_one, v.three)),
-            1 => Just((v.three, v.max_div_three_plus_one)),
-            1 => Just((v.max_div_four, v.four)),
-            1 => Just((v.four, v.max_div_four)),
-            1 => Just((v.max_div_four_plus_one, v.four)),
-            1 => Just((v.four, v.max_div_four_plus_one)),
-            1 => Just((neg_max_div_two, neg_two)),
-            1 => Just((neg_two, neg_max_div_two)),
-            1 => Just((neg_max_div_two_plus_one, neg_two)),
-            1 => Just((neg_two, neg_max_div_two_plus_one)),
-            1 => Just((neg_max_div_three, neg_three)),
-            1 => Just((neg_three, neg_max_div_three)),
-            1 => Just((neg_max_div_three_plus_one, neg_three)),
-            1 => Just((neg_three, neg_max_div_three_plus_one)),
-            1 => Just((neg_max_div_four, neg_four)),
-            1 => Just((neg_four, neg_max_div_four)),
-            1 => Just((neg_max_div_four_plus_one, neg_four)),
-            1 => Just((neg_four, neg_max_div_four_plus_one)),
-            1 => Just((min_div_two, v.two)),
-            1 => Just((v.two, min_div_two)),
-            1 => Just((min_div_two_minus_one, v.two)),
-            1 => Just((v.two, min_div_two_minus_one)),
-            1 => Just((min_div_three, v.three)),
-            1 => Just((v.three, min_div_three)),
-            1 => Just((min_div_three_minus_one, v.three)),
-            1 => Just((v.three, min_div_three_minus_one)),
-            1 => Just((min_div_four, v.four)),
-            1 => Just((v.four, min_div_four)),
-            1 => Just((min_div_four_minus_one, v.four)),
-            1 => Just((v.four, min_div_four_minus_one)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.two),
+                (v.two, v.max),
+                (v.max, v.max),
+                (v.half, v.two),
+                (v.two, v.half),
+                (v.half_plus_one, v.two),
+                (v.two, v.half_plus_one),
+                (v.max, v.one),
+                (v.one, v.max),
+                (v.min, v.one),
+                (v.one, v.min),
+                (v.max, v.zero),
+                (v.zero, v.max),
+                (v.min, v.zero),
+                (v.zero, v.min),
+                (v.zero, v.zero),
+                (v.one, v.one),
+                (v.two, v.two),
+                (v.three, v.three),
+                (v.min, neg_one),
+                (neg_one, v.min),
+                (v.max, neg_one),
+                (neg_one, v.max),
+                (v.min, v.two),
+                (v.two, v.min),
+                (v.min, neg_two),
+                (neg_two, v.min),
+                (v.min, v.three),
+                (v.min, neg_three),
+                (v.max, neg_two),
+                (neg_two, v.max),
+                (v.sqrt_max, v.sqrt_max),
+                (v.sqrt_max, v.sqrt_max_plus_one),
+                (v.sqrt_max_plus_one, v.sqrt_max),
+                (v.sqrt_max_plus_one, v.sqrt_max_plus_one),
+                (neg_sqrt_max, neg_sqrt_max),
+                (neg_sqrt_max, neg_sqrt_max_plus_one),
+                (neg_sqrt_max_plus_one, neg_sqrt_max),
+                (neg_sqrt_max_plus_one, neg_sqrt_max_plus_one),
+                (v.max_div_three, v.three),
+                (v.three, v.max_div_three),
+                (v.max_div_three_plus_one, v.three),
+                (v.three, v.max_div_three_plus_one),
+                (v.max_div_four, v.four),
+                (v.four, v.max_div_four),
+                (v.max_div_four_plus_one, v.four),
+                (v.four, v.max_div_four_plus_one),
+                (neg_max_div_two, neg_two),
+                (neg_two, neg_max_div_two),
+                (neg_max_div_two_plus_one, neg_two),
+                (neg_two, neg_max_div_two_plus_one),
+                (neg_max_div_three, neg_three),
+                (neg_three, neg_max_div_three),
+                (neg_max_div_three_plus_one, neg_three),
+                (neg_three, neg_max_div_three_plus_one),
+                (neg_max_div_four, neg_four),
+                (neg_four, neg_max_div_four),
+                (neg_max_div_four_plus_one, neg_four),
+                (neg_four, neg_max_div_four_plus_one),
+                (min_div_two, v.two),
+                (v.two, min_div_two),
+                (min_div_two_minus_one, v.two),
+                (v.two, min_div_two_minus_one),
+                (min_div_three, v.three),
+                (v.three, min_div_three),
+                (min_div_three_minus_one, v.three),
+                (v.three, min_div_three_minus_one),
+                (min_div_four, v.four),
+                (v.four, min_div_four),
+                (min_div_four_minus_one, v.four),
+                (v.four, min_div_four_minus_one),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
     /// Checked remainder and division don't panic on zero rhs.
-    pub fn div_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    pub fn div_unsigned_checked() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.half, v.two)),
-            1 => Just((v.half_plus_one, v.two)),
-            1 => Just((v.two, v.max)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.zero)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, v.two),
+                (v.max, v.max),
+                (v.one, v.max),
+                (v.zero, v.one),
+                (v.zero, v.max),
+                (v.half, v.two),
+                (v.half_plus_one, v.two),
+                (v.two, v.max),
+                (v.max, v.zero),
+                (v.zero, v.zero),
+                (v.one, v.zero),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn div_unsigned_overflowing() -> impl Strategy<Value = (T, T)>
+    pub fn div_unsigned_overflowing() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => (any::<T>(), v.one..=v.max),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.half, v.two)),
-            1 => Just((v.half_plus_one, v.two)),
-            1 => Just((v.two, v.max)),
-            1 => Just((v.three, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, v.two),
+                (v.max, v.max),
+                (v.one, v.max),
+                (v.zero, v.one),
+                (v.zero, v.max),
+                (v.half, v.two),
+                (v.half_plus_one, v.two),
+                (v.two, v.max),
+                (v.three, v.max),
+            ],
+            random: (any::<T>(), v.one..=v.max).boxed(),
+        }
     }
 
     /// Checked remainder and division don't panic on zero rhs.
-    pub fn div_signed_checked() -> impl Strategy<Value = (T, T)>
+    pub fn div_signed_checked() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((v.min, v.two)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.zero, v.zero)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, neg_one),
+                (v.min, v.one),
+                (v.min, neg_one),
+                (v.min, v.two),
+                (v.max, v.two),
+                (v.zero, v.one),
+                (v.zero, v.min),
+                (v.max, v.zero),
+                (v.min, v.zero),
+                (v.zero, v.zero),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn div_signed_overflowing() -> impl Strategy<Value = (T, T)>
+    pub fn div_signed_overflowing() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            3 => (any::<T>(), v.min..=neg_one),
-            3 => (any::<T>(), v.one..=v.max),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((v.min, v.two)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((neg_one, v.min)),
-            1 => Just((neg_one, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, neg_one),
+                (v.min, v.one),
+                (v.min, neg_one),
+                (v.min, v.two),
+                (v.max, v.two),
+                (v.zero, v.one),
+                (v.zero, v.min),
+                (neg_one, v.min),
+                (neg_one, v.max),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), v.min..=neg_one),
+                3 => (any::<T>(), v.one..=v.max),
+            ]
+            .boxed(),
+        }
     }
 
     /// Checked remainder and division don't panic on zero rhs.
-    pub fn rem_unsigned_checked() -> impl Strategy<Value = (T, T)>
+    pub fn rem_unsigned_checked() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.half, v.two)),
-            1 => Just((v.half_plus_one, v.two)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.zero)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, v.two),
+                (v.max, v.max),
+                (v.one, v.max),
+                (v.zero, v.one),
+                (v.zero, v.max),
+                (v.half, v.two),
+                (v.half_plus_one, v.two),
+                (v.max, v.zero),
+                (v.zero, v.zero),
+                (v.one, v.zero),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn rem_unsigned_overflowing() -> impl Strategy<Value = (T, T)>
+    pub fn rem_unsigned_overflowing() -> NumericCases<(T, T)>
     where
         T: Unsigned,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => (any::<T>(), v.one..=v.max),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.half, v.two)),
-            1 => Just((v.half_plus_one, v.two)),
-            1 => Just((v.two, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, v.two),
+                (v.max, v.max),
+                (v.one, v.max),
+                (v.zero, v.one),
+                (v.zero, v.max),
+                (v.half, v.two),
+                (v.half_plus_one, v.two),
+                (v.two, v.max),
+            ],
+            random: (any::<T>(), v.one..=v.max).boxed(),
+        }
     }
 
     /// Checked remainder and division don't panic on zero rhs.
-    pub fn rem_signed_checked() -> impl Strategy<Value = (T, T)>
+    pub fn rem_signed_checked() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            5 => (any::<T>(), any::<T>()),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((v.min, v.two)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((v.one, v.min)),
-            1 => Just((v.two, v.min)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.zero, v.zero)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, neg_one),
+                (v.min, v.one),
+                (v.min, neg_one),
+                (v.min, v.two),
+                (v.max, v.two),
+                (v.zero, v.one),
+                (v.zero, v.min),
+                (v.one, v.min),
+                (v.two, v.min),
+                (v.max, v.zero),
+                (v.min, v.zero),
+                (v.zero, v.zero),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn rem_signed_overflowing() -> impl Strategy<Value = (T, T)>
+    pub fn rem_signed_overflowing() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            3 => (any::<T>(), v.min..=neg_one),
-            3 => (any::<T>(), v.one..=v.max),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((v.min, v.two)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((neg_one, v.min)),
-            1 => Just((neg_one, v.max)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, v.one),
+                (v.max, neg_one),
+                (v.min, v.one),
+                (v.min, neg_one),
+                (v.min, v.two),
+                (v.max, v.two),
+                (v.zero, v.one),
+                (v.zero, v.min),
+                (neg_one, v.min),
+                (neg_one, v.max),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), v.min..=neg_one),
+                3 => (any::<T>(), v.one..=v.max),
+            ]
+            .boxed(),
+        }
     }
 
-    pub fn is_signed() -> impl Strategy<Value = T>
+    pub fn is_signed() -> NumericCases<T>
     where
         T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
-        prop_oneof![
-            5 => any::<T>(),
-            1 => Just(v.zero),
-            1 => Just(v.one),
-            1 => Just(v.neg_one.unwrap()),
-            1 => Just(v.max),
-            1 => Just(v.min),
-            1 => Just(v.half),
-            1 => Just(v.half_plus_one),
-        ]
+        NumericCases {
+            edges: vec![v.zero, v.one, v.neg_one.unwrap(), v.max, v.min, v.half, v.half_plus_one],
+            random: any::<T>().boxed(),
+        }
     }
 
     /// Does *not* return `T::min_value` because it traps miden vm.
-    pub fn unchecked_neg() -> impl Strategy<Value = T>
+    pub fn unchecked_neg() -> NumericCases<T>
     where
         T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
         let min_plus_one = v.min + T::one();
-        prop_oneof![
-            5 => (v.min+T::one())..=v.max,
-            1 => Just(v.zero),
-            1 => Just(v.one),
-            1 => Just(neg_one),
-            1 => Just(v.max),
-            1 => Just(v.half),
-            1 => Just(v.half_plus_one),
-            1 => Just(min_plus_one),
-        ]
+        NumericCases {
+            edges: vec![v.zero, v.one, neg_one, v.max, v.half, v.half_plus_one, min_plus_one],
+            random: ((v.min + T::one())..=v.max).boxed(),
+        }
     }
 
-    pub fn comparison_signed() -> impl Strategy<Value = (T, T)>
+    pub fn comparison_signed() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            2 => (any::<T>(), any::<T>()),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.one)),
-            1 => Just((neg_one, neg_one)),
-            1 => Just((v.max, v.max)),
-            1 => Just((v.min, v.min)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.one, v.zero)),
-            1 => Just((neg_one, v.zero)),
-            1 => Just((v.zero, neg_one)),
-            1 => Just((v.max, neg_one)),
-            1 => Just((neg_one, v.max)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.one, v.min)),
-            1 => Just((v.min, v.max)),
-            1 => Just((v.max, v.min)),
-            1 => Just((v.half, v.half_plus_one)),
-            1 => Just((v.half_plus_one, v.half)),
-            1 => Just((v.zero, v.max)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.zero, v.min)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.one, v.max)),
-            1 => Just((v.max, v.one)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.zero, v.zero),
+                (v.one, v.one),
+                (neg_one, neg_one),
+                (v.max, v.max),
+                (v.min, v.min),
+                (v.zero, v.one),
+                (v.one, v.zero),
+                (neg_one, v.zero),
+                (v.zero, neg_one),
+                (v.max, neg_one),
+                (neg_one, v.max),
+                (v.min, v.one),
+                (v.one, v.min),
+                (v.min, v.max),
+                (v.max, v.min),
+                (v.half, v.half_plus_one),
+                (v.half_plus_one, v.half),
+                (v.zero, v.max),
+                (v.max, v.zero),
+                (v.zero, v.min),
+                (v.min, v.zero),
+                (v.one, v.max),
+                (v.max, v.one),
+            ],
+            random: (any::<T>(), any::<T>()).boxed(),
+        }
     }
 
-    pub fn pow2_signed() -> impl Strategy<Value = T>
+    pub fn pow2_signed() -> NumericCases<T>
     where
         T: num_traits::Signed + 'static,
     {
@@ -711,56 +751,64 @@ where
         let max_exp = T::from(bit_width - 2).unwrap();
         let max_exp_plus_one = max_exp + T::one();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            // valid exponents
-            2 => v.zero..=max_exp,
-            1 => Just(v.zero),
-            1 => Just(v.one),
-            1 => Just(max_exp),
-
-            // invalid exponents
-            1 => v.min..=neg_one,
-            1 => Just(v.min),
-            1 => Just(neg_one),
-            1 => max_exp_plus_one..=v.max,
-            1 => Just(max_exp_plus_one),
-            1 => Just(v.max),
-        ]
+        NumericCases {
+            edges: vec![
+                // valid exponents
+                v.zero,
+                v.one,
+                max_exp,
+                // invalid exponents
+                v.min,
+                neg_one,
+                max_exp_plus_one,
+                v.max,
+            ],
+            random: prop_oneof![
+                // valid exponents
+                2 => v.zero..=max_exp,
+                // invalid exponents
+                1 => v.min..=neg_one,
+                1 => max_exp_plus_one..=v.max,
+            ]
+            .boxed(),
+        }
     }
 
-    pub fn ipow_signed() -> impl Strategy<Value = (T, T)>
+    pub fn ipow_signed() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed + 'static,
     {
         let v = NumericStrategyValues::<T>::new();
         let thirty = T::from(30).unwrap();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            2 => (any::<T>(), v.zero..=thirty),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.one, v.zero)),
-            1 => Just((neg_one, v.zero)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.one, v.one)),
-            1 => Just((neg_one, v.one)),
-            1 => Just((v.max, v.one)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.zero, v.two)),
-            1 => Just((v.one, v.two)),
-            1 => Just((neg_one, v.two)),
-            1 => Just((v.max, v.two)),
-            1 => Just((v.min, v.two)),
-            1 => Just((v.zero, thirty)),
-            1 => Just((v.one, thirty)),
-            1 => Just((neg_one, thirty)),
-            1 => Just((v.max, thirty)),
-            1 => Just((v.min, thirty)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.zero, v.zero),
+                (v.one, v.zero),
+                (neg_one, v.zero),
+                (v.max, v.zero),
+                (v.min, v.zero),
+                (v.zero, v.one),
+                (v.one, v.one),
+                (neg_one, v.one),
+                (v.max, v.one),
+                (v.min, v.one),
+                (v.zero, v.two),
+                (v.one, v.two),
+                (neg_one, v.two),
+                (v.max, v.two),
+                (v.min, v.two),
+                (v.zero, thirty),
+                (v.one, thirty),
+                (neg_one, thirty),
+                (v.max, thirty),
+                (v.min, thirty),
+            ],
+            random: (any::<T>(), v.zero..=thirty).boxed(),
+        }
     }
 
-    pub fn shr_signed_checked() -> impl Strategy<Value = (T, T)>
+    pub fn shr_signed_checked() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -769,31 +817,36 @@ where
         let max_shift = T::from(bit_width - 1).unwrap();
         let overflow_shift = T::from(bit_width).unwrap();
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            3 => (any::<T>(), v.zero..=max_shift),
-            3 => (any::<T>(), any::<T>()),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, max_shift)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((neg_one, v.one)),
-            1 => Just((neg_one, max_shift)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, max_shift)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.min, overflow_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.zero, neg_one)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.min, neg_one)),
-            1 => Just((v.max, neg_one)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, v.zero),
+                (v.min, v.one),
+                (v.min, max_shift),
+                (v.max, v.zero),
+                (v.max, max_shift),
+                (neg_one, v.one),
+                (neg_one, max_shift),
+                (v.zero, v.zero),
+                (v.zero, v.one),
+                (v.zero, max_shift),
+                (v.one, max_shift),
+                (v.min, overflow_shift),
+                (v.max, overflow_shift),
+                (v.zero, neg_one),
+                (v.zero, overflow_shift),
+                (v.min, neg_one),
+                (v.max, neg_one),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), v.zero..=max_shift),
+                3 => (any::<T>(), any::<T>()),
+            ]
+            .boxed(),
+        }
     }
 
     /// The shift amount (second tuple value) is bound by `u32::MAX`.
-    pub fn shr_signed_checked_u32_shift() -> impl Strategy<Value = (T, T)>
+    pub fn shr_signed_checked_u32_shift() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -803,33 +856,38 @@ where
         let overflow_shift = T::from(bit_width).unwrap();
         let max_u32_shift = T::from(u32::MAX).unwrap_or(v.max);
         let neg_one = v.neg_one.unwrap();
-        prop_oneof![
-            3 => (any::<T>(), v.zero..=max_shift),
-            3 => (any::<T>(), overflow_shift..=max_u32_shift),
-            1 => Just((v.min, v.zero)),
-            1 => Just((v.min, v.one)),
-            1 => Just((v.min, max_shift)),
-            1 => Just((v.max, v.zero)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((neg_one, v.one)),
-            1 => Just((neg_one, max_shift)),
-            1 => Just((v.zero, v.zero)),
-            1 => Just((v.zero, v.one)),
-            1 => Just((v.zero, max_shift)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.min, overflow_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.min, max_u32_shift)),
-            1 => Just((v.max, max_u32_shift)),
-            1 => Just((v.zero, max_u32_shift)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, v.zero),
+                (v.min, v.one),
+                (v.min, max_shift),
+                (v.max, v.zero),
+                (v.max, max_shift),
+                (neg_one, v.one),
+                (neg_one, max_shift),
+                (v.zero, v.zero),
+                (v.zero, v.one),
+                (v.zero, max_shift),
+                (v.one, max_shift),
+                (v.min, overflow_shift),
+                (v.max, overflow_shift),
+                (v.zero, overflow_shift),
+                (v.min, max_u32_shift),
+                (v.max, max_u32_shift),
+                (v.zero, max_u32_shift),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), v.zero..=max_shift),
+                3 => (any::<T>(), overflow_shift..=max_u32_shift),
+            ]
+            .boxed(),
+        }
     }
 
     /// Shift amount (second tuple value) is a `u32`, matching `rotate_left`/`rotate_right`. Rotates
     /// are total and reduce the count modulo the operand width, so identity points (multiples of
-    /// the width) and out-of-range counts are emphasized.
-    pub fn rotate_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    /// the width) and out-of-range counts are edge cases.
+    pub fn rotate_unsigned_u32() -> NumericCases<(T, u32)>
     where
         T: Unsigned,
     {
@@ -841,30 +899,35 @@ where
         // 0x55.. and 0xAA.. bit patterns expose rotate bugs that uniform bytes miss.
         let alt_lo = v.max_div_three;
         let alt_hi = v.max_div_three + v.max_div_three;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.max, 0u32)),
-            1 => Just((v.max, 1u32)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((alt_lo, 1u32)),
-            1 => Just((alt_lo, max_shift)),
-            1 => Just((alt_hi, 1u32)),
-            1 => Just((alt_hi, max_shift)),
-            1 => Just((v.half, max_shift)),
-            1 => Just((v.half_plus_one, max_shift)),
-            1 => Just((v.max, double_width)),
-            1 => Just((v.max, u32::MAX)),
-            1 => Just((v.zero, overflow_shift)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, 0u32),
+                (v.max, 1u32),
+                (v.max, max_shift),
+                (v.max, overflow_shift),
+                (v.one, max_shift),
+                (v.one, overflow_shift),
+                (alt_lo, 1u32),
+                (alt_lo, max_shift),
+                (alt_hi, 1u32),
+                (alt_hi, max_shift),
+                (v.half, max_shift),
+                (v.half_plus_one, max_shift),
+                (v.max, double_width),
+                (v.max, u32::MAX),
+                (v.zero, overflow_shift),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Signed counterpart of [`Self::rotate_unsigned_u32`]; adds `min` (sign bit set) and `-1`
     /// (all-ones) operands.
-    pub fn rotate_signed_u32() -> impl Strategy<Value = (T, u32)>
+    pub fn rotate_signed_u32() -> NumericCases<(T, u32)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -874,30 +937,35 @@ where
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
         let double_width = bit_width * 2;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.min, 0u32)),
-            1 => Just((v.min, 1u32)),
-            1 => Just((v.min, max_shift)),
-            1 => Just((v.min, overflow_shift)),
-            1 => Just((v.max, 1u32)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((neg_one, 1u32)),
-            1 => Just((neg_one, max_shift)),
-            1 => Just((neg_one, overflow_shift)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((v.min, double_width)),
-            1 => Just((v.max, u32::MAX)),
-            1 => Just((v.zero, overflow_shift)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, 0u32),
+                (v.min, 1u32),
+                (v.min, max_shift),
+                (v.min, overflow_shift),
+                (v.max, 1u32),
+                (v.max, max_shift),
+                (neg_one, 1u32),
+                (neg_one, max_shift),
+                (neg_one, overflow_shift),
+                (v.one, max_shift),
+                (v.one, overflow_shift),
+                (v.min, double_width),
+                (v.max, u32::MAX),
+                (v.zero, overflow_shift),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Shift amount is a `u32`, for `checked_shl`/`checked_shr`, which return `None` once the shift
     /// is `>= width`. The last in-range shift (`width - 1`) and first out-of-range shift (`width`)
-    /// are emphasized.
-    pub fn checked_shift_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    /// are edge cases.
+    pub fn checked_shift_unsigned_u32() -> NumericCases<(T, u32)>
     where
         T: Unsigned,
     {
@@ -905,26 +973,31 @@ where
         let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.max, 0u32)),
-            1 => Just((v.max, 1u32)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.max, overflow_shift + 1)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((v.half, max_shift)),
-            1 => Just((v.half_plus_one, max_shift)),
-            1 => Just((v.zero, 0u32)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.max, u32::MAX)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, 0u32),
+                (v.max, 1u32),
+                (v.max, max_shift),
+                (v.max, overflow_shift),
+                (v.max, overflow_shift + 1),
+                (v.one, max_shift),
+                (v.one, overflow_shift),
+                (v.half, max_shift),
+                (v.half_plus_one, max_shift),
+                (v.zero, 0u32),
+                (v.zero, overflow_shift),
+                (v.max, u32::MAX),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Signed counterpart of [`Self::checked_shift_unsigned_u32`].
-    pub fn checked_shift_signed_u32() -> impl Strategy<Value = (T, u32)>
+    pub fn checked_shift_signed_u32() -> NumericCases<(T, u32)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -933,27 +1006,32 @@ where
         let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.min, 0u32)),
-            1 => Just((v.min, 1u32)),
-            1 => Just((v.min, max_shift)),
-            1 => Just((v.min, overflow_shift)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((neg_one, 1u32)),
-            1 => Just((neg_one, max_shift)),
-            1 => Just((neg_one, overflow_shift)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.min, u32::MAX)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, 0u32),
+                (v.min, 1u32),
+                (v.min, max_shift),
+                (v.min, overflow_shift),
+                (v.max, max_shift),
+                (v.max, overflow_shift),
+                (neg_one, 1u32),
+                (neg_one, max_shift),
+                (neg_one, overflow_shift),
+                (v.one, max_shift),
+                (v.zero, overflow_shift),
+                (v.min, u32::MAX),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Shift amount is a `u32`, for `overflowing_shl`/`overflowing_shr`. The boolean reports whether
-    /// the shift was masked (i.e. was `>= width`), so the width boundary is emphasized.
-    pub fn overflowing_shift_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    /// the shift was masked (i.e. was `>= width`), so the width boundary is an edge case.
+    pub fn overflowing_shift_unsigned_u32() -> NumericCases<(T, u32)>
     where
         T: Unsigned,
     {
@@ -962,25 +1040,30 @@ where
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
         let double_width = bit_width * 2;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.max, 0u32)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.max, overflow_shift + 1)),
-            1 => Just((v.max, double_width)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((v.half, max_shift)),
-            1 => Just((v.half_plus_one, overflow_shift)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.max, u32::MAX)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, 0u32),
+                (v.max, max_shift),
+                (v.max, overflow_shift),
+                (v.max, overflow_shift + 1),
+                (v.max, double_width),
+                (v.one, max_shift),
+                (v.one, overflow_shift),
+                (v.half, max_shift),
+                (v.half_plus_one, overflow_shift),
+                (v.zero, overflow_shift),
+                (v.max, u32::MAX),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Signed counterpart of [`Self::overflowing_shift_unsigned_u32`].
-    pub fn overflowing_shift_signed_u32() -> impl Strategy<Value = (T, u32)>
+    pub fn overflowing_shift_signed_u32() -> NumericCases<(T, u32)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -990,27 +1073,32 @@ where
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
         let double_width = bit_width * 2;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.min, 0u32)),
-            1 => Just((v.min, max_shift)),
-            1 => Just((v.min, overflow_shift)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((neg_one, max_shift)),
-            1 => Just((neg_one, overflow_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((v.min, double_width)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.min, u32::MAX)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, 0u32),
+                (v.min, max_shift),
+                (v.min, overflow_shift),
+                (v.max, max_shift),
+                (v.max, overflow_shift),
+                (neg_one, max_shift),
+                (neg_one, overflow_shift),
+                (v.one, overflow_shift),
+                (v.min, double_width),
+                (v.zero, overflow_shift),
+                (v.min, u32::MAX),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Shift amount is a `u32`, for `unbounded_shl`/`unbounded_shr`, which yield `0` (or the sign
-    /// fill for signed `shr`) once the shift is `>= width`. Large out-of-range shifts are
-    /// emphasized alongside the width boundary.
-    pub fn unbounded_shift_unsigned_u32() -> impl Strategy<Value = (T, u32)>
+    /// fill for signed `shr`) once the shift is `>= width`. Large out-of-range shifts are edge
+    /// cases alongside the width boundary.
+    pub fn unbounded_shift_unsigned_u32() -> NumericCases<(T, u32)>
     where
         T: Unsigned,
     {
@@ -1019,25 +1107,30 @@ where
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
         let double_width = bit_width * 2;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.max, 0u32)),
-            1 => Just((v.max, max_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.max, double_width)),
-            1 => Just((v.one, max_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((v.half, max_shift)),
-            1 => Just((v.half_plus_one, overflow_shift)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.max, u32::MAX)),
-            1 => Just((v.max, u32::MAX - 1)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.max, 0u32),
+                (v.max, max_shift),
+                (v.max, overflow_shift),
+                (v.max, double_width),
+                (v.one, max_shift),
+                (v.one, overflow_shift),
+                (v.half, max_shift),
+                (v.half_plus_one, overflow_shift),
+                (v.zero, overflow_shift),
+                (v.max, u32::MAX),
+                (v.max, u32::MAX - 1),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 
     /// Signed counterpart of [`Self::unbounded_shift_unsigned_u32`].
-    pub fn unbounded_shift_signed_u32() -> impl Strategy<Value = (T, u32)>
+    pub fn unbounded_shift_signed_u32() -> NumericCases<(T, u32)>
     where
         T: num_traits::Signed + 'static,
     {
@@ -1047,21 +1140,26 @@ where
         let max_shift = bit_width - 1;
         let overflow_shift = bit_width;
         let double_width = bit_width * 2;
-        prop_oneof![
-            3 => (any::<T>(), 0u32..bit_width),
-            3 => (any::<T>(), bit_width..=u32::MAX),
-            1 => Just((v.min, 0u32)),
-            1 => Just((v.min, max_shift)),
-            1 => Just((v.min, overflow_shift)),
-            1 => Just((v.min, double_width)),
-            1 => Just((neg_one, max_shift)),
-            1 => Just((neg_one, overflow_shift)),
-            1 => Just((v.max, overflow_shift)),
-            1 => Just((v.one, overflow_shift)),
-            1 => Just((v.zero, overflow_shift)),
-            1 => Just((v.min, u32::MAX)),
-            1 => Just((neg_one, u32::MAX)),
-        ]
+        NumericCases {
+            edges: vec![
+                (v.min, 0u32),
+                (v.min, max_shift),
+                (v.min, overflow_shift),
+                (v.min, double_width),
+                (neg_one, max_shift),
+                (neg_one, overflow_shift),
+                (v.max, overflow_shift),
+                (v.one, overflow_shift),
+                (v.zero, overflow_shift),
+                (v.min, u32::MAX),
+                (neg_one, u32::MAX),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), 0u32..bit_width),
+                3 => (any::<T>(), bit_width..=u32::MAX),
+            ]
+            .boxed(),
+        }
     }
 }
 
