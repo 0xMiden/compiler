@@ -396,7 +396,7 @@ args = ["audit"]
 [tasks.test-all]
 category = "Test"
 description = "Runs the complete set of compiler tests"
-dependencies = ["test-rust", "test-lit", "sweep-flow"]
+run_task = { name = ["test-rust", "test-lit"], fork = true, cleanup_task = "sweep-flow" }
 
 [tasks.test]
 category = "Test"
