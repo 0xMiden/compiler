@@ -19,13 +19,13 @@ use crate::ClapDiagnostic;
     version,
     about = "A compiler for Miden Assembly",
     long_about = None,
-    arg_required_else_help = true,
+    arg_required_else_help = false,
 )]
 pub struct Midenc {
     /// The input file to compile
     ///
     /// You may specify `-` to read from stdin, otherwise you must provide a path
-    #[arg(value_name = "FILE", default_missing_value = "miden-project.toml")]
+    #[arg(value_name = "FILE")]
     input: Option<InputFile>,
     #[command(flatten)]
     options: compile::Compiler,
@@ -73,12 +73,12 @@ impl Midenc {
         let mut options = options.into_options(cwd.into());
         options.set_extra_flags(compile_matches.into());
 
-        let Some(input) = input else {
-            let mut command = <Self as clap::CommandFactory>::command();
-            command
-                .error(clap::error::ErrorKind::MissingRequiredArgument, "expected input file")
-                .exit();
-        };
+        let input = input.unwrap_or_else(|| {
+            InputFile::new(
+                midenc_session::FileType::Toml,
+                midenc_session::InputType::Real(options.current_dir.join("miden-project.toml")),
+            )
+        });
 
         let session = Rc::new(options.into_session(input, emitter, None)?);
         let context = Rc::new(Context::new(session));
