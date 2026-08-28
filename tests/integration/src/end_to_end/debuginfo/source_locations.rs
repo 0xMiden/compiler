@@ -15,7 +15,12 @@ fn rust_assert_macro_source_location_with_debug_executor() {
     let mut test = CompilerTest::rust_source_cargo_miden(
         "../fixtures/components/assert-debug-test",
         config,
-        ["--entrypoint".to_string(), "assert_debug_test::entrypoint".to_string()],
+        [
+            "--entrypoint".to_string(),
+            "assert_debug_test::entrypoint".to_string(),
+            "--debug".to_string(),
+            "full".to_string(),
+        ],
     );
 
     let package = test.compile_package();
@@ -28,6 +33,17 @@ fn rust_assert_macro_source_location_with_debug_executor() {
             .iter()
             .find(|msg| debug_info[msg.message].contains("entered unreachable code"))
             .is_some()
+    );
+
+    // Unlike the Wasm parameter `x`, this source local can only come from the
+    // DWARF emitted by the fixture's Cargo release profile. Finding it in the
+    // package proves that a Cargo-produced variable decorator survived Wasm
+    // translation and Miden Assembly serialization.
+    assert!(
+        debug_info.nodes().iter().flat_map(|node| node.debug_vars.iter()).any(|var| {
+            debug_info[var.name_idx].as_ref() == "cargo_dwarf_local" && var.arg_idx.is_none()
+        }),
+        "Cargo DWARF local should survive as a Miden Assembly debug-variable decorator"
     );
 
     // First, test that the function works when assertion passes (x > 100)
