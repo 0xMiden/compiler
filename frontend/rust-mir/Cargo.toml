@@ -1,7 +1,8 @@
 [package]
 name = "midenc-frontend-rust-mir"
 description = "Rust MIR frontend for the Miden compiler"
-version.workspace = true
+# Private packages stay at 0.1.0; the release lint rejects the workspace version.
+version = "0.1.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
