@@ -9,8 +9,8 @@ use clap::{Parser, builder::ArgPredicate};
 use miden_mast_package::TargetType;
 use midenc_session::{
     ColorChoice, DebugInfo, InputFile, IrFilter, LinkLibrary, OptLevel, Options, OutputFile,
-    OutputTypeSpec, OutputTypes, PathBuf, RemapPathPrefix, Session, Verbosity, Warnings,
-    add_target_link_libraries, diagnostics::Emitter,
+    OutputTypeSpec, OutputTypes, PanicStrategy, PathBuf, RemapPathPrefix, Session, Verbosity,
+    Warnings, add_target_link_libraries, diagnostics::Emitter,
 };
 
 /// Compile a program from WebAssembly or Miden IR, to Miden Assembly.
@@ -432,6 +432,20 @@ pub struct CodegenOptions {
     /// Tell the compiler to generate Miden Assembly from the inputs without linking them
     #[cfg_attr(feature = "std", arg(long, default_value_t = false))]
     pub no_link: bool,
+    /// The panic strategy to use when compiling Rust code for the Miden target
+    ///
+    /// With `abort` (the default), the crate's panic handler is invoked before trapping. With
+    /// `immediate-abort`, a panic traps immediately and the panic handler is not invoked.
+    #[cfg_attr(
+        feature = "std",
+        arg(
+            long = "panic",
+            value_enum,
+            value_name = "STRATEGY",
+            default_value = "abort",
+        )
+    )]
+    pub panic_strategy: PanicStrategy,
 }
 
 #[derive(Default, Debug, Clone)]
@@ -718,6 +732,7 @@ impl Compiler {
             analyze_only,
             link_only,
             no_link,
+            panic_strategy,
         } = CodegenOptions::parse_argv(codegen);
         let UnstableOptions {
             cargo_frontmatter,
@@ -782,6 +797,7 @@ impl Compiler {
         options.analyze_only = analyze_only;
         options.link_only = link_only;
         options.no_link = no_link;
+        options.panic_strategy = panic_strategy;
         options.lint = lint;
         options.cargo_frontmatter = cargo_frontmatter;
         options.print_cfg_after_all = print_cfg_after_all;
@@ -908,5 +924,16 @@ mod tests {
     #[test]
     fn no_stop_after_means_no_cap() {
         assert_eq!(options(&[]).stop_after, None);
+    }
+
+    /// `-C panic=<strategy>` reaches [`Options`] and defaults to `abort`.
+    #[test]
+    fn panic_strategy_reaches_the_options() {
+        assert_eq!(options(&[]).panic_strategy, PanicStrategy::Abort);
+        assert_eq!(options(&["-C", "panic=abort"]).panic_strategy, PanicStrategy::Abort);
+        assert_eq!(
+            options(&["-C", "panic=immediate-abort"]).panic_strategy,
+            PanicStrategy::ImmediateAbort
+        );
     }
 }

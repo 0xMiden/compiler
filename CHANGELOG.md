@@ -46,6 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by rustc for the Miden target. Functions with a duplicated name get a unique linkage name while
   debug info keeps the original source name. DWARF subprograms with a duplicated name resolve to
   their function through `DW_AT_low_pc` instead of the ambiguous name
+- The Rust panic strategy is now configurable with `-C panic=abort|immediate-abort` when compiling
+  Rust for the Miden target. The default changed from `immediate-abort` to `abort`: the crate's
+  panic handler then runs before the VM traps, unless `immediate-abort` is explicitly selected.
+  With `panic=abort`, the panic handler should not contain an infinite loop.
 
 ### `cargo-miden`
 

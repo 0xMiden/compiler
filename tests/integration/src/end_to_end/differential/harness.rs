@@ -192,6 +192,10 @@ pub(crate) const CASE_HEADER: &str = r#"#![no_std]
 
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
+    #[cfg(target_family = "wasm")]
+    core::arch::wasm32::unreachable();
+
+    #[cfg(not(target_family = "wasm"))]
     loop {}
 }
 

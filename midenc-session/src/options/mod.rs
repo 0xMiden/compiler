@@ -42,6 +42,8 @@ pub struct Options {
     pub optimize: OptLevel,
     /// The level of debugging info for the current program
     pub debug: DebugInfo,
+    /// The panic strategy used when compiling Rust code for the Miden target
+    pub panic_strategy: PanicStrategy,
     /// The type of outputs to emit
     pub output_types: OutputTypes,
     /// The paths in which to search for Miden Assembly libraries to link against
@@ -167,6 +169,7 @@ impl Options {
             entrypoint: None,
             optimize: OptLevel::None,
             debug: DebugInfo::None,
+            panic_strategy: PanicStrategy::Abort,
             output_types: Default::default(),
             search_paths,
             link_libraries: vec![],
@@ -335,6 +338,35 @@ pub enum OptLevel {
     Size,
     /// Only optimizations which reduce code size are applied
     SizeMin,
+}
+
+/// Enables configuring the panic strategy used when compiling Rust for the Miden target
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "std", derive(clap::ValueEnum))]
+pub enum PanicStrategy {
+    /// The panic handler gets invoked, then the vm aborts (traps)
+    #[default]
+    Abort,
+    /// A panic traps immediately, the panic handler is not invoked
+    ImmediateAbort,
+}
+
+impl PanicStrategy {
+    /// The value passed to rustc's `-Cpanic` flag, e.g. `immediate-abort`
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Abort => "abort",
+            Self::ImmediateAbort => "immediate-abort",
+        }
+    }
+
+    /// Render this strategy as a rustc argument, e.g. `-Cpanic=immediate-abort`
+    pub fn as_rustc_arg(self) -> &'static str {
+        match self {
+            Self::Abort => "-Cpanic=abort",
+            Self::ImmediateAbort => "-Cpanic=immediate-abort",
+        }
+    }
 }
 
 /// This enum describes what type of debugging information to emit in compiled programs

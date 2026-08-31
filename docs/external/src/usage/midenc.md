@@ -97,6 +97,15 @@ midenc --stop-after=transform --emit=hir=- foo.wasm
 
 `CHECKPOINT` is either an alias — `parse`, `analyze`, `transform`, `lower`, `assemble` — or a fully-qualified checkpoint id such as `hir.initial`. Which names are valid depends on the input: each frontend declares its own route, and a name that route does not reach is reported along with the names it does accept. A Miden Assembly input, for example, has no `transform` phase.
 
+### Panic strategy
+
+When `midenc` compiles Rust code, `-C panic=STRATEGY` determines what happens when the program panics. A panic always ends in a trap, but the strategy controls what happens before it:
+
+- `abort` (the default) runs the crate's panic handler first, which may print the panic message.
+- `immediate-abort` traps right at the panic site without running the panic handler. The panic handler and the formatting code it pulls in are stripped, producing smaller programs that execute in less cycles.
+
+The flag only applies when `midenc` drives `rustc`, i.e. when compiling a Cargo project or a `.rs` file. It overrides any `panic = "..."` setting in the project's Cargo profiles. When compiling a pre-built WebAssembly module, the panic strategy was already fixed by whatever produced the module.
+
 ## Debugging
 
 See [Debugging Programs](../guides/debugger.md) for details on how to debug Miden programs using `miden-debug`.
