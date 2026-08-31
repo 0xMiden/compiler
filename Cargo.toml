@@ -230,6 +230,14 @@ lto = false
 # Needed for 'inventory' to work
 codegen-units = 1
 
+# Keep only file/line debug information for non-workspace dependencies. Full
+# debug information for the Miden VM stack and the other external crates is the
+# dominant cost of the target directory: it multiplies into every statically
+# linked test executable (measured at ~91% of an 820 MB test binary). Workspace
+# crates are not matched by `"*"` and keep full debug information.
+[profile.dev.package."*"]
+debug = "line-tables-only"
+
 [profile.release]
 opt-level = 2
 debug = true

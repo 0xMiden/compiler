@@ -862,6 +862,14 @@ fn build_cargo_args(manifest_path: &Path, options: &Options) -> Vec<String> {
         ("profile.release.lto", "true"),
         ("profile.release.codegen-units", "1"),
         ("profile.release.panic", "\"abort\""),
+        // The guest Wasm needs DWARF (`debug = true` above) so the compiler can turn it
+        // into Miden debug information — but the host-side units of this nested build
+        // (build scripts, proc macros, and their whole native Miden dependency cone) do
+        // not. Without this override they inherit the profile's full debug information,
+        // which was measured at ~94% of a 310 MB proc-macro artifact, repeated in every
+        // build directory a test suite uses.
+        ("profile.dev.build-override.debug", "false"),
+        ("profile.release.build-override.debug", "false"),
     ];
 
     for (key, value) in cfg_pairs {
@@ -2216,6 +2224,14 @@ pub(crate) mod manifest {
             ("profile.release.lto", "true"),
             ("profile.release.codegen-units", "1"),
             ("profile.release.panic", "\"abort\""),
+            // The guest Wasm needs DWARF (`debug = true` above) so the compiler can turn
+            // it into Miden debug information — but the host-side units of this nested
+            // build (build scripts, proc macros, and their whole native Miden dependency
+            // cone) do not. When a profile sets `debug` explicitly, the host units
+            // inherit it, which was measured at ~94% of a 310 MB proc-macro artifact,
+            // repeated in every build directory a test suite uses.
+            ("profile.dev.build-override.debug", "false"),
+            ("profile.release.build-override.debug", "false"),
         ];
 
         for (key, value) in cfg_pairs {

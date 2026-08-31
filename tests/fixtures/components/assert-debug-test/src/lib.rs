@@ -24,5 +24,7 @@ fn my_alloc_error(_info: core::alloc::Layout) -> ! {
 #[no_mangle]
 pub fn entrypoint(x: u32) -> u32 {
     assert!(x > 100);
-    x
+    let mut cargo_dwarf_local = x;
+    core::hint::black_box(&mut cargo_dwarf_local);
+    cargo_dwarf_local
 }
