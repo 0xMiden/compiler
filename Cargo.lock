@@ -3973,6 +3973,7 @@ dependencies = [
  "midenc-dialect-hir",
  "midenc-expect-test",
  "midenc-hir",
+ "midenc-hir-eval",
  "midenc-session",
  "tempfile",
 ]

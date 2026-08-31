@@ -29,3 +29,4 @@ tempfile.workspace = true
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-expect-test = { path = "../../tools/expect-test" }
+midenc-hir-eval.workspace = true
