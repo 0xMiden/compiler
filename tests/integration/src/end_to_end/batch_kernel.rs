@@ -207,7 +207,7 @@ fn build_advice_inputs(transactions: &[MockTransaction]) -> AdviceInputs {
         stack.extend_from_slice(&[Felt::new_unchecked(0); 3]);
     }
 
-    AdviceInputs::default().with_map(map).with_stack(stack)
+    AdviceInputs::default().with_map(map).with_advice_stack(stack.into())
 }
 
 /// Returns the operand stack arguments for the kernel entrypoint:
