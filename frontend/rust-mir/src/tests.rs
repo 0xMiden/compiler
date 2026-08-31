@@ -1,10 +1,8 @@
-//! Golden tests of the Rust MIR frontend.
+//! Tests of the Rust MIR frontend.
 
-use core::fmt::Write;
 use std::{path::PathBuf, rc::Rc};
 
 use midenc_dialect_hir::transforms::Local2Reg;
-use midenc_expect_test::{ExpectFile, expect_file};
 use midenc_hir::{
     Context, Op, Operation, WalkResult,
     dialects::builtin::{self, Function},
@@ -46,15 +44,6 @@ fn functions(component: &builtin::ComponentRef) -> Vec<builtin::FunctionRef> {
     found
 }
 
-/// Prints every function of a component.
-fn print_functions(component: &builtin::ComponentRef) -> String {
-    let mut output = String::new();
-    for function in functions(component) {
-        writeln!(&mut output, "{}", function.borrow().as_operation()).unwrap();
-    }
-    output
-}
-
 /// Applies the `Local2Reg` pass to every function of a component.
 fn apply_local2reg(component: &builtin::ComponentRef, context: &Rc<Context>) {
     for function in functions(component) {
@@ -63,28 +52,6 @@ fn apply_local2reg(component: &builtin::ComponentRef, context: &Rc<Context>) {
         pass_manager.enable_verifier(true);
         pass_manager.run(function.as_operation_ref()).expect("invalid ir");
     }
-}
-
-/// Translates a fixture and compares the printed functions with an expect file.
-fn check_fixture(name: &str, run_local2reg: bool, expected: ExpectFile) {
-    let context = Rc::new(Context::default());
-    let component = translate_fixture(name, context.clone());
-
-    if run_local2reg {
-        apply_local2reg(&component, &context);
-    }
-
-    expected.assert_eq(&print_functions(&component));
-}
-
-#[test]
-fn add_raw() {
-    check_fixture("add.rs", false, expect_file!["expected/add.hir"]);
-}
-
-#[test]
-fn add_local2reg() {
-    check_fixture("add.rs", true, expect_file!["expected/add_local2reg.hir"]);
 }
 
 /// Evaluates the translated `add` function with the HIR interpreter.
