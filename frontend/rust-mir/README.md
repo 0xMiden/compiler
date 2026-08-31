@@ -8,7 +8,7 @@ The frontend links against rustc and runs the compiler in-process through `rustc
 
 This crate changes the shared development environment in two ways:
 
-1. **The `rustc-dev` toolchain component.** The `rust-toolchain.toml` at the workspace root includes `rustc-dev` in its `components` list. This component installs the private compiler libraries (`rustc_public`, `rustc_public_bridge`, `rustc_driver`, ...) that this crate links against, and also the compiler sources at `<sysroot>/lib/rustlib/rustc-src/rust`. `rustup` installs the component automatically on the first `cargo` command after a checkout.
+1. **The `rustc-dev` and `llvm-tools` toolchain components.** The `rust-toolchain.toml` at the workspace root includes both in its `components` list. `rustc-dev` installs the private compiler libraries (`rustc_public`, `rustc_public_bridge`, `rustc_driver`, ...) that this crate links against, and also the compiler sources at `<sysroot>/lib/rustlib/rustc-src/rust`. `llvm-tools` installs the LLVM shared library into the one directory that rustc puts on the linker search path; without it, binaries and tests of this crate fail to link. `rustup` installs the components automatically on the first `cargo` command after a checkout.
 2. **`#![feature(rustc_private)]`.** The crate compiles only on the nightly toolchain that the workspace already pins. The compiler crates come from the sysroot, not from crates.io, so a `rustc_public` API change can occur on each toolchain bump.
 
 At run time the driver finds the sysroot with `rustc --print sysroot`. Run tests from inside the workspace, so that `rustup` resolves the pinned toolchain.
