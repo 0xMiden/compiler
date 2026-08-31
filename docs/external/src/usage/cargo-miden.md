@@ -71,9 +71,19 @@ Out of the box, you will get a Rust crate that depends on the Miden SDK, and set
 allocator to a simple bump allocator we provide as part of the SDK, and is well suited for most
 Miden use cases, avoiding the overhead of more complex allocators.
 
-As there is no panic infrastructure, `panic = "abort"` is set, and the panic handler is configured
-to use the native WebAssembly `unreachable` intrinsic, so the compiler will strip out all of the
-usual panic formatting code.
+A panic always ends in a trap, as there is no unwinding on Miden. By default the crate's panic
+handler runs before the trap, so it can still report what went wrong. The template's handler
+traps via the native WebAssembly `unreachable` intrinsic.
+
+If you don't need the panic handler to run, select the `immediate-abort` panic strategy to trap
+right at the panic site. This strips out the usual panic formatting code, producing smaller
+programs that execute in less cycles:
+
+```bash
+cargo miden build --release -C panic=immediate-abort
+```
+
+See the [`midenc` docs](./midenc.md#panic-strategy) for details.
 
 ## Compiling to Miden package
 
