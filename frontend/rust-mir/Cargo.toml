@@ -15,7 +15,9 @@ publish = false
 [lib]
 doctest = false
 
-# Tells rust-analyzer to load the private `rustc_*` crates for this package.
+# Tells rust-analyzer to load the private `rustc_*` crates for this package. This works only
+# together with the editor-side setting `rust-analyzer.rustc.source = "discover"` — see the
+# "rust-analyzer setup" section in README.md.
 [package.metadata.rust-analyzer]
 rustc_private = true
 
