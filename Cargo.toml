@@ -15,6 +15,7 @@ members = [
     "dialects/wasm",
     "eval",
     "frontend/masm",
+    "frontend/rust-mir",
     "frontend/wasm",
     "hir",
     "hir-analysis",

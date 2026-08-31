@@ -272,3 +272,10 @@ publish = false
 name = "midenc-template-tests"
 unit = "private"
 publish = false
+
+# Experimental Rust MIR frontend. It uses the unstable `rustc_public` API, thus it
+# stays out of the release surface until the experiment concludes.
+[[packages]]
+name = "midenc-frontend-rust-mir"
+unit = "private"
+publish = false

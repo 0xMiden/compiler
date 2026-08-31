@@ -1,0 +1,4 @@
+builtin.function public extern("C") @add(%0: u32, %1: u32) -> u32 {
+    %6 = arith.add %0, %1 <{ overflow = #builtin.overflow<wrapping> }>;
+    builtin.ret %6 : (u32);
+};
