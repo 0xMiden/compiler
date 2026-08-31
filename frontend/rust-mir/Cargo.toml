@@ -1,0 +1,31 @@
+[package]
+name = "midenc-frontend-rust-mir"
+description = "Rust MIR frontend for the Miden compiler"
+version.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+publish = false
+
+[lib]
+doctest = false
+
+# Tells rust-analyzer to load the private `rustc_*` crates for this package.
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+[dependencies]
+midenc-dialect-arith.workspace = true
+midenc-dialect-hir.workspace = true
+midenc-hir.workspace = true
+midenc-session.workspace = true
+tempfile.workspace = true
+
+[dev-dependencies]
+# NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+midenc-expect-test = { path = "../../tools/expect-test" }
