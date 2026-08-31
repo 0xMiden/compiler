@@ -3,6 +3,6 @@
 # - docs/external/src/usage/cargo-miden.md
 # - docs/external/src/usage/midenc.md
 channel = "nightly-2026-04-30"
-components = ["rustfmt", "rust-src", "rustc-dev", "clippy", "rust-analyzer"]
+components = ["rustfmt", "rust-src", "rustc-dev", "llvm-tools", "clippy", "rust-analyzer"]
 targets = ["wasm32-unknown-unknown", "wasm32-wasip1", "wasm32-wasip2"]
 profile = "minimal"
