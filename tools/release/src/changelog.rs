@@ -35,26 +35,8 @@ pub struct Prompt {
     pub changes: Vec<Change>,
     /// Paths whose history was consulted.
     pub paths: Vec<String>,
-}
-
-/// The user-facing headings for a unit's changelog.
-///
-/// The compiler's changelog is grouped by what a reader is looking for -- a
-/// tool, or an API they depend on -- rather than by crate, because the crate
-/// split is an implementation detail nobody outside this repository tracks.
-fn headings(unit: &str) -> &'static [&'static str] {
-    match unit {
-        "compiler" => &[
-            "Compiler and `midenc`",
-            "`cargo-miden`",
-            "`miden-objtool`",
-            "Libraries and public APIs",
-            "Migration and breaking changes",
-        ],
-        "sdk" => &["Added", "Changed", "Fixed", "Migration and breaking changes"],
-        "templates" => &["Templates", "SDK compatibility"],
-        _ => &["Added", "Changed", "Fixed"],
-    }
+    /// The user-facing sections this unit's changelog is grouped into.
+    pub headings: Vec<String>,
 }
 
 /// Build the prompt material for a unit.
@@ -96,6 +78,7 @@ pub fn prepare(
         baseline,
         changes,
         paths,
+        headings: unit_config.headings().into_iter().map(str::to_string).collect(),
     })
 }
 
@@ -103,17 +86,25 @@ pub fn prepare(
 ///
 /// Derived from the unit's packages rather than hardcoded, so a package moving
 /// between units changes what its commits describe without anyone remembering
-/// to update a list here.
+/// to update a list here. A library unit's paths are included in every unit
+/// that depends on it: a change to a shared crate genuinely affects each
+/// dependent, so the duplication across changelogs is intended.
 fn unit_paths(ws: &Workspace, config: &Config, unit: &str) -> Result<Vec<String>> {
-    // Templates publish an archive rather than crates, so no package is ever
-    // assigned to them and their history lives in the template sources.
-    if unit == "templates" {
-        return Ok(vec!["extra/templates".to_string()]);
+    let unit_config = config.unit(unit)?;
+
+    // An artifact unit publishes no crates, so no package is ever assigned to
+    // it and its history lives in its sources.
+    if let Some(directory) = unit_config.source.as_ref().and_then(|s| s.directory.as_ref()) {
+        return Ok(vec![directory.to_string_lossy().replace('\\', "/")]);
     }
 
+    let seed: BTreeSet<String> = config.packages_in(unit).map(|p| p.name.clone()).collect();
+    // Pull in the library crates this unit depends on, transitively.
+    let names = crate::order::library_closure(ws, config, seed);
+
     let mut paths = BTreeSet::new();
-    for package in config.packages_in(unit).filter(|p| config.is_publishable(p)) {
-        let Some(actual) = ws.packages.get(&package.name) else {
+    for name in &names {
+        let Some(actual) = ws.packages.get(name) else {
             continue;
         };
         let Some(directory) = actual.manifest_path.parent() else {
@@ -205,7 +196,7 @@ impl Prompt {
              code. If a commit has no user-visible effect, leave it out.\n",
         );
         out.push_str("- Group entries under these headings, omitting any that would be empty:\n");
-        for heading in headings(&self.unit) {
+        for heading in &self.headings {
             out.push_str(&format!("    - {heading}\n"));
         }
         out.push_str(
@@ -322,6 +313,41 @@ unit = "compiler"
     }
 
     #[test]
+    fn headings_come_from_the_unit_configuration() {
+        let config = config();
+        let prompt = Prompt {
+            unit: "templates".to_string(),
+            changelog: "extra/templates/CHANGELOG.md".to_string(),
+            range: "HEAD".to_string(),
+            baseline: None,
+            changes: Vec::new(),
+            paths: vec!["extra/templates".to_string()],
+            headings: config
+                .unit("templates")
+                .unwrap()
+                .headings()
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+        };
+        let rendered = prompt.render(None);
+        assert!(rendered.contains("Templates"), "{rendered}");
+        assert!(rendered.contains("SDK compatibility"), "{rendered}");
+        assert!(!rendered.contains("Added"), "{rendered}");
+    }
+
+    #[test]
+    fn a_unit_declaring_no_headings_gets_the_defaults() {
+        // `compiler`, in this fixture, declares no `changelog-headings`.
+        assert_eq!(config().unit("compiler").unwrap().headings(), ["Added", "Changed", "Fixed"]);
+    }
+
+    #[test]
+    fn an_artifact_units_paths_come_from_its_source_directory() {
+        assert_eq!(unit_paths(&workspace(), &config(), "templates").unwrap(), ["extra/templates"]);
+    }
+
+    #[test]
     fn an_unknown_unit_is_rejected() {
         let err = prepare(&workspace(), &config(), "nonsense", None).unwrap_err().to_string();
         assert!(err.contains("not a release unit"), "{err}");
@@ -335,6 +361,13 @@ unit = "compiler"
             baseline: baseline.map(str::to_string),
             changes,
             paths: vec!["midenc".into()],
+            headings: vec![
+                "Compiler and `midenc`".into(),
+                "`cargo-miden`".into(),
+                "`miden-objtool`".into(),
+                "Libraries and public APIs".into(),
+                "Migration and breaking changes".into(),
+            ],
         }
     }
 

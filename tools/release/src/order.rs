@@ -13,7 +13,46 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail};
 
-use crate::workspace::{Package, Workspace};
+use crate::{
+    config::{Config, UnitKind},
+    workspace::{Package, Workspace},
+};
+
+/// The seed plus every transitively-reachable `library`-owned package.
+///
+/// A `library` unit publishes crates but is never released on its own, so its
+/// crates must be pulled into whichever releasable unit depends on them. This
+/// walks `seed`'s local dependencies, pulling in any package owned by a
+/// `library` unit, transitively; a dependency owned by no unit, or by a
+/// non-library unit, is left for that unit (or nobody) to publish.
+///
+/// Insert-then-push bounds termination by set membership rather than any
+/// assumption that the dependency graph is acyclic.
+pub fn library_closure(
+    ws: &Workspace,
+    config: &Config,
+    seed: BTreeSet<String>,
+) -> BTreeSet<String> {
+    let mut wanted = seed;
+    let mut queue: Vec<String> = wanted.iter().cloned().collect();
+    while let Some(name) = queue.pop() {
+        let Some(package) = ws.packages.get(&name) else {
+            continue;
+        };
+        for (dep, _) in &package.local_deps {
+            // A dependency in another releasable unit is that unit's to
+            // publish; only library crates are pulled across.
+            let is_library = config
+                .unit_of(dep)
+                .and_then(|owner| config.units.get(owner))
+                .is_some_and(|owner| owner.kind == UnitKind::Library);
+            if is_library && wanted.insert(dep.clone()) {
+                queue.push(dep.clone());
+            }
+        }
+    }
+    wanted
+}
 
 /// Order `selected` so that every package appears after all of its dependencies
 /// within the selection.
@@ -114,6 +153,107 @@ mod tests {
 
     fn selection(names: &[&str]) -> BTreeSet<String> {
         names.iter().map(|n| n.to_string()).collect()
+    }
+
+    // `library_closure`: the shared traversal `intent::package_order` and
+    // `changelog::unit_paths` both build on.
+
+    fn library_closure_config() -> Config {
+        crate::config::testing::config(
+            r#"
+schema-version = 2
+
+[units.app]
+kind = "crates"
+version-source = "own"
+tag = "app/v{version}"
+changelog = "CHANGELOG.md"
+
+[units.other]
+kind = "crates"
+version-source = "own"
+tag = "other/v{version}"
+changelog = "other/CHANGELOG.md"
+
+[units.lib1]
+kind = "library"
+version-source = "workspace"
+
+[units.lib2]
+kind = "library"
+version-source = "workspace"
+
+[[packages]]
+name = "app"
+unit = "app"
+
+[[packages]]
+name = "other"
+unit = "other"
+
+[[packages]]
+name = "lib1"
+unit = "lib1"
+
+[[packages]]
+name = "lib2"
+unit = "lib2"
+"#,
+        )
+    }
+
+    #[test]
+    fn library_closure_reaches_a_library_depending_on_a_library() {
+        // app -> lib1 -> lib2, both library-owned: the closure must reach past
+        // lib1 to lib2.
+        let ws = ws(&[
+            ("app", &["lib1", "other"][..]),
+            ("lib1", &["lib2"][..]),
+            ("lib2", &[][..]),
+            ("other", &[][..]),
+        ]);
+        let config = library_closure_config();
+
+        let closure = library_closure(&ws, &config, selection(&["app"]));
+
+        assert_eq!(closure, selection(&["app", "lib1", "lib2"]), "{closure:?}");
+    }
+
+    #[test]
+    fn library_closure_leaves_a_non_library_owned_dependency_for_its_own_unit() {
+        // "other" belongs to a `crates` unit, not `library`: it publishes
+        // itself, so pulling it into "app"'s closure would double-publish it.
+        let ws = ws(&[("app", &["other"][..]), ("other", &[][..])]);
+        let config = library_closure_config();
+
+        let closure = library_closure(&ws, &config, selection(&["app"]));
+
+        assert_eq!(closure, selection(&["app"]), "{closure:?}");
+    }
+
+    #[test]
+    fn library_closure_ignores_a_dependency_owned_by_no_unit() {
+        // "unclassified" exists in the workspace graph but appears in no
+        // `[[packages]]` entry, so `config.unit_of` has nothing to say about
+        // it -- it must not be treated as a library.
+        let ws = ws(&[("app", &["unclassified"][..]), ("unclassified", &[][..])]);
+        let config = library_closure_config();
+
+        let closure = library_closure(&ws, &config, selection(&["app"]));
+
+        assert_eq!(closure, selection(&["app"]), "{closure:?}");
+    }
+
+    #[test]
+    fn library_closure_terminates_on_a_cycle() {
+        // lib1 <-> lib2 depend on each other: without the insert-then-push
+        // guard this loops forever instead of returning.
+        let ws = ws(&[("lib1", &["lib2"][..]), ("lib2", &["lib1"][..])]);
+        let config = library_closure_config();
+
+        let closure = library_closure(&ws, &config, selection(&["lib1"]));
+
+        assert_eq!(closure, selection(&["lib1", "lib2"]), "{closure:?}");
     }
 
     #[test]

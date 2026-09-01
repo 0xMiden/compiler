@@ -167,25 +167,8 @@ fn package_order(
     unit: &str,
     already: &BTreeSet<String>,
 ) -> Result<Vec<String>> {
-    let mut wanted: BTreeSet<String> = config.packages_in(unit).map(|p| p.name.clone()).collect();
-
-    let mut queue: Vec<String> = wanted.iter().cloned().collect();
-    while let Some(name) = queue.pop() {
-        let Some(package) = ws.packages.get(&name) else {
-            continue;
-        };
-        for (dep, _) in &package.local_deps {
-            // A dependency in another releasable unit is that unit's to
-            // publish; only library crates are pulled across.
-            let is_library = config
-                .unit_of(dep)
-                .and_then(|owner| config.units.get(owner))
-                .is_some_and(|owner| owner.kind == crate::config::UnitKind::Library);
-            if is_library && wanted.insert(dep.clone()) {
-                queue.push(dep.clone());
-            }
-        }
-    }
+    let seed: BTreeSet<String> = config.packages_in(unit).map(|p| p.name.clone()).collect();
+    let wanted = order::library_closure(ws, config, seed);
 
     let selected: BTreeSet<String> =
         wanted.into_iter().filter(|name| !already.contains(name)).collect();
