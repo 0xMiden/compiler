@@ -228,9 +228,10 @@ requirement the unit's sources embed against what the unit's manifest declares,
 and warns about untracked files under the included paths — those are absent from
 the archive, and are the usual reason two checkouts of one commit disagree.
 
-> `bundle` requires the unit's source to be a `directory` with a `manifest`. An
-> artifact unit that uses an inline `include` list, or a `file` source, loads
-> fine but cannot be built by this command.
+> `bundle` requires the unit's source to be a `directory`; a `file` source is
+> attached as-is and has nothing to archive. Both forms of include list work.
+> An inline `include` unit has no manifest to hold its version, so it needs a
+> `version-file`, and its archive carries no manifest entry.
 
 ### `plan`
 
@@ -462,19 +463,23 @@ or, in a single-crate repository with no workspace table, the root
 `[package].version` itself. `"own"` is the consensus of the unit's own member
 manifest versions, which must already agree.
 
-This names a *domain*, not a per-unit version. There are exactly two domains in
-any repository, and `set-version --unit X` moves every package in every unit that
-names the same domain as `X`. Two releasable units may not both use
-`"workspace"`: bumping one would silently move the other's crates to an
-unpublished version, and two releasable units sharing a version domain are one
-unit. Give one of them `"own"`, or merge them. A `library` unit may share the
-workspace domain, because it is never released on its own and rides the version
-of whatever publishes it.
+This names a *domain*: the set of packages that move together. The two values
+name domains of different shapes.
 
-> Because there are only two domain names, a repository with three releasable
-> crate units cannot give each an independent version. Only the `"workspace"`
-> collision is refused at load time; two releasable units both naming `"own"`
-> load without complaint and then move together.
+`"workspace"` is one domain shared by every unit that declares it. They inherit
+a single root version, so `set-version --unit X` on such a unit moves every
+package in every unit that also names `"workspace"`. That is why two releasable
+units may not both use it: bumping one would silently move the other's crates to
+an unpublished version, and two releasable units sharing a version domain are
+one unit. Give one of them `"own"`, or merge them. A `library` unit may share
+the workspace domain, because it is never released on its own and rides the
+version of whatever publishes it.
+
+`"own"` is a domain of one — the declaring unit and nothing else, since the
+versions in question are that unit's own member manifests. `set-version --unit X`
+on such a unit moves that unit's packages and no others, so any number of units
+may declare `"own"` and each keeps an independent version. A `library` unit
+declaring `"own"` has a version of its own too, moved only by naming it.
 
 #### `latest`
 
@@ -744,8 +749,10 @@ reconciliation sees it already on the registry at that version and skips it.
 Two things to watch in this shape. `tool-b` uses `"own"` so that bumping `tool-a`
 does not move it, since two releasable units may not share the `"workspace"`
 domain. And `common` shares `"workspace"` with `tool-a`, which is allowed and is
-what makes the support crate's version move whenever `tool-a`'s does — if you
-would rather it moved with `tool-b`, give it `version-source = "own"` instead.
+what makes the support crate's version move whenever `tool-a`'s does. There is
+no way to make it ride `tool-b` instead: `"own"` is a domain of one, so giving
+`common` that would leave it with an independent version, moved only by
+`set-version --unit common`.
 
 ---
 

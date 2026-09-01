@@ -40,9 +40,60 @@ pub struct Edit {
     pub description: String,
 }
 
+/// The set of packages whose versions move together.
+///
+/// A domain is not the same thing as a `version-source`. `"workspace"` names
+/// one domain shared by every unit that inherits the root
+/// `[workspace.package]` version -- they genuinely do move together, which is
+/// why at most one *releasable* unit may name it. `"own"` names *this unit's*
+/// own member manifest versions, so its domain identity is the unit itself:
+/// two releasable units both declaring `"own"` are two domains, and bumping
+/// one must leave the other where it is.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Domain {
+    /// The root `[workspace.package]` version -- or, with no workspace table,
+    /// the root `[package].version` -- shared by every unit inheriting it.
+    Workspace,
+    /// One named unit's own member manifest versions.
+    Own(String),
+}
+
+impl Domain {
+    /// The domain a unit's version lives in.
+    pub fn of(config: &Config, unit: &str) -> Result<Self> {
+        let source = config.unit(unit)?.version_source.with_context(|| {
+            format!("unit '{unit}' declares no version-source, so it has no version to move")
+        })?;
+        Ok(match source {
+            VersionSource::Workspace => Self::Workspace,
+            VersionSource::Own => Self::Own(unit.to_string()),
+        })
+    }
+
+    /// Whether a unit's packages move when this domain moves.
+    pub fn contains(&self, config: &Config, unit: &str) -> bool {
+        match self {
+            Self::Workspace => config
+                .units
+                .get(unit)
+                .is_some_and(|u| u.version_source == Some(VersionSource::Workspace)),
+            Self::Own(owner) => owner == unit,
+        }
+    }
+}
+
+impl std::fmt::Display for Domain {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Workspace => f.write_str("workspace"),
+            Self::Own(unit) => write!(f, "{unit}'s own"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct VersionPlan {
-    pub domain: VersionSource,
+    pub domain: Domain,
     pub old: Version,
     pub new: Version,
     /// Packages whose own version field moves.
@@ -53,7 +104,7 @@ pub struct VersionPlan {
 impl VersionPlan {
     pub fn summary(&self) -> String {
         let mut summary = format!(
-            "{:?} domain: {} -> {}\n{} package(s), {} manifest edit(s)\n",
+            "{} domain: {} -> {}\n{} package(s), {} manifest edit(s)\n",
             self.domain,
             self.old,
             self.new,
@@ -112,12 +163,12 @@ pub fn check_direction(old: &Version, new: &Version, force: Force) -> Result<()>
 }
 
 /// The packages whose versions move when a domain moves.
-fn packages_in_domain(config: &Config, domain: VersionSource) -> BTreeSet<String> {
+fn packages_in_domain(config: &Config, domain: &Domain) -> BTreeSet<String> {
     config
         .units
-        .iter()
-        .filter(|(_, unit)| unit.version_source == Some(domain))
-        .flat_map(|(name, _)| config.packages_in(name))
+        .keys()
+        .filter(|name| domain.contains(config, name))
+        .flat_map(|name| config.packages_in(name))
         .map(|p| p.name.clone())
         .collect()
 }
@@ -126,14 +177,15 @@ fn packages_in_domain(config: &Config, domain: VersionSource) -> BTreeSet<String
 pub fn plan(
     ws: &Workspace,
     config: &Config,
-    domain: VersionSource,
+    unit: &str,
     requested: Option<Version>,
     force: Force,
 ) -> Result<VersionPlan> {
-    let packages = packages_in_domain(config, domain);
+    let domain = Domain::of(config, unit)?;
+    let packages = packages_in_domain(config, &domain);
 
     if packages.is_empty() {
-        bail!("no packages are assigned to the {domain:?} version domain");
+        bail!("no packages are assigned to the {domain} version domain");
     }
 
     // Every package in a domain must already agree, or "the domain's version"
@@ -153,7 +205,7 @@ pub fn plan(
             .map(|(name, version)| format!("  {name} {version}"))
             .collect::<Vec<_>>()
             .join("\n");
-        bail!("packages in the {domain:?} domain disagree about their version:\n{detail}");
+        bail!("packages in the {domain} domain disagree about their version:\n{detail}");
     }
 
     let old = Version::parse(distinct.iter().next().expect("domain is non-empty"))
@@ -169,7 +221,7 @@ pub fn plan(
         let mut doc: DocumentMut = text
             .parse()
             .with_context(|| format!("failed to parse {}", manifest.display()))?;
-        let descriptions = edit_document(&mut doc, &manifest, ws, &packages, domain, &new);
+        let descriptions = edit_document(&mut doc, &manifest, ws, &packages, &domain, &new);
         for description in descriptions {
             edits.push(Edit {
                 path: manifest.clone(),
@@ -189,13 +241,13 @@ pub fn plan(
 
 /// Apply a planned bump, then refresh the lockfile.
 pub fn apply(ws: &Workspace, config: &Config, plan: &VersionPlan) -> Result<()> {
-    let packages = packages_in_domain(config, plan.domain);
+    let packages = packages_in_domain(config, &plan.domain);
 
     for manifest in manifests(ws) {
         let text = std::fs::read_to_string(&manifest)
             .with_context(|| format!("failed to read {}", manifest.display()))?;
         let mut doc: DocumentMut = text.parse()?;
-        let changed = edit_document(&mut doc, &manifest, ws, &packages, plan.domain, &plan.new);
+        let changed = edit_document(&mut doc, &manifest, ws, &packages, &plan.domain, &plan.new);
         if !changed.is_empty() {
             std::fs::write(&manifest, doc.to_string())
                 .with_context(|| format!("failed to write {}", manifest.display()))?;
@@ -218,7 +270,7 @@ pub fn apply(ws: &Workspace, config: &Config, plan: &VersionPlan) -> Result<()> 
         }
 
         for tracked in unit.tracks.keys() {
-            if config.units[tracked.as_str()].version_source != Some(plan.domain) {
+            if !plan.domain.contains(config, tracked) {
                 continue;
             }
             let key = unit.requirement_key(tracked);
@@ -264,7 +316,7 @@ fn edit_document(
     manifest: &Path,
     ws: &Workspace,
     packages: &BTreeSet<String>,
-    domain: VersionSource,
+    domain: &Domain,
     new: &Version,
 ) -> Vec<String> {
     let mut changes = Vec::new();
@@ -273,7 +325,7 @@ fn edit_document(
     if is_root {
         // A virtual workspace inherits this; a single-crate repository has no
         // such table and carries its version at [package].version instead.
-        if domain == VersionSource::Workspace
+        if *domain == Domain::Workspace
             && let Some(version) = doc
                 .get_mut("workspace")
                 .and_then(|w| w.get_mut("package"))

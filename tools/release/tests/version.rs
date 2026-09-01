@@ -8,11 +8,7 @@
 
 use std::{fs, path::Path};
 
-use midenc_release::{
-    config::{Config, VersionSource},
-    version,
-    workspace::Workspace,
-};
+use midenc_release::{config::Config, version, workspace::Workspace};
 
 fn write(path: &Path, contents: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -156,8 +152,7 @@ fn setup(label: &str) -> (std::path::PathBuf, Workspace, Config) {
 fn bumping_the_compiler_domain_moves_the_workspace_version_and_its_requirements() {
     let (dir, ws, config) = setup("compiler");
 
-    let plan =
-        version::plan(&ws, &config, VersionSource::Workspace, None, version::Force::No).unwrap();
+    let plan = version::plan(&ws, &config, "compiler", None, version::Force::No).unwrap();
     assert_eq!(plan.old.to_string(), "0.9.2");
     assert_eq!(plan.new.to_string(), "0.10.0", "default bump is the next minor");
 
@@ -185,7 +180,7 @@ fn bumping_the_compiler_domain_moves_the_workspace_version_and_its_requirements(
 fn bumping_the_sdk_domain_rewrites_the_compiler_side_requirement() {
     let (dir, ws, config) = setup("sdk");
 
-    let plan = version::plan(&ws, &config, VersionSource::Own, None, version::Force::No).unwrap();
+    let plan = version::plan(&ws, &config, "sdk", None, version::Force::No).unwrap();
     assert_eq!(plan.old.to_string(), "0.13.1");
     assert_eq!(plan.new.to_string(), "0.14.0");
 
@@ -221,8 +216,7 @@ fn an_explicit_version_overrides_the_default_bump() {
     let (_dir, ws, config) = setup("explicit");
     let requested = semver::Version::parse("1.0.0-rc.1").unwrap();
     let plan =
-        version::plan(&ws, &config, VersionSource::Workspace, Some(requested), version::Force::No)
-            .unwrap();
+        version::plan(&ws, &config, "compiler", Some(requested), version::Force::No).unwrap();
     assert_eq!(plan.new.to_string(), "1.0.0-rc.1", "prereleases are selectable");
 }
 
@@ -230,10 +224,9 @@ fn an_explicit_version_overrides_the_default_bump() {
 fn downgrades_are_refused() {
     let (_dir, ws, config) = setup("downgrade");
     let older = semver::Version::parse("0.9.1").unwrap();
-    let err =
-        version::plan(&ws, &config, VersionSource::Workspace, Some(older), version::Force::No)
-            .unwrap_err()
-            .to_string();
+    let err = version::plan(&ws, &config, "compiler", Some(older), version::Force::No)
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("must increase"), "{err}");
 }
 
@@ -246,9 +239,7 @@ fn downgrades_are_refused() {
 fn force_permits_a_downgrade_and_rewrites_everything() {
     let (_dir, ws, config) = setup("forced");
     let older = semver::Version::parse("0.9.1").unwrap();
-    let plan =
-        version::plan(&ws, &config, VersionSource::Workspace, Some(older), version::Force::Yes)
-            .unwrap();
+    let plan = version::plan(&ws, &config, "compiler", Some(older), version::Force::Yes).unwrap();
     assert_eq!(plan.new.to_string(), "0.9.1");
     assert!(!plan.edits.is_empty(), "a forced move still rewrites the manifests");
 }
@@ -257,7 +248,7 @@ fn force_permits_a_downgrade_and_rewrites_everything() {
 fn republishing_the_same_version_is_refused() {
     let (_dir, ws, config) = setup("same");
     let same = semver::Version::parse("0.9.2").unwrap();
-    let err = version::plan(&ws, &config, VersionSource::Workspace, Some(same), version::Force::No)
+    let err = version::plan(&ws, &config, "compiler", Some(same), version::Force::No)
         .unwrap_err()
         .to_string();
     assert!(err.contains("must increase"), "{err}");
@@ -273,7 +264,7 @@ fn a_domain_whose_packages_disagree_is_rejected() {
     fs::write(&manifest, text).unwrap();
 
     let ws = Workspace::load(&dir).unwrap();
-    let err = version::plan(&ws, &config, VersionSource::Own, None, version::Force::No)
+    let err = version::plan(&ws, &config, "sdk", None, version::Force::No)
         .unwrap_err()
         .to_string();
     assert!(err.contains("disagree"), "{err}");
@@ -285,8 +276,7 @@ fn planning_writes_nothing() {
     let (dir, ws, config) = setup("dry-run");
     let before = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
 
-    let plan =
-        version::plan(&ws, &config, VersionSource::Workspace, None, version::Force::No).unwrap();
+    let plan = version::plan(&ws, &config, "compiler", None, version::Force::No).unwrap();
     assert!(!plan.edits.is_empty(), "the plan should describe real edits");
 
     let after = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
@@ -297,7 +287,7 @@ fn planning_writes_nothing() {
 fn private_packages_are_left_at_their_own_version() {
     let (dir, ws, config) = setup("private");
 
-    let plan = version::plan(&ws, &config, VersionSource::Own, None, version::Force::No).unwrap();
+    let plan = version::plan(&ws, &config, "sdk", None, version::Force::No).unwrap();
     version::apply(&ws, &config, &plan).unwrap();
 
     let private = fs::read_to_string(dir.join("shared-tests/Cargo.toml")).unwrap();
@@ -310,4 +300,109 @@ fn private_packages_are_left_at_their_own_version() {
     let ws = Workspace::load(&dir).unwrap();
     assert_eq!(ws.packages["fixture-shared-tests"].version, "0.1.0");
     assert_eq!(ws.packages["fixture-shared"].version, "0.14.0");
+}
+
+/// The drift hazard for `own`, which is the same one the `workspace` domain is
+/// validated against: two releasable units each carrying their own version are
+/// two domains, not one. A bump of either must leave the other where it is.
+fn siblings(dir: &Path) {
+    write(
+        &dir.join("Cargo.toml"),
+        r#"[workspace]
+resolver = "2"
+members = ["tool-a", "tool-b"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+fixture-tool-a = { version = "1.0.0", path = "tool-a" }
+fixture-tool-b = { version = "1.0.0", path = "tool-b" }
+"#,
+    );
+
+    for name in ["tool-a", "tool-b"] {
+        write(
+            &dir.join(name).join("Cargo.toml"),
+            &format!(
+                r#"[package]
+name = "fixture-{name}"
+version = "1.0.0"
+edition.workspace = true
+license.workspace = true
+description = "fixture"
+"#
+            ),
+        );
+        write(&dir.join(name).join("src/lib.rs"), "");
+    }
+
+    write(
+        &dir.join(".release/config.toml"),
+        r#"schema-version = 2
+
+[units.tool-a]
+kind = "crates"
+version-source = "own"
+tag = "tool-a/v{version}"
+changelog = "tool-a/CHANGELOG.md"
+
+[units.tool-b]
+kind = "crates"
+version-source = "own"
+tag = "tool-b/v{version}"
+changelog = "tool-b/CHANGELOG.md"
+
+[[packages]]
+name = "fixture-tool-a"
+unit = "tool-a"
+
+[[packages]]
+name = "fixture-tool-b"
+unit = "tool-b"
+"#,
+    );
+}
+
+#[test]
+fn bumping_one_own_unit_leaves_a_sibling_own_unit_alone() {
+    let dir = std::env::temp_dir().join(format!(
+        "midenc-release-version-siblings-{}-{:?}",
+        std::process::id(),
+        std::thread::current().id()
+    ));
+    let _ = fs::remove_dir_all(&dir);
+    siblings(&dir);
+
+    let ws = Workspace::load(&dir).unwrap();
+    let config = Config::load(&dir.join(".release/config.toml")).unwrap();
+
+    let plan = version::plan(&ws, &config, "tool-a", None, version::Force::No).unwrap();
+    assert_eq!(plan.new.to_string(), "1.1.0");
+    assert_eq!(
+        plan.packages.iter().cloned().collect::<Vec<_>>(),
+        ["fixture-tool-a"],
+        "a unit's own version domain is that unit alone"
+    );
+
+    version::apply(&ws, &config, &plan).unwrap();
+
+    let a = fs::read_to_string(dir.join("tool-a/Cargo.toml")).unwrap();
+    assert!(a.contains(r#"version = "1.1.0""#), "{a}");
+    let b = fs::read_to_string(dir.join("tool-b/Cargo.toml")).unwrap();
+    assert!(
+        b.contains(r#"version = "1.0.0""#),
+        "a sibling unit's crates must not move to a version nobody released: {b}"
+    );
+
+    let root = fs::read_to_string(dir.join("Cargo.toml")).unwrap();
+    assert!(
+        root.contains(r#"fixture-tool-a = { version = "1.1.0", path = "tool-a" }"#),
+        "{root}"
+    );
+    assert!(
+        root.contains(r#"fixture-tool-b = { version = "1.0.0", path = "tool-b" }"#),
+        "the sibling's requirement must not move either: {root}"
+    );
 }

@@ -79,38 +79,21 @@ impl Bundle {
         Ok(bundle)
     }
 
+    /// The manifest's own file name, which is also the archive's seed entry.
+    pub fn manifest_name(&self) -> &str {
+        &self.manifest_name
+    }
+
     /// Every file the archive should contain, relative to the source root, in
-    /// a stable order.
+    /// a stable order. The manifest itself seeds it.
     pub fn files(&self, root: &Path, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
-        Ok(self.entries(root, include)?.into_iter().map(|(path, _)| path).collect())
+        files(root, Some(self.manifest_name()), include)
     }
 
     /// Every file the archive should contain, paired with whether it is
-    /// executable, in a stable order.
-    ///
-    /// The executable flag comes from git's mode rather than the filesystem's:
-    /// git records exactly one bit (`100644` or `100755`), whereas an on-disk
-    /// mode varies with umask and platform and would put the archive's digest
-    /// back at the mercy of whoever built it.
+    /// executable, in a stable order. The manifest itself seeds it.
     pub fn entries(&self, root: &Path, include: &[PathBuf]) -> Result<Vec<(PathBuf, bool)>> {
-        // The manifest itself is always in the archive: a `Bundle` only exists
-        // where the unit has one, and a consumer reads it to find the sources.
-        // Its name comes from the path it was loaded from, not a literal --
-        // `ArtifactSource::manifest` lets a unit name it anything.
-        let mut files = vec![(PathBuf::from(&self.manifest_name), false)];
-
-        for relative in include {
-            let path = root.join(relative);
-            if !path.exists() {
-                bail!("the include list names {}, which does not exist", relative.display());
-            }
-            collect(&path, root, &mut files)
-                .with_context(|| format!("collecting '{}'", relative.display()))?;
-        }
-
-        files.sort();
-        files.dedup();
-        Ok(files)
+        entries(root, Some(self.manifest_name()), include)
     }
 
     /// The requirement this bundle declares under `key`.
@@ -181,6 +164,47 @@ fn collect(directory: &Path, root: &Path, files: &mut Vec<(PathBuf, bool)>) -> R
     Ok(())
 }
 
+/// Every file the archive should contain, relative to the source root, in a
+/// stable order.
+///
+/// `seed` is the archive's first entry, before the include list is walked: the
+/// manifest's own file name, for a unit whose include list comes from one, so
+/// that a consumer can read it to find the sources. Its name comes from the
+/// path the manifest was loaded from rather than a literal -- a unit may call
+/// it anything. A unit whose include list is inline has no manifest, so it
+/// seeds nothing; an archive must not carry an entry no file backs.
+pub fn entries(
+    root: &Path,
+    seed: Option<&str>,
+    include: &[PathBuf],
+) -> Result<Vec<(PathBuf, bool)>> {
+    let mut files: Vec<(PathBuf, bool)> =
+        seed.into_iter().map(|name| (PathBuf::from(name), false)).collect();
+
+    for relative in include {
+        let path = root.join(relative);
+        if !path.exists() {
+            bail!("the include list names {}, which does not exist", relative.display());
+        }
+        collect(&path, root, &mut files)
+            .with_context(|| format!("collecting '{}'", relative.display()))?;
+    }
+
+    files.sort();
+    files.dedup();
+    Ok(files)
+}
+
+/// The paths [`entries`] yields, without the executable flag.
+///
+/// The executable flag comes from git's mode rather than the filesystem's: git
+/// records exactly one bit (`100644` or `100755`), whereas an on-disk mode
+/// varies with umask and platform and would put the archive's digest back at
+/// the mercy of whoever built it.
+pub fn files(root: &Path, seed: Option<&str>, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    Ok(entries(root, seed, include)?.into_iter().map(|(path, _)| path).collect())
+}
+
 /// Files sitting under an included path that git does not track.
 ///
 /// These are invisible to [`Bundle::files`] by design, but silently dropping
@@ -230,13 +254,13 @@ pub fn untracked(root: &Path, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
 /// release checks its embedded copy against, so it must depend on the template
 /// contents and nothing else -- which is why the archive is built through the
 /// deterministic writer rather than the system `tar`.
-pub fn archive(root: &Path, bundle: &Bundle, include: &[PathBuf]) -> Result<(Vec<u8>, String)> {
-    let mut entries = Vec::new();
-    for (relative, executable) in bundle.entries(root, include)? {
+pub fn archive(root: &Path, seed: Option<&str>, include: &[PathBuf]) -> Result<(Vec<u8>, String)> {
+    let mut archived = Vec::new();
+    for (relative, executable) in entries(root, seed, include)? {
         let path = root.join(&relative);
         let bytes =
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
-        entries.push(crate::archive::Entry {
+        archived.push(crate::archive::Entry {
             path: relative.to_string_lossy().replace('\\', "/"),
             bytes,
             // A template can ship a script -- the project scaffold has a hook
@@ -246,7 +270,7 @@ pub fn archive(root: &Path, bundle: &Bundle, include: &[PathBuf]) -> Result<(Vec
         });
     }
 
-    let bytes = crate::archive::tar_gz(entries)?;
+    let bytes = crate::archive::tar_gz(archived)?;
     let digest = crate::registry::sha256_hex(&bytes);
     Ok((bytes, digest))
 }
@@ -484,6 +508,71 @@ pub fn check_requirements(
     Ok(problems)
 }
 
+/// A built artifact archive, and what it was built from.
+pub struct Built {
+    /// The unit's version, from its `version-file` or its manifest.
+    pub version: Version,
+    /// Paths in the archive, relative to the unit's source directory.
+    pub files: Vec<PathBuf>,
+    pub bytes: Vec<u8>,
+    pub digest: String,
+    /// Files under an included path that git does not track, and which are
+    /// therefore absent from the archive. Reported rather than included, so
+    /// the omission is a decision rather than an accident.
+    pub untracked: Vec<PathBuf>,
+}
+
+/// Build an artifact unit's archive from the working tree.
+///
+/// Both forms of directory source are buildable, because configuration accepts
+/// both: an include list named by a manifest, and an inline one. Only the first
+/// has a [`Bundle`], and only the first seeds the archive with a manifest
+/// entry.
+pub fn build(root: &Path, name: &str, unit: &UnitConfig) -> Result<Built> {
+    let sources = source_root(root, unit)?;
+    let include = include_paths(root, unit)?;
+    let manifest = unit.source.as_ref().and_then(|source| source.manifest.as_ref());
+    let bundle = manifest.map(|path| Bundle::load(&sources.join(path))).transpose()?;
+
+    // Every requirement this unit embeds must agree with what its manifest
+    // declares. A unit that tracks nothing embeds nothing -- and a unit that
+    // tracks anything is required to declare a manifest, so an inline-include
+    // unit never reaches the body of this loop.
+    for (tracked, spec) in &unit.tracks {
+        let bundle = bundle.as_ref().with_context(|| {
+            format!("unit '{name}' tracks '{tracked}' but declares no source manifest")
+        })?;
+        let key = unit.requirement_key(tracked);
+        let expected = bundle.requirement(&key)?;
+        let problems = check_requirements(&sources, &include, &spec.packages, expected)?;
+        if !problems.is_empty() {
+            let detail = problems
+                .iter()
+                .map(|problem| format!("  {problem}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!(
+                "the sources disagree with the requirement '{key}' declared for \
+                 '{tracked}':\n{detail}"
+            );
+        }
+    }
+
+    let seed = bundle.as_ref().map(Bundle::manifest_name);
+    let version = read_version(root, unit)?;
+    let untracked = untracked(&sources, &include)?;
+    let files = files(&sources, seed, &include)?;
+    let (bytes, digest) = archive(&sources, seed, &include)?;
+
+    Ok(Built {
+        version,
+        files,
+        bytes,
+        digest,
+        untracked,
+    })
+}
+
 fn find_manifests(directory: &Path, found: &mut Vec<PathBuf>) -> Result<()> {
     if !directory.is_dir() {
         return Ok(());
@@ -574,6 +663,82 @@ account = { path = "rust/account" }
         assert!(status.success(), "git {args:?} failed");
     }
 
+    /// Configuration accepts a directory source with an inline `include` list
+    /// and no manifest -- the error says "give it 'include' or a 'manifest'",
+    /// so either is legal. Such a unit has to be buildable, or the tool
+    /// accepts a configuration it cannot execute. There is no manifest to seed
+    /// the archive with, and an archive must not carry an entry no file backs.
+    #[test]
+    fn an_inline_include_unit_builds_without_a_manifest() {
+        let dir = fixture("inline-include");
+        // An include-only unit has no manifest to hold its version, so it
+        // records one in a file of its own.
+        write(&dir.join("version.toml"), "version = \"0.2.0\"\n");
+        git(&dir, &["add", "-A"]);
+
+        let unit = crate::config::testing::config(
+            r#"
+schema-version = 2
+
+[units.thing]
+kind = "artifact"
+tag = "thing/v{version}"
+changelog = "CHANGELOG.md"
+
+[units.thing.source]
+directory = "."
+include = ["rust/account/template"]
+version-file = { path = "version.toml" }
+"#,
+        )
+        .units
+        .remove("thing")
+        .unwrap();
+
+        let built = build(&dir, "thing", &unit).unwrap();
+
+        assert_eq!(built.version.to_string(), "0.2.0", "the version comes from the version-file");
+        assert_eq!(
+            built.files,
+            [
+                PathBuf::from("rust/account/template/Cargo.toml"),
+                PathBuf::from("rust/account/template/src/lib.rs"),
+            ],
+            "only the included files, and nothing seeding a manifest"
+        );
+
+        // Round-trip through the system tar, so the archive's contents are read
+        // back rather than taken on trust. `bundle.toml` is on disk beside the
+        // sources and is not in the include list: an entry for it would be an
+        // archive member no file backs.
+        let out = dir.join("out");
+        let _ = std::fs::remove_dir_all(&out);
+        std::fs::create_dir_all(&out).unwrap();
+        let path = out.join("thing.tar.gz");
+        std::fs::write(&path, &built.bytes).unwrap();
+        let listing = std::process::Command::new("tar").arg("-tzf").arg(&path).output().unwrap();
+        assert!(listing.status.success(), "the system tar must read what we produce");
+        let mut names: Vec<&str> = std::str::from_utf8(&listing.stdout).unwrap().lines().collect();
+        names.sort();
+        assert_eq!(
+            names,
+            ["rust/account/template/Cargo.toml", "rust/account/template/src/lib.rs"],
+            "no phantom manifest entry"
+        );
+    }
+
+    /// The counterpart: a unit whose include list comes from a manifest ships
+    /// the manifest, because a consumer reads it to find the sources.
+    #[test]
+    fn a_manifest_unit_seeds_the_archive_with_its_manifest() {
+        let dir = fixture_named("inline-seed", "named.toml");
+        let unit = artifact_unit(".", Some("named.toml"), &[]);
+        let built = build(&dir, "thing", &unit).unwrap();
+
+        assert_eq!(built.version.to_string(), "0.1.0");
+        assert!(built.files.contains(&PathBuf::from("named.toml")), "{:?}", built.files);
+    }
+
     #[test]
     fn the_archive_contains_only_declared_templates() {
         let dir = fixture("contents");
@@ -600,10 +765,11 @@ account = { path = "rust/account" }
         let dir = fixture("untracked");
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
         let include = include(&dir);
-        let (before, digest_before) = archive(&dir, &bundle, &include).unwrap();
+        let (before, digest_before) =
+            archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
 
         write(&dir.join("rust/account/template/.claude/settings.json"), "{}");
-        let (after, digest_after) = archive(&dir, &bundle, &include).unwrap();
+        let (after, digest_after) = archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
 
         assert_eq!(digest_before, digest_after, "an untracked file changed the bundle digest");
         assert_eq!(before, after);
@@ -618,7 +784,7 @@ account = { path = "rust/account" }
 
         // Once committed it ships, which is the only way to add template content.
         git(&dir, &["add", "-A"]);
-        let (_, digest_tracked) = archive(&dir, &bundle, &include).unwrap();
+        let (_, digest_tracked) = archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
         assert_ne!(digest_before, digest_tracked);
         assert!(untracked(&dir, &include).unwrap().is_empty());
     }
@@ -659,7 +825,7 @@ account = { path = "rust/account" }
 
         // `archive` reads every entry; it must not go looking for a
         // "bundle.toml" that was never written.
-        let (_, digest) = archive(&dir, &bundle, &include).unwrap();
+        let (_, digest) = archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
         assert!(!digest.is_empty());
     }
 

@@ -222,21 +222,23 @@ fn check_embedded_bundle(root: &Path, config: &Config, findings: &mut Findings) 
         let Some(source) = &unit.source else {
             continue;
         };
-        let (Some(directory), Some(manifest), Some(embedded)) =
-            (&source.directory, &source.manifest, &source.embedded_copy)
-        else {
+        let (Some(directory), Some(embedded)) = (&source.directory, &source.embedded_copy) else {
             continue;
         };
 
         let sources = root.join(directory);
         let embedded_path = root.join(embedded);
-        if !sources.join(manifest).exists() || !embedded_path.exists() {
+        // An inline-include unit has no manifest, and seeds the archive with
+        // nothing. Its embedded copy is checked all the same.
+        let manifest_path = source.manifest.as_ref().map(|manifest| sources.join(manifest));
+        if manifest_path.as_ref().is_some_and(|path| !path.exists()) || !embedded_path.exists() {
             continue;
         }
 
-        let bundle = crate::bundle::Bundle::load(&sources.join(manifest))?;
+        let bundle = manifest_path.map(|path| crate::bundle::Bundle::load(&path)).transpose()?;
         let include = crate::bundle::include_paths(root, unit)?;
-        let (_, expected) = crate::bundle::archive(&sources, &bundle, &include)?;
+        let seed = bundle.as_ref().map(crate::bundle::Bundle::manifest_name);
+        let (_, expected) = crate::bundle::archive(&sources, seed, &include)?;
         let actual = crate::registry::sha256_hex(&std::fs::read(&embedded_path)?);
 
         if actual != expected {

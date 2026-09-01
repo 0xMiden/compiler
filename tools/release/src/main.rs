@@ -352,9 +352,9 @@ fn main() -> Result<()> {
                 return Ok(());
             }
 
-            let domain =
-                config.unit(&unit)?.version_source.expect("a crates unit has a version-source");
-            let plan = version::plan(&ws, &config, domain, requested, force)?;
+            // The unit, not just its version-source: a unit declaring "own"
+            // is a domain of one, so the unit's identity is part of the domain.
+            let plan = version::plan(&ws, &config, &unit, requested, force)?;
             print!("{}", plan.summary());
 
             if dry_run {
@@ -633,54 +633,27 @@ fn main() -> Result<()> {
         }
         Command::Bundle { unit, output } => {
             let name = resolve_artifact_unit(&config, unit.as_deref())?;
-            let unit_config = config.unit(&name)?;
-            let root = midenc_release::bundle::source_root(&ws.root, unit_config)?;
-            let include = midenc_release::bundle::include_paths(&ws.root, unit_config)?;
-            let manifest = unit_config
-                .source
-                .as_ref()
-                .and_then(|s| s.manifest.as_ref())
-                .ok_or_else(|| anyhow::anyhow!("unit '{name}' declares no source manifest"))?;
-            let bundle = midenc_release::bundle::Bundle::load(&root.join(manifest))?;
-
-            // Every requirement this unit embeds must agree with what its
-            // manifest declares. A unit that tracks nothing embeds nothing.
-            for (tracked, spec) in &unit_config.tracks {
-                let key = unit_config.requirement_key(tracked);
-                let expected = bundle.requirement(&key)?;
-                let problems = midenc_release::bundle::check_requirements(
-                    &root,
-                    &include,
-                    &spec.packages,
-                    expected,
-                )?;
-                if !problems.is_empty() {
-                    for problem in &problems {
-                        eprintln!("error: {problem}");
-                    }
-                    bail!(
-                        "the sources disagree with the requirement '{key}' declared for \
-                         '{tracked}'"
-                    );
-                }
-            }
+            let built = midenc_release::bundle::build(&ws.root, &name, config.unit(&name)?)?;
 
             // The archive is built from tracked files, so anything else under an
             // included path is silently absent. Say so before writing it.
-            for stray in midenc_release::bundle::untracked(&root, &include)? {
+            for stray in &built.untracked {
                 eprintln!(
                     "warning: {} is not tracked by git and is not in the bundle",
                     stray.display()
                 );
             }
 
-            let (bytes, digest) = midenc_release::bundle::archive(&root, &bundle, &include)?;
-            let files = bundle.files(&root, &include)?.len();
-            println!("{name} {} — {files} files, {} bytes", bundle.version, bytes.len());
-            println!("sha256 {digest}");
+            println!(
+                "{name} {} — {} files, {} bytes",
+                built.version,
+                built.files.len(),
+                built.bytes.len()
+            );
+            println!("sha256 {}", built.digest);
 
             if let Some(path) = output {
-                std::fs::write(&path, &bytes)?;
+                std::fs::write(&path, &built.bytes)?;
                 println!("wrote {}", path.display());
             }
             Ok(())

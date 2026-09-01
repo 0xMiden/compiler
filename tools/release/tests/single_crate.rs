@@ -5,11 +5,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-use midenc_release::{
-    config::{Config, VersionSource},
-    version,
-    workspace::Workspace,
-};
+use midenc_release::{config::Config, version, workspace::Workspace};
 
 fn write(path: &Path, contents: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -98,7 +94,7 @@ fn a_single_crate_repositorys_version_can_be_bumped() {
     let plan = version::plan(
         &ws,
         &config,
-        VersionSource::Workspace,
+        "main",
         Some(semver::Version::parse("0.4.0").unwrap()),
         version::Force::No,
     )
