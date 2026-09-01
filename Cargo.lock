@@ -3966,6 +3966,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-frontend-rust-mir"
+version = "0.1.0"
+dependencies = [
+ "midenc-dialect-arith",
+ "midenc-dialect-hir",
+ "midenc-hir",
+ "midenc-hir-eval",
+ "midenc-session",
+ "tempfile",
+]
+
+[[package]]
 name = "midenc-frontend-wasm"
 version = "0.10.0-rc.1"
 dependencies = [
