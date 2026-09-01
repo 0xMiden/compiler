@@ -15,10 +15,7 @@ use std::{collections::BTreeSet, path::Path, process::Command};
 
 use anyhow::{Context, Result, bail};
 
-use crate::{
-    config::{Config, Unit},
-    workspace::Workspace,
-};
+use crate::{config::Config, workspace::Workspace};
 
 /// One commit in the range being described.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,7 +80,7 @@ pub fn prepare(
 
     let (range, baseline) = match range {
         Some(explicit) => (explicit, None),
-        None => match latest_tag(&ws.root, &unit_config.tag)? {
+        None => match latest_tag(&ws.root, unit_config.tag())? {
             Some(tag) => (format!("{tag}..HEAD"), Some(tag)),
             // No previous release: everything is new.
             None => ("HEAD".to_string(), None),
@@ -94,7 +91,7 @@ pub fn prepare(
 
     Ok(Prompt {
         unit: unit.to_string(),
-        changelog: unit_config.changelog.clone(),
+        changelog: unit_config.changelog().to_string(),
         range,
         baseline,
         changes,
@@ -114,12 +111,8 @@ fn unit_paths(ws: &Workspace, config: &Config, unit: &str) -> Result<Vec<String>
         return Ok(vec!["extra/templates".to_string()]);
     }
 
-    let wanted: Unit = unit
-        .parse()
-        .with_context(|| format!("'{unit}' is not a unit this tool can resolve packages for"))?;
-
     let mut paths = BTreeSet::new();
-    for package in config.packages_in(wanted).filter(|package| package.publish) {
+    for package in config.packages_in(unit).filter(|p| config.is_publishable(p)) {
         let Some(actual) = ws.packages.get(&package.name) else {
             continue;
         };
@@ -264,37 +257,34 @@ mod tests {
     use std::{collections::BTreeMap, path::PathBuf};
 
     use super::*;
-    use crate::{
-        config::{PackageConfig, UnitConfig},
-        workspace::Package,
-    };
+    use crate::workspace::Package;
 
     fn config() -> Config {
-        Config {
-            schema_version: 1,
-            units: BTreeMap::from([
-                (
-                    "compiler".to_string(),
-                    UnitConfig {
-                        tag: "v{version}".into(),
-                        changelog: "CHANGELOG.md".into(),
-                    },
-                ),
-                (
-                    "templates".to_string(),
-                    UnitConfig {
-                        tag: "templates/v{version}".into(),
-                        changelog: "extra/templates/CHANGELOG.md".into(),
-                    },
-                ),
-            ]),
-            packages: vec![PackageConfig {
-                name: "midenc".into(),
-                unit: Unit::Compiler,
-                publish: true,
-                version_source: None,
-            }],
-        }
+        crate::config::testing::config(
+            r#"
+schema-version = 2
+
+[units.compiler]
+kind = "crates"
+version-source = "workspace"
+tag = "v{version}"
+changelog = "CHANGELOG.md"
+
+[units.templates]
+kind = "artifact"
+tag = "templates/v{version}"
+changelog = "extra/templates/CHANGELOG.md"
+changelog-headings = ["Templates", "SDK compatibility"]
+
+[units.templates.source]
+directory = "extra/templates"
+manifest = "bundle.toml"
+
+[[packages]]
+name = "midenc"
+unit = "compiler"
+"#,
+        )
     }
 
     fn workspace() -> Workspace {

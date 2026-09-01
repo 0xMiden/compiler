@@ -14,10 +14,7 @@ use anyhow::{Context, Result, bail};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    config::{Config, Unit},
-    workspace::Workspace,
-};
+use crate::{config::Config, workspace::Workspace};
 
 pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
@@ -105,7 +102,7 @@ pub fn validate(ws: &Workspace, config: &Config, candidate: &Candidate) -> Vec<S
             continue;
         };
 
-        let expected_tag = render_tag(&unit_config.tag, &declaration.version);
+        let expected_tag = render_tag(unit_config.tag(), &declaration.version);
         if declaration.tag != expected_tag {
             problems.push(format!(
                 "unit '{unit}' declares tag '{}' but its template yields '{expected_tag}'",
@@ -145,16 +142,17 @@ fn check_versions_match_manifests(
     unit: &str,
     declaration: &UnitDeclaration,
 ) -> Vec<String> {
-    let unit_kind = match unit {
-        "compiler" => Unit::Compiler,
-        "sdk" => Unit::Sdk,
-        // Templates carry no crates, so there is nothing to cross-check here.
-        _ => return Vec::new(),
+    let Ok(unit_config) = config.unit(unit) else {
+        return Vec::new();
     };
+    // An artifact unit carries no crates, so there is nothing to cross-check.
+    if !unit_config.publishes_crates() {
+        return Vec::new();
+    }
 
     let declared = declaration.version.to_string();
     let mut problems = Vec::new();
-    for package in config.packages_in(unit_kind) {
+    for package in config.packages_in(unit) {
         let Some(actual) = ws.packages.get(&package.name) else {
             continue;
         };
@@ -189,19 +187,23 @@ mod tests {
     }
 
     fn config_with_templates() -> Config {
-        toml::from_str(
+        crate::config::testing::config(
             r#"
-schema-version = 1
+schema-version = 2
 
 # The templates unit publishes no crates, so there are no package entries.
 packages = []
 
 [units.templates]
+kind = "artifact"
 tag = "templates/v{version}"
 changelog = "tools/cargo-miden/templates/CHANGELOG.md"
+
+[units.templates.source]
+directory = "extra/templates"
+manifest = "bundle.toml"
 "#,
         )
-        .unwrap()
     }
 
     fn empty_workspace() -> Workspace {

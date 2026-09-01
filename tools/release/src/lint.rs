@@ -11,12 +11,9 @@ use std::{collections::BTreeSet, path::Path};
 use anyhow::{Context, Result};
 
 use crate::{
-    config::{Config, Unit},
+    config::{Config, UnitKind},
     workspace::Workspace,
 };
-
-/// The frozen version every private package carries.
-pub const PRIVATE_VERSION: &str = "0.1.0";
 
 #[derive(Debug, Default)]
 pub struct Findings {
@@ -111,7 +108,7 @@ fn check_classification(ws: &Workspace, config: &Config, findings: &mut Findings
             continue;
         };
 
-        if actual.publishable != package.publish {
+        if actual.publishable != config.is_publishable(package) {
             let (manifest, config_says) = if actual.publishable {
                 ("publishable", "private")
             } else {
@@ -126,23 +123,29 @@ fn check_classification(ws: &Workspace, config: &Config, findings: &mut Findings
     }
 }
 
-/// Private packages are pinned at [`PRIVATE_VERSION`] and never move.
+/// Private packages are pinned at the configured frozen version and never move.
 ///
 /// A private crate carrying a plausible-looking version invites the reader to
 /// assume it ships with the release. Freezing them all at one obviously inert
 /// version says the opposite, and keeps release churn off manifests that are
 /// never published.
 fn check_private_versions(ws: &Workspace, config: &Config, findings: &mut Findings) {
-    for package in config.packages_in(Unit::Private) {
-        let Some(actual) = ws.packages.get(&package.name) else {
-            continue;
-        };
-        if actual.version != PRIVATE_VERSION {
-            findings.error(format!(
-                "private package '{}' is at {} but private packages are frozen at {}; they are \
-                 never published, so a version that tracks a release domain is misleading",
-                package.name, actual.version, PRIVATE_VERSION
-            ));
+    let Some(frozen) = config.private_version.as_deref() else {
+        return;
+    };
+    for (name, _) in config.units_of_kind(UnitKind::Private) {
+        for package in config.packages_in(name) {
+            let Some(actual) = ws.packages.get(&package.name) else {
+                continue;
+            };
+            if actual.version != frozen {
+                findings.error(format!(
+                    "private package '{}' is at {} but private packages are frozen at {frozen}; \
+                     they are never published, so a version that tracks a release domain is \
+                     misleading",
+                    package.name, actual.version
+                ));
+            }
         }
     }
 }
@@ -153,10 +156,13 @@ fn check_private_versions(ws: &Workspace, config: &Config, findings: &mut Findin
 /// Dev dependencies without a version requirement are exempt, because Cargo
 /// strips them when packaging.
 fn check_private_dependencies(ws: &Workspace, config: &Config, findings: &mut Findings) {
-    let private: BTreeSet<&str> =
-        config.packages_in(Unit::Private).map(|p| p.name.as_str()).collect();
+    let private: BTreeSet<&str> = config
+        .units_of_kind(UnitKind::Private)
+        .flat_map(|(name, _)| config.packages_in(name))
+        .map(|p| p.name.as_str())
+        .collect();
 
-    for package in config.packages.iter().filter(|p| p.publish) {
+    for package in config.publishable() {
         let Some(actual) = ws.packages.get(&package.name) else {
             continue;
         };

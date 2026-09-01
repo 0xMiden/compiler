@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     candidate::{Candidate, UnitDeclaration},
-    config::{Config, Unit},
+    config::Config,
     order,
     workspace::Workspace,
 };
@@ -105,12 +105,12 @@ pub fn generate(
             continue;
         };
 
-        let packages = match unit {
-            "compiler" => package_order(ws, config, Unit::Compiler)?,
-            "sdk" => package_order(ws, config, Unit::Sdk)?,
-            // Templates publish no crates; the unit exists for its tag and
-            // release artifacts.
-            _ => Vec::new(),
+        let packages = if config.unit(unit)?.publishes_crates() {
+            package_order(ws, config, unit)?
+        } else {
+            // Artifact units publish no crates; the unit exists for its tag
+            // and release assets.
+            Vec::new()
         };
 
         stages.push(Stage {
@@ -143,7 +143,7 @@ pub fn generate(
     })
 }
 
-fn package_order(ws: &Workspace, config: &Config, unit: Unit) -> Result<Vec<String>> {
+fn package_order(ws: &Workspace, config: &Config, unit: &str) -> Result<Vec<String>> {
     let selected = config.packages_in(unit).map(|p| p.name.clone()).collect();
     order::topological(ws, &selected)
 }
@@ -199,44 +199,41 @@ mod tests {
     }
 
     fn config() -> Config {
-        toml::from_str(
+        crate::config::testing::config(
             r#"
-schema-version = 1
-
-[units.compiler]
-tag = "v{version}"
-changelog = "CHANGELOG.md"
+schema-version = 2
 
 [units.sdk]
+kind = "crates"
+version-source = "own"
 tag = "sdk/v{version}"
 changelog = "sdk/CHANGELOG.md"
 
-[[packages]]
-name = "comp-leaf"
-unit = "compiler"
-publish = true
+[units.compiler]
+kind = "crates"
 version-source = "workspace"
-
-[[packages]]
-name = "comp-root"
-unit = "compiler"
-publish = true
-version-source = "workspace"
+tag = "v{version}"
+changelog = "CHANGELOG.md"
+after = ["sdk"]
+latest = true
 
 [[packages]]
 name = "sdk-leaf"
 unit = "sdk"
-publish = true
-version-source = "sdk"
 
 [[packages]]
 name = "sdk-root"
 unit = "sdk"
-publish = true
-version-source = "sdk"
+
+[[packages]]
+name = "comp-leaf"
+unit = "compiler"
+
+[[packages]]
+name = "comp-root"
+unit = "compiler"
 "#,
         )
-        .unwrap()
     }
 
     fn candidate(units: &[&str]) -> Candidate {

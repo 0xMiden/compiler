@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use midenc_release::{
     candidate::{Candidate, UnitDeclaration, render_tag},
     closure,
-    config::{Config, Unit, VersionSource},
+    config::Config,
     executor,
     github::rest::RestGitHub,
     intent, lint, order, plan as release_plan,
@@ -43,7 +43,7 @@ enum Command {
     PackageOrder {
         /// Which unit to order. Omit to order every publishable package.
         #[arg(long)]
-        unit: Option<UnitArg>,
+        unit: Option<String>,
         /// Emit the order as `-p NAME` arguments ready to pass to Cargo.
         #[arg(long)]
         cargo_args: bool,
@@ -55,7 +55,7 @@ enum Command {
     SetVersion {
         /// Which domain to move.
         #[arg(long)]
-        unit: UnitArg,
+        unit: String,
         /// The new version. Defaults to the next minor.
         version: Option<semver::Version>,
         /// Print the edits without writing them.
@@ -92,7 +92,7 @@ enum Command {
     VerifyClosure {
         /// Which unit to verify. Omit for every publishable package.
         #[arg(long)]
-        unit: Option<UnitArg>,
+        unit: Option<String>,
         /// Skip the consumer build. Much faster, and much weaker: resolution
         /// alone cannot prove the archives contain every file they need.
         #[arg(long)]
@@ -131,7 +131,7 @@ enum Command {
         index: String,
         /// Which unit to reconcile. Omit for every publishable package.
         #[arg(long)]
-        unit: Option<UnitArg>,
+        unit: Option<String>,
         /// Reconcile against a sealed plan, so an existing version with
         /// different content is reported as a conflict rather than skipped.
         #[arg(long)]
@@ -250,25 +250,6 @@ enum Command {
     },
 }
 
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
-enum UnitArg {
-    Compiler,
-    Sdk,
-    /// The template bundle. Publishes no crates; its version lives in
-    /// `extra/templates/bundle.toml`.
-    Templates,
-}
-
-impl From<UnitArg> for Unit {
-    fn from(arg: UnitArg) -> Self {
-        match arg {
-            UnitArg::Compiler => Self::Compiler,
-            UnitArg::Sdk => Self::Sdk,
-            UnitArg::Templates => Self::Templates,
-        }
-    }
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let manifest_dir = match cli.manifest_dir {
@@ -305,11 +286,14 @@ fn main() -> Result<()> {
             bail!("release lint found {} problem(s)", findings.errors.len());
         }
         Command::PackageOrder { unit, cargo_args } => {
-            let selected: BTreeSet<String> = match unit {
-                Some(unit) => config.packages_in(unit.into()).map(|p| p.name.clone()).collect(),
-                None => {
-                    config.packages.iter().filter(|p| p.publish).map(|p| p.name.clone()).collect()
+            let selected: BTreeSet<String> = match &unit {
+                Some(unit) => {
+                    // Resolve first, so an unknown name fails with the loader's
+                    // message rather than as an empty selection.
+                    config.unit(unit)?;
+                    config.packages_in(unit).map(|p| p.name.clone()).collect()
                 }
+                None => config.publishable().map(|p| p.name.clone()).collect(),
             };
 
             let order = order::topological(&ws, &selected)?;
@@ -334,7 +318,7 @@ fn main() -> Result<()> {
 
             // Templates carry no crates, so their version lives in the bundle
             // manifest rather than in a version domain of Cargo manifests.
-            if let UnitArg::Templates = unit {
+            if !config.unit(&unit)?.publishes_crates() {
                 let templates = ws.root.join("extra/templates");
                 let bundle = midenc_release::bundle::Bundle::load(&templates.join("bundle.toml"))?;
                 let new = requested.unwrap_or_else(|| version::next_minor(&bundle.version));
@@ -345,16 +329,18 @@ fn main() -> Result<()> {
                     return Ok(());
                 }
                 midenc_release::bundle::set_version(&templates, &new)?;
-                update_candidate(&manifest_dir.join(".release/release.toml"), &config, unit, &new)?;
+                update_candidate(
+                    &manifest_dir.join(".release/release.toml"),
+                    &config,
+                    &unit,
+                    &new,
+                )?;
                 println!("recorded the candidate; review the diff");
                 return Ok(());
             }
 
-            let domain = match unit {
-                UnitArg::Compiler => VersionSource::Workspace,
-                UnitArg::Sdk => VersionSource::Sdk,
-                UnitArg::Templates => unreachable!("handled above"),
-            };
+            let domain =
+                config.unit(&unit)?.version_source.expect("a crates unit has a version-source");
             let plan = version::plan(&ws, &config, domain, requested, force)?;
             print!("{}", plan.summary());
 
@@ -366,7 +352,7 @@ fn main() -> Result<()> {
             println!("\nupdated {} manifest edit(s) and refreshed Cargo.lock", plan.edits.len());
 
             let candidate_path = manifest_dir.join(".release/release.toml");
-            update_candidate(&candidate_path, &config, unit, &plan.new)?;
+            update_candidate(&candidate_path, &config, &unit, &plan.new)?;
             println!("recorded the candidate in {}", candidate_path.display());
             println!("review the diff, then open the release-candidate pull request");
             Ok(())
@@ -394,11 +380,14 @@ fn main() -> Result<()> {
             no_build,
             cache_dir,
         } => {
-            let selected: BTreeSet<String> = match unit {
-                Some(unit) => config.packages_in(unit.into()).map(|p| p.name.clone()).collect(),
-                None => {
-                    config.packages.iter().filter(|p| p.publish).map(|p| p.name.clone()).collect()
+            let selected: BTreeSet<String> = match &unit {
+                Some(unit) => {
+                    // Resolve first, so an unknown name fails with the loader's
+                    // message rather than as an empty selection.
+                    config.unit(unit)?;
+                    config.packages_in(unit).map(|p| p.name.clone()).collect()
                 }
+                None => config.publishable().map(|p| p.name.clone()).collect(),
             };
             let packages = order::topological(&ws, &selected)?;
 
@@ -486,26 +475,21 @@ fn main() -> Result<()> {
                 // different content is a conflict rather than a skip.
                 Some(path) => {
                     let plan = release_plan::Plan::load(path)?;
-                    match unit {
-                        Some(unit) => plan.planned_for(match unit {
-                            UnitArg::Compiler => "compiler",
-                            UnitArg::Sdk => "sdk",
-                            UnitArg::Templates => "templates",
-                        }),
+                    match &unit {
+                        Some(unit) => {
+                            config.unit(unit)?;
+                            plan.planned_for(unit)
+                        }
                         None => plan.planned(),
                     }
                 }
                 None => {
-                    let selected: BTreeSet<String> = match unit {
+                    let selected: BTreeSet<String> = match &unit {
                         Some(unit) => {
-                            config.packages_in(unit.into()).map(|p| p.name.clone()).collect()
+                            config.unit(unit)?;
+                            config.packages_in(unit).map(|p| p.name.clone()).collect()
                         }
-                        None => config
-                            .packages
-                            .iter()
-                            .filter(|p| p.publish)
-                            .map(|p| p.name.clone())
-                            .collect(),
+                        None => config.publishable().map(|p| p.name.clone()).collect(),
                     };
                     order::topological(&ws, &selected)?
                         .into_iter()
@@ -736,14 +720,9 @@ fn main() -> Result<()> {
 fn update_candidate(
     path: &std::path::Path,
     config: &Config,
-    unit: UnitArg,
+    name: &str,
     version: &semver::Version,
 ) -> Result<()> {
-    let name = match unit {
-        UnitArg::Compiler => "compiler",
-        UnitArg::Sdk => "sdk",
-        UnitArg::Templates => "templates",
-    };
     let unit_config = config
         .units
         .get(name)
@@ -763,7 +742,7 @@ fn update_candidate(
         name.to_string(),
         UnitDeclaration {
             version: version.clone(),
-            tag: render_tag(&unit_config.tag, version),
+            tag: render_tag(unit_config.tag(), version),
             prerelease: !version.pre.is_empty(),
         },
     );

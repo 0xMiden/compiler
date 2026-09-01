@@ -111,6 +111,17 @@ pub fn check_direction(old: &Version, new: &Version, force: Force) -> Result<()>
     )
 }
 
+/// The packages whose versions move when a domain moves.
+fn packages_in_domain(config: &Config, domain: VersionSource) -> BTreeSet<String> {
+    config
+        .units
+        .iter()
+        .filter(|(_, unit)| unit.version_source == Some(domain))
+        .flat_map(|(name, _)| config.packages_in(name))
+        .map(|p| p.name.clone())
+        .collect()
+}
+
 /// Compute the edits a bump requires, without writing anything.
 pub fn plan(
     ws: &Workspace,
@@ -119,12 +130,7 @@ pub fn plan(
     requested: Option<Version>,
     force: Force,
 ) -> Result<VersionPlan> {
-    let packages: BTreeSet<String> = config
-        .packages
-        .iter()
-        .filter(|p| p.version_source == Some(domain))
-        .map(|p| p.name.clone())
-        .collect();
+    let packages = packages_in_domain(config, domain);
 
     if packages.is_empty() {
         bail!("no packages are assigned to the {domain:?} version domain");
@@ -183,12 +189,7 @@ pub fn plan(
 
 /// Apply a planned bump, then refresh the lockfile.
 pub fn apply(ws: &Workspace, config: &Config, plan: &VersionPlan) -> Result<()> {
-    let packages: BTreeSet<String> = config
-        .packages
-        .iter()
-        .filter(|p| p.version_source == Some(plan.domain))
-        .map(|p| p.name.clone())
-        .collect();
+    let packages = packages_in_domain(config, plan.domain);
 
     for manifest in manifests(ws) {
         let text = std::fs::read_to_string(&manifest)
@@ -204,7 +205,7 @@ pub fn apply(ws: &Workspace, config: &Config, plan: &VersionPlan) -> Result<()> 
     // Templates hardcode an SDK requirement, so an SDK bump has to carry them
     // along or generated projects stay pinned to the previous SDK. This is
     // silent when missed: the templates still render and still build.
-    if plan.domain == VersionSource::Sdk {
+    if plan.domain == VersionSource::Own {
         let templates = ws.root.join("extra/templates");
         if templates.join("bundle.toml").exists() {
             let requirement = crate::bundle::requirement_for(&plan.new);

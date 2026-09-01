@@ -102,38 +102,38 @@ fixture-shared.workspace = true
 
     write(
         &dir.join(".release/config.toml"),
-        r#"schema-version = 1
+        r#"schema-version = 2
 
 [units.compiler]
+kind = "crates"
+version-source = "workspace"
 tag = "v{version}"
 changelog = "CHANGELOG.md"
 
 [units.sdk]
+kind = "crates"
+version-source = "own"
 tag = "sdk/v{version}"
 changelog = "sdk/CHANGELOG.md"
+
+[units.private]
+kind = "private"
 
 [[packages]]
 name = "fixture-comp"
 unit = "compiler"
-publish = true
-version-source = "workspace"
 
 [[packages]]
 name = "fixture-shared"
 unit = "sdk"
-publish = true
-version-source = "sdk"
 
 [[packages]]
 name = "fixture-shared-dep"
 unit = "sdk"
-publish = true
-version-source = "sdk"
 
 [[packages]]
 name = "fixture-shared-tests"
 unit = "private"
-publish = false
 "#,
     );
 }
@@ -185,7 +185,7 @@ fn bumping_the_compiler_domain_moves_the_workspace_version_and_its_requirements(
 fn bumping_the_sdk_domain_rewrites_the_compiler_side_requirement() {
     let (dir, ws, config) = setup("sdk");
 
-    let plan = version::plan(&ws, &config, VersionSource::Sdk, None, version::Force::No).unwrap();
+    let plan = version::plan(&ws, &config, VersionSource::Own, None, version::Force::No).unwrap();
     assert_eq!(plan.old.to_string(), "0.13.1");
     assert_eq!(plan.new.to_string(), "0.14.0");
 
@@ -273,7 +273,7 @@ fn a_domain_whose_packages_disagree_is_rejected() {
     fs::write(&manifest, text).unwrap();
 
     let ws = Workspace::load(&dir).unwrap();
-    let err = version::plan(&ws, &config, VersionSource::Sdk, None, version::Force::No)
+    let err = version::plan(&ws, &config, VersionSource::Own, None, version::Force::No)
         .unwrap_err()
         .to_string();
     assert!(err.contains("disagree"), "{err}");
@@ -297,7 +297,7 @@ fn planning_writes_nothing() {
 fn private_packages_are_left_at_their_own_version() {
     let (dir, ws, config) = setup("private");
 
-    let plan = version::plan(&ws, &config, VersionSource::Sdk, None, version::Force::No).unwrap();
+    let plan = version::plan(&ws, &config, VersionSource::Own, None, version::Force::No).unwrap();
     version::apply(&ws, &config, &plan).unwrap();
 
     let private = fs::read_to_string(dir.join("shared-tests/Cargo.toml")).unwrap();
