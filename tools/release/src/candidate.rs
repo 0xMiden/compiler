@@ -102,6 +102,15 @@ pub fn validate(ws: &Workspace, config: &Config, candidate: &Candidate) -> Vec<S
             continue;
         };
 
+        if !unit_config.is_releasable() {
+            problems.push(format!(
+                "unit '{unit}' is a '{}' unit and is never released on its own; remove it from \
+                 `units`",
+                unit_config.kind
+            ));
+            continue;
+        }
+
         let expected_tag = render_tag(unit_config.tag(), &declaration.version);
         if declaration.tag != expected_tag {
             problems.push(format!(
@@ -269,6 +278,43 @@ manifest = "bundle.toml"
         let loaded = Candidate::load(&path).unwrap();
         assert_eq!(loaded, candidate);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A `private` unit has no tag by construction. Naming one in a
+    /// candidate's `units` must be rejected with a clear problem, not panic
+    /// when validation reaches for a tag that was never validated to exist.
+    #[test]
+    fn a_private_unit_cannot_be_selected() {
+        let candidate = Candidate {
+            schema_version: 1,
+            units: vec!["private".into()],
+            declarations: [("private".to_string(), declaration("0.1.0", "v0.1.0", false))]
+                .into_iter()
+                .collect(),
+        };
+
+        let config = crate::config::testing::config(crate::config::testing::THREE_UNITS);
+        let problems = validate(&empty_workspace(), &config, &candidate);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("never released on its own"), "{}", problems[0]);
+    }
+
+    /// Same as above, for a `library` unit: it publishes crates but has no tag
+    /// of its own, so it must be rejected the same way a `private` unit is.
+    #[test]
+    fn a_library_unit_cannot_be_selected() {
+        let candidate = Candidate {
+            schema_version: 1,
+            units: vec!["common".into()],
+            declarations: [("common".to_string(), declaration("0.1.0", "v0.1.0", false))]
+                .into_iter()
+                .collect(),
+        };
+
+        let config = crate::config::testing::config(crate::config::testing::TWO_UNITS_ONE_LIBRARY);
+        let problems = validate(&empty_workspace(), &config, &candidate);
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("never released on its own"), "{}", problems[0]);
     }
 
     #[test]

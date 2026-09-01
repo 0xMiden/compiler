@@ -17,8 +17,9 @@
 //! - **Nothing extra is attached.** An asset nobody planned is either a mistake
 //!   or an intrusion, and after publication it can never be removed.
 //!
-//! Units are published in dependency order — SDK, then templates, then compiler
-//! — so that a consumer who sees a compiler release can already resolve
+//! Units are published in the order the sealed plan records, which is the
+//! dependency order configuration declared when the intent was generated, so
+//! that a consumer who sees a downstream release can already resolve
 //! everything it refers to.
 
 use anyhow::{Context, Result, bail};
@@ -43,22 +44,23 @@ pub struct Finalized {
     pub already_published: bool,
 }
 
-/// Publication order. A unit absent from the plan is simply skipped.
+/// Publication order, taken from the sealed plan.
 ///
-/// The compiler goes last because it depends on the SDK, and templates go
-/// before it because a compiler release announces template compatibility.
-const ORDER: [&str; 3] = ["sdk", "templates", "compiler"];
-
+/// The plan's stages were ordered by configuration when the intent was
+/// generated, and the plan is the reviewed artifact. Re-deriving the order from
+/// configuration here would let a configuration change between sealing and
+/// finalizing silently reorder a release that was already approved.
 pub fn order_units(plan: &Plan) -> Vec<String> {
-    let mut ordered: Vec<String> = ORDER
+    let mut ordered: Vec<String> = plan
+        .intent
+        .stages
         .iter()
-        .filter(|unit| plan.intent.tags.iter().any(|tag| tag.unit == **unit))
-        .map(|unit| unit.to_string())
+        .map(|stage| stage.unit.clone())
+        .filter(|unit| plan.intent.tags.iter().any(|tag| &tag.unit == unit))
         .collect();
 
-    // Anything the plan names that this list does not know about still has to
-    // be released; dropping it silently would publish a partial release and
-    // report success.
+    // A tag without a stage still has to be released; dropping it silently
+    // would publish a partial release and report success.
     for tag in &plan.intent.tags {
         if !ordered.contains(&tag.unit) {
             ordered.push(tag.unit.clone());
@@ -312,14 +314,26 @@ mod tests {
     }
 
     #[test]
-    fn units_publish_sdk_then_templates_then_compiler() {
-        let plan = plan(&[("compiler", false), ("templates", false), ("sdk", false)]);
+    fn publication_follows_the_plan_stage_order() {
+        let plan = plan(&[("sdk", false), ("templates", false), ("compiler", false)]);
         let github = staged(&plan);
 
         let finalized = finalize(&github, &plan).unwrap();
         let order: Vec<&str> = finalized.iter().map(|f| f.unit.as_str()).collect();
         assert_eq!(order, ["sdk", "templates", "compiler"]);
         assert!(finalized.iter().all(|f| !f.already_published));
+    }
+
+    /// The order is the plan's, not this repository's. A repository whose
+    /// configuration orders units differently must be honoured.
+    #[test]
+    fn a_foreign_order_is_honoured() {
+        let plan = plan(&[("compiler", false), ("sdk", false)]);
+        let github = staged(&plan);
+
+        let finalized = finalize(&github, &plan).unwrap();
+        let order: Vec<&str> = finalized.iter().map(|f| f.unit.as_str()).collect();
+        assert_eq!(order, ["compiler", "sdk"]);
     }
 
     #[test]
@@ -440,7 +454,7 @@ mod tests {
     }
 
     #[test]
-    fn a_unit_the_order_does_not_know_is_still_released() {
+    fn a_tag_without_a_stage_is_still_released() {
         let plan = plan(&[("sdk", false), ("docs", false)]);
         let ordered = order_units(&plan);
         assert_eq!(ordered, ["sdk", "docs"], "an unknown unit must not be silently dropped");

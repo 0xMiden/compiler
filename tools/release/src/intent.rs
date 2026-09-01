@@ -72,10 +72,6 @@ impl Intent {
     }
 }
 
-/// Units publish in this order when several are selected. SDK crates are
-/// depended on by compiler crates, so the SDK must be resolvable first.
-const UNIT_ORDER: [&str; 3] = ["sdk", "templates", "compiler"];
-
 /// Build an intent from the reviewed candidate.
 pub fn generate(
     ws: &Workspace,
@@ -100,7 +96,10 @@ pub fn generate(
     let mut stages = Vec::new();
     let mut tags = Vec::new();
 
-    for unit in UNIT_ORDER {
+    // Publish order comes from configuration, so a repository with different
+    // units gets its own ordering without the tool knowing their names.
+    for unit in config.order()? {
+        let unit = unit.as_str();
         let Some(declaration) = selected.get(unit) else {
             continue;
         };
@@ -125,14 +124,8 @@ pub fn generate(
         });
     }
 
-    // Every selected unit must be recognized, or a typo would silently produce
-    // a release that omits it.
-    if stages.len() != selected.len() {
-        let known = UNIT_ORDER.join(", ");
-        let unknown: Vec<&str> =
-            selected.keys().filter(|unit| !UNIT_ORDER.contains(unit)).copied().collect();
-        bail!("unknown unit(s): {}; known units are {known}", unknown.join(", "));
-    }
+    // (deleted: `candidate::validate` already rejects an undeclared unit, and
+    // it runs before this point.)
 
     Ok(Intent {
         schema_version: SCHEMA_VERSION,
