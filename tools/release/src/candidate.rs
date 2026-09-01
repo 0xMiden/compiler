@@ -8,7 +8,10 @@
 //! duplication is the point -- it is double-entry bookkeeping, and validation
 //! rejects a candidate whose declaration and manifests disagree.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use anyhow::{Context, Result, bail};
 use semver::Version;
@@ -133,6 +136,54 @@ pub fn validate(ws: &Workspace, config: &Config, candidate: &Candidate) -> Vec<S
         problems.extend(check_versions_match_manifests(ws, config, unit, declaration));
     }
 
+    let selected_units: BTreeSet<&str> = candidate.units.iter().map(String::as_str).collect();
+
+    for (name, unit) in config.releasable() {
+        if selected_units.contains(name.as_str()) {
+            continue;
+        }
+
+        // Explicit co-release: no version-requirement basis, declared by hand.
+        for trigger in unit.release_when.iter().map(String::as_str) {
+            if selected_units.contains(trigger) {
+                problems.push(format!(
+                    "unit '{trigger}' is being released, so unit '{name}' must also be released; \
+                     add it to `units` in the candidate"
+                ));
+            }
+        }
+
+        // Requirement-driven co-release. Decided from content: a stable patch
+        // bump leaves a `major.minor` requirement untouched, and forcing a
+        // release for it would mean a version bump with nothing to describe.
+        let Some(source) = &unit.source else {
+            continue;
+        };
+        for tracked in unit.tracks.keys() {
+            if !selected_units.contains(tracked.as_str()) {
+                continue;
+            }
+            let Some(declaration) = candidate.declarations.get(tracked) else {
+                continue;
+            };
+            let key = unit.requirement_key(tracked);
+            let Some(declared) = declared_requirement(&ws.root, source, &key) else {
+                continue;
+            };
+            let expected = crate::bundle::requirement_for(&declaration.version);
+
+            if declared != expected {
+                problems.push(format!(
+                    "unit '{name}' requires '{tracked}' at \"{declared}\", but releasing \
+                     {tracked} {} needs \"{expected}\"; unit '{name}' must also be released. Run \
+                     `release-tool set-version --unit {tracked} {}`, which rewrites the \
+                     requirement, then add '{name}' to `units`",
+                    declaration.version, declaration.version
+                ));
+            }
+        }
+    }
+
     for unit in candidate.declarations.keys() {
         if !candidate.units.contains(unit) {
             problems.push(format!(
@@ -142,6 +193,23 @@ pub fn validate(ws: &Workspace, config: &Config, candidate: &Candidate) -> Vec<S
     }
 
     problems
+}
+
+/// The requirement an artifact unit's manifest currently declares under `key`.
+///
+/// Read directly rather than through `bundle::Bundle`, so that co-release
+/// validation does not depend on the bundle format beyond "a TOML file with a
+/// string key". A manifest that is absent or malformed yields `None`, and the
+/// caller treats that as "nothing to compare".
+fn declared_requirement(
+    root: &std::path::Path,
+    source: &crate::config::ArtifactSource,
+    key: &str,
+) -> Option<String> {
+    let manifest = root.join(source.directory.as_ref()?).join(source.manifest.as_ref()?);
+    let text = std::fs::read_to_string(manifest).ok()?;
+    let document: toml::Value = toml::from_str(&text).ok()?;
+    document.get(key)?.as_str().map(str::to_string)
 }
 
 /// The declared version must be the version the manifests actually carry.
@@ -315,6 +383,102 @@ manifest = "bundle.toml"
         let problems = validate(&empty_workspace(), &config, &candidate);
         assert_eq!(problems.len(), 1, "{problems:?}");
         assert!(problems[0].contains("never released on its own"), "{}", problems[0]);
+    }
+
+    fn tracking_config() -> Config {
+        crate::config::testing::config(crate::config::testing::THREE_UNITS)
+    }
+
+    /// Writes a bundle manifest declaring `requirement` for the tracked unit,
+    /// and returns a workspace rooted at it.
+    fn workspace_with_requirement(requirement: &str) -> Workspace {
+        let dir = std::env::temp_dir().join(format!(
+            "midenc-release-corelease-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("extra/templates")).unwrap();
+        std::fs::write(
+            dir.join("extra/templates/bundle.toml"),
+            format!(
+                "schema-version = 1\nversion = \"1.0.0\"\nsdk-requirement = \
+                 \"{requirement}\"\n[templates.demo]\npath = \"demo\"\n"
+            ),
+        )
+        .unwrap();
+
+        let mut ws = empty_workspace();
+        ws.root = dir;
+        ws
+    }
+
+    fn sdk_only(version: &str) -> Candidate {
+        let mut candidate = Candidate {
+            schema_version: SUPPORTED_SCHEMA_VERSION,
+            units: vec!["sdk".to_string()],
+            declarations: Default::default(),
+        };
+        candidate.declarations.insert(
+            "sdk".to_string(),
+            declaration(version, &format!("sdk/v{version}"), version.contains('-')),
+        );
+        candidate
+    }
+
+    #[test]
+    fn a_stable_patch_bump_does_not_force_the_tracking_units_release() {
+        // 0.14.0 -> 0.14.1 leaves the requirement at "0.14".
+        let ws = workspace_with_requirement("0.14");
+        let problems = validate(&ws, &tracking_config(), &sdk_only("0.14.1"));
+        assert!(
+            !problems.iter().any(|p| p.contains("templates")),
+            "a patch bump must not force a templates release: {problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_minor_bump_forces_the_tracking_units_release() {
+        // 0.14.x -> 0.15.0 moves the requirement to "0.15".
+        let ws = workspace_with_requirement("0.14");
+        let problems = validate(&ws, &tracking_config(), &sdk_only("0.15.0"));
+        assert!(
+            problems.iter().any(|p| p.contains("templates") && p.contains("0.15")),
+            "{problems:?}"
+        );
+    }
+
+    #[test]
+    fn a_prerelease_forces_the_tracking_units_release() {
+        // A caret requirement never matches a prerelease.
+        let ws = workspace_with_requirement("0.14");
+        let problems = validate(&ws, &tracking_config(), &sdk_only("0.15.0-rc.1"));
+        assert!(problems.iter().any(|p| p.contains("templates")), "{problems:?}");
+    }
+
+    #[test]
+    fn no_problem_when_the_tracking_unit_is_already_in_the_candidate() {
+        let ws = workspace_with_requirement("0.14");
+        let mut candidate = sdk_only("0.15.0");
+        candidate.units.push("templates".to_string());
+        candidate
+            .declarations
+            .insert("templates".to_string(), declaration("2.0.0", "templates/v2.0.0", false));
+
+        let problems = validate(&ws, &tracking_config(), &candidate);
+        assert!(!problems.iter().any(|p| p.contains("must also be released")), "{problems:?}");
+    }
+
+    /// An explicit `release-when` still works, for co-release with no
+    /// version-requirement basis.
+    #[test]
+    fn an_explicit_release_when_forces_a_release() {
+        let config = crate::config::testing::config(
+            &crate::config::testing::THREE_UNITS
+                .replace("after = [\"sdk\", \"templates\"]", "release-when = [\"sdk\"]"),
+        );
+        let problems = validate(&empty_workspace(), &config, &sdk_only("0.14.1"));
+        assert!(problems.iter().any(|p| p.contains("compiler")), "{problems:?}");
     }
 
     #[test]
