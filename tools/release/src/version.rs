@@ -247,7 +247,8 @@ fn edit_document(
     let is_root = manifest == ws.root.join("Cargo.toml");
 
     if is_root {
-        // Compiler crates inherit this; SDK crates do not.
+        // A virtual workspace inherits this; a single-crate repository has no
+        // such table and carries its version at [package].version instead.
         if domain == VersionSource::Workspace
             && let Some(version) = doc
                 .get_mut("workspace")
@@ -256,6 +257,19 @@ fn edit_document(
             && set_string(version, new)
         {
             changes.push(format!("workspace.package.version = \"{new}\""));
+        }
+
+        // The root manifest may itself declare a package in this domain. In a
+        // single-crate repository it is the only manifest there is, and
+        // `manifests()` excludes it from the member list, so nothing else
+        // would ever write it.
+        if let Some(package) = doc.get_mut("package")
+            && let Some(name) = package.get("name").and_then(|n| n.as_str()).map(str::to_string)
+            && packages.contains(&name)
+            && let Some(version) = package.get_mut("version")
+            && set_string(version, new)
+        {
+            changes.push(format!("package.version = \"{new}\""));
         }
 
         if let Some(deps) = doc

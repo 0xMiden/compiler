@@ -120,7 +120,14 @@ fn unit_paths(ws: &Workspace, config: &Config, unit: &str) -> Result<Vec<String>
             continue;
         };
         let relative = directory.strip_prefix(&ws.root).unwrap_or(directory);
-        paths.insert(relative.to_string_lossy().replace('\\', "/"));
+        let relative = relative.to_string_lossy().replace('\\', "/");
+        // A package at the repository root strips to "", and `git log -- ""`
+        // is a fatal pathspec error.
+        paths.insert(if relative.is_empty() {
+            ".".to_string()
+        } else {
+            relative
+        });
     }
 
     Ok(paths.into_iter().collect())
