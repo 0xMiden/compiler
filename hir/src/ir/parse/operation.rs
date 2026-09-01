@@ -873,11 +873,15 @@ where
             });
         };
 
-        // Lazy load dialects in the context as needed.
-        let dialect = self
-            .parser
-            .context()
-            .get_registered_dialect(interner::Symbol::intern(dialect_name));
+        // The dialect name comes from the source, so it may name nothing at all. This is a
+        // different failure from an unregistered operation inside a dialect that does exist.
+        let dialect_symbol = interner::Symbol::intern(dialect_name);
+        let Some(dialect) = self.parser.context().find_registered_dialect(dialect_symbol) else {
+            return Err(ParserError::UnknownDialect {
+                span,
+                dialect: dialect_symbol,
+            });
+        };
         let opcode = interner::Symbol::intern(opcode);
         let Some(op_name) =
             dialect.registered_ops().iter().find(|name| name.name() == opcode).cloned()
@@ -1177,7 +1181,13 @@ where
             (self.state_mut().default_dialect_stack.last().unwrap().as_str(), name)
         });
 
-        let dialect = self.context().get_registered_dialect(interner::Symbol::intern(dialect));
+        let dialect_symbol = interner::Symbol::intern(dialect);
+        let Some(dialect) = self.context().find_registered_dialect(dialect_symbol) else {
+            return Err(ParserError::UnknownDialect {
+                span: name_span,
+                dialect: dialect_symbol,
+            });
+        };
         dialect
             .registered_ops()
             .iter()
