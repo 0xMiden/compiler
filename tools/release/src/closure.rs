@@ -341,6 +341,28 @@ mod tests {
         );
     }
 
+    /// And the reason it never fired: widening the selection to everything
+    /// makes every dependency internal, so the `continue` fires every time.
+    #[test]
+    fn widening_the_selection_hides_the_problem() {
+        use crate::registry::client::StubIndex;
+        let ws = workspace(&[
+            ("comp", "0.10.0", &["contract"][..], true),
+            ("contract", "0.13.1", &[][..], true),
+        ]);
+        // An index that knows about nothing: `contract` 0.13.1 is unpublished.
+        let index = StubIndex::new();
+
+        let narrow = check_external_dependencies(&ws, &index, &["comp".to_string()]).unwrap();
+        assert_eq!(narrow.len(), 1, "a narrow selection reports it: {narrow:?}");
+        assert!(narrow[0].contains("contract"), "{narrow:?}");
+
+        let wide =
+            check_external_dependencies(&ws, &index, &["comp".to_string(), "contract".to_string()])
+                .unwrap();
+        assert!(wide.is_empty(), "a wide selection hides it: {wide:?}");
+    }
+
     #[test]
     fn private_dependencies_are_not_expected_on_the_registry() {
         use crate::registry::client::StubIndex;

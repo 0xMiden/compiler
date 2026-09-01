@@ -192,6 +192,36 @@ fn package_order(
     order::topological(ws, &selected)
 }
 
+/// The packages a candidate's release will actually publish, across every
+/// unit it selects.
+///
+/// This is the same selection `generate` computes for each stage — a unit's
+/// own packages plus the transitive closure of `library` crates they depend
+/// on, deduplicated across units — unioned into one set rather than kept
+/// per-stage. It exists for callers that only need "what will this release
+/// publish" (scoping `closure::check_external_dependencies` to the release,
+/// for one) without building a full `Intent` or re-implementing
+/// `package_order`'s traversal.
+///
+/// Unlike a flat `config.packages_in(unit)` over `candidate.units`, this
+/// includes `library`-kind crates: they publish but are never released on
+/// their own, so they never appear in a candidate's `units`, and a scope that
+/// omits them treats a crate the release will genuinely publish as external.
+pub fn release_scope(
+    ws: &Workspace,
+    config: &Config,
+    candidate: &Candidate,
+) -> Result<BTreeSet<String>> {
+    let mut staged: BTreeSet<String> = BTreeSet::new();
+    for unit in &candidate.units {
+        if config.unit(unit)?.publishes_crates() {
+            let packages = package_order(ws, config, unit, &staged)?;
+            staged.extend(packages);
+        }
+    }
+    Ok(staged)
+}
+
 /// Digest the candidate's canonical form, not its file bytes, so that
 /// reformatting a comment does not change the identity of the release.
 fn candidate_digest(candidate: &Candidate) -> Result<String> {
@@ -510,5 +540,114 @@ unit = "compiler"
 
         let first = intent.stages.iter().find(|s| s.packages.contains(&"common".to_string()));
         assert_eq!(first.map(|s| s.unit.as_str()), Some("tool-a"));
+    }
+
+    // `release_scope` -- the selection `main.rs`'s `VerifyClosure` handler
+    // hands to `closure::check_external_dependencies`.
+
+    fn three_units_workspace() -> Workspace {
+        // Mirrors `config::testing::THREE_UNITS`'s package layout: "thetool"
+        // (the `compiler` unit) depends directly on "thesdk" (the `sdk`
+        // unit) -- a cross-unit dependency that is *not* a `library`, so it
+        // must stay whoever's unit owns it, not the dependent's.
+        let packages: [(&str, Vec<&str>); 2] = [("thesdk", vec![]), ("thetool", vec!["thesdk"])];
+        Workspace {
+            root: std::path::PathBuf::from("/tmp"),
+            packages: packages
+                .into_iter()
+                .map(|(name, deps)| {
+                    (
+                        name.to_string(),
+                        Package {
+                            version: "1.0.0".to_string(),
+                            manifest_path: std::path::PathBuf::from("/tmp/Cargo.toml"),
+                            local_deps: deps
+                                .into_iter()
+                                .map(|d: &str| (d.to_string(), EdgeKind::Required))
+                                .collect(),
+                            publishable: true,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn three_units_config() -> Config {
+        crate::config::testing::config(crate::config::testing::THREE_UNITS)
+    }
+
+    fn three_units_candidate(units: &[&str]) -> Candidate {
+        let mut declarations = BTreeMap::new();
+        for unit in units {
+            let (version, tag) = match *unit {
+                "sdk" => ("1.0.0", "sdk/v1.0.0"),
+                "compiler" => ("1.0.0", "v1.0.0"),
+                other => panic!("unsupported unit in this fixture: {other}"),
+            };
+            declarations.insert(
+                (*unit).to_string(),
+                UnitDeclaration {
+                    version: semver::Version::parse(version).unwrap(),
+                    tag: tag.to_string(),
+                    prerelease: false,
+                },
+            );
+        }
+        Candidate {
+            schema_version: crate::candidate::SUPPORTED_SCHEMA_VERSION,
+            units: units.iter().map(|u| u.to_string()).collect(),
+            declarations,
+        }
+    }
+
+    #[test]
+    fn release_scope_includes_a_librarys_transitive_closure() {
+        let scope =
+            release_scope(&library_workspace(), &library_config(), &library_candidate(&["tool-a"]))
+                .unwrap();
+
+        assert!(
+            scope.contains("common"),
+            "a library crate the release depends on must be in scope: {scope:?}"
+        );
+        assert!(scope.contains("tool-a"), "{scope:?}");
+    }
+
+    #[test]
+    fn release_scope_excludes_a_dependency_owned_by_a_releasable_unit_outside_the_candidate() {
+        let scope = release_scope(
+            &three_units_workspace(),
+            &three_units_config(),
+            &three_units_candidate(&["compiler"]),
+        )
+        .unwrap();
+
+        assert!(scope.contains("thetool"), "{scope:?}");
+        // This is the hazard the guard exists for: "thesdk" belongs to the
+        // "sdk" unit, a releasable unit this candidate does not select. It
+        // must stay out of scope, or `check_external_dependencies` would
+        // never see it as external and the check goes vacuous again.
+        assert!(
+            !scope.contains("thesdk"),
+            "'thesdk' belongs to a unit outside this candidate and must not be widened into \
+             scope: {scope:?}"
+        );
+    }
+
+    #[test]
+    fn release_scope_for_a_multi_unit_candidate_contains_each_package_once() {
+        let scope = release_scope(
+            &library_workspace(),
+            &library_config(),
+            &library_candidate(&["tool-a", "tool-b"]),
+        )
+        .unwrap();
+
+        assert_eq!(
+            scope,
+            BTreeSet::from(["common".to_string(), "tool-a".to_string(), "tool-b".to_string()]),
+            "each package -- including the library shared by both units -- appears exactly once"
+        );
     }
 }

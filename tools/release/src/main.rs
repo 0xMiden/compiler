@@ -1,6 +1,9 @@
-use std::{collections::BTreeSet, path::PathBuf};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use midenc_release::{
     candidate::{Candidate, UnitDeclaration, render_tag},
@@ -397,12 +400,45 @@ fn main() -> Result<()> {
             let index = midenc_release::registry::client::SparseIndex::new(
                 "sparse+https://index.crates.io/",
             );
-            let problems = closure::check_external_dependencies(&ws, &index, &packages)?;
-            if !problems.is_empty() {
-                for problem in &problems {
-                    eprintln!("error: {problem}");
+
+            // Two selections, two questions. The closure build asks "do these
+            // archives resolve and compile", and wants everything. The
+            // dependency check asks "would this release leave a requirement
+            // unresolvable", and must use the candidate's scope — with every
+            // package selected, every dependency is internal and the check is
+            // vacuous, which is why it never fired in production.
+            let scope: BTreeSet<String> = match &unit {
+                Some(name) => config.packages_in(name).map(|p| p.name.clone()).collect(),
+                None => {
+                    let candidate_path = manifest_dir.join(".release/release.toml");
+                    match load_candidate_if_present(&candidate_path)? {
+                        // The set the release will actually publish: each
+                        // selected unit's own packages plus the transitive
+                        // closure of `library` crates they depend on. A flat
+                        // `packages_in` over the candidate's units would miss
+                        // library crates, which publish but are never
+                        // released on their own and so never appear in
+                        // `units` -- see `intent::release_scope`.
+                        Some(candidate) => intent::release_scope(&ws, &config, &candidate)?,
+                        // No candidate on this branch: nothing is being
+                        // released, so there is no scope to check.
+                        None => BTreeSet::new(),
+                    }
                 }
-                bail!("the selection is not self-contained");
+            };
+
+            if !scope.is_empty() {
+                let scoped = order::topological(&ws, &scope)?;
+                let problems = closure::check_external_dependencies(&ws, &index, &scoped)?;
+                if !problems.is_empty() {
+                    for problem in &problems {
+                        eprintln!("error: {problem}");
+                    }
+                    bail!(
+                        "the release scope is not self-contained; a unit it depends on must be \
+                         released alongside it"
+                    );
+                }
             }
 
             println!("verifying the closure of {} package(s)...", packages.len());
@@ -712,6 +748,23 @@ fn main() -> Result<()> {
             Ok(())
         }
         Command::FakeRegistry { .. } => unreachable!("handled before config loading"),
+    }
+}
+
+/// Load the release candidate, distinguishing "no candidate on this branch"
+/// from "a candidate is present but broken".
+///
+/// Only a missing file is a legitimate no-op: nothing is being released, so
+/// there is nothing to check. A file that exists but fails to parse, or
+/// declares an unsupported schema version, must not collapse into that same
+/// empty-scope outcome -- that would silently skip whatever the caller does
+/// with the candidate, on a release branch that is actually broken.
+fn load_candidate_if_present(path: &Path) -> Result<Option<Candidate>> {
+    match std::fs::metadata(path) {
+        Ok(_) => Candidate::load(path).map(Some),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(err)
+            .with_context(|| format!("failed to read release candidate at {}", path.display())),
     }
 }
 
