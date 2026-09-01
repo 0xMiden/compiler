@@ -18,15 +18,29 @@ doctest = false
 name = "example-benchmarks"
 path = "src/main.rs"
 
+[[bin]]
+name = "contract-benchmarks"
+path = "src/bin/contract-benchmarks.rs"
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
 miden-assembly.workspace = true
 miden-core.workspace = true
 miden-debug = { workspace = true, features = ["std", "flamegraph"] }
+miden-field.workspace = true
+miden-field-repr.workspace = true
 miden-mast-package.workspace = true
+miden-processor.workspace = true
+miden-protocol = { workspace = true, features = ["std", "testing"] }
+miden-standards = { workspace = true, features = ["std", "testing"] }
+miden-testing = { workspace = true, features = ["std"] }
+miden-tx = { version = "=0.16.0-rc.4" }
+miden-tx-script-args.workspace = true
+rand.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+tokio.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

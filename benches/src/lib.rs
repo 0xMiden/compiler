@@ -1,6 +1,7 @@
 //! End-to-end benchmarks for compiler example projects.
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
@@ -13,6 +14,8 @@ use miden_core::serde::Serializable;
 use miden_debug::{ExecutionConfig, Executor, flamegraph::FlamegraphProfile};
 use miden_mast_package::Package;
 use serde::{Deserialize, Serialize};
+
+mod mockchain;
 
 pub const RESULTS_FILE: &str = "results.json";
 
@@ -31,6 +34,16 @@ pub struct BenchmarkResult {
     pub cycles: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub flamegraph: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replay: Option<String>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+struct TransactionBenchmarkResult {
+    name: String,
+    cycles: usize,
+    flamegraph: Option<String>,
+    replay: Option<String>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -65,6 +78,8 @@ pub struct BenchmarkRunner {
     /// comparison report without a baseline value. The candidate run must never set this:
     /// a candidate build failure is a real regression.
     skip_failed_builds: bool,
+    /// Whether to persist the JSON report and human-facing benchmark artifacts.
+    write_artifacts: bool,
 }
 
 impl BenchmarkRunner {
@@ -91,17 +106,26 @@ impl BenchmarkRunner {
             build_dir,
             cargo_miden,
             skip_failed_builds,
+            write_artifacts: true,
         })
     }
 
+    /// Disable report, package, replay, and flamegraph output for stdout-only consumers.
+    #[must_use]
+    pub fn without_artifacts(mut self) -> Self {
+        self.write_artifacts = false;
+        self
+    }
+
     pub fn run(&self, commit: String) -> Result<BenchmarkReport> {
-        recreate_dir(&self.output_dir.join("packages"))?;
-        recreate_dir(&self.output_dir.join("flamegraphs"))?;
+        self.prepare_output_dirs()?;
 
         let cases = discover_cases(&self.workspace_root)?;
         let mut benchmarks = Vec::with_capacity(cases.len());
         for case in cases {
-            eprintln!("Benchmarking {}", case.name);
+            if self.write_artifacts {
+                eprintln!("Benchmarking {}", case.name);
+            }
             match self.run_case(&case) {
                 Ok(benchmark) => benchmarks.push(benchmark),
                 // Only compile-step failures are skippable: a malformed inputs.toml or an
@@ -114,17 +138,72 @@ impl BenchmarkRunner {
             }
         }
 
+        let transactions = match self.run_transaction_benchmarks() {
+            Ok(transactions) => transactions,
+            Err(err) if self.skip_failed_builds && err.is::<BuildFailure>() => {
+                eprintln!("Skipping MockChain transaction benchmarks: {err:#}");
+                Vec::new()
+            }
+            Err(err) => return Err(err),
+        };
+        merge_transaction_benchmarks(&mut benchmarks, transactions)?;
+        if !self.skip_failed_builds {
+            ensure!(
+                benchmarks.iter().all(|benchmark| benchmark.cycles.is_some()),
+                "every benchmark must have an executable scenario"
+            );
+        }
+
         let report = BenchmarkReport {
-            schema_version: 1,
+            schema_version: 3,
             commit,
             benchmarks,
         };
+        self.write_report(&report)?;
+        Ok(report)
+    }
+
+    /// Run only the MockChain-backed contract scenarios.
+    pub fn run_contracts(&self, commit: String) -> Result<BenchmarkReport> {
+        self.prepare_output_dirs()?;
+
+        let mut benchmarks = discover_cases(&self.workspace_root)?
+            .into_iter()
+            .filter(|case| !case.execute)
+            .map(|case| self.run_case(&case))
+            .collect::<Result<Vec<_>>>()?;
+        merge_transaction_benchmarks(&mut benchmarks, self.run_transaction_benchmarks()?)?;
+        ensure!(
+            benchmarks.iter().all(|benchmark| benchmark.cycles.is_some()),
+            "every contract benchmark must have an executable scenario"
+        );
+        let report = BenchmarkReport {
+            schema_version: 3,
+            commit,
+            benchmarks,
+        };
+        self.write_report(&report)?;
+        Ok(report)
+    }
+
+    fn prepare_output_dirs(&self) -> Result<()> {
+        if self.write_artifacts {
+            recreate_dir(&self.output_dir.join("packages"))?;
+            recreate_dir(&self.output_dir.join("flamegraphs"))?;
+            recreate_dir(&self.output_dir.join("replays"))?;
+        }
+        Ok(())
+    }
+
+    fn write_report(&self, report: &BenchmarkReport) -> Result<()> {
+        if !self.write_artifacts {
+            return Ok(());
+        }
         let output = self.output_dir.join(RESULTS_FILE);
-        let mut contents = serde_json::to_vec_pretty(&report)?;
+        let mut contents = serde_json::to_vec_pretty(report)?;
         contents.push(b'\n');
         fs::write(&output, contents)
-            .with_context(|| format!("failed to write {}", output.display()))?;
-        Ok(report)
+            .with_context(|| format!("failed to write {}", output.display()))
     }
 
     fn run_case(&self, case: &BenchmarkCase) -> Result<BenchmarkResult> {
@@ -138,37 +217,47 @@ impl BenchmarkRunner {
         let optimized = self
             .compile(&project_dir, "none")
             .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
-        let saved_package =
-            self.output_dir
-                .join("packages")
-                .join(format!("{}.{}", case.name, Package::EXTENSION));
-        fs::copy(&optimized, &saved_package).with_context(|| {
-            format!(
-                "failed to copy optimized package from {} to {}",
-                optimized.display(),
-                saved_package.display()
-            )
-        })?;
-        let optimized_package = load_package(&saved_package)?;
+        let optimized_package = if self.write_artifacts {
+            let saved_package = self.output_dir.join("packages").join(format!(
+                "{}.{}",
+                case.name,
+                Package::EXTENSION
+            ));
+            fs::copy(&optimized, &saved_package).with_context(|| {
+                format!(
+                    "failed to copy optimized package from {} to {}",
+                    optimized.display(),
+                    saved_package.display()
+                )
+            })?;
+            load_package(&saved_package)?
+        } else {
+            load_package(&optimized)?
+        };
         let mast_size = serialized_mast_size(&optimized_package);
 
         let (cycles, flamegraph) = if case.execute {
             let inputs = project_dir.join("inputs.toml");
             let optimized_profile = self.profile(optimized_package, &inputs, &project_dir, None)?;
 
-            let debuggable = self
-                .compile(&project_dir, "full")
-                .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
-            let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
-            let flamegraph_path = self.output_dir.join(&relative_flamegraph);
-            self.profile(
-                load_package(&debuggable)?,
-                &inputs,
-                &project_dir,
-                Some(&flamegraph_path),
-            )?;
+            let flamegraph = if self.write_artifacts {
+                let debuggable = self
+                    .compile(&project_dir, "full")
+                    .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+                let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
+                let flamegraph_path = self.output_dir.join(&relative_flamegraph);
+                self.profile(
+                    load_package(&debuggable)?,
+                    &inputs,
+                    &project_dir,
+                    Some(&flamegraph_path),
+                )?;
+                Some(relative_flamegraph)
+            } else {
+                None
+            };
 
-            (Some(optimized_profile.total_cycles()), Some(relative_flamegraph))
+            (Some(optimized_profile.total_cycles()), flamegraph)
         } else {
             (None, None)
         };
@@ -178,6 +267,7 @@ impl BenchmarkRunner {
             mast_size,
             cycles,
             flamegraph,
+            replay: None,
         })
     }
 
@@ -283,6 +373,35 @@ impl BenchmarkRunner {
         }
         Ok(profile)
     }
+}
+
+fn merge_transaction_benchmarks(
+    benchmarks: &mut [BenchmarkResult],
+    transactions: Vec<TransactionBenchmarkResult>,
+) -> Result<()> {
+    let mut transactions = transactions
+        .into_iter()
+        .map(|benchmark| (benchmark.name.clone(), benchmark))
+        .collect::<BTreeMap<_, _>>();
+    for benchmark in benchmarks {
+        let Some(transaction) = transactions.remove(&benchmark.name) else {
+            continue;
+        };
+        ensure!(
+            benchmark.cycles.is_none(),
+            "{} has multiple execution scenarios",
+            benchmark.name
+        );
+        benchmark.cycles = Some(transaction.cycles);
+        benchmark.flamegraph = transaction.flamegraph;
+        benchmark.replay = transaction.replay;
+    }
+    ensure!(
+        transactions.is_empty(),
+        "transaction benchmark has no matching example: {}",
+        transactions.keys().next().expect("map is not empty")
+    );
+    Ok(())
 }
 
 /// Collects the legacy-layout dependency packages that the executor must load for an example.
@@ -416,7 +535,7 @@ fn command_output(output: &Output) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::process::ExitStatus;
+    use std::{collections::BTreeSet, process::ExitStatus};
 
     use miden_assembly::Assembler;
 
@@ -470,6 +589,22 @@ mod tests {
     }
 
     #[test]
+    fn every_non_program_example_has_one_transaction_scenario() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let expected = discover_cases(workspace)
+            .unwrap()
+            .into_iter()
+            .filter(|case| !case.execute)
+            .map(|case| case.name)
+            .collect::<BTreeSet<_>>();
+        let scenarios = mockchain::transaction_scenario_examples();
+        let actual = scenarios.iter().copied().map(str::to_owned).collect::<BTreeSet<_>>();
+
+        assert_eq!(scenarios.len(), actual.len(), "an example has multiple scenarios");
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn collects_packages_from_flat_and_fingerprinted_cache_layouts() {
         let cache = tempfile::tempdir().unwrap();
         fs::write(cache.path().join("legacy.masp"), []).unwrap();
@@ -494,5 +629,26 @@ mod tests {
         package.description = Some("metadata".repeat(1_000));
 
         assert_eq!(serialized_mast_size(&package), expected);
+    }
+
+    #[test]
+    fn artifact_free_runner_writes_no_output() {
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let output = temp.path().join("output");
+        let runner =
+            BenchmarkRunner::new(workspace, &output, temp.path().join("build"), None, false)
+                .unwrap()
+                .without_artifacts();
+        let report = BenchmarkReport {
+            schema_version: 3,
+            commit: "test".into(),
+            benchmarks: Vec::new(),
+        };
+
+        runner.prepare_output_dirs().unwrap();
+        runner.write_report(&report).unwrap();
+
+        assert!(!output.exists());
     }
 }
