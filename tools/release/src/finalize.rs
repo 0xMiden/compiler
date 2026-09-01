@@ -17,6 +17,11 @@
 //! - **Nothing extra is attached.** An asset nobody planned is either a mistake
 //!   or an intrusion, and after publication it can never be removed.
 //!
+//! Which release, if any, claims the repository's "latest" slot is not decided
+//! here. It travels in the sealed plan's `Stage.latest`, set at intent time, so
+//! that a configuration change between review and publication cannot silently
+//! alter an already-approved release.
+//!
 //! Units are published in the order the sealed plan records, which is the
 //! dependency order configuration declared when the intent was generated, so
 //! that a consumer who sees a downstream release can already resolve
@@ -69,23 +74,6 @@ pub fn order_units(plan: &Plan) -> Vec<String> {
     ordered
 }
 
-/// Whether a unit may claim the repository's "latest release" slot.
-///
-/// Only a stable compiler release. The SDK and the template bundle are not what
-/// someone means by "the latest release" of this repository, and a prerelease
-/// claiming the slot would hand it to something explicitly not recommended.
-fn claims_latest(plan: &Plan, unit: &str) -> bool {
-    if unit != "compiler" {
-        return false;
-    }
-    plan.intent
-        .stages
-        .iter()
-        .find(|stage| stage.unit == unit)
-        .map(|stage| !stage.prerelease)
-        .unwrap_or(false)
-}
-
 /// Verify and publish every draft in the plan.
 ///
 /// Verification for *all* units happens before *any* unit is published: a
@@ -101,7 +89,12 @@ pub fn finalize(github: &dyn GitHub, plan: &Plan) -> Result<Vec<Finalized>> {
 
     let mut finalized = Vec::new();
     for pending in verified {
-        let latest = claims_latest(plan, &pending.unit);
+        let latest = plan
+            .intent
+            .stages
+            .iter()
+            .find(|stage| stage.unit == pending.unit)
+            .is_some_and(|stage| stage.latest);
 
         if pending.already_published {
             finalized.push(Finalized {
@@ -283,6 +276,7 @@ mod tests {
                         unit: unit.to_string(),
                         version: "1.0.0".into(),
                         prerelease: *prerelease,
+                        latest: false,
                         packages: vec![],
                     })
                     .collect(),
@@ -337,27 +331,17 @@ mod tests {
     }
 
     #[test]
-    fn only_a_stable_compiler_release_becomes_latest() {
-        let plan = plan(&[("sdk", false), ("templates", false), ("compiler", false)]);
+    fn only_the_stage_marked_latest_becomes_latest() {
+        let mut plan = plan(&[("sdk", false), ("templates", false), ("compiler", false)]);
+        for stage in &mut plan.intent.stages {
+            stage.latest = stage.unit == "compiler";
+        }
         let github = staged(&plan);
         finalize(&github, &plan).unwrap();
 
         assert_eq!(github.is_latest("compiler/v1.0.0"), Some(true));
         assert_eq!(github.is_latest("sdk/v1.0.0"), Some(false));
         assert_eq!(github.is_latest("templates/v1.0.0"), Some(false));
-    }
-
-    #[test]
-    fn a_compiler_prerelease_does_not_become_latest() {
-        let plan = plan(&[("compiler", true)]);
-        let github = staged(&plan);
-        finalize(&github, &plan).unwrap();
-
-        assert_eq!(
-            github.is_latest("compiler/v1.0.0"),
-            Some(false),
-            "a prerelease must never take the latest slot"
-        );
     }
 
     #[test]

@@ -167,6 +167,7 @@ fn staging_the_same_tag_twice_does_not_duplicate_the_draft() {
                 unit: "sdk".into(),
                 version: "0.14.0-rc.1".into(),
                 prerelease: true,
+                latest: false,
                 packages: vec![],
             }],
             tags: vec![crate::intent::Tag {

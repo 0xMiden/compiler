@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{closure::Closure, intent::Intent, reconcile::Planned};
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// One package as it was actually built.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -57,15 +57,21 @@ impl Plan {
 
     pub fn load(path: &std::path::Path) -> Result<Self> {
         let text = std::fs::read_to_string(path)?;
-        let plan: Self = serde_json::from_str(&text)?;
-        if plan.schema_version != SCHEMA_VERSION {
-            bail!(
-                "release plan schema version {} is not supported (expected {})",
-                plan.schema_version,
-                SCHEMA_VERSION
-            );
+
+        // Read the declared version before deserializing the document, so a
+        // format change reports this message rather than a serde complaint
+        // about a field the reader has never heard of.
+        let probe: serde_json::Value = serde_json::from_str(&text)?;
+        match probe.get("schema-version").and_then(serde_json::Value::as_u64) {
+            Some(version) if version == u64::from(SCHEMA_VERSION) => {}
+            Some(version) => bail!(
+                "release plan schema version {version} is not supported (expected \
+                 {SCHEMA_VERSION})"
+            ),
+            None => bail!("release plan declares no schema-version"),
         }
-        Ok(plan)
+
+        Ok(serde_json::from_str(&text)?)
     }
 
     /// The publication set for one unit, with sealed digests attached.
@@ -182,6 +188,7 @@ mod tests {
                 unit: "sdk".into(),
                 version: version.into(),
                 prerelease: false,
+                latest: false,
                 packages: packages.iter().map(|p| p.to_string()).collect(),
             }],
             tags: vec![Tag {
@@ -275,5 +282,58 @@ mod tests {
         let restored: Plan = serde_json::from_str(&plan.to_canonical_json()).unwrap();
         assert_eq!(restored, plan);
         assert_eq!(restored.digest(), plan.digest());
+    }
+
+    /// A uniquely named file under the system temp directory, following the
+    /// pattern used by this crate's integration tests (see
+    /// `tools/release/tests/config.rs` and `tools/release/tests/closure.rs`).
+    fn temp_plan_path(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "midenc-release-plan-{label}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("plan.json")
+    }
+
+    #[test]
+    fn load_reads_a_plan_at_the_current_schema_version() {
+        let plan = seal(&intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "d")])).unwrap();
+        let path = temp_plan_path("current");
+        std::fs::write(&path, plan.to_canonical_json()).unwrap();
+
+        let loaded = Plan::load(&path).unwrap();
+        assert_eq!(loaded, plan);
+    }
+
+    #[test]
+    fn load_reports_a_schema_version_mismatch_by_its_designed_message() {
+        // A minimal document that reaches the probe: valid JSON with a
+        // `schema-version` the reader does not support. It need not
+        // deserialize as a `Plan`, since the probe bails before that happens.
+        let path = temp_plan_path("mismatch");
+        std::fs::write(&path, r#"{"schema-version": 1}"#).unwrap();
+
+        let err = Plan::load(&path).unwrap_err().to_string();
+        assert!(
+            err.contains("schema version 1") && err.contains(&SCHEMA_VERSION.to_string()),
+            "expected the designed version-mismatch message naming both versions, got: {err}"
+        );
+    }
+
+    #[test]
+    fn load_reports_a_missing_schema_version_by_its_designed_message() {
+        // No `schema-version` key at all. Deliberately not `schema_version`
+        // (the Rust field name): `Plan` is `#[serde(rename_all =
+        // "kebab-case")]`, and a snake_case key would still be absent under
+        // the kebab-case name the probe looks for -- exercising this same
+        // branch while looking, at a glance, like a different case.
+        let path = temp_plan_path("missing");
+        std::fs::write(&path, r#"{"intent": {}}"#).unwrap();
+
+        let err = Plan::load(&path).unwrap_err().to_string();
+        assert!(err.contains("declares no schema-version"), "{err}");
     }
 }

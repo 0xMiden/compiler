@@ -184,6 +184,7 @@ mod tests {
                         unit: unit.to_string(),
                         version: "1.0.0".into(),
                         prerelease: false,
+                        latest: false,
                         packages: vec![],
                     })
                     .collect(),

@@ -24,7 +24,7 @@ use crate::{
     workspace::Workspace,
 };
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -47,6 +47,12 @@ pub struct Stage {
     pub unit: String,
     pub version: String,
     pub prerelease: bool,
+    /// Whether this unit claims the repository's "latest release" slot.
+    ///
+    /// Decided here, at intent time, rather than at finalization: the plan is
+    /// the reviewed artifact, and configuration could otherwise move between
+    /// the review and the publication.
+    pub latest: bool,
     /// Crates to publish, in dependency order. This is the `-p` list.
     pub packages: Vec<String>,
 }
@@ -116,6 +122,10 @@ pub fn generate(
             unit: unit.to_string(),
             version: declaration.version.to_string(),
             prerelease: declaration.prerelease,
+            // A prerelease never claims the slot, whatever configuration says.
+            // Handing GitHub's default download to something explicitly not
+            // recommended is the failure this guards.
+            latest: config.unit(unit)?.latest && !declaration.prerelease,
             packages,
         });
         tags.push(Tag {
@@ -313,6 +323,44 @@ unit = "compiler"
 
         let err = generate(&workspace(), &config(), &candidate, "abc123").unwrap_err().to_string();
         assert!(err.contains("but 'sdk-leaf' is at 0.14.0"), "{err}");
+    }
+
+    #[test]
+    fn a_unit_that_claims_latest_gets_it_when_stable() {
+        let intent =
+            generate(&workspace(), &config(), &candidate(&["compiler"]), "abc123").unwrap();
+        let compiler = intent.stages.iter().find(|s| s.unit == "compiler").unwrap();
+        assert!(compiler.latest);
+    }
+
+    #[test]
+    fn a_prerelease_never_claims_latest_however_configured() {
+        // `candidate::validate` (Task 4) requires the declared version to match
+        // the workspace manifests exactly, so the prerelease version below has
+        // to be reflected in the fixture workspace too, not just the candidate.
+        let mut ws = workspace();
+        for package in ws.packages.values_mut() {
+            if package.version == "0.10.0" {
+                package.version = "1.0.0-rc.1".to_string();
+            }
+        }
+
+        let mut candidate = candidate(&["compiler"]);
+        let declaration = candidate.declarations.get_mut("compiler").unwrap();
+        declaration.version = semver::Version::parse("1.0.0-rc.1").unwrap();
+        declaration.tag = "v1.0.0-rc.1".to_string();
+        declaration.prerelease = true;
+
+        let intent = generate(&ws, &config(), &candidate, "abc123").unwrap();
+        let compiler = intent.stages.iter().find(|s| s.unit == "compiler").unwrap();
+        assert!(!compiler.latest, "a prerelease must never claim the latest slot");
+    }
+
+    #[test]
+    fn a_unit_that_does_not_claim_latest_never_gets_it() {
+        let intent = generate(&workspace(), &config(), &candidate(&["sdk"]), "abc123").unwrap();
+        let sdk = intent.stages.iter().find(|s| s.unit == "sdk").unwrap();
+        assert!(!sdk.latest);
     }
 
     #[test]

@@ -369,6 +369,7 @@ mod tests {
                         unit: "sdk".into(),
                         version: "1.0.0".into(),
                         prerelease: false,
+                        latest: false,
                         packages: vec![],
                     }],
                     tags: vec![Tag {

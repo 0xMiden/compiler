@@ -185,6 +185,7 @@ fn a_sealed_plan_turns_a_foreign_version_into_a_conflict() {
             unit: "sdk".into(),
             version: "0.1.0".into(),
             prerelease: false,
+            latest: false,
             packages: vec!["closure-leaf".into(), "closure-root".into()],
         }],
         tags: vec![Tag {
