@@ -30,8 +30,6 @@ pub const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 pub struct Bundle {
     pub schema_version: u32,
     pub version: Version,
-    /// The SDK requirement the templates carry for both runtime and build-support crates.
-    pub sdk_requirement: String,
     pub templates: BTreeMap<String, TemplateEntry>,
     /// The manifest's own file name, e.g. `"bundle.toml"` or `"templates.toml"`.
     ///
@@ -41,6 +39,14 @@ pub struct Bundle {
     /// actually loaded from rather than a hardcoded literal.
     #[serde(skip)]
     manifest_name: String,
+    /// Requirement declarations, keyed by the manifest key that holds them --
+    /// `sdk-requirement` in this repository. Which key a unit uses comes from
+    /// its `tracks` entry, so the bundle format itself stays agnostic.
+    ///
+    /// This is `flatten`ed, so `Bundle` must never gain `deny_unknown_fields`:
+    /// the two are incompatible.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -105,6 +111,14 @@ impl Bundle {
         files.sort();
         files.dedup();
         Ok(files)
+    }
+
+    /// The requirement this bundle declares under `key`.
+    pub fn requirement(&self, key: &str) -> Result<&str> {
+        self.extra
+            .get(key)
+            .and_then(toml::Value::as_str)
+            .with_context(|| format!("the bundle manifest declares no string key '{key}'"))
     }
 }
 
@@ -237,12 +251,12 @@ pub fn archive(root: &Path, bundle: &Bundle, include: &[PathBuf]) -> Result<(Vec
     Ok((bytes, digest))
 }
 
-const SDK_TEMPLATE_PACKAGES: [&str; 2] = ["miden", "miden-sdk-build-script-support"];
-
-fn is_sdk_template_dependency(line: &str) -> bool {
-    SDK_TEMPLATE_PACKAGES
-        .iter()
-        .any(|name| line.strip_prefix(name).is_some_and(|rest| rest.trim_start().starts_with('=')))
+/// Whether a manifest line declares a requirement on one of `tracked`.
+fn is_tracked_dependency(line: &str, tracked: &[String]) -> bool {
+    tracked.iter().any(|name| {
+        line.strip_prefix(name.as_str())
+            .is_some_and(|rest| rest.trim_start().starts_with('='))
+    })
 }
 
 /// The SDK requirement templates should carry for a given SDK version.
@@ -259,32 +273,41 @@ pub fn requirement_for(version: &Version) -> String {
     }
 }
 
-/// Rewrite the bundle's declared requirement and every template manifest to
-/// match a new SDK version.
-pub fn set_sdk_requirement(root: &Path, requirement: &str) -> Result<Vec<PathBuf>> {
-    let bundle_path = root.join("bundle.toml");
+/// Rewrite the requirement the artifact manifest declares under `key`, and
+/// every source manifest under `include` that requires one of `tracked`.
+///
+/// `manifest` is the artifact manifest's path relative to `root`; `include` is
+/// the unit's include list, also relative to `root`.
+pub fn set_requirement(
+    root: &Path,
+    manifest: &Path,
+    key: &str,
+    tracked: &[String],
+    include: &[PathBuf],
+    requirement: &str,
+) -> Result<Vec<PathBuf>> {
+    let bundle_path = root.join(manifest);
     let bundle = Bundle::load(&bundle_path)?;
+    let old = format!("\"{}\"", bundle.requirement(key)?);
+    let new = format!("\"{requirement}\"");
     let mut changed = Vec::new();
 
     let text = std::fs::read_to_string(&bundle_path)?;
     let mut document: toml_edit::DocumentMut = text.parse()?;
-    document["sdk-requirement"] = toml_edit::value(requirement);
+    document[key] = toml_edit::value(requirement);
     std::fs::write(&bundle_path, document.to_string())?;
     changed.push(bundle_path);
 
-    let old = format!("\"{}\"", bundle.sdk_requirement);
-    let new = format!("\"{requirement}\"");
-
-    for entry in bundle.templates.values() {
+    for relative in include {
         let mut manifests = Vec::new();
-        find_manifests(&root.join(&entry.path), &mut manifests)?;
+        find_manifests(&root.join(relative), &mut manifests)?;
         for manifest in manifests {
             let text = std::fs::read_to_string(&manifest)?;
             let updated: String = text
                 .lines()
                 .map(|line| {
                     let trimmed = line.trim();
-                    let is_miden_version = is_sdk_template_dependency(trimmed)
+                    let is_miden_version = is_tracked_dependency(trimmed, tracked)
                         && !trimmed.contains("path")
                         && !trimmed.contains("git")
                         && trimmed.contains(&old);
@@ -407,17 +430,25 @@ pub fn write_version(root: &Path, unit: &UnitConfig, version: &Version) -> Resul
     Ok(path)
 }
 
-/// Check that every template's SDK requirement matches what the bundle declares.
+/// Check that every source requirement on `tracked` matches `expected`.
 ///
-/// This is the drift that would otherwise be silent: after an SDK minor bump,
-/// a template left at the old requirement still renders, still builds, and
-/// quietly pins generated projects to the previous SDK.
-pub fn check_sdk_requirements(root: &Path, bundle: &Bundle) -> Result<Vec<String>> {
+/// This is the drift that would otherwise be silent: after a tracked unit's
+/// minor bump, a source left at the old requirement still renders, still
+/// builds, and quietly pins consumers to the previous version.
+///
+/// `expected` is the bare requirement -- `"0.14"` -- rather than a bundle, so
+/// this stays independent of the artifact manifest's format.
+pub fn check_requirements(
+    root: &Path,
+    include: &[PathBuf],
+    tracked: &[String],
+    expected: &str,
+) -> Result<Vec<String>> {
     let mut problems = Vec::new();
-    let expected = format!("\"{}\"", bundle.sdk_requirement);
+    let quoted = format!("\"{expected}\"");
 
-    for (name, entry) in &bundle.templates {
-        let directory = root.join(&entry.path);
+    for relative in include {
+        let directory = root.join(relative);
         let mut manifests = Vec::new();
         find_manifests(&directory, &mut manifests)?;
 
@@ -428,7 +459,7 @@ pub fn check_sdk_requirements(root: &Path, bundle: &Bundle) -> Result<Vec<String
                 // `miden = "0.13"`, `miden-sdk-build-script-support = "0.13"`, or their
                 // inline-table forms. Lines selecting a path or git source are development
                 // escape hatches and carry no version.
-                if !is_sdk_template_dependency(trimmed) {
+                if !is_tracked_dependency(trimmed, tracked) {
                     continue;
                 }
                 if !trimmed.contains("version") && !trimmed.contains('"') {
@@ -437,13 +468,12 @@ pub fn check_sdk_requirements(root: &Path, bundle: &Bundle) -> Result<Vec<String
                 if trimmed.contains("path") || trimmed.contains("git") {
                     continue;
                 }
-                if !trimmed.contains(&expected) {
+                if !trimmed.contains(&quoted) {
                     problems.push(format!(
-                        "{}:{}: template '{name}' requires `{trimmed}` but the bundle declares \
-                         sdk-requirement = \"{}\"",
+                        "{}:{}: requires `{trimmed}` but the declared requirement is \
+                         \"{expected}\"",
                         manifest.display(),
                         number + 1,
-                        bundle.sdk_requirement
                     ));
                 }
             }
@@ -524,6 +554,12 @@ account = { path = "rust/account" }
     /// through the unit's manifest.
     fn include(dir: &Path) -> Vec<PathBuf> {
         include_paths(dir, &artifact_unit(".", Some("bundle.toml"), &[])).unwrap()
+    }
+
+    /// The packages the fixture's templates track, as `[units.templates.tracks.sdk]`
+    /// names them in this repository.
+    fn tracked() -> Vec<String> {
+        vec!["miden".to_string(), "miden-sdk-build-script-support".to_string()]
     }
 
     fn git(dir: &Path, args: &[&str]) {
@@ -642,13 +678,26 @@ account = { path = "rust/account" }
     fn a_matching_sdk_requirement_is_accepted() {
         let dir = fixture("match");
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
-        assert!(check_sdk_requirements(&dir, &bundle).unwrap().is_empty());
+        let expected = bundle.requirement("sdk-requirement").unwrap();
+        assert!(
+            check_requirements(&dir, &include(&dir), &tracked(), expected)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn a_sdk_bump_updates_runtime_and_build_support_requirements() {
         let dir = fixture("sdk-bump");
-        set_sdk_requirement(&dir, "0.14").unwrap();
+        set_requirement(
+            &dir,
+            Path::new("bundle.toml"),
+            "sdk-requirement",
+            &tracked(),
+            &include(&dir),
+            "0.14",
+        )
+        .unwrap();
 
         let manifest =
             std::fs::read_to_string(dir.join("rust/account/template/Cargo.toml")).unwrap();
@@ -658,7 +707,13 @@ account = { path = "rust/account" }
             "{manifest}"
         );
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
-        assert!(check_sdk_requirements(&dir, &bundle).unwrap().is_empty());
+        let expected = bundle.requirement("sdk-requirement").unwrap();
+        assert_eq!(expected, "0.14");
+        assert!(
+            check_requirements(&dir, &include(&dir), &tracked(), expected)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
@@ -677,7 +732,13 @@ account = { path = "rust/account" }
         );
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
 
-        let problems = check_sdk_requirements(&dir, &bundle).unwrap();
+        let problems = check_requirements(
+            &dir,
+            &include(&dir),
+            &tracked(),
+            bundle.requirement("sdk-requirement").unwrap(),
+        )
+        .unwrap();
         assert_eq!(problems.len(), 2, "{problems:?}");
         assert!(problems.iter().all(|problem| problem.contains("0.14")), "{problems:?}");
         assert!(problems.iter().all(|problem| problem.contains("account")), "{problems:?}");
@@ -703,7 +764,14 @@ account = { path = "rust/account" }
         );
         let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
         assert!(
-            check_sdk_requirements(&dir, &bundle).unwrap().is_empty(),
+            check_requirements(
+                &dir,
+                &include(&dir),
+                &tracked(),
+                bundle.requirement("sdk-requirement").unwrap()
+            )
+            .unwrap()
+            .is_empty(),
             "development source selections carry no version and must not be flagged"
         );
     }
@@ -881,5 +949,98 @@ directory = "{directory}"
         let after = std::fs::read_to_string(&path).unwrap();
         assert!(after.contains("release-version = \"9.9.10\""), "{after}");
         assert!(after.contains("other = \"untouched\""), "{after}");
+    }
+
+    #[test]
+    fn requirements_are_rewritten_only_for_tracked_packages() {
+        let dir = temp_dir("tracks-rewrite");
+        let root = dir.join("t");
+        std::fs::create_dir_all(root.join("demo")).unwrap();
+        std::fs::write(
+            root.join("bundle.toml"),
+            "schema-version = 1\nversion = \"1.0.0\"\nlib-requirement = \
+             \"0.1\"\n[templates.demo]\npath = \"demo\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("demo/Cargo.toml"),
+            "[dependencies]\nthelib = \"0.1\"\nsomething-else = \"0.1\"\n",
+        )
+        .unwrap();
+
+        let changed = set_requirement(
+            &root,
+            Path::new("bundle.toml"),
+            "lib-requirement",
+            &["thelib".to_string()],
+            &[PathBuf::from("demo")],
+            "0.2",
+        )
+        .unwrap();
+
+        assert_eq!(changed.len(), 2, "the manifest and one template: {changed:?}");
+        let demo = std::fs::read_to_string(root.join("demo/Cargo.toml")).unwrap();
+        assert!(demo.contains("thelib = \"0.2\""), "{demo}");
+        assert!(
+            demo.contains("something-else = \"0.1\""),
+            "an untracked package must not be rewritten: {demo}"
+        );
+    }
+
+    #[test]
+    fn a_stale_requirement_is_reported() {
+        let dir = temp_dir("tracks-check");
+        let root = dir.join("t");
+        std::fs::create_dir_all(root.join("demo")).unwrap();
+        std::fs::write(root.join("demo/Cargo.toml"), "[dependencies]\nthelib = \"0.1\"\n").unwrap();
+
+        let problems =
+            check_requirements(&root, &[PathBuf::from("demo")], &["thelib".to_string()], "0.2")
+                .unwrap();
+        assert_eq!(problems.len(), 1, "{problems:?}");
+        assert!(problems[0].contains("thelib"), "{problems:?}");
+    }
+
+    /// `#[serde(flatten)]` collects every key the struct does not name, and
+    /// `#[serde(skip)]` removes `manifest_name` from deserialization entirely.
+    /// The two must not interact: the private invariant stays set from the
+    /// loaded path, and never leaks into `extra`.
+    #[test]
+    fn the_flattened_map_holds_only_undeclared_keys() {
+        let dir = temp_dir("flatten-invariant");
+        let root = dir.join("t");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("templates.toml"),
+            "schema-version = 1\nversion = \"1.0.0\"\nsdk-requirement = \
+             \"0.13\"\n[templates.demo]\npath = \"demo\"\n",
+        )
+        .unwrap();
+
+        let bundle = Bundle::load(&root.join("templates.toml")).unwrap();
+        assert_eq!(bundle.manifest_name, "templates.toml");
+        assert_eq!(bundle.extra.keys().collect::<Vec<_>>(), ["sdk-requirement"]);
+        assert!(!bundle.extra.contains_key("manifest_name"), "{:?}", bundle.extra);
+        assert!(!bundle.extra.contains_key("manifest-name"), "{:?}", bundle.extra);
+        assert!(!bundle.extra.contains_key("schema-version"), "{:?}", bundle.extra);
+        assert!(!bundle.extra.contains_key("version"), "{:?}", bundle.extra);
+        assert!(!bundle.extra.contains_key("templates"), "{:?}", bundle.extra);
+        assert_eq!(bundle.requirement("sdk-requirement").unwrap(), "0.13");
+    }
+
+    #[test]
+    fn a_requirement_key_the_manifest_lacks_is_an_error_not_a_panic() {
+        let dir = temp_dir("tracks-missing");
+        let root = dir.join("t");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("bundle.toml"),
+            "schema-version = 1\nversion = \"1.0.0\"\n[templates.demo]\npath = \"demo\"\n",
+        )
+        .unwrap();
+
+        let bundle = Bundle::load(&root.join("bundle.toml")).unwrap();
+        let error = format!("{:#}", bundle.requirement("lib-requirement").unwrap_err());
+        assert!(error.contains("lib-requirement"), "{error}");
     }
 }

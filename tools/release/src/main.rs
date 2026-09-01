@@ -638,12 +638,26 @@ fn main() -> Result<()> {
                 .ok_or_else(|| anyhow::anyhow!("unit '{name}' declares no source manifest"))?;
             let bundle = midenc_release::bundle::Bundle::load(&root.join(manifest))?;
 
-            let problems = midenc_release::bundle::check_sdk_requirements(&root, &bundle)?;
-            if !problems.is_empty() {
-                for problem in &problems {
-                    eprintln!("error: {problem}");
+            // Every requirement this unit embeds must agree with what its
+            // manifest declares. A unit that tracks nothing embeds nothing.
+            for (tracked, spec) in &unit_config.tracks {
+                let key = unit_config.requirement_key(tracked);
+                let expected = bundle.requirement(&key)?;
+                let problems = midenc_release::bundle::check_requirements(
+                    &root,
+                    &include,
+                    &spec.packages,
+                    expected,
+                )?;
+                if !problems.is_empty() {
+                    for problem in &problems {
+                        eprintln!("error: {problem}");
+                    }
+                    bail!(
+                        "the sources disagree with the requirement '{key}' declared for \
+                         '{tracked}'"
+                    );
                 }
-                bail!("the sources disagree with the bundle's declared requirement");
             }
 
             // The archive is built from tracked files, so anything else under an

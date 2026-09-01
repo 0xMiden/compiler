@@ -76,13 +76,15 @@ fn check_sdk_requirement_matches_release(ws: &Workspace, findings: &mut Findings
     let bundle = crate::bundle::Bundle::load(&templates.join("bundle.toml"))?;
     let expected = crate::bundle::requirement_for(&sdk.version);
 
-    if bundle.sdk_requirement != expected {
+    let declared = bundle.requirement("sdk-requirement")?;
+
+    if declared != expected {
         findings.error(format!(
-            "the templates require `miden = \"{}\"`, which cannot resolve the SDK version this \
-             release publishes ({}). It must be \"{expected}\". Fix it with `cargo make release \
-             set-version --unit sdk {}` rather than by hand, which rewrites the bundle manifest \
-             and every template together",
-            bundle.sdk_requirement, sdk.version, sdk.version
+            "the templates require `miden = \"{declared}\"`, which cannot resolve the SDK version \
+             this release publishes ({}). It must be \"{expected}\". Fix it with `cargo make \
+             release set-version --unit sdk {}` rather than by hand, which rewrites the bundle \
+             manifest and every template together",
+            sdk.version, sdk.version
         ));
     }
     Ok(())

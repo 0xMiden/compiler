@@ -202,17 +202,41 @@ pub fn apply(ws: &Workspace, config: &Config, plan: &VersionPlan) -> Result<()> 
         }
     }
 
-    // Templates hardcode an SDK requirement, so an SDK bump has to carry them
-    // along or generated projects stay pinned to the previous SDK. This is
-    // silent when missed: the templates still render and still build.
-    if plan.domain == VersionSource::Own {
-        let templates = ws.root.join("extra/templates");
-        if templates.join("bundle.toml").exists() {
+    // A unit embedding requirements on this domain's crates has to be carried
+    // along, or consumers stay pinned to the previous version. Silent when
+    // missed: the sources still render and still build.
+    for (name, unit) in config.releasable() {
+        let Some(source) = &unit.source else {
+            continue;
+        };
+        let (Some(directory), Some(manifest)) = (&source.directory, &source.manifest) else {
+            continue;
+        };
+        let root = ws.root.join(directory);
+        if !root.join(manifest).exists() {
+            continue;
+        }
+
+        for tracked in unit.tracks.keys() {
+            if config.units[tracked.as_str()].version_source != Some(plan.domain) {
+                continue;
+            }
+            let key = unit.requirement_key(tracked);
+            let packages = &unit.tracks[tracked.as_str()].packages;
+            let include = crate::bundle::include_paths(&ws.root, unit)?;
             let requirement = crate::bundle::requirement_for(&plan.new);
-            let changed = crate::bundle::set_sdk_requirement(&templates, &requirement)?;
+            let changed = crate::bundle::set_requirement(
+                &root,
+                manifest,
+                &key,
+                packages,
+                &include,
+                &requirement,
+            )?;
             if !changed.is_empty() {
                 println!(
-                    "updated the template SDK requirement to \"{requirement}\" in {} file(s)",
+                    "updated unit '{name}' requirement on '{tracked}' to \"{requirement}\" in {} \
+                     file(s)",
                     changed.len()
                 );
             }
