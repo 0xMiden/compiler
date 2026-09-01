@@ -1,0 +1,24 @@
+cargo-features = ["trim-paths"]
+
+[package]
+name = "stored-procedure-example"
+description = "A Miden account component that dispatches through a stored procedure root"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Build this crate as a self-contained, C-style dynamic library
+# This is required to emit the proper Wasm module type
+crate-type = ["cdylib"]
+
+[dependencies]
+miden = { path = "../../sdk/sdk" }
+
+[build-dependencies]
+miden-sdk-build-script-support = { path = "../../sdk/build-script-support" }
+
+[profile.release]
+trim-paths = ["diagnostics", "object"]
+
+[profile.dev]
+trim-paths = ["diagnostics", "object"]

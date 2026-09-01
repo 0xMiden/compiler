@@ -32,7 +32,7 @@ impl P2idNote {
             target_account_id: target,
         };
         let note_script_root = P2idNote::get_entrypoint_root();
-        note::build_recipient(serial_num, note_script_root, inputs.to_felt_repr())
+        note::build_recipient(serial_num, note_script_root.into(), inputs.to_felt_repr())
     }
 
     #[note_script]

@@ -122,6 +122,15 @@ pub(crate) fn map_type_to_type_ref(
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
 
             reject_unsupported_component_primitive(&ident, last.span())?;
+            // `StoredProcedure` is a guest-side handle: it adds a signature to a root, and the
+            // signature has no place in the WIT interface. The check comes before the generic
+            // rejection below, because the handle is usually written with its signature.
+            if ident == "StoredProcedure" {
+                return Err(syn::Error::new(
+                    last.span(),
+                    "use `ProcedureRoot` in exported signatures; convert with `assume_signature`",
+                ));
+            }
 
             if !last.arguments.is_empty() {
                 if ident == "Option" {

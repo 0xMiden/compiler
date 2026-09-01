@@ -8,3 +8,4 @@ mod counter_note;
 mod fibonacci;
 mod is_prime;
 mod storage_metadata;
+mod stored_procedure_metadata;

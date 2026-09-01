@@ -3,6 +3,8 @@ use miden_base_sys::bindings::{
 };
 use miden_stdlib_sys::{Digest, Felt, Word};
 
+use crate::ProcedureRoot;
+
 /// A type that can be stored in (or loaded from) account storage.
 ///
 /// Storage slots and map items store a single [`Word`]. Implementations must define a reversible
@@ -57,6 +59,16 @@ impl WordValue for Digest {
 
     fn try_from_word(word: Word) -> Result<Self, &'static str> {
         Ok(word.try_into().unwrap())
+    }
+}
+
+impl WordValue for ProcedureRoot {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(self.into())
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        Ok(word.into())
     }
 }
 

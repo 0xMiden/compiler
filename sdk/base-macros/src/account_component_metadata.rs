@@ -52,6 +52,12 @@ fn schema_type_from_storage_type_arg(ty: &syn::Type) -> SchemaType {
 
     match last_segment.ident.to_string().as_str() {
         "Word" => SchemaType::native_word(),
+        // TODO(i1352 phase 2): flip to miden::protocol::stored_procedure once the protocol
+        // registers it.
+        "ProcedureRoot" => SchemaType::native_word(),
+        // TODO(i1352 phase 2): flip to miden::protocol::stored_procedure once the protocol
+        // registers it.
+        "StoredProcedure" => SchemaType::native_word(),
         "Felt" | "AssetAmount" => SchemaType::native_felt(),
         "u8" => SchemaType::u8(),
         "u16" => SchemaType::u16(),
@@ -63,6 +69,33 @@ fn schema_type_from_storage_type_arg(ty: &syn::Type) -> SchemaType {
 /// Builds a simple word schema from a storage type argument.
 fn word_schema_from_storage_type_arg(ty: &syn::Type) -> WordSchema {
     WordSchema::new_simple(schema_type_from_storage_type_arg(ty))
+}
+
+/// Rejects storage type arguments that a storage map cannot hold.
+fn reject_unsupported_map_type_arg(ty: &syn::Type) -> Result<(), syn::Error> {
+    let syn::Type::Path(type_path) = ty else {
+        return Ok(());
+    };
+
+    let Some(last_segment) = type_path.path.segments.last() else {
+        return Ok(());
+    };
+
+    if last_segment.ident == "ProcedureRoot" {
+        return Err(syn::Error::new(
+            ty.span(),
+            "`ProcedureRoot` is not supported in storage maps yet; use a `StorageValue` slot",
+        ));
+    }
+
+    if last_segment.ident == "StoredProcedure" {
+        return Err(syn::Error::new(
+            ty.span(),
+            "`StoredProcedure` is not supported in storage maps yet; use a `StorageValue` slot",
+        ));
+    }
+
+    Ok(())
 }
 
 /// Builds protocol metadata for an account component during macro expansion.
@@ -102,6 +135,9 @@ impl AccountComponentMetadataBuilder {
         match typecheck_storage_field(field)? {
             StorageFieldType::StorageMap => {
                 let args = extract_storage_type_args(field)?;
+                for arg in &args {
+                    reject_unsupported_map_type_arg(arg)?;
+                }
                 let key_schema = args
                     .first()
                     .map(word_schema_from_storage_type_arg)
@@ -153,5 +189,94 @@ impl AccountComponentMetadataBuilder {
             .with_description(self.description.as_ref())
             .with_version(self.version)
             .with_storage_schema(storage_schema))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Returns the first field of a struct written as `name: type`.
+    fn field_from_declaration(declaration: proc_macro2::TokenStream) -> syn::Field {
+        let item: syn::ItemStruct = syn::parse_quote! {
+            struct Component { #declaration }
+        };
+        item.fields.into_iter().next().expect("struct must have one field")
+    }
+
+    fn builder() -> AccountComponentMetadataBuilder {
+        AccountComponentMetadataBuilder::new(
+            "component".to_string(),
+            Version::new(1, 0, 0),
+            "description",
+        )
+    }
+
+    fn slot_name() -> StorageSlotName {
+        StorageSlotName::new("component::component::slot".to_string()).expect("valid slot name")
+    }
+
+    #[test]
+    fn procedure_root_maps_to_the_word_schema_type() {
+        let ty: syn::Type = syn::parse_quote!(ProcedureRoot);
+        assert_eq!(schema_type_from_storage_type_arg(&ty), SchemaType::native_word());
+
+        let ty: syn::Type = syn::parse_quote!(miden::ProcedureRoot);
+        assert_eq!(schema_type_from_storage_type_arg(&ty), SchemaType::native_word());
+    }
+
+    #[test]
+    fn stored_procedure_maps_to_the_word_schema_type() {
+        let ty: syn::Type = syn::parse_quote!(StoredProcedure<fn(Word, Felt) -> Felt>);
+        assert_eq!(schema_type_from_storage_type_arg(&ty), SchemaType::native_word());
+
+        let ty: syn::Type = syn::parse_quote!(miden::StoredProcedure<fn(Word)>);
+        assert_eq!(schema_type_from_storage_type_arg(&ty), SchemaType::native_word());
+    }
+
+    #[test]
+    fn stored_procedure_is_rejected_in_storage_maps() {
+        let field = field_from_declaration(
+            quote::quote!(slot: StorageMap<Word, StoredProcedure<fn(Word)>>),
+        );
+        let error = builder()
+            .add_storage_entry(slot_name(), None, &field, None)
+            .expect_err("`StoredProcedure` map values must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "`StoredProcedure` is not supported in storage maps yet; use a `StorageValue` slot"
+        );
+
+        let field = field_from_declaration(
+            quote::quote!(slot: StorageMap<StoredProcedure<fn(Word)>, Word>),
+        );
+        let error = builder()
+            .add_storage_entry(slot_name(), None, &field, None)
+            .expect_err("`StoredProcedure` map keys must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "`StoredProcedure` is not supported in storage maps yet; use a `StorageValue` slot"
+        );
+    }
+
+    #[test]
+    fn procedure_root_is_rejected_in_storage_maps() {
+        let field = field_from_declaration(quote::quote!(slot: StorageMap<Word, ProcedureRoot>));
+        let error = builder()
+            .add_storage_entry(slot_name(), None, &field, None)
+            .expect_err("`ProcedureRoot` map values must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "`ProcedureRoot` is not supported in storage maps yet; use a `StorageValue` slot"
+        );
+
+        let field = field_from_declaration(quote::quote!(slot: StorageMap<ProcedureRoot, Word>));
+        let error = builder()
+            .add_storage_entry(slot_name(), None, &field, None)
+            .expect_err("`ProcedureRoot` map keys must be rejected");
+        assert_eq!(
+            error.to_string(),
+            "`ProcedureRoot` is not supported in storage maps yet; use a `StorageValue` slot"
+        );
     }
 }

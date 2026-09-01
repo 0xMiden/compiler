@@ -430,6 +430,80 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
+    /// Execute the procedure whose MAST root word is on top of the operand stack, dispatching
+    /// through the compiler-owned scratch cell at `scratch_elem_addr` (a word-aligned element
+    /// address).
+    ///
+    /// Traps with an assertion failure if the root word is zero, which is what an account
+    /// storage slot that was never initialized reads as. The callee is invoked in the same
+    /// memory context as the caller (`dynexec`).
+    ///
+    /// Expects `[root, args...]` on the operand stack, with digest element 0 on top. The root
+    /// word is spilled to the scratch cell and replaced by that cell's address, which `dynexec`
+    /// pops before transferring control, so the callee observes `[args...]` in normal argument
+    /// order.
+    pub fn exec_root(&mut self, scratch_elem_addr: u32, signature: &Signature, span: SourceSpan) {
+        // Consume the root word operands; all further effects on them are transient
+        for index in 0..midenc_dialect_hir::ExecRoot::ROOT_FELTS {
+            let root = self.stack.pop().expect("operand stack is empty");
+            assert_eq!(
+                root.ty(),
+                Type::Felt,
+                "expected felt for procedure root element {index} of exec_root"
+            );
+        }
+
+        // Zero-root guard: `eqw` compares the top two words without consuming either, so the
+        // padded zero word is dropped after the flag is asserted away.
+        // [root, ..] -> [0, root, ..] -> [is_zero, 0, root, ..] -> [0, root, ..] -> [root, ..]
+        self.emit(masm::Instruction::PadW, span);
+        self.emit(masm::Instruction::Eqw, span);
+        self.emit(
+            Self::assertz_with_message_inst(
+                "stored procedure call: procedure root is zero (storage slot not initialized)",
+                span,
+            ),
+            span,
+        );
+        self.emit(masm::Instruction::DropW, span);
+
+        // Spill the root word to the scratch cell `dynexec` reads the callee digest from.
+        // `mem_storew_le` takes digest element 0 from the stack top, the same order `procref`
+        // produces and the function-table slot stores use, and leaves the word on the stack.
+        self.emit(masm::Instruction::MemStoreWLeImm(scratch_elem_addr.into()), span);
+        self.emit(masm::Instruction::DropW, span);
+
+        // Consume the arguments and produce the results on the emulated stack. Signatures for
+        // root dispatch never carry argument-extension attributes, so argument types must match
+        // the parameter types exactly. NOTE: this deliberately does not reuse
+        // `process_call_signature`: its zext/sext paths emit instructions that operate on the
+        // physical stack top, which the transient scratch address takes next.
+        for (i, param) in signature.params.iter().enumerate() {
+            assert!(
+                matches!(param.extension(), ArgumentExtension::None),
+                "invalid exec_root: argument extension is not supported for parameter at index {i}"
+            );
+            let arg = self.stack.pop().expect("operand stack is empty");
+            assert_eq!(
+                arg.ty(),
+                param.ty,
+                "invalid exec_root: invalid argument type for parameter at index {i}"
+            );
+        }
+        for result in signature.results.iter().rev() {
+            self.push(result.ty.clone());
+        }
+
+        // `dynexec` pops the element address and reads the callee MAST root word at it
+        self.emit_push(scratch_elem_addr, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
+        self.emit(masm::Instruction::DynExec, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+    }
+
     /// Push the MAST root digest of `callee` onto the operand stack as one word.
     ///
     /// This emits a `procref` instruction; the assembler computes the digest at assembly time
@@ -704,6 +778,70 @@ mod tests {
         assert!(matches!(&insts[11], masm::Instruction::EmitImm(_)));
         assert_eq!(insts[12], masm::Instruction::DynExec);
         assert!(matches!(&insts[13], masm::Instruction::EmitImm(_)));
+    }
+
+    /// Pin the exact instruction sequence and stack effect of a stored-procedure dispatch: the
+    /// zero-root guard, the spill of the root word to the scratch cell, and the frame-traced
+    /// `dynexec` through that cell's address.
+    #[test]
+    fn exec_root_emits_zero_guard_root_spill_and_dynexec() {
+        use midenc_hir::CallConv;
+
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let signature = Signature::with_convention(&context, CallConv::C, [Type::I32], [Type::I32]);
+
+        // The scheduled operand order is [root..., args...], digest element 0 on top
+        emitter.push(Type::I32);
+        for _ in 0..midenc_dialect_hir::ExecRoot::ROOT_FELTS {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        let scratch_elem_addr = 294912u32;
+        emitter.exec_root(scratch_elem_addr, &signature, span);
+
+        // The emulated stack holds exactly the call result
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::I32);
+
+        let insts = block
+            .iter()
+            .map(|op| match op {
+                Op::Inst(inst) => inst.clone().into_inner(),
+                op => panic!("unexpected non-instruction op: {op:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(insts.len(), 10);
+        // Zero-root guard: compare the root word to the zero word and trap when equal
+        assert_eq!(insts[0], masm::Instruction::PadW);
+        assert_eq!(insts[1], masm::Instruction::Eqw);
+        assert!(
+            matches!(&insts[2], masm::Instruction::AssertzWithError(masm::Immediate::Value(msg)) if msg.inner().contains("procedure root is zero")),
+            "expected zero-root assertion, got {:?}",
+            &insts[2]
+        );
+        assert_eq!(insts[3], masm::Instruction::DropW);
+        // Spill the root word to the scratch cell, then drop the copy left on the stack
+        assert!(
+            matches!(&insts[4], masm::Instruction::MemStoreWLeImm(masm::Immediate::Value(value)) if *value.inner() == scratch_elem_addr),
+            "expected store of the root word to the scratch cell, got {:?}",
+            &insts[4]
+        );
+        assert_eq!(insts[5], masm::Instruction::DropW);
+        // Frame-traced dynexec through the scratch cell address, which it pops itself
+        assert!(
+            matches!(&insts[6], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == scratch_elem_addr.into()),
+            "expected push of the scratch cell address, got {:?}",
+            &insts[6]
+        );
+        assert!(matches!(&insts[7], masm::Instruction::EmitImm(_)));
+        assert_eq!(insts[8], masm::Instruction::DynExec);
+        assert!(matches!(&insts[9], masm::Instruction::EmitImm(_)));
     }
 
     #[test]

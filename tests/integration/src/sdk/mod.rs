@@ -19,6 +19,7 @@ mod canonabi;
 mod macros;
 mod note_script_root;
 mod stdlib;
+mod stored_procedure;
 
 /// Rebuilds an executable program from a compiled note-script package for direct execution tests.
 pub(crate) fn note_script_program(

@@ -74,7 +74,7 @@ impl ProbeNote {
     /// Returns the note script root of this crate, as the compiler resolved it.
     #[note_constructor]
     pub fn probe() -> Word {
-        Self::get_entrypoint_root()
+        Self::get_entrypoint_root().into()
     }
 
     /// Exercises `Digest` as a constructor parameter and result: the generated bindings must

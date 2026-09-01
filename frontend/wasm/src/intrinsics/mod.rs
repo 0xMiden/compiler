@@ -5,6 +5,7 @@ pub use self::intrinsic::*;
 pub mod advice;
 pub mod crypto;
 pub mod debug;
+pub mod exec_root;
 pub mod felt;
 pub mod mem;
 pub mod note;
@@ -46,6 +47,12 @@ pub fn convert_intrinsics_call<B: ?Sized + Builder>(
                  `convert_module_context_stub_call`"
             )
         }
+        Intrinsic::ExecRoot(function) => {
+            panic!(
+                "stored-procedure dispatch intrinsic '{function}' is a module-context stub and \
+                 must be lowered via `convert_module_context_stub_call`"
+            )
+        }
     }
 }
 
@@ -69,6 +76,13 @@ pub fn convert_module_context_stub_call<B: ?Sized + Builder>(
             stub_function_ref,
             args,
             frontend_metadata,
+            builder,
+            span,
+        ),
+        Intrinsic::ExecRoot(function) => exec_root::convert_exec_root_intrinsics_stub(
+            function,
+            stub_function_ref,
+            args,
             builder,
             span,
         ),

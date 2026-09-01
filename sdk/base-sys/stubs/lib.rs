@@ -9,6 +9,7 @@
 
 mod active_account;
 mod active_note;
+mod exec_root;
 mod faucet;
 mod input_note;
 mod note;

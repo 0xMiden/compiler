@@ -85,8 +85,9 @@ pub fn maybe_lower_linker_stub(
         Err(_) => return Ok(false),
     };
     let import_path: SymbolPath = SymbolPath::from_masm_function_id(func_ident);
+    let recognized_intrinsic = Intrinsic::try_from(&import_path).ok();
     // Ensure the stub targets a known Miden ABI module or a recognized intrinsic.
-    let is_intrinsic = Intrinsic::try_from(&import_path).is_ok();
+    let is_intrinsic = recognized_intrinsic.is_some();
     if !is_miden_abi_module(&import_path) && !is_intrinsic {
         if import_path.namespace() == Some(symbols::Miden) {
             panic!(
@@ -102,14 +103,13 @@ pub fn maybe_lower_linker_stub(
     let context = function_ref.borrow().as_operation().context_rc();
 
     // Classify intrinsics and obtain signature when needed
-    let (import_sig, intrinsic): (Signature, Option<Intrinsic>) =
-        match Intrinsic::try_from(&import_path) {
-            Ok(intr) => (function_ref.borrow().get_signature().clone(), Some(intr)),
-            Err(_) => {
-                let import_ft: FunctionType = miden_abi_function_type(&import_path);
-                (Signature::new(&context, import_ft.params, import_ft.results), None)
-            }
-        };
+    let (import_sig, intrinsic): (Signature, Option<Intrinsic>) = match recognized_intrinsic {
+        Some(intr) => (function_ref.borrow().get_signature().clone(), Some(intr)),
+        None => {
+            let import_ft: FunctionType = miden_abi_function_type(&import_path);
+            (Signature::new(&context, import_ft.params, import_ft.results), None)
+        }
+    };
 
     // Build the function body for the stub and replace it with an exec to MASM
     let span = function_ref.borrow().name().span;
@@ -202,4 +202,26 @@ pub fn maybe_lower_linker_stub(
     fb.ret(ret_vals, span)?;
 
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use wasmparser::BinaryReader;
+
+    use super::*;
+
+    /// A body that declares no locals, traps, and ends.
+    const TRAPPING_BODY: &[u8] = &[0x00, 0x00, 0x0b];
+    /// A body that declares no locals, reads and drops its first parameter, and ends.
+    const NON_TRAPPING_BODY: &[u8] = &[0x00, 0x20, 0x00, 0x1a, 0x0b];
+
+    fn function_body(bytes: &[u8]) -> FunctionBody<'_> {
+        FunctionBody::new(BinaryReader::new(bytes, 0))
+    }
+
+    #[test]
+    fn body_shape_separates_trapping_stubs_from_other_functions() {
+        assert!(is_unreachable_stub(&function_body(TRAPPING_BODY)));
+        assert!(!is_unreachable_stub(&function_body(NON_TRAPPING_BODY)));
+    }
 }

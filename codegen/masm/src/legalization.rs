@@ -446,6 +446,38 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             }
             DynamicLegalityResult::legal()
         })
+        .add_dynamically_legal_op::<hir::ExecRoot, _>(|op| {
+            let exec = op
+                .downcast_ref::<hir::ExecRoot>()
+                .expect("this legality rule is registered for hir.exec_root");
+            let signature = exec.get_signature();
+            // The lowering consumes the arguments as-is: an extension requirement would need
+            // instructions operating on the stack top, which the transient scratch address takes
+            if let Some(index) = signature.params.iter().position(|param| {
+                !matches!(
+                    param.extension(),
+                    midenc_hir::dialects::builtin::attributes::ArgumentExtension::None
+                )
+            }) {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' does not support argument extension, which parameter {index} \
+                     requires",
+                    op.name()
+                )));
+            }
+            let arg_felts: usize =
+                signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
+            let root_felts = hir::ExecRoot::ROOT_FELTS;
+            if arg_felts + root_felts > OPERAND_STACK_WINDOW_FELTS {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' schedules {arg_felts} argument field elements plus the \
+                     {root_felts} procedure root field elements, which exceeds the \
+                     {OPERAND_STACK_WINDOW_FELTS}-element operand stack window",
+                    op.name()
+                )));
+            }
+            DynamicLegalityResult::legal()
+        })
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
                 "operation '{}' is temporary dialect-conversion scaffolding and must be \

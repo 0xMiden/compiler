@@ -17,12 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decodes the note storage into the struct fields. The `active_note` module functions stay
   available and unchanged. A user trait implemented for the note struct with an identically
   named method now needs UFCS disambiguation at the call site #1010
+- The new `StoredProcedure<F>` type holds a procedure root together with a signature, where `F`
+  is a bare function-pointer type such as `fn(Word, Felt) -> Felt`. A storage slot declared with
+  a signature accepts the roots of that signature only, and `stored.call(asset, amount)` — from
+  the `Call0` to `Call12` traits — checks the argument types and the return type at compile time.
+  Arguments accept `Felt`, `bool`, `u8`, `u16`, `u32`, `Word`, `Digest` and `ProcedureRoot`, and
+  must not take more than 12 field elements on the operand stack, because the root takes 4 of the
+  16 elements the operand window holds. `ProcedureRoot` stays the untyped wire type used in
+  exported signatures; `ProcedureRoot::assume_signature::<F>()` is the one point where a
+  signature enters the type, and nothing after it tests the assertion #1352
 - The new `miden-sdk-build-script-support` crate owns the package-staging protocol needed by
   plain Cargo builds and IDE analysis. Contract crates add it as a build dependency and call `prepare_package_cache()`
 - `println!` supports format arguments; formatted output requires `extern crate alloc` and a
   configured global allocator.
 - `#[note]` impl blocks generate a `get_entrypoint_root()` associated method on the note type,
-  returning the MAST root digest of the note script defined by the current crate (the
+  returning the `ProcedureRoot` of the note script defined by the current crate (the
   `#[note_script]` entrypoint export). It is backed by a compiler intrinsic resolved at
   assembly time, so a note constructor can build a `Recipient` committing to its own note
   script root (e.g. via `note::build_recipient`). Compilation fails if the project defines no

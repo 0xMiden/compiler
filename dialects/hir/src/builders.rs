@@ -951,6 +951,26 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(table, signature, type_tag, index, args)
     }
 
+    /// Execute the procedure whose MAST root digest word is `root`; a same-context invocation
+    /// through a root value rather than a symbol.
+    ///
+    /// `root` must hold [crate::ops::ExecRoot::ROOT_FELTS] felts, digest element `i` in element
+    /// `i` of the slice; `signature` describes `args` and the results, and never the root word.
+    fn exec_root<R, A>(
+        &mut self,
+        signature: Signature,
+        root: R,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ExecRoot>, Report>
+    where
+        R: IntoIterator<Item = ValueRef>,
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::ExecRoot, (_, R, A)>(span);
+        op_builder(signature, root, args)
+    }
+
     /// Materialize the MAST root digest of `callee` as four felt values (one word).
     ///
     /// The callee is referenced, not invoked; see [crate::ops::ProcedureRoot].

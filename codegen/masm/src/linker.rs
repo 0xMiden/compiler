@@ -1,10 +1,12 @@
 use midenc_hir::{
-    FxHashMap, Op, Symbol,
+    FxHashMap, Op, Symbol, WalkResult,
     dialects::builtin::{self, DataSegmentError, SegmentRef, attributes::U64Attr},
 };
 
 /// The page size used for the linker's own memory layout, in bytes.
 const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
+/// The size in bytes of the scratch cell `hir.exec_root` dispatches through: one word.
+const EXEC_ROOT_SCRATCH_SIZE_BYTES: u32 = 32;
 /// The default number of pages reserved before any compiler-managed memory region.
 ///
 /// This is a fallback floor for modules that carry no
@@ -19,6 +21,7 @@ pub struct LinkInfo {
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
     function_tables: FunctionTableLayout,
+    exec_root_scratch: Option<u32>,
     heap_base: u32,
 }
 
@@ -30,6 +33,7 @@ impl LinkInfo {
             globals_layout: Default::default(),
             segment_layout: Default::default(),
             function_tables: Default::default(),
+            exec_root_scratch: None,
             heap_base: 0,
         }
     }
@@ -62,6 +66,20 @@ impl LinkInfo {
 
     pub fn function_tables(&self) -> &FunctionTableLayout {
         &self.function_tables
+    }
+
+    /// Get the word-aligned element address of the scratch cell `hir.exec_root` dispatches
+    /// through, or `None` if the program holds no such operation.
+    ///
+    /// The cell is one word of compiler-owned memory, word-aligned as `dynexec` requires. The
+    /// emission stores the callee MAST root there and hands the address to `dynexec`. One cell
+    /// serves the whole program: `dynexec` reads the digest at dispatch and keeps nothing that
+    /// refers back to the cell, so the next dispatch is free to overwrite it (verified against
+    /// miden-processor 0.29.1, `execution/dyn.rs:51-66`).
+    pub fn exec_root_scratch(&self) -> Option<u32> {
+        let base = crate::lower::NativePtr::from_ptr(self.exec_root_scratch?);
+        assert!(base.is_word_aligned(), "the exec_root scratch cell must be word-aligned");
+        Some(base.addr)
     }
 
     /// Returns true if the component requires an `init` procedure to set up linear memory
@@ -227,18 +245,42 @@ impl Linker {
             function_tables.end_offset = next_table_offset;
         }
 
-        // 5. Compute the dynamic heap base: the first page boundary past all
+        // 5. Lay out the `hir.exec_root` scratch cell after the function tables, but only when
+        // the component holds such an operation: an unconditional cell would move every address
+        // above it in every program that never dispatches through a root. The cell starts at a
+        // page boundary or at the end of a table, both of which are word multiples, so it is
+        // word-aligned as `dynexec` requires.
+        let mut static_end = function_tables.end_offset;
+        let exec_root_scratch = if requires_exec_root_scratch(component) {
+            let offset = next_table_offset;
+            static_end = offset.checked_add(EXEC_ROOT_SCRATCH_SIZE_BYTES).ok_or_else(|| {
+                LinkerError::LayoutOverflow {
+                    reason: alloc::format!(
+                        "the stored-procedure dispatch scratch cell at offset {offset:#x} does \
+                         not fit in linear memory"
+                    ),
+                }
+            })?;
+            log::debug!(target: "linker",
+                "stored-procedure dispatch scratch cell allocated at offset {offset:#x}"
+            );
+            Some(offset)
+        } else {
+            None
+        };
+
+        // 6. Compute the dynamic heap base: the first page boundary past all
         // statically-allocated memory (global variables and function tables), or the end of
         // reserved memory if larger. Static memory that reaches the last page leaves no
         // representable heap base, so that is a link failure rather than a panic in an accessor.
-        let after_tables = function_tables
-            .end_offset
-            .checked_next_multiple_of(self.page_size)
-            .ok_or_else(|| LinkerError::LayoutOverflow {
-                reason: alloc::format!(
-                    "function tables ending at {:#x} leave no room for the dynamic heap",
-                    function_tables.end_offset
-                ),
+        let after_tables =
+            static_end.checked_next_multiple_of(self.page_size).ok_or_else(|| {
+                LinkerError::LayoutOverflow {
+                    reason: alloc::format!(
+                        "static memory ending at {static_end:#x} leaves no room for the dynamic \
+                         heap"
+                    ),
+                }
             })?;
         let after_static = globals_boundary.max(after_tables);
         let reserved_bytes = self.reserved_memory_pages as u64 * self.page_size as u64;
@@ -256,6 +298,7 @@ impl Linker {
             globals_layout: core::mem::take(&mut self.globals_layout),
             segment_layout: core::mem::take(&mut self.segment_layout),
             function_tables,
+            exec_root_scratch,
             heap_base,
         })
     }
@@ -330,6 +373,22 @@ impl Linker {
 
         Ok(())
     }
+}
+
+/// Returns true if `component` holds at least one `hir.exec_root` operation.
+///
+/// The layout only needs to know whether the scratch cell is used at all, so the walk stops at
+/// the first such operation.
+fn requires_exec_root_scratch(component: &midenc_hir::Operation) -> bool {
+    component
+        .prewalk(|op: &midenc_hir::Operation| {
+            if op.downcast_ref::<midenc_dialect_hir::ExecRoot>().is_some() {
+                WalkResult::Break(())
+            } else {
+                WalkResult::Continue(())
+            }
+        })
+        .was_interrupted()
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -685,5 +744,78 @@ mod tests {
         // The default reservation floor (17 pages) puts the table at 0x110000; its one 32-byte
         // slot rounds up to the next page boundary
         assert_eq!(link_info.heap_base(), 0x120000);
+    }
+
+    /// Build a component holding one module with a four-felt function that dispatches through
+    /// `hir.exec_root` if `with_exec_root`, then link it.
+    fn link_module_with_optional_exec_root(with_exec_root: bool) -> LinkInfo {
+        use midenc_dialect_hir::HirOpBuilder;
+        use midenc_hir::{
+            Type, ValueRef,
+            dialects::builtin::{BuiltinOpBuilder, FunctionBuilder, attributes::Signature},
+        };
+
+        let context = Rc::new(Context::default());
+        let world_ref =
+            context.clone().builder().create::<World, ()>(Default::default())().unwrap();
+        let mut world_builder = WorldBuilder::new(world_ref);
+        let component_ref = world_builder
+            .define_component(
+                Ident::from("test_ns"),
+                Ident::from("test"),
+                Version::parse("1.0.0").unwrap(),
+            )
+            .unwrap();
+        let mut component_builder = ComponentBuilder::new(component_ref);
+        let module_ref = component_builder.define_module(Ident::from("m")).unwrap();
+        let mut module_builder = ModuleBuilder::new(module_ref);
+        let signature = Signature::new(
+            &context,
+            alloc::vec![Type::Felt; midenc_dialect_hir::ExecRoot::ROOT_FELTS],
+            [],
+        );
+        let function_ref = module_builder
+            .define_function(Ident::from("dispatch"), Visibility::Public, signature)
+            .unwrap();
+        {
+            let mut op_builder = context.clone().builder();
+            let mut function_builder = FunctionBuilder::new(function_ref, &mut op_builder);
+            if with_exec_root {
+                let root: alloc::vec::Vec<ValueRef> = {
+                    let entry = function_builder.entry_block();
+                    let entry = entry.borrow();
+                    entry.arguments().iter().map(|arg| arg.borrow().as_value_ref()).collect()
+                };
+                let dispatch_signature = Signature::new(&context, [], []);
+                function_builder
+                    .exec_root(dispatch_signature, root, [], SourceSpan::default())
+                    .unwrap();
+            }
+            function_builder.ret(None, SourceSpan::default()).unwrap();
+        }
+
+        let component = component_ref.borrow();
+        Linker::default()
+            .link(None, component.as_operation())
+            .expect("layout should fit")
+    }
+
+    /// The scratch cell exists only when the program dispatches through a procedure root: an
+    /// unconditional cell would move the address of everything laid out above it in every other
+    /// program.
+    #[test]
+    fn link_allocates_the_exec_root_scratch_only_when_it_is_used() {
+        let without = link_module_with_optional_exec_root(false);
+        assert!(without.exec_root_scratch().is_none());
+
+        let with = link_module_with_optional_exec_root(true);
+        let scratch = with.exec_root_scratch().expect("a dispatch must get a scratch cell");
+        // The accessor reports an element address, and asserts its word alignment
+        assert!(
+            scratch * 4 < with.heap_base(),
+            "the scratch cell must not overlap the dynamic heap"
+        );
+        assert_eq!(without.heap_base(), 0x110000);
+        assert_eq!(with.heap_base(), 0x120000);
     }
 }

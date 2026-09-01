@@ -277,6 +277,27 @@ fn result_type_maps_unit_argument_to_wit_placeholder() {
 }
 
 #[test]
+fn stored_procedure_points_at_procedure_root() {
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+
+    for source in [
+        "StoredProcedure",
+        "StoredProcedure<fn(Word, Felt) -> Felt>",
+        "miden::StoredProcedure<fn(Word)>",
+    ] {
+        let ty: Type = syn::parse_str(source).unwrap();
+        let err = map_type_to_type_ref(&ty, &exported)
+            .expect_err("`StoredProcedure` must be rejected in an exported signature");
+        assert_eq!(
+            err.to_string(),
+            "use `ProcedureRoot` in exported signatures; convert with `assume_signature`",
+            "unexpected message for `{source}`"
+        );
+    }
+}
+
+#[test]
 fn struct_field_missing_export_type_hint() {
     reset_export_type_registry_for_tests();
     let item: syn::ItemStruct = parse_quote! {

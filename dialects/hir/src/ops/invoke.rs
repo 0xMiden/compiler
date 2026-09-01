@@ -669,6 +669,248 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
     }
 }
 
+/// Same-context invocation of the procedure whose MAST root is given by the `root` operands.
+///
+/// The four `root` operands are one MAST root digest word, digest element `i` in operand `i`;
+/// this is the order [`ProcedureRoot`] produces and the order the MASM word instructions expect.
+/// `arguments` are the flattened call arguments, and `signature` is the dispatch contract the
+/// lowering emits against: it describes the arguments and the results only, never the root word.
+///
+/// Lowering spills the root word to a compiler-owned word-aligned memory cell and dispatches
+/// through it with `dynexec`, so the callee runs in the memory context of the caller. Dispatch
+/// traps if the root word is zero, which is what an account storage slot that was never
+/// initialized reads as.
+///
+/// NOTE: should a cross-context invocation on a root value ever be needed, model it as a twin of
+/// this op lowered via `dyncall`; see the note beside [`Call`].
+#[operation(
+    dialect = HirDialect,
+    implements(
+        CallOpInterface,
+        InferTypeOpInterface,
+        OperandRangeRequirementOpInterface,
+        OpPrinter
+    )
+)]
+pub struct ExecRoot {
+    /// The signature the call site expects of the callee, excluding the root word
+    #[attr(hidden)]
+    signature: SignatureAttr,
+    /// The MAST root digest word of the callee
+    #[operands]
+    root: IntFelt,
+    #[operands]
+    arguments: AnyType,
+}
+
+impl ExecRoot {
+    /// Number of felt operands holding the callee MAST root digest.
+    pub const ROOT_FELTS: usize = 4;
+}
+
+impl InferTypeOpInterface for ExecRoot {
+    fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
+        let span = self.span();
+        let sig = self.signature.borrow();
+        let owner = self.as_operation_ref();
+        for (i, result) in sig.results().iter().enumerate() {
+            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+            self.op.results.push(value);
+        }
+        Ok(())
+    }
+}
+
+impl OperandRangeRequirementOpInterface for ExecRoot {
+    fn operand_range_requirement(&self, _operand_index: usize) -> OperandRangeRequirement {
+        OperandRangeRequirement::None
+    }
+}
+
+impl OpPrinter for ExecRoot {
+    fn print(&self, printer: &mut AsmPrinter<'_>) {
+        use formatter::*;
+
+        printer.print_space();
+        *printer += const_text("[");
+        printer.print_value_uses(self.root().as_value_range());
+        *printer += const_text("]");
+        printer.print_operand_list(self.arguments());
+        let callee_sig = self.signature();
+        *printer += const_text(" : ");
+        callee_sig.print(printer);
+        if self.op.has_attributes() {
+            printer.print_space();
+            *printer += const_text(" attributes ");
+            printer.print_attribute_dictionary(
+                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+            );
+        }
+    }
+}
+
+impl OpParser for ExecRoot {
+    fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
+        use core::num::NonZeroU8;
+
+        use midenc_hir::parse::ParserError;
+
+        // The bracketed root word
+        let mut root = SmallVec::default();
+        parser.parse_operand_list(
+            &mut root,
+            parse::Delimiter::Bracket,
+            /*allow_result_number=*/ true,
+            NonZeroU8::new(Self::ROOT_FELTS as u8),
+        )?;
+
+        let mut operands = SmallVec::default();
+        parser.parse_operand_list(
+            &mut operands,
+            parse::Delimiter::OptionalParen,
+            /*allow_result_number=*/ true,
+            None,
+        )?;
+
+        parser.parse_colon()?;
+        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
+        state.attrs.push(NamedAttribute::new("signature", sig_attr));
+
+        let span = SourceSpan::new(
+            state.span.source_id(),
+            state.span.start()..parser.current_location().end(),
+        );
+        let sig_attribute = sig_attr.borrow();
+        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
+            return Err(ParserError::InvalidAttributeValue {
+                span,
+                reason: format!(
+                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
+                     instead",
+                    sig_attribute.name()
+                ),
+            });
+        };
+        if operands.len() != signature.arity() {
+            return Err(ParserError::MismatchedValueAndTypeLists {
+                span,
+                num_values: operands.len(),
+                num_types: signature.arity(),
+            });
+        }
+
+        parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
+
+        // Operand group 0: the root digest word
+        let root_types = [const { Type::Felt }; Self::ROOT_FELTS];
+        let mut root_values = SmallVec::default();
+        parser.resolve_operands(state.span, &root, &root_types, &mut root_values)?;
+        state.operands.push(root_values);
+
+        // Operand group 1: the callee arguments, typed per the signature
+        let type_params =
+            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+        let mut operand_values = SmallVec::default();
+        parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
+        state.operands.push(operand_values);
+
+        Ok(())
+    }
+}
+
+impl CallOpInterface for ExecRoot {
+    /// The callee is named by the root word, which is only known at runtime; the first felt of
+    /// that word stands for it here, as [Callable] holds a single value.
+    #[inline(always)]
+    fn callable_for_callee(&self) -> Callable {
+        Callable::Value(self.root()[0].borrow().as_value_ref())
+    }
+
+    /// The callee of a root dispatch is its root word; rewriting it to a resolved symbol
+    /// requires replacing the op (e.g. with `hir.exec`), which is left to a future
+    /// devirtualization pass.
+    fn set_callee(&mut self, _callable: Callable) {
+        unimplemented!("hir.exec_root does not support replacing its callee")
+    }
+
+    #[inline(always)]
+    fn arguments(&self) -> OpOperandRange<'_> {
+        self.operands().group(1)
+    }
+
+    #[inline(always)]
+    fn arguments_mut(&mut self) -> OpOperandRangeMut<'_> {
+        self.operands_mut().group_mut(1)
+    }
+
+    fn resolve(&self) -> Option<SymbolRef> {
+        None
+    }
+
+    fn resolve_in_symbol_table(&self, _symbols: &dyn SymbolTable) -> Option<SymbolRef> {
+        None
+    }
+
+    /// The signature is the contract the lowering emits against — the stack shape pushed before
+    /// `dynexec` and popped after — so it is the call site's answer even though no single
+    /// callee is known.
+    fn callee_signature(&self) -> Option<midenc_hir::dialects::builtin::attributes::Signature> {
+        Some(self.get_signature().clone())
+    }
+
+    /// The callee is a runtime value with no producer this op can see, so the set of possible
+    /// callees is unknown.
+    fn possible_callees(&self) -> Option<SmallVec<[SymbolRef; 2]>> {
+        None
+    }
+}
+
+/// `hir.exec_root` carries its callee's signature as an attribute rather than deriving it from a
+/// resolved callee, so nothing but this verifier ties the operands to it. The emitter consumes
+/// one operand per parameter and asserts each type, and its lowering cannot recover from a
+/// mismatch — an under-supplied call pops an empty stack.
+impl Verify<dyn CallOpInterface> for ExecRoot {
+    fn verify(&self, _context: &Context) -> Result<(), Report> {
+        let num_root = self.root().len();
+        if num_root != Self::ROOT_FELTS {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_root: expected {} root operand(s), but got {num_root}",
+                Self::ROOT_FELTS
+            )));
+        }
+
+        let signature = self.get_signature();
+        let arguments = self
+            .arguments()
+            .iter()
+            .map(|operand| operand.borrow().as_value_ref())
+            .collect::<SmallVec<[_; 4]>>();
+
+        if arguments.len() != signature.params.len() {
+            return Err(Report::msg(format!(
+                "invalid hir.exec_root: the call signature declares {} parameter(s), but {} \
+                 argument(s) were given",
+                signature.params.len(),
+                arguments.len()
+            )));
+        }
+
+        for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate()
+        {
+            let argument_ty = argument.borrow().ty().clone();
+            if argument_ty != param.ty {
+                return Err(Report::msg(format!(
+                    "invalid hir.exec_root: parameter {index} has type '{}', but the argument \
+                     given has type '{argument_ty}'",
+                    &param.ty
+                )));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 impl CallOpInterface for Exec {
     #[inline(always)]
     fn callable_for_callee(&self) -> Callable {
@@ -1037,6 +1279,58 @@ builtin.module public @test {
             source,
         )
         .expect("hir.exec parser should type operands from signature params");
+    }
+
+    /// The root word is printed as a bracketed operand list ahead of the arguments, and the
+    /// signature covers the arguments only; the parser must recover both operand groups.
+    #[test]
+    fn exec_root_prints_and_reparses() {
+        use midenc_hir::{Op, ValueRef};
+
+        use super::ExecRoot;
+
+        let mut test = Test::named("exec_root_prints_and_reparses").in_module("test");
+        let params = [Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::I32];
+        test.with_function("dispatch", &params, &[Type::I32]);
+
+        let signature = Signature::new(&test.context_rc(), [Type::I32], [Type::I32]);
+        {
+            let mut builder = test.function_builder();
+            let entry_arguments: alloc::vec::Vec<ValueRef> = {
+                let entry = builder.entry_block();
+                let entry = entry.borrow();
+                entry.arguments().iter().map(|arg| arg.borrow().as_value_ref()).collect()
+            };
+            let (root, args) = entry_arguments.split_at(ExecRoot::ROOT_FELTS);
+            let op = builder
+                .exec_root(
+                    signature,
+                    root.iter().copied(),
+                    args.iter().copied(),
+                    SourceSpan::default(),
+                )
+                .unwrap();
+            let results: alloc::vec::Vec<ValueRef> = {
+                let op = op.borrow();
+                op.results().iter().map(|result| result.borrow().as_value_ref()).collect()
+            };
+            builder.ret(results, SourceSpan::default()).unwrap();
+        }
+
+        let printed = format!("{}", test.module().borrow().as_operation());
+        assert!(
+            printed.contains("hir.exec_root"),
+            "expected the printed module to contain the op: {printed}"
+        );
+
+        // Re-parse in a fresh context: the printing context already owns the `@test` symbols.
+        let reparse_context = Test::default().context_rc();
+        parse::parse_any(
+            ParserConfig::new(reparse_context.clone()),
+            Uri::new("exec_root_prints_and_reparses.hir"),
+            &printed,
+        )
+        .expect("printed hir.exec_root should re-parse");
     }
 
     #[test]

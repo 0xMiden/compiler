@@ -12,6 +12,27 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### `get_entrypoint_root()` returns `ProcedureRoot`
+
+The `get_entrypoint_root()` method that `#[note]` generates on the note type now returns
+`ProcedureRoot` instead of `Word`. Code that keeps or compares the note script root as a `Word`,
+or that passes it to a function which takes a `Word` (e.g. `note::build_recipient`), must convert
+it with `Word::from(root)` or `.into()`.
+
+Before:
+
+```rust
+let note_script_root = MyNote::get_entrypoint_root();
+note::build_recipient(serial_num, note_script_root, inputs.to_felt_repr())
+```
+
+After:
+
+```rust
+let note_script_root = MyNote::get_entrypoint_root();
+note::build_recipient(serial_num, note_script_root.into(), inputs.to_felt_repr())
+```
+
 ### Transaction summaries are six words (protocol 0.16)
 
 Custom authentication components sign a commitment to the transaction summary. Protocol 0.16

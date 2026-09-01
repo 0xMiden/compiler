@@ -1071,6 +1071,34 @@ impl HirLowering for hir::ExecIndirect {
     }
 }
 
+impl HirLowering for hir::ExecRoot {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let scratch_addr = emitter.link_info.exec_root_scratch().ok_or_else(|| {
+            self.as_operation()
+                .context()
+                .diagnostics()
+                .diagnostic(Severity::Error)
+                .with_message("invalid stored procedure call operation")
+                .with_primary_label(
+                    self.span(),
+                    "the linker did not allocate the scratch cell this dispatch needs",
+                )
+                .into_report()
+        })?;
+
+        let signature = self.get_signature().clone();
+
+        // The default operand schedule puts the root word on top of the stack, digest element 0
+        // first, followed by the arguments in signature order — exactly the layout `exec_root`
+        // expects
+        emitter
+            .inst_emitter(self.as_operation())
+            .exec_root(scratch_addr, &signature, self.span());
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Call {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};

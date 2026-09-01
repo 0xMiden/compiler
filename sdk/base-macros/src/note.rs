@@ -455,20 +455,20 @@ fn render_entrypoint_root_method(note_ty: &syn::TypePath) -> TokenStream2 {
     let method_ident = syn::Ident::new(ENTRYPOINT_ROOT_METHOD, Span::call_site());
     quote! {
         impl #note_ty {
-            /// Returns the MAST root digest of this note's script.
+            /// Returns the procedure root of this note's script.
             ///
-            /// The digest is the root of the `#[note_script]` entrypoint export as executed by
-            /// the transaction kernel, resolved by the compiler at assembly time. Use it to
+            /// The root is the MAST root of the `#[note_script]` entrypoint export as executed
+            /// by the transaction kernel, resolved by the compiler at assembly time. Use it to
             /// build the note recipient (e.g. via `note::build_recipient`) in note
-            /// constructors.
+            /// constructors. Use `Word::from(root)` to get the raw word.
             ///
             /// Must not be called from code reachable from the `#[note_script]` entrypoint
             /// itself: the note script's MAST root would then depend on its own digest, and
             /// assembly fails with a call-graph cycle error. Inside a running note script, use
             /// `active_note::get_script_root()` instead.
             #[inline(always)]
-            pub fn #method_ident() -> ::miden::Word {
-                ::miden::note::__entrypoint_root()
+            pub fn #method_ident() -> ::miden::ProcedureRoot {
+                ::miden::ProcedureRoot::from(::miden::note::__entrypoint_root())
             }
         }
     }
@@ -1764,6 +1764,10 @@ mod tests {
         assert!(
             rendered.contains("__entrypoint_root"),
             "the generated method must delegate to the hidden SDK plumbing: {rendered}"
+        );
+        assert!(
+            rendered.contains(":: miden :: ProcedureRoot :: from"),
+            "the generated method must return a `ProcedureRoot`: {rendered}"
         );
     }
 

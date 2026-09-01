@@ -9,7 +9,7 @@ use midenc_hir::{
     interner::{Symbol, symbols},
 };
 
-use super::{advice, crypto, debug, felt, mem, note};
+use super::{advice, crypto, debug, exec_root, felt, mem, note};
 
 /// Error raised when an attempt is made to use or load an unrecognized intrinsic
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -35,6 +35,8 @@ pub enum Intrinsic {
     Advice(Symbol),
     /// A note intrinsic
     Note(Symbol),
+    /// A stored-procedure dispatch intrinsic
+    ExecRoot(Symbol),
 }
 
 /// Attempt to recognize an intrinsic function from the given [SymbolPath].
@@ -75,6 +77,7 @@ impl TryFrom<&SymbolPath> for Intrinsic {
             symbols::Crypto => Ok(Self::Crypto(function)),
             symbols::Advice => Ok(Self::Advice(function)),
             symbols::Note => Ok(Self::Note(function)),
+            symbols::ExecRoot => Ok(Self::ExecRoot(function)),
             _ => Err(UnknownIntrinsicError(path.clone())),
         }
     }
@@ -98,6 +101,7 @@ impl Intrinsic {
             Self::Crypto(_) => symbols::Crypto,
             Self::Advice(_) => symbols::Advice,
             Self::Note(_) => symbols::Note,
+            Self::ExecRoot(_) => symbols::ExecRoot,
         }
     }
 
@@ -110,6 +114,7 @@ impl Intrinsic {
             Self::Crypto(_) => SymbolPath::from_iter(crypto::MODULE_PREFIX.iter().copied()),
             Self::Advice(_) => SymbolPath::from_iter(advice::MODULE_PREFIX.iter().copied()),
             Self::Note(_) => SymbolPath::from_iter(note::MODULE_PREFIX.iter().copied()),
+            Self::ExecRoot(_) => SymbolPath::from_iter(exec_root::MODULE_PREFIX.iter().copied()),
         }
     }
 
@@ -121,7 +126,8 @@ impl Intrinsic {
             | Self::Felt(function)
             | Self::Crypto(function)
             | Self::Advice(function)
-            | Self::Note(function) => *function,
+            | Self::Note(function)
+            | Self::ExecRoot(function) => *function,
         }
     }
 
@@ -140,6 +146,9 @@ impl Intrinsic {
             Self::Advice(function) => advice::function_type(*function),
             // Note intrinsics synthesize their linker-stub bodies in place
             Self::Note(_) => None,
+            // Stored-procedure dispatch stubs declare their own signature; the frontend reads it
+            // from the stub instead of a registry, because one stub exists per call signature
+            Self::ExecRoot(_) => None,
         }
     }
 
@@ -155,6 +164,9 @@ impl Intrinsic {
             Self::Crypto(function) => crypto::as_intrinsic(*function),
             // Note intrinsics need module context that only the linker-stub path provides
             Self::Note(_) => Some(IntrinsicsConversionResult::ModuleContextStub),
+            // Stored-procedure dispatch stubs need the stub's own signature, which only the
+            // linker-stub path provides
+            Self::ExecRoot(_) => Some(IntrinsicsConversionResult::ModuleContextStub),
         }
     }
 }

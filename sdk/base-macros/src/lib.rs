@@ -362,7 +362,7 @@ pub fn export_type(
 ///         let inputs = MyNote { target };
 ///         note::build_recipient(
 ///             serial_num,
-///             MyNote::get_entrypoint_root(),
+///             MyNote::get_entrypoint_root().into(),
 ///             inputs.to_felt_repr(),
 ///         )
 ///     }
@@ -391,10 +391,11 @@ pub fn export_type(
 ///
 /// # Generated `get_entrypoint_root()` method
 ///
-/// The impl-block expansion also generates a `pub fn get_entrypoint_root() -> Word` associated
-/// method on the note type. It returns the MAST root digest of the `#[note_script]` entrypoint
-/// export as executed by the transaction kernel — resolved by the compiler at assembly time —
-/// for use when building the note recipient in constructors (see the example above).
+/// The impl-block expansion also generates a `pub fn get_entrypoint_root() -> ProcedureRoot`
+/// associated method on the note type. It returns the procedure root of the `#[note_script]`
+/// entrypoint export as executed by the transaction kernel — resolved by the compiler at
+/// assembly time — for use when building the note recipient in constructors (see the example
+/// above). Use `Word::from(root)` to get the raw word.
 ///
 /// The method must not be called from code reachable from the `#[note_script]` entrypoint
 /// itself: the note script's MAST root would then depend on its own digest, and assembly fails

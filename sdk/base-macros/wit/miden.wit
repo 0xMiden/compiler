@@ -26,6 +26,11 @@ interface core-types {
         inner: word
     }
 
+    /// The MAST root of a procedure of an account interface.
+    record procedure-root {
+        inner: word,
+    }
+
     /// Unique identifier of an account.
     ///
     /// # Layout
