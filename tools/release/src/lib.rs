@@ -11,6 +11,7 @@ pub mod config;
 pub mod executor;
 pub mod finalize;
 pub mod github;
+pub mod glob;
 pub mod intent;
 pub mod lint;
 pub mod order;
