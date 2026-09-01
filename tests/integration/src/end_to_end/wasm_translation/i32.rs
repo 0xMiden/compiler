@@ -3,24 +3,20 @@ use std::cell::RefCell;
 use miden_core::Felt;
 use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
 use midenc_hir::{FunctionIdent, Ident, interner::Symbol};
-use proptest::{
-    prelude::*,
-    test_runner::{TestCaseError, TestError},
-};
+use proptest::{prelude::*, test_runner::TestCaseError};
 
 use super::wasm_interpreter::WasmInterpreter;
 use crate::{
     CompilerTestBuilder,
-    end_to_end::support::{NumericStrategy, TrapExpectation, default_host_with_core_lib},
+    end_to_end::support::{
+        NumericCases, NumericStrategy, TrapExpectation, default_host_with_core_lib,
+    },
 };
 
-/// Proptest harness for a binary `(i32, i32) -> i32` Wasm operation.
+/// Test harness for a binary `(i32, i32) -> i32` Wasm operation.
 ///
 /// The `wat_op` is executed in a function exported as `entrypoint`.
-fn test_i32_wasm_op_binary<S>(wat_op: &str, strategy: S)
-where
-    S: Strategy<Value = (i32, i32)>,
-{
+fn test_i32_wasm_op_binary(wat_op: &str, cases: NumericCases<(i32, i32)>) {
     let wat = format!(
         r#"(module
   (func $entrypoint (export "entrypoint") (param $a i32) (param $b i32) (result i32)
@@ -45,7 +41,7 @@ where
     let package = test.compile_package();
     let program = package.unwrap_program();
 
-    let res = NumericStrategy::<i32>::test_runner().run(&strategy, |(a, b)| {
+    cases.run(|(a, b)| {
         let expected = interpreter
             .borrow_mut()
             .call_entrypoint::<(i32, i32), i32>("entrypoint", (a, b));
@@ -93,14 +89,6 @@ where
             }
         }
     });
-
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal failing case: {value:?}\n{reason}")
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
 }
 
 #[test]

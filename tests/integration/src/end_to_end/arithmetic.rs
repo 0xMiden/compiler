@@ -8,7 +8,7 @@ use proptest::{
     test_runner::{TestError, TestRunner},
 };
 
-use super::support::NumericStrategy;
+use super::support::{NumericCases, NumericStrategy};
 use crate::{
     CompilerTest,
     testing::{eval_package, run_masm_vs_rust},
@@ -636,7 +636,7 @@ test_unary_op_total!(bnot, !, bool);
 fn test_overflowing_arith<T, U>(
     op: fn(T, U) -> (T, bool),
     fn_name: &str,
-    strategy: impl Strategy<Value = (T, U)>,
+    cases: NumericCases<(T, U)>,
 ) where
     T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
     U: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
@@ -654,7 +654,7 @@ fn test_overflowing_arith<T, U>(
     let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
-    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
+    cases.run(move |(a, b)| {
         let rust_out = op(a, b);
 
         // Write the operation result to 20 * PAGE_SIZE.
@@ -686,20 +686,10 @@ fn test_overflowing_arith<T, U>(
         })?;
         Ok(())
     });
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
 }
 
-fn test_checked_arith<T, U>(
-    op: fn(T, U) -> Option<T>,
-    fn_name: &str,
-    strategy: impl Strategy<Value = (T, U)>,
-) where
+fn test_checked_arith<T, U>(op: fn(T, U) -> Option<T>, fn_name: &str, cases: NumericCases<(T, U)>)
+where
     T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
     U: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
 {
@@ -737,7 +727,7 @@ pub extern "C" fn entrypoint(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs
     let mut test = CompilerTest::rust_source_program_with_entrypoint(source_code, "entrypoint");
     let package = test.compile_package();
 
-    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
+    cases.run(move |(a, b)| {
         let rust_out = match op(a, b) {
             Some(value) => (value, true),
             None => (T::zero(), false),
@@ -774,16 +764,9 @@ pub extern "C" fn entrypoint(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs
         })?;
         Ok(())
     });
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
 }
 
-fn test_binary_fn<T, U>(op: fn(T, U) -> T, fn_name: &str, strategy: impl Strategy<Value = (T, U)>)
+fn test_binary_fn<T, U>(op: fn(T, U) -> T, fn_name: &str, cases: NumericCases<(T, U)>)
 where
     T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + std::fmt::Debug + 'static,
     U: ToMidenRepr + PrimInt + Arbitrary,
@@ -803,7 +786,7 @@ where
     let mut test = CompilerTest::rust_fn_body(&main_fn, None);
     let package = test.compile_package();
 
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
+    cases.run(move |(a, b)| {
         let rust_out = op(a, b);
 
         // Write the operation result to 20 * PAGE_SIZE.
@@ -826,11 +809,4 @@ where
         })?;
         Ok(())
     });
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
 }
