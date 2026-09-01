@@ -6,10 +6,7 @@
 //! on a private one, or an active `[patch]` entry that makes the workspace
 //! build correctly while the published crate does not.
 
-use std::{
-    collections::BTreeSet,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeSet, path::Path};
 
 use anyhow::{Context, Result};
 
@@ -33,59 +30,90 @@ impl Findings {
     }
 }
 
-pub fn run(ws: &Workspace, config: &Config) -> Result<Findings> {
+pub fn run(ws: &Workspace, config: &Config, candidate_path: &Path) -> Result<Findings> {
     let mut findings = Findings::default();
 
     check_classification(ws, config, &mut findings);
     check_private_versions(ws, config, &mut findings);
     check_private_dependencies(ws, config, &mut findings);
     check_active_patches(&ws.root, &mut findings)?;
-    check_embedded_bundle(&ws.root, &mut findings)?;
-    check_sdk_requirement_matches_release(ws, &mut findings)?;
+    check_embedded_bundle(&ws.root, config, &mut findings)?;
+    check_tracked_requirements(ws, config, candidate_path, &mut findings)?;
 
     Ok(findings)
 }
 
-/// The templates' `miden` requirement must be able to resolve the SDK version
-/// this candidate releases.
+/// A unit's requirement on a tracked unit must be able to resolve the version
+/// that tracked unit actually releases as part of this candidate.
 ///
-/// `check_sdk_requirements` asks whether the templates agree with `bundle.toml`.
-/// This asks the question that actually matters: whether what they agree on can
-/// resolve anything. The two come apart on a prerelease — a caret requirement
-/// never matches one, so an SDK at `0.14.0-rc.1` beneath templates requiring
-/// `"0.14"` leaves every generated project unable to resolve the very SDK it
-/// was released beside, while both files look perfectly consistent.
-fn check_sdk_requirement_matches_release(ws: &Workspace, findings: &mut Findings) -> Result<()> {
-    let candidate_path = ws.root.join(".release/release.toml");
-    let templates = ws.root.join("extra/templates");
-    if !candidate_path.exists() || !templates.join("bundle.toml").exists() {
+/// `bundle::check_requirements` asks whether the sources agree with the
+/// manifest's declared requirement. This asks the question that actually
+/// matters: whether what they agree on can resolve anything. The two come
+/// apart on a prerelease — a caret requirement never matches one, so an SDK at
+/// `0.14.0-rc.1` beneath templates requiring `"0.14"` leaves every generated
+/// project unable to resolve the very SDK it was released beside, while both
+/// files look perfectly consistent.
+fn check_tracked_requirements(
+    ws: &Workspace,
+    config: &Config,
+    candidate_path: &Path,
+    findings: &mut Findings,
+) -> Result<()> {
+    if !candidate_path.exists() {
         return Ok(());
     }
+    let candidate = crate::candidate::Candidate::load(candidate_path)?;
 
-    let candidate = crate::candidate::Candidate::load(&candidate_path)?;
-    let Some(sdk) = candidate
-        .declarations
-        .get("sdk")
-        .filter(|_| candidate.units.iter().any(|unit| unit == "sdk"))
-    else {
-        // The SDK is not being released, so the templates' requirement refers to
-        // a version that is already published and outside this candidate.
-        return Ok(());
-    };
+    for (name, unit) in config.releasable() {
+        let Some(source) = &unit.source else {
+            continue;
+        };
+        let (Some(directory), Some(manifest)) = (&source.directory, &source.manifest) else {
+            continue;
+        };
+        let manifest_path = ws.root.join(directory).join(manifest);
+        if !manifest_path.exists() {
+            continue;
+        }
 
-    let bundle = crate::bundle::Bundle::load(&templates.join("bundle.toml"))?;
-    let expected = crate::bundle::requirement_for(&sdk.version);
+        for tracked in unit.tracks.keys() {
+            let Some(declaration) = candidate
+                .declarations
+                .get(tracked)
+                .filter(|_| candidate.units.iter().any(|selected| selected == tracked))
+            else {
+                // The tracked unit is not being released, so this unit's
+                // requirement refers to a version that is already published
+                // and outside this candidate.
+                continue;
+            };
 
-    let declared = bundle.requirement("sdk-requirement")?;
+            let bundle = crate::bundle::Bundle::load(&manifest_path)?;
+            let key = unit.requirement_key(tracked);
+            let expected = crate::bundle::requirement_for(&declaration.version);
 
-    if declared != expected {
-        findings.error(format!(
-            "the templates require `miden = \"{declared}\"`, which cannot resolve the SDK version \
-             this release publishes ({}). It must be \"{expected}\". Fix it with `cargo make \
-             release set-version --unit sdk {}` rather than by hand, which rewrites the bundle \
-             manifest and every template together",
-            sdk.version, sdk.version
-        ));
+            let declared = match bundle.requirement(&key) {
+                Ok(declared) => declared,
+                Err(problem) => {
+                    findings.error(format!(
+                        "unit '{name}' tracks '{tracked}' but its manifest declares no \
+                         requirement under '{key}': {problem:#}"
+                    ));
+                    continue;
+                }
+            };
+
+            if declared != expected {
+                findings.error(format!(
+                    "unit '{name}' requires `{key} = \"{declared}\"`, which cannot resolve the \
+                     version this release publishes for '{tracked}' ({}). It must be \
+                     \"{expected}\". Fix it with `release-tool set-version --unit {tracked} {}` \
+                     rather than by hand, which rewrites the manifest and every tracked source \
+                     together",
+                    declaration.version, declaration.version
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -182,55 +210,65 @@ fn check_private_dependencies(ws: &Workspace, config: &Config, findings: &mut Fi
     }
 }
 
-/// The archive embedded in `cargo-miden` must match the template sources.
+/// A committed copy of an artifact unit's archive must match its sources.
 ///
-/// The archive is committed rather than generated at build time, because
-/// `cargo-miden` is published and a `.crate` cannot contain files from outside
-/// its own directory. A committed artifact drifts unless something checks it,
-/// and drift here is invisible: `cargo miden new` keeps working, from stale
-/// templates.
-fn check_embedded_bundle(root: &Path, findings: &mut Findings) -> Result<()> {
-    let templates = root.join("extra/templates");
-    let embedded = root.join("tools/cargo-miden/templates.tar.gz");
-    if !templates.join("bundle.toml").exists() || !embedded.exists() {
-        return Ok(());
-    }
+/// The archive is committed rather than generated at build time, because the
+/// crate that embeds it is published and a `.crate` cannot contain files from
+/// outside its own directory. A committed artifact drifts unless something
+/// checks it, and drift here is invisible: the tool keeps working, from stale
+/// sources.
+fn check_embedded_bundle(root: &Path, config: &Config, findings: &mut Findings) -> Result<()> {
+    for (name, unit) in config.releasable() {
+        let Some(source) = &unit.source else {
+            continue;
+        };
+        let (Some(directory), Some(manifest), Some(embedded)) =
+            (&source.directory, &source.manifest, &source.embedded_copy)
+        else {
+            continue;
+        };
 
-    let bundle = crate::bundle::Bundle::load(&templates.join("bundle.toml"))?;
-    // The manifest is the include list. This check still finds its unit by
-    // hardcoded path rather than through the unit's configuration.
-    let include: Vec<PathBuf> = bundle.templates.values().map(|entry| entry.path.clone()).collect();
-    let (_, expected) = crate::bundle::archive(&templates, &bundle, &include)?;
-    let actual = crate::registry::sha256_hex(&std::fs::read(&embedded)?);
-
-    if actual != expected {
-        let mut message = format!(
-            "the embedded template bundle is stale: {} has sha256 {}, but the sources produce {}. \
-             Regenerate it with `release-tool bundle --output tools/cargo-miden/templates.tar.gz`",
-            embedded.display(),
-            &actual[..16],
-            &expected[..16]
-        );
-
-        // The bundle is built from tracked files, so an untracked one in a
-        // template directory is the likeliest reason two checkouts of the same
-        // commit disagree -- and the reason is invisible from the digests
-        // alone. This turns "it differs in CI" into an answer.
-        let strays = crate::bundle::untracked(&bundle, &templates, &include)?;
-        if !strays.is_empty() {
-            let list: Vec<String> = strays
-                .iter()
-                .map(|path| format!("extra/templates/{}", path.display()))
-                .collect();
-            message.push_str(&format!(
-                ".\nNote: these files sit in a template directory but are not tracked by git, so \
-                 they are not in the bundle and never reach a generated project: {}. Commit them \
-                 (`git add -f` if something is ignoring them) or remove them",
-                list.join(", ")
-            ));
+        let sources = root.join(directory);
+        let embedded_path = root.join(embedded);
+        if !sources.join(manifest).exists() || !embedded_path.exists() {
+            continue;
         }
 
-        findings.error(message);
+        let bundle = crate::bundle::Bundle::load(&sources.join(manifest))?;
+        let include = crate::bundle::include_paths(root, unit)?;
+        let (_, expected) = crate::bundle::archive(&sources, &bundle, &include)?;
+        let actual = crate::registry::sha256_hex(&std::fs::read(&embedded_path)?);
+
+        if actual != expected {
+            let mut message = format!(
+                "the embedded archive for unit '{name}' is stale: {} has sha256 {}, but the \
+                 sources produce {}. Regenerate it with `release-tool bundle --unit {name} \
+                 --output {}`",
+                embedded_path.display(),
+                &actual[..16],
+                &expected[..16],
+                embedded_path.strip_prefix(root).unwrap_or(&embedded_path).display()
+            );
+
+            // The bundle is built from tracked files, so an untracked one under
+            // an included path is the likeliest reason two checkouts of the
+            // same commit disagree -- and the reason is invisible from the
+            // digests alone. This turns "it differs in CI" into an answer.
+            let strays = crate::bundle::untracked(&sources, &include)?;
+            if !strays.is_empty() {
+                let list: Vec<String> =
+                    strays.iter().map(|path| directory.join(path).display().to_string()).collect();
+                message.push_str(&format!(
+                    ".\nNote: these files sit under the sources for unit '{name}' but are not \
+                     tracked by git, so they are not in the bundle and never reach a generated \
+                     project: {}. Commit them (`git add -f` if something is ignoring them) or \
+                     remove them",
+                    list.join(", ")
+                ));
+            }
+
+            findings.error(message);
+        }
     }
     Ok(())
 }
@@ -295,13 +333,47 @@ mod tests {
         root
     }
 
+    /// Like `fixture`, but the generated bundle declares no requirement at all
+    /// under the tracked key -- the case `check_tracked_requirements` handles
+    /// by recording a finding and continuing, not by propagating an error.
+    fn fixture_without_requirement(label: &str, sdk_version: &str) -> std::path::PathBuf {
+        let root = std::env::temp_dir().join(format!("lint-{label}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".release")).unwrap();
+        std::fs::create_dir_all(root.join("extra/templates")).unwrap();
+
+        std::fs::write(
+            root.join(".release/release.toml"),
+            format!(
+                "schema-version = 1\nunits = [\"sdk\"]\n\n[sdk]\nversion = \"{sdk_version}\"\ntag \
+                 = \"sdk/v{sdk_version}\"\nprerelease = {}\n",
+                sdk_version.contains('-')
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("extra/templates/bundle.toml"),
+            "schema-version = 1\nversion = \"1.0.0\"\n\n[templates]\naccount = { path = \
+             \"rust/account\" }\n",
+        )
+        .unwrap();
+        root
+    }
+
     fn check(root: &std::path::Path) -> Findings {
         let ws = Workspace {
             root: root.to_path_buf(),
             packages: Default::default(),
         };
+        let config = crate::config::testing::config(crate::config::testing::THREE_UNITS);
         let mut findings = Findings::default();
-        check_sdk_requirement_matches_release(&ws, &mut findings).unwrap();
+        check_tracked_requirements(
+            &ws,
+            &config,
+            &root.join(".release/release.toml"),
+            &mut findings,
+        )
+        .unwrap();
         findings
     }
 
@@ -343,6 +415,20 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    /// Task 12's behavior change: a unit whose manifest declares no
+    /// requirement under its tracked key is a finding, not an error that
+    /// propagates and aborts the whole lint run.
+    #[test]
+    fn a_manifest_missing_the_declared_requirement_key_is_a_finding_not_an_error() {
+        let root = fixture_without_requirement("missing-key", "0.14.0");
+        let findings = check(&root);
+
+        assert_eq!(findings.errors.len(), 1, "{:?}", findings.errors);
+        assert!(findings.errors[0].contains("sdk-requirement"), "{}", findings.errors[0]);
+        assert!(findings.errors[0].contains("templates"), "{}", findings.errors[0]);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     /// When the SDK is not part of the release, its requirement names an
     /// already-published version and is none of this check's business.
     #[test]
@@ -356,5 +442,100 @@ mod tests {
         .unwrap();
         assert!(check(&root).is_empty());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_repository_with_no_artifact_units_is_not_checked() {
+        let config = crate::config::testing::config(crate::config::testing::SINGLE_UNIT);
+        let mut findings = Findings::default();
+        check_embedded_bundle(std::path::Path::new("/nonexistent"), &config, &mut findings)
+            .unwrap();
+        assert!(findings.is_empty(), "{:?}", findings.errors);
+    }
+
+    #[test]
+    fn an_absent_embedded_copy_is_skipped_not_reported() {
+        // Absence is not drift. Reporting it would make the check fire in
+        // every repository that has not built the archive yet.
+        let config = crate::config::testing::config(crate::config::testing::THREE_UNITS);
+        let mut findings = Findings::default();
+        check_embedded_bundle(std::path::Path::new("/nonexistent"), &config, &mut findings)
+            .unwrap();
+        assert!(findings.is_empty(), "{:?}", findings.errors);
+    }
+
+    /// A minimal config with one private package, and no `private-version` --
+    /// the check must not run.
+    const PRIVATE_UNIT_CONFIG: &str = r#"
+schema-version = 2
+
+[units.private]
+kind = "private"
+
+[[packages]]
+name = "internal"
+unit = "private"
+"#;
+
+    /// The same shape, frozen at `"0.1.0"` -- the check must run.
+    const PRIVATE_UNIT_CONFIG_FROZEN: &str = r#"
+schema-version = 2
+private-version = "0.1.0"
+
+[units.private]
+kind = "private"
+
+[[packages]]
+name = "internal"
+unit = "private"
+"#;
+
+    /// A workspace with one private package, `internal`, at `version`.
+    fn workspace_with_private_package(version: &str) -> Workspace {
+        let mut packages = std::collections::BTreeMap::new();
+        packages.insert(
+            "internal".to_string(),
+            crate::workspace::Package {
+                version: version.to_string(),
+                manifest_path: std::path::PathBuf::from("internal/Cargo.toml"),
+                local_deps: Vec::new(),
+                publishable: false,
+            },
+        );
+        Workspace {
+            root: std::path::PathBuf::from("/nonexistent"),
+            packages,
+        }
+    }
+
+    #[test]
+    fn private_versions_are_not_checked_when_unset() {
+        let config = crate::config::testing::config(PRIVATE_UNIT_CONFIG);
+        assert!(config.private_version.is_none());
+
+        // Without a frozen version, a private package at any version -- even
+        // one that would clearly drift once a version is configured -- must
+        // produce no finding.
+        let ws = workspace_with_private_package("9.9.9");
+        let mut findings = Findings::default();
+        check_private_versions(&ws, &config, &mut findings);
+
+        assert!(findings.is_empty(), "{:?}", findings.errors);
+    }
+
+    /// The positive case that makes the negative one mean something: the same
+    /// workspace, with `private-version` set, does produce a finding.
+    #[test]
+    fn a_private_package_that_drifts_from_the_frozen_version_is_reported() {
+        let config = crate::config::testing::config(PRIVATE_UNIT_CONFIG_FROZEN);
+        assert_eq!(config.private_version.as_deref(), Some("0.1.0"));
+
+        let ws = workspace_with_private_package("9.9.9");
+        let mut findings = Findings::default();
+        check_private_versions(&ws, &config, &mut findings);
+
+        assert_eq!(findings.errors.len(), 1, "{:?}", findings.errors);
+        assert!(findings.errors[0].contains("internal"), "{}", findings.errors[0]);
+        assert!(findings.errors[0].contains("9.9.9"), "{}", findings.errors[0]);
     }
 }

@@ -37,7 +37,11 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Check release-candidate preconditions.
-    Lint,
+    Lint {
+        /// Path to the candidate declaration.
+        #[arg(long, default_value = ".release/release.toml")]
+        candidate: PathBuf,
+    },
     /// Print the publication order for a release unit.
     ///
     /// Cargo's own packaging order is unreliable at this workspace's scale, so
@@ -278,8 +282,9 @@ fn main() -> Result<()> {
     let ws = Workspace::load(&manifest_dir)?;
 
     match cli.command {
-        Command::Lint => {
-            let findings = lint::run(&ws, &config)?;
+        Command::Lint { candidate } => {
+            let candidate_path = manifest_dir.join(&candidate);
+            let findings = lint::run(&ws, &config, &candidate_path)?;
             if findings.is_empty() {
                 println!(
                     "release lint: {} packages classified, no findings",
@@ -662,7 +667,7 @@ fn main() -> Result<()> {
 
             // The archive is built from tracked files, so anything else under an
             // included path is silently absent. Say so before writing it.
-            for stray in midenc_release::bundle::untracked(&bundle, &root, &include)? {
+            for stray in midenc_release::bundle::untracked(&root, &include)? {
                 eprintln!(
                     "warning: {} is not tracked by git and is not in the bundle",
                     stray.display()

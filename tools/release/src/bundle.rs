@@ -187,7 +187,7 @@ fn collect(directory: &Path, root: &Path, files: &mut Vec<(PathBuf, bool)>) -> R
 /// them is how an archive comes to differ between two checkouts of the same
 /// commit. Callers surface them so the omission is a decision rather than an
 /// accident.
-pub fn untracked(_bundle: &Bundle, root: &Path, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
+pub fn untracked(root: &Path, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
 
     for relative in include {
@@ -609,7 +609,7 @@ account = { path = "rust/account" }
         assert_eq!(before, after);
 
         // ... but it is reported, so the omission is visible rather than silent.
-        let strays = untracked(&bundle, &dir, &include).unwrap();
+        let strays = untracked(&dir, &include).unwrap();
         assert_eq!(
             strays,
             [PathBuf::from("rust/account/template/.claude/settings.json")],
@@ -620,7 +620,7 @@ account = { path = "rust/account" }
         git(&dir, &["add", "-A"]);
         let (_, digest_tracked) = archive(&dir, &bundle, &include).unwrap();
         assert_ne!(digest_before, digest_tracked);
-        assert!(untracked(&bundle, &dir, &include).unwrap().is_empty());
+        assert!(untracked(&dir, &include).unwrap().is_empty());
     }
 
     /// The project scaffold ships a hook that has to be runnable in a generated
