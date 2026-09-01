@@ -10,7 +10,7 @@
 //! assets are what was produced.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
 };
 
@@ -117,6 +117,75 @@ pub fn stage(
     }
 
     Ok(staged)
+}
+
+/// Route staged files to the units whose globs claim them.
+///
+/// Every routing failure is an error rather than a default. The previous
+/// behavior — anything not obviously a template belongs to the compiler — meant
+/// a build job that produced nothing at all staged a release with no binaries
+/// and reported success.
+///
+/// `required-assets` is evaluated only for units in the plan: a release of one
+/// unit must not demand another's artifacts.
+pub fn route(
+    config: &crate::config::Config,
+    plan: &Plan,
+    files: &[PathBuf],
+) -> Result<BTreeMap<String, Payload>> {
+    let in_plan: BTreeSet<&str> = plan.intent.tags.iter().map(|tag| tag.unit.as_str()).collect();
+    let mut payloads: BTreeMap<String, Payload> = BTreeMap::new();
+
+    for path in files {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .with_context(|| format!("{} has no usable file name", path.display()))?;
+
+        let claimants: Vec<&str> = config
+            .releasable()
+            .filter(|(_, unit)| unit.assets.iter().any(|p| crate::glob::matches(p, name)))
+            .map(|(unit_name, _)| unit_name.as_str())
+            .collect();
+
+        match claimants.as_slice() {
+            [unit] if in_plan.contains(*unit) => {
+                payloads.entry((*unit).to_string()).or_default().add(name, path.clone())
+            }
+            [unit] => bail!(
+                "asset '{name}' belongs to unit '{unit}', which this release does not include. It \
+                 would be uploaded nowhere and silently dropped; do not build it for this \
+                 release, or add '{unit}' to the candidate"
+            ),
+            [] => bail!(
+                "asset '{name}' matches no unit's `assets` globs; add a pattern for it, or stop \
+                 producing it"
+            ),
+            many => bail!(
+                "asset '{name}' matches more than one unit ({}); asset globs must not overlap",
+                many.join(", ")
+            ),
+        }
+    }
+
+    for (name, unit) in config.releasable() {
+        if !in_plan.contains(name.as_str()) {
+            continue;
+        }
+        for required in &unit.required_assets {
+            let satisfied = payloads
+                .get(name)
+                .is_some_and(|p| p.assets.keys().any(|a| crate::glob::matches(required, a)));
+            if !satisfied {
+                bail!(
+                    "unit '{name}' requires an asset matching '{required}', and none was staged; \
+                     the build that produces it did not run or did not upload"
+                );
+            }
+        }
+    }
+
+    Ok(payloads)
 }
 
 /// Delete every still-draft release belonging to a plan.

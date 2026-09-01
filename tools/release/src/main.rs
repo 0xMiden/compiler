@@ -693,27 +693,19 @@ fn main() -> Result<()> {
             let plan = release_plan::Plan::load(&plan)?;
             let github = github_client(api_base)?;
 
-            // Artifacts are discovered by unit from the directory the build jobs
-            // populated, so the workflow decides what exists and this decides
-            // where it goes.
-            let mut payloads: std::collections::BTreeMap<String, staging::Payload> =
-                Default::default();
+            // Artifacts are discovered from the directory the build jobs
+            // populated, and routed by the globs each unit declares.
+            let mut files = Vec::new();
             if let Some(dir) = artifacts {
                 for entry in std::fs::read_dir(&dir)? {
                     let path = entry?.path();
-                    if !path.is_file() {
-                        continue;
+                    if path.is_file() {
+                        files.push(path);
                     }
-                    let name =
-                        path.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
-                    let unit = if name.starts_with("templates") {
-                        "templates"
-                    } else {
-                        "compiler"
-                    };
-                    payloads.entry(unit.to_string()).or_default().add(name, path);
                 }
             }
+            files.sort();
+            let payloads = staging::route(&config, &plan, &files)?;
 
             let staged = staging::stage(github.as_ref(), &plan, &payloads)?;
             for entry in &staged {

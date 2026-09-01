@@ -205,3 +205,133 @@ unit = "main"
     );
     assert_eq!(config.order().unwrap(), ["main"]);
 }
+
+use midenc_release::{
+    intent::{Intent, Stage, Tag},
+    plan::{Plan, SealedPackage},
+    staging,
+};
+
+fn files(names: &[&str]) -> Vec<PathBuf> {
+    names.iter().map(|n| PathBuf::from("/artifacts").join(n)).collect()
+}
+
+fn plan_for(units: &[&str]) -> Plan {
+    Plan {
+        schema_version: midenc_release::plan::SCHEMA_VERSION,
+        intent: Intent {
+            schema_version: midenc_release::intent::SCHEMA_VERSION,
+            subject: "abc123".into(),
+            candidate_digest: "cand".into(),
+            stages: units
+                .iter()
+                .map(|unit| Stage {
+                    unit: (*unit).to_string(),
+                    version: "1.0.0".into(),
+                    prerelease: false,
+                    latest: false,
+                    packages: vec![],
+                })
+                .collect(),
+            tags: units
+                .iter()
+                .map(|unit| Tag {
+                    unit: (*unit).to_string(),
+                    name: format!("{unit}/v1.0.0"),
+                })
+                .collect(),
+        },
+        packages: vec![SealedPackage {
+            name: "a".into(),
+            version: "1.0.0".into(),
+            digest: "d".into(),
+            size: 1,
+        }],
+    }
+}
+
+#[test]
+fn assets_route_to_the_unit_whose_glob_matches() {
+    let config = load(THREE_UNITS, "route");
+    let plan = plan_for(&["sdk", "templates", "compiler"]);
+    let payloads = staging::route(
+        &config,
+        &plan,
+        &files(&["tool-x86_64.tar.gz", "tool-aarch64.tar.gz", "templates.tar.gz"]),
+    )
+    .unwrap();
+
+    assert_eq!(payloads["compiler"].assets.len(), 2);
+    assert_eq!(payloads["templates"].assets.len(), 1);
+    assert!(payloads["templates"].assets.contains_key("templates.tar.gz"));
+}
+
+#[test]
+fn an_asset_matching_no_unit_is_an_error() {
+    let config = load(THREE_UNITS, "route-unmatched");
+    let plan = plan_for(&["compiler"]);
+    let error =
+        format!("{:#}", staging::route(&config, &plan, &files(&["mystery.tar.gz"])).unwrap_err());
+    assert!(error.contains("mystery.tar.gz"), "{error}");
+    assert!(error.contains("no unit"), "{error}");
+}
+
+#[test]
+fn an_asset_matching_two_units_is_an_error() {
+    let config = load(
+        &THREE_UNITS.replace(r#"assets = ["templates.tar.gz"]"#, r#"assets = ["*.tar.gz"]"#),
+        "route-ambiguous",
+    );
+    let plan = plan_for(&["templates", "compiler"]);
+    let error = format!(
+        "{:#}",
+        staging::route(&config, &plan, &files(&["tool-x86_64.tar.gz"])).unwrap_err()
+    );
+    assert!(error.contains("compiler") && error.contains("templates"), "{error}");
+}
+
+#[test]
+fn an_unsatisfied_required_asset_is_an_error_when_the_unit_is_in_the_plan() {
+    let config = load(
+        &THREE_UNITS.replace(
+            "assets = [\"tool-*.tar.gz\"]",
+            "assets = [\"tool-*.tar.gz\"]\nrequired-assets = [\"tool-*.tar.gz\"]",
+        ),
+        "route-required",
+    );
+    let plan = plan_for(&["templates", "compiler"]);
+    let error = format!(
+        "{:#}",
+        staging::route(&config, &plan, &files(&["templates.tar.gz"])).unwrap_err()
+    );
+    assert!(error.contains("tool-*.tar.gz"), "{error}");
+}
+
+/// The case that makes `route` take the plan: a templates-only release must
+/// not abort because the compiler's binaries are absent.
+#[test]
+fn a_required_asset_is_not_demanded_of_a_unit_outside_the_plan() {
+    let config = load(
+        &THREE_UNITS.replace(
+            "assets = [\"tool-*.tar.gz\"]",
+            "assets = [\"tool-*.tar.gz\"]\nrequired-assets = [\"tool-*.tar.gz\"]",
+        ),
+        "route-outside",
+    );
+    let plan = plan_for(&["templates"]);
+    let payloads = staging::route(&config, &plan, &files(&["templates.tar.gz"])).unwrap();
+    assert_eq!(payloads["templates"].assets.len(), 1);
+}
+
+/// An asset routed to a unit with no stage would be silently discarded by
+/// `stage`, which is how an SDK-only release could drop every built artifact.
+#[test]
+fn an_asset_routed_outside_the_plan_is_reported() {
+    let config = load(THREE_UNITS, "route-orphan");
+    let plan = plan_for(&["sdk"]);
+    let error = format!(
+        "{:#}",
+        staging::route(&config, &plan, &files(&["tool-x86_64.tar.gz"])).unwrap_err()
+    );
+    assert!(error.contains("compiler"), "{error}");
+}
