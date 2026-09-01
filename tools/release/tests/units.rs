@@ -145,6 +145,45 @@ unit = "zebra"
     assert_eq!(config.order().unwrap(), ["zebra", "alpha"]);
 }
 
+const TWO_UNITS_ONE_LIBRARY: &str = r#"
+schema-version = 2
+
+[units.tool-a]
+kind = "crates"
+version-source = "own"
+tag = "tool-a/v{version}"
+changelog = "a/CHANGELOG.md"
+latest = true
+
+[units.tool-b]
+kind = "crates"
+version-source = "own"
+tag = "tool-b/v{version}"
+changelog = "b/CHANGELOG.md"
+
+[units.common]
+kind = "library"
+version-source = "workspace"
+
+[[packages]]
+name = "tool-a"
+unit = "tool-a"
+
+[[packages]]
+name = "tool-b"
+unit = "tool-b"
+
+[[packages]]
+name = "common"
+unit = "common"
+"#;
+
+#[test]
+fn a_library_unit_is_never_released_on_its_own() {
+    let config = load(TWO_UNITS_ONE_LIBRARY, "lib-order");
+    assert_eq!(config.order().unwrap(), ["tool-a", "tool-b"]);
+}
+
 #[test]
 fn a_single_unit_repository_orders_trivially() {
     let config = load(

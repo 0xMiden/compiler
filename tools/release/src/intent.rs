@@ -12,7 +12,7 @@
 //! rules out timestamps, absolute paths, and map iteration order, and it is why
 //! serialization goes through ordered collections.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
@@ -101,6 +101,9 @@ pub fn generate(
 
     let mut stages = Vec::new();
     let mut tags = Vec::new();
+    // Packages an earlier stage already publishes, so a shared library crate
+    // is claimed once rather than by every dependent.
+    let mut staged: BTreeSet<String> = BTreeSet::new();
 
     // Publish order comes from configuration, so a repository with different
     // units gets its own ordering without the tool knowing their names.
@@ -111,7 +114,9 @@ pub fn generate(
         };
 
         let packages = if config.unit(unit)?.publishes_crates() {
-            package_order(ws, config, unit)?
+            let packages = package_order(ws, config, unit, &staged)?;
+            staged.extend(packages.iter().cloned());
+            packages
         } else {
             // Artifact units publish no crates; the unit exists for its tag
             // and release assets.
@@ -146,8 +151,44 @@ pub fn generate(
     })
 }
 
-fn package_order(ws: &Workspace, config: &Config, unit: &str) -> Result<Vec<String>> {
-    let selected = config.packages_in(unit).map(|p| p.name.clone()).collect();
+/// The packages a unit's stage publishes.
+///
+/// Its own, plus the transitive local dependencies belonging to `library`
+/// units, minus anything an earlier stage in this intent already publishes.
+///
+/// The library closure is what makes a shared crate work: it belongs to no
+/// releasable unit, so without this nothing would ever publish it. The
+/// deduplication is what stops two units that share one from both claiming it —
+/// reconciliation would skip the second, but an intent naming the same crate
+/// twice is not something a reviewer should have to reason about.
+fn package_order(
+    ws: &Workspace,
+    config: &Config,
+    unit: &str,
+    already: &BTreeSet<String>,
+) -> Result<Vec<String>> {
+    let mut wanted: BTreeSet<String> = config.packages_in(unit).map(|p| p.name.clone()).collect();
+
+    let mut queue: Vec<String> = wanted.iter().cloned().collect();
+    while let Some(name) = queue.pop() {
+        let Some(package) = ws.packages.get(&name) else {
+            continue;
+        };
+        for (dep, _) in &package.local_deps {
+            // A dependency in another releasable unit is that unit's to
+            // publish; only library crates are pulled across.
+            let is_library = config
+                .unit_of(dep)
+                .and_then(|owner| config.units.get(owner))
+                .is_some_and(|owner| owner.kind == crate::config::UnitKind::Library);
+            if is_library && wanted.insert(dep.clone()) {
+                queue.push(dep.clone());
+            }
+        }
+    }
+
+    let selected: BTreeSet<String> =
+        wanted.into_iter().filter(|name| !already.contains(name)).collect();
     order::topological(ws, &selected)
 }
 
@@ -198,6 +239,54 @@ mod tests {
                     )
                 })
                 .collect(),
+        }
+    }
+
+    fn library_workspace() -> Workspace {
+        let packages: [(&str, Vec<&str>); 3] =
+            [("common", vec![]), ("tool-a", vec!["common"]), ("tool-b", vec!["common"])];
+        Workspace {
+            root: std::path::PathBuf::from("/tmp"),
+            packages: packages
+                .into_iter()
+                .map(|(name, deps)| {
+                    (
+                        name.to_string(),
+                        Package {
+                            version: "1.0.0".to_string(),
+                            manifest_path: std::path::PathBuf::from("/tmp/Cargo.toml"),
+                            local_deps: deps
+                                .into_iter()
+                                .map(|d: &str| (d.to_string(), EdgeKind::Required))
+                                .collect(),
+                            publishable: true,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    fn library_config() -> Config {
+        crate::config::testing::config(crate::config::testing::TWO_UNITS_ONE_LIBRARY)
+    }
+
+    fn library_candidate(units: &[&str]) -> Candidate {
+        let mut declarations = BTreeMap::new();
+        for unit in units {
+            declarations.insert(
+                (*unit).to_string(),
+                UnitDeclaration {
+                    version: semver::Version::parse("1.0.0").unwrap(),
+                    tag: format!("{unit}/v1.0.0"),
+                    prerelease: false,
+                },
+            );
+        }
+        Candidate {
+            schema_version: crate::candidate::SUPPORTED_SCHEMA_VERSION,
+            units: units.iter().map(|u| u.to_string()).collect(),
+            declarations,
         }
     }
 
@@ -378,5 +467,48 @@ unit = "compiler"
 
         let err = generate(&workspace(), &config(), &candidate, "abc123").unwrap_err().to_string();
         assert!(err.contains("not defined in .release/config.toml"), "{err}");
+    }
+
+    #[test]
+    fn a_library_crate_joins_the_stage_that_needs_it() {
+        let intent = generate(
+            &library_workspace(),
+            &library_config(),
+            &library_candidate(&["tool-a"]),
+            "abc123",
+        )
+        .unwrap();
+
+        let stage = intent.stages.iter().find(|s| s.unit == "tool-a").unwrap();
+        assert!(stage.packages.contains(&"common".to_string()), "{:?}", stage.packages);
+        // Dependency order: the library resolves before its dependent.
+        let common = stage.packages.iter().position(|p| p == "common").unwrap();
+        let tool = stage.packages.iter().position(|p| p == "tool-a").unwrap();
+        assert!(common < tool, "{:?}", stage.packages);
+    }
+
+    #[test]
+    fn a_library_crate_is_published_once_across_stages() {
+        let intent = generate(
+            &library_workspace(),
+            &library_config(),
+            &library_candidate(&["tool-a", "tool-b"]),
+            "abc123",
+        )
+        .unwrap();
+
+        let occurrences: usize = intent
+            .stages
+            .iter()
+            .flat_map(|s| s.packages.iter())
+            .filter(|p| *p == "common")
+            .count();
+        assert_eq!(
+            occurrences, 1,
+            "a library crate publishes once, in the first stage that needs it"
+        );
+
+        let first = intent.stages.iter().find(|s| s.packages.contains(&"common".to_string()));
+        assert_eq!(first.map(|s| s.unit.as_str()), Some("tool-a"));
     }
 }
