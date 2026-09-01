@@ -197,6 +197,10 @@ enum Command {
     /// contents, which is what a compiler release checks its embedded copy
     /// against.
     Bundle {
+        /// Which artifact unit to build. Required only when the repository
+        /// declares more than one.
+        #[arg(long)]
+        unit: Option<String>,
         /// Write the archive here.
         #[arg(long)]
         output: Option<PathBuf>,
@@ -319,19 +323,20 @@ fn main() -> Result<()> {
         } => {
             let force = version::Force::from(force);
 
-            // Templates carry no crates, so their version lives in the bundle
-            // manifest rather than in a version domain of Cargo manifests.
-            if !config.unit(&unit)?.publishes_crates() {
-                let templates = ws.root.join("extra/templates");
-                let bundle = midenc_release::bundle::Bundle::load(&templates.join("bundle.toml"))?;
-                let new = requested.unwrap_or_else(|| version::next_minor(&bundle.version));
-                version::check_direction(&bundle.version, &new, force)?;
-                println!("templates: {} -> {new}", bundle.version);
+            // An artifact unit carries no crates, so its version lives in a file
+            // of its own rather than in a version domain of Cargo manifests.
+            let unit_config = config.unit(&unit)?;
+            if !unit_config.publishes_crates() {
+                let current = midenc_release::bundle::read_version(&ws.root, unit_config)?;
+                let new = requested.unwrap_or_else(|| version::next_minor(&current));
+                version::check_direction(&current, &new, force)?;
+                println!("{unit}: {current} -> {new}");
                 if dry_run {
                     println!("\ndry run: nothing written");
                     return Ok(());
                 }
-                midenc_release::bundle::set_version(&templates, &new)?;
+                let written = midenc_release::bundle::write_version(&ws.root, unit_config, &new)?;
+                println!("updated {}", written.display());
                 update_candidate(
                     &manifest_dir.join(".release/release.toml"),
                     &config,
@@ -621,30 +626,38 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Command::Bundle { output } => {
-            let root = ws.root.join("extra/templates");
-            let bundle = midenc_release::bundle::Bundle::load(&root.join("bundle.toml"))?;
+        Command::Bundle { unit, output } => {
+            let name = resolve_artifact_unit(&config, unit.as_deref())?;
+            let unit_config = config.unit(&name)?;
+            let root = midenc_release::bundle::source_root(&ws.root, unit_config)?;
+            let include = midenc_release::bundle::include_paths(&ws.root, unit_config)?;
+            let manifest = unit_config
+                .source
+                .as_ref()
+                .and_then(|s| s.manifest.as_ref())
+                .ok_or_else(|| anyhow::anyhow!("unit '{name}' declares no source manifest"))?;
+            let bundle = midenc_release::bundle::Bundle::load(&root.join(manifest))?;
 
             let problems = midenc_release::bundle::check_sdk_requirements(&root, &bundle)?;
             if !problems.is_empty() {
                 for problem in &problems {
                     eprintln!("error: {problem}");
                 }
-                bail!("the templates disagree with the bundle's declared SDK requirement");
+                bail!("the sources disagree with the bundle's declared requirement");
             }
 
-            // The archive is built from tracked files, so anything else in a
-            // template directory is silently absent. Say so before writing it.
-            for stray in midenc_release::bundle::untracked(&bundle, &root)? {
+            // The archive is built from tracked files, so anything else under an
+            // included path is silently absent. Say so before writing it.
+            for stray in midenc_release::bundle::untracked(&bundle, &root, &include)? {
                 eprintln!(
-                    "warning: extra/templates/{} is not tracked by git and is not in the bundle",
+                    "warning: {} is not tracked by git and is not in the bundle",
                     stray.display()
                 );
             }
 
-            let (bytes, digest) = midenc_release::bundle::archive(&root, &bundle)?;
-            let files = bundle.files(&root)?.len();
-            println!("templates {} — {files} files, {} bytes", bundle.version, bytes.len());
+            let (bytes, digest) = midenc_release::bundle::archive(&root, &bundle, &include)?;
+            let files = bundle.files(&root, &include)?.len();
+            println!("{name} {} — {files} files, {} bytes", bundle.version, bytes.len());
             println!("sha256 {digest}");
 
             if let Some(path) = output {
@@ -801,6 +814,32 @@ fn update_candidate(
     );
 
     candidate.save(path)
+}
+
+/// The artifact unit to act on. A repository with exactly one needs no flag.
+fn resolve_artifact_unit(config: &Config, requested: Option<&str>) -> Result<String> {
+    use midenc_release::config::UnitKind;
+
+    let artifacts: Vec<&String> =
+        config.units_of_kind(UnitKind::Artifact).map(|(name, _)| name).collect();
+
+    match requested {
+        Some(name) => {
+            if config.unit(name)?.kind != UnitKind::Artifact {
+                bail!("unit '{name}' does not release an artifact");
+            }
+            Ok(name.to_string())
+        }
+        None => match artifacts.as_slice() {
+            [only] => Ok((*only).to_string()),
+            [] => bail!("this repository declares no artifact units"),
+            many => bail!(
+                "this repository declares {} artifact units ({}); pass --unit to choose one",
+                many.len(),
+                many.iter().map(|n| n.as_str()).collect::<Vec<_>>().join(", ")
+            ),
+        },
+    }
 }
 
 /// A GitHub client, pointed at a stub when a base URL is supplied.

@@ -6,7 +6,10 @@
 //! on a private one, or an active `[patch]` entry that makes the workspace
 //! build correctly while the published crate does not.
 
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result};
 
@@ -192,7 +195,10 @@ fn check_embedded_bundle(root: &Path, findings: &mut Findings) -> Result<()> {
     }
 
     let bundle = crate::bundle::Bundle::load(&templates.join("bundle.toml"))?;
-    let (_, expected) = crate::bundle::archive(&templates, &bundle)?;
+    // The manifest is the include list. This check still finds its unit by
+    // hardcoded path rather than through the unit's configuration.
+    let include: Vec<PathBuf> = bundle.templates.values().map(|entry| entry.path.clone()).collect();
+    let (_, expected) = crate::bundle::archive(&templates, &bundle, &include)?;
     let actual = crate::registry::sha256_hex(&std::fs::read(&embedded)?);
 
     if actual != expected {
@@ -208,7 +214,7 @@ fn check_embedded_bundle(root: &Path, findings: &mut Findings) -> Result<()> {
         // template directory is the likeliest reason two checkouts of the same
         // commit disagree -- and the reason is invisible from the digests
         // alone. This turns "it differs in CI" into an answer.
-        let strays = crate::bundle::untracked(&bundle, &templates)?;
+        let strays = crate::bundle::untracked(&bundle, &templates, &include)?;
         if !strays.is_empty() {
             let list: Vec<String> = strays
                 .iter()
