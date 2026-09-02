@@ -85,6 +85,26 @@ fn switch_loop_oz() {
     );
 }
 
+/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-09-02, campaign 11), -Oz
+/// twin of `control_flow::deep_nest_overflow`: the eight-level loop nest
+/// that passes at the default opt-level (`control_flow::nest8`) panics at
+/// -Oz with `implicit operand stack overflow along incoming control flow
+/// edges of after(scf.if in ^block129)` at
+/// hir-analysis/src/analyses/spills.rs:1533. At -Oz LLVM keeps every level
+/// as a loop (no peeling of the `% 3 + 1` levels), so cfg-to-scf's
+/// exit-dispatch result columns reach the 16-felt budget one nesting level
+/// earlier than at O2: the generated `% 3` nests fail from depth SEVEN at
+/// -Oz (six passes) versus depth nine at O2. Compile-time, no inputs
+/// involved. Un-ignore together with `deep_nest_overflow`.
+#[test]
+#[ignore = "compiler panic: 'implicit operand stack overflow along incoming control flow edges of \
+            after(scf.if in ^block129)' at hir-analysis/src/analyses/spills.rs:1533 at -Oz — \
+            cfg-to-scf exit-dispatch result columns of the eight-deep nest exceed the 16-felt \
+            budget (compile-time, no inputs involved)"]
+fn nest8_oz() {
+    run_case_with_flags("nest8_oz", include_str!("../cases/case_nest8.rs"), SIZE_MIN);
+}
+
 /// u64 checked/saturating/overflowing arithmetic, signed and unsigned compare
 /// chains, and guarded unsigned div/rem inside a 6-trip loop. The loop stays
 /// a loop at O2 as well (the body is too heavy to unroll), so the -Oz shape

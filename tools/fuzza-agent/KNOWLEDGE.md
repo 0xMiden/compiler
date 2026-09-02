@@ -96,10 +96,13 @@ Maintenance rules:
     2026-07 corollary that W <= 1 at every boundary was WRONG (struck
     2026-08-27): midenc-CSE'd masked shift/rotate-count bands cross edges
     as SSA and can carry 16+ felts — see "Spill analysis & the edge-split
-    cluster". `spill_trailing_until_fits` and proactive block-arg spilling
-    remain unproducible (>16-felt block params have no producer), but the
-    loop-header `w_used >= K` arm and the CFG edge-split machinery are
-    reachable.
+    cluster". Proactive block-arg spilling remains unproducible (>16-felt
+    block params have no producer), but `spill_trailing_until_fits` IS
+    producible since 2026-09-02 (campaign 11): cfg-to-scf threads escaping
+    values and exit discriminators outward as REGION-OP RESULT columns, and
+    a nine-deep loop nest gives an `scf.if` more than 16 felts of results
+    (see "Control-flow lifting shapes"); the loop-header `w_used >= K` arm
+    and the CFG edge-split machinery are reachable as before.
   - The >16-felt pressure differential cases trigger is largely
     *self-inflicted*: the frontend batches `load_local`s at block tops and
     `SinkOperandDefs` sinks arithmetic but not loads (original wasm operand
@@ -584,6 +587,54 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   `get_region_invocation_bounds`/`get_entry_successor_regions`/
   `get_successor_regions` region-analysis arms (liveness/DCA-adjacent —
   candidates for a spill-focused area, not for CF cases).
+
+## Control-flow lifting shapes (verified 2026-09-02, campaign 11)
+
+Bug-directed sweep of cfg-to-scf / scf canonicalization / cf lowering with
+input-routed plain-Rust shapes (state machines, multi-exit loops, carried
+sets, deep nests, many-block functions, switch forms, short-circuit
+lattices, jump-threading sources), every kept case with a native-verified
+pinned exit grid (`tests/control_flow.rs`, campaign 11 cases):
+
+- **No runtime divergence was found in any lifted shape** — 18 shape
+  families x 16 random pairs at O2, x48 pairs at -Oz and O3, plus pinned
+  grids covering every exit site, 0-/1-/n-trip of every zero-trip-capable
+  loop, and the signed/unsigned compare boundaries of `Ordering` dispatch.
+  Exit-dispatch selectors, poison-threaded discriminators (`sm_bits` lifts
+  to 2 `scf.while`, 7 `index_switch`, 5 `scf.if`, 23 `cf.select`, 42
+  `ub.poison`) and loop-carried locals all agree with native.
+- **LLVM jump-threads a bit-driven `loop { match state {..} }` machine into
+  NESTED loops at O2** (wat-verified, `case_sm_bits.rs`: 8 states with two
+  `continue` arms become two `loop` frames, one `br_table`). State machines
+  therefore exercise nested-loop exit dispatch, not a single flat switch.
+- **Region-op result columns grow with nesting depth, ~2 per level**:
+  every value that escapes a loop level and every level's exit
+  discriminator becomes a result of the enclosing `scf.while`/`scf.if`
+  (the widest `scf.if` of the eight-deep `case_nest8.rs` has fifteen u32
+  results). This is the only plain-Rust producer of >16-felt region
+  results — the `nest8` / `deep_nest_overflow` pair pins the depth
+  boundary (8 pass / 9 fail at O2; 6 / 7 at -Oz, where LLVM keeps every
+  level as a loop: wat-verified 8 `loop` frames at -Oz vs 6 at O2 for the
+  same eight-level source, whose `% 3 + 1` levels O2 peels). Exit
+  MULTIPLICITY does not drive it: ten escape sites at depth five
+  (`case_wide_exits.rs`) stay within budget.
+- A `match` on a u64 against 64-bit constants is NOT a compare chain:
+  LLVM emits a `br_table` on a wrapped half plus `i64.eq`/`i64.ne`
+  compares (`case_sm_wide.rs`, wat-verified), so u64 selectors still reach
+  `translate_br_table`.
+- **`br_table` width**: the wasm frontend builds one `cf.switch` successor
+  group per target; a 255-target table builds (`case_switch255.rs`), 256
+  does not (`switch256`, u8 group index) — sizing fact for dense-match
+  cases, the bug itself lives with the test.
+- Scale is otherwise free: ~800 blocks (200-arm match + depth-8 tree +
+  128-step guarded chain, `case_blocks_max.rs`), a 16-state x 4-way
+  machine with 64 arms (`case_sm16.rs`), sixteen loop-carried variables
+  with a full rotation per trip all compile and pass at O2 — block count
+  and arm count are not limits below the switch-width cap.
+- Short-circuit lattices with side-effecting `#[inline(never)]` probes
+  (`case_shortcircuit.rs`) keep their evaluation ORDER end-to-end: an
+  atomic counter of probe weights, reset with `swap(0)` before returning,
+  is a cheap way to assert which operands ran.
 
 ## Block-emitter operand-drop facts (codegen/masm emitter.rs / emit/mod.rs / stack.rs)
 
@@ -1083,6 +1134,13 @@ spillmix/match` (differential tests module `debug_info.rs`).
   the panic dumps' felt totals first — a `NoSolution` over MORE than 16
   felts is an over-full stack (spill defect), one within 16 felts is the
   in-contract arity-2 gap (campaign 10).
+- **Exit tags in the top nibble + a native scan** (campaign 11): return
+  `(tag << 28) | (acc & 0x0fff_ffff)` from a multi-exit shape, then build
+  the case as a host binary (`scratch/c11run.sh <case> scan`, rustc only,
+  no harness) to list inputs per exit tag — that is how every `_edges`
+  grid in `tests/control_flow.rs` is guaranteed to cover each exit and
+  each 0-/1-/n-trip path before it is committed. Composite cases pack two
+  tags (`a_tag << 30 | b_tag << 28`).
 - Widening multiplies do NOT give a multi-use i128: each
   `(a as u128) * (b as u128)` gets its own `zext` pair (no CSE merge even
   when `a` is shared), so no 4-felt Copy-constrained operand is
@@ -1194,6 +1252,11 @@ at the test site.
   (cargo caching only affects the Rust→wasm step), so no cache-busting is
   needed to re-probe an unchanged case. `cargo make fuzza-probe` handles all
   of this and writes to `target/fuzza-probe/<case>/`.
+- `cargo test <filter> -- --exact` needs the FULL test path
+  (`end_to_end::differential::tests::<module>::<name>`); a partial path
+  with `--exact` silently runs zero tests. Also, extra names after `--`
+  are OR-ed with the pre-`--` filter, so `cargo test control_flow:: --
+  sm_bits` runs the whole module, not one test.
 - A guest that fails to COMPILE (a rustc error such as an ambiguous integer
   literal, E0689) aborts the whole `cargo test` process, not just its test:
   every other test in the batch is lost and the failing tests print no
