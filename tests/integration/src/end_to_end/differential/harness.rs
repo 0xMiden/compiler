@@ -215,6 +215,13 @@ crate-type = ["cdylib"]
 [profile.release]
 opt-level = 3
 panic = "abort"
+# Emit full DWARF in the guest wasm. The compiler defaults to
+# `--debug full` and parses wasm debug info, so this one key opens the
+# whole debug-info pipeline (DWARF decode, debug-value decorators, their
+# interaction with DCE/sinking/mem2reg) for every differential case.
+# Debug info must never change program semantics: a divergence that
+# appears only with this key set is a real compiler bug.
+debug = 2
 
 [profile.dev]
 panic = "abort"
@@ -234,6 +241,12 @@ path = "src/lib.rs"
 
 [dependencies]
 miden-core = "*"
+
+# Keep the debug info in the assembled package so the packaging path is
+# exercised too (the compiler's `--debug` flag cannot substitute for this
+# key — package retention is gated on the project profile).
+[profile.release]
+debug = true
 "#
     )
 }
