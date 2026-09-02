@@ -54,6 +54,11 @@ closed by an unreachability argument).
   instantiation sits warm in the partial table, and a cold dispatch ARM can
   be llvm-cov attribution noise — verify via its dedicated callee's coverage
   before making it an iteration's headline target.
+- For gap-check iterations, tell the agent to extract the area's full
+  per-function coverage from `report.json` directly (the rendered report
+  caps each table at 30 rows) and to prefer compile-side probes
+  (`fuzza-probe` wat/hir dumps) over paid coverage steps — a closure-heavy
+  iteration can finish without a single `fuzza-cov-step`.
 
 ## Per-iteration subagent prompt skeleton
 
