@@ -218,7 +218,7 @@ pub fn classify_function_type(
     assert!(
         func_ty.abi.is_wasm_canonical_abi(),
         "unexpected function abi: {:?}",
-        &func_ty.abi
+        func_ty.abi
     );
 
     let flat_params = flatten_types(context, &func_ty.params)?;
@@ -250,7 +250,7 @@ pub fn flatten_function_type(
     assert!(
         func_ty.abi.is_wasm_canonical_abi(),
         "unexpected function abi: {:?}",
-        &func_ty.abi
+        func_ty.abi
     );
     let mut flat_params = flatten_types(context, &func_ty.params)?;
     let mut flat_results = flatten_types(context, &func_ty.results)?;

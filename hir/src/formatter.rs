@@ -66,7 +66,7 @@ where
             if i == 0 {
                 write!(f, "{item}")?;
             } else {
-                write!(f, "{}{item}", &self.separator)?;
+                write!(f, "{}{item}", self.separator)?;
             }
         }
         Ok(())

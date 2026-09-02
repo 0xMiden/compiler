@@ -567,7 +567,7 @@ fn component_to_masm_component(
         .to_library_path()
         .to_absolute()
         .map_err(|err| {
-            Report::msg(format!("unable to canonicalize '{}': {err}", &id.to_library_path()))
+            Report::msg(format!("unable to canonicalize '{}': {err}", id.to_library_path()))
         })?
         .into_owned();
 

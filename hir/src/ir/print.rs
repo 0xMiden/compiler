@@ -329,6 +329,6 @@ impl fmt::Display for Operation {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         use crate::formatter::PrettyPrint;
 
-        write!(f, "{}", &self.render())
+        write!(f, "{}", self.render())
     }
 }

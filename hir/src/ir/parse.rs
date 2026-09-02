@@ -761,7 +761,7 @@ pub struct UnresolvedOperand {
 impl core::fmt::Debug for UnresolvedOperand {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("UnresolvedOperand")
-            .field_with("name", |f| write!(f, "{}", &self.name))
+            .field_with("name", |f| write!(f, "{}", self.name))
             .finish()
     }
 }

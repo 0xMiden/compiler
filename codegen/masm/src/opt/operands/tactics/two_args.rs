@@ -443,9 +443,9 @@ mod tests {
                              {:?}\ninput: {:?}\nexpected: {:?}\noutput: {:?}",
                             constraint_pair[1],
                             constraint_pair[0],
-                            &pending,
-                            &context.expected(),
-                            &builder.stack()
+                            pending,
+                            context.expected(),
+                            builder.stack()
                         );
 
                         let num_actions = builder.take().len();

@@ -1963,7 +1963,7 @@ pub(crate) mod manifest {
                     return Err(Report::msg(format!(
                         "the provided project manifest defines a package ({}) that differs from \
                          the one requested via --package ({package_name})",
-                        &compiler_opts.packages[0]
+                        compiler_opts.packages[0]
                     )));
                 }
                 reject_unbuildable_target(

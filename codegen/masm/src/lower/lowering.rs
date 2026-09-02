@@ -94,7 +94,7 @@ pub trait HirLowering: Op {
         for arg in args.iter() {
             log::trace!(target: &trace_target, "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
         }
-        log::trace!(target: &trace_target, "starting with stack: {:#?}", &emitter.stack);
+        log::trace!(target: &trace_target, "starting with stack: {:#?}", emitter.stack);
         emitter
             .schedule_operands(
                 &args,
@@ -110,10 +110,10 @@ pub trait HirLowering: Op {
                     "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
                      {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                     op.name(),
-                    &emitter.stack,
+                    emitter.stack,
                 )
             });
-        log::trace!(target: &trace_target, "stack after scheduling: {:#?}", &emitter.stack);
+        log::trace!(target: &trace_target, "stack after scheduling: {:#?}", emitter.stack);
 
         Ok(())
     }
@@ -149,7 +149,7 @@ fn schedule_ext2_operands<T: HirLowering>(
                 "failed to schedule ext2 operands: {args:?}\nfor inst '{}'\nwith error: \
                  {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                 op.name(),
-                &emitter.stack,
+                emitter.stack,
             )
         });
 
@@ -362,7 +362,7 @@ stack on entry to 'before': {before_stack:#?}
 stack on exit from 'after': {:#?}
                             ",
                         self.as_operation(),
-                        &body_emitter.stack
+                        body_emitter.stack
                     );
                 }
 
@@ -1365,7 +1365,7 @@ impl HirLowering for cf::CondBr {
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
                          error: {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                         self.as_operation().name(),
-                        &emitter.stack,
+                        emitter.stack,
                     )
                 });
 
@@ -1394,7 +1394,7 @@ impl HirLowering for cf::CondBr {
                         "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
                          error: {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                         self.as_operation().name(),
-                        &emitter.stack,
+                        emitter.stack,
                     )
                 });
 
@@ -1597,7 +1597,7 @@ impl HirLowering for arith::Join {
                     "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
                      {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                     op.name(),
-                    &emitter.stack,
+                    emitter.stack,
                 )
             });
 

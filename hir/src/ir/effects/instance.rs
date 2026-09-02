@@ -218,7 +218,7 @@ impl fmt::Debug for EffectValue {
                 .debug_tuple("Symbol")
                 .field_with(|f| {
                     let symbol = symbol_use.borrow();
-                    write!(f, "{}", &symbol.path())
+                    write!(f, "{}", symbol.path())
                 })
                 .finish(),
             Self::Operand(operand) => {

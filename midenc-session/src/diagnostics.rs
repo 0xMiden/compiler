@@ -355,13 +355,13 @@ impl InFlightDiagnostic {
 
 impl fmt::Display for InFlightDiagnostic {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", &self.message)
+        write!(f, "{}", self.message)
     }
 }
 
 impl fmt::Debug for InFlightDiagnostic {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", &self.message)
+        write!(f, "{}", self.message)
     }
 }
 

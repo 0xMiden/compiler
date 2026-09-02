@@ -67,7 +67,7 @@ pub(crate) fn convert_mem_intrinsics<B: ?Sized + Builder>(
     match function.as_str() {
         HEAP_BASE => {
             let func = function_ref.borrow();
-            assert_eq!(args.len(), 0, "{} takes no arguments", &func.get_name());
+            assert_eq!(args.len(), 0, "{} takes no arguments", func.get_name());
 
             let signature = func.get_signature().clone();
             drop(func);

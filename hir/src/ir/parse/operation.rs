@@ -240,7 +240,7 @@ where
             let Some(loc_attr) = attr.try_downcast_attr::<LocationAttr>().ok() else {
                 return Err(ParserError::InvalidLocationAlias {
                     span: loc_info.loc,
-                    reason: format!("expected location, but found '{:?}'", &attr.borrow()),
+                    reason: format!("expected location, but found '{:?}'", attr.borrow()),
                 });
             };
             let loc = loc_attr.borrow().as_value().try_into_span(self.context());
@@ -498,7 +498,7 @@ where
             return Err(ParserError::InvalidResultIndex {
                 span: use_info.loc,
                 value_span: SourceSpan::UNKNOWN,
-                reason: format!("{} has index {result_index}", &use_info.name),
+                reason: format!("{} has index {result_index}", use_info.name),
             });
         }
 

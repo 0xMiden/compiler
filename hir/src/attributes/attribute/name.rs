@@ -238,7 +238,7 @@ impl fmt::Debug for AttributeName {
 
 impl fmt::Display for AttributeName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", &self.dialect(), &self.name())
+        write!(f, "{}.{}", self.dialect(), self.name())
     }
 }
 

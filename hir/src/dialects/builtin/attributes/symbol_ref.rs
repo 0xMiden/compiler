@@ -72,7 +72,7 @@ impl SymbolRef {
 
 impl fmt::Display for SymbolRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.path)
+        write!(f, "{}", self.path)
     }
 }
 

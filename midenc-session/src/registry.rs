@@ -240,7 +240,7 @@ impl HybridPackageRegistry {
         published_file_name: Option<&str>,
     ) -> Result<miden_project::Version, InstallPackageError> {
         let version = miden_project::Version::new(package.version.clone(), package.digest());
-        log::trace!(target: "package-registry", "preparing to install package {}@{version}", &package.name);
+        log::trace!(target: "package-registry", "preparing to install package {}@{version}", package.name);
         if let Some(previous_digest) = self
             .packages
             .get(&package.name)
@@ -249,7 +249,7 @@ impl HybridPackageRegistry {
             .copied()
             && previous_digest != package.digest()
         {
-            log::trace!(target: "package-registry", "package already installed: {}@{version}", &package.name);
+            log::trace!(target: "package-registry", "package already installed: {}@{version}", package.name);
             return Err(InstallPackageError::AlreadyInstalledWithDifferentDigest {
                 package: package.name.clone(),
                 version,
@@ -287,7 +287,7 @@ impl HybridPackageRegistry {
             .or_default()
             .insert(package.version.clone(), record);
 
-        log::trace!(target: "package-registry", "installed {}@{version}", &package.name);
+        log::trace!(target: "package-registry", "installed {}@{version}", package.name);
 
         self.artifacts
             .entry(package.name.clone())
@@ -490,7 +490,7 @@ mod tests {
         registry.filesystem_cache = Some(cache_dir.path().to_path_buf());
         registry.install_if_missing(Arc::clone(&incumbent)).unwrap();
 
-        let cached = cache_dir.path().join(format!("{}.masp", &incumbent.name));
+        let cached = cache_dir.path().join(format!("{}.masp", incumbent.name));
         let before = std::fs::read(&cached).unwrap();
 
         let err = registry.install_if_missing(intruder).unwrap_err();

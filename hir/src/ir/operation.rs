@@ -143,7 +143,7 @@ impl core::hash::Hash for Operation {
 impl fmt::Debug for Operation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Operation")
-            .field_with("name", |f| write!(f, "{}", &self.name()))
+            .field_with("name", |f| write!(f, "{}", self.name()))
             .field("offset", &self.offset)
             .field("order", &self.order)
             .field("attrs", &self.attrs)
@@ -169,7 +169,7 @@ impl fmt::Debug for OperationRef {
 
 impl fmt::Display for OperationRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.borrow().name())
+        write!(f, "{}", self.borrow().name())
     }
 }
 
@@ -576,7 +576,7 @@ impl Operation {
     ) -> EntityRef<'a, dyn Attribute> {
         let name = name.into();
         let Some(prop) = self.name.get_property(name) else {
-            panic!("{name} is not a valid property for '{}'", &self.name);
+            panic!("{name} is not a valid property for '{}'", self.name);
         };
         unsafe { (prop.get)(self.container(), prop, core::marker::PhantomData) }
     }
@@ -589,7 +589,7 @@ impl Operation {
     ) -> EntityMut<'a, dyn Attribute> {
         let name = name.into();
         let Some(prop) = self.name.get_property(name) else {
-            panic!("{name} is not a valid property for '{}'", &self.name);
+            panic!("{name} is not a valid property for '{}'", self.name);
         };
         unsafe { (prop.get_mut)(self.container().cast_mut(), prop, core::marker::PhantomData) }
     }
@@ -605,7 +605,7 @@ impl Operation {
     ) -> Result<(), Report> {
         let name = name.into();
         let Some(prop) = self.name.get_property(name) else {
-            panic!("{name} is not a valid property for '{}'", &self.name);
+            panic!("{name} is not a valid property for '{}'", self.name);
         };
         unsafe { (prop.try_from)(self.container().cast_mut(), prop, value) }
     }

@@ -580,7 +580,7 @@ impl Verify<dyn CallOpInterface> for ExecIndirect {
                 return Err(Report::msg(format!(
                     "invalid hir.exec_indirect: parameter {index} has type '{}', but the argument \
                      given has type '{argument_ty}'",
-                    &param.ty
+                    param.ty
                 )));
             }
         }

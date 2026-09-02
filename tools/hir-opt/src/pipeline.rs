@@ -100,7 +100,7 @@ impl PassPipeline {
 
 impl fmt::Display for PassPipeline {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", &self.anchor)?;
+        write!(f, "{}", self.anchor)?;
         let needs_parens = !self.nested.is_empty() || !self.passes.is_empty();
         if needs_parens {
             f.write_str("(")?;
@@ -132,7 +132,7 @@ impl SelectedPass {
         use midenc_hir::pass::registry::RegistryEntry;
 
         let Some(info) = midenc_hir::pass::PassInfo::lookup(self.name.as_str()) else {
-            return Err(Report::msg(format!("unknown pass '{}'", &self.name)));
+            return Err(Report::msg(format!("unknown pass '{}'", self.name)));
         };
 
         let options =

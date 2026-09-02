@@ -5,7 +5,6 @@
 #![feature(unsize)]
 #![feature(ptr_metadata)]
 #![feature(ptr_as_uninit)]
-#![feature(layout_for_ptr)]
 #![feature(ptr_alignment_type)]
 #![feature(slice_ptr_get)]
 #![feature(specialization)]
@@ -19,7 +18,7 @@
 #![feature(unboxed_closures)]
 #![feature(box_into_inner)]
 #![feature(exact_size_is_empty)]
-#![feature(generic_const_exprs)]
+//#![feature(generic_const_exprs)]
 #![feature(clone_to_uninit)]
 // The following are used in impls of custom collection types based on SmallVec
 #![feature(std_internals)] // for ByRefSized
@@ -30,7 +29,6 @@
 #![feature(iter_next_chunk)]
 #![feature(iter_collect_into)]
 #![feature(trusted_len)]
-#![feature(never_type)]
 #![feature(cast_maybe_uninit)]
 #![feature(maybe_uninit_array_assume_init)]
 #![feature(maybe_uninit_uninit_array_transpose)]

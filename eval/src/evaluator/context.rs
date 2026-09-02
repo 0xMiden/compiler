@@ -41,7 +41,7 @@ impl ExecutionContext {
 
     /// Reset the memory of this context to its initial state
     pub fn reset(&mut self) {
-        self.memory.truncate(0);
+        self.memory.clear();
         self.memory.resize(4 * PAGE_SIZE, 0);
     }
 

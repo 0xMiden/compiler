@@ -78,7 +78,7 @@ pub struct Rodata {
 impl fmt::Debug for Rodata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Rodata")
-            .field("digest", &format_args!("{}", &self.digest))
+            .field("digest", &format_args!("{}", self.digest))
             .field("start", &self.start)
             .field_with("data", |f| {
                 f.debug_struct("ConstantData")

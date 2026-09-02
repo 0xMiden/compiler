@@ -559,7 +559,7 @@ impl quote::ToTokens for WithOperands<'_> {
                     let operand_constraint = operands.iter().map(|o| &o.constraint);
                     let constraint_violation = operands.iter().map(|o| {
                         syn::Lit::Str(syn::LitStr::new(
-                            &format!("type constraint violation for '{}'", &o.name),
+                            &format!("type constraint violation for '{}'", o.name),
                             o.name.span(),
                         ))
                     });
@@ -870,11 +870,11 @@ impl quote::ToTokens for OpCreateFn<'_> {
         let build_op = BuildOp(self.op);
 
         let create_doc = syn::Lit::Str(syn::LitStr::new(
-            &format!("Manually construct a new `{}`", &self.op.name),
+            &format!("Manually construct a new `{}`", self.op.name),
             self.op.span,
         ));
         let alloc_default_doc = syn::Lit::Str(syn::LitStr::new(
-            &format!("Allocate a new, default-initialized `{}`", &self.op.name),
+            &format!("Allocate a new, default-initialized `{}`", self.op.name),
             self.op.span,
         ));
 

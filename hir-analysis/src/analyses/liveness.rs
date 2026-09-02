@@ -373,7 +373,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
 
         // Determine if the state has changed, if so, then overwrite `live_in` with what we've
         // computed. Otherwise, do nothing to avoid triggering re-analysis.
-        log::trace!(target: self.debug_name(), "computed live-in for {op}: {:#?}", &temp_live_in);
+        log::trace!(target: self.debug_name(), "computed live-in for {op}: {:#?}", temp_live_in);
         if live_in.value() == &temp_live_in {
             return Ok(());
         } else {
@@ -542,7 +542,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                     "joined live-in lattice of {} with live-in of {}: {:#?}",
                     before.anchor(),
                     after.anchor(),
-                    &before_live_in
+                    before_live_in
                 );
                 if before.value() == &before_live_in {
                     return;
@@ -598,7 +598,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                     "joined live-out lattice of {} with live-out lattice of {}: {:#?}",
                     before.anchor(),
                     after.anchor(),
-                    &before_live_out
+                    before_live_out
                 );
                 if before.value() != &before_live_out {
                     *before.value_mut() = before_live_out.clone();
@@ -662,7 +662,7 @@ impl DenseBackwardDataFlowAnalysis for Liveness {
                     "joined live-out lattice of {} with live-in lattice of {}: {:#?}",
                     before.anchor(),
                     after.anchor(),
-                    &before_live_out
+                    before_live_out
                 );
                 if before.value() != &before_live_out {
                     *before.value_mut() = before_live_out.clone();
@@ -727,7 +727,7 @@ impl Liveness {
                 "joined live-out lattice of {} with live-in lattice of {}: {:#?}",
                 point,
                 ProgramPoint::before(op),
-                &live_out_prev
+                live_out_prev
             );
             let mut prev_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
             if prev_liveness.value() != &live_out_prev {
@@ -759,7 +759,7 @@ impl Liveness {
                 "joined live-in lattice of {} to live-in lattice of {}: {:#?}",
                 point,
                 ProgramPoint::before(op),
-                &live_in_block
+                live_in_block
             );
             let mut block_liveness = solver.get_or_create_mut::<Lattice<NextUseSet>, _>(point);
             if block_liveness.value() != &live_in_block {

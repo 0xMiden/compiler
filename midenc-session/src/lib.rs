@@ -289,9 +289,9 @@ impl Session {
         if log::log_enabled!(target: "driver", log::Level::Debug) {
             for lib in options.link_libraries.iter() {
                 if let Some(path) = lib.path.as_deref() {
-                    log::debug!(target: "driver", " | linking library '{}' from {}", &lib.name, path.display());
+                    log::debug!(target: "driver", " | linking library '{}' from {}", lib.name, path.display());
                 } else {
-                    log::debug!(target: "driver", " | linking library '{}'", &lib.name);
+                    log::debug!(target: "driver", " | linking library '{}'", lib.name);
                 }
             }
         }

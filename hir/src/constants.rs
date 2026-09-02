@@ -44,7 +44,7 @@ impl fmt::Debug for ConstantId {
 }
 impl fmt::Display for ConstantId {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "const{}", &self.0)
+        write!(f, "const{}", self.0)
     }
 }
 
