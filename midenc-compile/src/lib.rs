@@ -20,9 +20,9 @@ use alloc::rc::Rc;
 pub use midenc_hir::Context;
 #[cfg(feature = "std")]
 use midenc_hir::Op;
+use midenc_session::diagnostics::{Diagnostic, Report, miette};
 #[cfg(feature = "std")]
 use midenc_session::{OutputFile, OutputType};
-use midenc_session::diagnostics::{Diagnostic, Report, miette};
 #[cfg(feature = "std")]
 use midenc_session::{OutputMode, diagnostics::WrapErr};
 

@@ -67,7 +67,9 @@ pub fn write_masp_file_atomic(
     package: &Package,
     output_dir: impl AsRef<Path>,
 ) -> std::io::Result<()> {
-    midenc_session::registry::write_package_atomically(package, output_dir.as_ref()).map(|_| ())
+    midenc_session::registry::write_package_atomically(package, output_dir.as_ref())
+        .map(|_| ())
+        .map_err(std::io::Error::other)
 }
 
 /// Removes outer build settings that would poison a nested Cargo invocation.
