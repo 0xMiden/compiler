@@ -242,3 +242,157 @@ fn u128_bits() {
 fn u128_cmp() {
     run_case("u128_cmp", include_str!("../cases/case_u128_cmp.rs"));
 }
+
+/// Wide multiplication and carries at operand boundaries: `i64.mul_wide_u`
+/// / `i64.mul_wide_s` products with both hi and lo words folded, 4-limb
+/// u128 x u128 products in the core-lib wrapping_mul, a multiply-add chain
+/// whose carries ripple through all four limbs, and an i128 product of a
+/// negated operand.
+#[test]
+fn wide_mul_edges() {
+    run_case("wide_mul_edges", include_str!("../cases/case_wide_mul_edges.rs"));
+}
+
+/// Pinned edge grid for `wide_mul_edges`: (MAX, MAX) is u64::MAX * u64::MAX,
+/// -1 * -1 and u128::MAX * u128::MAX; (0x80000000, 0x80000000) is 2^63 *
+/// 2^63 and i64::MIN * i64::MIN; (0x80000000, MAX) is i64::MIN * -1 and
+/// i64::MIN * i64::MAX; odd `a ^ b` rows select the 2^64 operand for the
+/// (2^64-1) * (2^64+1) == MAX product; 0/1 rows pin the identities.
+#[test]
+fn wide_mul_edges_edges() {
+    run_case_with_inputs(
+        "wide_mul_edges_edges",
+        include_str!("../cases/case_wide_mul_edges.rs"),
+        &[
+            (0xffffffff, 0xffffffff),
+            (0x80000000, 0x80000000),
+            (0x80000000, 0xffffffff),
+            (0xffffffff, 0x80000000),
+            (1, 1),
+            (0, 0),
+            (1, 0xffffffff),
+            (0xffffffff, 1),
+            (0x80000000, 1),
+            (1, 0x80000000),
+            (0x7fffffff, 0xffffffff),
+            (0xffffffff, 0x7fffffff),
+            (3, 5),
+            (0x12345678, 0x9abcdef0),
+        ],
+    );
+}
+
+/// 128-bit division/remainder GUARD shapes: i128 checked_div/checked_rem/
+/// wrapping_div/wrapping_rem/overflowing_div and u128 checked_div/checked_rem
+/// with dynamic divisors reaching 0, -1 and i32::MIN — LLVM's `rhs == 0` /
+/// `rhs == -1 && lhs == MIN` branch arms around the `__divti3`/`__modti3`/
+/// `__udivti3`/`__umodti3` builtins, which the by-construction-safe divisors
+/// of i128_sdiv/i128_srem/u128_udiv/u128_umod never form.
+#[test]
+fn div128_guards() {
+    run_case("div128_guards", include_str!("../cases/case_div128_guards.rs"));
+}
+
+/// Pinned edge grid for `div128_guards`: (0x80000000, 0xFFFFFFFF) is exactly
+/// i128::MIN / -1 (None / wrapping MIN / rem 0 / overflow flag) and u128 2^127
+/// / MAX-splat; (x, 0) divides by zero everywhere; MIN / 1, MIN / i32::MIN,
+/// -1 / -1, 0 / -1, small / negative and the all-ones rows.
+#[test]
+fn div128_guards_edges() {
+    run_case_with_inputs(
+        "div128_guards_edges",
+        include_str!("../cases/case_div128_guards.rs"),
+        &[
+            (0x80000000, 0xffffffff),
+            (0x80000000, 0),
+            (0x80000000, 1),
+            (0x80000000, 0x80000000),
+            (0xffffffff, 0xffffffff),
+            (0xffffffff, 0x80000000),
+            (0x7fffffff, 0xffffffff),
+            (0, 0xffffffff),
+            (0, 0),
+            (1, 0x80000000),
+            (7, 0xfffffffe),
+            (0xfffffff9, 2),
+            (0x12345678, 0x9abcdef0),
+        ],
+    );
+}
+
+/// 128-bit shift shapes at count boundaries: u128/i128 checked_shl/
+/// checked_shr/overflowing_shl/overflowing_shr (compare + select around the
+/// __ashlti3/__lshrti3/__ashrti3 libcalls), i128 wrapping shifts of negative
+/// values across the 64-bit limb boundary, u8/u16/i8 checked shifts, and u64
+/// shifts with a u64-typed count.
+#[test]
+fn shift128_shapes() {
+    run_case("shift128_shapes", include_str!("../cases/case_shift128_shapes.rs"));
+}
+
+/// Pinned edge grid for `shift128_shapes`: counts 0, 1, 7, 8, 15, 16, 31, 32,
+/// 63, 64, 65, 127, 128, 129 and u32::MAX on a negative (0x80000001-built)
+/// value, plus MAX/1/0 values at 64 and 128.
+#[test]
+fn shift128_shapes_edges() {
+    run_case_with_inputs(
+        "shift128_shapes_edges",
+        include_str!("../cases/case_shift128_shapes.rs"),
+        &[
+            (0x80000001, 0),
+            (0x80000001, 1),
+            (0x80000001, 7),
+            (0x80000001, 8),
+            (0x80000001, 15),
+            (0x80000001, 16),
+            (0x80000001, 31),
+            (0x80000001, 32),
+            (0x80000001, 63),
+            (0x80000001, 64),
+            (0x80000001, 65),
+            (0x80000001, 127),
+            (0x80000001, 128),
+            (0x80000001, 129),
+            (0x80000001, 0xffffffff),
+            (0xffffffff, 64),
+            (1, 128),
+            (0, 64),
+            (0x7fffffff, 127),
+        ],
+    );
+}
+
+/// Mixed-width expression trees with casts in the middle: u64 and u128
+/// products with their high words extracted by shift + truncation, u32 ->
+/// u64 -> u128 -> u64 -> u32 round trips, limb swaps, an i64 from a signed
+/// high half and unsigned low half, a u128 assembled from four u32 limbs and
+/// taken apart again, and carries crossing the 32- and 64-bit limbs.
+#[test]
+fn width_trees() {
+    run_case("width_trees", include_str!("../cases/case_width_trees.rs"));
+}
+
+/// Pinned edge grid for `width_trees`: all-ones words (every carry ripples,
+/// MAX products), zero, one-sided all-ones, sign-bit-only words (the signed
+/// high half at i32::MIN), and mixed rows.
+#[test]
+fn width_trees_edges() {
+    run_case_with_inputs(
+        "width_trees_edges",
+        include_str!("../cases/case_width_trees.rs"),
+        &[
+            (0xffffffff, 0xffffffff),
+            (0, 0),
+            (0xffffffff, 0),
+            (0, 0xffffffff),
+            (0x80000000, 0x80000000),
+            (1, 0xffffffff),
+            (0xffffffff, 1),
+            (0x80000000, 0),
+            (0, 0x80000000),
+            (0x7fffffff, 0x80000000),
+            (1, 1),
+            (0x12345678, 0x9abcdef0),
+        ],
+    );
+}

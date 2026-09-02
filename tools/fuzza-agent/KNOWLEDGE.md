@@ -132,6 +132,28 @@ Maintenance rules:
   the at-limit case, `case_wide_calls.rs`); one felt more currently fails the
   build inside the spill analysis — treat wider signatures as unwritable, not
   as a novel finding.
+- **The differential reference is native code, so a guest-TOOLCHAIN
+  miscompile shows up as a divergence too.** Before blaming midenc, run
+  the dumped WAT through an independent engine (`wasm-tools parse x.wat -o
+  x.wasm && wasmtime run -W wide-arithmetic=y --invoke entrypoint x.wasm a
+  b`): if wasmtime agrees with the MASM value, the wasm itself is wrong.
+  One such class is known (2026-09-02, campaign 12; pinned at
+  `checked_mul_i64`/`sat_mul_i64`/`pow_i64` in tests/signed.rs): with
+  `+wide-arithmetic`, rustc 1.97-nightly/LLVM 22.1.4 can emit the
+  `local.get` of an `i64.mul_wide_s` hi result BEFORE the multiply that
+  defines it (the WAT signature is `local.get N` textually preceding
+  `i64.mul_wide_s ... local.set N` inside one compare feeding `br_if`), so
+  i64 overflow-checked multiplies (checked/overflowing/saturating_mul,
+  checked_pow) miscompute in a stackification-dependent way. Classify by
+  that WAT signature; keep i64 overflow-checked multiplies out of passing
+  guards until the toolchain is bumped.
+- LLVM on wasm keeps constant-divisor division and remainder as
+  `div_s/div_u/rem_s/rem_u` with an immediate operand (`isIntDivCheap`):
+  only UNSIGNED power-of-two divisors become `shr_u`/`and`; signed `x / 8`
+  stays `div_s`, and no multiply-high magic (`mul_wide`) division form
+  exists on this target (wat-verified 2026-09-02, `case_div_const_forms.rs`).
+  Corollary: i64 `%` by a constant hits the same `checked_mod for i64`
+  compile panic as the dynamic form.
 
 ## Frontend routing facts (Rust → wasm → HIR → emitter)
 
@@ -1166,6 +1188,25 @@ All asserted by pinned-grid differential cases (`case_shift_counts`,
   an identical position is safe end-to-end (`case_memnoop_same.rs` executes
   exactly that against the always-taken element fast path). The nonzero-length
   overlap abort (`mem_overlap`) is a separate, still-open bug.
+- Campaign 12 value ladders (2026-09-02, pinned grids + 512-pair sweeps,
+  all passing — `case_sdiv_guards`, `case_div_const_forms`,
+  `case_shift_shapes`, `case_ext_chains`, `case_wide_mul_edges`,
+  `case_cmp_chains`, `case_bit_shapes`, `case_width_trees`, `case_ovf_mul`,
+  `case_int_logs`, `case_div128_guards`, `case_shift128_shapes`): the
+  LLVM guard arms for `/0` and `MIN / -1` (checked/wrapping/overflowing/
+  euclid forms) on i32/i64/i128/u128 agree with Rust; checked/overflowing
+  shifts at counts width/2·width/u32::MAX, sub-word (u8/u16/i8/i16) shifts
+  and rotates, u128/i128 rotates and checked shifts across the 64-bit limb;
+  sext/zext chains in every cast order incl. i8→u64, sext-then-logical-
+  shift, and `i64::from(i32)` products at MIN·MIN; `mul_wide_u/s` hi and lo
+  words at MAX·MAX, 2^63·2^63, MIN·MIN, MIN·−1, MIN·MAX; 4-limb u128
+  products/carries ((2^64−1)(2^64+1) == MAX, MAX+1 == 0); signed-vs-unsigned
+  compares of one bit pattern, `cmp`/min/max/clamp on i64 and i128 with
+  high limbs equal or differing by one; swap_bytes/reverse_bits/
+  is_power_of_two/next_power_of_two/leading_ones/abs family at MIN on
+  32/64/128 bits; ilog2/ilog10/ilog(3)/isqrt/checked_pow at exact powers;
+  and mixed-width limb reassembly trees. The only divergences were the
+  guest-toolchain class above.
 - u128 boundary relations agree with Rust end-to-end (2026-07-23 mop-up
   grids, all passing): `__udivti3`/`__umodti3` at divisor exactly 1,
   divisor == dividend, smallest divisor > dividend, dividend 0, and
