@@ -279,8 +279,9 @@ is toolchain-gated for cargo-miden no_std cdylib builds — not case-producible:
   the out-of-scope linker-stub surface.
 - `start_section` (0-cov): rustc/wasm-ld never emit a wasm start section for
   a no_std cdylib (no life-before-main in Rust).
-- `dwarf_section` (0-cov): differential builds carry no DWARF (see the
-  Local2Reg section's synthesized-debug-info fact).
+- `dwarf_section`: WARM since the campaign-7 DWARF flip (974f0757e) — every
+  differential guest now builds with full debug info (see the debug-info
+  cluster section).
 - `TagSection` is `unreachable!()` (exceptions feature disabled).
 - Partials: `global_section` (the I32 `__stack_pointer` is the only wasm
   global this toolchain emits), `data_section` (no passive-segment producer
@@ -304,17 +305,23 @@ hir-transform/) — scope FUZZA_AREA accordingly.
   dead-store-erasure arm; a zero-param/zero-local helper reaches the
   no-locals early return; a by-value aggregate param (passed indirectly)
   gives a promotable single-use pointer local.
-- **Harness debug info is frontend-synthesized, not DWARF**: cargo-miden
-  differential builds carry no DWARF, so the frontend synthesizes plain
-  `[DW_OP_WASM_local(N)]` `di.debug_value` records itself (probe: HIR shows
-  `producer = midenc-frontend-wasm`, file "unknown"). `di.debug_declare`
-  and non-trivial expressions (Deref, FrameBase) are emitted only from real
-  DWARF location schedules (function_builder_ext.rs
-  `emit_scheduled_dbg_value`) — the declare-conversion loop,
-  `declares_are_safe`, the FrameBase matcher arm, and the
-  unsafe-expression preserve/return-false paths of
-  `convert_debug_references_for_local` are pipeline-gated. The
-  `di.debug_value` rewrite path is warm.
+- **Harness guests carry FULL DWARF since the campaign-7 flip** (974f0757e:
+  `debug = 2` in the generated release profile + the package retention key),
+  so `di.debug_declare` and location schedules are pipeline-live — but
+  rustc/LLVM emit every wasm-local VALUE location as the two-op
+  `[DW_OP_WASM_local(N), DW_OP_stack_value]` (probe-verified across the
+  `dbg_*` corpus; a bare one-op `[WasmLocal]` memory location never
+  appears — even by-value aggregate pointer params get either no named
+  DWARF entry at all, falling back to `argN`, or the two-op form,
+  `case_dbg_byval`). Consequences: `declares_are_safe`'s exact
+  `[WasmLocal(idx)]` match never succeeds, so the declare-conversion loop
+  of `convert_debug_references_for_local` is unproducible from rustc DWARF
+  (unit-test-only), and an unsafe declare referencing a promotable or
+  dead-store local takes the return-false path — Local2Reg then PRESERVES
+  the stores (DWARF-on builds promote fewer locals; codegen-only,
+  differentially semantics-neutral). The frontend still synthesizes plain
+  `[DW_OP_WASM_local(N)]` `di.debug_value` records at local.set/tee and for
+  params, which keeps the safe-values rewrite loop warm.
 - Other closed Local2Reg arms: ExecFpi prefix-local pinning (SDK-only
   producer); the loaded-but-never-stored "poison" arm (no safe-Rust
   producer of a read-before-any-write wasm local — LLVM materializes
@@ -801,6 +808,57 @@ spill shape BEFORE paying a coverage step.
   ignored unroll-family reproducers (specifics at the test sites). Because
   the poisoned phi can never feed a live use, this defect cannot silently
   miscompile; it always surfaces as a compile-time panic.
+
+## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
+
+The harness flip alone (974f0757e) warmed the decode/schedule/lowering
+pipeline wholesale (+2090 regions); marginal case shapes are almost all +0.
+Corpus cases: `case_dbg_rebind/negconst/salvage/loop/byval/manylive/
+spillmix/match` (differential tests module `debug_info.rs`).
+
+- **rustc -O2 wasm DWARF shapes** (HIR-dump + `MIDENC_TRACE=dwarf=trace`
+  probes): value locations `[WasmLocal|WasmStack, StackValue]`; memory
+  locations `DW_OP_fbreg(local FP, offset)` for stack aggregates; constant
+  location RANGES for named mutable vars before their first mutation —
+  the only plain-Rust `DW_OP_consts` producer is a NEGATIVE i64 initializer
+  (`case_dbg_negconst`; positive values always come as `DW_OP_constu`, even
+  for i64, so the signed-positive Const chain in
+  `debug_var_location_from_expression` (lowering.rs:1678) has no producer);
+  salvaged dead named defs → arithmetic expressions (`DW_OP_mul/and/shl`
+  after the location op) which the decoder catch-all DROPS wholesale — only
+  the `DW_OP_plus_uconst` form survives decode (`case_dbg_salvage`).
+- **Never emitted by this toolchain** (probe-verified dead ends):
+  DW_AT_decl_column on variables; DW_OP_addr for locals (`&STATIC` locals
+  constant-fold away, and global-variable DIEs live at CU scope which
+  `collect_dwarf_local_data` never walks — it only descends subprogram
+  subtrees); DW_OP_WASM_global variable locations (globals appear only as
+  frame bases); DW_OP_reg/bregN; low_pc-as-Udata / high_pc-as-Addr forms.
+  Const-folded tuples do not produce const-piece expressions (no producer
+  for the unsupported-no-index Exprloc edge in `decode_variable_entry`).
+- **Serde/print/parse closures**: `DebugVarLocation::Expression` — the only
+  path into `ExpressionOp` Serializable/Deserializable — is produced ONLY
+  by single-op `FrameBase::Local` declares (plus the theoretical Address
+  arm); compound expressions always contain a Wasm-location op and fail
+  `debugger_can_safely_evaluate_expression`. Hence the serde arms for
+  Plus/Minus/Deref/Piece/BitPiece/ResolvedFrameBase/Unsupported and most
+  `read_from` tags are pipeline-unreachable (the salvage API that could
+  build such expressions is dead, below). All di `AttrParser::parse` impls
+  (Subprogram/Variable/CompileUnit/Expression) are textual-HIR-parse-gated;
+  `Subprogram::with_param_names`/`with_function_type` are component-export
+  path only (`semantic_debug_signature`).
+- **debuginfo/transform.rs**: `salvage_debug_info`/`apply_salvage_action`/
+  `collect_debug_ops`/`debug_value_users`/`is_debug_info_op` have zero
+  callers outside the dialect (dead API). `erase_debug_info`'s only callers
+  — the DeadCodeElimination pass and ControlFlowSink — are commented out of
+  the pipeline (midenc-compile backend.rs), so the LIVE debug-erasure path
+  is region-DCE's `erase_debug_value` (ir/region/transforms/dce.rs), driven
+  by dead named computations whose debug uses survive to HIR
+  (`case_dbg_salvage`).
+- Debug decorators lower to a DebugVar decorator + a REAL Nop each;
+  differentially verified neutral under operand-scheduling pressure, spill
+  edge splits, and br_table dispatch (`case_dbg_manylive`,
+  `case_dbg_spillmix`, `case_dbg_match`) — the full suite is green with
+  DWARF on.
 
 ## Case-writing tricks that work
 
