@@ -3650,6 +3650,7 @@ dependencies = [
  "miden-note-codec-macros",
  "miden-note-codec-wit",
  "miden-protocol",
+ "midenc-frontend-wasm-metadata",
  "tempfile",
  "wit-bindgen",
  "wit-component",
@@ -4569,7 +4570,6 @@ dependencies = [
  "midenc-session",
  "proptest",
  "sha2",
- "tempfile",
  "walkdir",
 ]
 
