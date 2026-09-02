@@ -7,13 +7,21 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// multiplicand folds via `Sext::fold`'s I128 arm.
 ///
 /// Formerly ignored (i1288): inputs (3022925119, 3340151117) diverged
-/// (native 3550407903 vs masm 3550391763). Re-verified 2026-09-02 (campaign
-/// 12) on the current toolchain: the pinned pair and 512 fresh random pairs
-/// match at the default configuration and under `--optimize=size-min` /
-/// `--optimize=max`, and every sub-shape (negative-constant `mul_wide_s`
-/// alone, dynamic `mul_wide_s`, the extend8/16/32_s re-extensions of the
-/// product limbs) matches on the pinned pair — so the test runs again as a
-/// regression guard. Re-ignore with the exact inputs if it ever diverges.
+/// (native 3550407903 vs masm 3550391763). Root cause (2026-09-02, verified
+/// standalone without the Miden compiler): the GUEST toolchain — rustc
+/// 1.97.0-nightly / LLVM 22.1.4 with `+wide-arithmetic` — sinks the
+/// `i64.mul_wide_s` below a `local.get` of its own high word, so the wasm
+/// reads a zero-initialised local and the `(hi as i16) as i64` term vanishes
+/// (the same LLVM defect as the ignored `checked_mul_i64` / `sat_mul_i64` /
+/// `pow_i64`). It passes now ONLY because the harness builds guests with
+/// `debug = 2`: the variable-location records pin the multiply's definitions
+/// and block the sink (`-C debuginfo=1` still miscompiles). The pinned pair
+/// and 512 fresh pairs match at the default, `-Oz` and `-O3` levels in that
+/// configuration, so the test runs as a guard of the guest wasm we actually
+/// compile — not as proof of compiler correctness. If the harness ever drops
+/// `debug = 2`, it fails again with the same numbers; the real un-ignore
+/// condition for the family is a toolchain past the LLVM fix or cargo-miden
+/// dropping `+wide-arithmetic`.
 #[test]
 fn sext_shapes() {
     run_case("sext_shapes", include_str!("../cases/case_sext_shapes.rs"));
