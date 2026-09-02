@@ -59,6 +59,20 @@ closed by an unreachability argument).
   caps each table at 30 rows) and to prefer compile-side probes
   (`fuzza-probe` wat/hir dumps) over paid coverage steps — a closure-heavy
   iteration can finish without a single `fuzza-cov-step`.
+- When plain-Rust areas are exhausted, the next campaigns are *capability*
+  campaigns: a harness lever (e.g. DWARF in guest builds, a compiler
+  configuration via `MIDENC_DIFF_FLAGS`) flipped for the whole corpus,
+  followed by a fallout sweep — every case is a differential probe of the
+  new configuration for free, and any failure is a finding. Measure what
+  the lever opened with a per-function *set diff* between two `report.json`
+  snapshots (functions warm in one and cold in the other); the rendered
+  delta's "newly-exercised functions" count is a test-crate-rebuild
+  artifact and must not be used for that judgment. Copy each baseline's
+  `report.json` aside right after producing it — `fuzza-cov-step` rotates
+  it into `report.prev.json` and overwrites that on the next step, so the
+  baseline is gone two steps later. Region gains attributed to functions a
+  compile-panicking case unwinds through (e.g. `emit_if` arms) are llvm-cov
+  counter-expression phantoms, not reachable code.
 
 ## Per-iteration subagent prompt skeleton
 

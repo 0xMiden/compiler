@@ -129,6 +129,10 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
         .file("Cargo.toml", &manifest)
         .file("src/lib.rs", &full_source)
         .build();
+    // Per-case flags win: an env flag for an option the case already pins is
+    // dropped, so a corpus-wide sweep never passes the same option twice.
+    let option_name = |flag: &str| flag.split('=').next().unwrap_or(flag).to_string();
+    let pinned: Vec<String> = flags.iter().map(|f| option_name(f)).collect();
     let midenc_flags: Vec<String> = flags
         .iter()
         .map(|f| f.to_string())
@@ -136,6 +140,7 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
             std::env::var("MIDENC_DIFF_FLAGS")
                 .unwrap_or_default()
                 .split_whitespace()
+                .filter(|f| !pinned.contains(&option_name(f)))
                 .map(|f| f.to_string()),
         )
         .collect();

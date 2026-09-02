@@ -71,7 +71,18 @@ Maintenance rules:
     args and zero yield operands (only cfg-to-scf's own synthesized
     discriminators thread as SSA).
   - The five scf while/switch arg-and-result canonicalization interiors and
-    cfg-to-scf undef/latch threading are structurally unproducible.
+    cfg-to-scf undef/latch threading are structurally unproducible AT O2.
+    Refined 2026-09-02 (`case_loop_keep_oz`, `--optimize=size-min`): the
+    small early-`break` scan and `continue` loops -Oz keeps lift to
+    `scf.while` ops with exit-dispatch `scf.index_switch` continuations
+    whose result columns include UNUSED results, and those drive the full
+    interiors of `WhileUnusedResult` (61→168/171) and
+    `IndexSwitchRemoveUnusedResults` (18→104/106, incl. `transfer_body` and
+    the rewriter-instantiated scf `while`/`index_switch`/`condition`
+    builders) — the O2 corpus only ever hit their bail paths.
+    `RemoveLoopInvariantArgsFromBeforeBlock`, `WhileRemoveDuplicatedResults`
+    and `IfRemoveUnusedResults` stay closed at -Oz too (no iter args, no
+    duplicated condition operands, no unused if results).
   - Spill-analysis W at a block/region boundary carries no USER values
     (locals are reloaded per block; Local2Reg promotes only same-block
     store/load pairs with no control flow between them — local2reg.rs). The
@@ -573,13 +584,18 @@ Verified 2026-07-23 (three probed cases — fresh-valued multi-exit loops,
 nested labeled blocks, three-level nested-loop exits — all +0 area; HIR dumps
 corroborate each closure below):
 
-- **The post-op drop never fires.** `drop_unused_operands_at`'s per-op call
-  site (emit_inline closure#1) can never find a dead operand: between
-  consecutive ops, stack-value liveness only changes by consumption or by a
-  last use inside the op's regions — and region bodies only use their own
-  load_locals plus cfg-to-scf columns, with the scf lowerings reconciling the
-  parent stack themselves. Everything dead is dropped at block entry
-  (closure#0); the post-op scan interior is unreachable.
+- **The post-op drop DOES fire** (refined 2026-09-02; the 2026-07-23
+  "never fires" closure predates DWARF and the count-band lever).
+  `drop_unused_operands_at`'s per-op call site (emit_inline closure#1)
+  finds dead operands when a stack value's last use sits inside the
+  regions of a region-bearing op: CSE-merged masked count bands live
+  across an `scf.while` die inside its body, so the drop fires at the op
+  right after the while (`case_band_guard_oz` at -Oz: one post-op site,
+  nine dead bands under two live operands, "2 used operands out of 11" →
+  the pathological branch's used/unused INTERLEAVE arms — movdn+dropn,
+  swap+drop, movup+drop — went 25→105/177 at -Oz; the DWARF-on default
+  corpus already sits at 76/177 through its unused-batch/whole-stack
+  arms). Block-entry drops (closure#0) remain the common path.
 - **Block-entry drops always see uniform liveness.** Inherited stacks at
   emit_inline entries hold at most one cfg-to-scf payload column (+ the
   selector, which emit_switch_region/emit_linear_search drop out-of-band via
@@ -587,7 +603,9 @@ corroborate each closure below):
   level's columns or NONE — the levels chain, they never stack — so entries
   are all-live (no drop) or all-dead (whole-stack batch, warm). The
   solver path and the used/unused interleave arms of the pathological branch
-  are unreachable from wasm-derived IR.
+  are unreachable AT BLOCK ENTRY; both are reachable at the post-op site
+  (previous bullet: dead count bands under live operands after an
+  `scf.while`).
 - **scf.while `after` regions are always trivial latches**: `^block(args…):
   scf.yield` with every arg dead and dropped at index 0 — the swap/movup arms
   of `drop_operand_at_position` have no producer (dead scf results are
@@ -840,7 +858,58 @@ spill shape BEFORE paying a coverage step.
 - Closures in this file that argue "LLVM pre-cleans X" were established at
   opt-level 2; `-Oz` keeps loop structure, avoids unrolling, and prefers
   calls over inlining, so those closures may not hold under
-  `--optimize=size-min` unless marked as re-verified there.
+  `--optimize=size-min` unless marked as re-verified there. Re-verified at
+  -Oz over the whole corpus (wat sweep, 2026-09-02): no wasm `if`/`else`,
+  no result-typed `block` frames, per-site `return`s, loop state through
+  locals (the locals argument). REOPENED at -Oz: "everything is inlined
+  unless `#[inline(never)]`", "small constant-trip loops are peeled/
+  unrolled", and "constant-size copies are inline load/store pairs" — see
+  the -Oz shape facts below.
+- **-Oz opens no new compiler function** (iteration 8.1, 2026-09-02:
+  per-function set diff of the -Oz and default corpus baselines, 117 cases
+  each). The only functions warm exclusively under `--optimize=size-min`
+  are the NoSolution panic-dump path (OperandStack/OperandType Debug,
+  ValueId Display, the `schedule_operands` error closure). Region-level
+  novelty is limited to `BlockType::from_wasm`'s single-result `Type` arm
+  and the `create_block_with_params::<Vec<Type>>` monomorph it feeds: 17
+  corpus cases carry a dead-fallthrough `loop (result i32)` at -Oz (the
+  frame LLVM's end-of-function fixup types when a loop's only exits are
+  in-loop returns; the O2 corpus has none), whose `end` is translated in
+  dead state and hits exactly the translate_unreachable_operator regions
+  the O2 corpus already warms. The `FuncType` arm (block params /
+  multi-value results) needs `+multivalue` and the `ir_type` error edge
+  needs an f64 block result (out of scope), so `from_wasm` is closed at
+  every opt-level. The apparent -Oz gains in `emit_if`/`emit_branch_block`
+  are unwinding phantoms of the known NoSolution panic (see the gotcha in
+  "Operational gotchas"). Verdict: the axis is coverage-poor; its value is
+  differential (new guest programs over warm paths).
+- **-Oz shape facts** (wat-probed 2026-09-02; cases `case_loop_keep_oz`,
+  `case_helper_calls_oz`, `case_mem_libcalls_oz`, `case_switch_loop_oz`,
+  `case_band_guard_oz` in `tests/opt_levels.rs`, all pinned via
+  `run_case_with_flags`, all passing): at `--optimize=size-min` LLVM keeps
+  4-8-trip constant-bound loops that O2 unrolls (nested counted loops,
+  early-`break` scans, `continue` loops — 6 kept loops vs 2 at O2); keeps
+  ~8-op u32 helpers called from 3-4 sites as real calls (3 functions / 7
+  calls vs one fully-inlined function at O2), but a 2-site u64 helper is
+  still inlined — it is per-callee size arithmetic, so `#[inline(never)]`
+  stays the reliable lever; lowers constant-length copies of >= 48 bytes
+  and a 64-byte zero-init to `memory.copy`/`memory.fill` with immediate
+  lengths (O2: inline i64 pairs), while 12-24-byte copies stay inline at
+  -Oz too and a fill that later stores fully overwrite is DSE'd at both
+  levels (immediate lengths reach no new emitter arm — memcpy/memset treat
+  the count as a runtime operand); keeps a dense 8-arm `match` in a 5-trip
+  loop as ONE in-loop `br_table` (O2: nine unrolled br_tables). A 6-trip
+  loop with a heavy u64 checked/overflowing body already stays a loop at
+  O2 — no wasm shape difference, yet its -Oz scheduling still warms
+  post-op drop and `OpEmitter::swap` arms (`case_u64_checks_oz`).
+- **The count-band window boundary moves at -Oz**: the spill_loop_mix
+  shape (K masked rotate counts shared between pre-loop code and rotates
+  of the loop-carried accumulator, plus the 28/30 live-through pair and a
+  light second loop) compiles and passes with K <= 9 at -Oz and panics
+  (`NoSolution`, the rotl_window arity-2 class) from K = 10 up, whereas
+  K = 16 compiles at O2 and O3 — -Oz keeps the bands un-hoisted, so the
+  Copy-constrained count sits deeper in the window. `case_band_guard_oz`
+  (K = 9) is the passing guard beside the ignored `spill_loop_mix_oz`.
 - `--test-harness` (codegen emits extra VM test-harness code) is a distinct
   codegen arm that was NOT swept: its executor-side semantics are unclear,
   so a divergence there could be a false finding — investigate before use.
@@ -1022,6 +1091,23 @@ at the test site.
 - Ignored cases contribute no coverage on a clean rebaseline (they don't run),
   so an area's headline can *drop* after `fuzza-cov-clean` relative to the
   session that created the ignored case. Expected.
+- `MIDENC_DIFF_FLAGS` is appended AFTER a case's `run_case_with_flags`
+  flags with no dedup, so an env-prefixed run of a test that pins the same
+  flag fails at once with clap's `the argument '--optimize [<LEVEL>]'
+  cannot be used multiple times`. Probe pinned `_oz` tests WITHOUT the
+  prefix, and note that an env-prefixed `fuzza-cov-step` cannot exercise
+  pinned cases at all (they error out and contribute nothing): measure a
+  new configuration case with plain `run_case` under the prefix, then pin
+  it and re-verify without the prefix.
+- **Panic unwinding leaves phantom warm regions.** llvm-cov derives many
+  region counts as expressions (entry minus error edge, entry minus
+  sibling arm) that do not model unwinding, so a frame a panic unwinds
+  through reads `entry N / exit N-1` and its never-taken sibling arms (an
+  `assert!` message, an impossible `if let` arm) read count 1 (2026-09-02:
+  the spill_loop_mix -Oz NoSolution panic unwinds through `emit_if`'s
+  then-branch closure, which is why `emit_if`/`emit_branch_block` read
+  +5/+4 at -Oz). Before treating a compile-panicking case's "gains" as
+  reachable arms, check the arm-tail counters and the panic backtrace.
 - The report's per-function cold-line lists merge regions into line ranges: a
   warm match ARM whose `match` line hosts a small cold sub-region can look
   cold (that is how translate_unreachable_operator's warm End-of-Loop arm
