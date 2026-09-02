@@ -260,3 +260,10 @@ Outputs live under `target/fuzza-coverage/`:
 - `report.prev.json` — previous snapshot (used for the delta).
 - `html/html/index.html` — per-line highlighted source view for debugging
   which exact lines you hit.
+
+## Hard rules for process control
+
+- Never run `pkill`, `killall`, or any kill-by-pattern. Other sessions run
+  the same test binaries in sibling worktrees, and a pattern kill takes
+  their processes down too (this happened once). To stop a run you
+  started, kill only the PID your own shell spawned, or let it finish.
