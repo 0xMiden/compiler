@@ -4234,20 +4234,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "midenc-release"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "flate2",
- "semver 1.0.28",
- "serde",
- "serde_json",
- "toml 1.1.4+spec-1.1.0",
- "toml_edit",
-]
-
-[[package]]
 name = "midenc-session"
 version = "0.10.0-rc.1"
 dependencies = [

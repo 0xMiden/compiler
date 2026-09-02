@@ -39,13 +39,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Install Rust
+      - &install-rust
+        name: Install Rust
         run: |
           rustup update --no-self-update
           rustc --version
 
-      - name: Build release-tool
-        run: cargo build -p midenc-release
+      - &install-cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
 
       # Package classification, publishability, private-dependency edges, the
       # frozen private-crate versions, and active `[patch]` entries. An active
@@ -53,18 +57,10 @@ jobs:
       # builds, the normalized manifest looks correct, and the published crate
       # resolves to a registry version without the patched behaviour.
       - name: Lint release configuration
-        run: ./target/debug/release-tool lint
+        run: cargo make release lint
 
       - name: Check publication order is derivable
-        run: ./target/debug/release-tool package-order
-
-      - name: Release-tool tests
-        run: cargo test -p midenc-release
-
-      - name: Formatting and lints
-        run: |
-          cargo fmt -p midenc-release -- --check
-          cargo clippy -p midenc-release --all-targets -- -D warnings
+        run: cargo make release package-order
 
   closure:
     name: package closure
@@ -81,16 +77,11 @@ jobs:
           ref: ${{ inputs.ref }}
           persist-credentials: false
 
-      - name: Install Rust
-        run: |
-          rustup update --no-self-update
-          rustc --version
-
-      - name: Build release-tool
-        run: cargo build -p midenc-release
+      - *install-rust
+      - *install-cargo-make
 
       - name: Verify the package closure
-        run: ./target/debug/release-tool verify-closure --cache-dir "${RUNNER_TEMP}/index-cache"
+        run: cargo make release verify-closure --cache-dir "${RUNNER_TEMP}/index-cache"
 
   workflow-policy:
     name: workflow policy
@@ -150,6 +141,6 @@ jobs:
           echo "workflow-policy: ok"
 
       - name: actionlint
-        uses: docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+        uses: docker://rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7
         with:
           args: -color

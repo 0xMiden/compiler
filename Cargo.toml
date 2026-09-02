@@ -42,7 +42,6 @@ members = [
     "tools/expect-test",
     "tools/hir-opt",
     "tools/objtool",
-    "tools/release",
     "tests/support",
     "tests/integration",
     "tests/integration-network",

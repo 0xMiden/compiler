@@ -220,10 +220,6 @@ unit = "sdk"
 # --- private: repository infrastructure, never published ----------------------
 
 [[packages]]
-name = "midenc-release"
-unit = "private"
-
-[[packages]]
 name = "miden-field-repr-tests"
 unit = "private"
 
