@@ -59,7 +59,14 @@ Maintenance rules:
   - Everything is inlined unless `#[inline(never)]`; obvious tail recursion
     becomes a loop (and any *surviving* recursion is a linker error anyway).
   - Multi-use defs are tee'd — the same SSA value never appears as both
-    operands of one op (`v * v` gets distinct HIR values).
+    operands of one op (`v * v` gets distinct HIR values). BUT midenc-CSE
+    merges the repeated `hir.load_local`s of one wasm local within a block
+    (no intervening store) into ONE multi-use SSA value (verified
+    2026-09-02: the `rotl_window` panic dump's post-loop `acc` is one
+    `load_local` with eleven uses), so a user value read several times in
+    a block IS a Copy-constrained operand at every use but the last — the
+    strongest plain-Rust lever for Copy constraints, beside the shared
+    count bands (`case_chain_window.rs`).
   - Identical trailing code in branch arms is merged (sink-common-code), which
     can silently drop your arm-local pressure below thresholds.
 - **The locals argument** (kills many transform paths): LLVM's RegStackify
@@ -680,7 +687,25 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   (`LinearStackWindow`+`Linear` produce a valid in-window schedule for the
   same shape at other arities). Reproducer: `rotl_window` (ten shared
   count bands + u64 rotl; the six-count `spill_switch` passes) — a
-  root-cause distinct from the unroll-family panics above.
+  root-cause distinct from the unroll-family panics above. The class needs
+  no loop: a single-block chain of N shared counts on a multi-use u64
+  (LLVM hoists the rotates ahead of the xor/add chain, so their results
+  are the freight) reproduces it at N = 20 and passes at N <= 18
+  (`case_chain_window.rs`, campaign 10); `[Copy, Copy]` (counts reused a
+  third time) fails from N = 16, `[Copy, Move]` and `[Move, Move]` pass at
+  every N tried (the failing TwoArgs patterns are the ones that `dup` the
+  Copy operand BEFORE moving/duping the deeper one).
+- **Arity-1 and arity >= 3 problems cannot hit the window gap on an
+  in-contract (<= 16-felt) stack** (campaign 10, source + ladder-verified):
+  arity-1 never enters the solver (`solve_and_apply` emits one dup/movup;
+  a bottom u64 of a 16-felt stack is `dup.15 dup.15`, `case_unary_window.rs`
+  passes with thirteen counts + accumulator above the operand), and
+  `LinearStackWindow` materializes copies deepest-first, which keeps every
+  later copy source within the window (the already-copied sources lie
+  between it and the bottom), then moves only within the top. A
+  `NoSolution` at arity 1/>= 3 therefore implies an OVER-FULL stack (> 16
+  felts, see the spill section) or SSA-invalid IR (F1), never a solver
+  limitation.
 - **No size-gated compiler path exists at single-block scale**: a ~400-op
   non-reassociable chain (139 spill locals, 267 stack-motion ops in MASM)
   compiles in about a second and passes differentially — no cliff, no
@@ -769,6 +794,32 @@ spill shape BEFORE paying a coverage step.
   twin/edge) spill the value in BOTH arms and never trigger reconciliation
   (that is why the cluster stayed cold until now). Loop preheader and
   BACKEDGE splits come from over-capacity loop headers the same way.
+  CAVEAT (2026-09-02, `pass:spills=trace` over spill_split /
+  spill_loop_mix / spill_switch): split-edge reloads are materialized and
+  then ERASED by the SSA reconstruction ("erase unused reload" for every
+  split-block reload — the walk uses a dominator tree cached before the
+  transform's own splits, so split blocks are never visited); the spilled
+  values stay live on the operand stack past their spills and the passing
+  cases pass only because the unrelieved pressure still fits the window.
+  Never design a case whose window fit depends on split-edge relief
+  (specifics at `zero_trip_frontier`/`zero_trip_overflow` in pressure.rs).
+- **Zero-trip-capable loops are the plain-Rust loop-bypass lever**: a
+  `while i < input2 % 97` bound keeps LLVM's loop guard and a bypass edge
+  around the loop, whereas the corpus's `% 97 + 3` bounds become
+  bottom-test loops with no bypass (wat/HIR-verified 2026-09-02; the
+  lifted form wraps the while in an `scf.if`). With spilled bands crossing
+  such a loop the shape reaches the split-edge defects above from about
+  eleven counts (two loops) / twelve counts (one loop) / six counts with an
+  in-loop `match`; below those, zero-trip and one-trip inputs execute
+  correctly (pinned twin `zero_trip_guard_repro`). Bottom-test loops with
+  an opaque `#[inline(never)]` trip count are unaffected (the campaign-10
+  `helper_bound` rung passed on 0/1-trip inputs).
+- **`scf.while` result columns fit the loop-header budget**: twelve
+  in-loop counts plus two live-through counts across a bottom-test while
+  that carries a dispatch discriminator + payload column (in-loop
+  `return`) compile and pass at every (in-loop, live-through) split from
+  (2, 12) to (12, 2) (`case_while_results.rs`); the "results are not in
+  the header budget" overflow hypothesis is closed for bottom-test loops.
 - **Loop-header `w_used >= K`** (the over-capacity arm incl. its sort and
   take_while closures) is reachable with 16+ shared counts used both before
   the loop and on the loop-carried accumulator inside it (LICM cannot hoist
@@ -825,7 +876,14 @@ spill shape BEFORE paying a coverage step.
   operand that is not on the operand stack — the mechanism behind the
   ignored unroll-family reproducers (specifics at the test sites). Because
   the poisoned phi can never feed a live use, this defect cannot silently
-  miscompile; it always surfaces as a compile-time panic.
+  miscompile; it always surfaces as a compile-time panic. Two source facts
+  bound the phi machinery (2026-09-02): `rewrite_cfg_spills` rebuilds SSA
+  form from the `DominanceInfo` the spill ANALYSIS computed and cached
+  before the transform split any edge, and `DominanceFrontier::new`
+  populates frontiers only for blocks with THREE or more predecessors
+  (`enumerate().any(|(i, _)| i > 1)`) — so phi insertion never happens at
+  two-predecessor joins, and the unroll-family shapes (epilogue joins with
+  3+ predecessors) are the ones that reach it.
 
 ## Compiler-configuration axes (verified 2026-09-02, campaign 8)
 
@@ -1018,6 +1076,17 @@ spillmix/match` (differential tests module `debug_info.rs`).
   an input-derived factor) keeps a copy alive that LLVM would elide when it
   can prove `len == 0` or `src == dst` — how a len-0 same-position
   `memory.copy` reaches the VM at all (`case_memnoop_same.rs`).
+- **Pressure ladders are cheap**: a warm differential case takes ~2 s and
+  the harness runs cases in parallel, so a parametric family (a small
+  generator script under `scratch/`, one case file per rung) classifies a
+  whole ladder in one `cargo test <module> -- --test-threads=8` run; read
+  the panic dumps' felt totals first — a `NoSolution` over MORE than 16
+  felts is an over-full stack (spill defect), one within 16 felts is the
+  in-contract arity-2 gap (campaign 10).
+- Widening multiplies do NOT give a multi-use i128: each
+  `(a as u128) * (b as u128)` gets its own `zext` pair (no CSE merge even
+  when `a` is shared), so no 4-felt Copy-constrained operand is
+  constructible from plain Rust (HIR-probed 2026-09-02).
 
 ## Runtime edge-semantics facts (2026-07-23 edge-value sweep)
 
@@ -1125,3 +1194,8 @@ at the test site.
   (cargo caching only affects the Rust→wasm step), so no cache-busting is
   needed to re-probe an unchanged case. `cargo make fuzza-probe` handles all
   of this and writes to `target/fuzza-probe/<case>/`.
+- A guest that fails to COMPILE (a rustc error such as an ambiguous integer
+  literal, E0689) aborts the whole `cargo test` process, not just its test:
+  every other test in the batch is lost and the failing tests print no
+  dump. Type generated literals (`let k: u32 = if c { 3 } else { 11 }`)
+  and check the log tail for `could not compile` before reading results.
