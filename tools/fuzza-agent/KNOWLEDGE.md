@@ -146,7 +146,15 @@ Maintenance rules:
   i64 overflow-checked multiplies (checked/overflowing/saturating_mul,
   checked_pow) miscompute in a stackification-dependent way. Classify by
   that WAT signature; keep i64 overflow-checked multiplies out of passing
-  guards until the toolchain is bumped.
+  guards until the toolchain is bumped. The i1288 `sext_shapes` divergence
+  was this class too (reproduced standalone with the exact wrong value):
+  in straight-line `mul_wide_s` shapes the harness's `debug = 2` guest
+  profile masks it — `-C debuginfo=2` variable-location records pin the
+  multiply's definitions and block the sink (`debuginfo=1` still
+  miscompiles), while the `br_if` overflow-test shape is not masked at any
+  debug level. A case that passes only with DWARF is therefore not proof of
+  compiler correctness; check the no-DWARF standalone build before
+  un-ignoring anything in this family.
 - LLVM on wasm keeps constant-divisor division and remainder as
   `div_s/div_u/rem_s/rem_u` with an immediate operand (`isIntDivCheap`):
   only UNSIGNED power-of-two divisors become `shr_u`/`and`; signed `x / 8`
@@ -383,6 +391,59 @@ hir-transform/) — scope FUZZA_AREA accordingly.
   `link_fails_when_data_segments_fill_the_address_space`, and inherently a
   link error, not differential material. `DataSegmentLayout::len`/
   `pop_front`/`Segment::alloc_default` are dead API (no pipeline callers).
+
+## Memory & data-layout ladders (verified 2026-09-02, campaign 13)
+
+Bug-directed sweep of the element-addressed memory lowering (`prepare_addr`
++ `emit/mem.rs` + the `intrinsics/mem.masm` cross-element procs + data
+segments + frames) with plain-Rust layout ladders, every kept case native-
+grid-checked (1225 boundary pairs) and 256-pair swept (`tests/memory.rs`,
+campaign-13 cases):
+
+- **No silent load/store miscompile was found.** Agreeing with native:
+  byte lanes at all four offsets (volatile stores keep them as
+  `i32.store8`; whole-word reads of a byte buffer become element-space
+  `i32.load`s), halfwords at byte offsets 0..3 (3 = element-straddling
+  `load_u16`/`store_u16`), `#[repr(C, packed)]` u16/u32/u64/i16 fields at
+  every offset (21-byte records in a runtime-indexed array cycle each
+  field through 0..3), `packed(2)` u32/u64/u128 fields at 2 mod 4
+  (`align=1` memargs -> the byte-space `mod 2` assert), u64 at 4 mod 8
+  (`i64.load/store align=4`: `load_dw`/`store_dw` at odd element
+  addresses), u128 at 4/8/12 (i64 halves straddling Miden words), i64 at
+  odd byte offsets (three-element `realign_dw`), `i64.store8/16/32` +
+  `i64.load8/16/32_u/_s` at offsets 0..3 (`trunc_int64` into the narrow
+  stores — the corpus had never emitted these before campaign 13), enum
+  layouts (`Option<u8/u16/u32>`, `Result<u32, u8>`, u8/u32/u64-payload
+  enums), fat pointers in `.rodata` and in the frame, odd-size by-value
+  aggregates and sret returns ([u8; 7], [u16; 5], 13-byte packed, [u8;
+  13], (u8, u32, u16)), `[bool; N]` lanes, runtime-length copies/fills of
+  0..33 bytes at src/dst offsets 0..3 and 200..2092-byte copies through
+  both memcpy arms, u16/u64/i8 element copies and fills, a 96 KiB
+  `.rodata` beside a 40 KiB `.bss` and a funcref table (globals land at
+  the wasm memory end, 0x130000, table on the next page), and frames of
+  2.5 KiB / 68000 B / 1,000,000 B whose addresses escape to helpers.
+- **The only memory finding is a MASM-only trap on identical-range
+  copies**: a `copy_within` whose runtime destination equals its source
+  is blocked when the ranges are 4-aligned (see the ignored
+  `copy_same_pos` in `tests/memory.rs`; the byte-loop arm is fine,
+  `copy_same_bytes`). Keep runtime shifts non-zero in passing cases.
+- **memset has no element fast path**: `OpEmitter::memset` is a per-byte
+  load/mask/or/store loop (~25 cycles per byte), so a `[0u8; N]`/`[0u32;
+  N]` local costs ~25·N cycles per execution (a 68000-byte zero-init is
+  ~1.7M cycles, ~17 s in the step-mode executor). memcpy's element fast
+  path needs `src%4 == dst%4 == count%4 == 0`. For large-frame cases use
+  `[MaybeUninit<u32>; N]` (no fill; `assume_init` only on written slots),
+  which is how `frame_64k`/`frame_1m` stay cheap. A director-level
+  improvement: splat the byte to a u32 and store whole elements when
+  `dst%4 == count%4 == 0`.
+- **Frames up to ~1 MB pass** (`frame_1m`, SP down to ~0x0B000): the
+  shadow stack is 1 MiB (`--stack-first`, data at 0x100000), so larger
+  frames are UB natively too — not differential material. The recursive-
+  frame rung is unwritable (recursion is a linker error).
+- **WAT probe reading**: the text format prints `align=N` in BYTES (2, 4,
+  8; absent = natural alignment), not the log2 memarg value.
+- `&STATIC[a..b]` in a static initializer is a rustc E0658 (const `Index`
+  is not stable) — build interior slices of statics at runtime.
 
 ## Indirect calls / funcref tables (verified 2026-08-27)
 
@@ -1044,6 +1105,17 @@ spill shape BEFORE paying a coverage step.
 - `--test-harness` (codegen emits extra VM test-harness code) is a distinct
   codegen arm that was NOT swept: its executor-side semantics are unclear,
   so a divergence there could be a false finding — investigate before use.
+- **`--optimize=max` can overflow the test-runner THREAD stack on a large
+  guest** (campaign 13, `copy_mixed`): at max LLVM unrolls loops into a
+  program many times larger (an 8467-line MASM here), and the assembler's
+  MAST build / debug-engine block execution recurse deeper than the 2 MiB
+  proptest test-runner thread allows ("thread ... has overflowed its
+  stack; fatal runtime error: stack overflow"). NOT a compiler finding —
+  `RUST_MIN_STACK=8388608` makes it pass, and the real midenc/VM binaries
+  run on the 8 MiB main-thread stack. If a max sweep aborts a whole batch
+  this way, drop the offending large-program case from the max set (it
+  still passes at default and -Oz) or re-run that case with a bigger
+  `RUST_MIN_STACK`; do not pin it.
 
 ## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
 
@@ -1303,3 +1375,13 @@ at the test site.
   every other test in the batch is lost and the failing tests print no
   dump. Type generated literals (`let k: u32 = if c { 3 } else { 11 }`)
   and check the log tail for `could not compile` before reading results.
+  Cheap pre-check: `scratch/c13run.sh <case> grid` builds a case natively
+  and evaluates the 35x35 boundary grid (compile errors, native panics,
+  non-determinism) in seconds before any harness run.
+- **`usize` is 64 bits natively and 32 bits on wasm** — a FALSE divergence
+  source (campaign 13, `rodata_big`): `(j.wrapping_mul(31)) % 98304` with
+  `j: usize` wraps at 2^32 only on the wasm side, and 98304 is not a
+  power of two, so the two sides index different bytes. Keep index
+  arithmetic that can exceed 2^32 in `u32` (wrapping ops) BEFORE the
+  `as usize`, unless a power-of-two mask/modulus follows. Before blaming
+  the compiler, model the case in Python with 32-bit wraps.
