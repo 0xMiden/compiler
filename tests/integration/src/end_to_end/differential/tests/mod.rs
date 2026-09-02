@@ -10,6 +10,7 @@ mod control_flow;
 mod debug_info;
 mod memory;
 mod opt_levels;
+mod pressure;
 mod scale;
 mod signed;
 mod spills;

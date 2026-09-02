@@ -127,7 +127,10 @@ fn spill_switch() {
 /// passing `spill_switch` (six counts) — the boundary is copy-constraint
 /// depth, not unrolling; no unrolled chain and no invalid IR are involved
 /// (unlike `unroll_chain`/`unroll_rotmix`, whose panics stem from
-/// TransformSpills-produced non-dominating phi operands). Un-ignore when
+/// TransformSpills-produced non-dominating phi operands). The same class is
+/// also reachable with no loop at all: a single-block chain of twenty shared
+/// counts on a multi-use u64 panics identically (`[Move, Copy]`, 15 felts),
+/// eighteen counts pass (`chain_window` in pressure.rs). Un-ignore when
 /// this case compiles (binary problems get a window-aware fallback tactic).
 #[test]
 #[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
