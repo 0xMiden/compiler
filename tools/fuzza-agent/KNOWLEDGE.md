@@ -809,6 +809,42 @@ spill shape BEFORE paying a coverage step.
   the poisoned phi can never feed a live use, this defect cannot silently
   miscompile; it always surfaces as a compile-time panic.
 
+## Compiler-configuration axes (verified 2026-09-02, campaign 8)
+
+- **midenc has no middle-end optimization knob.** The HIR pass pipeline in
+  `midenc-compile/src/pipeline/backend.rs` is a fixed list; per-pass CLI
+  flags are dead (the registration loop is commented out), `--pass-pipeline`
+  exists only in the standalone `hir-opt` tool, `ControlFlowSink` and
+  `DeadCodeElimination` are commented out of the schedule on purpose
+  (`24b3c936b`), and `RegionSimplificationLevel::Aggressive` is never
+  constructed (its `merge_identical_blocks` is a stub). Reaching those needs a
+  compiler-source change, not a harness flag — do not re-explore.
+- **`--optimize=<level>` only sets the guest's LLVM opt-level** (via
+  `--config profile.release.opt-level=N` on the nested cargo build). Cargo
+  config profiles override manifest profiles, so the harness's manifest
+  `opt-level = 3` is inert: the default corpus runs at **opt-level 2**,
+  `--optimize=max` gives 3, `--optimize=size-min` gives z. Verified by guest
+  wasm hashes changing under the flag.
+- **Sweep plumbing:** `MIDENC_DIFF_FLAGS='<flags>'` (whitespace-split env,
+  read by the harness) re-runs the whole corpus under another configuration;
+  `run_case_with_flags(name, src, &["--optimize=size-min"])` pins a
+  configuration-dependent finding in-repo. The native reference build is
+  never affected. Prefix `fuzza-cov`/`fuzza-cov-step` with the same env when
+  measuring a configuration, or the profile mixes configurations.
+- **Corpus sweep results (117 cases):** `--optimize=max` clean;
+  `--debug=none` clean (with campaign 7's debug-on arm, both debug
+  configurations agree with native everywhere); `--optimize=size-min` hits
+  one known compile-time panic class (see the ignored `spill_loop_mix_oz`
+  in `tests/spills.rs`) — `-Oz` keeps count bands un-hoisted, so
+  copy-constrained operands sit deeper in the window than at O2/O3.
+- Closures in this file that argue "LLVM pre-cleans X" were established at
+  opt-level 2; `-Oz` keeps loop structure, avoids unrolling, and prefers
+  calls over inlining, so those closures may not hold under
+  `--optimize=size-min` unless marked as re-verified there.
+- `--test-harness` (codegen emits extra VM test-harness code) is a distinct
+  codegen arm that was NOT swept: its executor-side semantics are unclear,
+  so a divergence there could be a false finding — investigate before use.
+
 ## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
 
 The harness flip alone (974f0757e) warmed the decode/schedule/lowering

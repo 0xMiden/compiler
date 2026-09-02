@@ -70,8 +70,18 @@ cases come in three flavors:
   fails reliably rather than only when proptest happens to draw the input.
 - **Compile-time compiler panics** — the case *is* the reproducer; the panic
   message and source location are in the ignore reason.
+- **Configuration-dependent findings** — a `<case>_<config>` twin (e.g.
+  `spill_loop_mix_oz`) pins the compiler flags via `run_case_with_flags`, so
+  the finding reproduces without any environment setup.
 - **Out-of-scope artifacts** — kept for coverage/documentation (e.g.
   `mem_grow`); the ignore reason explains why they will not be "fixed".
+
+Every guest is built with full DWARF, and the whole corpus can be re-run
+under another compiler configuration with `MIDENC_DIFF_FLAGS='<midenc
+flags>'` (whitespace-split; e.g. `--optimize=size-min`). Only the MASM side
+changes — the native reference build is untouched — so the outputs must
+still match: a divergence that appears under one configuration only is a
+real compiler bug.
 
 The specifics of each bug — the failure, the exact inputs, what passing
 sibling cases have *bounded*, and what would allow un-ignoring — live only

@@ -621,7 +621,11 @@ if [[ -f "${OUT}/report.json" ]]; then
     mv "${OUT}/report.json" "${OUT}/report.prev.json"
 fi
 
-cargo llvm-cov --package midenc-integration-tests --no-report -- differential --test-threads=1
+# Tolerate test failures, as `fuzza-cov-step` does — a failed case still
+# contributes coverage, and a configuration sweep (e.g. `MIDENC_DIFF_FLAGS`)
+# may legitimately hit a known compile-time panic.
+test_status=0
+cargo llvm-cov --package midenc-integration-tests --no-report -- differential --test-threads=1 || test_status=$?
 cargo llvm-cov report --json --output-path "${OUT}/report.json"
 cargo llvm-cov report --html --output-dir "${OUT}/html"
 
@@ -637,6 +641,9 @@ fi
 python3 "${WORKSPACE}/tools/fuzza-agent/cov.py" "${COV_ARGS[@]}" > "${OUT}/report.md"
 
 echo ""
+if [[ "${test_status}" -ne 0 ]]; then
+    echo "NOTE: one or more differential tests failed; report reflects coverage up to the failures." >&2
+fi
 echo "Coverage report written to:"
 echo "  ${OUT}/report.md     (agent-consumable summary, includes delta if a prev snapshot existed)"
 echo "  ${OUT}/html/         (human-readable browser view)"
