@@ -1,6 +1,6 @@
 //! Operand-stack pressure, spill analysis/transform, and select scheduling.
 
-use super::super::harness::run_case;
+use super::super::harness::{run_case, run_case_with_flags};
 
 /// Reused-condition selects with operands live past them plus a u64 select —
 /// exercises dup/mov select emitter scheduling variants.
@@ -43,6 +43,35 @@ fn spill_loop() {
 #[test]
 fn spill_loop_mix() {
     run_case("spill_loop_mix", include_str!("../cases/case_spill_loop_mix.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC under `--optimize=size-min` only (safe Rust,
+/// 2026-09-02): the `spill_loop_mix` case, which compiles and passes at the
+/// default opt-level 2 and at `--optimize=max`, panics with `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109 when the guest is built at
+/// opt-level z: `failed to schedule operands: [%594, %258] for inst
+/// 'arith.rotl'`, constraints `[Copy, Move]`, over a 16-entry operand stack
+/// (two 2-felt words on top, twelve shared rotate counts below, the
+/// Copy-constrained count at depth 14). Same bug class as `rotl_window`:
+/// an arity-2 problem gets only the `TwoArgs` tactic, its dup+movup pattern
+/// needs a stack access past the 16-felt MASM window, and there is no
+/// fallback tactic. Not the `unroll_chain` spills defect — the spills pass
+/// trace shows no unused-phi warning, so the IR is SSA-valid and the
+/// scheduling problem is in-contract. `-Oz` triggers it because LLVM keeps
+/// the count band un-hoisted, so the counts sit deeper in the window at the
+/// rotate than they do at O2/O3. Compile-time — no inputs involved.
+/// Un-ignore when `rotl_window` compiles (binary problems get a
+/// window-aware fallback tactic).
+#[test]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
+            scheduling an arity-2 arith.rotl under --optimize=size-min (rotl_window bug class: \
+            TwoArgs-only tactic list, no window-aware fallback; compile-time, no inputs involved)"]
+fn spill_loop_mix_oz() {
+    run_case_with_flags(
+        "spill_loop_mix_oz",
+        include_str!("../cases/case_spill_loop_mix.rs"),
+        &["--optimize=size-min"],
+    );
 }
 
 /// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case

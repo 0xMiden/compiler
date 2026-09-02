@@ -198,7 +198,10 @@ fn <name>() {
      `<name>_repro` that calls `run_case_with_inputs` with the exact failing
      pair, so the bug reproduces deterministically instead of only when
      proptest happens to draw it (see `switch_shapes_repro` and
-     `sext_shapes_repro` in the test modules). If the case mixes several constructs,
+     `sext_shapes_repro` in the test modules). A finding that appears only
+     under a compiler configuration (a `MIDENC_DIFF_FLAGS` sweep) is pinned
+     the same way with `run_case_with_flags` and the flags in the twin (see
+     `spill_loop_mix_oz`). If the case mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore
      reason are the bug's **only** documentation (nothing goes in README or

@@ -94,10 +94,31 @@ pub(super) fn run_case_with_inputs(name: &str, source: &str, inputs: &[(u32, u32
     run_case_inner(name, source, Inputs::Explicit(inputs));
 }
 
+/// Like [`run_case`], but passes extra `midenc` flags for the MASM build.
+///
+/// Use this to pin a configuration-dependent finding (e.g. a divergence that
+/// appears only under `--optimize=max`) so it reproduces in-repo without any
+/// environment setup. The native reference build is not affected by the flags.
+pub(super) fn run_case_with_flags(name: &str, source: &str, flags: &[&str]) {
+    run_case_inner_with_flags(name, source, Inputs::Random16, flags);
+}
+
 /// Shared body of [`run_case`] / [`run_case_with_inputs`]: build the case both
 /// natively and to MASM, then compare `entrypoint` outputs for the requested
 /// inputs.
 fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
+    run_case_inner_with_flags(name, source, inputs, &[]);
+}
+
+/// [`run_case_inner`] with extra per-case `midenc` flags.
+///
+/// The `MIDENC_DIFF_FLAGS` environment variable (whitespace-split) is
+/// appended after the per-case flags. It lets a whole-corpus sweep re-run
+/// every case under a different compiler configuration (e.g.
+/// `MIDENC_DIFF_FLAGS=--optimize=max`) with no per-case edits. The outputs
+/// must match the native reference under every configuration — a divergence
+/// that appears only under some flag set is a real compiler bug.
+fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags: &[&str]) {
     let pkg_name = format!("differential_{name}");
     let manifest = cargo_toml(&pkg_name);
     let miden_project_manifest = miden_project_toml(&pkg_name);
@@ -108,10 +129,20 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
         .file("Cargo.toml", &manifest)
         .file("src/lib.rs", &full_source)
         .build();
+    let midenc_flags: Vec<String> = flags
+        .iter()
+        .map(|f| f.to_string())
+        .chain(
+            std::env::var("MIDENC_DIFF_FLAGS")
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(|f| f.to_string()),
+        )
+        .collect();
     let mut test = CompilerTest::rust_source_cargo_miden(
         masm_proj.root(),
         WasmTranslationConfig::default(),
-        [],
+        midenc_flags,
     );
     let package = test.compile_package();
 
