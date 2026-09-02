@@ -179,8 +179,16 @@ fn run_case_inner_with_flags(name: &str, source: &str, inputs: Inputs<'_>, flags
         // want to capture the exact inputs that triggered the miscompilation. Shrunk inputs might
         // trigger another code path (another miscompilation?).
         Inputs::Random16 => {
+            // `FUZZA_INPUT_PAIRS` scales the pair count for a deeper sweep of
+            // the whole corpus (the RNG is freshly seeded per run, so repeated
+            // sweeps explore new inputs). Default: 16.
+            let cases = std::env::var("FUZZA_INPUT_PAIRS")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .filter(|&n| n > 0)
+                .unwrap_or(16);
             let cfg = Config {
-                cases: 16,
+                cases,
                 max_shrink_iters: 0,
                 failure_persistence: Some(Box::new(FileFailurePersistence::Off)),
                 ..Config::default()

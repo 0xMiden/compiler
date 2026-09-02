@@ -81,7 +81,9 @@ under another compiler configuration with `MIDENC_DIFF_FLAGS='<midenc
 flags>'` (whitespace-split; e.g. `--optimize=size-min`). Only the MASM side
 changes — the native reference build is untouched — so the outputs must
 still match: a divergence that appears under one configuration only is a
-real compiler bug.
+real compiler bug. `FUZZA_INPUT_PAIRS=N` scales the random input pairs per
+case (default 16; the RNG is freshly seeded per run) for a deep sweep of the
+whole corpus.
 
 The specifics of each bug — the failure, the exact inputs, what passing
 sibling cases have *bounded*, and what would allow un-ignoring — live only
