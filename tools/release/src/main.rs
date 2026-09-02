@@ -18,7 +18,7 @@ use midenc_release::{
     workspace::Workspace,
 };
 
-/// Release tooling for the Miden compiler repository.
+/// Release tooling for a Cargo repository, driven by `.release/config.toml`.
 #[derive(Debug, Parser)]
 #[command(name = "release-tool", version, arg_required_else_help = true)]
 struct Cli {
@@ -44,9 +44,9 @@ enum Command {
     },
     /// Print the publication order for a release unit.
     ///
-    /// Cargo's own packaging order is unreliable at this workspace's scale, so
-    /// every `cargo package` and `cargo publish` invocation must take its `-p`
-    /// list from here. See `tasks/design/release-tooling.md` §8.4.
+    /// Cargo's own packaging order is unreliable at scale, so every `cargo
+    /// package` and `cargo publish` invocation must take its `-p` list from
+    /// here. See `tools/release/README.md`.
     PackageOrder {
         /// Which unit to order. Omit to order every publishable package.
         #[arg(long)]
@@ -57,8 +57,9 @@ enum Command {
     },
     /// Move a version domain, updating every requirement that names it.
     ///
-    /// Compiler crates inherit the workspace version; SDK crates carry their
-    /// own but move together. Defaults to the next minor.
+    /// A domain is whatever the unit's `version-source` names: the workspace
+    /// version, or a version the unit's packages carry and move together.
+    /// Defaults to the next minor.
     SetVersion {
         /// Which domain to move.
         #[arg(long)]
@@ -184,8 +185,8 @@ enum Command {
     },
     /// Verify every staged draft and publish it.
     ///
-    /// Phase E, and the only irreversible step that cannot be undone even in
-    /// principle: a published release is immutable. Everything checkable is
+    /// The last step, and the only irreversible one that cannot be undone even
+    /// in principle: a published release is immutable. Everything checkable is
     /// checked for every unit before the first one is published.
     Finalize {
         /// The sealed plan.
@@ -195,10 +196,10 @@ enum Command {
         #[arg(long)]
         api_base: Option<String>,
     },
-    /// Build the template bundle archive.
+    /// Build an artifact unit's archive from its configured sources.
     ///
-    /// The archive is deterministic: its digest identifies the template
-    /// contents, which is what a compiler release checks its embedded copy
+    /// The archive is deterministic: its digest identifies the source
+    /// contents, which is what `lint` checks a unit's `embedded-copy`
     /// against.
     Bundle {
         /// Which artifact unit to build. Required only when the repository

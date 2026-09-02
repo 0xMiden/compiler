@@ -157,10 +157,12 @@ publishes for the unit it tracks.
 release-tool package-order [--unit <UNIT>] [--cargo-args]
 ```
 
-Prints packages in dependency order, one per line. `--unit` restricts it to one
-unit's packages; omit it for every publishable package. `--cargo-args` emits the
-order as a `-p NAME -p NAME …` string ready to paste after `cargo publish` or
-`cargo package`.
+Prints packages in dependency order, one per line. `--unit` restricts it to that
+unit's own packages *plus the transitive closure of the `library` crates they
+depend on* — the same set the unit's publish stage covers, since a `library`
+crate is published by whichever releasable unit needs it. Omit `--unit` for every
+publishable package. `--cargo-args` emits the order as a `-p NAME -p NAME …`
+string ready to paste after `cargo publish` or `cargo package`.
 
 Cargo's own packaging order is not reliable at scale, so every `cargo package`
 and `cargo publish` invocation should take its `-p` list from here.
@@ -177,10 +179,34 @@ without writing them.
 
 For a unit that publishes crates, it moves every package in that unit's
 [version domain](#version-source), rewrites every intra-workspace requirement
-naming one of them, refreshes `Cargo.lock`, rewrites any tracking unit's
-embedded requirement, and records the unit and version in `.release/release.toml`.
-For an artifact unit it writes the version to the unit's version file or source
-manifest and records the same declaration.
+naming one of them, refreshes `Cargo.lock`, and rewrites any tracking unit's
+embedded requirement. For an artifact unit it writes the version to the unit's
+version file or source manifest.
+
+Whether it then records the unit and version in `.release/release.toml` depends
+on whether the unit is *releasable*, not on whether it publishes crates:
+
+| `kind` | version moves | candidate entry recorded |
+| --- | --- | --- |
+| `crates` | yes | yes |
+| `artifact` | yes | yes |
+| `library` | yes | **no** |
+| `private` | refused | — |
+
+A `library` unit has no tag to render and is never named in a candidate, so a
+declaration for one is refused — [`lint`](#lint) reports it as an error, and
+nothing downstream of it would know what tag to cut. Moving its version is still
+supported and still useful — its crates reach the
+registry inside whichever releasable unit depends on them — so `set-version`
+performs the move, skips the candidate entry, and says so:
+
+```
+unit 'shared' is a 'library' unit, so no candidate entry was recorded; its
+crates are published by the units that depend on them
+```
+
+A `private` unit has no version of its own to move; its packages are pinned at
+`private-version`, and `set-version` refuses before reading or writing anything.
 
 `--force` allows a move that does not increase the version. SemVer orders a
 prerelease below its release, so replacing an already-bumped `0.32.0` with
@@ -257,16 +283,20 @@ Packages the selected crates, publishes them to a throwaway registry, and builds
 a consumer that resolves *only* through it. That last part is the point:
 resolution alone cannot prove an archive contains every file it needs.
 
-`--unit` restricts the selection; omit it for every publishable package.
+`--unit` restricts the selection to that unit's library closure; omit it for
+every publishable package.
 `--no-build` skips the consumer build — much faster, and much weaker.
 `--cache-dir` caches upstream index responses between runs.
 
 It also runs a second, narrower check: whether the release scope is
 self-contained, i.e. whether publishing it would leave a requirement that cannot
-resolve. With `--unit`, the scope is that unit's packages. Without it, the scope
-comes from `.release/release.toml` — the candidate's units plus the transitive
-closure of the `library` crates they depend on — because selecting *everything*
-makes every dependency internal and the check vacuous.
+resolve. With `--unit`, the scope is that unit's packages plus the transitive
+closure of the `library` crates they depend on — without the closure, a library
+crate this release publishes is mistaken for an unpublished outside dependency
+and the check fails on a release that is in fact self-contained. Without
+`--unit`, the scope comes from `.release/release.toml` — the candidate's units
+plus the same library closure — because selecting *everything* makes every
+dependency internal and the check vacuous.
 
 This is what justifies publishing with `--no-verify` in production, where
 skipping Cargo's verification keeps build scripts from running beside a live
@@ -506,7 +536,7 @@ archived from sources *or* attached as-is, never both.
 | `directory` | Archive git-tracked files beneath this directory, relative to the workspace root. |
 | `file` | Attach an existing file, produced by whatever built it. |
 | `include` | Paths relative to `directory`, files or directories, each enumerated with `git ls-files`. The inline include list. |
-| `manifest` | A TOML file inside `directory` whose entries supply the include list, and which also holds the unit's version. The named include list. |
+| `manifest` | A TOML file under `directory` whose entries supply the include list, and which also holds the unit's version. The named include list — its format is [below](#the-include-manifest). |
 | `asset` | The default `--output` name for `bundle`. Not a routing mechanism — the file reaches its release through `stage --artifacts` and this unit's `assets` globs, because CI builds it in one job and stages it in another. |
 | `embedded-copy` | A committed copy of the archive that `lint` verifies against freshly built bytes. Drift here is otherwise invisible. |
 | `version-file` | Where the version lives, when it is not the manifest's `version` key. A table: `path` (relative to the workspace root) and `key` (defaults to `"version"`). |
@@ -519,6 +549,74 @@ either confuse a consumer or fail to resolve outside the repository.
 `version-file.key` is a single literal key, not a dotted path. `set-version`
 refuses to create a key that is not already present, rather than silently
 inserting a top-level `package.version` that nothing reads.
+
+#### The include manifest
+
+`source.manifest` names a TOML file with a schema of its own — it is neither a
+Cargo manifest nor a fragment of `.release/config.toml`. Its path is relative to
+`directory`; it may be called anything and may sit in a subdirectory.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `schema-version` | yes | Must be exactly `1`. |
+| `version` | yes | The unit's version, SemVer. Required unconditionally — including when the unit declares a `version-file`. See below. |
+| `templates` | yes | The include list. A non-empty table whose every value is an inline table with a `path` key: a file or directory relative to `directory`. |
+| anything else | no | Preserved and readable by `tracks`, which is how a unit declares an embedded requirement. Undeclared keys are not an error. |
+
+Each entry's key — `account` below — is a label for whoever reads the file.
+Nothing derives a path, an archive entry, or a name from it. Each `path` is
+enumerated with `git ls-files`, exactly like
+an inline `include` entry: untracked files under it stay out of the archive, and
+a path that does not exist is an error.
+
+The manifest is itself an entry in the archive it describes, seeded at its path
+relative to `directory`, so a consumer that unpacks the archive can read it to
+find the sources.
+
+A complete manifest, for a unit configured as
+`directory = "extra/templates"`, `manifest = "bundle.toml"`:
+
+```toml
+# extra/templates/bundle.toml
+schema-version = 1
+version = "0.4.0"
+
+# An undeclared key. `[units.templates.tracks.sdk]` reads it — the key name
+# defaults to "<tracked>-requirement" and is overridable with
+# `requirement-key`. Omit it entirely if the unit tracks nothing.
+sdk-requirement = "0.14"
+
+[templates]
+account = { path = "rust/account" }
+note = { path = "rust/note" }
+```
+
+Two requirements are easy to miss, and both fail at parse time:
+
+**`templates` must be present and non-empty.** Omitting the table fails with
+``missing field `templates` ``; declaring it empty fails with `the bundle
+declares no templates`. There is no inline alternative inside a manifest — a
+unit that wants a bare list of paths uses `source.include` and no manifest at
+all.
+
+**`version` is required even when the unit declares a `version-file`.** The
+manifest is parsed in full before anything asks where the version lives, and the
+key has no default, so a manifest without it fails with
+``missing field `version` `` however the unit is configured. When a
+`version-file` *is* declared it wins: the manifest's own `version` is parsed and
+then ignored, and nothing keeps the two in step. Declare one or the other as the
+real source and treat the manifest's copy, where a `version-file` forces one to
+exist, as inert.
+
+##### Why the table is called `templates`
+
+Because this repository's artifact unit is a set of project templates, and the
+format was lifted from it. It is the last piece of this-repository vocabulary
+left in a data format that adopters write by hand, and it will read oddly for a
+unit that archives anything else — a WASM component, a JSON schema set, a
+firmware image. It is load-bearing all the same: the key is what serde matches
+on, so a manifest must spell it `templates` whatever the unit archives. Renaming
+it is a breaking change to every existing manifest, so it has not been made.
 
 ### `[units.<name>.tracks.<tracked>]`
 
@@ -788,7 +886,8 @@ assets = ["templates.tar.gz"]
 [units.templates.source]
 directory = "extra/templates"
 # The manifest is the include list: the archive must contain everything
-# `cargo miden new` renders from and nothing else.
+# `cargo miden new` renders from and nothing else. See "The include manifest"
+# for its format.
 manifest = "bundle.toml"
 asset = "templates.tar.gz"
 # cargo-miden ships a copy of the archive, because a .crate cannot contain files

@@ -1,10 +1,10 @@
 //! Publication ordering.
 //!
 //! Cargo computes a packaging order internally, but that order is not reliable
-//! at this workspace's scale: with 33 publishable crates, an alphabetically
-//! ordered `-p` list deterministically fails because Cargo packages
-//! `midenc-hir` before `midenc-session`, its own dependency. The identical set
-//! in topological order succeeds. See `tasks/design/release-tooling.md` §8.4.
+//! at scale: given dozens of publishable crates, an alphabetically ordered
+//! `-p` list deterministically fails because Cargo reaches a crate before the
+//! workspace dependency it needs. The identical set in topological order
+//! succeeds. See `tools/release/README.md`.
 //!
 //! Every packaging and publishing invocation therefore takes its `-p` list from
 //! this module.

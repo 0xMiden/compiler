@@ -16,7 +16,19 @@ fn write(path: &Path, contents: &str) {
 // repository regardless of the pathspec — so the fixture needs a real commit
 // for the changelog test to reach the assertion it's checking.
 fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git").arg("-C").arg(dir).args(args).status().unwrap();
+    // `GIT_DIR` and `GIT_WORK_TREE` outrank `-C <dir>`, so a runner that
+    // exports either -- a hook, or a `jj`/`git` wrapper -- would point this
+    // fixture's commands at the repository under test instead of the temporary
+    // one. Removed rather than cleared: the child still needs `PATH` and
+    // `HOME`.
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .status()
+        .unwrap();
     assert!(status.success(), "git {args:?} failed in {}", dir.display());
 }
 

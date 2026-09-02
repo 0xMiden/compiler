@@ -31,14 +31,19 @@ pub struct Bundle {
     pub schema_version: u32,
     pub version: Version,
     pub templates: BTreeMap<String, TemplateEntry>,
-    /// The manifest's own file name, e.g. `"bundle.toml"` or `"templates.toml"`.
+    /// The manifest's own path, relative to the unit's source root -- e.g.
+    /// `"bundle.toml"`, or `"meta/templates.toml"` for a manifest that does not
+    /// sit at the root.
     ///
-    /// `ArtifactSource::manifest` is an arbitrary path; nothing constrains its
-    /// name. This is set from the path [`Bundle::load`] was given, not
-    /// deserialized, so the archive seeds the manifest under the name it was
-    /// actually loaded from rather than a hardcoded literal.
+    /// `ArtifactSource::manifest` is an arbitrary relative path; nothing
+    /// constrains its name or its depth. This is set from the path
+    /// [`Bundle::load`] was given, not deserialized, so the archive seeds the
+    /// manifest at the location it was actually loaded from. Seeding the file
+    /// *name* alone would name a root-relative entry that does not exist
+    /// whenever the manifest lives in a subdirectory, and `archive` would fail
+    /// reading it.
     #[serde(skip)]
-    manifest_name: String,
+    manifest_path: PathBuf,
     /// Requirement declarations, keyed by the manifest key that holds them --
     /// `sdk-requirement` in this repository. Which key a unit uses comes from
     /// its `tracks` entry, so the bundle format itself stays agnostic.
@@ -55,7 +60,15 @@ pub struct TemplateEntry {
 }
 
 impl Bundle {
-    pub fn load(path: &Path) -> Result<Self> {
+    /// Load the manifest at `relative`, resolved against the unit's source
+    /// root.
+    ///
+    /// The two parts are taken separately because the relative half is what
+    /// the archive seeds: a manifest is an entry in the archive it describes,
+    /// and the archive's paths are relative to `root`.
+    pub fn load(root: &Path, relative: &Path) -> Result<Self> {
+        let path = root.join(relative);
+        let path = path.as_path();
         let text = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read bundle manifest at {}", path.display()))?;
         let mut bundle: Self =
@@ -71,29 +84,29 @@ impl Bundle {
         if bundle.templates.is_empty() {
             bail!("the bundle declares no templates");
         }
-        bundle.manifest_name = path
-            .file_name()
-            .with_context(|| format!("{} has no file name", path.display()))?
-            .to_string_lossy()
-            .into_owned();
+        if relative.file_name().is_none() {
+            bail!("{} has no file name", relative.display());
+        }
+        bundle.manifest_path = relative.to_path_buf();
         Ok(bundle)
     }
 
-    /// The manifest's own file name, which is also the archive's seed entry.
-    pub fn manifest_name(&self) -> &str {
-        &self.manifest_name
+    /// The manifest's own path relative to the source root, which is also the
+    /// archive's seed entry.
+    pub fn manifest_path(&self) -> &Path {
+        &self.manifest_path
     }
 
     /// Every file the archive should contain, relative to the source root, in
     /// a stable order. The manifest itself seeds it.
     pub fn files(&self, root: &Path, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
-        files(root, Some(self.manifest_name()), include)
+        files(root, Some(self.manifest_path()), include)
     }
 
     /// Every file the archive should contain, paired with whether it is
     /// executable, in a stable order. The manifest itself seeds it.
     pub fn entries(&self, root: &Path, include: &[PathBuf]) -> Result<Vec<(PathBuf, bool)>> {
-        entries(root, Some(self.manifest_name()), include)
+        entries(root, Some(self.manifest_path()), include)
     }
 
     /// The requirement this bundle declares under `key`.
@@ -168,18 +181,19 @@ fn collect(directory: &Path, root: &Path, files: &mut Vec<(PathBuf, bool)>) -> R
 /// stable order.
 ///
 /// `seed` is the archive's first entry, before the include list is walked: the
-/// manifest's own file name, for a unit whose include list comes from one, so
-/// that a consumer can read it to find the sources. Its name comes from the
-/// path the manifest was loaded from rather than a literal -- a unit may call
-/// it anything. A unit whose include list is inline has no manifest, so it
-/// seeds nothing; an archive must not carry an entry no file backs.
+/// manifest's own path relative to `root`, for a unit whose include list comes
+/// from one, so that a consumer can read it to find the sources. It comes from
+/// the path the manifest was loaded from rather than a literal -- a unit may
+/// call it anything and put it anywhere under the source root. A unit whose
+/// include list is inline has no manifest, so it seeds nothing; an archive must
+/// not carry an entry no file backs.
 pub fn entries(
     root: &Path,
-    seed: Option<&str>,
+    seed: Option<&Path>,
     include: &[PathBuf],
 ) -> Result<Vec<(PathBuf, bool)>> {
     let mut files: Vec<(PathBuf, bool)> =
-        seed.into_iter().map(|name| (PathBuf::from(name), false)).collect();
+        seed.into_iter().map(|path| (path.to_path_buf(), false)).collect();
 
     for relative in include {
         let path = root.join(relative);
@@ -201,7 +215,7 @@ pub fn entries(
 /// records exactly one bit (`100644` or `100755`), whereas an on-disk mode
 /// varies with umask and platform and would put the archive's digest back at
 /// the mercy of whoever built it.
-pub fn files(root: &Path, seed: Option<&str>, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
+pub fn files(root: &Path, seed: Option<&Path>, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
     Ok(entries(root, seed, include)?.into_iter().map(|(path, _)| path).collect())
 }
 
@@ -254,7 +268,7 @@ pub fn untracked(root: &Path, include: &[PathBuf]) -> Result<Vec<PathBuf>> {
 /// release checks its embedded copy against, so it must depend on the template
 /// contents and nothing else -- which is why the archive is built through the
 /// deterministic writer rather than the system `tar`.
-pub fn archive(root: &Path, seed: Option<&str>, include: &[PathBuf]) -> Result<(Vec<u8>, String)> {
+pub fn archive(root: &Path, seed: Option<&Path>, include: &[PathBuf]) -> Result<(Vec<u8>, String)> {
     let mut archived = Vec::new();
     for (relative, executable) in entries(root, seed, include)? {
         let path = root.join(&relative);
@@ -311,7 +325,7 @@ pub fn set_requirement(
     requirement: &str,
 ) -> Result<Vec<PathBuf>> {
     let bundle_path = root.join(manifest);
-    let bundle = Bundle::load(&bundle_path)?;
+    let bundle = Bundle::load(root, manifest)?;
     let old = format!("\"{}\"", bundle.requirement(key)?);
     let new = format!("\"{requirement}\"");
     let mut changed = Vec::new();
@@ -393,7 +407,7 @@ pub fn include_paths(root: &Path, unit: &UnitConfig) -> Result<Vec<PathBuf>> {
         .manifest
         .as_ref()
         .context("the unit declares neither 'include' nor 'manifest'")?;
-    let bundle = Bundle::load(&root.join(directory).join(manifest))?;
+    let bundle = Bundle::load(&root.join(directory), manifest)?;
     Ok(bundle.templates.values().map(|entry| entry.path.clone()).collect())
 }
 
@@ -532,7 +546,7 @@ pub fn build(root: &Path, name: &str, unit: &UnitConfig) -> Result<Built> {
     let sources = source_root(root, unit)?;
     let include = include_paths(root, unit)?;
     let manifest = unit.source.as_ref().and_then(|source| source.manifest.as_ref());
-    let bundle = manifest.map(|path| Bundle::load(&sources.join(path))).transpose()?;
+    let bundle = manifest.map(|path| Bundle::load(&sources, path)).transpose()?;
 
     // Every requirement this unit embeds must agree with what its manifest
     // declares. A unit that tracks nothing embeds nothing -- and a unit that
@@ -558,7 +572,7 @@ pub fn build(root: &Path, name: &str, unit: &UnitConfig) -> Result<Built> {
         }
     }
 
-    let seed = bundle.as_ref().map(Bundle::manifest_name);
+    let seed = bundle.as_ref().map(Bundle::manifest_path);
     let version = read_version(root, unit)?;
     let untracked = untracked(&sources, &include)?;
     let files = files(&sources, seed, &include)?;
@@ -742,7 +756,7 @@ version-file = { path = "version.toml" }
     #[test]
     fn the_archive_contains_only_declared_templates() {
         let dir = fixture("contents");
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         let files = bundle.files(&dir, &include(&dir)).unwrap();
 
         assert!(files.contains(&PathBuf::from("bundle.toml")));
@@ -763,13 +777,13 @@ version-file = { path = "version.toml" }
     #[test]
     fn a_file_git_does_not_track_stays_out_of_the_archive() {
         let dir = fixture("untracked");
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         let include = include(&dir);
         let (before, digest_before) =
-            archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
+            archive(&dir, Some(bundle.manifest_path()), &include).unwrap();
 
         write(&dir.join("rust/account/template/.claude/settings.json"), "{}");
-        let (after, digest_after) = archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
+        let (after, digest_after) = archive(&dir, Some(bundle.manifest_path()), &include).unwrap();
 
         assert_eq!(digest_before, digest_after, "an untracked file changed the bundle digest");
         assert_eq!(before, after);
@@ -784,7 +798,7 @@ version-file = { path = "version.toml" }
 
         // Once committed it ships, which is the only way to add template content.
         git(&dir, &["add", "-A"]);
-        let (_, digest_tracked) = archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
+        let (_, digest_tracked) = archive(&dir, Some(bundle.manifest_path()), &include).unwrap();
         assert_ne!(digest_before, digest_tracked);
         assert!(untracked(&dir, &include).unwrap().is_empty());
     }
@@ -800,7 +814,7 @@ version-file = { path = "version.toml" }
         git(&dir, &["add", "-A"]);
         git(&dir, &["update-index", "--chmod=+x", "rust/account/template/hook.sh"]);
 
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         let entries = bundle.entries(&dir, &include(&dir)).unwrap();
 
         let executable: Vec<&PathBuf> =
@@ -815,7 +829,7 @@ version-file = { path = "version.toml" }
     #[test]
     fn the_archive_seeds_the_manifest_under_its_own_name() {
         let dir = fixture_named("manifest-name", "templates.toml");
-        let bundle = Bundle::load(&dir.join("templates.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("templates.toml")).unwrap();
         let unit = artifact_unit(".", Some("templates.toml"), &[]);
         let include = include_paths(&dir, &unit).unwrap();
 
@@ -825,14 +839,46 @@ version-file = { path = "version.toml" }
 
         // `archive` reads every entry; it must not go looking for a
         // "bundle.toml" that was never written.
-        let (_, digest) = archive(&dir, Some(bundle.manifest_name()), &include).unwrap();
+        let (_, digest) = archive(&dir, Some(bundle.manifest_path()), &include).unwrap();
         assert!(!digest.is_empty());
+    }
+
+    /// Nor is the manifest constrained to sit at the source root. Seeding the
+    /// archive with its file *name* alone named a root-relative entry that no
+    /// file backs, and `archive` died reading it; the seed is the manifest's
+    /// path relative to the source root.
+    #[test]
+    fn the_archive_seeds_a_manifest_that_sits_in_a_subdirectory() {
+        let dir = fixture_named("manifest-subdir", "meta/templates.toml");
+        let manifest = Path::new("meta/templates.toml");
+        let bundle = Bundle::load(&dir, manifest).unwrap();
+        assert_eq!(bundle.manifest_path(), manifest);
+
+        let unit = artifact_unit(".", Some("meta/templates.toml"), &[]);
+        let include = include_paths(&dir, &unit).unwrap();
+
+        let files = bundle.files(&dir, &include).unwrap();
+        assert!(files.contains(&PathBuf::from("meta/templates.toml")), "{files:?}");
+        assert!(!files.contains(&PathBuf::from("templates.toml")), "{files:?}");
+
+        // The failing half: `archive` reads every entry it is handed. Seeding
+        // the file name alone -- what this used to do -- names a root-relative
+        // entry no file backs, and reading it is an error.
+        let error = archive(&dir, Some(Path::new("templates.toml")), &include).unwrap_err();
+        assert!(format!("{error:#}").contains("templates.toml"), "{error:#}");
+
+        let (_, digest) = archive(&dir, Some(bundle.manifest_path()), &include).unwrap();
+        assert!(!digest.is_empty());
+
+        // And the whole unit builds, seed included.
+        let built = build(&dir, "thing", &unit).unwrap();
+        assert!(built.files.contains(&PathBuf::from("meta/templates.toml")), "{:?}", built.files);
     }
 
     #[test]
     fn the_file_list_is_stable() {
         let dir = fixture("stable");
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         let include = include(&dir);
         let first = bundle.files(&dir, &include).unwrap();
         for _ in 0..8 {
@@ -843,7 +889,7 @@ version-file = { path = "version.toml" }
     #[test]
     fn a_matching_sdk_requirement_is_accepted() {
         let dir = fixture("match");
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         let expected = bundle.requirement("sdk-requirement").unwrap();
         assert!(
             check_requirements(&dir, &include(&dir), &tracked(), expected)
@@ -872,7 +918,7 @@ version-file = { path = "version.toml" }
             manifest.contains("miden-sdk-build-script-support = { version = \"0.14\" }"),
             "{manifest}"
         );
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         let expected = bundle.requirement("sdk-requirement").unwrap();
         assert_eq!(expected, "0.14");
         assert!(
@@ -896,7 +942,7 @@ sdk-requirement = "0.14"
 account = { path = "rust/account" }
 "#,
         );
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
 
         let problems = check_requirements(
             &dir,
@@ -928,7 +974,7 @@ account = { path = "rust/account" }
              { path = \"{{ compiler_path }}/sdk/build-script-support\" }\n{% else \
              %}\nmiden-sdk-build-script-support = { version = \"0.13\" }\n{% endif %}\n",
         );
-        let bundle = Bundle::load(&dir.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&dir, Path::new("bundle.toml")).unwrap();
         assert!(
             check_requirements(
                 &dir,
@@ -1168,9 +1214,17 @@ directory = "{directory}"
     }
 
     /// `#[serde(flatten)]` collects every key the struct does not name, and
-    /// `#[serde(skip)]` removes `manifest_name` from deserialization entirely.
+    /// `#[serde(skip)]` removes `manifest_path` from deserialization entirely.
     /// The two must not interact: the private invariant stays set from the
-    /// loaded path, and never leaks into `extra`.
+    /// loaded path, whatever a manifest claims.
+    ///
+    /// The manifest here plants decoys under every spelling the private field
+    /// could answer to -- its own, and the kebab-case rename the container
+    /// applies. Without them the assertions below hold vacuously, since a
+    /// manifest that never mentions the key proves nothing about what would
+    /// happen if one did. The correct outcome is that each decoy lands
+    /// harmlessly in `extra`, as an undeclared key like any other, while
+    /// `manifest_path` still comes from the path `load` was given.
     #[test]
     fn the_flattened_map_holds_only_undeclared_keys() {
         let dir = temp_dir("flatten-invariant");
@@ -1178,16 +1232,29 @@ directory = "{directory}"
         std::fs::create_dir_all(&root).unwrap();
         std::fs::write(
             root.join("templates.toml"),
-            "schema-version = 1\nversion = \"1.0.0\"\nsdk-requirement = \
-             \"0.13\"\n[templates.demo]\npath = \"demo\"\n",
+            "schema-version = 1\nversion = \"1.0.0\"\nsdk-requirement = \"0.13\"\nmanifest_path = \
+             \"decoy\"\nmanifest-path = \"decoy-kebab\"\nmanifest_name = \"decoy\"\nmanifest-name \
+             = \"decoy-kebab\"\n[templates.demo]\npath = \"demo\"\n",
         )
         .unwrap();
 
-        let bundle = Bundle::load(&root.join("templates.toml")).unwrap();
-        assert_eq!(bundle.manifest_name, "templates.toml");
-        assert_eq!(bundle.extra.keys().collect::<Vec<_>>(), ["sdk-requirement"]);
-        assert!(!bundle.extra.contains_key("manifest_name"), "{:?}", bundle.extra);
-        assert!(!bundle.extra.contains_key("manifest-name"), "{:?}", bundle.extra);
+        let bundle = Bundle::load(&root, Path::new("templates.toml")).unwrap();
+        assert_eq!(
+            bundle.manifest_path,
+            Path::new("templates.toml"),
+            "the loaded path wins over anything the manifest declares"
+        );
+        assert_eq!(
+            bundle.extra.keys().collect::<Vec<_>>(),
+            [
+                "manifest-name",
+                "manifest-path",
+                "manifest_name",
+                "manifest_path",
+                "sdk-requirement"
+            ],
+            "every decoy is an ordinary undeclared key"
+        );
         assert!(!bundle.extra.contains_key("schema-version"), "{:?}", bundle.extra);
         assert!(!bundle.extra.contains_key("version"), "{:?}", bundle.extra);
         assert!(!bundle.extra.contains_key("templates"), "{:?}", bundle.extra);
@@ -1205,7 +1272,7 @@ directory = "{directory}"
         )
         .unwrap();
 
-        let bundle = Bundle::load(&root.join("bundle.toml")).unwrap();
+        let bundle = Bundle::load(&root, Path::new("bundle.toml")).unwrap();
         let error = format!("{:#}", bundle.requirement("lib-requirement").unwrap_err());
         assert!(error.contains("lib-requirement"), "{error}");
     }

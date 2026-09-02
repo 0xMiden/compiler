@@ -36,6 +36,14 @@ pub struct Payload {
 }
 
 impl Payload {
+    /// Record `path` under the asset name `name`.
+    ///
+    /// Precondition: `name` is unique within this payload. The backing map is
+    /// keyed by name, so adding the same name twice keeps the later path and
+    /// drops the earlier one silently. [`route`] satisfies this because one
+    /// `read_dir` cannot yield two entries with the same file name, but it
+    /// takes an arbitrary `&[PathBuf]` and is `pub`: a caller assembling a
+    /// list from several directories must deduplicate before it gets here.
     pub fn add(&mut self, name: impl Into<String>, path: impl Into<PathBuf>) {
         self.assets.insert(name.into(), path.into());
     }

@@ -88,7 +88,7 @@ fn check_tracked_requirements(
                 continue;
             };
 
-            let bundle = crate::bundle::Bundle::load(&manifest_path)?;
+            let bundle = crate::bundle::Bundle::load(&ws.root.join(directory), manifest)?;
             let key = unit.requirement_key(tracked);
             let expected = crate::bundle::requirement_for(&declaration.version);
 
@@ -235,9 +235,13 @@ fn check_embedded_bundle(root: &Path, config: &Config, findings: &mut Findings) 
             continue;
         }
 
-        let bundle = manifest_path.map(|path| crate::bundle::Bundle::load(&path)).transpose()?;
+        let bundle = source
+            .manifest
+            .as_ref()
+            .map(|manifest| crate::bundle::Bundle::load(&sources, manifest))
+            .transpose()?;
         let include = crate::bundle::include_paths(root, unit)?;
-        let seed = bundle.as_ref().map(crate::bundle::Bundle::manifest_name);
+        let seed = bundle.as_ref().map(crate::bundle::Bundle::manifest_path);
         let (_, expected) = crate::bundle::archive(&sources, seed, &include)?;
         let actual = crate::registry::sha256_hex(&std::fs::read(&embedded_path)?);
 
@@ -262,9 +266,9 @@ fn check_embedded_bundle(root: &Path, config: &Config, findings: &mut Findings) 
                     strays.iter().map(|path| directory.join(path).display().to_string()).collect();
                 message.push_str(&format!(
                     ".\nNote: these files sit under the sources for unit '{name}' but are not \
-                     tracked by git, so they are not in the bundle and never reach a generated \
-                     project: {}. Commit them (`git add -f` if something is ignoring them) or \
-                     remove them",
+                     tracked by git, so they are not in the archive and never reach a consumer of \
+                     it: {}. Commit them (`git add -f` if something is ignoring them) or remove \
+                     them",
                     list.join(", ")
                 ));
             }
