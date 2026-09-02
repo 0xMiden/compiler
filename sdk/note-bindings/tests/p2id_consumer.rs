@@ -96,6 +96,12 @@ edition = "2024"
 
 [workspace]
 
+# Keep only file/line debug information: this project exists to prove the
+# generated bindings compile and run, and full DWARF for the native Miden
+# dependency cone costs gigabytes in the shared test build directory.
+[profile.dev]
+debug = "line-tables-only"
+
 [dependencies]
 miden-note-bindings = {{ path = {bindings_dir:?} }}
 
@@ -166,6 +172,10 @@ fn main() {{
         .arg(temp.path().join("Cargo.toml"))
         .current_dir(temp.path())
         .env("CARGO_TARGET_DIR", workspace.join("target/note-bindings-consumer"))
+        // Share the hash-keyed intermediates with the other test builds; only the
+        // name-keyed final artifacts stay in the directory above. Convention from
+        // `tests/support`.
+        .env("CARGO_BUILD_BUILD_DIR", workspace.join("target/miden_build_cache"))
         .env("CARGO_NET_OFFLINE", "true");
     scrub_nested_cargo_env(&mut cargo);
     let output = cargo

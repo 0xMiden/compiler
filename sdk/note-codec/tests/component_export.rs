@@ -34,7 +34,11 @@ fn minimal_codec_crate_builds_to_wasi_only_component() {
             WASM_TARGET,
             "--offline",
         ])
-        .env("CARGO_TARGET_DIR", &target_dir);
+        .env("CARGO_TARGET_DIR", &target_dir)
+        // Share the hash-keyed intermediates with the other test builds; only the
+        // name-keyed final artifacts stay in the directory above. Convention from
+        // `tests/support`.
+        .env("CARGO_BUILD_BUILD_DIR", workspace_root().join("target/miden_build_cache"));
     for &variable in NESTED_CARGO_SCRUB_ENV {
         command.env_remove(variable);
     }
