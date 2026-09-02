@@ -76,6 +76,34 @@ impl Intent {
     pub fn digest(&self) -> String {
         crate::registry::sha256_hex(self.to_canonical_json().as_bytes())
     }
+
+    /// Read an intent, refusing one written by a different schema.
+    ///
+    /// The intent crosses a job boundary as a file, and `seal` carries it whole
+    /// into the plan -- where `Plan::load` only ever probes the *outer*
+    /// schema-version, so a stale intent read here survives all the way to
+    /// finalization inside a plan that looks perfectly valid. That a v1 intent
+    /// happens to fail deserialization today is an accident of which fields
+    /// changed, not a guarantee.
+    ///
+    /// The version is read before the document is deserialized, so a format
+    /// change reports this message rather than a serde complaint about a field
+    /// the reader has never heard of. Same shape as [`crate::plan::Plan::load`].
+    pub fn load(path: &std::path::Path) -> Result<Self> {
+        let text = std::fs::read_to_string(path)?;
+
+        let probe: serde_json::Value = serde_json::from_str(&text)?;
+        match probe.get("schema-version").and_then(serde_json::Value::as_u64) {
+            Some(version) if version == u64::from(SCHEMA_VERSION) => {}
+            Some(version) => bail!(
+                "release intent schema version {version} is not supported (expected \
+                 {SCHEMA_VERSION})"
+            ),
+            None => bail!("release intent declares no schema-version"),
+        }
+
+        Ok(serde_json::from_str(&text)?)
+    }
 }
 
 /// Build an intent from the reviewed candidate.
@@ -632,5 +660,60 @@ unit = "compiler"
             BTreeSet::from(["common".to_string(), "tool-a".to_string(), "tool-b".to_string()]),
             "each package -- including the library shared by both units -- appears exactly once"
         );
+    }
+
+    // `Intent::load`. The intent crosses a job boundary as a file and `seal`
+    // carries it whole into the plan, so an unchecked one reaches finalization
+    // inside a plan whose own schema-version probe says nothing about it.
+
+    /// A uniquely named file under the system temp directory, following the
+    /// pattern the rest of this crate's tests use.
+    fn temp_intent_path(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "midenc-release-intent-{label}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.join("intent.json")
+    }
+
+    fn an_intent() -> Intent {
+        generate(&workspace(), &config(), &candidate(&["sdk"]), "abc123").unwrap()
+    }
+
+    #[test]
+    fn load_reads_an_intent_at_the_current_schema_version() {
+        let intent = an_intent();
+        let path = temp_intent_path("current");
+        std::fs::write(&path, intent.to_canonical_json()).unwrap();
+
+        assert_eq!(Intent::load(&path).unwrap(), intent);
+    }
+
+    #[test]
+    fn load_reports_a_schema_version_mismatch_by_its_designed_message() {
+        // Reaches the probe without deserializing as an `Intent`: that a v1
+        // document also happens to be missing a required field today is an
+        // accident of which fields changed, and is exactly what this stops
+        // relying on.
+        let path = temp_intent_path("mismatch");
+        std::fs::write(&path, r#"{"schema-version": 1}"#).unwrap();
+
+        let err = Intent::load(&path).unwrap_err().to_string();
+        assert!(
+            err.contains("schema version 1") && err.contains(&SCHEMA_VERSION.to_string()),
+            "expected the designed version-mismatch message naming both versions, got: {err}"
+        );
+    }
+
+    #[test]
+    fn load_reports_a_missing_schema_version_by_its_designed_message() {
+        let path = temp_intent_path("missing");
+        std::fs::write(&path, r#"{"subject": "abc123"}"#).unwrap();
+
+        let err = Intent::load(&path).unwrap_err().to_string();
+        assert!(err.contains("declares no schema-version"), "{err}");
     }
 }

@@ -54,6 +54,24 @@ pub fn library_closure(
     wanted
 }
 
+/// The packages a `--unit` selection publishes.
+///
+/// A unit's own packages plus the transitive `library` closure over them, which
+/// is the same set `intent::package_order` stages. A flat `packages_in` omits
+/// the library crates a unit depends on, and every consequence of that omission
+/// is a *quiet* one: an ordering that leaves a crate out of the `-p` list, a
+/// closure check that calls a crate this release publishes an unpublished
+/// outside dependency, a reconciliation that reports nothing to publish while a
+/// library crate is genuinely absent from the registry.
+///
+/// The unit is resolved first, so an unknown name fails with the loader's
+/// message rather than as an empty selection.
+pub fn selection_for_unit(ws: &Workspace, config: &Config, unit: &str) -> Result<BTreeSet<String>> {
+    config.unit(unit)?;
+    let seed: BTreeSet<String> = config.packages_in(unit).map(|p| p.name.clone()).collect();
+    Ok(library_closure(ws, config, seed))
+}
+
 /// Order `selected` so that every package appears after all of its dependencies
 /// within the selection.
 ///
@@ -254,6 +272,41 @@ unit = "lib2"
         let closure = library_closure(&ws, &config, selection(&["lib1"]));
 
         assert_eq!(closure, selection(&["lib1", "lib2"]), "{closure:?}");
+    }
+
+    // `selection_for_unit`: what a `--unit` flag selects. Every command taking
+    // one goes through this, so a fifth call site cannot quietly go back to a
+    // flat `packages_in`.
+
+    #[test]
+    fn a_unit_selection_includes_the_library_crates_it_depends_on() {
+        // The shape that made `verify-closure --unit app` report a spurious
+        // "not self-contained": lib1 is published by this release, but a flat
+        // `packages_in("app")` leaves it looking like an outside dependency.
+        let ws = ws(&[
+            ("app", &["lib1", "other"][..]),
+            ("lib1", &["lib2"][..]),
+            ("lib2", &[][..]),
+            ("other", &[][..]),
+        ]);
+        let selected = selection_for_unit(&ws, &library_closure_config(), "app").unwrap();
+        assert_eq!(selected, selection(&["app", "lib1", "lib2"]), "{selected:?}");
+    }
+
+    #[test]
+    fn a_unit_selection_leaves_another_units_packages_to_that_unit() {
+        let ws = ws(&[("app", &["other"][..]), ("other", &[][..])]);
+        let selected = selection_for_unit(&ws, &library_closure_config(), "app").unwrap();
+        assert_eq!(selected, selection(&["app"]), "{selected:?}");
+    }
+
+    #[test]
+    fn an_unknown_unit_is_rejected_rather_than_selecting_nothing() {
+        let ws = ws(&[("app", &[][..])]);
+        let err = selection_for_unit(&ws, &library_closure_config(), "nonsense")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("not a release unit"), "{err}");
     }
 
     #[test]

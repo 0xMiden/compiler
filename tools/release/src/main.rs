@@ -299,12 +299,7 @@ fn main() -> Result<()> {
         }
         Command::PackageOrder { unit, cargo_args } => {
             let selected: BTreeSet<String> = match &unit {
-                Some(unit) => {
-                    // Resolve first, so an unknown name fails with the loader's
-                    // message rather than as an empty selection.
-                    config.unit(unit)?;
-                    config.packages_in(unit).map(|p| p.name.clone()).collect()
-                }
+                Some(unit) => order::selection_for_unit(&ws, &config, unit)?,
                 None => config.publishable().map(|p| p.name.clone()).collect(),
             };
 
@@ -332,6 +327,11 @@ fn main() -> Result<()> {
             // of its own rather than in a version domain of Cargo manifests.
             let unit_config = config.unit(&unit)?;
             if !unit_config.publishes_crates() {
+                // Neither crates nor a release: a `private` unit has no version
+                // of its own to move, and its packages are pinned at
+                // `private-version`. Refused here, before anything is read or
+                // written.
+                config.releasable_unit(&unit)?;
                 let current = midenc_release::bundle::read_version(&ws.root, unit_config)?;
                 let new = requested.unwrap_or_else(|| version::next_minor(&current));
                 version::check_direction(&current, &new, force)?;
@@ -364,6 +364,21 @@ fn main() -> Result<()> {
             version::apply(&ws, &config, &plan)?;
             println!("\nupdated {} manifest edit(s) and refreshed Cargo.lock", plan.edits.len());
 
+            // A `library` unit publishes crates but is never released on its
+            // own, so its version moves like any other domain's and there is
+            // nothing to record: it has no tag to render, and a candidate entry
+            // naming it would be refused by `candidate::validate`. Its crates
+            // reach the registry inside whichever releasable unit depends on
+            // them.
+            if !unit_config.is_releasable() {
+                println!(
+                    "\nunit '{unit}' is a '{}' unit, so no candidate entry was recorded; its \
+                     crates are published by the units that depend on them",
+                    unit_config.kind
+                );
+                return Ok(());
+            }
+
             let candidate_path = manifest_dir.join(".release/release.toml");
             update_candidate(&candidate_path, &config, &unit, &plan.new)?;
             println!("recorded the candidate in {}", candidate_path.display());
@@ -394,12 +409,7 @@ fn main() -> Result<()> {
             cache_dir,
         } => {
             let selected: BTreeSet<String> = match &unit {
-                Some(unit) => {
-                    // Resolve first, so an unknown name fails with the loader's
-                    // message rather than as an empty selection.
-                    config.unit(unit)?;
-                    config.packages_in(unit).map(|p| p.name.clone()).collect()
-                }
+                Some(unit) => order::selection_for_unit(&ws, &config, unit)?,
                 None => config.publishable().map(|p| p.name.clone()).collect(),
             };
             let packages = order::topological(&ws, &selected)?;
@@ -418,7 +428,12 @@ fn main() -> Result<()> {
             // package selected, every dependency is internal and the check is
             // vacuous, which is why it never fired in production.
             let scope: BTreeSet<String> = match &unit {
-                Some(name) => config.packages_in(name).map(|p| p.name.clone()).collect(),
+                // The library closure again, and for the same reason as the
+                // no-`--unit` arm below: without it a library crate this
+                // release publishes is mistaken for an unpublished outside
+                // dependency, and the check fails on a release that is in fact
+                // self-contained.
+                Some(name) => order::selection_for_unit(&ws, &config, name)?,
                 None => {
                     let candidate_path = manifest_dir.join(".release/release.toml");
                     match load_candidate_if_present(&candidate_path)? {
@@ -489,8 +504,7 @@ fn main() -> Result<()> {
             no_build,
             cache_dir,
         } => {
-            let text = std::fs::read_to_string(&intent_path)?;
-            let intent: intent::Intent = serde_json::from_str(&text)?;
+            let intent = intent::Intent::load(&intent_path)?;
 
             let packages: Vec<String> =
                 intent.stages.iter().flat_map(|s| s.packages.iter().cloned()).collect();
@@ -503,7 +517,7 @@ fn main() -> Result<()> {
                 cache_dir,
             };
             let built = closure::verify(&ws.root, &options)?;
-            let plan = release_plan::seal(&intent, &built)?;
+            let plan = release_plan::seal(&config, &intent, &built)?;
             let json = plan.to_canonical_json();
 
             match output {
@@ -531,10 +545,7 @@ fn main() -> Result<()> {
                 }
                 None => {
                     let selected: BTreeSet<String> = match &unit {
-                        Some(unit) => {
-                            config.unit(unit)?;
-                            config.packages_in(unit).map(|p| p.name.clone()).collect()
-                        }
+                        Some(unit) => order::selection_for_unit(&ws, &config, unit)?,
                         None => config.publishable().map(|p| p.name.clone()).collect(),
                     };
                     order::topological(&ws, &selected)?

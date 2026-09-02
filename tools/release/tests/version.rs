@@ -16,13 +16,16 @@ fn write(path: &Path, contents: &str) {
 }
 
 /// A workspace with a `compiler` domain at 0.9.2 and an `sdk` domain at 0.13.1,
-/// where a compiler crate depends on an SDK crate.
+/// where a compiler crate depends on an SDK crate, plus an artifact unit whose
+/// sources embed a requirement on the `sdk` domain.
 fn fixture(dir: &Path) {
     write(
         &dir.join("Cargo.toml"),
         r#"[workspace]
 resolver = "2"
 members = ["comp", "shared", "shared-dep", "shared-tests"]
+# Template sources, whose manifests are not part of this workspace.
+exclude = ["templates"]
 
 [workspace.package]
 version = "0.9.2"
@@ -96,6 +99,31 @@ fixture-shared.workspace = true
     );
     write(&dir.join("shared-tests/src/lib.rs"), "");
 
+    // The artifact unit's sources: a manifest that both records the unit's
+    // version and declares the requirement its templates embed on the `sdk`
+    // domain, and one template carrying that requirement.
+    write(
+        &dir.join("templates/bundle.toml"),
+        r#"schema-version = 1
+version = "0.5.0"
+sdk-requirement = "0.13"
+
+[templates]
+project = { path = "project" }
+"#,
+    );
+    write(
+        &dir.join("templates/project/Cargo.toml"),
+        r#"[package]
+name = "generated"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fixture-shared = "0.13"
+"#,
+    );
+
     write(
         &dir.join(".release/config.toml"),
         r#"schema-version = 2
@@ -111,6 +139,21 @@ kind = "crates"
 version-source = "own"
 tag = "sdk/v{version}"
 changelog = "sdk/CHANGELOG.md"
+
+# Publishes an archive rather than crates, and embeds a requirement on the sdk
+# domain: an sdk bump must carry it along, and a bump of any other domain must
+# leave it alone.
+[units.templates]
+kind = "artifact"
+tag = "templates/v{version}"
+changelog = "templates/CHANGELOG.md"
+
+[units.templates.source]
+directory = "templates"
+manifest = "bundle.toml"
+
+[units.templates.tracks.sdk]
+packages = ["fixture-shared"]
 
 [units.private]
 kind = "private"
@@ -404,5 +447,62 @@ fn bumping_one_own_unit_leaves_a_sibling_own_unit_alone() {
     assert!(
         root.contains(r#"fixture-tool-b = { version = "1.0.0", path = "tool-b" }"#),
         "the sibling's requirement must not move either: {root}"
+    );
+}
+
+/// The `tracks` rewrite, in both directions.
+///
+/// A tracking unit's embedded requirement moves when the domain it tracks moves
+/// -- and only then. The negative direction is the one worth pinning down: an
+/// inverted domain comparison would rewrite the requirement to the *wrong*
+/// unit's version, and the sources would still parse, still render, and still
+/// build. Nothing downstream would notice.
+#[test]
+fn bumping_a_tracked_domain_rewrites_the_tracking_units_requirement() {
+    let (dir, ws, config) = setup("tracks-sdk");
+
+    let plan = version::plan(&ws, &config, "sdk", None, version::Force::No).unwrap();
+    assert_eq!(plan.new.to_string(), "0.14.0");
+    version::apply(&ws, &config, &plan).unwrap();
+
+    let bundle = fs::read_to_string(dir.join("templates/bundle.toml")).unwrap();
+    assert!(
+        bundle.contains(r#"sdk-requirement = "0.14""#),
+        "the tracking unit's declared requirement must move with the domain it tracks: {bundle}"
+    );
+    assert!(
+        bundle.contains(r#"version = "0.5.0""#),
+        "the tracking unit's own version is a different domain and must not move: {bundle}"
+    );
+
+    let template = fs::read_to_string(dir.join("templates/project/Cargo.toml")).unwrap();
+    assert!(
+        template.contains(r#"fixture-shared = "0.14""#),
+        "the sources carrying the requirement move too, or generated projects stay pinned to the \
+         previous release: {template}"
+    );
+}
+
+#[test]
+fn bumping_a_domain_the_unit_does_not_track_leaves_its_requirement_alone() {
+    let (dir, ws, config) = setup("tracks-other");
+
+    // `compiler`, not `sdk`: a different domain entirely, and the templates
+    // track neither it nor anything in it.
+    let plan = version::plan(&ws, &config, "compiler", None, version::Force::No).unwrap();
+    assert_eq!(plan.new.to_string(), "0.10.0");
+    version::apply(&ws, &config, &plan).unwrap();
+
+    let bundle = fs::read_to_string(dir.join("templates/bundle.toml")).unwrap();
+    assert!(
+        bundle.contains(r#"sdk-requirement = "0.13""#),
+        "a bump of an untracked domain must not rewrite the requirement -- doing so would pin \
+         consumers to a version of the wrong unit: {bundle}"
+    );
+
+    let template = fs::read_to_string(dir.join("templates/project/Cargo.toml")).unwrap();
+    assert!(
+        template.contains(r#"fixture-shared = "0.13""#),
+        "and the sources must be left alone too: {template}"
     );
 }

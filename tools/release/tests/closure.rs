@@ -193,7 +193,32 @@ fn a_sealed_plan_turns_a_foreign_version_into_a_conflict() {
             name: "sdk/v0.1.0".into(),
         }],
     };
-    let sealed = plan::seal(&intent, &built).unwrap();
+    // Sealing is checked against release policy: a package's version is
+    // compared to its stage's only when the stage's unit owns it.
+    let config_path = dir.join("release-config.toml");
+    std::fs::write(
+        &config_path,
+        r#"schema-version = 2
+
+[units.sdk]
+kind = "crates"
+version-source = "own"
+tag = "sdk/v{version}"
+changelog = "sdk/CHANGELOG.md"
+
+[[packages]]
+name = "closure-leaf"
+unit = "sdk"
+
+[[packages]]
+name = "closure-root"
+unit = "sdk"
+"#,
+    )
+    .unwrap();
+    let config = midenc_release::config::Config::load(&config_path).unwrap();
+
+    let sealed = plan::seal(&config, &intent, &built).unwrap();
 
     let real_digest = &sealed.packages[0].digest;
     assert_eq!(real_digest.len(), 64, "the sealed digest came from a real archive");

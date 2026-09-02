@@ -548,6 +548,26 @@ impl Config {
             .with_context(|| format!("'{name}' is not a release unit; see .release/config.toml"))
     }
 
+    /// A unit that is released on its own, with a tag, a changelog, and a
+    /// GitHub release.
+    ///
+    /// [`Config::unit`] proves only that a name is *declared*. The commands
+    /// that render a tag or read a changelog need more than that: a `library`
+    /// or `private` unit is forbidden to declare either, so reaching
+    /// [`UnitConfig::tag`] with one panics on an internal assertion. This is
+    /// the boundary check that turns that into a message.
+    pub fn releasable_unit(&self, name: &str) -> Result<&UnitConfig> {
+        let unit = self.unit(name)?;
+        if !unit.is_releasable() {
+            bail!(
+                "unit '{name}' is a '{}' unit and is never released on its own, so it has no tag \
+                 or changelog",
+                unit.kind
+            );
+        }
+        Ok(unit)
+    }
+
     /// The packages belonging to a unit, in configuration order.
     pub fn packages_in<'a>(&'a self, unit: &'a str) -> impl Iterator<Item = &'a PackageConfig> {
         self.packages.iter().filter(move |p| p.unit == unit)

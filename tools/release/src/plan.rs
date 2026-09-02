@@ -19,7 +19,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::{closure::Closure, intent::Intent, reconcile::Planned};
+use crate::{closure::Closure, config::Config, intent::Intent, reconcile::Planned};
 
 pub const SCHEMA_VERSION: u32 = 2;
 
@@ -112,7 +112,15 @@ impl Plan {
 /// The cross-checks are what stop a plan from being sealed against the wrong
 /// build: every package the intent names must have been built, at the version
 /// the intent declared, and nothing else may have been.
-pub fn seal(intent: &Intent, closure: &Closure) -> Result<Plan> {
+///
+/// "The version the intent declared" applies only to the packages the stage's
+/// unit actually owns. A stage spans more than one version domain: it carries
+/// the unit's own packages plus the transitive `library` closure they depend
+/// on, and a `library` unit having a version domain of its own is the entire
+/// point of the kind. This is why the config is a parameter --
+/// `candidate::check_versions_match_manifests` asks the same question over
+/// `config.packages_in(unit)`, and this must agree with it.
+pub fn seal(config: &Config, intent: &Intent, closure: &Closure) -> Result<Plan> {
     let built: BTreeMap<&str, &crate::closure::PackagedCrate> =
         closure.crates.iter().map(|c| (c.name.as_str(), c)).collect();
 
@@ -125,7 +133,11 @@ pub fn seal(intent: &Intent, closure: &Closure) -> Result<Plan> {
                 problems.push(format!("'{name}' is in the intent but was not built"));
                 continue;
             };
-            if crate_.version != stage.version {
+            // A library crate is sealed at the version it was actually built
+            // at, which is what `planned_for` reads back and what the registry
+            // will be asked for.
+            let owned_by_this_unit = config.unit_of(name) == Some(stage.unit.as_str());
+            if owned_by_this_unit && crate_.version != stage.version {
                 problems.push(format!(
                     "'{name}' was built at {} but the intent declares {} for unit '{}'",
                     crate_.version, stage.version, stage.unit
@@ -179,6 +191,38 @@ mod tests {
         intent::{Stage, Tag},
     };
 
+    /// One `crates` unit owning `leaf` and `root`, plus a `library` unit
+    /// owning `shared` -- a version domain of its own, which is the point.
+    fn config() -> Config {
+        crate::config::testing::config(
+            r#"
+schema-version = 2
+
+[units.sdk]
+kind = "crates"
+version-source = "own"
+tag = "sdk/v{version}"
+changelog = "sdk/CHANGELOG.md"
+
+[units.shared]
+kind = "library"
+version-source = "workspace"
+
+[[packages]]
+name = "leaf"
+unit = "sdk"
+
+[[packages]]
+name = "root"
+unit = "sdk"
+
+[[packages]]
+name = "shared"
+unit = "shared"
+"#,
+        )
+    }
+
     fn intent(packages: &[&str], version: &str) -> Intent {
         Intent {
             schema_version: 1,
@@ -215,6 +259,7 @@ mod tests {
     #[test]
     fn sealing_attaches_digests_in_stage_order() {
         let plan = seal(
+            &config(),
             &intent(&["leaf", "root"], "1.0.0"),
             &closure(&[("root", "1.0.0", "d-root"), ("leaf", "1.0.0", "d-leaf")]),
         )
@@ -227,15 +272,20 @@ mod tests {
 
     #[test]
     fn a_package_the_intent_names_but_nobody_built_blocks_sealing() {
-        let err = seal(&intent(&["leaf", "root"], "1.0.0"), &closure(&[("leaf", "1.0.0", "d")]))
-            .unwrap_err()
-            .to_string();
+        let err = seal(
+            &config(),
+            &intent(&["leaf", "root"], "1.0.0"),
+            &closure(&[("leaf", "1.0.0", "d")]),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(err.contains("'root' is in the intent but was not built"), "{err}");
     }
 
     #[test]
     fn a_package_built_but_not_planned_blocks_sealing() {
         let err = seal(
+            &config(),
             &intent(&["leaf"], "1.0.0"),
             &closure(&[("leaf", "1.0.0", "d"), ("stowaway", "1.0.0", "d")]),
         )
@@ -247,16 +297,49 @@ mod tests {
 
     #[test]
     fn a_version_mismatch_between_intent_and_build_blocks_sealing() {
-        let err = seal(&intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "9.9.9", "d")]))
+        let err = seal(&config(), &intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "9.9.9", "d")]))
             .unwrap_err()
             .to_string();
         assert!(err.contains("built at 9.9.9"), "{err}");
     }
 
+    /// The pair to the test above, and the shape a multi-crate repository
+    /// actually has: a `library` unit has a version domain of its own, so a
+    /// stage carrying one spans two domains. Comparing the library's version
+    /// against the *stage's* refuses to seal a perfectly good build -- and
+    /// with every fixture package pinned at one version, nothing notices.
+    #[test]
+    fn a_library_crate_seals_at_its_own_version_rather_than_the_stages() {
+        let plan = seal(
+            &config(),
+            &intent(&["shared", "leaf"], "1.0.0"),
+            &closure(&[("shared", "0.3.7", "d-shared"), ("leaf", "1.0.0", "d-leaf")]),
+        )
+        .unwrap();
+
+        let shared = plan.packages.iter().find(|p| p.name == "shared").expect("shared is sealed");
+        assert_eq!(
+            shared.version, "0.3.7",
+            "a library crate is sealed at the version it was built at, not the stage's"
+        );
+        assert_eq!(
+            plan.planned_for("sdk")
+                .into_iter()
+                .map(|p| (p.name, p.version))
+                .collect::<Vec<_>>(),
+            [
+                ("shared".to_string(), "0.3.7".to_string()),
+                ("leaf".to_string(), "1.0.0".to_string())
+            ],
+            "reconciliation must ask the registry for the version that was built"
+        );
+    }
+
     #[test]
     fn planned_packages_carry_their_sealed_digest() {
         let plan =
-            seal(&intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "sealed")])).unwrap();
+            seal(&config(), &intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "sealed")]))
+                .unwrap();
         let planned = plan.planned();
 
         assert_eq!(planned.len(), 1);
@@ -270,15 +353,17 @@ mod tests {
     #[test]
     fn plans_are_deterministic() {
         let (intent, closure) = (intent(&["leaf"], "1.0.0"), closure(&[("leaf", "1.0.0", "d")]));
-        let first = seal(&intent, &closure).unwrap();
+        let first = seal(&config(), &intent, &closure).unwrap();
         for _ in 0..8 {
-            assert_eq!(seal(&intent, &closure).unwrap().digest(), first.digest());
+            assert_eq!(seal(&config(), &intent, &closure).unwrap().digest(), first.digest());
         }
     }
 
     #[test]
     fn plans_round_trip_through_json() {
-        let plan = seal(&intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "d")])).unwrap();
+        let plan =
+            seal(&config(), &intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "d")]))
+                .unwrap();
         let restored: Plan = serde_json::from_str(&plan.to_canonical_json()).unwrap();
         assert_eq!(restored, plan);
         assert_eq!(restored.digest(), plan.digest());
@@ -300,7 +385,9 @@ mod tests {
 
     #[test]
     fn load_reads_a_plan_at_the_current_schema_version() {
-        let plan = seal(&intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "d")])).unwrap();
+        let plan =
+            seal(&config(), &intent(&["leaf"], "1.0.0"), &closure(&[("leaf", "1.0.0", "d")]))
+                .unwrap();
         let path = temp_plan_path("current");
         std::fs::write(&path, plan.to_canonical_json()).unwrap();
 

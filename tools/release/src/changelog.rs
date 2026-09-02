@@ -50,10 +50,10 @@ pub fn prepare(
     unit: &str,
     range: Option<String>,
 ) -> Result<Prompt> {
-    let unit_config = config
-        .units
-        .get(unit)
-        .with_context(|| format!("'{unit}' is not a release unit; see .release/config.toml"))?;
+    // Releasable, not merely declared: a prompt is built out of a unit's tag
+    // and changelog, and a `library` or `private` unit is forbidden to declare
+    // either. Without this the tag lookup below reaches an internal assertion.
+    let unit_config = config.releasable_unit(unit)?;
 
     let paths = unit_paths(ws, config, unit)?;
     if paths.is_empty() {

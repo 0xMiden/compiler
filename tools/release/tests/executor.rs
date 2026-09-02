@@ -120,6 +120,39 @@ fn intent() -> Intent {
     }
 }
 
+/// Release policy for the fixture: one package in each of two `crates` units.
+fn config(dir: &Path) -> midenc_release::config::Config {
+    let path = dir.join("release-config.toml");
+    fs::write(
+        &path,
+        r#"schema-version = 2
+
+[units.sdk]
+kind = "crates"
+version-source = "own"
+tag = "sdk/v{version}"
+changelog = "sdk/CHANGELOG.md"
+
+[units.compiler]
+kind = "crates"
+version-source = "workspace"
+tag = "v{version}"
+changelog = "CHANGELOG.md"
+after = ["sdk"]
+
+[[packages]]
+name = "exec-sdk"
+unit = "sdk"
+
+[[packages]]
+name = "exec-comp"
+unit = "compiler"
+"#,
+    )
+    .unwrap();
+    midenc_release::config::Config::load(&path).unwrap()
+}
+
 /// Seal a plan by actually packaging, so the digests are real.
 fn sealed_plan(dir: &Path) -> Plan {
     let built = closure::verify(
@@ -132,7 +165,7 @@ fn sealed_plan(dir: &Path) -> Plan {
         },
     )
     .unwrap();
-    plan::seal(&intent(), &built).unwrap()
+    plan::seal(&config(dir), &intent(), &built).unwrap()
 }
 
 fn options(dir: &Path, dry_run: bool) -> Options {
