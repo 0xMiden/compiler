@@ -122,7 +122,44 @@ Maintenance rules:
 - `_imm` binary emitter variants are called only from `#[cfg(test)]` code,
   except `eq/lt/gt/lte_imm`, which switch lowering calls with **U32 selectors
   only**. `shr_imm_*` is dead: `arith::Shr` lowering always calls `shr()`;
-  constant shift counts are materialized as pushed operands.
+  constant shift counts are materialized as pushed operands. (`push_u32`/
+  `push_i32` in int32.rs are cold corollaries: their only callers are the
+  closed `shl/shr/rotl/rotr_imm` interiors.)
+- Division/modulo routing (verified 2026-09-02): the MASM lowering maps
+  `arith.Div` → `checked_div`, `arith.Mod` → `checked_mod`, `arith.Divmod`
+  → `checked_divmod`, and `wasm.I32RemS` → `wrapping_mod` (its ONLY
+  producer; `I64RemS` goes through `arith.Mod` into the known i64
+  checked_mod panic). No pipeline path emits an unchecked division:
+  `unchecked_div`/`unchecked_mod`/`unchecked_divmod` (+ `_imm` and
+  smallint-uint twins) are dead API. `arith.Divmod`'s only producer is the
+  byte→element address split in `dialects/wasm/src/mem.rs` `prepare_addr`,
+  always **U32**-typed (wasm32 byte addresses) — the U64/other
+  `checked_divmod` arms and `checked_divmod_u64` are unreachable (user
+  `/`+`%` pairs never form a Divmod: div and rem translate separately, and
+  LLVM's fusion is mul-sub strength reduction, not a divmod op).
+- `(try_)int32_to_uint` / `(try_)int32_to_int` (int32.rs N-bit
+  normalization) are compile-time-unreachable from ANY frontend input
+  (verified 2026-09-02, full caller audit): callers are the U8/U16 arms of
+  binary arith/div (need sub-word-typed HIR arith — no producer, LLVM
+  pre-masks), `handle_uint_overflow`'s Checked/Overflowing arms (doubly
+  dead: checked/overflowing legalized away), `cast` arms (hir.Cast never
+  built), `exp`/`exp_imm`/`pow2` arms (ops never built), `felt_to_uint/
+  int` (SDK-only felt surface), and `is_valid_uint`/`is_valid_int` (zero
+  callers workspace-wide — dead API). No caller can pass n=32 (arms pass
+  8/16, cast arms {16,8,1}, felt guards n<32), so the 2026-08 upstream
+  mask-overflow fix point and the `signed/unsigned_reserved_mask` helpers
+  are reachable only from unit tests. The 2026-08 upstream
+  Dup1→Dup0/mask fixes in these functions therefore fixed
+  corpus-unreachable code — do not hunt for their divergences.
+- Sub-word premask + checked/saturating/overflowing legalization
+  re-verified on the 2026-09 toolchain (subword_sign HIR probe + deleted
+  `sat_ovf` wat probe): i8/i16 appear only as pointer pointee types and
+  `wasm.sign_extend` src types; saturating u32/i32 add/sub become
+  add/sub + compare + select (a saturating u64 add over provably-small
+  operands is known-bits-folded away entirely), overflowing add/mul
+  become add+carry-compare / mul_wide+hi-word-select, checked_div becomes
+  an explicit rhs==0 branch. Zero checked/saturating/overflowing
+  constructs survive to wasm.
 - Memory-op immediate/typed arms (re-verified 2026-08-27 on the
   element-address-space rewrite of emit/mem.rs): the `load_imm` family has
   only unit-test callers; `store_imm`'s sole producer is the
@@ -865,6 +902,9 @@ at the test site.
 
 ## Operational gotchas
 
+- Case files cannot use `//!` inner doc comments: the harness prepends
+  `#![no_std]` + the panic handler ABOVE the case source, so inner doc
+  comments land after items and fail with E0753. Use plain `//` comments.
 - Agent Bash tools usually start a fresh shell per command — `export
   FUZZA_AREA=...` is lost. Prefix every invocation:
   `FUZZA_AREA='...' cargo make fuzza-cov-step`.
