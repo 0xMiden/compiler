@@ -30,6 +30,14 @@ pub struct MasmComponent {
     ///
     /// If unset, it indicates that the component is a library, even if it could be made executable.
     pub entrypoint: Option<masm::InvocationTarget>,
+    /// A private copy of the selected canonical-ABI entrypoint without its component `init`
+    /// prologue.
+    ///
+    /// This is present only when a component with a core Wasm start is compiled as an executable
+    /// through a canonical-ABI wrapper. Generated `main` invokes `init` itself, then any test
+    /// harness initialization, then this copy. The public wrapper retains its normal `init`
+    /// prologue for fresh-context calls.
+    pub executable_entrypoint_without_init: Option<masm::Procedure>,
     /// The rodata segments of this component keyed by the offset of the segment
     pub rodata: Vec<Rodata>,
     /// The address of the start of the global heap
@@ -282,6 +290,15 @@ impl MasmComponent {
         let mut exe = Box::new(masm::Module::new_executable());
         let span = SourceSpan::default();
         let mut invoked = Vec::new();
+        let entrypoint = if let Some(procedure) = self.executable_entrypoint_without_init.as_ref() {
+            let target = InvocationTarget::Symbol(procedure.name().as_ident());
+            exe.define_procedure(procedure.clone(), source_manager.clone())
+                .into_diagnostic()
+                .wrap_err("failed to define executable entrypoint without init")?;
+            target
+        } else {
+            entrypoint.clone()
+        };
         let body = {
             let mut block = masm::Block::new(span, Vec::with_capacity(64));
             // Invoke component initializer, if present
@@ -301,7 +318,7 @@ impl MasmComponent {
                 Inst::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
             )));
             invoked.push(masm::Invoke::new(masm::InvokeKind::Exec, entrypoint.clone()));
-            block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint.clone()))));
+            block.push(Op::Inst(Span::new(span, Inst::Exec(entrypoint))));
             block.push(Op::Inst(Span::new(
                 span,
                 Inst::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()),
@@ -685,6 +702,7 @@ mod tests {
                 root: root_path,
                 init: None,
                 entrypoint: Some(exec_target(&child_path.join(masm::Path::new("caller")))),
+                executable_entrypoint_without_init: None,
                 rodata: Vec::new(),
                 heap_base: 0,
                 stack_pointer: None,

@@ -1,6 +1,9 @@
 use midenc_hir::{
-    FxHashMap, Op, Symbol,
-    dialects::builtin::{self, DataSegmentError, SegmentRef, attributes::U64Attr},
+    FxHashMap, Op, Symbol, WalkResult,
+    dialects::builtin::{
+        self, DataSegmentError, SegmentRef,
+        attributes::{U64Attr, UnitAttr},
+    },
 };
 
 /// The page size used for the linker's own memory layout, in bytes.
@@ -19,6 +22,7 @@ pub struct LinkInfo {
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
     function_tables: FunctionTableLayout,
+    component_start: Option<builtin::FunctionRef>,
     heap_base: u32,
 }
 
@@ -30,6 +34,7 @@ impl LinkInfo {
             globals_layout: Default::default(),
             segment_layout: Default::default(),
             function_tables: Default::default(),
+            component_start: None,
             heap_base: 0,
         }
     }
@@ -64,10 +69,20 @@ impl LinkInfo {
         &self.function_tables
     }
 
+    /// Returns the core Wasm function which must run after ordinary component initialization.
+    #[inline]
+    pub fn component_start(&self) -> Option<builtin::FunctionRef> {
+        self.component_start
+    }
+
     /// Returns true if the component requires an `init` procedure to set up linear memory
-    /// (data segments, global variables, or function tables) before execution.
+    /// (data segments, global variables, or function tables) and run its core Wasm start function
+    /// before execution.
     pub fn requires_init(&self) -> bool {
-        self.has_globals() || self.has_data_segments() || self.has_function_tables()
+        self.has_globals()
+            || self.has_data_segments()
+            || self.has_function_tables()
+            || self.component_start.is_some()
     }
 
     /// Get the address of the first page boundary past all statically-allocated memory (global
@@ -86,6 +101,7 @@ pub struct Linker {
     globals_layout: GlobalVariableLayout,
     segment_layout: builtin::DataSegmentLayout,
     function_tables: Vec<builtin::FunctionTableRef>,
+    component_start: Option<builtin::FunctionRef>,
     reserved_memory_pages: u32,
     page_size: u32,
 }
@@ -109,6 +125,7 @@ impl Linker {
             globals_layout: GlobalVariableLayout::new(globals_start, page_size),
             segment_layout: Default::default(),
             function_tables: Default::default(),
+            component_start: None,
             reserved_memory_pages,
             page_size,
         }
@@ -132,7 +149,13 @@ impl Linker {
             return Err(LinkerError::Undefined);
         }
 
-        // 2. Visit each Module in the component and discover Segment, GlobalVariable, and
+        // 2. Discover and validate the optional core Wasm start marker before computing layout.
+        // This preflight walks every operation nested in the selected component so a misplaced
+        // marker is diagnosed rather than silently ignored. Supporting world siblings are not
+        // nested here and therefore remain outside this component link.
+        self.discover_component_start(component)?;
+
+        // 3. Visit each Module in the component and discover Segment, GlobalVariable, and
         // FunctionTable items, along with the memory claimed by the modules themselves
         let mut declared_reserved_memory = 0u64;
         let body = body.entry();
@@ -142,7 +165,7 @@ impl Linker {
             }
         }
 
-        // 3. Layout global variables past all memory claimed by the modules themselves
+        // 4. Layout global variables past all memory claimed by the modules themselves
         let next_available_offset =
             self.segment_layout.next_available_offset().ok_or_else(|| {
                 LinkerError::LayoutOverflow {
@@ -192,7 +215,7 @@ impl Linker {
             self.globals_layout.global_table_offset()
         );
 
-        // 4. Lay out function tables in the page following the global table, two words per slot
+        // 5. Lay out function tables in the page following the global table, two words per slot
         // (MAST root digest + signature tag). Page alignment makes the first table word-aligned
         // as `dynexec` requires, and each table's byte size is a word multiple, so subsequent
         // tables stay word-aligned too.
@@ -227,7 +250,7 @@ impl Linker {
             function_tables.end_offset = next_table_offset;
         }
 
-        // 5. Compute the dynamic heap base: the first page boundary past all
+        // 6. Compute the dynamic heap base: the first page boundary past all
         // statically-allocated memory (global variables and function tables), or the end of
         // reserved memory if larger. Static memory that reaches the last page leaves no
         // representable heap base, so that is a link failure rather than a panic in an accessor.
@@ -256,8 +279,146 @@ impl Linker {
             globals_layout: core::mem::take(&mut self.globals_layout),
             segment_layout: core::mem::take(&mut self.segment_layout),
             function_tables,
+            component_start: self.component_start,
             heap_base,
         })
+    }
+
+    /// Discover the single function carrying the frontend/backend component-start contract.
+    ///
+    /// The marker is deliberately legal only on a public, defined `extern("C") () -> ()`
+    /// function nested in this component's core-module tree. In particular, component/interface
+    /// functions and arbitrary operations cannot use it to acquire initialization semantics.
+    fn discover_component_start(
+        &mut self,
+        component: &midenc_hir::Operation,
+    ) -> Result<(), LinkerError> {
+        let root = component.as_operation_ref();
+        component
+            .prewalk(|op| {
+                if !op.has_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR) {
+                    return WalkResult::Continue(());
+                }
+
+                if op
+                    .get_typed_attribute::<UnitAttr>(midenc_dialect_hir::WASM_COMPONENT_START_ATTR)
+                    .is_none()
+                {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartMarker {
+                        reason: alloc::format!(
+                            "attribute '{}' on '{}' must have value `unit`",
+                            midenc_dialect_hir::WASM_COMPONENT_START_ATTR,
+                            op.name()
+                        ),
+                    });
+                }
+
+                let Some(function) = op.downcast_ref::<builtin::Function>() else {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartMarker {
+                        reason: alloc::format!(
+                            "attribute '{}' is only valid on a core-module function, not '{}'",
+                            midenc_dialect_hir::WASM_COMPONENT_START_ATTR,
+                            op.name()
+                        ),
+                    });
+                };
+
+                // Walk from the function's containing operation to the selected component root.
+                // Every operation on that path must be a module; otherwise this is a component-
+                // level or interface function rather than translated core Wasm. The outermost
+                // module is a direct child of `init`'s root and may be private. A nested module,
+                // however, must be public for a direct qualified `exec` from the root to traverse
+                // it under MASM visibility rules.
+                let mut containing_modules = alloc::vec::Vec::<builtin::ModuleRef>::new();
+                let mut parent = function.as_operation().parent_op();
+                let mut reached_root = false;
+                while let Some(parent_ref) = parent {
+                    if parent_ref == root {
+                        reached_root = true;
+                        break;
+                    }
+                    let parent_op = parent_ref.borrow();
+                    let next = parent_op.parent_op();
+                    let Some(module) = parent_op.downcast_ref::<builtin::Module>() else {
+                        return WalkResult::Break(LinkerError::InvalidComponentStartMarker {
+                            reason: alloc::format!(
+                                "function '{}' is not in the selected component's core-module tree",
+                                function.path()
+                            ),
+                        });
+                    };
+                    containing_modules.push(module.as_module_ref());
+                    drop(parent_op);
+                    parent = next;
+                }
+                if !reached_root || containing_modules.is_empty() {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartMarker {
+                        reason: alloc::format!(
+                            "function '{}' is not in the selected component's core-module tree",
+                            function.path()
+                        ),
+                    });
+                }
+
+                if function.is_declaration() {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartFunction {
+                        function: function.path().to_string(),
+                        reason: alloc::string::String::from(
+                            "it is a declaration, not a definition",
+                        ),
+                    });
+                }
+                if !function.is_public() {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartFunction {
+                        function: function.path().to_string(),
+                        reason: alloc::string::String::from(
+                            "it is not public and cannot be executed from component `init`",
+                        ),
+                    });
+                }
+
+                let signature = function.signature();
+                if signature.cc != midenc_hir::CallConv::C
+                    || !signature.params.is_empty()
+                    || !signature.results.is_empty()
+                {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartFunction {
+                        function: function.path().to_string(),
+                        reason: alloc::format!(
+                            "expected `extern(\"C\") () -> ()`, got calling convention '{}' with \
+                             {} parameters and {} results",
+                            signature.cc,
+                            signature.params.len(),
+                            signature.results.len()
+                        ),
+                    });
+                }
+
+                if let Some(inaccessible) = containing_modules
+                    .iter()
+                    .take(containing_modules.len().saturating_sub(1))
+                    .find(|module| !module.borrow().is_public())
+                {
+                    return WalkResult::Break(LinkerError::InvalidComponentStartFunction {
+                        function: function.path().to_string(),
+                        reason: alloc::format!(
+                            "nested module '{}' is private, so component `init` cannot reach it",
+                            inaccessible.borrow().path()
+                        ),
+                    });
+                }
+
+                let function_ref = function.as_function_ref();
+                if let Some(previous) = self.component_start {
+                    return WalkResult::Break(LinkerError::MultipleComponentStartFunctions {
+                        first: previous.borrow().path().to_string(),
+                        second: function.path().to_string(),
+                    });
+                }
+                self.component_start = Some(function_ref);
+                WalkResult::Continue(())
+            })
+            .into_result()
     }
 
     /// Discover the memory-owning items of `module` and of any module nested within it.
@@ -354,6 +515,24 @@ pub enum LinkerError {
     /// A computed memory layout does not fit in the 32-bit linear address space
     #[error("invalid memory layout: {reason}")]
     LayoutOverflow { reason: alloc::string::String },
+    /// The component-start marker was attached to an invalid operation or has the wrong type.
+    #[error("invalid Wasm component start marker: {reason}")]
+    InvalidComponentStartMarker { reason: alloc::string::String },
+    /// The marked function does not satisfy the backend component-start contract.
+    #[error("invalid Wasm component start function '{function}': {reason}")]
+    InvalidComponentStartFunction {
+        function: alloc::string::String,
+        reason: alloc::string::String,
+    },
+    /// The deliberately scoped representation supports one start function per component.
+    #[error(
+        "unsupported Wasm component: multiple start functions are marked ('{first}' and \
+         '{second}')"
+    )]
+    MultipleComponentStartFunctions {
+        first: alloc::string::String,
+        second: alloc::string::String,
+    },
 }
 
 /// This struct contains data about the layout of global variables in linear memory
@@ -550,14 +729,82 @@ mod tests {
     use alloc::rc::Rc;
 
     use midenc_hir::{
-        BuilderExt, Context, Ident, Op, SourceSpan, Visibility,
+        BuilderExt, CallConv, Context, Ident, Op, SourceSpan, Type, Visibility,
         dialects::builtin::{
-            self, ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::U64Attr,
+            self, BuiltinOpBuilder, ComponentBuilder, FunctionBuilder, FunctionRef, ModuleBuilder,
+            World, WorldBuilder,
+            attributes::{BoolAttr, Signature, U64Attr, UnitAttr},
         },
         version::Version,
     };
 
     use super::*;
+
+    struct StartFixture {
+        context: Rc<Context>,
+        component: builtin::ComponentRef,
+        module: builtin::ModuleRef,
+        function: FunctionRef,
+    }
+
+    fn start_fixture(
+        visibility: Visibility,
+        call_conv: CallConv,
+        params: impl IntoIterator<Item = Type>,
+        results: impl IntoIterator<Item = Type>,
+        define: bool,
+    ) -> StartFixture {
+        let context = Rc::new(Context::default());
+        let world_ref =
+            context.clone().builder().create::<World, ()>(Default::default())().unwrap();
+        let mut world_builder = WorldBuilder::new(world_ref);
+        let component = world_builder
+            .define_component(
+                Ident::from("test_ns"),
+                Ident::from("test"),
+                Version::parse("1.0.0").unwrap(),
+            )
+            .unwrap();
+        let mut component_builder = ComponentBuilder::new(component);
+        let module = component_builder.define_module(Ident::from("core")).unwrap();
+        let signature = Signature::with_convention(&context, call_conv, params, results);
+        let mut module_builder = ModuleBuilder::new(module);
+        let function = module_builder
+            .define_function(Ident::from("initialize"), visibility, signature)
+            .unwrap();
+        if define {
+            FunctionBuilder::new(function, module_builder.builder())
+                .ret(None, SourceSpan::default())
+                .unwrap();
+        }
+
+        StartFixture {
+            context,
+            component,
+            module,
+            function,
+        }
+    }
+
+    fn mark_start(context: &Rc<Context>, mut function: FunctionRef) {
+        let marker = context.create_attribute::<UnitAttr, _>(());
+        function
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR, marker);
+    }
+
+    fn link_start_fixture(fixture: &StartFixture) -> Result<LinkInfo, LinkerError> {
+        let component = fixture.component.borrow();
+        Linker::default().link(None, component.as_operation())
+    }
+
+    fn expect_link_error(result: Result<LinkInfo, LinkerError>, message: &str) -> LinkerError {
+        match result {
+            Ok(_) => panic!("{message}"),
+            Err(err) => err,
+        }
+    }
 
     /// Build a component holding one module that reserves `reserved_bytes` of memory and
     /// declares one single-slot function table, then link it.
@@ -685,5 +932,139 @@ mod tests {
         // The default reservation floor (17 pages) puts the table at 0x110000; its one 32-byte
         // slot rounds up to the next page boundary
         assert_eq!(link_info.heap_base(), 0x120000);
+    }
+
+    #[test]
+    fn marked_start_alone_requires_component_init() {
+        let fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        mark_start(&fixture.context, fixture.function);
+
+        let link_info = link_start_fixture(&fixture).expect("a valid component start must link");
+        assert!(link_info.requires_init(), "the start marker alone must require `init`");
+        assert!(link_info.component_start() == Some(fixture.function));
+    }
+
+    #[test]
+    fn component_start_marker_must_be_unit_typed() {
+        let mut fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        let marker = fixture.context.create_attribute::<BoolAttr, _>(true);
+        fixture
+            .function
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR, marker);
+
+        let err =
+            expect_link_error(link_start_fixture(&fixture), "a non-unit marker must not link");
+        assert!(err.to_string().contains("must have value `unit`"), "{err}");
+    }
+
+    #[test]
+    fn component_start_marker_is_only_valid_on_core_module_functions() {
+        let mut fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        let marker = fixture.context.create_attribute::<UnitAttr, _>(());
+        fixture
+            .module
+            .borrow_mut()
+            .as_operation_mut()
+            .set_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR, marker);
+
+        let err =
+            expect_link_error(link_start_fixture(&fixture), "a marker on a module must not link");
+        let message = err.to_string();
+        assert!(message.contains("only valid on a core-module function"), "{message}");
+        assert!(message.contains("builtin.module"), "{message}");
+    }
+
+    #[test]
+    fn component_level_function_cannot_be_a_core_module_start() {
+        let fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        let signature = Signature::with_convention(&fixture.context, CallConv::C, [], []);
+        let mut component_builder = ComponentBuilder::new(fixture.component);
+        let component_function = component_builder
+            .define_function(Ident::from("component_entry"), Visibility::Public, signature)
+            .unwrap();
+        mark_start(&fixture.context, component_function);
+
+        let err = expect_link_error(
+            link_start_fixture(&fixture),
+            "a component-level function cannot be a core-module start",
+        );
+        assert!(err.to_string().contains("core-module tree"), "{err}");
+    }
+
+    #[test]
+    fn component_start_must_be_a_public_definition() {
+        for (visibility, define, expected) in [
+            (Visibility::Private, true, "not public"),
+            (Visibility::Public, false, "declaration"),
+        ] {
+            let fixture = start_fixture(visibility, CallConv::C, [], [], define);
+            mark_start(&fixture.context, fixture.function);
+            let err =
+                expect_link_error(link_start_fixture(&fixture), "an invalid start must not link");
+            assert!(err.to_string().contains(expected), "{err}");
+        }
+    }
+
+    #[test]
+    fn component_start_must_have_the_core_c_void_signature() {
+        for (call_conv, params, results) in [
+            (CallConv::Fast, alloc::vec::Vec::new(), alloc::vec::Vec::new()),
+            (CallConv::C, alloc::vec![Type::I32], alloc::vec::Vec::new()),
+            (CallConv::C, alloc::vec::Vec::new(), alloc::vec![Type::I32]),
+        ] {
+            let fixture = start_fixture(Visibility::Public, call_conv, params, results, true);
+            mark_start(&fixture.context, fixture.function);
+            let err =
+                expect_link_error(link_start_fixture(&fixture), "an invalid start must not link");
+            assert!(err.to_string().contains("extern(\"C\") () -> ()"), "{err}");
+        }
+    }
+
+    #[test]
+    fn component_supports_only_one_marked_start() {
+        let fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        mark_start(&fixture.context, fixture.function);
+        let signature = Signature::with_convention(&fixture.context, CallConv::C, [], []);
+        let mut module_builder = ModuleBuilder::new(fixture.module);
+        let second = module_builder
+            .define_function(Ident::from("second_initialize"), Visibility::Public, signature)
+            .unwrap();
+        FunctionBuilder::new(second, module_builder.builder())
+            .ret(None, SourceSpan::default())
+            .unwrap();
+        mark_start(&fixture.context, second);
+
+        let err = expect_link_error(link_start_fixture(&fixture), "two starts must not link");
+        let message = err.to_string();
+        assert!(message.contains("multiple start functions"), "{message}");
+        assert!(message.contains("initialize") && message.contains("second_initialize"));
+    }
+
+    #[test]
+    fn start_in_a_private_nested_module_is_not_reachable_from_init() {
+        let fixture = start_fixture(Visibility::Public, CallConv::C, [], [], true);
+        // Move the marker to a valid function in a private nested module; the original function
+        // remains unmarked and merely keeps the top-level module non-empty.
+        let nested = ModuleBuilder::new(fixture.module)
+            .declare_module(Ident::from("nested"))
+            .unwrap();
+        let mut nested_builder = ModuleBuilder::new(nested);
+        let signature = Signature::with_convention(&fixture.context, CallConv::C, [], []);
+        let nested_start = nested_builder
+            .define_function(Ident::from("nested_start"), Visibility::Public, signature)
+            .unwrap();
+        FunctionBuilder::new(nested_start, nested_builder.builder())
+            .ret(None, SourceSpan::default())
+            .unwrap();
+        mark_start(&fixture.context, nested_start);
+
+        let err = expect_link_error(
+            link_start_fixture(&fixture),
+            "a start behind a private nested module must not link",
+        );
+        assert!(err.to_string().contains("nested module"), "{err}");
+        assert!(err.to_string().contains("private"), "{err}");
     }
 }

@@ -82,6 +82,12 @@ pub struct ParsedModule<'data> {
     /// List of data segments found in this module
     pub data_segments: PrimaryMap<DataSegmentIndex, DataSegment<'data>>,
 
+    /// Whether the module declared any element segment whose elements are not instantiated.
+    ///
+    /// Declared segments have no runtime representation after parsing, but structural consumers
+    /// still need to distinguish their presence from a module with no element section entries.
+    pub has_declared_elements: bool,
+
     /// When we're parsing the code section this will be incremented so we know
     /// which function is currently being defined.
     code_index: u32,
@@ -799,7 +805,9 @@ impl<'a, 'data> ModuleEnvironment<'a, 'data> {
                     self.result.module.passive_elements_map.insert(elem_index, index);
                 }
 
-                ElementKind::Declared => {}
+                ElementKind::Declared => {
+                    self.result.has_declared_elements = true;
+                }
             }
         }
         Ok(())

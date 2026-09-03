@@ -1,12 +1,15 @@
 use std::rc::Rc;
 
 use cranelift_entity::PrimaryMap;
+use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
 use midenc_frontend_wasm_metadata::{FrontendMetadata, ProtocolExportKind};
 use midenc_hir::{
-    self as hir2, BuilderExt, Context, FxHashMap, FxHashSet, Ident, SymbolNameComponent,
-    SymbolPath,
+    self as hir2, BuilderExt, CallConv, Context, FxHashMap, FxHashSet, Ident, OpExt, Symbol as _,
+    SymbolNameComponent, SymbolPath,
     diagnostics::Report,
-    dialects::builtin::{self, ComponentBuilder, ModuleBuilder, World, WorldBuilder},
+    dialects::builtin::{
+        self, ComponentBuilder, ModuleBuilder, World, WorldBuilder, attributes::UnitAttr,
+    },
     formatter::DisplayValues,
     interner::Symbol,
     smallvec,
@@ -21,6 +24,7 @@ use super::{
     TypeModuleIndex,
     flat::CanonicalAbiMode,
     shim_bypass::{self, ShimBypassInfo},
+    start::{StartupAdapter, StartupAdapterFixup, classify_startup_adapter},
 };
 use crate::{
     FrontendOutput, WasmTranslationConfig,
@@ -77,6 +81,9 @@ pub struct ComponentTranslator<'a> {
 
     /// Information about shim modules to bypass
     shim_bypass_info: ShimBypassInfo,
+
+    /// Whether this component has already folded a supported core Wasm startup adapter.
+    has_component_start: bool,
 }
 
 impl<'a> ComponentTranslator<'a> {
@@ -152,6 +159,7 @@ impl<'a> ComponentTranslator<'a> {
             shim_bypass_info: ShimBypassInfo::default(),
             component_frontend_metadata,
             lifted_export_names: FxHashSet::default(),
+            has_component_start: false,
         })
     }
 
@@ -568,6 +576,17 @@ impl<'a> ComponentTranslator<'a> {
             DisplayValues::new(args.keys())
         );
 
+        let startup_adapter = match &frame.modules[*module_idx] {
+            ModuleDef::Static(static_module_idx) => classify_startup_adapter(
+                &self.nested_modules[*static_module_idx],
+                types.module_types_builder(),
+            ),
+            ModuleDef::Import(_) => None,
+        };
+        if let Some(adapter) = startup_adapter {
+            return self.fold_startup_adapter(frame, module_idx, args, adapter);
+        }
+
         // Check if this module instantiation should be skipped (shim or fixup)
         if self.shim_bypass_info.shim_module_indices.contains(&current_module_idx) {
             log::warn!(target: "component-translator",
@@ -687,6 +706,265 @@ impl<'a> ComponentTranslator<'a> {
                 panic!("Module import instantiation is not supported yet")
             }
         };
+        Ok(())
+    }
+
+    /// Fold a supported startup adapter and mark the defined function it resolves to.
+    fn fold_startup_adapter(
+        &mut self,
+        frame: &mut ComponentFrame<'a>,
+        module_idx: &ModuleIndex,
+        args: &'a FxHashMap<&str, ModuleInstanceIndex>,
+        adapter: StartupAdapter,
+    ) -> Result<(), Report> {
+        if self.has_component_start {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "multiple core Wasm startup adapters in one component are not supported"
+            )
+        }
+
+        if let Some(fixup) = adapter.fixup.as_ref() {
+            self.validate_startup_fixup(frame, args, adapter.start.module.as_str(), fixup)?;
+        } else if args.len() != 1 || !args.contains_key(adapter.start.module.as_str()) {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter instantiation arguments do not match its imports"
+            )
+        }
+
+        let Some(target_instance_idx) = args.get(adapter.start.module.as_str()).copied() else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter import module '{}' has no matching instantiation \
+                 argument",
+                adapter.start.module
+            )
+        };
+        let ModuleInstanceDef::Instantiated {
+            module_idx: target_module_idx,
+            args: _,
+        } = &frame.module_instances[target_instance_idx]
+        else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter target must be an already-instantiated static module"
+            )
+        };
+        let target_module_index = target_module_idx.as_u32();
+        if self.shim_bypass_info.shim_module_indices.contains(&target_module_index)
+            || self.shim_bypass_info.fixup_module_indices.contains(&target_module_index)
+        {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter target must be a translated static module"
+            )
+        }
+        let ModuleDef::Static(target_static_module_idx) = frame.modules[*target_module_idx] else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter target must be an already-instantiated static module"
+            )
+        };
+
+        let target_module = &self.nested_modules[target_static_module_idx].module;
+        let Some(target_entity) = target_module.exports.get(adapter.start.field.as_str()).copied()
+        else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter target instance does not export '{}'",
+                adapter.start.field
+            )
+        };
+        let EntityIndex::Function(target_func_idx) = target_entity else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter target export '{}' is not a function",
+                adapter.start.field
+            )
+        };
+        if target_module.is_imported_function(target_func_idx) {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "core Wasm startup adapter target export '{}' must resolve to a defined function",
+                adapter.start.field
+            )
+        }
+
+        let module_name = target_module.name();
+        let function_name = target_module.func_name(target_func_idx);
+        let module_path = SymbolPath {
+            path: smallvec![SymbolNameComponent::Component(module_name.as_symbol())],
+        };
+        let Some(module_ref) = self.result.resolve_module(&module_path) else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "failed to resolve core Wasm startup adapter target module '{module_name}'"
+            )
+        };
+        let Some(mut function_ref) =
+            ModuleBuilder::new(module_ref).get_function(function_name.as_str())
+        else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "failed to resolve core Wasm startup adapter target function \
+                 '{module_name}::{function_name}'"
+            )
+        };
+
+        {
+            let function = function_ref.borrow();
+            let signature = function.get_signature();
+            if function.is_declaration()
+                || signature.calling_convention() != CallConv::C
+                || !signature.params().is_empty()
+                || !signature.results().is_empty()
+            {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "core Wasm startup adapter target must be a defined `C` function with \
+                     signature `() -> ()`"
+                )
+            }
+        }
+
+        let marker = self.context.create_attribute::<UnitAttr, _>(());
+        function_ref.borrow_mut().set_attribute(WASM_COMPONENT_START_ATTR, marker);
+        self.has_component_start = true;
+
+        // Preserve component-model instance index numbering without emitting HIR for the adapter.
+        frame.module_instances.push(ModuleInstanceDef::Instantiated {
+            module_idx: *module_idx,
+            args: args.clone(),
+        });
+        Ok(())
+    }
+
+    /// Validate that a combined startup/fixup adapter only wires canonical lowers into a shim
+    /// whose indirection has already been removed by the frontend.
+    fn validate_startup_fixup(
+        &self,
+        frame: &ComponentFrame<'a>,
+        args: &'a FxHashMap<&str, ModuleInstanceIndex>,
+        start_module: &str,
+        fixup: &StartupAdapterFixup,
+    ) -> Result<(), Report> {
+        let mut expected_args = FxHashSet::default();
+        expected_args.insert(start_module);
+        expected_args.insert(fixup.table.module.as_str());
+        for function in &fixup.functions {
+            expected_args.insert(function.module.as_str());
+        }
+
+        let Some(table_instance_idx) = args.get(fixup.table.module.as_str()).copied() else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "combined core Wasm startup/fixup adapter has no shim-table argument for '{}'",
+                fixup.table.module
+            )
+        };
+        let ModuleInstanceDef::Instantiated {
+            module_idx: shim_module_idx,
+            args: _,
+        } = &frame.module_instances[table_instance_idx]
+        else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "combined core Wasm startup/fixup adapter table must come from an instantiated \
+                 shim module"
+            )
+        };
+        if !self.shim_bypass_info.shim_module_indices.contains(&shim_module_idx.as_u32())
+            || !self
+                .shim_bypass_info
+                .shim_instance_indices
+                .contains(&table_instance_idx.as_u32())
+        {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "combined core Wasm startup/fixup adapter table must come from a bypassed shim \
+                 module"
+            )
+        }
+        let ModuleDef::Static(shim_static_module_idx) = frame.modules[*shim_module_idx] else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "combined core Wasm startup/fixup adapter table must come from a static shim \
+                 module"
+            )
+        };
+        let shim_module = &self.nested_modules[shim_static_module_idx].module;
+        let Some(EntityIndex::Table(_)) =
+            shim_module.exports.get(fixup.table.field.as_str()).copied()
+        else {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "combined core Wasm startup/fixup adapter shim does not export table '{}'",
+                fixup.table.field
+            )
+        };
+
+        let mut resolved_functions = FxHashSet::default();
+        for function in &fixup.functions {
+            let Some(function_instance_idx) = args.get(function.module.as_str()).copied() else {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "combined core Wasm startup/fixup adapter has no function argument for '{}'",
+                    function.module
+                )
+            };
+            let ModuleInstanceDef::Synthetic(entities) =
+                &frame.module_instances[function_instance_idx]
+            else {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "combined core Wasm startup/fixup adapter functions must come from a \
+                     synthetic canonical-lower instance"
+                )
+            };
+            let Some(EntityIndex::Function(function_idx)) =
+                entities.get(function.field.as_str()).copied()
+            else {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "combined core Wasm startup/fixup adapter function argument does not export \
+                     '{}'",
+                    function.field
+                )
+            };
+            let CoreDef::Lower(lower) = &frame.funcs[function_idx] else {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "combined core Wasm startup/fixup adapter functions must resolve to direct \
+                     canonical lowers"
+                )
+            };
+            if !matches!(frame.component_funcs[lower.func], ComponentFuncDef::Import(..)) {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "combined core Wasm startup/fixup adapter functions must lower component \
+                     imports"
+                )
+            }
+            if !resolved_functions.insert(function_idx) {
+                unsupported_diag!(
+                    self.context.diagnostics(),
+                    "combined core Wasm startup/fixup adapter functions must be distinct"
+                )
+            }
+        }
+
+        // The start target itself is validated by the ordinary startup fold below. Check its key
+        // here so the combined adapter cannot smuggle unrelated instantiation arguments.
+        if args.len() != expected_args.len() || args.keys().any(|key| !expected_args.contains(*key))
+        {
+            unsupported_diag!(
+                self.context.diagnostics(),
+                "combined core Wasm startup/fixup adapter instantiation arguments do not match \
+                 its imports"
+            )
+        }
+
         Ok(())
     }
 
@@ -1086,5 +1364,292 @@ impl<'a> ComponentFrame<'a> {
             }
             ComponentItemDef::Type(_ty) => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use midenc_dialect_hir::WASM_COMPONENT_START_ATTR;
+    use midenc_hir::{
+        Context, Op, OpExt, SymbolName,
+        dialects::builtin::{ComponentBuilder, ModuleBuilder, attributes::UnitAttr},
+    };
+
+    use crate::{WasmTranslationConfig, translate};
+
+    fn translate_wat(wat: &str) -> (Rc<Context>, ComponentBuilder) {
+        let wasm = wat::parse_str(wat).expect("component WAT should compile");
+        let context = Rc::new(Context::default());
+        let output = translate(&wasm, &WasmTranslationConfig::default(), context.clone())
+            .expect("component should translate");
+        (context, ComponentBuilder::new(output.component))
+    }
+
+    fn combined_startup_fixup_wat(actual_function: &str, table_instance: &str) -> String {
+        format!(
+            r#"
+            (component
+                (type $host-type (func))
+                (type $host-instance-type (instance
+                    (export "run" (func (type $host-type)))
+                ))
+                (import "host" (instance $host-instance (type $host-instance-type)))
+                (alias export $host-instance "run" (func $host))
+                (core func $lowered (canon lower (func $host)))
+
+                (core module $shim
+                    (type $shim-type (func))
+                    (table (export "$imports") 1 1 funcref)
+                    (func (export "0") (type $shim-type))
+                )
+                (core instance $shim-instance (instantiate $shim))
+                (alias core export $shim-instance "0" (core func $shim-function))
+                (alias core export $shim-instance "$imports" (core table $shim-table))
+                (core instance $synthetic-shim
+                    (export "$imports" (table $shim-table)))
+                (core instance $actual
+                    (export "0" (func {actual_function})))
+
+                (core module $main
+                    (func $actual-start (export "aliased-start"))
+                )
+                (core instance $main-instance (instantiate $main))
+
+                (core module $fixup
+                    (type $actual-type (func))
+                    (type $start-type (func))
+                    (import "actual-functions" "0" (func $actual (type $actual-type)))
+                    (import "not-main" "aliased-start" (func $start (type $start-type)))
+                    (import "indirect-shim" "$imports" (table 1 1 funcref))
+                    (start $start)
+                    (elem (i32.const 0) func $actual)
+                )
+                (core instance $fixup-instance
+                    (instantiate $fixup
+                        (with "actual-functions" (instance $actual))
+                        (with "not-main" (instance $main-instance))
+                        (with "indirect-shim" (instance {table_instance}))))
+
+                (component $export-component)
+                (instance $exports (instantiate $export-component))
+                (export "miden:test/component@1.0.0" (instance $exports))
+            )
+            "#
+        )
+    }
+
+    #[test]
+    fn folds_startup_adapter_and_marks_resolved_definition() {
+        let (_context, component) = translate_wat(
+            r#"
+            (component
+                (core module $main
+                    (func $actual-start (export "aliased-start"))
+                )
+                (core instance $main-instance (instantiate $main))
+                (core module $adapter
+                    (import "not-main" "aliased-start" (func $start))
+                    (start $start)
+                )
+                (core instance $adapter-instance
+                    (instantiate $adapter
+                        (with "not-main" (instance $main-instance))))
+                (component $export-component)
+                (instance $exports (instantiate $export-component))
+                (export "miden:test/component@1.0.0" (instance $exports))
+            )
+            "#,
+        );
+
+        let main = component
+            .find_module(SymbolName::intern("main"))
+            .expect("main module should be translated");
+        let start = ModuleBuilder::new(main)
+            .get_function("actual-start")
+            .expect("actual start definition should be translated");
+        assert!(
+            start
+                .borrow()
+                .as_operation()
+                .get_typed_attribute::<UnitAttr>(WASM_COMPONENT_START_ATTR)
+                .is_some(),
+            "resolved function should carry the typed start marker"
+        );
+        assert!(
+            component.find_module(SymbolName::intern("adapter")).is_none(),
+            "folded adapter must not produce HIR"
+        );
+    }
+
+    #[test]
+    fn folds_combined_startup_fixup_after_validating_bypassed_shim() {
+        let wat = combined_startup_fixup_wat("$lowered", "$shim-instance");
+        let (_context, component) = translate_wat(&wat);
+
+        let main = component
+            .find_module(SymbolName::intern("main"))
+            .expect("main module should be translated");
+        let start = ModuleBuilder::new(main)
+            .get_function("actual-start")
+            .expect("actual start definition should be translated");
+        assert!(
+            start
+                .borrow()
+                .as_operation()
+                .get_typed_attribute::<UnitAttr>(WASM_COMPONENT_START_ATTR)
+                .is_some(),
+            "combined adapter should mark the resolved start definition"
+        );
+        assert!(
+            component.find_module(SymbolName::intern("fixup")).is_none(),
+            "folded combined adapter must not produce HIR"
+        );
+    }
+
+    #[test]
+    fn combined_startup_fixup_rejects_a_synthetic_table_argument() {
+        let wat = combined_startup_fixup_wat("$lowered", "$synthetic-shim");
+        let wasm = wat::parse_str(&wat).expect("component WAT should compile");
+        let err = match translate(
+            &wasm,
+            &WasmTranslationConfig::default(),
+            Rc::new(Context::default()),
+        ) {
+            Ok(_) => panic!("a synthetic table argument must not satisfy the shim relationship"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("table must come from an instantiated shim module"),
+            "unexpected diagnostic: {err:?}"
+        );
+    }
+
+    #[test]
+    fn combined_startup_fixup_rejects_an_alias_instead_of_a_canonical_lower() {
+        let wat = combined_startup_fixup_wat("$shim-function", "$shim-instance");
+        let wasm = wat::parse_str(&wat).expect("component WAT should compile");
+        let err = match translate(
+            &wasm,
+            &WasmTranslationConfig::default(),
+            Rc::new(Context::default()),
+        ) {
+            Ok(_) => panic!("a shim alias must not satisfy the canonical-lower relationship"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("must resolve to direct canonical lowers"),
+            "unexpected diagnostic: {err:?}"
+        );
+    }
+
+    #[test]
+    fn exported_initialize_without_adapter_is_not_marked() {
+        let (_context, component) = translate_wat(
+            r#"
+            (component
+                (core module $main
+                    (func $_initialize (export "_initialize"))
+                )
+                (core instance $main-instance (instantiate $main))
+                (component $export-component)
+                (instance $exports (instantiate $export-component))
+                (export "miden:test/component@1.0.0" (instance $exports))
+            )
+            "#,
+        );
+
+        let main = component
+            .find_module(SymbolName::intern("main"))
+            .expect("main module should be translated");
+        let initialize = ModuleBuilder::new(main)
+            .get_function("_initialize")
+            .expect("initialize definition should be translated");
+        assert!(
+            !initialize.borrow().has_attribute(WASM_COMPONENT_START_ATTR),
+            "the export name alone must not drive startup recognition"
+        );
+    }
+
+    #[test]
+    fn rejects_multiple_startup_adapters() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $main
+                    (func $actual-start (export "start"))
+                )
+                (core instance $main-instance (instantiate $main))
+                (core module $adapter
+                    (import "target" "start" (func $start))
+                    (start $start)
+                )
+                (core instance $first
+                    (instantiate $adapter (with "target" (instance $main-instance))))
+                (core instance $second
+                    (instantiate $adapter (with "target" (instance $main-instance))))
+                (component $export-component)
+                (instance $exports (instantiate $export-component))
+                (export "miden:test/component@1.0.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let err = match translate(
+            &wasm,
+            &WasmTranslationConfig::default(),
+            Rc::new(Context::default()),
+        ) {
+            Ok(_) => panic!("a second startup adapter must be rejected"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string().contains("multiple core Wasm startup adapters"),
+            "unexpected diagnostic: {err:?}"
+        );
+    }
+
+    #[test]
+    fn startup_lookalike_takes_the_existing_unsupported_instantiation_path() {
+        let wasm = wat::parse_str(
+            r#"
+            (component
+                (core module $main
+                    (func $actual-start (export "start"))
+                )
+                (core instance $main-instance (instantiate $main))
+                (core module $observable-adapter
+                    (import "target" "start" (func $start))
+                    (export "observable" (func $start))
+                    (start $start)
+                )
+                (core instance $adapter-instance
+                    (instantiate $observable-adapter
+                        (with "target" (instance $main-instance))))
+                (component $export-component)
+                (instance $exports (instantiate $export-component))
+                (export "miden:test/component@1.0.0" (instance $exports))
+            )
+            "#,
+        )
+        .expect("component WAT should compile");
+        let err = match translate(
+            &wasm,
+            &WasmTranslationConfig::default(),
+            Rc::new(Context::default()),
+        ) {
+            Ok(_) => panic!("an observable adapter must not be folded"),
+            Err(err) => err,
+        };
+
+        assert!(
+            err.to_string()
+                .contains("Instantiated module as another module instantiation argument"),
+            "the lookalike must continue through ordinary translation: {err:?}"
+        );
     }
 }

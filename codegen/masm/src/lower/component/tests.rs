@@ -1,7 +1,11 @@
 use alloc::{collections::BTreeMap, format, rc::Rc, string::String};
 use core::cell::RefCell;
 
-use midenc_hir::{Context, OperationRef, PointerType, diagnostics::Uri};
+use midenc_hir::{
+    Context, OperationRef, PointerType,
+    diagnostics::Uri,
+    dialects::builtin::{FunctionRef, attributes::UnitAttr},
+};
 use midenc_session::{
     InputFile, Options, Session,
     diagnostics::{CaptureEmitter, DefaultSourceManager},
@@ -443,6 +447,32 @@ fn capturing_context() -> (Rc<Context>, alloc::sync::Arc<CaptureEmitter>) {
     (Rc::new(Context::new(Rc::new(session))), emitter)
 }
 
+fn context_with_entrypoint(entrypoint: &str) -> Rc<Context> {
+    let options = Options {
+        entrypoint: Some(entrypoint.to_string()),
+        ..Default::default()
+    };
+    let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
+    let session =
+        Session::new(InputFile::empty(), alloc::boxed::Box::new(options), None, source_manager)
+            .expect("should build a session");
+    Rc::new(Context::new(Rc::new(session)))
+}
+
+fn context_with_entrypoint_and_test_harness(entrypoint: &str) -> Rc<Context> {
+    let options = Options {
+        entrypoint: Some(entrypoint.to_string()),
+        flags: midenc_session::CompileFlags::new(["--test-harness"])
+            .expect("the test-harness flag must parse"),
+        ..Default::default()
+    };
+    let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
+    let session =
+        Session::new(InputFile::empty(), alloc::boxed::Box::new(options), None, source_manager)
+            .expect("should build a session");
+    Rc::new(Context::new(Rc::new(session)))
+}
+
 /// Everything a caller can observe about a lowered component, as one comparable value.
 fn summarize(component: &MasmComponent) -> String {
     format!(
@@ -456,6 +486,52 @@ fn summarize(component: &MasmComponent) -> String {
         component.stack_pointer,
         component.rodata,
     )
+}
+
+/// Find and mark a uniquely named function as the component's core Wasm start function.
+fn mark_start_function(context: &Rc<Context>, root: OperationRef, name: &str) -> FunctionRef {
+    let mut found = None;
+    root.borrow().prewalk_all(|op| {
+        let Some(function) = op.downcast_ref::<builtin::Function>() else {
+            return;
+        };
+        if function.name().as_str() == name {
+            assert!(found.is_none(), "fixture function name '{name}' must be unique");
+            found = Some(function.as_function_ref());
+        }
+    });
+    let mut function = found.unwrap_or_else(|| panic!("fixture must define function '{name}'"));
+    let marker = context.create_attribute::<UnitAttr, _>(());
+    function
+        .borrow_mut()
+        .as_operation_mut()
+        .set_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR, marker);
+    function
+}
+
+fn exec_paths(block: &masm::Block) -> Vec<String> {
+    block
+        .iter()
+        .filter_map(|op| match op {
+            masm::Op::Inst(inst) => match inst.inner() {
+                masm::Instruction::Exec(masm::InvocationTarget::Path(path)) => {
+                    Some(path.inner().as_str().to_string())
+                }
+                masm::Instruction::Exec(masm::InvocationTarget::Symbol(name)) => {
+                    Some(name.as_str().to_string())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+fn component_init(component: &MasmComponent) -> &masm::Procedure {
+    component.modules[0]
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == "init")
+        .expect("a marked component must define `init`")
 }
 
 /// A world holding a single component lowers to exactly what that component lowers to.
@@ -526,6 +602,355 @@ fn a_component_lowers_rooted_at_its_own_id() {
     assert!(
         format!("{lowered}").contains("main"),
         "and its function must have been lowered: {lowered}"
+    );
+}
+
+/// A start marker is sufficient to create component `init`, and the marked function is its final
+/// same-context invocation even when the component has no ordinary memory initialization needs.
+#[test]
+fn a_marked_start_is_the_final_component_initialization_step() {
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT);
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    mark_start_function(&context, op, "main");
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a component whose only initialization is its start must lower");
+
+    let init = component_init(&lowered);
+    let execs = exec_paths(init.body());
+    assert_eq!(
+        execs.last().map(String::as_str),
+        Some("::\"hir_ns:test@1.0.0\"::test::main"),
+        "the start function must be the final `exec` in `init`: {execs:?}"
+    );
+    assert!(
+        init.invoked().any(|invoke| {
+            invoke.kind == masm::InvokeKind::Exec
+                && invoke.target.unwrap_path().as_str() == "::\"hir_ns:test@1.0.0\"::test::main"
+        }),
+        "the start edge must be present in `init`'s invocation metadata"
+    );
+
+    let lowered_start = lowered
+        .modules
+        .iter()
+        .find(|module| module.path().as_str().ends_with("::test"))
+        .and_then(|module| {
+            module.procedures().find(|procedure| procedure.name().as_str() == "main")
+        })
+        .expect("the marked function must still be lowered");
+    assert!(
+        !lowered_start.has_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR),
+        "the HIR-only marker must be consumed rather than copied to MASM"
+    );
+}
+
+#[test]
+fn a_marked_start_remains_resolvable_when_a_synthetic_wrapper_is_rebased() {
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT);
+    let mut component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    component.borrow_mut().mark_synthetic_wrapper();
+    mark_start_function(&context, op, "main");
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a marked synthetic wrapper must lower");
+
+    let target = library_target("rebased");
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("the marked wrapper must produce rebased assembler inputs");
+    let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
+    assembler
+        .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
+        .expect("the compiler intrinsics should link");
+    assembler
+        .assemble_library("rebased", sources.root, sources.support)
+        .expect("rebasing must update the start target recorded in `init`");
+}
+
+/// Add a global and table to the marked component so the start's position is tested against both
+/// phases whose ordering is semantically observable to constructors.
+fn component_with_global_table_and_start() -> String {
+    WORLD_WITH_A_PRIVATE_TABLE_CALLEE.replace(
+        "builtin.function private extern(\"C\") @private_callee() {",
+        "builtin.global_variable private @g : i32 {\n            builtin.ret_imm 1 : i32;\n        };\n\n        builtin.function public extern(\"C\") @component_start() {\n            builtin.ret;\n        };\n\n        builtin.function private extern(\"C\") @private_callee() {",
+    )
+}
+
+#[test]
+fn component_start_runs_after_globals_and_function_tables() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, &component_with_global_table_and_start());
+    mark_start_function(&context, world.as_operation_ref(), "component_start");
+    let lowered = lower_world(world).expect("a fully initialized marked component must lower");
+
+    let execs = exec_paths(component_init(&lowered).body());
+    let table = execs
+        .iter()
+        .position(|target| target.ends_with("::wasm::__init_function_table"))
+        .expect("function-table initialization must be invoked");
+    let start = execs
+        .iter()
+        .position(|target| target.ends_with("::wasm::component_start"))
+        .expect("the component start must be invoked");
+    assert!(table < start, "table initialization must precede start: {execs:?}");
+    assert_eq!(start + 1, execs.len(), "nothing may execute after start in `init`: {execs:?}");
+}
+
+const COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("component-model") @entry() {
+        builtin.ret;
+    };
+    builtin.module private @core {
+        builtin.global_variable private @g : i32 {
+            builtin.ret_imm 1 : i32;
+        };
+        builtin.function public extern("C") @component_start() {
+            builtin.ret;
+        };
+        builtin.function public extern("C") @core_entry() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+/// Generated `main` retains component-init ownership and the public canonical wrapper retains its
+/// fresh-context prologue. Only the selected marked executable gets a private no-init body.
+#[test]
+fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
+    let context = context_with_entrypoint_and_test_harness("\"hir_ns:test@1.0.0\"::entry");
+    let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
+    mark_start_function(&context, op, "component_start");
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a marked canonical executable entrypoint must lower through its private copy");
+
+    let public_entry = lowered.modules[0]
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == "entry")
+        .expect("the public canonical wrapper must remain defined");
+    assert_eq!(
+        exec_paths(public_entry.body()).first().map(String::as_str),
+        Some("init"),
+        "fresh-context calls through the public wrapper must still initialize"
+    );
+    let private_entry = lowered
+        .executable_entrypoint_without_init
+        .as_ref()
+        .expect("the marked executable must carry a private no-init entry body");
+    assert_eq!(private_entry.name().as_str(), EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC);
+    assert_eq!(private_entry.visibility(), masm::Visibility::Private);
+    assert!(
+        !exec_paths(private_entry.body()).iter().any(|target| target == "init"),
+        "the executable-only entry body must not repeat component initialization"
+    );
+
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("the marked canonical executable should generate main and its private entry");
+    let private_entry = sources
+        .root
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC)
+        .expect("the no-init entry body must be private to the executable module");
+    assert_eq!(private_entry.visibility(), masm::Visibility::Private);
+    let main = sources
+        .root
+        .procedures()
+        .find(|procedure| procedure.name().is_main())
+        .expect("the executable root must define main");
+    let init = main
+        .body()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                masm::Op::Inst(inst)
+                    if matches!(
+                        inst.inner(),
+                        masm::Instruction::Exec(masm::InvocationTarget::Path(path))
+                            if path.inner().as_str() == "::\"hir_ns:test@1.0.0\"::init"
+                    )
+            )
+        })
+        .expect("generated main must retain component init");
+    let harness = main
+        .body()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                masm::Op::Inst(inst) if matches!(inst.inner(), masm::Instruction::AdvPush)
+            )
+        })
+        .expect("the fixture enables test-harness initialization");
+    let entry = main
+        .body()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                masm::Op::Inst(inst)
+                    if matches!(
+                        inst.inner(),
+                        masm::Instruction::Exec(masm::InvocationTarget::Symbol(name))
+                            if name.as_str() == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC
+                    )
+            )
+        })
+        .expect("generated main must invoke the private no-init entry body");
+    assert!(
+        init < harness && harness < entry,
+        "generated main must preserve init -> harness -> entry ordering"
+    );
+}
+
+#[test]
+fn unmarked_canonical_executable_keeps_the_existing_entrypoint_path() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::entry");
+    let lowered = lower_component(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START)
+        .expect("the unmarked canonical executable must remain supported");
+    assert!(lowered.executable_entrypoint_without_init.is_none());
+
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
+    let sources = lowered.source_inputs(&target, context.session()).unwrap();
+    let main = sources.root.procedures().find(|procedure| procedure.name().is_main()).unwrap();
+    let execs = exec_paths(main.body());
+    assert!(execs.iter().any(|target| target.ends_with("::init")));
+    assert!(execs.iter().any(|target| target.ends_with("::entry")));
+    assert!(!execs.iter().any(|target| target == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC));
+}
+
+const COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @api {
+        builtin.function public extern("component-model") @entry() {
+            builtin.ret;
+        };
+    };
+    builtin.module private @core {
+        builtin.function public extern("C") @component_start() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+#[test]
+fn nested_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::api::entry");
+    let op = parse(&context, COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START);
+    mark_start_function(&context, op, "component_start");
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    let analysis_manager = AnalysisManager::new(op, None);
+
+    let err = match component.borrow().to_masm_component(analysis_manager) {
+        Ok(_) => panic!("a nested canonical entrypoint has ambiguous init ownership"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("must be defined directly"), "{err}");
+}
+
+const WORLD_WITH_SUPPORTING_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module private @core {
+            builtin.function public extern("C") @component_start() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.module public @supporting {
+        builtin.function public extern("component-model") @entry() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+#[test]
+fn supporting_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
+    let context = context_with_entrypoint("supporting::entry");
+    let world = parse_world(&context, WORLD_WITH_SUPPORTING_CANONICAL_ENTRYPOINT_AND_START);
+    mark_start_function(&context, world.as_operation_ref(), "component_start");
+
+    let err = match lower_world(world) {
+        Ok(_) => {
+            panic!("a supporting canonical entrypoint would still initialize the component twice")
+        }
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("initialization twice"), "{err}");
+}
+
+#[test]
+fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::core::core_entry");
+    let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    mark_start_function(&context, op, "component_start");
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a marked core-C executable entrypoint remains supported");
+
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("the marked executable should generate its main module");
+    let main = sources
+        .root
+        .procedures()
+        .find(|procedure| procedure.name().is_main())
+        .expect("the executable root should define main");
+    let execs = exec_paths(main.body());
+    let init = "::\"hir_ns:test@1.0.0\"::init";
+    let entry = "\"hir_ns:test@1.0.0\"::core::core_entry";
+    assert_eq!(execs.iter().filter(|target| target.as_str() == init).count(), 1);
+    let init = execs
+        .iter()
+        .position(|target| target == init)
+        .expect("generated main must invoke component init");
+    let entry = execs
+        .iter()
+        .position(|target| target == entry)
+        .unwrap_or_else(|| panic!("generated main must invoke the core entrypoint: {execs:?}"));
+    assert!(
+        init < entry,
+        "generated main must initialize once before executing the core entrypoint: {execs:?}"
     );
 }
 
