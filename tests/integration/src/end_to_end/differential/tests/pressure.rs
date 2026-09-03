@@ -66,6 +66,9 @@ fn call_live() {
 /// and a second zero-trip-capable loop. Ten is the largest count that
 /// compiles — eleven hits `zero_trip_frontier`, and the single-loop shape
 /// hits `zero_trip_overflow` at twelve.
+/// Configuration note (campaign 16): at `--optimize=size-min` ten counts
+/// already hit the F2 gap (`NoSolution` on `arith.rotl`, `spill_loop_mix_oz`
+/// class), one rung below the O2 boundary; O3 and O1 pass.
 #[test]
 fn zero_trip_guard() {
     run_case("zero_trip_guard", include_str!("../cases/case_zero_trip_guard.rs"));
@@ -166,6 +169,9 @@ fn zero_trip_overflow() {
 /// (in-loop, live-through) split from (2, 12) to (12, 2) passes with the
 /// `+ 3` bound; the same splits with a zero-trip-capable bound all fail in
 /// the `zero_trip_overflow` class.
+/// Configuration note (campaign 16): at `--optimize=size-min` the un-hoisted
+/// bands push the copy-constrained count past the window and the case hits
+/// the F2 gap (`spill_loop_mix_oz` class); O2, O3 and O1 pass.
 #[test]
 fn while_results() {
     run_case("while_results", include_str!("../cases/case_while_results.rs"));

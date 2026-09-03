@@ -15,6 +15,12 @@ use super::super::harness::{run_case, run_case_with_inputs};
 /// live across the jump-threaded nested loops and every dispatch arm. Six
 /// is the boundary: eight counts hit the known arity-2 `NoSolution` (F2,
 /// `rotl_window` class: 15-felt in-contract stack, Copy count at the bottom).
+/// Configuration note (campaign 16): at `--optimize=size-min` six counts
+/// already hit the F2 gap (the bands stay un-hoisted, `spill_loop_mix_oz`
+/// class), and WITHOUT guest DWARF (`FUZZA_GUEST_DEBUG=0`) the case hits the
+/// F12 aliasing panic (`nest_continue` class) although it has no labeled
+/// continue: Local2Reg promotion, which DWARF blocks, creates the
+/// loop-invariant before-block arguments the pattern matches.
 #[test]
 fn chain_sm() {
     run_case("chain_sm", include_str!("../cases/case_chain_sm.rs"));
@@ -45,6 +51,9 @@ fn chain_sm_edges() {
 /// the inner body), the `match` arms and the code after the nest. Six is
 /// the boundary: seven hits the arity-2 F2 gap (15 felts) and eight the
 /// known F6 over-full stack (20 felts: erased split-edge reloads).
+/// Configuration note (campaign 16): at `--optimize=basic` six counts
+/// already hit the F2 gap (`NoSolution` on `arith.rotl`); O2, O3 and -Oz
+/// pass.
 #[test]
 fn bands_exits() {
     run_case("bands_exits", include_str!("../cases/case_bands_exits.rs"));
@@ -96,6 +105,10 @@ fn selects_switch() {
 /// tree (24 felts in one block) over the loop-carried value, with escapes
 /// at three depths (early return, labeled break of level 1, `continue` of
 /// level 3). Six levels stay under the F7 depth boundary (9 at O2, 7 at -Oz).
+/// Configuration note (campaign 16 sweeps, 2026-09-03): at `--optimize=max`
+/// LLVM unrolls the innermost body differently and this shape hits the F1
+/// spills defect (`unroll_chain` class: 42 "unused phi" warnings, then
+/// `NoSolution` scheduling an `scf.condition`); it passes at O2, -Oz and O1.
 #[test]
 fn tree_nest() {
     run_case("tree_nest", include_str!("../cases/case_tree_nest.rs"));
@@ -282,6 +295,10 @@ fn carried_wide_edges() {
 /// five levels of region result columns with the carried u64 crossing every
 /// call. A `continue` of an OUTER level from an inner loop that contains a
 /// call is the `nest_continue` panic below.
+/// Configuration note (campaign 16): at `--optimize=size-min` and
+/// `--optimize=basic` LLVM keeps the helper out of line inside the loops and
+/// the case hits the F12 aliasing panic (`nest_continue` class); O2 and O3
+/// pass.
 #[test]
 fn nest_calls() {
     run_case("nest_calls", include_str!("../cases/case_nest_calls.rs"));
@@ -348,6 +365,9 @@ fn nest_continue() {
 /// 'outer` with the helper `#[inline(always)]` — LLVM restructures the nest,
 /// the lifted `scf.while` has no loop-invariant iter arg, and the case
 /// compiles and passes.
+/// Configuration note (campaign 16): below O2 (`--optimize=size-min`,
+/// `--optimize=basic`) the helper is no longer inlined, so this twin becomes
+/// the `nest_continue` shape and hits the F12 panic as well.
 #[test]
 fn nest_continue_inline() {
     run_case("nest_continue_inline", include_str!("../cases/case_nest_continue_inline.rs"));

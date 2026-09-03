@@ -246,6 +246,13 @@ extern "C" fn rust_eh_personality() {}
 "#;
 
 pub(crate) fn cargo_toml(pkg_name: &str) -> String {
+    // `FUZZA_GUEST_DEBUG` overrides the guest's debug-info level for a sweep
+    // (e.g. `0` to build every guest without DWARF and expose the shapes that
+    // debug info happens to mask). Default: 2 (full DWARF).
+    let debug = std::env::var("FUZZA_GUEST_DEBUG")
+        .ok()
+        .filter(|v| matches!(v.as_str(), "0" | "1" | "2"))
+        .unwrap_or_else(|| "2".to_string());
     format!(
         r#"[package]
 name = "{pkg_name}"
@@ -265,7 +272,7 @@ panic = "abort"
 # interaction with DCE/sinking/mem2reg) for every differential case.
 # Debug info must never change program semantics: a divergence that
 # appears only with this key set is a real compiler bug.
-debug = 2
+debug = {debug}
 
 [profile.dev]
 panic = "abort"
