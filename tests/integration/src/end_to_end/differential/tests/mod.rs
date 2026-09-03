@@ -6,6 +6,7 @@
 mod arith;
 mod boundaries;
 mod calls;
+mod compose;
 mod control_flow;
 mod debug_info;
 mod memory;

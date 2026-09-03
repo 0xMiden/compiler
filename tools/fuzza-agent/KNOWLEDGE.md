@@ -87,9 +87,15 @@ Maintenance rules:
     `IndexSwitchRemoveUnusedResults` (18→104/106, incl. `transfer_body` and
     the rewriter-instantiated scf `while`/`index_switch`/`condition`
     builders) — the O2 corpus only ever hit their bail paths.
-    `RemoveLoopInvariantArgsFromBeforeBlock`, `WhileRemoveDuplicatedResults`
-    and `IfRemoveUnusedResults` stay closed at -Oz too (no iter args, no
-    duplicated condition operands, no unused if results).
+    `WhileRemoveDuplicatedResults` and `IfRemoveUnusedResults` stay closed
+    at -Oz too (no duplicated condition operands, no unused if results).
+    `RemoveLoopInvariantArgsFromBeforeBlock` IS producible at O2 (campaign
+    14, 2026-09-03): a `continue 'outer` from an inner loop that contains a
+    `#[inline(never)]` call lifts to an outer `scf.while` with a
+    loop-invariant before-block argument — and the pattern's rewrite
+    panics on every match (`AliasingViolationError` at rewriter.rs:335,
+    pinned `nest_continue` in tests/compose.rs); with the call inlined
+    LLVM restructures the nest and the pattern stays cold.
   - Spill-analysis W at a block/region boundary carries no USER values
     (locals are reloaded per block; Local2Reg promotes only same-block
     store/load pairs with no control flow between them — local2reg.rs). The
@@ -445,6 +451,87 @@ campaign-13 cases):
 - `&STATIC[a..b]` in a static initializer is a rustc E0658 (const `Index`
   is not stable) — build interior slices of statics at runtime.
 
+## Call boundaries & pairwise compositions (verified 2026-09-02, campaign 14)
+
+Bug-directed sweep of internal call boundaries and of pairwise compositions
+of the campaign-10..13 boundary guards (`tests/calls.rs` campaign-14 cases,
+`tests/compose.rs`), every kept case native-grid-checked and 256-pair swept:
+
+- **Signature felt counting**: a hidden return-area pointer (sret) is an
+  ordinary i32 parameter and counts against the 16-felt flat-signature
+  cap (7 u64 + u32 + u128 result = 16 felts compiles, `case_call_sigs16`);
+  u128 parameters scalarize to two i64 (4 felts); mixed 14 u32 + u64 and
+  7 u64 + 2 u32 are at-limit shapes that pass with four u64 live across
+  every call.
+- **Wide by-value results agree with native** in every layout tried
+  (`case_ret_area`): `repr(C)` records with a word-aligned u128 field,
+  `repr(C, packed)` records with the u128 at byte offset 1 (unaligned i64
+  store pairs into the return area), 13-byte arrays, `(u64, u64)`,
+  `Option<u128>` / `Result<u64, u32>`, a u128 rebuilt by a helper on every
+  loop trip, and sret forwarding (a helper passing its own return-area
+  pointer to its callee).
+- **Callee-side pressure is independent of caller-side pressure**: a
+  callee spilling a 20-felt tree and a 16-felt-signature callee using
+  every parameter twice, called under six live caller u64s, pass
+  (`case_callee_pressure`); `&mut` array / slice fat-pointer parameters
+  (15-felt pointer+scalar signatures, runtime-bounded sub-slices, in-place
+  `swap`) pass (`case_mut_arrays`); calls inside zero-trip-capable loops
+  with carried u64s, in single `match` arms and deciding exits pass
+  (`case_loop_calls`).
+- **Composition boundaries** (each guard is the largest passing rung; the
+  rung above hits only a KNOWN class): count bands x sixteen-state machine
+  — 6 shared counts pass, 8 = F2 arity-2 gap (`case_chain_sm`); bands x
+  five-exit zero-trip nest with an in-loop `match` — 6 pass, 7 = F2, 8 =
+  F6 over-full stack (`case_bands_exits`); 24-felt tree in the innermost
+  body of a six-level nest with three escape depths passes
+  (`case_tree_nest`); twenty pinned felts across misaligned runtime-length
+  copies/fills pass (`case_spills_copies`); nine rotating u32 + three u64
+  carried across two pinned calls per trip pass (`case_calls_carried`);
+  six selects feeding two `br_table`s in a loop pass
+  (`case_selects_switch`); C12 value ladders deciding five exits pass
+  (`case_ladder_exits`); packed 35-byte records feeding mul_wide / 128-bit
+  libcall shifts / i128 checked_div / sext chains and written back
+  unaligned pass (`case_lanes_wide`); a four-state machine mixing a
+  16-felt sret call, a packed frame store, a fn-pointer dispatch and a
+  runtime `copy_within` passes once its arithmetic lives in helpers
+  (`case_calls_all`). No runtime divergence in any composition.
+- **The F9 guest-LLVM class does not extend to `i64.add128`/`sub128`**:
+  u128/i128 checked/overflowing/saturating add and sub in
+  `#[inline(never)]` helpers and a loop, with both limbs at their
+  boundaries, agree with native (`case_add128_checked`, 256 pairs).
+- **Second sweep (2026-09-03, all 256-pair swept, no runtime divergence)**:
+  wide results carried OUT of loop nests by the exit dispatch (u128 /
+  `(u64, u64)` / `Option<u128>` / `Result` helper results deciding and
+  carrying five exits, `case_sret_exits`); fn pointers RETURNING u128 /
+  tuples / `Option<u128>` (return-area pointer as the first
+  `exec_indirect` argument, `case_sret_dispatch`); packed records returned
+  by value into runtime-indexed array elements (computed unaligned sret
+  address, `case_sret_indexed`); u8/u16/u32 record fields returned by
+  value (i64.store8/16/32 into the sret area, `case_narrow_ret`); narrow
+  signed/unsigned/bool parameters and results across calls and a
+  narrow-typed fn pointer (`case_narrow_sigs`); three u128 carried across
+  a call per trip (`case_carried_wide`); a 2 KiB frame escaping as a
+  runtime `&mut [u32]` sub-slice through fn-pointer dispatch
+  (`case_frame_dispatch`); side-effect order of `&&`/`||` lattices over
+  direct and dispatched calls (`case_shortcircuit_calls`); six count bands
+  across a direct call, a 6-u32 helper and a plain-locals dispatch
+  (`case_bands_calls`); recursion through the table with a 5-u64
+  signature (`case_recursion_wide`) and with per-frame `&mut [u64; 6]`
+  arrays escaping into the callee frame (`case_recursion_frames`); a
+  24-arm `br_table` whose arms call every arity shape (`case_switch_calls`);
+  calls at every level of a five-level nest deciding each level's exit
+  (`case_nest_calls`). Only the two panic classes above (`indirect_spill`
+  family, `nest_continue`) were found.
+- **`for`/`while` nests with a labeled `continue` of an outer level from
+  an inner loop that contains a call do not compile** (the
+  `nest_continue` panic above; the same nest with a same-level `continue`,
+  labeled `break`s or an inlined helper compiles). Keep compositions to
+  same-level `continue`s when the inner loop calls anything.
+- **Native `usize` is 64-bit, wasm `usize` is 32-bit**: `(x as usize) % N`
+  on a u64 `x` is a FALSE divergence (the wasm side truncates first) —
+  index with `(x % N) as usize` (re-learned by `recursion_frames`; the
+  C13 `rodata_big` gotcha above is the same trap).
+
 ## Indirect calls / funcref tables (verified 2026-08-27)
 
 Corpus cases: `case_call_indirect`, `case_indirect_sigs`,
@@ -500,6 +587,45 @@ region-verified.
   (14 felts) dispatches end-to-end (`case_indirect_wide`); one felt more is a
   clean translation-time diagnostic (code_translator/mod.rs `unsupported
   call_indirect ... operand stack window`), not a panic.
+- **Recursion THROUGH a fn-pointer table compiles and runs** (campaign 14,
+  2026-09-02, `case_recursion_indirect.rs` + `_edges`): the linker's
+  "found a cycle in the call graph" check sees only direct `exec` edges, so
+  a helper that loads its callee from a runtime-indexed `static [fn; N]`
+  and calls it (`dynexec`) may recurse — bounded depth `input1 % 6` with
+  non-tail per-frame state matches native. Direct and mutual recursion
+  through plain calls remain the clean linker diagnostic (re-verified with
+  a deleted probe). This is the only plain-Rust recursion lever.
+- **Wide indirect dispatch is spill-analysis-blind** (campaign 14,
+  trace-verified 2026-09-03): the spill analysis reads an op's inputs from
+  operand group 0 only, and `hir.exec_indirect` keeps its ARGUMENTS in
+  group 1 (group 0 = the table index), so whenever the argument setup of a
+  dispatch needs more than 16 felts the analysis spills some ARGUMENTS,
+  never reloads them ("required by reloads = 0", "freed by op = 1") and
+  budgets the call as one felt, while the emitter keeps the spilled values
+  physically (spills are `store_local` copies; the dispatch use is real).
+  The over-full physical stack then aborts at the first deep access — the
+  site varies: `NoSolution` at lowering.rs:109 for an arity-2 op in the
+  same block or for the dispatch itself, `invalid operand stack index`
+  (emit/mod.rs:623, arity-1 Copy) or `invalid stack offset for movup`
+  (emit/mod.rs:758). `hir.exec` is unaffected (arguments in group 0);
+  `dyn Trait` method dispatch (vtable `call_indirect`) is affected the
+  same way. Plain-Rust producers: (1) 7-u64 dispatch in a loop with >= 7
+  loop-invariant u64 locals as arguments (the DWARF-kept wasm locals are
+  reloaded per block, so the seven `load_local`s + the carried accumulator
+  + index math overflow; N <= 6 passes: `case_dispatch_pressure.rs`);
+  (2) loop-free 7-u64 dispatch with two single-use values stackified
+  UNDER it (one still fits); (3) loop-free dispatch with arguments computed
+  IN PLACE from extra locals (`v3.rotate_left(c)` as an argument); (4) fn
+  pointers taking three u128 parameters (twelve limb felts) in a loop, or
+  two u128 with one argument computed in place (`case_indirect_u128.rs`
+  = the passing two-plain-locals guard). Pinned: `indirect_spill` (loop),
+  `indirect_spill_line` (loop-free), `indirect_spill_args` (emitter
+  signature), each with a passing direct-call twin (`direct_loop`,
+  `direct_line`, `direct_args`) in `tests/calls.rs`. Straight-line
+  dispatches whose arguments are plain locals loaded right before the
+  call pass with twelve such locals (`case_indirect_args.rs`). Rule for
+  compositions: a fn-pointer / `dyn` dispatch under pressure must take
+  PLAIN LOCALS only, with nothing single-use stackified across it.
 - **Verified dead ends**: `add_table_entry`'s Intrinsic arm
   (`CallableFunction::Intrinsic` is unconstructible today — the only
   `register_linker_stub` caller pre-filters on `is_operation()`) and
@@ -937,6 +1063,22 @@ spill shape BEFORE paying a coverage step.
   cases pass only because the unrelieved pressure still fits the window.
   Never design a case whose window fit depends on split-edge relief
   (specifics at `zero_trip_frontier`/`zero_trip_overflow` in pressure.rs).
+  Campaign-14 refinements (trace-verified, 2026-09-02): a BACKEDGE split
+  of a bottom-test loop loses its reloads the same way (an over-capacity
+  header with eight live-through u64 locals and three bands shared
+  before/after the loop: "edges to split = 1", then "erase unused reload"
+  for exactly those bands); and the `frontier.rs:123` unwrap needs only
+  ONE crossing band plus a join with three or more predecessors reached
+  through a split edge — a four-arm `match` inside a zero-trip-capable
+  loop with a single u32 count shared before and after the loop is
+  enough. Count bands are not only rotates: EVERY constant shift count is
+  one — the `<< 32` of a u64 assembly and the `>> 32` of the final fold
+  form a band that crosses everything in between, and LLVM synthesizes
+  constant u32 shifts on its own (`x * 7` -> `x << 3`, `x * 19` -> shifts
+  by 4 and 1, `(a >> 4) & 3` address math), so a composition that must
+  stay free of crossing bands should keep its arithmetic in
+  `#[inline(never)]` helpers and leave the composing function with calls,
+  locals and `& mask` operations only (`case_calls_all.rs`).
 - **Zero-trip-capable loops are the plain-Rust loop-bypass lever**: a
   `while i < input2 % 97` bound keeps LLVM's loop guard and a bypass edge
   around the loop, whereas the corpus's `% 97 + 3` bounds become
