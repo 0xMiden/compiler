@@ -1,6 +1,6 @@
 //! Function-call boundaries: sret aggregates, at-limit signatures, call placement.
 
-use super::super::harness::{run_case, run_case_with_inputs};
+use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
 
 /// Non-inlined helper calls (multi-arg, u64, bool) plus reused selects —
 /// exercises call translation/lowering and select emitter variants.
@@ -230,9 +230,36 @@ fn callee_pressure() {
 /// `saturating_add`/`saturating_sub` (ignored sat_add_u128 / sat_sub_u128),
 /// this `checked_add` loop at `--optimize=basic` (ignored chk_add_u128_o1),
 /// and both-limb value uses masked by DWARF (wide_words) — see tests/wide.rs.
+/// Configuration note (campaign 16): under the harness's own `-Oz` and O1
+/// builds this case DIVERGES — the F9 guest-toolchain class on `i64.add128`
+/// (the harness-built wasm returns the MASM value in wasmtime and carries the
+/// stale-read signature in both helpers); a standalone `-Oz` build happens to
+/// stackify safely. Pinned as `add128_checked_oz` below; the O1 loop shape is
+/// `chk_add_u128_o1` in tests/wide.rs.
 #[test]
 fn add128_checked() {
     run_case("add128_checked", include_str!("../cases/case_add128_checked.rs"));
+}
+
+/// RUNTIME DIVERGENCE under `--optimize=size-min` only (F9 guest-toolchain
+/// class, 2026-09-03, campaign 16): the `add128_checked` case built by the
+/// harness at -Oz returns 36400036 for (972208690, 972208690) where native
+/// returns the checked-add fold — wasmtime gives the same wrong value for the
+/// harness-built wasm, whose `checked`/`signed` helpers read an `i64.add128`
+/// result local before the op defines it (RegStackify sink; not masked by
+/// DWARF). The same source passes at O2 and O3 under the harness. Not a
+/// midenc bug. Un-ignore when the guest toolchain is past the LLVM fix or
+/// cargo-miden drops `+wide-arithmetic`.
+#[test]
+#[ignore = "guest-toolchain miscompile (LLVM +wide-arithmetic stale-read of an i64.add128 result) \
+            under --optimize=size-min: native vs masm mismatch, e.g. inputs (972208690, 972208690) \
+            -> masm 36400036; wasmtime agrees with masm"]
+fn add128_checked_oz() {
+    run_case_with_flags(
+        "add128_checked_oz",
+        include_str!("../cases/case_add128_checked.rs"),
+        &["--optimize=size-min"],
+    );
 }
 
 /// Helpers taking `&mut` stack arrays and runtime-bounded slices (fat

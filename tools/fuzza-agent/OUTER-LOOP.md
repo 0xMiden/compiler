@@ -73,6 +73,20 @@ closed by an unreachability argument).
   baseline is gone two steps later. Region gains attributed to functions a
   compile-panicking case unwinds through (e.g. `emit_if` arms) are llvm-cov
   counter-expression phantoms, not reachable code.
+- Bug-directed campaigns (compass = findings, not regions) work as
+  pressure ladders per fragile subsystem: parametric families climbed until
+  they break, one passing boundary guard per ladder, every panic classified
+  by signature against the known classes before it is reported. Follow a
+  block of such campaigns with (a) a configuration sweep of the whole corpus
+  (`MIDENC_DIFF_FLAGS=--optimize=max|size-min|basic`, `FUZZA_INPUT_PAIRS`,
+  `FUZZA_GUEST_DEBUG=0`) — known classes move with the guest opt-level and
+  new shapes surface only there — and (b) a program-scale campaign of
+  realistic no_std programs with pinned grids and deep fuzz, which is where
+  long-range pass interactions show up.
+- Inner-loop agents may stop only processes they spawned (never
+  pattern kills); an agent that dies mid-run (usage limit) leaves unverified
+  files — relaunch the same brief with a "reuse, verify, trim the partial
+  work" section rather than starting over.
 
 ## Per-iteration subagent prompt skeleton
 

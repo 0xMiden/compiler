@@ -83,7 +83,9 @@ changes — the native reference build is untouched — so the outputs must
 still match: a divergence that appears under one configuration only is a
 real compiler bug. `FUZZA_INPUT_PAIRS=N` scales the random input pairs per
 case (default 16; the RNG is freshly seeded per run) for a deep sweep of the
-whole corpus.
+whole corpus, and `FUZZA_GUEST_DEBUG=0|1|2` overrides the guests' debug-info
+level (default 2) — a no-DWARF sweep exposes the shapes that debug info
+happens to mask in the guest toolchain.
 
 The specifics of each bug — the failure, the exact inputs, what passing
 sibling cases have *bounded*, and what would allow un-ignoring — live only
