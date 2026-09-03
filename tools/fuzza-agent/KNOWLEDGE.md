@@ -1297,6 +1297,30 @@ spill shape BEFORE paying a coverage step.
   still passes at default and -Oz) or re-run that case with a bigger
   `RUST_MIN_STACK`; do not pin it.
 
+- **Configuration dependence of the known panic classes (campaign 16
+  sweeps, 2026-09-03; whole corpus at `--optimize=max`, `size-min`,
+  `basic` × 256 pairs and a `FUZZA_GUEST_DEBUG=0` sweep):** the guest
+  opt-level moves every pressure boundary — the arity-2 gap fires one to
+  four count-band rungs earlier at `-Oz`/O1 (bands stay un-hoisted), the
+  region-exit budget (deep nests) is hit at depth 7 instead of 9 below O2,
+  the labeled-continue-plus-call aliasing panic fires wherever LLVM stops
+  inlining the helper (below O2), and O3's full unrolling of constant-trip
+  inner loops inside rolled outer loops creates backedge splits whose
+  reloads the spill transform erases (stale dominator tree) — the first
+  REALISTIC program to panic did so only at O3. Without guest DWARF,
+  Local2Reg promotion (blocked under DWARF) creates loop-invariant
+  before-block arguments, so the scf loop-invariant-args pattern matches
+  programs with no labeled continue at all. Practical rules: sweep every
+  kept case at max and size-min (and basic) before calling it a guard;
+  `RUST_MIN_STACK=8388608` for max sweeps; a standalone `-Oz` rustc build
+  can stackify differently from the harness's build-std/LTO/cgu=1 build,
+  so confirm toolchain-class divergences on the harness-built wasm
+  (wasmtime on target/miden_test_shared/.../differential_<case>.wasm).
+- **Configuration knobs summary:** `MIDENC_DIFF_FLAGS` (midenc flags,
+  per-case flags win per option), `FUZZA_INPUT_PAIRS=N` (random pairs
+  per case), `FUZZA_GUEST_DEBUG=0|1|2` (guest debug-info level; default
+  2), `run_case_with_flags` (pin a configuration in-repo).
+
 ## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
 
 The harness flip alone (974f0757e) warmed the decode/schedule/lowering
@@ -1565,3 +1589,67 @@ at the test site.
   arithmetic that can exceed 2^32 in `u32` (wrapping ops) BEFORE the
   `as usize`, unless a power-of-two mask/modulus follows. Before blaming
   the compiler, model the case in Python with 32-bit wraps.
+
+## Program-scale composites (verified 2026-09-03, campaign 17)
+
+Realistic `no_std` programs (`tests/programs.rs`: SHA-256, Keccak-f[800],
+Murmur3/xxHash32/FNV, a stack-VM interpreter in `match` and fn-pointer-
+table forms, 256-bit bignum incl. Montgomery reduction, a Huffman + LZ
+decoder, three sorts, Q16.16 DSP + CORDIC, a shunting-yard parser with an
+arena AST, Dijkstra, Levenshtein/LCS/Needleman-Wunsch, CRC/Adler/LFSRs,
+`core::fmt` into a stack buffer, iterator pipelines) all compile and match
+native at the default configuration. Facts they established:
+
+- **Slice / array `==` is unlinkable in guests**: `[u32; 8] == [u32; 8]`,
+  `[u32; 64] == …` and any slice equality lower to a `memcmp`/`bcmp`
+  libcall and the guest link fails with `rust-lld: undefined symbol:
+  memcmp` (no wasi-libc, compiler-builtins' `mem` symbols absent).
+  This includes core code that compares slices internally — `str::split`
+  with a `char` pattern (`CharSearcher` compares the encoded char with
+  `==`) — bisected standalone in `prog_fmt`. Compare element-wise / scan
+  bytes by hand. A user program hitting this gets a link error, not a
+  midenc diagnostic.
+- **`core`'s unstable sorts are recursive** (`slice::sort_unstable`,
+  `sort_unstable_by_key`, `select_nth_unstable` → ipnsort `quicksort`,
+  `median3_rec`, `median_of_medians` call themselves) and hit the
+  linker's `found a cycle in the call graph` error — unusable from
+  guests; `binary_search`, `rotate_left`, `reverse`, `split_at_mut`,
+  `fill`, `copy_from_slice`, `swap` and the iterator adapters (`zip`,
+  `windows`, `chunks_exact`, `rev().enumerate()`, `max_by_key`,
+  `position`/`rposition`, `step_by`, `take_while`, `skip`, `cycle().take`,
+  `nth`, `find`, `min`, `any`/`all`, `filter().count()`) are loops and
+  pass (`prog_iters`; the sort probe was deleted).
+- **`core::fmt` runs on the VM**: `write!` into a `fmt::Write` stack
+  buffer with Display / LowerHex / UpperHex / Binary / Octal / signed /
+  width / alignment / `{:?}` of slices and tuples, plus `str::parse` and
+  `from_str_radix` round-trips, agree with native (`prog_fmt`) — the
+  `dyn Write` vtable dispatch, `Formatter::pad_integral` and `DebugList`
+  paths execute correctly (previously linked only as dead panic paths).
+- Every program that keeps an unprovable bounds check links
+  `core::panicking` + `core::fmt` (~600 KB wasm, never executed) — a
+  compile-time / package-size cost only.
+- Cost calibration: Keccak-f[800] (three 22-round permutations on 25 u32
+  lanes) is ~4 s per input pair in the step-mode executor — the most
+  expensive realistic shape in the corpus; the other programs stay under
+  ~0.5 s per pair. Budget deep sweeps accordingly.
+- `gen` is a reserved keyword in edition 2024 — name generators
+  `gen_str` etc. (a guest that fails to compile aborts the whole test
+  batch).
+- The u128 multiply-accumulate schoolbook chain (`t = a*b + r + carry` as
+  u128, `r = t as u64`, `carry = t >> 64`) is valid at every opt level
+  and debuginfo level (`prog_bignum`: 16 `mul_wide_u` + 24 `add128`, no
+  stale-read signature standalone at o2/o2d2/o3/oz) — unlike the C15
+  add-with-carry idiom, so it is safe in passing guards.
+- **`--optimize=max` is a pressure lever realistic programs pull by
+  themselves**: LLVM fully unrolls constant-trip inner loops (a 16-tap
+  i64 multiply-accumulate over a stack array becomes ONE block of 16
+  products) while the enclosing data-length loop stays rolled, so values
+  shared by the code before the loop, the loop and the code after it are
+  spilled at the header with reloads on the split backedge — the shape
+  behind `prog_fixedpoint_o3` / `fir_cordic_o3` (tests/programs.rs; the
+  same programs pass at opt-level 2 and `-Oz`, where the tap loop stays
+  rolled). Sweep every kept program at max and size-min before calling it
+  clean; pin configuration findings with `run_case_with_flags` twins.
+- libtest's `--skip NAME` is a SUBSTRING filter: `--skip probe_m1` also
+  skips `probe_m10`..`probe_m19` (a ladder batch that silently runs zero
+  tests). Use `-- --exact <full path> <full path> …` to select rungs.

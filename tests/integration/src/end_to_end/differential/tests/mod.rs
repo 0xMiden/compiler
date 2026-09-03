@@ -12,6 +12,7 @@ mod debug_info;
 mod memory;
 mod opt_levels;
 mod pressure;
+mod programs;
 mod scale;
 mod signed;
 mod spills;
