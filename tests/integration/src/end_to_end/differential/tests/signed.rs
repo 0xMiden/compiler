@@ -248,10 +248,14 @@ fn cmp_chains_edges() {
 /// Bounded by passing siblings: inlined `if let Some(x) = a.checked_mul(b)`
 /// and `overflowing_mul` flag branches (LLVM stackifies those in a valid
 /// order), u64 / u32 / i32 / u128 / i128 checked/overflowing/saturating
-/// multiplies (ovf_mul; `hi != 0` needs no second operand), and every
-/// dynamic `i64.mul_wide_s` product used as a VALUE (wide_mul_edges,
-/// mulwide_dyn). Un-ignore (together with sat_mul_i64 / pow_i64) when the
-/// guest toolchain is bumped past the LLVM fix, or when cargo-miden stops
+/// multiplies (ovf_mul, u64_sat_forms; `hi != 0` needs no second operand),
+/// and the high-word-only / branch-on-constant uses of dynamic
+/// `i64.mul_wide_s` products (mul_hi_only). Both-words VALUE uses
+/// (wide_mul_edges, mulwide_dyn, wide_words) pass only under the harness's
+/// `debug = 2` — the same defect, DWARF-masked (see wide_words). The full
+/// blast radius is recorded in KNOWLEDGE.md (F9). Un-ignore (together with
+/// sat_mul_i64 / pow_i64 and the tests/wide.rs family) when the guest
+/// toolchain is bumped past the LLVM fix, or when cargo-miden stops
 /// enabling `+wide-arithmetic`.
 #[test]
 #[ignore = "guest LLVM miscompile (wide-arithmetic i64.mul_wide_s hi read before def): inputs \

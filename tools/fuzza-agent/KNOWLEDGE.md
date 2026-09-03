@@ -143,24 +143,58 @@ Maintenance rules:
   the dumped WAT through an independent engine (`wasm-tools parse x.wat -o
   x.wasm && wasmtime run -W wide-arithmetic=y --invoke entrypoint x.wasm a
   b`): if wasmtime agrees with the MASM value, the wasm itself is wrong.
-  One such class is known (2026-09-02, campaign 12; pinned at
-  `checked_mul_i64`/`sat_mul_i64`/`pow_i64` in tests/signed.rs): with
-  `+wide-arithmetic`, rustc 1.97-nightly/LLVM 22.1.4 can emit the
-  `local.get` of an `i64.mul_wide_s` hi result BEFORE the multiply that
-  defines it (the WAT signature is `local.get N` textually preceding
-  `i64.mul_wide_s ... local.set N` inside one compare feeding `br_if`), so
-  i64 overflow-checked multiplies (checked/overflowing/saturating_mul,
-  checked_pow) miscompute in a stackification-dependent way. Classify by
-  that WAT signature; keep i64 overflow-checked multiplies out of passing
-  guards until the toolchain is bumped. The i1288 `sext_shapes` divergence
-  was this class too (reproduced standalone with the exact wrong value):
-  in straight-line `mul_wide_s` shapes the harness's `debug = 2` guest
-  profile masks it — `-C debuginfo=2` variable-location records pin the
-  multiply's definitions and block the sink (`debuginfo=1` still
-  miscompiles), while the `br_if` overflow-test shape is not masked at any
-  debug level. A case that passes only with DWARF is therefore not proof of
-  compiler correctness; check the no-DWARF standalone build before
-  un-ignoring anything in this family.
+  One such class is known (F9; campaign 12 + the campaign-15 blast-radius
+  enumeration, 2026-09-03): with `+wide-arithmetic`, rustc
+  1.97-nightly/LLVM 22.1.4 can emit the `local.get` of a multi-result op's
+  result local BEFORE the op that defines it — RegStackify sinks
+  `i64.mul_wide_s`/`mul_wide_u`/`i64.add128`/`i64.sub128` into the SECOND
+  operand subtree of a binary instruction whose FIRST operand is the high
+  word read through a local, so the read sees a zero-initialised local, the
+  register previously colored to that local, or the previous loop
+  iteration's value. WAT signature: `local.get N` textually preceding
+  `<wide op> ... local.set N` with that value still on the operand stack
+  when the `local.set N` executes (a stack-simulating detector over the WAT,
+  campaign-15 tooling kept at `scratch/c15-tools/probe.py` on the campaign
+  machine, agreed with wasmtime-vs-native on every one of ~260
+  probes × up to 16 configs; wasmtime 48 `-W wide-arithmetic=y` always
+  returns the MASM value). Classify by that signature. Blast radius (all
+  four ops, every opt-level 1/2/3/s/z, LTO irrelevant):
+  - Harness-exposed at every `-C debuginfo` level (pinned as ignored
+    reproducers): i64 `checked_mul` (non-inlined helper returning `Option`,
+    and loops at O2/O3), `saturating_mul` (every form), `checked_pow` (every
+    form), `overflowing_mul` whose flag feeds a `break` (`checked_mul_i64` /
+    `sat_mul_i64` / `pow_i64`); u128 `saturating_add` / `saturating_sub`
+    (every form, `sat_add_u128` / `sat_sub_u128`); the straight-line
+    fixed-point idiom `((a as u128 * b as u128) >> 32) as u64`
+    (`fixmul_u64`); u128 `checked_add` accumulated in a loop at guest
+    opt-level 1 only (`chk_add_u128_o1`, `--optimize=basic`).
+  - Masked by `-C debuginfo=2` ONLY (the harness's `debug = 2` guest
+    profile; `debuginfo=1` still miscompiles): every "both words used as
+    values" shape — `hi ^ lo.rotate_left(k)` of a u64×u64/i64×i64 product
+    or of a u128 sum/difference, in straight-line, helper and loop forms,
+    with dynamic, constant or x·x operands (`wide_words`, `sext_shapes`),
+    bignum add-with-carry chains (`s = a + b + c` as u128, carry = `s >>
+    64`), and `hi != lo >> k` loop-break compares on mul_wide_u (all
+    levels) / add128 / sub128 (O2, O3 only) (`wide_loop_cmp`). The
+    variable-location records pin the op's definitions; a case that passes
+    only with DWARF is not proof of correctness — check the standalone
+    no-DWARF build before un-ignoring anything in this family.
+  - Safe (valid stackification at every level and debuginfo): high word
+    only, low word only, `hi != 0` / `hi < 0` / `hi < lo` branches,
+    `hi != dyn` with the low word unused, selects, the mum fold `lo ^ hi`,
+    `(product) % m` and `>> dynamic` libcall forms, products stored to
+    memory or compared as u128, 4-limb multiply-accumulate and schoolbook
+    chains, sub-with-borrow chains; u64 checked/overflowing/saturating_mul,
+    checked_pow, widening_mul, carrying_mul in every form (`hi != 0` is a
+    unary `i64.eqz`); i128 saturating_add/sub (sign-xor test) and every u128/
+    i128 checked/overflowing add/sub except the O1 loop above; i128
+    checked/overflowing/saturating_mul and i64/u64 wrapping products emit no
+    wide op at all. Guards: `mul_hi_only`, `u64_sat_forms`, `sat_i128`,
+    `add128_checked`, `ovf_mul`, `wide_mul_edges`, `mulwide_dyn`.
+  Keep every shape in the first two groups out of passing guards until the
+  toolchain is bumped past the LLVM fix or cargo-miden drops
+  `+wide-arithmetic`; the standalone scan of the whole corpus (213 cases, O2
+  with and without DWARF) found no other affected case.
 - LLVM on wasm keeps constant-divisor division and remainder as
   `div_s/div_u/rem_s/rem_u` with an immediate operand (`isIntDivCheap`):
   only UNSIGNED power-of-two divisors become `shr_u`/`and`; signed `x / 8`
@@ -495,10 +529,14 @@ of the campaign-10..13 boundary guards (`tests/calls.rs` campaign-14 cases,
   16-felt sret call, a packed frame store, a fn-pointer dispatch and a
   runtime `copy_within` passes once its arithmetic lives in helpers
   (`case_calls_all`). No runtime divergence in any composition.
-- **The F9 guest-LLVM class does not extend to `i64.add128`/`sub128`**:
-  u128/i128 checked/overflowing/saturating add and sub in
-  `#[inline(never)]` helpers and a loop, with both limbs at their
-  boundaries, agree with native (`case_add128_checked`, 256 pairs).
+- **The F9 guest-LLVM class DOES extend to `i64.add128`/`sub128`** (campaign
+  15 refuted the campaign-14 reading): u128/i128 checked/overflowing add and
+  sub in helpers and a loop agree with native at the default level
+  (`case_add128_checked`, 256 pairs), but u128 `saturating_add`/
+  `saturating_sub` miscompile in every form, u128 `checked_add` loops
+  miscompile at guest opt-level 1, and both-limb value uses of a u128 sum/
+  difference are DWARF-masked miscompiles (see the F9 entry under "Toolchain
+  & pipeline facts").
 - **Second sweep (2026-09-03, all 256-pair swept, no runtime divergence)**:
   wide results carried OUT of loop nests by the exit dispatch (u128 /
   `(u64, u64)` / `Option<u128>` / `Result` helper results deciding and

@@ -225,8 +225,11 @@ fn callee_pressure() {
 /// `saturating_sub`/`checked_sub`/`overflowing_sub` (`i64.add128` /
 /// `i64.sub128` on this toolchain) in `#[inline(never)]` helpers and a loop
 /// — the forms that expose the F9 guest-LLVM defect for `mul_wide_s` — with
-/// both limbs at their boundaries; passes, so the defect does not extend to
-/// the 128-bit add/sub instructions.
+/// both limbs at their boundaries; passes at the default opt-level. The
+/// defect DOES reach the 128-bit add/sub instructions in other shapes: u128
+/// `saturating_add`/`saturating_sub` (ignored sat_add_u128 / sat_sub_u128),
+/// this `checked_add` loop at `--optimize=basic` (ignored chk_add_u128_o1),
+/// and both-limb value uses masked by DWARF (wide_words) — see tests/wide.rs.
 #[test]
 fn add128_checked() {
     run_case("add128_checked", include_str!("../cases/case_add128_checked.rs"));
