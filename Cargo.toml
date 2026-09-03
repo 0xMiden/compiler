@@ -42,7 +42,6 @@ members = [
     "tools/expect-test",
     "tools/hir-opt",
     "tools/objtool",
-    "tools/release",
     "tests/support",
     "tests/integration",
     "tests/integration-network",
@@ -61,7 +60,7 @@ exclude = [
 
 [workspace.package]
 version = "0.10.0-rc.1"
-rust-version = "1.97"
+rust-version = "1.99"
 authors = ["Miden contributors"]
 description = "An intermediate representation and compiler for Miden Assembly"
 repository = "https://github.com/0xMiden/compiler"
@@ -91,7 +90,7 @@ clap = { version = "4.6", default-features = false, features = [
     "suggestions",
     "error-context",
 ] }
-cranelift-entity = "0.131"
+cranelift-entity = "0.135"
 compact_str = { version = "0.9", default-features = false }
 darling = { version = "0.23", features = ["diagnostics"] }
 flate2 = "1.1"

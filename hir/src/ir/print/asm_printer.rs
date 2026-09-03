@@ -76,7 +76,7 @@ impl<'a> AsmPrinter<'a> {
         let context = op.context();
         self.print_results(op.results().all());
 
-        self.document += text(format!("\"{}\"", &op.name()));
+        self.document += text(format!("\"{}\"", op.name()));
 
         // Print operand list and successors
         //

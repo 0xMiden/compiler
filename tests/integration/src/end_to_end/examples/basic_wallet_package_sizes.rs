@@ -17,7 +17,7 @@ fn basic_wallet_and_p2id() {
     );
     let account_package = account_test.compile_package();
     assert!(account_package.is_library(), "expected library");
-    expect!["7982"].assert_eq(stripped_mast_size_str(&account_package).as_str());
+    expect!["8505"].assert_eq(stripped_mast_size_str(&account_package).as_str());
 
     let mut tx_script_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/basic-wallet-tx-script",
@@ -26,7 +26,7 @@ fn basic_wallet_and_p2id() {
     );
     let tx_script_package = tx_script_test.compile_package();
     assert!(tx_script_package.is_library(), "expected library");
-    expect!["13556"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
+    expect!["13234"].assert_eq(stripped_mast_size_str(&tx_script_package).as_str());
 
     let mut p2id_test = CompilerTest::rust_source_cargo_miden(
         "../../examples/p2id-note",
@@ -35,7 +35,7 @@ fn basic_wallet_and_p2id() {
     );
     let note_package = p2id_test.compile_package();
     assert!(note_package.is_library(), "expected library");
-    expect!["17024"].assert_eq(stripped_mast_size_str(&note_package).as_str());
+    expect!["17488"].assert_eq(stripped_mast_size_str(&note_package).as_str());
     // The note package exports both the note script and the `build-recipient` constructor; the
     // constructor must not interfere with the `@note_script`-attributed export selection.
     assert!(
@@ -52,5 +52,5 @@ fn basic_wallet_and_p2id() {
     );
     let p2ide_package = p2ide_test.compile_package();
     assert!(p2ide_package.is_library(), "expected library");
-    expect!["13103"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
+    expect!["13566"].assert_eq(stripped_mast_size_str(&p2ide_package).as_str());
 }

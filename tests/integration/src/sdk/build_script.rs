@@ -232,10 +232,10 @@ fn assert_check_succeeded(phase: &str, output: &Output) {
 /// Finds every immutable package generation under `target_root`'s cargo target directory.
 ///
 /// The script stages generations in its `OUT_DIR`, whose path embeds a cargo-chosen hash:
-/// `<target>[/<triple>]/debug/build/<crate>-<hash>/out/miden-packages/gen-<unique-id>`. The
-/// fixtures pin a wasm build target in `.cargo/config.toml`, which puts the script's run
-/// directory under the triple subtree, so the scan covers the host layout and every per-triple
-/// layout.
+/// `<target>[/<triple>]/debug/build/<crate>-<hash>/out/miden-packages/gen-<unique-id>`, or under
+/// `<crate>/<hash>` in newer Cargo nightlies. The fixtures pin a wasm build target in
+/// `.cargo/config.toml`, which puts the script's run directory under the triple subtree, so the
+/// scan covers the host layout and every per-triple layout.
 /// `target_root` is the directory that owns the check's `target/` — the workspace root for
 /// the generated pair, the example itself for the standalone p2id check — and `crate_name`
 /// is the cargo package name of the crate whose script staged the cache. Published generations
@@ -260,8 +260,19 @@ fn published_generations(target_root: &Path, crate_name: &str) -> Vec<PathBuf> {
                 .is_some_and(|name| name.starts_with(crate_name))
         })
         .flat_map(|build_dir| {
-            fs::read_dir(build_dir.join("out").join("miden-packages"))
+            let mut package_roots = vec![build_dir.join("out").join("miden-packages")];
+            if let Ok(entries) = fs::read_dir(&build_dir) {
+                package_roots.extend(
+                    entries
+                        .filter_map(Result::ok)
+                        .map(|entry| entry.path())
+                        .filter(|path| path.is_dir())
+                        .map(|path| path.join("out").join("miden-packages")),
+                );
+            }
+            package_roots
                 .into_iter()
+                .filter_map(|package_root| fs::read_dir(package_root).ok())
                 .flatten()
                 .filter_map(Result::ok)
                 .map(|entry| entry.path())
@@ -307,12 +318,20 @@ fn private_staging_generations(target_root: &Path) -> Vec<PathBuf> {
 
 /// Returns Cargo's persisted stdout for the build script that owns `generation`.
 fn build_script_output(generation: &Path) -> PathBuf {
-    generation
+    let build_script_dir = generation
         .parent()
         .and_then(Path::parent)
         .and_then(Path::parent)
-        .expect("a generation must live below <build-script>/out/miden-packages")
-        .join("output")
+        .expect("a generation must live below <build-script>/out/miden-packages");
+    let legacy_output = build_script_dir.join("output");
+    if legacy_output.is_file() {
+        legacy_output
+    } else {
+        // Newer Cargo nightlies keep the same persisted stream under the build script's `run`
+        // directory. Accept both layouts so this test observes the directive rather than pinning
+        // Cargo's internal cache organization.
+        build_script_dir.join("run").join("stdout")
+    }
 }
 
 /// Returns the immutable generation exported by the most recently executed matching build

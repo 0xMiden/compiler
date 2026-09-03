@@ -775,40 +775,6 @@ ls -l "${OUT}" 2>/dev/null || true
 exit "${status}"
 ''']
 
-# Release tooling
-# ============================================================
-# Local, read-only or repository-local commands only. `publish` and `finalize`
-# are deliberately absent: they cross irreversible boundaries and belong to the
-# release workflow, where an approval gate and a short-lived token stand between
-# them and production. A convenient local shortcut for them would be a way to
-# skip that by accident.
-
-[tasks.release-tool]
-category = "Build"
-description = "Builds release-tool and installs it to the bin folder"
-command = "cargo"
-args = [
-    "-Z",
-    "unstable-options",
-    "build",
-    "-p",
-    "midenc-release",
-    "--bin",
-    "release-tool",
-    "--artifact-dir",
-    "${MIDENC_BIN_DIR}",
-]
-
-[tasks.release]
-category = "Release"
-command = "${MIDENC_BIN_DIR}/release-tool"
-description = "Invoke a `release-tool` command"
-args = [
-    "${@}"
-]
-dependencies = ["release-tool"]
-env = { "GITHUB_REPOSITORY" = "0xMiden/compiler" }
-
 [tasks.test-templates]
 category = "Test"
 description = "Scaffold a project from every template and build it, dev and release"
@@ -819,3 +785,22 @@ description = "Scaffold a project from every template and build it, dev and rele
 dependencies = ["cargo-miden"]
 command = "cargo"
 args = ["make", "test", "-E", "package(midenc-template-tests)", "${@}"]
+
+# Release tooling
+# ============================================================
+# Local, read-only or repository-local commands only. `publish` and `finalize`
+# are deliberately absent: they cross irreversible boundaries and belong to the
+# release workflow, where an approval gate and a short-lived token stand between
+# them and production. A convenient local shortcut for them would be a way to
+# skip that by accident.
+
+[tasks.release]
+category = "Release"
+description = "Invoke a `release-tool` command"
+command = "release-tool"
+install_crate = { crate_name = "miden-release-tool", binary = "release-tool", test_arg = "--help" }
+install_crate_args = ["--locked"]
+args = [
+    "${@}"
+]
+env = { "GITHUB_REPOSITORY" = "0xMiden/compiler" }

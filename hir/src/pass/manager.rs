@@ -716,12 +716,12 @@ impl OpPassManager {
         // Print statistics
         for stat in rendered_stats {
             write!(out, "{: <1$} (S) ", "", indent)?;
-            write!(out, "{: <1$} ", &stat.value, largest_value)?;
-            write!(out, "{: <1$}", &stat.name, largest_name)?;
+            write!(out, "{: <1$} ", stat.value, largest_value)?;
+            write!(out, "{: <1$}", stat.name, largest_name)?;
             if stat.description.is_empty() {
                 out.write_char('\n')?;
             } else {
-                writeln!(out, " - {}", &stat.description)?;
+                writeln!(out, " - {}", stat.description)?;
             }
         }
 

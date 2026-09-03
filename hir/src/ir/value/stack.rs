@@ -11,7 +11,7 @@ pub struct StackOperand {
 
 impl core::fmt::Display for StackOperand {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}:{}", &self.pos, &self.value)
+        write!(f, "{}:{}", self.pos, self.value)
     }
 }
 

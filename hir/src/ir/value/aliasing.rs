@@ -166,8 +166,8 @@ impl From<ValueOrAlias> for ValueRef {
 impl fmt::Display for ValueOrAlias {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.alias() {
-            None => write!(f, "{}", &self.value_id),
-            Some(alias) => write!(f, "{}.{alias}", &self.value_id),
+            None => write!(f, "{}", self.value_id),
+            Some(alias) => write!(f, "{}.{alias}", self.value_id),
         }
     }
 }

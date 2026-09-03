@@ -16,7 +16,7 @@ fn main() {
     }
 
     if let Ok(version) = env::var("MIDENC_BUILD_VERSION") {
-        println!("cargo::rustc-env=MIDENC_BUILD_VERSION={}", &version);
+        println!("cargo::rustc-env=MIDENC_BUILD_VERSION={}", version);
         return;
     }
 

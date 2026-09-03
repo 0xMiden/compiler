@@ -26,7 +26,7 @@ jobs:
       # `rust-toolchain.toml`.
       uses: dtolnay/rust-toolchain@master
       with:
-        toolchain: nightly-2026-04-30
+        toolchain: nightly-2026-09-01
         components: rust-src, llvm-tools, rustfmt
         targets: wasm32-wasip2
     - uses: Swatinem/rust-cache@v2

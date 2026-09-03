@@ -247,7 +247,7 @@ impl formatter::PrettyPrint for AbiParam {
     fn render(&self) -> formatter::Document {
         use formatter::*;
 
-        let ty = text(format!("{}", &self.ty));
+        let ty = text(format!("{}", self.ty));
 
         let mut doc = Document::Empty;
         let flags = OpPrintingFlags::default();
@@ -340,7 +340,7 @@ impl fmt::Display for Signature {
                 }
                 builder.finish()
             })
-            .entry(&"cc", &format_args!("{}", &self.cc))
+            .entry(&"cc", &format_args!("{}", self.cc))
             .finish()
     }
 }

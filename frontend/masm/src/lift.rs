@@ -168,7 +168,7 @@ fn lift_modules(
             miden_project::TargetType::Executable => {
                 return Err(Report::msg(format!(
                     "cannot link against executable package '{}'",
-                    &link_lib.name
+                    link_lib.name
                 )));
             }
             _ => {

@@ -90,7 +90,7 @@ pub trait Verify<Trait: ?Sized> {
 /// are easy rules to uphold.
 ///
 /// However, we must ensure that we continue to uphold these rules moving forward.
-#[rustc_unsafe_specialization_marker]
+//#[rustc_unsafe_specialization_marker]
 pub unsafe trait HasVerifier<Trait: ?Sized>: Verify<Trait> {}
 
 // While at first glance, it appears we would be using this to specialize on the fact that a type

@@ -176,7 +176,7 @@ impl LinkLibrary {
 
         Err(Report::msg(format!(
             "unable to locate library '{}' using any of the provided search paths",
-            &self.name
+            self.name
         )))
     }
 }

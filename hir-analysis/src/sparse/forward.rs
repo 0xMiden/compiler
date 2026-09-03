@@ -498,7 +498,7 @@ pub(super) fn visit_block<A>(
                         let change_result = arg_lattice.join(operand_lattice.lattice());
                         (change_result, arg_lattice)
                     };
-                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {:#?}: {change_result}", &arg_lattice);
+                    log::debug!(target: analysis.debug_name(), "updated lattice for {arg} to {:#?}: {change_result}", arg_lattice);
                 } else {
                     // Conservatively consider internally produced arguments as entry points.
                     log::trace!(target: analysis.debug_name(), "setting lattice for internally-produced argument {arg} to entry state");

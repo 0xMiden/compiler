@@ -290,7 +290,7 @@ impl BlockEmitter<'_> {
                         target: &trace_target,
                         symbol = self.trace_target.relevant_symbol();
                         "dropping {batch_size} operands from {:?}",
-                        &self.stack
+                        self.stack
                     );
                     // It should only be possible to hit this point if the entire stack is unused
                     assert_eq!(batch_size, self.stack.len());

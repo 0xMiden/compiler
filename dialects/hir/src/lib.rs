@@ -1,7 +1,6 @@
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
 #![feature(ptr_metadata)]
-#![feature(specialization)]
 #![allow(incomplete_features)]
 #![no_std]
 #![deny(warnings)]
@@ -52,6 +51,14 @@ pub const ACCOUNT_PROCEDURE_EXPORT_ATTR: &str = "account_procedure";
 /// Set by frontend component-export lifting; consumed by MASM codegen, which converts it into a
 /// MASM procedure attribute.
 pub const TRANSACTION_SCRIPT_EXPORT_ATTR: &str = "transaction_script";
+
+/// Attribute marking a translated core Wasm function as the component start function.
+///
+/// Set by the Wasm component frontend when folding the state-free startup adapter emitted by
+/// rustc's component linker. Consumed by MASM codegen, which executes the marked function as the
+/// final phase of per-context component initialization. The marker's value must be a
+/// `builtin::UnitAttr`.
+pub const WASM_COMPONENT_START_ATTR: &str = "wasm_component_start";
 
 #[derive(Debug, DialectRegistration)]
 pub struct HirDialect {

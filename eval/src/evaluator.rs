@@ -225,10 +225,7 @@ impl HirEvaluator {
                     .error("invalid call")
                     .with_primary_label(
                         callable.as_operation().span(),
-                        format!(
-                            "argument type mismatch: expected {}, got {given_ty}",
-                            &expected.ty
-                        ),
+                        format!("argument type mismatch: expected {}, got {given_ty}", expected.ty),
                     )
                     .with_secondary_label(
                         arg.span(),
@@ -337,10 +334,7 @@ impl HirEvaluator {
                     .error("invalid call")
                     .with_primary_label(
                         op.span(),
-                        format!(
-                            "argument type mismatch: expected {}, got {given_ty}",
-                            &expected.ty
-                        ),
+                        format!("argument type mismatch: expected {}, got {given_ty}", expected.ty),
                     )
                     .with_secondary_label(
                         arg.span(),

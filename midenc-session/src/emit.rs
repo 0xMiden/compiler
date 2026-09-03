@@ -266,8 +266,8 @@ impl Emit for miden_mast_package::Package {
         use miden_mast_package::PackageExport;
         match mode {
             OutputMode::Text => {
-                writer.write_fmt(format_args!("# package: {}@{}\n", &self.name, &self.version))?;
-                writer.write_fmt(format_args!("# kind:    {}\n\n", &self.kind))?;
+                writer.write_fmt(format_args!("# package: {}@{}\n", self.name, self.version))?;
+                writer.write_fmt(format_args!("# kind:    {}\n\n", self.kind))?;
                 let forest = self.mast_forest();
                 for export in self.manifest.exports() {
                     if let PackageExport::Procedure(proc) = export

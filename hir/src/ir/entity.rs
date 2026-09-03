@@ -125,7 +125,7 @@ impl fmt::Display for AliasingViolationError {
         write!(
             f,
             "{} in file '{}' at line {} and column {}",
-            &self.kind,
+            self.kind,
             self.location.file(),
             self.location.line(),
             self.location.column()

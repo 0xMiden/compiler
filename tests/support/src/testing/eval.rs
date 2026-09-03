@@ -118,8 +118,10 @@ where
                 let mut felts = felts.into_owned();
                 felts.resize(padded, Felt::ZERO);
                 felts
-                    .chunks_exact(4)
-                    .map(|chunk| miden_core::Word::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|chunk| miden_core::Word::new(*chunk))
                     .collect()
             }
             Initializer::MemoryWords { words, .. } => words.into_owned(),
@@ -254,7 +256,7 @@ pub fn compile_miden_component_to_package(
     let artifact = compile_link_output_to_masm_with_pre_assembly_stage(
         component,
         |lowered: &LoweredTarget| {
-            println!("# Assembled\n{}", &lowered.component);
+            println!("# Assembled\n{}", lowered.component);
             Ok(())
         },
     )

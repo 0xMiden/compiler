@@ -50,13 +50,13 @@ impl core::fmt::Debug for AnalysisStateKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("AnalysisStateKey")
             .field("type_id", &self.type_id)
-            .field_with("anchor", |f| write!(f, "{}", &self.anchor))
+            .field_with("anchor", |f| write!(f, "{}", self.anchor))
             .finish()
     }
 }
 impl core::fmt::Display for AnalysisStateKey {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        write!(f, "{}", &self.anchor)
+        write!(f, "{}", self.anchor)
     }
 }
 

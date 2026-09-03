@@ -116,7 +116,7 @@ unsafe impl<T: AttributeRegistration> TryFromAttribute for T {
                 "could not convert attribute of type '{}' to '{}' for property '{}'",
                 value.type_name(),
                 info.type_name,
-                &info.name,
+                info.name,
             )))
         }
     }
@@ -407,7 +407,7 @@ impl fmt::Debug for OperationName {
 }
 impl fmt::Display for OperationName {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}.{}", &self.dialect(), &self.name())
+        write!(f, "{}.{}", self.dialect(), self.name())
     }
 }
 

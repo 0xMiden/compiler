@@ -160,7 +160,7 @@ impl quote::ToTokens for EffectOpInterface {
             return;
         }
 
-        for (_kind, (kind_path, values_by_field)) in by_kind.iter() {
+        for (kind_path, values_by_field) in by_kind.values() {
             let effect_values = Punctuated::<_, Token![;]>::from_iter(values_by_field.iter().map(
                 |(field, exprs)| {
                     let exprs = exprs.iter();
