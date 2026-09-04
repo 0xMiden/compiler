@@ -4,6 +4,10 @@
 # at 2^31 (see `miden_core::FMP_INIT_VALUE`). Additionally, we place this above the maximum
 # addressable Wasm linear memory range (in element-addressable space) so that Wasm code cannot
 # reach it via byte pointers.
+#
+# NOTE: `ReservedCell::HeapInfo` in `codegen/masm/src/linker.rs` mirrors this address, and a unit
+# test there parses this line by its exact `const HEAP_INFO_ADDR=0x…` spelling to check the two
+# agree. Change them together, and keep the spelling.
 const HEAP_INFO_ADDR=0x40000000 # 2^30 (address in elements)
 
 # The location of the heap_top value
