@@ -56,6 +56,8 @@ fn schema_type_from_storage_type_arg(ty: &syn::Type) -> SchemaType {
         "u8" => SchemaType::u8(),
         "u16" => SchemaType::u16(),
         "u32" => SchemaType::u32(),
+        // TODO(i1352): flip to miden::protocol::stored_procedure once the protocol registers it
+        "StoredProcedure" => SchemaType::native_word(),
         _ => SchemaType::native_word(),
     }
 }

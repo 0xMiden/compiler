@@ -300,10 +300,20 @@ pub(crate) fn storage_slot_name_for_package(
     account_package: &str,
     interface_segment: &str,
 ) -> StorageSlotName {
+    storage_slot_name_for_field(account_package, interface_segment, "count_map")
+}
+
+/// Returns the storage slot name `#[component_storage]` derives for `field` of a generated
+/// account package whose `[lib].namespace` interface segment is `interface_segment`.
+pub(crate) fn storage_slot_name_for_field(
+    account_package: &str,
+    interface_segment: &str,
+    field: &str,
+) -> StorageSlotName {
     let package_name = account_package.strip_prefix("miden:").unwrap_or(account_package);
     let namespace = sanitize_slot_name_component(package_name);
-    StorageSlotName::new(format!("{namespace}::{interface_segment}::count_map"))
-        .expect("generated counter storage slot name must be valid")
+    StorageSlotName::new(format!("{namespace}::{interface_segment}::{field}"))
+        .expect("generated storage slot name must be valid")
 }
 
 /// Normalizes a generated component package into its storage slot namespace segment.
