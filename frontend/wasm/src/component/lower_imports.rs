@@ -5,7 +5,7 @@ use core::cell::RefCell;
 
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_cf::ControlFlowOpBuilder;
-use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
+use midenc_dialect_hir::{Dyncall, ExecFpi, HirOpBuilder};
 use midenc_hir::{
     Builder, Context, FunctionType, Op, SmallVec, SourceSpan, SymbolPath, Type, ValueRef,
     Visibility,
@@ -41,6 +41,9 @@ const FPI_IMPORT_PREFIX: &str = "fpi-";
 /// leading `word` parameter, lowered to `hir.dyncall` instead of a declared `hir.call` target.
 const DYNCALL_IMPORT_PREFIX: &str = "dyncall-";
 const FPI_ABI_PREFIX_ARGS: usize = ExecFpi::PREFIX_FELTS;
+/// Field elements the callee's procedure root occupies, both as the leading flat parameters of a
+/// dyncall import's lowering function and as the root operand of the `hir.dyncall` it emits.
+const DYNCALL_ROOT_FELTS: usize = Dyncall::ROOT_FELTS;
 const FPI_EXEC_INPUTS: usize = ExecFpi::MAX_INPUT_FELTS;
 const FPI_EXEC_RESULTS: usize = ExecFpi::EXECUTOR_RESULT_FELTS;
 
@@ -839,10 +842,10 @@ fn leads_with_proc_root_word(params: &[Type]) -> bool {
 /// are applied to, and the root's flat parameters (four felts) to re-prepend to the flattened
 /// signature so it keeps matching the core Wasm import.
 ///
-/// The flat-value half of the budget is checked here with the root included: wit-bindgen counted
-/// the root's four values when it generated the core import, so a signature past that count
-/// arrives with its parameters spilled to memory, which no lowering of this import supports. The
-/// felt half is checked on the completed signature by [`reject_oversized_dyncall_call_site`].
+/// The budget is checked on the completed signature by [`reject_oversized_dyncall_call_site`].
+/// The bound wit-bindgen flattened against (twelve argument values, the canonical ABI's sixteen
+/// flat parameters less the root's four) needs no check of its own, as every flat value costs at
+/// least one felt and the shim's argument budget is the same twelve felts.
 fn split_dyncall_root(
     context: &Rc<Context>,
     import_func_path: &SymbolPath,
@@ -853,20 +856,9 @@ fn split_dyncall_root(
         "dyncall import shape validation guarantees a leading procedure-root `word` parameter"
     );
     let (root_tys, arg_tys) = import_func_ty.params.split_at(1);
-    let root_flat_params = flatten_types(context, root_tys)
-        .wrap_err("failed to flatten the procedure-root parameter of a dyncall import")?;
-    let flat_arg_values = flatten_types(context, arg_tys)
-        .wrap_err("failed to flatten the arguments of a dyncall import")?
-        .len();
-    if root_flat_params.len() + flat_arg_values > MAX_FLAT_PARAMS {
-        let max_arg_values = MAX_FLAT_PARAMS - root_flat_params.len();
-        return Err(Report::msg(format!(
-            "unsupported stored procedure signature for '{import_func_path}': {flat_arg_values} \
-             flat argument values plus the {} procedure-root values exceed the canonical ABI's \
-             {MAX_FLAT_PARAMS} flat parameters; use at most {max_arg_values} argument values",
-            root_flat_params.len()
-        )));
-    }
+    let root_flat_params = flatten_types(context, root_tys).wrap_err_with(|| {
+        format!("failed to flatten the procedure-root parameter of '{import_func_path}'")
+    })?;
     let mut arguments_ty = import_func_ty.clone();
     arguments_ty.params = arg_tys.iter().cloned().collect();
     Ok((arguments_ty, root_flat_params))
@@ -885,7 +877,6 @@ fn reject_oversized_dyncall_call_site(
     import_lowered_sig: &Signature,
     transformation: Option<CanonicalAbiIndirection>,
 ) -> WasmResult<()> {
-    const ROOT_FELTS: usize = midenc_dialect_hir::Dyncall::ROOT_FELTS;
     let stack_felts: usize =
         import_lowered_sig.params.iter().map(|param| param.ty.size_in_felts()).sum();
     if stack_felts <= MAX_DIRECT_STACK_FELTS {
@@ -894,8 +885,8 @@ fn reject_oversized_dyncall_call_site(
     // Import flattening appends the result pointer to the parameters exactly when classification
     // reports output indirection; parameter indirection was rejected before this point.
     let result_ptr_felts = usize::from(transformation == Some(CanonicalAbiIndirection::Out));
-    let arg_felts = stack_felts - ROOT_FELTS - result_ptr_felts;
-    let max_arg_felts = MAX_DIRECT_STACK_FELTS - ROOT_FELTS - result_ptr_felts;
+    let arg_felts = stack_felts - DYNCALL_ROOT_FELTS - result_ptr_felts;
+    let max_arg_felts = MAX_DIRECT_STACK_FELTS - DYNCALL_ROOT_FELTS - result_ptr_felts;
     let result_ptr = if result_ptr_felts == 0 {
         ""
     } else {
@@ -903,9 +894,9 @@ fn reject_oversized_dyncall_call_site(
     };
     Err(Report::msg(format!(
         "unsupported stored procedure signature for '{import_func_path}': {arg_felts} argument \
-         field elements plus the {ROOT_FELTS} procedure-root elements{result_ptr} exceed Miden's \
-         {MAX_DIRECT_STACK_FELTS}-element operand stack window; use at most {max_arg_felts} \
-         argument field elements"
+         field elements plus the {DYNCALL_ROOT_FELTS} procedure-root elements{result_ptr} exceed \
+         Miden's {MAX_DIRECT_STACK_FELTS}-element operand stack window; use at most \
+         {max_arg_felts} argument field elements"
     )))
 }
 
@@ -950,15 +941,15 @@ fn build_import_call(
             call.results().iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
         }
         ImportCallKind::Dyncall => {
-            const ROOT_FELTS: usize = midenc_dialect_hir::Dyncall::ROOT_FELTS;
             assert!(
-                args.len() >= ROOT_FELTS && import_func_sig.params.len() >= ROOT_FELTS,
+                args.len() >= DYNCALL_ROOT_FELTS
+                    && import_func_sig.params.len() >= DYNCALL_ROOT_FELTS,
                 "dyncall import `{import_func_path}` lost its procedure-root parameter"
             );
-            let (root, call_args) = args.split_at(ROOT_FELTS);
-            let root: [ValueRef; ROOT_FELTS] = root.try_into().unwrap();
+            let (root, call_args) = args.split_at(DYNCALL_ROOT_FELTS);
+            let root: [ValueRef; DYNCALL_ROOT_FELTS] = root.try_into().unwrap();
             let signature = Signature {
-                params: import_func_sig.params[ROOT_FELTS..].to_vec(),
+                params: import_func_sig.params[DYNCALL_ROOT_FELTS..].to_vec(),
                 results: import_func_sig.results,
                 cc: import_func_sig.cc,
             };
@@ -2441,11 +2432,12 @@ mod tests {
     }
 
     #[test]
-    fn dyncall_import_past_the_flat_value_count_is_rejected_before_the_core_signature_check() {
+    fn dyncall_import_past_the_budget_is_rejected_before_the_core_signature_check() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
 
-        // Thirteen felt arguments plus the root's four values are 17 flat parameters: wit-bindgen
-        // spilled them to memory on the guest side, so the core import takes a single pointer
+        // Thirteen felt arguments plus the root's four elements are 17 stack felts: wit-bindgen
+        // spilled them to memory on the guest side, so the core import takes a single pointer.
+        // The budget diagnostic has to win over the core signature mismatch that spill leaves
         let mut ir = FunctionType::new(
             CallConv::Fast,
             core::iter::once(word_type())
@@ -2471,12 +2463,13 @@ mod tests {
         );
 
         match result {
-            Ok(_) => panic!("expected the over-count dyncall import to be rejected"),
+            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
             Err(err) => {
                 let message = err.to_string();
                 assert!(
-                    message.contains("13 flat argument values plus the 4 procedure-root values")
-                        && message.contains("use at most 12 argument values"),
+                    message
+                        .contains("13 argument field elements plus the 4 procedure-root elements")
+                        && message.contains("use at most 12 argument field elements"),
                     "unexpected diagnostic: {message}"
                 );
             }
