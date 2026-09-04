@@ -12,7 +12,7 @@
 //! parameter, which the Wasm frontend lowers to a dynamic call in a new VM context — nothing has
 //! to be linked or resolved for it, so no dependency package is consulted here.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use heck::{ToKebabCase, ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::{Ident, TokenStream as TokenStream2};
@@ -90,6 +90,9 @@ pub(super) fn collect_stored_procedure_slots(
 ) -> Result<Vec<StoredProcedureSlot>, Error> {
     let mut slots = Vec::new();
     let mut errors = Vec::new();
+    // Every generated name is derived from the normalized field name, so two fields normalizing
+    // alike (`foo_bar`, `fooBar`, `foo__bar`) would generate the same items and imports.
+    let mut normalized_names = BTreeMap::<String, Ident>::new();
 
     for field in fields.named.iter_mut() {
         let Some(field_ident) = field.ident.clone() else {
@@ -98,6 +101,20 @@ pub(super) fn collect_stored_procedure_slots(
         let Some(signature_arg) = stored_procedure_signature_arg_mut(&mut field.ty) else {
             continue;
         };
+
+        let normalized = field_ident.to_string().to_upper_camel_case();
+        if let Some(previous) = normalized_names.get(&normalized) {
+            errors.push(Error::new(
+                field_ident.span(),
+                format!(
+                    "stored procedure slots `{previous}` and `{field_ident}` would both generate \
+                     the items `{normalized}Signature` and `{normalized}Call`; stored procedure \
+                     field names must differ by more than their word separators or letter case"
+                ),
+            ));
+            continue;
+        }
+        normalized_names.insert(normalized, field_ident.clone());
 
         let signature = signature_arg.clone();
         match build_slot(&field_ident, &signature) {
@@ -183,11 +200,10 @@ pub(super) fn expand_stored_procedure_slots(
     let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
         allow_missing_local_wit: true,
     })?;
-    let bindings = generate::generate_inline_import_bindings(
+    let bindings = generate::generate_stored_procedure_bindings(
         &wit_config,
         &inline_wit,
         STORED_PROCEDURE_BINDINGS_WORLD,
-        &[],
     )?;
 
     let file: syn::File = syn::parse2(bindings)?;
@@ -236,7 +252,7 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
     };
     let explicit_names = bare_fn.inputs.iter().filter_map(explicit_name).collect::<Vec<_>>();
 
-    let mut params = Vec::with_capacity(bare_fn.inputs.len());
+    let mut params: Vec<StoredProcedureParam> = Vec::with_capacity(bare_fn.inputs.len());
     for (index, input) in bare_fn.inputs.iter().enumerate() {
         let ident = match explicit_name(input) {
             Some(ident) => ident,
@@ -254,10 +270,32 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
                 ident
             }
         };
+        let wit_name = ident.to_string().to_kebab_case();
+        if wit_name == PROC_ROOT_PARAM {
+            return Err(Error::new(
+                ident.span(),
+                format!(
+                    "stored procedure parameter `{ident}` is named `{PROC_ROOT_PARAM}` in WIT, \
+                     which is reserved for the procedure root passed as the leading argument; \
+                     rename the parameter"
+                ),
+            ));
+        }
+        if let Some(previous) = params.iter().find(|param| param.wit_name == wit_name) {
+            return Err(Error::new(
+                ident.span(),
+                format!(
+                    "stored procedure parameters `{}` and `{ident}` are both named `{wit_name}` \
+                     in WIT; parameter names must differ by more than their word separators or \
+                     letter case",
+                    previous.ident
+                ),
+            ));
+        }
         let type_ref = map_type_to_type_ref(&input.ty, &exported_types)?;
         reject_custom_type(&type_ref, input.ty.span())?;
         params.push(StoredProcedureParam {
-            wit_name: ident.to_string().to_kebab_case(),
+            wit_name,
             ident,
             user_ty: input.ty.clone(),
             type_ref,
@@ -641,6 +679,60 @@ world stored-procedure-bindings {
         let message = collect_error(&mut fields);
 
         assert!(message.contains("would be named `arg0`"), "{message}");
+    }
+
+    #[test]
+    fn rejects_slots_whose_names_normalize_to_the_same_generated_items() {
+        for second in [quote!(fooBar), quote!(foo__bar)] {
+            let mut fields = fields(quote! {
+                {
+                    foo_bar: StorageValue<StoredProcedure<fn()>>,
+                    #second: StorageValue<StoredProcedure<fn()>>,
+                }
+            });
+            let message = collect_error(&mut fields);
+
+            assert!(
+                message
+                    .contains("would both generate the items `FooBarSignature` and `FooBarCall`"),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_a_parameter_named_like_the_procedure_root() {
+        let mut fields = fields(quote! {
+            {
+                hook: StorageValue<StoredProcedure<fn(proc_root: Felt)>>,
+            }
+        });
+        let message = collect_error(&mut fields);
+
+        assert!(message.contains("`proc_root` is named `proc-root` in WIT"), "{message}");
+        assert!(message.contains("reserved for the procedure root"), "{message}");
+    }
+
+    #[test]
+    fn rejects_duplicate_parameter_names() {
+        let cases = [
+            (quote!(fn(x: Felt, x: u32)), "`x` and `x` are both named `x`"),
+            (
+                quote!(fn(foo_bar: Felt, fooBar: u32)),
+                "`foo_bar` and `fooBar` are both named `foo-bar`",
+            ),
+        ];
+
+        for (signature, expected) in cases {
+            let mut fields = fields(quote! {
+                {
+                    hook: StorageValue<StoredProcedure<#signature>>,
+                }
+            });
+            let message = collect_error(&mut fields);
+
+            assert!(message.contains(expected), "{message}");
+        }
     }
 
     #[test]

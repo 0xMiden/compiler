@@ -244,11 +244,16 @@ pub fn component(
 /// storage struct; elsewhere, import it (`use crate::AuthorityCall;`). Signature parameters and
 /// the result must be Miden core types or WIT primitives.
 ///
-/// The root is set from off-chain code: the SDK offers no constructor for a `StoredProcedure`,
-/// and the guest has no way to obtain procedure roots. Neither the compiler nor the VM checks the
-/// stored root against the declared signature; a root that names no procedure of the account, or
-/// one with a different stack contract, fails the transaction or yields wrong in-VM results, but
-/// never breaks Rust memory safety. Use `is_set()` to check whether the slot has been populated.
+/// The arguments travel on the VM's operand stack next to the procedure root, which bounds the
+/// signature: at most 12 flat argument values and at most 12 argument field elements — one fewer
+/// of each when the result is returned through a pointer, which takes an argument slot of its
+/// own. Wider signatures are rejected when the component is compiled.
+///
+/// Roots are expected to be written by the host at deployment or update time; the SDK offers no
+/// constructor for a `StoredProcedure`. Neither the compiler nor the VM checks the stored root
+/// against the declared signature; a root that names no procedure of the account, or one with a
+/// different stack contract, fails the transaction or yields wrong in-VM results, but never
+/// breaks Rust memory safety. Use `is_set()` to check whether the slot has been populated.
 ///
 /// Arguments reach the procedure with the first parameter on top of the operand stack, each
 /// flattened to its field elements in declaration order. A Rust-compiled sibling expects exactly
