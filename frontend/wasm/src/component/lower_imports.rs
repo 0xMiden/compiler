@@ -130,6 +130,8 @@ pub fn generate_import_lowering_function(
         }
         Some(transformation)
     };
+    // The root is re-attached only here, once the tuple and budget checks above have run on the
+    // argument list alone (see the comment on the split above).
     import_lowered_sig.params.splice(0..0, root_flat_params);
 
     let core_func_ref = module_builder
@@ -823,9 +825,20 @@ fn is_dyncall_import(
 /// Validates that an import with the reserved `dyncall-` prefix leads with the procedure-root
 /// `word` parameter.
 ///
-/// The generated import always spells the root as the `word` record, which
-/// [`ComponentFunctionType`] keeps a struct, so an import leading with four bare felts is a
-/// hand-written signature misusing the reserved prefix rather than a flattened root.
+/// Unlike its FPI counterpart [`validate_fpi_import_shape`], which also accepts its generated
+/// `felt, felt, word` prefix already flattened to bare felts, this check rejects a root spelled
+/// as four felts, because the dyncall path can never see one:
+///
+/// * The only producer of `dyncall-` imports is `#[component_storage]`, whose generated
+///   stored-procedure world declares every import with a leading `proc-root: word` parameter.
+///   The SDK macros reject the prefix in every other world, so no user-authored or dependency
+///   WIT reaches here with it.
+/// * [`ComponentFunctionType::from_component_type`] maps a WIT record to a struct type, so that
+///   `word` is still a single struct parameter at this point; it is expanded into four felts only
+///   later, by the canonical flattening in [`split_dyncall_root`].
+///
+/// Four leading bare felts therefore mean a hand-written interface misusing the reserved prefix,
+/// which is what the diagnostic reports.
 fn validate_dyncall_import_shape(
     import_func_path: &SymbolPath,
     import_func_ty: &FunctionType,
@@ -841,6 +854,9 @@ fn validate_dyncall_import_shape(
 }
 
 /// Returns true when `params` lead with the procedure-root `word` record of a dyncall import.
+///
+/// A root already flattened to four bare felts is deliberately not accepted, see
+/// [`validate_dyncall_import_shape`].
 fn leads_with_proc_root_word(params: &[Type]) -> bool {
     matches!(params, [proc_root, ..] if is_proc_root_word_type(proc_root))
 }
