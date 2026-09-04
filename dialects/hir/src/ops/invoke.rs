@@ -4,7 +4,7 @@ use midenc_hir::{
     derive::{EffectOpInterface, OpParser, OpPrinter, operation},
     dialects::builtin::{
         FunctionTable,
-        attributes::{LocalVariableArrayAttr, SignatureAttr, U32Attr},
+        attributes::{LocalVariableArrayAttr, Signature, SignatureAttr, U32Attr},
     },
     effects::*,
     interner::symbols,
@@ -14,6 +14,139 @@ use midenc_hir::{
 };
 
 use crate::HirDialect;
+
+/// Declare one result per result of `signature` on `op`, in signature order.
+///
+/// Call ops carry the callee signature as an attribute, so this is what inferring their result
+/// types amounts to.
+fn infer_results_from_signature(
+    op: &mut Operation,
+    signature: &Signature,
+    context: &Context,
+) -> Result<(), Report> {
+    let span = op.span;
+    let owner = op.as_operation_ref();
+    for (i, result) in signature.results().iter().enumerate() {
+        let value = context.make_result(span, result.ty.clone(), owner, i as u8);
+        op.results.push(value);
+    }
+    Ok(())
+}
+
+/// Verify that `arguments` agrees with the parameters of `signature` in count and type, naming
+/// the op as `op_name` in the diagnostics.
+///
+/// The indirect call ops carry their callee's signature as an attribute rather than deriving it
+/// from a resolved callee, so nothing but this ties their operands to it.
+fn verify_arguments_against_signature(
+    op_name: &str,
+    arguments: OpOperandRange<'_>,
+    signature: &Signature,
+) -> Result<(), Report> {
+    let arguments = arguments
+        .iter()
+        .map(|operand| operand.borrow().as_value_ref())
+        .collect::<SmallVec<[_; 4]>>();
+
+    if arguments.len() != signature.params.len() {
+        return Err(Report::msg(format!(
+            "invalid {op_name}: the call signature declares {} parameter(s), but {} argument(s) \
+             were given",
+            signature.params.len(),
+            arguments.len()
+        )));
+    }
+
+    for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate() {
+        let argument_ty = argument.borrow().ty().clone();
+        if argument_ty != param.ty {
+            return Err(Report::msg(format!(
+                "invalid {op_name}: parameter {index} has type '{}', but the argument given has \
+                 type '{argument_ty}'",
+                param.ty
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+/// The `(arguments) : signature` tail as [parse_arguments_and_signature] returns it: the
+/// unresolved arguments, and the parameter types to resolve them against.
+type ParsedArgumentsAndSignature = (SmallVec<[parse::UnresolvedOperand; 2]>, SmallVec<[Type; 2]>);
+
+/// Parse the `(arguments) : signature` tail shared by the call ops, recording the parsed
+/// signature as the `signature` attribute of `state`.
+///
+/// Returns the unresolved arguments along with the parameter types to resolve them against,
+/// having checked that the two agree in count. The caller resolves them, so that ops with
+/// further operand groups can push those groups in their declared order.
+fn parse_arguments_and_signature(
+    state: &mut OperationState,
+    parser: &mut dyn OpAsmParser<'_>,
+) -> ParseResult<ParsedArgumentsAndSignature> {
+    use midenc_hir::parse::ParserError;
+
+    let mut operands = SmallVec::default();
+    parser.parse_operand_list(
+        &mut operands,
+        parse::Delimiter::OptionalParen,
+        /*allow_result_number=*/ true,
+        None,
+    )?;
+
+    parser.parse_colon()?;
+    let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
+    state.attrs.push(NamedAttribute::new("signature", sig_attr));
+
+    let span = SourceSpan::new(
+        state.span.source_id(),
+        state.span.start()..parser.current_location().end(),
+    );
+    let sig_attribute = sig_attr.borrow();
+    let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
+        return Err(ParserError::InvalidAttributeValue {
+            span,
+            reason: format!(
+                "expected 'signature' property to be of type #builtin.signature, got '{}' instead",
+                sig_attribute.name()
+            ),
+        });
+    };
+    if operands.len() != signature.arity() {
+        return Err(ParserError::MismatchedValueAndTypeLists {
+            span,
+            num_values: operands.len(),
+            num_types: signature.arity(),
+        });
+    }
+
+    let type_params =
+        signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
+    Ok((operands, type_params))
+}
+
+/// Print the `(arguments) : signature` suffix shared by the call ops.
+fn print_arguments_and_signature(
+    printer: &mut AsmPrinter<'_>,
+    arguments: OpOperandRange<'_>,
+    signature: &SignatureAttr,
+) {
+    printer.print_operand_list(arguments);
+    *printer += formatter::const_text(" : ");
+    signature.print(printer);
+}
+
+/// Print the trailing `attributes { .. }` dictionary of `op`, if it has any attributes.
+fn print_optional_attributes(printer: &mut AsmPrinter<'_>, op: &Operation) {
+    if op.has_attributes() {
+        printer.print_space();
+        *printer += formatter::const_text(" attributes ");
+        printer.print_attribute_dictionary(
+            op.attributes().iter().map(|attr| *attr.as_named_attribute()),
+        );
+    }
+}
 
 #[operation(
     dialect = HirDialect,
@@ -35,14 +168,8 @@ pub struct Exec {
 
 impl InferTypeOpInterface for Exec {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
-        let sig = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in sig.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        let signature = self.signature.borrow();
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -54,77 +181,24 @@ impl OperandRangeRequirementOpInterface for Exec {
 
 impl OpPrinter for Exec {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use formatter::*;
-
         let callee = self.callee();
         printer.print_space();
         printer.print_symbol_path(callee.path());
-        printer.print_operand_list(self.arguments());
-        let callee_sig = self.signature();
-        *printer += const_text(" : ");
-        callee_sig.print(printer);
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_arguments_and_signature(printer, self.arguments(), &self.signature());
+        print_optional_attributes(printer, &self.op);
     }
 }
 
 impl OpParser for Exec {
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
-        use midenc_hir::parse::ParserError;
-
         let callee = parser.parse_symbol_ref()?;
 
         state.attrs.push(NamedAttribute::new("callee", callee.into_inner()));
 
-        let mut operands = SmallVec::default();
-        parser.parse_operand_list(
-            &mut operands,
-            parse::Delimiter::OptionalParen,
-            /*allow_result_number=*/ true,
-            None,
-        )?;
-
-        parser.parse_colon()?;
-        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
-        state.attrs.push(NamedAttribute::new("signature", sig_attr));
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        let sig_attribute = sig_attr.borrow();
-        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
-            return Err(ParserError::InvalidAttributeValue {
-                span,
-                reason: format!(
-                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
-                     instead",
-                    sig_attribute.name()
-                ),
-            });
-        };
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        if operands.len() != signature.arity() {
-            return Err(ParserError::MismatchedValueAndTypeLists {
-                span,
-                num_values: operands.len(),
-                num_types: signature.arity(),
-            });
-        }
+        let (operands, type_params) = parse_arguments_and_signature(state, parser)?;
 
         parser.parse_optional_attribute_dict_with_keyword(&mut state.attrs)?;
 
-        let type_params =
-            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
 
@@ -288,18 +362,10 @@ impl InferTypeOpInterface for ProcedureRoot {
 
 impl OpPrinter for ProcedureRoot {
     fn print(&self, printer: &mut AsmPrinter<'_>) {
-        use formatter::*;
-
         printer.print_space();
         let callee = self.callee();
         printer.print_symbol_path(callee.path());
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
@@ -350,14 +416,8 @@ pub struct ExecIndirect {
 
 impl InferTypeOpInterface for ExecIndirect {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
-        let sig = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in sig.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        let signature = self.signature.borrow();
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -378,24 +438,15 @@ impl OpPrinter for ExecIndirect {
             let index = index.borrow();
             *printer += const_text("[") + display(index.id()) + const_text("]");
         }
-        printer.print_operand_list(self.arguments());
-        let callee_sig = self.signature();
-        *printer += const_text(" : ");
-        callee_sig.print(printer);
+        print_arguments_and_signature(printer, self.arguments(), &self.signature());
         *printer += const_text(" tag ") + display(*self.get_type_tag());
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
 impl OpParser for ExecIndirect {
     fn parse(state: &mut OperationState, parser: &mut dyn OpAsmParser<'_>) -> ParseResult {
-        use midenc_hir::parse::{ParserError, ParserExt, Token};
+        use midenc_hir::parse::{ParserExt, Token};
 
         let table = parser.parse_symbol_ref()?;
         state.attrs.push(NamedAttribute::new("table", table.into_inner()));
@@ -405,40 +456,7 @@ impl OpParser for ExecIndirect {
         let index = parser.parse_operand(/*allow_result_number=*/ true)?;
         parser.token_stream_mut().expect(Token::Rbracket)?;
 
-        let mut operands = SmallVec::default();
-        parser.parse_operand_list(
-            &mut operands,
-            parse::Delimiter::OptionalParen,
-            /*allow_result_number=*/ true,
-            None,
-        )?;
-
-        parser.parse_colon()?;
-        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
-        state.attrs.push(NamedAttribute::new("signature", sig_attr));
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        let sig_attribute = sig_attr.borrow();
-        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
-            return Err(ParserError::InvalidAttributeValue {
-                span,
-                reason: format!(
-                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
-                     instead",
-                    sig_attribute.name()
-                ),
-            });
-        };
-        if operands.len() != signature.arity() {
-            return Err(ParserError::MismatchedValueAndTypeLists {
-                span,
-                num_values: operands.len(),
-                num_types: signature.arity(),
-            });
-        }
+        let (operands, type_params) = parse_arguments_and_signature(state, parser)?;
 
         parser.parse_custom_keyword("tag")?;
         let type_tag = parser.parse_decimal_integer::<u32>()?.into_inner();
@@ -460,8 +478,6 @@ impl OpParser for ExecIndirect {
         state.operands.push(index_values);
 
         // Operand group 1: the callee arguments, typed per the signature
-        let type_params =
-            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
         state.operands.push(operand_values);
@@ -558,32 +574,7 @@ impl CallOpInterface for ExecIndirect {
 impl Verify<dyn CallOpInterface> for ExecIndirect {
     fn verify(&self, _context: &Context) -> Result<(), Report> {
         let signature = self.get_signature();
-        let arguments = self
-            .arguments()
-            .iter()
-            .map(|operand| operand.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 4]>>();
-
-        if arguments.len() != signature.params.len() {
-            return Err(Report::msg(format!(
-                "invalid hir.exec_indirect: the call signature declares {} parameter(s), but {} \
-                 argument(s) were given",
-                signature.params.len(),
-                arguments.len()
-            )));
-        }
-
-        for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate()
-        {
-            let argument_ty = argument.borrow().ty().clone();
-            if argument_ty != param.ty {
-                return Err(Report::msg(format!(
-                    "invalid hir.exec_indirect: parameter {index} has type '{}', but the argument \
-                     given has type '{argument_ty}'",
-                    param.ty
-                )));
-            }
-        }
+        verify_arguments_against_signature("hir.exec_indirect", self.arguments(), &signature)?;
 
         // The tag is what the runtime check compares, and it is a producer-supplied integer:
         // nothing else ties it to a signature. If a table entry claims this call's tag while
@@ -739,14 +730,8 @@ pub struct Call {
 
 impl InferTypeOpInterface for Call {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
         let signature = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in signature.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -767,13 +752,7 @@ impl OpPrinter for Call {
         *printer += const_text(" <");
         printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
         *printer += const_text(" >");
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
@@ -869,14 +848,8 @@ impl Dyncall {
 
 impl InferTypeOpInterface for Dyncall {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
-        let sig = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in sig.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        let signature = self.signature.borrow();
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -894,17 +867,8 @@ impl OpPrinter for Dyncall {
         *printer += const_text("[");
         printer.print_value_uses(self.root().as_value_range());
         *printer += const_text("]");
-        printer.print_operand_list(self.arguments());
-        let callee_sig = self.signature();
-        *printer += const_text(" : ");
-        callee_sig.print(printer);
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_arguments_and_signature(printer, self.arguments(), &self.signature());
+        print_optional_attributes(printer, &self.op);
     }
 }
 
@@ -921,45 +885,19 @@ impl OpParser for Dyncall {
             None,
         )?;
 
-        let mut operands = SmallVec::default();
-        parser.parse_operand_list(
-            &mut operands,
-            parse::Delimiter::OptionalParen,
-            /*allow_result_number=*/ true,
-            None,
-        )?;
+        let (operands, type_params) = parse_arguments_and_signature(state, parser)?;
 
-        parser.parse_colon()?;
-        let sig_attr = <SignatureAttr as midenc_hir::attributes::AttrParser>::parse(parser)?;
-        state.attrs.push(NamedAttribute::new("signature", sig_attr));
-
-        let span = SourceSpan::new(
-            state.span.source_id(),
-            state.span.start()..parser.current_location().end(),
-        );
-        let sig_attribute = sig_attr.borrow();
-        let Some(signature) = sig_attribute.downcast_ref::<SignatureAttr>() else {
-            return Err(ParserError::InvalidAttributeValue {
-                span,
-                reason: format!(
-                    "expected 'signature' property to be of type #builtin.signature, got '{}' \
-                     instead",
-                    sig_attribute.name()
-                ),
-            });
-        };
+        // The root word is fixed-size; like the argument arity checked above, a mismatch is
+        // reported against the op parsed so far
         if root.len() != Self::ROOT_FELTS {
+            let span = SourceSpan::new(
+                state.span.source_id(),
+                state.span.start()..parser.current_location().end(),
+            );
             return Err(ParserError::MismatchedValueAndTypeLists {
                 span,
                 num_values: root.len(),
                 num_types: Self::ROOT_FELTS,
-            });
-        }
-        if operands.len() != signature.arity() {
-            return Err(ParserError::MismatchedValueAndTypeLists {
-                span,
-                num_values: operands.len(),
-                num_types: signature.arity(),
             });
         }
 
@@ -972,8 +910,6 @@ impl OpParser for Dyncall {
         state.operands.push(root_values);
 
         // Operand group 1: the callee arguments, typed per the signature
-        let type_params =
-            signature.params().iter().map(|p| p.ty.clone()).collect::<SmallVec<[Type; 2]>>();
         let mut operand_values = SmallVec::default();
         parser.resolve_operands(state.span, &operands, &type_params, &mut operand_values)?;
         state.operands.push(operand_values);
@@ -1051,34 +987,7 @@ impl Verify<dyn CallOpInterface> for Dyncall {
                 signature.cc
             )));
         }
-        let arguments = self
-            .arguments()
-            .iter()
-            .map(|operand| operand.borrow().as_value_ref())
-            .collect::<SmallVec<[_; 4]>>();
-
-        if arguments.len() != signature.params.len() {
-            return Err(Report::msg(format!(
-                "invalid hir.dyncall: the call signature declares {} parameter(s), but {} \
-                 argument(s) were given",
-                signature.params.len(),
-                arguments.len()
-            )));
-        }
-
-        for (index, (argument, param)) in arguments.iter().zip(signature.params.iter()).enumerate()
-        {
-            let argument_ty = argument.borrow().ty().clone();
-            if argument_ty != param.ty {
-                return Err(Report::msg(format!(
-                    "invalid hir.dyncall: parameter {index} has type '{}', but the argument given \
-                     has type '{argument_ty}'",
-                    param.ty
-                )));
-            }
-        }
-
-        Ok(())
+        verify_arguments_against_signature("hir.dyncall", self.arguments(), &signature)
     }
 }
 
@@ -1104,14 +1013,8 @@ pub struct Syscall {
 
 impl InferTypeOpInterface for Syscall {
     fn infer_return_types(&mut self, context: &Context) -> Result<(), Report> {
-        let span = self.span();
         let signature = self.signature.borrow();
-        let owner = self.as_operation_ref();
-        for (i, result) in signature.results().iter().enumerate() {
-            let value = context.make_result(span, result.ty.clone(), owner, i as u8);
-            self.op.results.push(value);
-        }
-        Ok(())
+        infer_results_from_signature(&mut self.op, &signature, context)
     }
 }
 
@@ -1132,13 +1035,7 @@ impl OpPrinter for Syscall {
         *printer += const_text(" <");
         printer.print_attribute_dictionary(self.op.properties().filter(|p| p.name == "signature"));
         *printer += const_text(" >");
-        if self.op.has_attributes() {
-            printer.print_space();
-            *printer += const_text(" attributes ");
-            printer.print_attribute_dictionary(
-                self.op.attributes().iter().map(|attr| *attr.as_named_attribute()),
-            );
-        }
+        print_optional_attributes(printer, &self.op);
     }
 }
 
