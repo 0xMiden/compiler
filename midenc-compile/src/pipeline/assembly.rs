@@ -22,7 +22,7 @@ use miden_mast_package::Package;
 use midenc_codegen_masm::{MasmComponent, intrinsics};
 use midenc_session::{Session, diagnostics::Report};
 
-use crate::cargo::NOTE_CODEC_CRATE_METADATA;
+use crate::cargo::NOTE_CODEC_TABLE_NAME;
 
 /// Apply the session's link inputs to `assembler` before a project is assembled with it.
 pub(crate) fn prepare_assembler(
@@ -63,13 +63,12 @@ pub(crate) fn prepare_assembler(
     Ok(())
 }
 
-/// Attaches frontend metadata, advice-map data, and target-specific package sections.
+/// Attaches frontend metadata, advice-map data, and target-specific sections after assembly.
 pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
     sections: &midenc_frontend_wasm_metadata::PackageSections,
     context: &TargetAssemblyContext<'_>,
-    session: &Session,
 ) -> Result<(), Report> {
     use miden_assembly::serde::Serializable;
     use miden_mast_package::{Section, SectionId};
@@ -106,7 +105,7 @@ pub(crate) fn post_process_package(
 
     if has_note_codec && context.target.ty == TargetType::Note {
         // Run after schema and kernel attachment. The codec stages this package state and hashes it.
-        attach_note_codec(package, context, session)?;
+        attach_note_codec(package, context)?;
     }
 
     Ok(())
@@ -124,15 +123,14 @@ fn validate_note_codec_declaration(
 
     if has_note_codec && !package_has_note_target {
         return Err(Report::msg(format!(
-            "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}]` requires a note target, but the \
-             package that contains target '{target_name}' defines no note target"
+            "`[package.metadata.{NOTE_CODEC_TABLE_NAME}]` requires a note target, but the package \
+             that contains target '{target_name}' defines no note target"
         )));
     }
     if has_note_codec && target_type == TargetType::Note && !has_note_storage_schema {
         return Err(Report::msg(format!(
-            "note target '{target_name}' declares \
-             `[package.metadata.{NOTE_CODEC_CRATE_METADATA}]` but emitted no note storage schema; \
-             add one named-field `#[note]` struct"
+            "note target '{target_name}' declares `[package.metadata.{NOTE_CODEC_TABLE_NAME}]` \
+             but emitted no note storage schema; add one named-field `#[note]` struct"
         )));
     }
     Ok(())
@@ -151,18 +149,16 @@ fn package_has_note_target(package: &midenc_session::miden_project::Package) -> 
             .any(|target| target.inner().ty == TargetType::Note)
 }
 
-/// Build and attach the note codec declared by the current project package.
+/// Builds and attaches the note codec declared by the current project package.
 fn attach_note_codec(
     package: &mut Package,
     context: &TargetAssemblyContext<'_>,
-    session: &Session,
 ) -> Result<(), Report> {
     let Some(component) = crate::cargo::build_project_note_codec(
         context.package.as_ref(),
         context.manifest_path,
         context.project_root.as_ref(),
         package,
-        session,
     )?
     else {
         return Ok(());

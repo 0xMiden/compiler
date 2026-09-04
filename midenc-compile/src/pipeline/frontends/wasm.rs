@@ -592,7 +592,6 @@ impl Frontend for WasmFrontend {
             &found.component,
             &found.sections,
             cx.assembly(),
-            &cx.session(),
         )
     }
 

@@ -832,7 +832,6 @@ mod tests {
                 &found.component,
                 &found.sections,
                 cx.assembly(),
-                &cx.session(),
             )
         }
 
