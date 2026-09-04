@@ -20,6 +20,7 @@ use quote::{ToTokens, format_ident, quote};
 use semver::Version;
 use syn::{Error, FieldsNamed, ReturnType, Type, Visibility, ext::IdentExt, spanned::Spanned};
 
+use super::is_unit_type;
 use crate::{
     component_macro::{CORE_TYPES_PACKAGE, storage::storage_field_type},
     fpi, generate, manifest_paths,
@@ -29,6 +30,7 @@ use crate::{
         wit_bindgen_rust_ident,
     },
     wit_builder::WitBuilder,
+    wit_world::write_world_block,
 };
 
 /// Name of the inline WIT world generated for stored-procedure slots.
@@ -214,9 +216,9 @@ pub(super) fn expand_stored_procedure_slots(
     }
 
     let inline_wit = build_stored_procedure_wit(struct_ident, slots);
-    let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
-        allow_missing_local_wit: true,
-    })?;
+    // The rendered world only ever uses SDK core types, so it resolves against the bundled WIT
+    // alone: no dependency package is read, and none becomes a build input of this expansion.
+    let wit_config = manifest_paths::resolve_sdk_wit()?;
     let bindings = generate::generate_stored_procedure_bindings(
         &wit_config,
         &inline_wit,
@@ -373,11 +375,6 @@ fn bare_fn_signature(signature: &Type) -> Result<&syn::TypeBareFn, Error> {
     }
 }
 
-/// Returns true for the unit type `()`.
-fn is_unit_type(ty: &Type) -> bool {
-    matches!(ty, Type::Tuple(tuple) if tuple.elems.is_empty())
-}
-
 /// Renders the inline WIT world declaring one `dyncall-<field>` import per stored-procedure slot.
 fn build_stored_procedure_wit(struct_ident: &Ident, slots: &[StoredProcedureSlot]) -> String {
     // Every name derived from a Rust identifier is rendered as an explicit WIT identifier, so a
@@ -411,9 +408,12 @@ fn build_stored_procedure_wit(struct_ident: &Ident, slots: &[StoredProcedureSlot
         }
     });
     wit.blank_line();
-    wit.world(STORED_PROCEDURE_BINDINGS_WORLD, |world| {
-        world.line(&format!("import {interface_name};"));
-    });
+    write_world_block(
+        &mut wit,
+        STORED_PROCEDURE_BINDINGS_WORLD,
+        std::slice::from_ref(&interface_name),
+        &[],
+    );
 
     wit.finish()
 }
@@ -456,10 +456,7 @@ fn build_slot_items(
         None => quote!(),
     };
 
-    let mut call_path = quote!(#bindings_module_ident);
-    for ident in call_module_path {
-        call_path = quote!(#call_path::#ident);
-    }
+    let call_path = fpi::append_module_path(quote!(#bindings_module_ident), call_module_path);
     // The procedure root is passed as the leading argument; the frontend takes it off the import's
     // parameter list and turns the call into a dynamic call into a new VM context.
     let call = quote!(#call_path::#import_fn_ident(self.root() #(, #param_idents)*));

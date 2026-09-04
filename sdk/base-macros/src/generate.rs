@@ -685,13 +685,14 @@ fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
 }
 
-/// Rejects imported functions named with the `dyncall-` prefix the Wasm frontend reserves for
+/// Rejects functions named with the `dyncall-` prefix the Wasm frontend reserves for
 /// stored-procedure dispatch imports.
 ///
 /// The frontend classifies those imports by name, so a dependency function that happened to use
-/// the prefix would be dispatched as a dynamic call instead of linked. Only the world
-/// `#[component_storage]` generates for stored-procedure slots is exempt, and only because its
-/// caller says so through `policy`.
+/// the prefix would be dispatched as a dynamic call instead of linked. Exports are checked as
+/// well: an export with the prefix is an import with the prefix in every consumer, where the
+/// diagnostic would blame the dependency. Only the world `#[component_storage]` generates for
+/// stored-procedure slots is exempt, and only because its caller says so through `policy`.
 fn validate_reserved_dyncall_namespace(
     resolve: &Resolve,
     world_id: WorldId,
@@ -701,14 +702,22 @@ fn validate_reserved_dyncall_namespace(
         return Ok(());
     }
     let world = &resolve.worlds[world_id];
-    for item in world.imports.values() {
+    let items = world
+        .imports
+        .values()
+        .map(|item| ("imported", item))
+        .chain(world.exports.values().map(|item| ("exported", item)));
+    for (direction, item) in items {
         let (origin, functions): (String, Vec<&Function>) = match item {
             WorldItem::Interface { id, .. } => {
                 let interface = &resolve.interfaces[*id];
                 let name = fpi::interface_import_path(resolve, *id)
                     .or_else(|| interface.name.clone())
                     .unwrap_or_else(|| "<anonymous>".to_string());
-                (format!("imported interface `{name}`"), interface.functions.values().collect())
+                (
+                    format!("{direction} interface `{name}`"),
+                    interface.functions.values().collect(),
+                )
             }
             WorldItem::Function(function) => (format!("world `{}`", world.name), vec![function]),
             WorldItem::Type { .. } => continue,
@@ -721,13 +730,42 @@ fn validate_reserved_dyncall_namespace(
                 format!(
                     "{origin} defines function `{}` with reserved prefix `{DYNCALL_WIT_PREFIX}`; \
                      the compiler lowers imports with that prefix as stored-procedure dispatches, \
-                     so an imported function must use a different name",
+                     so an {direction} function must use a different name",
                     function.name
                 ),
             ));
         }
     }
     Ok(())
+}
+
+/// Rejects an exported function whose WIT name carries the prefix reserved for stored-procedure
+/// dispatch.
+///
+/// The Wasm frontend classifies imports named `dyncall-…` as dynamic calls on a stored procedure
+/// root, so exporting such a name only breaks the package's consumers — and there the diagnostic
+/// blames the dependency. Reject it where the name is written instead. `item_kind` names the
+/// construct that carries the name, e.g. `"component method"`.
+///
+/// `wit_name` must be the un-rawed WIT spelling of `fn_ident` (see
+/// [`rust_ident_to_wit_name`](crate::types::rust_ident_to_wit_name)): a raw identifier keeps its
+/// `r#` through plain kebab-casing and would slip past the prefix comparison.
+pub(crate) fn reject_reserved_dyncall_export(
+    fn_ident: &syn::Ident,
+    wit_name: &str,
+    item_kind: &str,
+) -> syn::Result<()> {
+    if !wit_name.starts_with(DYNCALL_WIT_PREFIX) {
+        return Ok(());
+    }
+
+    Err(Error::new(
+        fn_ident.span(),
+        format!(
+            "{item_kind} `{fn_ident}` is exported as `{wit_name}`, but the `{DYNCALL_WIT_PREFIX}` \
+             WIT prefix (`dyncall_` in Rust) is reserved for stored-procedure dispatch; rename it"
+        ),
+    ))
 }
 
 /// Returns true when the selected world references Miden SDK core types.
@@ -1405,6 +1443,63 @@ world world-level-world {
         assert!(message.contains("world `world-level-world`"), "{message}");
         assert!(message.contains("`dyncall-notify`"), "{message}");
         assert!(!message.contains("interface"), "{message}");
+    }
+
+    /// Rejects the reserved prefix on the export side too: an export with it is a reserved import
+    /// in every consumer of the package.
+    #[test]
+    fn exported_functions_with_the_dyncall_prefix_are_rejected() {
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:exporter@1.0.0;
+
+interface api {
+    dyncall-notify: func(amount: u32);
+}
+
+world exporter-world {
+    export api;
+}
+"#,
+        );
+
+        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("exported interface `miden:exporter/api@1.0.0`"), "{message}");
+        assert!(message.contains("`dyncall-notify`"), "{message}");
+        assert!(message.contains("an exported function must use a different name"), "{message}");
+
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:world-level-export@1.0.0;
+
+world world-level-export-world {
+    export dyncall-run: func(amount: u32);
+}
+"#,
+        );
+
+        let message = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("world `world-level-export-world`"), "{message}");
+        assert!(message.contains("`dyncall-run`"), "{message}");
+    }
+
+    /// Rejects a written export name with the reserved prefix, and only that prefix.
+    #[test]
+    fn reserved_dyncall_export_names_are_rejected_by_name() {
+        let ident = syn::Ident::new("dyncall_notify", Span::call_site());
+        let message = reject_reserved_dyncall_export(&ident, "dyncall-notify", "note constructor")
+            .unwrap_err()
+            .to_string();
+        assert!(message.contains("note constructor `dyncall_notify`"), "{message}");
+        assert!(message.contains("exported as `dyncall-notify`"), "{message}");
+        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+
+        reject_reserved_dyncall_export(&ident, "notify", "note constructor")
+            .expect("an unrelated export name is accepted");
     }
 
     /// Parses a test WIT world with the bundled SDK WIT available in the resolver.
