@@ -238,12 +238,17 @@ pub mod __stored_procedure_sealed {
 ///
 /// Roots are expected to be written by the host at deployment or update time, taken from the
 /// sibling package's exports: the SDK offers no constructor for this type. The stored root is not
-/// validated by the compiler or the VM against the declared signature. A root that names no
-/// procedure of the account, or one with a different stack contract, makes the transaction fail
-/// or yields wrong in-VM results, but never breaks Rust memory safety in the caller. Calling an
-/// unset slot (all-zero root) fails the transaction with a descriptive assertion.
+/// validated by the compiler or the VM against the declared signature: the called procedure is
+/// trusted to honour it. A wrong or stale root — one that names no procedure of the account, or
+/// one with a different stack contract — fails the transaction or returns wrong values. A result
+/// of a variant type ([`Option`], [`Result`]) is lifted from the returned discriminant
+/// without validation, so a root returning an out-of-range discriminant is undefined behaviour in
+/// the caller, like any other canonical-ABI lift. Calling an unset slot (all-zero root) fails the
+/// transaction with a descriptive assertion.
 pub struct StoredProcedure<S: ProcedureSignature> {
+    /// MAST root of the procedure, all-zero while the slot is unset.
     root: Word,
+    /// Ties the value to the one call signature `#[component_storage]` generated `S` for.
     _sig: core::marker::PhantomData<S>,
 }
 
