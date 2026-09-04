@@ -29,7 +29,6 @@ use super::{
 };
 use crate::{
     callable::CallableFunction,
-    code_translator::OPERAND_STACK_WINDOW_FELTS,
     error::WasmResult,
     fpi::store_fpi_prefix_locals,
     module::function_builder_ext::{
@@ -85,7 +84,9 @@ pub fn generate_import_lowering_function(
     // direct-call budget and the arguments are budgeted against the window it leaves instead.
     let (budgeted_ty, root_flat_params) = match call_kind {
         ImportCallKind::Call => (import_func_ty.ir.clone(), Vec::new()),
-        ImportCallKind::Dyncall => split_dyncall_root(&context, &import_func_ty.ir)?,
+        ImportCallKind::Dyncall => {
+            split_dyncall_root(&context, &import_func_path, &import_func_ty.ir)?
+        }
     };
     let mut import_lowered_sig =
         flatten_function_type(&context, &budgeted_ty, CanonicalAbiMode::Import).wrap_err_with(
@@ -808,13 +809,7 @@ fn validate_dyncall_import_shape(
     import_func_path: &SymbolPath,
     import_func_ty: &FunctionType,
 ) -> WasmResult<()> {
-    let params = import_func_ty.params.as_slice();
-    let structured = matches!(params, [proc_root, ..] if is_fpi_proc_root_type(proc_root));
-    let flattened = matches!(
-        params,
-        [a, b, c, d, ..] if [a, b, c, d].into_iter().all(is_fpi_felt_type)
-    );
-    if !structured && !flattened {
+    if dyncall_root_param_count(&import_func_ty.params).is_none() {
         return Err(Report::msg(format!(
             "import `{import_func_path}` uses reserved prefix `{DYNCALL_IMPORT_PREFIX}` but does \
              not lead with the procedure-root `word` parameter"
@@ -824,21 +819,51 @@ fn validate_dyncall_import_shape(
     Ok(())
 }
 
-/// Splits a dyncall import's leading procedure-root parameter off its IR type.
+/// Returns how many leading parameters of a dyncall import spell its procedure root: one for the
+/// generated `word` record, four when it reached lowering already flattened to felts, and none
+/// when the import does not have the expected shape.
+fn dyncall_root_param_count(params: &[Type]) -> Option<usize> {
+    const FLATTENED_ROOT_PARAMS: usize = midenc_dialect_hir::Dyncall::ROOT_FELTS;
+    match params {
+        [proc_root, ..] if is_fpi_proc_root_type(proc_root) => Some(1),
+        [a, b, c, d, ..] if [a, b, c, d].into_iter().all(is_fpi_felt_type) => {
+            Some(FLATTENED_ROOT_PARAMS)
+        }
+        _ => None,
+    }
+}
+
+/// Splits a dyncall import's leading procedure-root parameter(s) off its IR type.
 ///
-/// Returns the type of the arguments alone, which is what the direct-call budget applies to, and
-/// the root's flat parameters (the `word` record flattened to four felts) to re-prepend to the
-/// flattened signature so it keeps matching the core Wasm import.
+/// Returns the type of the arguments alone, which is what the felt half of the direct-call budget
+/// applies to (the root is spilled, not passed), and the root's flat parameters (four felts) to
+/// re-prepend to the flattened signature so it keeps matching the core Wasm import.
+///
+/// The flat-value half of the budget is checked here with the root included: wit-bindgen counted
+/// the root's four values when it generated the core import, so a signature past that count
+/// arrives with its parameters spilled to memory, which no lowering of this import supports.
 fn split_dyncall_root(
     context: &Rc<Context>,
+    import_func_path: &SymbolPath,
     import_func_ty: &FunctionType,
 ) -> WasmResult<(FunctionType, Vec<AbiParam>)> {
-    let (root_ty, arg_tys) = import_func_ty
-        .params
-        .split_first()
+    let root_params = dyncall_root_param_count(&import_func_ty.params)
         .expect("dyncall import shape validation guarantees a leading root parameter");
-    let root_flat_params = flatten_types(context, core::slice::from_ref(root_ty))
+    let (root_tys, arg_tys) = import_func_ty.params.split_at(root_params);
+    let root_flat_params = flatten_types(context, root_tys)
         .wrap_err("failed to flatten the procedure-root parameter of a dyncall import")?;
+    let flat_arg_values = flatten_types(context, arg_tys)
+        .wrap_err("failed to flatten the arguments of a dyncall import")?
+        .len();
+    if root_flat_params.len() + flat_arg_values > MAX_FLAT_PARAMS {
+        let max_arg_values = MAX_FLAT_PARAMS - root_flat_params.len();
+        return Err(Report::msg(format!(
+            "unsupported stored procedure signature for '{import_func_path}': {flat_arg_values} \
+             flat argument values plus the {} procedure-root values exceed the canonical ABI's \
+             {MAX_FLAT_PARAMS} flat parameters; use at most {max_arg_values} argument values",
+            root_flat_params.len()
+        )));
+    }
     let mut arguments_ty = import_func_ty.clone();
     arguments_ty.params = arg_tys.iter().cloned().collect();
     Ok((arguments_ty, root_flat_params))
@@ -901,11 +926,11 @@ fn build_import_call(
             // The lowering schedules the root address on the operand stack on top of the
             // arguments, so together they must fit in the addressable operand stack window
             let arg_felts: usize = signature.params.iter().map(|p| p.ty.size_in_felts()).sum();
-            if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
+            if arg_felts + 1 > MAX_DIRECT_STACK_FELTS {
                 return Err(Report::msg(format!(
                     "unsupported stored procedure signature for '{import_func_path}': {arg_felts} \
                      argument field elements plus the procedure-root address exceed Miden's \
-                     {OPERAND_STACK_WINDOW_FELTS}-element operand stack window"
+                     {MAX_DIRECT_STACK_FELTS}-element operand stack window"
                 )));
             }
 
@@ -926,6 +951,10 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 
 /// Generates a lowering function for component imports that require transformation.
 ///
+/// `call_kind` selects how the import is reached: a declared `hir.call` target, or a
+/// `hir.dyncall` to the procedure root passed as the leading arguments (see
+/// [`build_import_call`]).
+///
 /// This function handles the case where a Component Model import needs to be "lowered" to match
 /// core WebAssembly conventions. This is necessary when importing functions that return complex
 /// types (structs, records, tuples) which must be transformed to use pointer-based returns in
@@ -935,6 +964,8 @@ fn reject_tuple_parameter_import_lowering<T>(import_func_path: &SymbolPath) -> W
 /// WASM style (storing results via an output pointer parameter).
 ///
 /// # Arguments
+///
+/// * `call_kind` - How the import is reached (see [`build_import_call`]).
 ///
 /// * `import_func_path` - The full symbol path to the imported function, including namespace,
 ///   component name, and function name (e.g., "miden:component/interface@1.0.0#function").
@@ -1069,6 +1100,9 @@ fn generate_lowering_with_transformation(
 ///
 /// # Arguments
 ///
+/// * `call_kind` - How the import is reached: a declared `hir.call` target, or a `hir.dyncall` to
+///   the procedure root passed as the leading arguments (see [`build_import_call`]).
+///
 /// * `import_func_path` - The full symbol path to the imported function in Component Model
 ///   format (e.g., "miden:component/interface@1.0.0#function").
 ///
@@ -1091,7 +1125,8 @@ fn generate_lowering_with_transformation(
 ///
 /// The generated lowering function is a simple pass-through that:
 /// 1. Receives arguments from core WASM caller
-/// 2. Directly calls the component import with the same arguments
+/// 2. Calls the component import (or, for a dyncall import, the procedure root passed as the
+///    leading arguments) with the same arguments
 /// 3. Returns the result unchanged (at most one simple value)
 ///
 #[allow(clippy::too_many_arguments)]
@@ -2265,6 +2300,89 @@ mod tests {
                 "unexpected diagnostic: {err}"
             ),
         }
+    }
+
+    #[test]
+    fn dyncall_import_past_the_flat_value_count_is_rejected_before_the_core_signature_check() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        // Thirteen felt arguments plus the root's four values are 17 flat parameters: wit-bindgen
+        // spilled them to memory on the guest side, so the core import takes a single pointer
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            core::iter::once(word_type())
+                .chain((0..13).map(|_| Type::Felt))
+                .collect::<Vec<_>>(),
+            vec![],
+        );
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![AbiParam::new(Type::I32)],
+            results: vec![],
+            cc: CallConv::ComponentModel,
+        };
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("dyncall-wide"),
+            &import_func_ty,
+            core_function_path("dyncall-wide"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected the over-count dyncall import to be rejected"),
+            Err(err) => {
+                let message = err.to_string();
+                assert!(
+                    message.contains("13 flat argument values plus the 4 procedure-root values")
+                        && message.contains("use at most 12 argument values"),
+                    "unexpected diagnostic: {message}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dyncall_import_with_a_flattened_root_strips_all_four_root_felts() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        let mut ir = FunctionType::new(
+            CallConv::Fast,
+            vec![Type::Felt, Type::Felt, Type::Felt, Type::Felt, Type::U32],
+            vec![Type::Felt],
+        );
+        ir.abi = CallConv::ComponentModel;
+        let import_func_ty = ComponentFunctionType { ir };
+        let core_func_sig = Signature {
+            params: vec![
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::Felt),
+                AbiParam::new(Type::I32),
+            ],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        };
+
+        let lowered = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("dyncall-flat"),
+            &import_func_ty,
+            core_function_path("dyncall-flat"),
+            core_func_sig,
+        )
+        .expect("a dyncall import with a flattened root should build");
+
+        let signatures =
+            dyncall_signatures(lowered.function_ref().expect("expected function lowering"));
+        assert_eq!(signatures.len(), 1);
+        let params: Vec<Type> = signatures[0].params.iter().map(|p| p.ty.clone()).collect();
+        assert_eq!(params, vec![Type::I32]);
     }
 
     #[test]
