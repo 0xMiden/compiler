@@ -244,6 +244,14 @@ pub fn component(
 /// storage struct; elsewhere, import it (`use crate::AuthorityCall;`). Signature parameters and
 /// the result must be Miden core types or WIT primitives.
 ///
+/// Two more items land in that same module: a marker type named after the field,
+/// `AuthoritySignature` here and again with the storage struct's visibility, which seals the slot
+/// to the declared signature and replaces the `fn` type in the field's spelling; and a hidden
+/// `__miden_stored_procedure_bindings_<struct>` module (the struct name snake-cased) holding the
+/// generated imports of all the struct's slots. A field whose `<Field>Signature` or `<Field>Call`
+/// name would collide with the storage struct's own name is rejected, as are two fields whose
+/// names differ only by word separators or letter case, since they generate the same items.
+///
 /// The arguments travel on the VM's operand stack next to the procedure root, which bounds the
 /// signature: at most 12 flat argument values, and at most 12 argument field elements — 11 when
 /// the result is returned through a pointer, which takes an element of its own. Wider signatures

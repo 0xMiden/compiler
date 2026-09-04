@@ -13,15 +13,14 @@ use crate::{
     boilerplate::runtime_boilerplate,
     generate::reject_reserved_dyncall_export,
     types::{
-        explicit_wit_identifier, map_type_to_type_ref, registered_export_type_map,
-        reject_custom_type_ref, rust_ident_to_wit_name, wit_bindgen_rust_ident,
+        map_type_to_type_ref, registered_export_type_map, reject_custom_type_ref,
+        rust_ident_to_wit_name, wit_bindgen_rust_ident,
     },
     util::{
         generate_frontend_link_section, generate_wit_link_section, is_type_named,
         is_unit_return_type,
     },
-    wit_builder::WitBuilder,
-    wit_world::{ManifestPackage, write_world_block},
+    wit_world::{InlineInterfaceWorld, ManifestPackage, wit_func_line, wit_param},
 };
 
 const NOTE_SCRIPT_ATTR: &str = "note_script";
@@ -30,7 +29,6 @@ const NOTE_SCRIPT_DOC_MARKER: &str = "__miden_note_script_marker";
 const NOTE_CONSTRUCTOR_ATTR: &str = "note_constructor";
 const NOTE_CONSTRUCTOR_MARKER_ATTR: &str = "miden_note_constructor_requires_note";
 const NOTE_CONSTRUCTOR_DOC_MARKER: &str = "__miden_note_constructor_marker";
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 const ENTRYPOINT_ROOT_METHOD: &str = "get_entrypoint_root";
 /// Diagnostic emitted for an `#[export_type]` custom type in a note constructor signature.
 const CUSTOM_TYPE_ERROR: &str = "custom exported types are not supported in note constructor \
@@ -804,18 +802,14 @@ fn constructor_wit_signature(constructor: &NoteConstructor) -> String {
     let params = constructor
         .params
         .iter()
-        .map(|param| {
-            format!("{}: {}", explicit_wit_identifier(&param.wit_param_name), param.wit_type_name)
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let wit_name = explicit_wit_identifier(&constructor.wit_name);
-    match &constructor.return_info {
-        ConstructorReturn::Unit => format!("{wit_name}: func({params});"),
-        ConstructorReturn::Type { wit_type_name, .. } => {
-            format!("{wit_name}: func({params}) -> {wit_type_name};")
-        }
-    }
+        .map(|param| wit_param(&param.wit_param_name, &param.wit_type_name))
+        .collect::<Vec<_>>();
+    let result = match &constructor.return_info {
+        ConstructorReturn::Unit => None,
+        ConstructorReturn::Type { wit_type_name, .. } => Some(wit_type_name.as_str()),
+    };
+
+    wit_func_line(&constructor.wit_name, &params, result)
 }
 
 fn note_instantiation(note_ty: &syn::TypePath) -> TokenStream2 {
@@ -1084,26 +1078,28 @@ fn build_note_script_wit(
     constructor_type_imports: &BTreeSet<String>,
     dependency_imports: &[String],
 ) -> String {
-    let mut wit = WitBuilder::new("#[note]", component_package, component_version);
-    wit.use_path(CORE_TYPES_PACKAGE);
-    wit.blank_line();
-    wit.interface(interface_name, |interface| {
-        // `word` is always required by the entrypoint's `arg` parameter
-        let mut type_imports = constructor_type_imports.clone();
-        type_imports.insert("word".to_string());
-        let imports = type_imports.iter().cloned().collect::<Vec<_>>().join(", ");
-        interface.line(&format!("use core-types.{{{imports}}};"));
+    // `word` is always required by the entrypoint's `arg` parameter
+    let mut type_imports = constructor_type_imports.clone();
+    type_imports.insert("word".to_string());
+    let exports = [interface_name.to_string()];
+
+    InlineInterfaceWorld {
+        generated_by: "#[note]",
+        package: component_package,
+        version: component_version,
+        interface_name,
+        world_name,
+        imports: dependency_imports,
+        exports: &exports,
+    }
+    .render(&type_imports, |interface| {
         interface.blank_line();
-        interface.line(&format!("{}: func(arg: word);", explicit_wit_identifier(export_name)));
+        // The entrypoint's `arg` parameter is macro-controlled and never needs escaping.
+        interface.line(&wit_func_line(export_name, &["arg: word".to_string()], None));
         for constructor in constructors {
             interface.line(&constructor_wit_signature(constructor));
         }
-    });
-    wit.blank_line();
-    let exports = [interface_name.to_string()];
-    write_world_block(&mut wit, world_name, dependency_imports, &exports);
-
-    wit.finish()
+    })
 }
 
 /// Synthesizes the generated guest trait path for the inline note-script interface.

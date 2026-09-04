@@ -22,15 +22,14 @@ use syn::{Error, FieldsNamed, ReturnType, Type, Visibility, ext::IdentExt, spann
 
 use super::is_unit_type;
 use crate::{
-    component_macro::{CORE_TYPES_PACKAGE, storage::storage_field_type},
+    component_macro::storage::storage_field_type,
     fpi, generate, manifest_paths,
     types::{
         StorageFieldType, TypeRef, explicit_wit_identifier, map_type_to_type_ref,
         registered_export_type_map, reject_custom_type_ref, rust_ident_to_wit_name,
         wit_bindgen_rust_ident,
     },
-    wit_builder::WitBuilder,
-    wit_world::write_world_block,
+    wit_world::{InlineInterfaceWorld, wit_func_line, wit_param},
 };
 
 /// Name of the inline WIT world generated for stored-procedure slots.
@@ -393,44 +392,34 @@ fn build_stored_procedure_wit(struct_ident: &Ident, slots: &[StoredProcedureSlot
         }
     }
 
-    let mut wit = WitBuilder::new(
-        "#[component_storage]",
-        STORED_PROCEDURE_BINDINGS_PACKAGE,
-        &Version::new(1, 0, 0),
-    );
-    wit.use_path(CORE_TYPES_PACKAGE);
-    wit.blank_line();
-    wit.interface(&interface_name, |interface| {
-        let imports = core_imports.iter().cloned().collect::<Vec<_>>().join(", ");
-        interface.line(&format!("use core-types.{{{imports}}};"));
+    InlineInterfaceWorld {
+        generated_by: "#[component_storage]",
+        package: STORED_PROCEDURE_BINDINGS_PACKAGE,
+        version: &Version::new(1, 0, 0),
+        interface_name: &interface_name,
+        world_name: STORED_PROCEDURE_BINDINGS_WORLD,
+        imports: std::slice::from_ref(&interface_name),
+        exports: &[],
+    }
+    .render(&core_imports, |interface| {
         for slot in slots {
             interface.line(&stored_procedure_wit_signature(slot));
         }
-    });
-    wit.blank_line();
-    write_world_block(
-        &mut wit,
-        STORED_PROCEDURE_BINDINGS_WORLD,
-        std::slice::from_ref(&interface_name),
-        &[],
-    );
-
-    wit.finish()
+    })
 }
 
 /// Renders the WIT function signature of one generated stored-procedure import.
 fn stored_procedure_wit_signature(slot: &StoredProcedureSlot) -> String {
+    // The procedure-root parameter is macro-controlled and never needs escaping.
     let mut params = vec![format!("{PROC_ROOT_PARAM}: {WORD_WIT_TYPE}")];
-    params.extend(slot.params.iter().map(|param| {
-        format!("{}: {}", explicit_wit_identifier(&param.wit_name), param.type_ref.wit_name)
-    }));
-    let params = params.join(", ");
-    let fn_name = explicit_wit_identifier(&slot.wit_fn_name);
+    params.extend(
+        slot.params
+            .iter()
+            .map(|param| wit_param(&param.wit_name, &param.type_ref.wit_name)),
+    );
+    let result = slot.result.as_ref().map(|(_, type_ref)| type_ref.wit_name.as_str());
 
-    match &slot.result {
-        Some((_, type_ref)) => format!("{fn_name}: func({params}) -> {};", type_ref.wit_name),
-        None => format!("{fn_name}: func({params});"),
-    }
+    wit_func_line(&slot.wit_fn_name, &params, result)
 }
 
 /// Builds the marker type and the call trait generated for one stored-procedure slot.

@@ -18,6 +18,8 @@ use syn::{
 };
 
 pub(crate) use crate::component_macro::storage::typecheck_storage_field;
+/// Fully-qualified identifier for the core types package used by exported component interfaces.
+pub(crate) use crate::wit_world::CORE_TYPES_PACKAGE;
 use crate::{
     account_component_metadata::AccountComponentMetadataBuilder,
     boilerplate::runtime_boilerplate,
@@ -29,7 +31,6 @@ use crate::{
     generate::reject_reserved_dyncall_export,
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
-        rust_ident_to_wit_name,
     },
     util::{generate_frontend_link_section, generate_wit_link_section, is_type_named},
 };
@@ -39,8 +40,6 @@ mod sibling;
 mod storage;
 mod stored_procedure;
 
-/// Fully-qualified identifier for the core types package used by exported component interfaces.
-const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
 /// Attribute name used to mark the authentication procedure on a component method.
 const AUTH_SCRIPT_ATTR: &str = "auth_script";
 /// Helper attribute preserved by `#[auth_script]` so `#[component]` can recognize the method.
@@ -1291,14 +1290,7 @@ fn parse_component_signature(
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
     let wit_name = to_kebab_case(&sig.ident.to_string());
-    // Guarded on the un-rawed name: a raw identifier keeps its `r#` through kebab-casing
-    // (`r#dyncall_notify` renders as `r-dyncall-notify`) and would slip past the prefix check
-    // while still being written as a reserved export by its author.
-    reject_reserved_dyncall_export(
-        &sig.ident,
-        &rust_ident_to_wit_name(&sig.ident),
-        "component method",
-    )?;
+    reject_reserved_dyncall_export(&sig.ident, &wit_name, "component method")?;
 
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
@@ -1685,18 +1677,16 @@ mod tests {
         );
     }
 
-    /// Catches the reserved prefix behind a raw identifier: kebab-casing keeps the `r#`, so the
-    /// guard reads the un-rawed name the author wrote.
+    /// Pins that the guard reads the name the method is actually exported under: a raw identifier
+    /// keeps its `r#` through kebab-casing, so it never carries the reserved prefix.
     #[test]
-    fn a_raw_identifier_cannot_evade_the_reserved_dyncall_prefix() {
+    fn a_raw_identifier_is_exported_under_its_kebab_cased_name() {
         let exported_types = HashMap::new();
-        let reserved: syn::Signature = parse_quote!(fn r#dyncall_notify(&self, amount: u32));
-        let message = match parse_component_signature(&reserved, &[], &exported_types) {
-            Ok(_) => panic!("expected the reserved dyncall prefix to be rejected"),
-            Err(err) => err.to_string(),
-        };
+        let raw: syn::Signature = parse_quote!(fn r#dyncall_notify(&self, amount: u32));
+        let (method, _) = parse_component_signature(&raw, &[], &exported_types)
+            .expect("an export name without the reserved prefix is accepted");
 
-        assert!(message.contains("exported as `dyncall-notify`"), "{message}");
+        assert_eq!(method.wit_name, "r-dyncall-notify");
     }
 
     #[test]
