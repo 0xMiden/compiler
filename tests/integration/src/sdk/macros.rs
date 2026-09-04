@@ -1201,6 +1201,62 @@ impl TestComponent for TestComponentStorage {
     );
 }
 
+/// Sibling WIT defining a function with the reserved stored-procedure dispatch prefix.
+const TEST_SIBLING_RESERVED_DYNCALL_WIT: &str = r#"package miden:test-sibling@0.0.1;
+
+use miden:base/core-types@1.0.0;
+
+interface test-sibling {
+    use core-types.{felt, word};
+
+    dyncall-notify: func(root: word, amount: felt);
+}
+
+world test-sibling-world {
+    export test-sibling;
+}
+"#;
+
+#[test]
+fn component_sibling_functions_with_the_dyncall_prefix_are_rejected() {
+    // The Wasm frontend lowers imports named `dyncall-…` as stored-procedure dispatches, so a
+    // sibling function with that name would be dispatched instead of linked; the macro must
+    // reject it before anything is generated.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, native_account::NativeAccount, Felt};
+
+#[component_storage]
+struct TestComponentStorage;
+
+#[component(test_sibling::TestSibling)]
+trait TestComponent: NativeAccount + TestSibling {
+    fn relay(&mut self, amount: Felt);
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn relay(&mut self, amount: Felt) {
+        let _ = amount;
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project_with_sibling_dep_inner(
+        "component_sibling_reserved_dyncall_prefix",
+        lib_rs,
+        Some(TEST_SIBLING_RESERVED_DYNCALL_WIT),
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected the reserved dyncall prefix to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("reserved prefix `dyncall-`") && stderr.contains("`dyncall-notify`"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
 #[test]
 fn component_sibling_trait_name_must_differ_from_the_component_trait() {
     // A sibling reference whose interface segment equals the component trait name would generate a

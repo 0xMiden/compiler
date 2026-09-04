@@ -20,6 +20,12 @@ use wit_bindgen_rust::{Opts, WithOption};
 
 use crate::{fpi, manifest_paths};
 
+/// WIT package name of the inline world `#[component_storage]` generates for stored-procedure
+/// slots; the one place allowed to define `dyncall-` imports.
+pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
+/// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
+pub(crate) const DYNCALL_WIT_PREFIX: &str = "dyncall-";
+
 /// Fully-qualified WIT interface path for Miden SDK core types.
 pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
 
@@ -270,6 +276,7 @@ fn generate_bindings_from_sources(
         .resolve
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
+    validate_reserved_dyncall_namespace(&wit_sources.resolve, world_id)?;
     fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
     #[cfg(feature = "internal-wit-emit")]
     if inline_source.is_some() {
@@ -634,6 +641,53 @@ fn push_default_with_entries(opts: &mut Opts) {
 
 fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
+}
+
+/// Rejects imported functions named with the `dyncall-` prefix the Wasm frontend reserves for
+/// stored-procedure dispatch imports.
+///
+/// The frontend classifies those imports by name, so a dependency function that happened to use
+/// the prefix would be dispatched as a dynamic call instead of linked. Only the inline world
+/// generated for stored-procedure slots may define such functions.
+fn validate_reserved_dyncall_namespace(resolve: &Resolve, world_id: WorldId) -> syn::Result<()> {
+    let world = &resolve.worlds[world_id];
+    for item in world.imports.values() {
+        let (owner, functions): (String, Vec<&Function>) = match item {
+            WorldItem::Interface { id, .. } => {
+                let interface = &resolve.interfaces[*id];
+                let is_stored_procedure_world = interface.package.is_some_and(|package| {
+                    let name = &resolve.packages[package].name;
+                    format!("{}:{}", name.namespace, name.name) == STORED_PROCEDURE_BINDINGS_PACKAGE
+                });
+                if is_stored_procedure_world {
+                    continue;
+                }
+                let owner = fpi::interface_import_path(resolve, *id)
+                    .or_else(|| interface.name.clone())
+                    .unwrap_or_else(|| "<anonymous>".to_string());
+                (owner, interface.functions.values().collect())
+            }
+            WorldItem::Function(function) => {
+                (resolve.worlds[world_id].name.clone(), vec![function])
+            }
+            WorldItem::Type { .. } => continue,
+        };
+        if let Some(function) =
+            functions.iter().find(|function| function.name.starts_with(DYNCALL_WIT_PREFIX))
+        {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "dependency interface `{owner}` defines function `{}` with reserved prefix \
+                     `{DYNCALL_WIT_PREFIX}`; the compiler lowers imports with that prefix as \
+                     stored-procedure dispatches, so dependency functions must use a different \
+                     name",
+                    function.name
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Returns true when the selected world references Miden SDK core types.
@@ -1204,6 +1258,46 @@ interface api {
     }
 
     /// Parses a test WIT world with the bundled SDK WIT available in the resolver.
+    #[test]
+    fn dependency_functions_with_the_dyncall_prefix_are_rejected() {
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "notifier.wit",
+            r#"
+package miden:notifier@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+    dyncall-notify: func(root: word, amount: felt);
+}
+
+world notifier-world {
+    export api;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+        let inline = crate::wit_world::import_world_wit(
+            "sibling-bindings",
+            &["miden:notifier/api@1.0.0".to_string()],
+        );
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        let err = validate_reserved_dyncall_namespace(&resolve, world).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("`miden:notifier/api@1.0.0`"), "{message}");
+        assert!(message.contains("`dyncall-notify`"), "{message}");
+        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+    }
+
     fn parse_test_world(source: &str) -> (Resolve, WorldId) {
         let mut resolve = Resolve::default();
         let sdk_group =
