@@ -1656,3 +1656,161 @@ impl PlainAuth {
         "unexpected stderr: {stderr}"
     );
 }
+
+#[test]
+fn component_storage_stored_procedure_slots_compile() {
+    // The full guest surface: two stored-procedure slots, the generated `<Field>Call` traits in
+    // scope in the declaring module, and `is_set()` on the retrieved root.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, AccountId, Felt, StorageValue, StoredProcedure};
+
+#[component_storage]
+pub struct TestComponentStorage {
+    #[storage(description = "authorization predicate")]
+    authority: StorageValue<StoredProcedure<fn(role: Felt, caller: AccountId) -> bool>>,
+    #[storage]
+    hook: StorageValue<StoredProcedure<fn()>>,
+}
+
+#[component]
+pub trait TestComponent {
+    #[account_procedure]
+    fn authorize(&self, role: Felt, caller: AccountId) -> bool;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn authorize(&self, role: Felt, caller: AccountId) -> bool {
+        let hook = self.hook.get();
+        if hook.is_set() {
+            hook.call();
+        }
+        self.authority.get().call(role, caller)
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_storage_stored_procedure_slots_compile", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "expected stored-procedure slots to compile: {stderr}");
+}
+
+#[test]
+fn component_storage_stored_procedure_rejects_non_fn_signature() {
+    // `StoredProcedure` carries the signature; a non-`fn` argument would otherwise surface as a
+    // sealed-trait error pointing into the SDK.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, StorageValue, StoredProcedure};
+
+#[component_storage]
+struct TestComponentStorage {
+    #[storage]
+    authority: StorageValue<StoredProcedure<u32>>,
+}
+"#;
+
+    let cargo_proj = account_component_project(
+        "component_storage_stored_procedure_rejects_non_fn_signature",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected a non-`fn` signature argument to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("stored procedure slots must spell their signature as"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_storage_stored_procedure_rejects_unsafe_or_extern_fn() {
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, StorageValue, StoredProcedure};
+
+#[component_storage]
+struct TestComponentStorage {
+    #[storage]
+    hook: StorageValue<StoredProcedure<unsafe fn()>>,
+}
+"#;
+
+    let cargo_proj = account_component_project(
+        "component_storage_stored_procedure_rejects_unsafe_or_extern_fn",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected an `unsafe fn` signature to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("found `unsafe`"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn component_storage_stored_procedure_rejects_map_slots() {
+    // A stored root is bound to the one slot whose signature the macro generated, so it cannot be
+    // a map entry.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, Felt, StorageMap, StoredProcedure};
+
+#[component_storage]
+struct TestComponentStorage {
+    #[storage]
+    hooks: StorageMap<Felt, StoredProcedure<fn()>>,
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_storage_stored_procedure_rejects_map_slots", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(
+        !output.status.success(),
+        "expected `StoredProcedure` in a map slot to be rejected"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("is only supported in `StorageValue` slots"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
+fn component_storage_stored_procedure_rejects_reference_params() {
+    // Signature parameters cross the component-model boundary, so they are mapped with the same
+    // rules as exported interface types.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, Felt, StorageValue, StoredProcedure};
+
+#[component_storage]
+struct TestComponentStorage {
+    #[storage]
+    hook: StorageValue<StoredProcedure<fn(x: &Felt)>>,
+}
+"#;
+
+    let cargo_proj = account_component_project(
+        "component_storage_stored_procedure_rejects_reference_params",
+        lib_rs,
+    );
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected reference parameters to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("references are not supported"), "unexpected stderr: {stderr}");
+}

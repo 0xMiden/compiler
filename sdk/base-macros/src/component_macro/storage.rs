@@ -4,7 +4,10 @@ use heck::ToSnakeCase;
 use quote::quote;
 use syn::{Field, Type, spanned::Spanned};
 
-use crate::{account_component_metadata::AccountComponentMetadataBuilder, types::StorageFieldType};
+use crate::{
+    account_component_metadata::AccountComponentMetadataBuilder, component_macro::stored_procedure,
+    types::StorageFieldType,
+};
 
 /// Normalizes a storage slot name component into a valid identifier-like segment.
 ///
@@ -59,7 +62,7 @@ struct StorageAttributeArgs {
     type_attr: Option<String>,
 }
 
-/// Attempts to parse a `#[storage(...)]` attribute and returns the extracted arguments.
+/// Attempts to parse a `#[storage]` / `#[storage(...)]` attribute and returns its arguments.
 fn parse_storage_attribute(
     attr: &syn::Attribute,
 ) -> Result<Option<StorageAttributeArgs>, syn::Error> {
@@ -72,6 +75,13 @@ fn parse_storage_attribute(
 
     let list = match &attr.meta {
         syn::Meta::List(list) => list,
+        // Bare `#[storage]` is the shorthand for a slot that carries no optional arguments.
+        syn::Meta::Path(_) => {
+            return Ok(Some(StorageAttributeArgs {
+                description: None,
+                type_attr: None,
+            }));
+        }
         _ => return Err(syn::Error::new(attr.span(), "Expected #[storage(...)]")),
     };
 
@@ -129,6 +139,10 @@ pub fn process_storage_fields(
 
     for field in fields.named.iter_mut() {
         if let Err(err) = typecheck_storage_field(field) {
+            errors.push(err);
+            continue;
+        }
+        if let Err(err) = reject_stored_procedure_in_map(field) {
             errors.push(err);
             continue;
         }
@@ -267,6 +281,25 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
             ),
         )),
     }
+}
+
+/// Rejects a `StoredProcedure` used as the key or value type of a `StorageMap`.
+///
+/// A stored procedure root is bound to the one slot whose signature the macro generated, so it
+/// cannot be a map entry; without this check the user would face a sealed-trait error pointing at
+/// the SDK instead.
+fn reject_stored_procedure_in_map(field: &Field) -> Result<(), syn::Error> {
+    if !matches!(typecheck_storage_field(field)?, StorageFieldType::StorageMap) {
+        return Ok(());
+    }
+    if !stored_procedure::mentions_stored_procedure(&field.ty) {
+        return Ok(());
+    }
+
+    Err(syn::Error::new(
+        field.ty.span(),
+        "`StoredProcedure` is only supported in `StorageValue` slots",
+    ))
 }
 
 #[cfg(test)]

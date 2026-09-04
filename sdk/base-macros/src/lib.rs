@@ -215,6 +215,45 @@ pub fn component(
 ///     }
 /// }
 /// ```
+///
+/// # Stored procedure slots
+///
+/// A slot may hold the MAST root of a procedure exported by a *sibling* component (another
+/// component deployed on the same account) and call it. Declare it in one line, spelling the call
+/// signature as a `fn` type:
+///
+/// ```rust,ignore
+/// use miden::{component_storage, AccountId, Felt, StorageValue, StoredProcedure};
+///
+/// #[component_storage]
+/// pub struct AuthorityStorage {
+///     #[storage(description = "authorization predicate")]
+///     authority: StorageValue<StoredProcedure<fn(role: Felt, caller: AccountId) -> bool>>,
+/// }
+/// ```
+///
+/// Calling it uses the `call` method with exactly that signature:
+///
+/// ```rust,ignore
+/// let allowed = self.authority.get().call(role, caller);
+/// ```
+///
+/// `call` is a method of a generated trait named after the field, `AuthorityCall` here, whose
+/// visibility matches the storage struct's. The trait is in scope in the module declaring the
+/// storage struct; elsewhere, import it (`use crate::AuthorityCall;`). Signature parameters and
+/// the result must be Miden core types or WIT primitives.
+///
+/// The root is set from off-chain code only: the guest cannot construct a `StoredProcedure` or
+/// obtain procedure roots. Neither the compiler nor the VM checks the stored root against the
+/// declared signature; a root that names no procedure of the account, or one with a different
+/// stack contract, fails the transaction or yields wrong in-VM results, but never breaks Rust
+/// memory safety. Use `is_set()` to check whether the slot has been populated.
+///
+/// Arguments reach the procedure first parameter on top of the operand stack, each flattened to
+/// its field elements in declaration order. A Rust-compiled sibling expects exactly that layout.
+/// A MASM procedure documents its own stack contract; spell the signature to match it, e.g. an
+/// account id expected as `[account_suffix, account_prefix]` is two `Felt` parameters in that
+/// order rather than one `AccountId` (which flattens to prefix, then suffix).
 #[proc_macro_attribute]
 pub fn component_storage(
     attr: proc_macro::TokenStream,

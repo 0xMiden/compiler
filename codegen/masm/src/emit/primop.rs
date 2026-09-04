@@ -399,27 +399,7 @@ impl OpEmitter<'_> {
             span,
         );
 
-        // Consume the arguments and produce the results on the emulated stack. Signatures for
-        // indirect calls never carry argument-extension attributes, so argument types must match
-        // the parameter types exactly. NOTE: this deliberately does not reuse
-        // `process_call_signature`: its zext/sext paths emit instructions that operate on the
-        // physical stack top, which at this point holds the transient slot address.
-        for (i, param) in signature.params.iter().enumerate() {
-            assert!(
-                matches!(param.extension(), ArgumentExtension::None),
-                "invalid exec_indirect: argument extension is not supported for parameter at \
-                 index {i}"
-            );
-            let arg = self.stack.pop().expect("operand stack is empty");
-            assert_eq!(
-                arg.ty(),
-                param.ty,
-                "invalid exec_indirect: invalid argument type for parameter at index {i}"
-            );
-        }
-        for result in signature.results.iter().rev() {
-            self.push(result.ty.clone());
-        }
+        self.consume_exact_call_signature(signature, "exec_indirect");
 
         // `dynexec` pops the element address and reads the callee MAST root word at it
         self.emit(
@@ -427,6 +407,64 @@ impl OpEmitter<'_> {
             span,
         );
         self.emit(masm::Instruction::DynExec, span);
+        self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+    }
+
+    /// Invoke the procedure whose MAST root is the word on top of the operand stack in a new
+    /// context (`dyncall`).
+    ///
+    /// Expects `[root0, root1, root2, root3, args...]` on the operand stack, root element 0 on
+    /// top and the arguments in signature order. The root is first checked to be non-zero — an
+    /// all-zero root is an unset storage slot, reported with a descriptive assertion instead of
+    /// the VM's late "procedure not found" failure — then spilled to the reserved scratch word at
+    /// `root_scratch_addr` (see [crate::linker::ReservedCell::DyncallRoot]), as the VM reads a
+    /// `dyncall` target from memory. The scratch address is pushed in the root's place, and
+    /// `dyncall` pops it before transferring control, so the callee observes `[args...]` in
+    /// normal argument order and its results replace them.
+    ///
+    /// Reusing one fixed scratch word is safe: the VM reads the root before the context switch,
+    /// and the callee runs in a fresh context where the caller's memory is invisible.
+    pub fn dyncall(&mut self, root_scratch_addr: u32, signature: &Signature, span: SourceSpan) {
+        // Consume the root word; all further effects on it are transient
+        for i in 0..midenc_dialect_hir::Dyncall::ROOT_FELTS {
+            let root_felt = self.stack.pop().expect("operand stack is empty");
+            assert_eq!(
+                root_felt.ty(),
+                Type::Felt,
+                "expected felt root element {i} for dyncall, got {}",
+                root_felt.ty()
+            );
+        }
+
+        // Unset-slot guard: [r0, r1, r2, r3, ..] -> [all_zero, r0, r1, r2, r3, ..] -> [r0, ..]
+        self.emit(masm::Instruction::Dup0, span);
+        self.emit(masm::Instruction::EqImm(Felt::ZERO.into()), span);
+        for dup in [masm::Instruction::Dup2, masm::Instruction::Dup3, masm::Instruction::Dup4] {
+            self.emit(dup, span);
+            self.emit(masm::Instruction::EqImm(Felt::ZERO.into()), span);
+            self.emit(masm::Instruction::And, span);
+        }
+        self.emit(
+            Self::assertz_with_message_inst(
+                "stored procedure slot is unset: no procedure root to dyncall",
+                span,
+            ),
+            span,
+        );
+
+        // Spill the root to the scratch word: [r0, r1, r2, r3, args..] -> [args..]
+        self.emit(masm::Instruction::MemStoreWLeImm(root_scratch_addr.into()), span);
+        self.emit(masm::Instruction::DropW, span);
+
+        self.consume_exact_call_signature(signature, "dyncall");
+
+        // `dyncall` pops the element address and reads the callee MAST root word at it
+        self.emit_push(root_scratch_addr, span);
+        self.emit(
+            masm::Instruction::EmitImm(Event::FrameStart.as_event_id().as_felt().into()),
+            span,
+        );
+        self.emit(masm::Instruction::DynCall, span);
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
@@ -475,6 +513,31 @@ impl OpEmitter<'_> {
         );
         self.emit(masm::Instruction::SysCall(callee), span);
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
+    }
+
+    /// Consumes one argument per parameter of `signature` from the emulated stack and produces
+    /// its results, emitting no instructions.
+    ///
+    /// Used by the lowerings whose physical stack top holds a transient address at this point
+    /// (`exec_indirect`, `dyncall`): `process_call_signature`'s zext/sext paths emit instructions
+    /// operating on the stack top, so argument extension is rejected here and argument types must
+    /// match the parameter types exactly. `op_name` labels the assertion messages.
+    fn consume_exact_call_signature(&mut self, signature: &Signature, op_name: &str) {
+        for (i, param) in signature.params.iter().enumerate() {
+            assert!(
+                matches!(param.extension(), ArgumentExtension::None),
+                "invalid {op_name}: argument extension is not supported for parameter at index {i}"
+            );
+            let arg = self.stack.pop().expect("operand stack is empty");
+            assert_eq!(
+                arg.ty(),
+                param.ty,
+                "invalid {op_name}: invalid argument type for parameter at index {i}"
+            );
+        }
+        for result in signature.results.iter().rev() {
+            self.push(result.ty.clone());
+        }
     }
 
     fn process_call_signature(
@@ -704,6 +767,87 @@ mod tests {
         assert!(matches!(&insts[11], masm::Instruction::EmitImm(_)));
         assert_eq!(insts[12], masm::Instruction::DynExec);
         assert!(matches!(&insts[13], masm::Instruction::EmitImm(_)));
+    }
+
+    /// Pin the exact instruction sequence and stack effect of a dynamic cross-context call: the
+    /// unset-slot guard, the root spill to the scratch word, the address push, and the
+    /// frame-traced `dyncall`.
+    #[test]
+    fn dyncall_emits_unset_guard_root_spill_and_dyncall() {
+        use midenc_hir::{CallConv, Felt};
+
+        let mut block = Vec::default();
+        let context = Rc::new(Context::default());
+        let mut stack = OperandStack::new(context.clone());
+        let mut invoked = BTreeSet::default();
+        let mut emitter = OpEmitter::new(&mut invoked, &mut block, &mut stack);
+
+        let signature = Signature::with_convention(
+            &context,
+            CallConv::ComponentModel,
+            [Type::Felt, Type::U32],
+            [Type::U32],
+        );
+
+        // The scheduled operand order is [root0..root3, args...], root element 0 on top
+        emitter.push(Type::U32);
+        emitter.push(Type::Felt);
+        for _ in 0..midenc_dialect_hir::Dyncall::ROOT_FELTS {
+            emitter.push(Type::Felt);
+        }
+
+        let span = SourceSpan::default();
+        let scratch = crate::linker::ReservedCell::DyncallRoot.element_addr();
+        emitter.dyncall(scratch, &signature, span);
+
+        // The emulated stack holds exactly the call result
+        assert_eq!(emitter.stack_len(), 1);
+        assert_eq!(emitter.stack()[0], Type::U32);
+        // No static invocation target is recorded for the assembler call graph
+        assert!(invoked.is_empty());
+
+        let insts = block
+            .iter()
+            .map(|op| match op {
+                Op::Inst(inst) => inst.clone().into_inner(),
+                op => panic!("unexpected non-instruction op: {op:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(insts.len(), 18);
+        // Unset-slot guard: fold `root[i] == 0` over the word, then assert the fold is false
+        let is_eq_zero = |inst: &masm::Instruction| matches!(inst, masm::Instruction::EqImm(masm::Immediate::Value(value)) if *value.inner() == Felt::ZERO);
+        assert_eq!(insts[0], masm::Instruction::Dup0);
+        assert!(is_eq_zero(&insts[1]), "expected eq.0, got {:?}", insts[1]);
+        for (i, dup) in [masm::Instruction::Dup2, masm::Instruction::Dup3, masm::Instruction::Dup4]
+            .into_iter()
+            .enumerate()
+        {
+            let base = 2 + i * 3;
+            assert_eq!(insts[base], dup);
+            assert!(is_eq_zero(&insts[base + 1]), "expected eq.0, got {:?}", insts[base + 1]);
+            assert_eq!(insts[base + 2], masm::Instruction::And);
+        }
+        assert!(
+            matches!(&insts[11], masm::Instruction::AssertzWithError(masm::Immediate::Value(msg)) if msg.inner().contains("stored procedure slot is unset")),
+            "expected unset-slot assertion, got {:?}",
+            insts[11]
+        );
+        // Spill the root to the scratch word and drop it
+        assert!(
+            matches!(&insts[12], masm::Instruction::MemStoreWLeImm(masm::Immediate::Value(addr)) if *addr.inner() == scratch),
+            "expected store of the root to the scratch word, got {:?}",
+            insts[12]
+        );
+        assert_eq!(insts[13], masm::Instruction::DropW);
+        // Push the scratch address, then the frame-traced dyncall pops it
+        assert!(
+            matches!(&insts[14], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == scratch.into()),
+            "expected push of the scratch address, got {:?}",
+            insts[14]
+        );
+        assert!(matches!(&insts[15], masm::Instruction::EmitImm(_)));
+        assert_eq!(insts[16], masm::Instruction::DynCall);
+        assert!(matches!(&insts[17], masm::Instruction::EmitImm(_)));
     }
 
     #[test]

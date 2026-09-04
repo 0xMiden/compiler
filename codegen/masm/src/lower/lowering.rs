@@ -1071,6 +1071,23 @@ impl HirLowering for hir::ExecIndirect {
     }
 }
 
+impl HirLowering for hir::Dyncall {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let signature = self.get_signature().clone();
+
+        // The default operand schedule puts the root word on top of the stack (element 0 on
+        // top), followed by the arguments in signature order — exactly the layout `dyncall`
+        // expects
+        emitter.inst_emitter(self.as_operation()).dyncall(
+            crate::linker::ReservedCell::DyncallRoot.element_addr(),
+            &signature,
+            self.span(),
+        );
+
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Call {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};
