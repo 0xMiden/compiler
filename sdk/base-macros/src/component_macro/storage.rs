@@ -9,6 +9,13 @@ use crate::{
     types::StorageFieldType,
 };
 
+/// Rust crate the supported storage field types are expected to come from.
+const BASE_CRATE: &str = "miden";
+/// Rust type name of a storage map slot.
+const TYPENAME_MAP: &str = "StorageMap";
+/// Rust type name of a storage value slot.
+const TYPENAME_VALUE: &str = "StorageValue";
+
 /// Normalizes a storage slot name component into a valid identifier-like segment.
 ///
 /// This is a lossy transformation: characters outside `[A-Za-z0-9_]` are replaced with `_`, and
@@ -255,11 +262,30 @@ pub fn process_storage_fields(
 /// * A developer defines their own `StorageMap` or `StorageValue`
 /// * A developer uses a valid type from miden but aliases it
 pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType, syn::Error> {
-    let type_path = match &field.ty {
-        Type::Path(type_path) => type_path,
-        _ => {
-            return Err(syn::Error::new(field.span(), "storage field type must be a path"));
-        }
+    if !matches!(&field.ty, Type::Path(_)) {
+        return Err(syn::Error::new(field.span(), "storage field type must be a path"));
+    }
+
+    storage_field_type(&field.ty).ok_or_else(|| {
+        syn::Error::new(
+            field.span(),
+            format!(
+                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
+                 `{BASE_CRATE}` crate"
+            ),
+        )
+    })
+}
+
+/// Classifies the written spelling of a storage field type, or `None` when it is neither of the
+/// supported types.
+///
+/// This is the single spelling rule for storage slots — `StorageMap`/`StorageValue`, optionally
+/// qualified with `miden::` — shared by [`typecheck_storage_field`] and the stored-procedure
+/// rewrite, so both agree on which fields are storage slots.
+pub(crate) fn storage_field_type(ty: &Type) -> Option<StorageFieldType> {
+    let Type::Path(type_path) = ty else {
+        return None;
     };
 
     let segments: Vec<String> = type_path
@@ -269,22 +295,12 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
         .map(|segment| segment.ident.to_string())
         .collect();
 
-    const BASE_CRATE: &str = "miden";
-    const TYPENAME_MAP: &str = "StorageMap";
-    const TYPENAME_VALUE: &str = "StorageValue";
-
     match segments.as_slice() {
-        [a] if a == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
-        _ => Err(syn::Error::new(
-            field.span(),
-            format!(
-                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
-                 `{BASE_CRATE}` crate"
-            ),
-        )),
+        [a] if a == TYPENAME_MAP => Some(StorageFieldType::StorageMap),
+        [a] if a == TYPENAME_VALUE => Some(StorageFieldType::StorageValue),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Some(StorageFieldType::StorageMap),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Some(StorageFieldType::StorageValue),
+        _ => None,
     }
 }
 
@@ -320,6 +336,8 @@ mod tests {
         typecheck_storage_field,
     };
 
+    /// Pins the map-slot diagnostic: a stored root is bound to the one slot whose signature the
+    /// macro generated, so it cannot be a map key or value.
     #[test]
     fn rejects_stored_procedures_in_map_slots() {
         let field = syn::Field::parse_named

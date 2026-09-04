@@ -216,10 +216,11 @@ impl<T: WordValue> StorageValue<T> {
 /// The trait is sealed behind a hidden supertrait that only the macro expansion implements.
 pub trait ProcedureSignature: __stored_procedure_sealed::Sealed {}
 
-/// Supertrait sealing [`ProcedureSignature`]; implemented only by `#[component_storage]`
-/// expansions.
+/// Hidden module holding the supertrait that seals [`ProcedureSignature`].
 #[doc(hidden)]
 pub mod __stored_procedure_sealed {
+    /// Supertrait sealing [`ProcedureSignature`](super::ProcedureSignature); implemented only by
+    /// `#[component_storage]` expansions.
     pub trait Sealed {}
 }
 
@@ -232,8 +233,8 @@ pub mod __stored_procedure_sealed {
 /// component works.
 ///
 /// The arguments travel on the VM's operand stack next to the procedure root, which bounds the
-/// signature: at most 12 flat argument values and at most 12 argument field elements — one fewer
-/// of each when the result is returned through a pointer.
+/// signature: at most 12 flat argument values, and at most 12 argument field elements — 11 when
+/// the result is returned through a pointer, which takes an element of its own.
 ///
 /// Roots are expected to be written by the host at deployment or update time, taken from the
 /// sibling package's exports: the SDK offers no constructor for this type. The stored root is not
