@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist. The dialect half of the name comes from the source, so it can name anything; it
   previously reached a direct map index and aborted.
 
+- Parsing a module whose body is empty, or which defines the same symbol twice, now
+  succeeds or reports a redefinition rather than aborting. Building the symbol table
+  assumed a region with an entry block and uniquely named symbols, which is not something
+  parsed text can be relied on to provide.
+
 - The filesystem package cache is now per-build. When the calling process already exported
   `MIDENC_PACKAGE_CACHE`, the compiler adopts that directory as its package cache and leaves
   it in place — the caller owns its location and lifetime, which is how packages stay
