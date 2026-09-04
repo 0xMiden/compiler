@@ -43,15 +43,18 @@ const EXPECTED_BUMPS: u64 = 2;
 const PACK_A: u64 = 7;
 const PACK_B: u64 = 11;
 
-/// Deploys a target component exporting a procedure with a leading `bool` argument, one taking
-/// six `u64`s (the full twelve-field-element argument budget), one taking no arguments and
-/// returning nothing, and one returning a `Word`, and a dispatcher whose four stored-procedure
-/// slots hold their lifted export roots. A note drives the dispatcher, which checks the returned
-/// results in-guest and records the sum's halves and the returned word in plain value slots the
-/// host asserts after the transaction. The unit-returning procedure has no result to check
-/// in-guest, so it is observed through the target's counter, which the host asserts as well.
+/// Dispatches the four signature shapes at the edges of what a dispatched call supports: a
+/// leading `bool` argument, six `u64`s (the full twelve-field-element argument budget), an empty
+/// signature, and a `Word` result returned through a result pointer.
+///
+/// Deploys a target component exporting one procedure per shape, and a dispatcher whose four
+/// stored-procedure slots hold their lifted export roots. A note drives the dispatcher, which
+/// checks the returned results in-guest and records the sum's halves and the returned word in
+/// plain value slots the host asserts after the transaction. The unit-returning procedure has no
+/// result to check in-guest, so it is observed through the target's counter, which the host
+/// asserts as well.
 #[test]
-fn dispatches_bool_and_twelve_felt_signatures() {
+fn dispatches_bool_wide_unit_and_word_signatures() {
     let names = DispatchProjectNames::new("stored_procedure_signatures");
     let (_target_project, target_package) =
         build_target_package(&names, "signature-target", TARGET_SOURCE);
@@ -192,7 +195,7 @@ fn dispatches_bool_and_twelve_felt_signatures() {
     );
 }
 
-/// Target component exporting the three procedures dispatched through stored roots.
+/// Target component exporting the four procedures dispatched through stored roots.
 const TARGET_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
