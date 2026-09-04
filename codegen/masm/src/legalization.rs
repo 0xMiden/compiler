@@ -22,8 +22,8 @@ use crate::HirLowering;
 
 /// The number of operand stack elements addressable by Miden Assembly instructions.
 ///
-/// An indirect call schedules its arguments plus the table index inside this window, which
-/// bounds the argument size its lowering can support.
+/// An indirect call schedules its arguments plus the table index (or, for `hir.dyncall`, the
+/// root address) inside this window, which bounds the argument size its lowering can support.
 const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// Validate every `hir.procedure_root` below `root` before MASM procedures begin snapshotting HIR
@@ -441,6 +441,37 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                     "operation '{}' schedules {arg_felts} argument field elements plus the table \
                      index, which exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand stack \
                      window",
+                    op.name()
+                )));
+            }
+            DynamicLegalityResult::legal()
+        })
+        .add_dynamically_legal_op::<hir::Dyncall, _>(|op| {
+            let call = op
+                .downcast_ref::<hir::Dyncall>()
+                .expect("this legality rule is registered for hir.dyncall");
+            let signature = call.get_signature();
+            // The lowering consumes the arguments as-is: an extension requirement would need
+            // instructions operating on the stack top, which the transient root address holds
+            if let Some(index) = signature.params.iter().position(|param| {
+                !matches!(
+                    param.extension(),
+                    midenc_hir::dialects::builtin::attributes::ArgumentExtension::None
+                )
+            }) {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' does not support argument extension, which parameter {index} \
+                     requires",
+                    op.name()
+                )));
+            }
+            let arg_felts: usize =
+                signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
+            if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' schedules {arg_felts} argument field elements plus the root \
+                     address, which exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand \
+                     stack window",
                     op.name()
                 )));
             }

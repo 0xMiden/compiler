@@ -208,6 +208,93 @@ impl<T: WordValue> StorageValue<T> {
     }
 }
 
+/// Marker trait implemented by the signature types `#[component_storage]` generates for
+/// stored-procedure slots.
+///
+/// Each `StorageValue<StoredProcedure<fn(..) -> R>>` field expands to a dedicated marker type
+/// implementing this trait, so a [`StoredProcedure`] is always tied to exactly one call signature.
+/// The trait is sealed behind a hidden supertrait that only the macro expansion implements.
+pub trait ProcedureSignature: __stored_procedure_sealed::Sealed {}
+
+/// Supertrait sealing [`ProcedureSignature`]; implemented only by `#[component_storage]`
+/// expansions.
+#[doc(hidden)]
+pub mod __stored_procedure_sealed {
+    pub trait Sealed {}
+}
+
+/// The MAST root of a sibling account component's procedure, stored in an account storage slot.
+///
+/// A slot of this type is declared as `StorageValue<StoredProcedure<fn(..) -> R>>` in a
+/// `#[component_storage]` struct, which generates a `call` method with exactly that signature
+/// (see the `#[component_storage]` documentation). Calling it invokes the procedure whose root is
+/// stored in the slot in a new VM context (`dyncall`), the same way a direct call into a sibling
+/// component works.
+///
+/// The root can only be set from off-chain code, through the sibling package's exports: there is
+/// no in-guest constructor, and the guest cannot obtain its own procedure roots. The stored root
+/// is not validated by the compiler or the VM against the declared signature. A root that names
+/// no procedure of the account, or one with a different stack contract, makes the transaction
+/// fail or yields wrong in-VM results, but never breaks Rust memory safety in the caller. Calling
+/// an unset slot (all-zero root) fails the transaction with a descriptive assertion.
+pub struct StoredProcedure<S: ProcedureSignature> {
+    root: Word,
+    _sig: core::marker::PhantomData<S>,
+}
+
+impl<S: ProcedureSignature> StoredProcedure<S> {
+    /// Returns true when the slot holds a procedure root, i.e. is not all-zero.
+    #[inline(always)]
+    pub fn is_set(&self) -> bool {
+        self.root != Word::default()
+    }
+
+    /// Returns the stored procedure root.
+    ///
+    /// The root alone grants no way to call the procedure; it is exposed for inspection and
+    /// forwarding only.
+    #[inline(always)]
+    pub fn root(&self) -> Word {
+        self.root
+    }
+}
+
+impl<S: ProcedureSignature> WordValue for StoredProcedure<S> {
+    fn try_into_word(self) -> Result<Word, &'static str> {
+        Ok(self.root)
+    }
+
+    fn try_from_word(word: Word) -> Result<Self, &'static str> {
+        Ok(Self {
+            root: word,
+            _sig: core::marker::PhantomData,
+        })
+    }
+}
+
+// Manual impls: the derives would needlessly bound `S` on the derived traits.
+impl<S: ProcedureSignature> Clone for StoredProcedure<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<S: ProcedureSignature> Copy for StoredProcedure<S> {}
+
+impl<S: ProcedureSignature> PartialEq for StoredProcedure<S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.root == other.root
+    }
+}
+
+impl<S: ProcedureSignature> Eq for StoredProcedure<S> {}
+
+impl<S: ProcedureSignature> core::fmt::Debug for StoredProcedure<S> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("StoredProcedure").field("root", &self.root).finish()
+    }
+}
+
 /// Typed access to an account storage map.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct StorageMap<K: WordKey, V: WordValue> {
