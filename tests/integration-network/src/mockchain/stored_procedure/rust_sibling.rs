@@ -134,7 +134,7 @@ fn rust_sibling() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["12424"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["13211"].assert_eq(single_note_cycles(&tx_measurements));
 
     // 314, incremented once, then increased by 5 through the two-argument procedure
     assert_counter_storage_at_key(
@@ -169,9 +169,15 @@ const UNSET_SLOT_ASSERTION_MESSAGE: &str =
     "stored procedure slot is unset: no procedure root to dyncall";
 
 /// Dispatcher component: its call targets live in storage, so it depends on no other package.
+///
+/// After dispatching it allocates on the heap: the dispatch spills the callee root to the
+/// compiler's reserved memory band, which the heap metadata also lives in, so a first allocation
+/// after a dispatch proves the two do not alias.
 const DISPATCHER_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
+
+extern crate alloc;
 
 use miden::{assert_eq, component, component_storage, felt, Felt, StorageValue, StoredProcedure, Word};
 
@@ -207,7 +213,13 @@ impl Dispatcher for DispatcherStorage {
         let after_increment = increment.call(key);
         let after_add = add.call(key, delta);
         assert_eq(after_add, after_increment + delta);
-        after_add
+        // First heap allocation of this context, after the dispatches
+        let mut results = alloc::vec::Vec::with_capacity(2);
+        results.push(after_increment);
+        results.push(after_add);
+        let results = core::hint::black_box(results);
+        assert_eq(results[0] + delta, results[1]);
+        results[1]
     }
 
     fn dispatch_unset(&mut self, key: Word) -> Felt {

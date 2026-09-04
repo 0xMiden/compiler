@@ -22,11 +22,15 @@ const DEFAULT_RESERVATION: u32 = 17;
 /// Guest pointers are 32-bit byte addresses, so guest-reachable element addresses end below
 /// [`Self::GUEST_ADDRESS_LIMIT`]; procedure locals are framed upwards from the VM's initial frame
 /// pointer, [`Self::LOCALS_FRAME_START`]. The band in between belongs to no program, and every
-/// fixed cell the compiler needs is allocated from it here, so cells cannot collide. The cells
-/// need no initialization: each use is a store immediately followed by the instruction consuming
-/// it, and a fresh context starts zero-filled.
+/// fixed cell the compiler uses is listed here, including the one owned by the MASM intrinsics,
+/// so cells cannot collide. A cell's lifetime is its owner's business: the heap metadata lives
+/// for the whole context, while a spill cell is written immediately before the instruction that
+/// consumes it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReservedCell {
+    /// The dynamic-heap metadata word (`heap_top`, `heap_size`, `heap_base`, magic) owned by the
+    /// `intrinsics::mem` MASM module, whose `HEAP_INFO_ADDR` constant must equal this cell.
+    HeapInfo,
     /// The word to which a `dyncall` lowering spills the callee's MAST root, which the VM reads
     /// from memory.
     DyncallRoot,
@@ -34,10 +38,10 @@ pub enum ReservedCell {
 
 impl ReservedCell {
     /// All reserved cells, in address order.
-    pub const ALL: [Self; 1] = [Self::DyncallRoot];
+    pub const ALL: [Self; 2] = [Self::HeapInfo, Self::DyncallRoot];
     /// Number of elements every cell spans: one word.
     pub const ELEMENTS: u32 = 4;
-    /// First element address past guest-reachable memory: `u32::MAX` bytes, in elements.
+    /// First element address past guest-reachable memory: 2^32 bytes, in elements.
     pub const GUEST_ADDRESS_LIMIT: u64 = (u32::MAX as u64 + 1) / Self::ELEMENTS as u64;
     /// The VM's initial frame pointer, from which procedure locals are allocated upwards.
     ///
@@ -47,8 +51,10 @@ impl ReservedCell {
 
     /// Returns the word-aligned element address of this cell.
     pub const fn element_addr(self) -> u32 {
+        let band_start = Self::GUEST_ADDRESS_LIMIT as u32;
         match self {
-            Self::DyncallRoot => Self::GUEST_ADDRESS_LIMIT as u32,
+            Self::HeapInfo => band_start,
+            Self::DyncallRoot => band_start + Self::ELEMENTS,
         }
     }
 }
@@ -794,24 +800,6 @@ impl FunctionTableLayout {
 mod tests {
     use alloc::rc::Rc;
 
-    /// The reserved band's upper bound mirrors the VM constant it cannot reference in constant
-    /// expressions; a VM release moving the frame pointer must fail here, not corrupt memory.
-    #[test]
-    fn reserved_cells_stay_below_the_vm_locals_frame() {
-        assert_eq!(
-            miden_core::FMP_INIT_VALUE.as_canonical_u64(),
-            super::ReservedCell::LOCALS_FRAME_START
-        );
-        for cell in super::ReservedCell::ALL {
-            let addr = cell.element_addr() as u64;
-            assert!(addr >= super::ReservedCell::GUEST_ADDRESS_LIMIT);
-            assert!(
-                addr + super::ReservedCell::ELEMENTS as u64
-                    <= super::ReservedCell::LOCALS_FRAME_START
-            );
-        }
-    }
-
     use midenc_hir::{
         BuilderExt, CallConv, Context, Ident, Op, SourceSpan, Type, Visibility,
         dialects::builtin::{
@@ -821,6 +809,27 @@ mod tests {
         },
         version::Version,
     };
+
+    /// The reserved band's bounds mirror constants this crate cannot reference in constant
+    /// expressions: the VM's initial frame pointer, and the heap-info address the MASM
+    /// intrinsics hard-code. Either moving without this table following must fail here, not
+    /// corrupt memory.
+    #[test]
+    fn reserved_cells_mirror_the_vm_and_intrinsics_constants() {
+        assert_eq!(
+            miden_core::FMP_INIT_VALUE.as_canonical_u64(),
+            super::ReservedCell::LOCALS_FRAME_START
+        );
+
+        let heap_info_addr = include_str!("../intrinsics/mem.masm")
+            .lines()
+            .find_map(|line| line.strip_prefix("const HEAP_INFO_ADDR="))
+            .and_then(|value| value.split_whitespace().next())
+            .and_then(|value| value.strip_prefix("0x"))
+            .and_then(|hex| u32::from_str_radix(hex, 16).ok())
+            .expect("intrinsics/mem.masm should define `const HEAP_INFO_ADDR=0x…`");
+        assert_eq!(heap_info_addr, super::ReservedCell::HeapInfo.element_addr());
+    }
 
     use super::*;
 
