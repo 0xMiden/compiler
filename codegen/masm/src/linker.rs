@@ -17,28 +17,56 @@ const DEFAULT_PAGE_SIZE: u32 = 2u32.pow(16);
 /// declared reservation instead, which dominates this default whenever it is larger.
 const DEFAULT_RESERVATION: u32 = 17;
 
-/// Fixed memory cells the compiler reserves in the address band no program can reach.
+/// Define [`ReservedCell`] along with the table of every cell, [`ReservedCell::ALL`].
 ///
-/// Guest pointers are 32-bit byte addresses, so guest-reachable element addresses end below
-/// [`Self::GUEST_ADDRESS_LIMIT`]; procedure locals are framed upwards from the VM's initial frame
-/// pointer, [`Self::LOCALS_FRAME_START`]. The band in between belongs to no program, and every
-/// fixed cell the compiler uses is listed here, including the one owned by the MASM intrinsics,
-/// so cells cannot collide. A cell's lifetime is its owner's business: the heap metadata lives
-/// for the whole context, while a spill cell is written immediately before the instruction that
-/// consumes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReservedCell {
-    /// The dynamic-heap metadata word (`heap_top`, `heap_size`, `heap_base`, magic) owned by the
-    /// `intrinsics::mem` MASM module, whose `HEAP_INFO_ADDR` constant must equal this cell.
-    HeapInfo,
-    /// The word to which a `dyncall` lowering spills the callee's MAST root, which the VM reads
-    /// from memory.
-    DyncallRoot,
+/// Deriving that table from the variant list is what keeps the two in sync. A cell reachable by a
+/// guest pointer or a locals frame would be silent memory corruption, and the band checks below
+/// are what rule that out — but they can only check the cells they are given, so a hand-maintained
+/// table would let a new cell escape them by omission, with nothing to fail.
+macro_rules! reserved_cells {
+    (
+        $(#[$enum_meta:meta])*
+        $vis:vis enum $name:ident {
+            $($(#[$variant_meta:meta])* $variant:ident),+ $(,)?
+        }
+    ) => {
+        $(#[$enum_meta])*
+        $vis enum $name {
+            $($(#[$variant_meta])* $variant),+
+        }
+
+        impl $name {
+            /// All reserved cells, in address order.
+            pub const ALL: [Self; Self::COUNT] = [$(Self::$variant),+];
+            /// The number of reserved cells.
+            pub const COUNT: usize = [$(Self::$variant),+].len();
+        }
+    };
+}
+
+reserved_cells! {
+    /// Fixed memory cells the compiler reserves in the address band no program can reach.
+    ///
+    /// Guest pointers are 32-bit byte addresses, so guest-reachable element addresses end below
+    /// [`Self::GUEST_ADDRESS_LIMIT`]; procedure locals are framed upwards from the VM's initial
+    /// frame pointer, [`Self::LOCALS_FRAME_START`]. The band in between belongs to no program, and
+    /// every fixed cell the compiler uses is listed here, including the one owned by the MASM
+    /// intrinsics, so cells cannot collide. A cell's lifetime is its owner's business: the heap
+    /// metadata lives for the whole context, while a spill cell is written immediately before the
+    /// instruction that consumes it.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum ReservedCell {
+        /// The dynamic-heap metadata word (`heap_top`, `heap_size`, `heap_base`, magic) owned by
+        /// the `intrinsics::mem` MASM module, whose `HEAP_INFO_ADDR` constant must equal this
+        /// cell.
+        HeapInfo,
+        /// The word to which a `dyncall` lowering spills the callee's MAST root, which the VM
+        /// reads from memory.
+        DyncallRoot,
+    }
 }
 
 impl ReservedCell {
-    /// All reserved cells, in address order.
-    pub const ALL: [Self; 2] = [Self::HeapInfo, Self::DyncallRoot];
     /// Number of elements every cell spans: one word.
     pub const ELEMENTS: u32 = miden_core::WORD_SIZE as u32;
     /// First element address past guest-reachable memory: 2^32 bytes, in elements.
@@ -810,16 +838,15 @@ mod tests {
         version::Version,
     };
 
+    use super::*;
+
     /// The reserved band's bounds mirror constants this crate cannot reference in constant
     /// expressions: the VM's initial frame pointer, and the heap-info address the MASM
     /// intrinsics hard-code. Either moving without this table following must fail here, not
     /// corrupt memory.
     #[test]
     fn reserved_cells_mirror_the_vm_and_intrinsics_constants() {
-        assert_eq!(
-            miden_core::FMP_INIT_VALUE.as_canonical_u64(),
-            super::ReservedCell::LOCALS_FRAME_START
-        );
+        assert_eq!(miden_core::FMP_INIT_VALUE.as_canonical_u64(), ReservedCell::LOCALS_FRAME_START);
 
         let heap_info_addr = include_str!("../intrinsics/mem.masm")
             .lines()
@@ -828,10 +855,8 @@ mod tests {
             .and_then(|value| value.strip_prefix("0x"))
             .and_then(|hex| u32::from_str_radix(hex, 16).ok())
             .expect("intrinsics/mem.masm should define `const HEAP_INFO_ADDR=0x…`");
-        assert_eq!(heap_info_addr, super::ReservedCell::HeapInfo.element_addr());
+        assert_eq!(heap_info_addr, ReservedCell::HeapInfo.element_addr());
     }
-
-    use super::*;
 
     struct StartFixture {
         context: Rc<Context>,

@@ -12,8 +12,10 @@ use self::{context::SolverContext, stack::Stack};
 
 /// The number of field elements addressable by MASM stack manipulation instructions.
 ///
-/// This is the same window MASM legalization bounds a call's operands by, so both take it from the
-/// VM's minimum stack depth rather than each restating the number.
+/// MASM legalization bounds a call's operands by this same window — an indirect call schedules its
+/// arguments together with the operands selecting the callee, the table index for
+/// `hir.exec_indirect` and the root word for `hir.dyncall` — so it imports this constant rather
+/// than restating the number.
 pub(crate) const MASM_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// This represents a specific action that should be taken by
