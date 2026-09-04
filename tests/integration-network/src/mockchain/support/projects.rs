@@ -310,7 +310,11 @@ pub(crate) fn storage_slot_name_for_package(
 }
 
 /// Returns the storage slot name `#[component_storage]` derives for `field` of a generated
-/// account package whose `[lib].namespace` interface segment is `interface_segment`.
+/// account package.
+///
+/// `interface_segment` is the slot-name form of the component interface, i.e. the `[lib].namespace`
+/// interface segment already snake-cased the way the macro snake-cases it (interface
+/// `signature-target` is passed as `signature_target`).
 pub(crate) fn storage_slot_name_for_field(
     account_package: &str,
     interface_segment: &str,

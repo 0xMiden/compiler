@@ -1,6 +1,7 @@
 //! Stored-procedure signatures at the edges of what a dispatched call supports: a narrow scalar
-//! (`bool`) argument, an argument list filling the twelve-field-element budget, and an empty
-//! signature returning nothing.
+//! (`bool`) argument, an argument list filling the twelve-field-element budget, an empty
+//! signature returning nothing, and a `Word` result, which does not fit a flat value and is
+//! therefore returned through a result pointer.
 
 use miden_client::{
     account::{
@@ -37,13 +38,18 @@ const EXPECTED_SUM: u64 = 15 + (1 << 40);
 /// the value of the target's counter after the transaction.
 const EXPECTED_BUMPS: u64 = 2;
 
+/// Arguments the dispatcher passes to the `Word`-returning `pack` procedure, mirroring the fixed
+/// values spelled in the dispatcher source.
+const PACK_A: u64 = 7;
+const PACK_B: u64 = 11;
+
 /// Deploys a target component exporting a procedure with a leading `bool` argument, one taking
-/// six `u64`s (the full twelve-field-element argument budget), and one taking no arguments and
-/// returning nothing, and a dispatcher whose three stored-procedure slots hold their lifted
-/// export roots. A note drives the dispatcher, which checks the returned results in-guest and
-/// records the sum's halves in a plain value slot the host asserts after the transaction. The unit-returning
-/// procedure has no result to check in-guest, so it is observed through the target's counter,
-/// which the host asserts as well.
+/// six `u64`s (the full twelve-field-element argument budget), one taking no arguments and
+/// returning nothing, and one returning a `Word`, and a dispatcher whose four stored-procedure
+/// slots hold their lifted export roots. A note drives the dispatcher, which checks the returned
+/// results in-guest and records the sum's halves and the returned word in plain value slots the
+/// host asserts after the transaction. The unit-returning procedure has no result to check
+/// in-guest, so it is observed through the target's counter, which the host asserts as well.
 #[test]
 fn dispatches_bool_and_twelve_felt_signatures() {
     let names = DispatchProjectNames::new("stored_procedure_signatures");
@@ -56,12 +62,14 @@ fn dispatches_bool_and_twelve_felt_signatures() {
     let scale_slot = names.dispatcher_slot("scale");
     let sum6_slot = names.dispatcher_slot("sum6");
     let bump_slot = names.dispatcher_slot("bump");
+    let pack_slot = names.dispatcher_slot("pack");
     let last_sum_slot = names.dispatcher_slot("last_sum");
+    let last_pack_slot = names.dispatcher_slot("last_pack");
     let count_slot =
         storage_slot_name_for_field(&names.target_account_package, "signature_target", "count");
     assert_word_value_slots(
         &dispatcher_package,
-        &[scale_slot.clone(), sum6_slot.clone(), bump_slot.clone()],
+        &[scale_slot.clone(), sum6_slot.clone(), bump_slot.clone(), pack_slot.clone()],
     );
 
     let target_component = {
@@ -91,9 +99,18 @@ fn dispatches_bool_and_twelve_felt_signatures() {
                 lifted_export_root(&target_package, "bump"),
             )
             .unwrap();
-        // Every value slot needs an initial value, including the one the dispatch writes.
+        init_storage_data
+            .insert_value(
+                StorageValueName::from_slot_name(&pack_slot),
+                lifted_export_root(&target_package, "pack"),
+            )
+            .unwrap();
+        // Every value slot needs an initial value, including the ones the dispatch writes.
         init_storage_data
             .insert_value(StorageValueName::from_slot_name(&last_sum_slot), Word::default())
+            .unwrap();
+        init_storage_data
+            .insert_value(StorageValueName::from_slot_name(&last_pack_slot), Word::default())
             .unwrap();
         AccountComponent::from_package(&dispatcher_package, &init_storage_data).unwrap()
     };
@@ -132,7 +149,7 @@ fn dispatches_bool_and_twelve_felt_signatures() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["13333"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["15576"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The dispatcher recorded the low and high halves of the `u64` sum it received.
     let committed_storage = chain.committed_account(account.id()).unwrap().storage();
@@ -146,6 +163,21 @@ fn dispatches_bool_and_twelve_felt_signatures() {
         Felt::ZERO,
     ]);
     assert_eq!(recorded, expected, "recorded sum halves mismatch");
+
+    // A `Word` does not fit the single flat value the canonical ABI returns directly: the caller
+    // passes a result pointer that has to stay live across the dispatched context switch, and the
+    // callee's flat results are stored through it once the call returns. The dispatcher copied
+    // the word it received into a plain value slot.
+    let packed = committed_storage
+        .get_item(&last_pack_slot)
+        .expect("dispatcher should expose the recorded-word slot");
+    let expected_packed = Word::new([
+        Felt::new(PACK_A).unwrap(),
+        Felt::new(PACK_B).unwrap(),
+        Felt::new(PACK_A + PACK_B).unwrap(),
+        Felt::ZERO,
+    ]);
+    assert_eq!(packed, expected_packed, "recorded packed word mismatch");
 
     // The unit-returning procedure returns nothing to check in-guest: the two dispatched calls
     // are observed through the target's committed counter. A felt value slot is stored as
@@ -165,7 +197,7 @@ const TARGET_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, component_storage, felt, Felt, StorageValue};
+use miden::{component, component_storage, felt, Felt, StorageValue, Word};
 
 /// Storage of the sibling component: only the unit-returning procedure writes to it, the others
 /// are pure.
@@ -176,7 +208,8 @@ struct SignatureTargetStorage {
 }
 
 /// Sibling account component exporting procedures with a narrow-scalar argument, with the widest
-/// argument list a dispatched call supports, and with neither arguments nor a result.
+/// argument list a dispatched call supports, with neither arguments nor a result, and with a
+/// result too wide to be returned as a flat value.
 #[component]
 trait SignatureTarget {
     /// Returns `amount` doubled when `enabled`, and `amount` unchanged otherwise.
@@ -188,6 +221,9 @@ trait SignatureTarget {
     /// Increments the stored counter, returning nothing.
     #[account_procedure]
     fn bump(&mut self);
+    /// Returns both arguments and their sum packed into a word.
+    #[account_procedure]
+    fn pack(&self, a: Felt, b: Felt) -> Word;
 }
 
 #[component]
@@ -202,6 +238,10 @@ impl SignatureTarget for SignatureTargetStorage {
 
     fn bump(&mut self) {
         self.count.set(self.count.get() + felt!(1));
+    }
+
+    fn pack(&self, a: Felt, b: Felt) -> Word {
+        Word::new([a, b, a + b, felt!(0)])
     }
 }
 "#;
@@ -222,15 +262,19 @@ struct DispatcherStorage {
     sum6: StorageValue<StoredProcedure<fn(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> u64>>,
     #[storage(description = "root of an argument-less procedure incrementing a counter")]
     bump: StorageValue<StoredProcedure<fn()>>,
+    #[storage(description = "root of a procedure packing two felts into a word")]
+    pack: StorageValue<StoredProcedure<fn(a: Felt, b: Felt) -> Word>>,
     #[storage(description = "low and high 32-bit halves of the last dispatched sum")]
     last_sum: StorageValue<Word>,
+    #[storage(description = "word returned by the last dispatched pack")]
+    last_pack: StorageValue<Word>,
 }
 
-/// Account component dispatching all three stored procedures with fixed arguments.
+/// Account component dispatching all four stored procedures with fixed arguments.
 #[component]
 trait Dispatcher {
     /// Dispatches the stored procedures, checks the results of those that return one, records
-    /// the sum in storage, and returns the scaled value.
+    /// the sum and the packed word in storage, and returns the scaled value.
     #[account_procedure]
     fn dispatch(&mut self) -> Felt;
 }
@@ -264,6 +308,11 @@ impl Dispatcher for DispatcherStorage {
             felt!(0),
             felt!(0),
         ]));
+
+        // A `Word` exceeds the single flat value the canonical ABI returns directly, so the
+        // dispatched call passes a result pointer that stays live across the context switch and
+        // receives the four field elements after the call returns.
+        self.last_pack.set(self.pack.get().call(felt!(7), felt!(11)));
 
         scaled
     }
