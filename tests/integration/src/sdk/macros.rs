@@ -1789,7 +1789,7 @@ struct TestComponentStorage {
 }
 
 #[test]
-fn component_storage_stored_procedure_rejects_unsafe_or_extern_fn() {
+fn component_storage_stored_procedure_rejects_unsafe_fn() {
     let lib_rs = r#"#![no_std]
 #![feature(alloc_error_handler)]
 
@@ -1802,15 +1802,38 @@ struct TestComponentStorage {
 }
 "#;
 
-    let cargo_proj = account_component_project(
-        "component_storage_stored_procedure_rejects_unsafe_or_extern_fn",
-        lib_rs,
-    );
+    let cargo_proj =
+        account_component_project("component_storage_stored_procedure_rejects_unsafe_fn", lib_rs);
     let output = cargo_check_miden_target(&cargo_proj);
     assert!(!output.status.success(), "expected an `unsafe fn` signature to be rejected");
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     assert!(stderr.contains("found `unsafe`"), "unexpected stderr: {stderr}");
+}
+
+#[test]
+fn component_storage_stored_procedure_rejects_extern_fn() {
+    // The call crosses a VM context, not a C ABI boundary, so an explicit ABI promises something
+    // the generated dispatch does not honor.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component_storage, Felt, StorageValue, StoredProcedure};
+
+#[component_storage]
+struct TestComponentStorage {
+    #[storage]
+    hook: StorageValue<StoredProcedure<extern "C" fn(amount: Felt)>>,
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_storage_stored_procedure_rejects_extern_fn", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected an `extern` signature to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(stderr.contains("found an explicit ABI"), "unexpected stderr: {stderr}");
 }
 
 #[test]

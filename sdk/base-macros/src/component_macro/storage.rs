@@ -140,11 +140,14 @@ pub fn process_storage_fields(
     let mut slot_ids = HashMap::<(u64, u64), String>::new();
 
     for field in fields.named.iter_mut() {
-        if let Err(err) = typecheck_storage_field(field) {
-            errors.push(err);
-            continue;
-        }
-        if let Err(err) = reject_stored_procedure_in_map(field) {
+        let field_type = match typecheck_storage_field(field) {
+            Ok(field_type) => field_type,
+            Err(err) => {
+                errors.push(err);
+                continue;
+            }
+        };
+        if let Err(err) = reject_stored_procedure_in_map(field, &field_type) {
             errors.push(err);
             continue;
         }
@@ -290,8 +293,11 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
 /// A stored procedure root is bound to the one slot whose signature the macro generated, so it
 /// cannot be a map entry; without this check the user would face a sealed-trait error pointing at
 /// the SDK instead.
-fn reject_stored_procedure_in_map(field: &Field) -> Result<(), syn::Error> {
-    if !matches!(typecheck_storage_field(field)?, StorageFieldType::StorageMap) {
+fn reject_stored_procedure_in_map(
+    field: &Field,
+    field_type: &StorageFieldType,
+) -> Result<(), syn::Error> {
+    if !matches!(field_type, StorageFieldType::StorageMap) {
         return Ok(());
     }
     if !stored_procedure::mentions_stored_procedure(&field.ty) {
@@ -309,20 +315,25 @@ mod tests {
     use quote::quote;
     use syn::parse::Parser;
 
-    use super::{derive_storage_slot_name, reject_stored_procedure_in_map};
+    use super::{
+        StorageFieldType, derive_storage_slot_name, reject_stored_procedure_in_map,
+        typecheck_storage_field,
+    };
 
     #[test]
     fn rejects_stored_procedures_in_map_slots() {
         let field = syn::Field::parse_named
             .parse2(quote!(hooks: StorageMap<Felt, StoredProcedure<fn()>>))
             .expect("test field must parse");
-        let err = reject_stored_procedure_in_map(&field).unwrap_err();
+        let field_type = typecheck_storage_field(&field).expect("test field type must be valid");
+        let err = reject_stored_procedure_in_map(&field, &field_type).unwrap_err();
         assert!(err.to_string().contains("only supported in `StorageValue` slots"), "{err}");
 
         let field = syn::Field::parse_named
             .parse2(quote!(count_map: StorageMap<Word, Felt>))
             .expect("test field must parse");
-        reject_stored_procedure_in_map(&field).expect("plain map slots are accepted");
+        reject_stored_procedure_in_map(&field, &StorageFieldType::StorageMap)
+            .expect("plain map slots are accepted");
     }
 
     #[test]
