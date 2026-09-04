@@ -12,6 +12,70 @@ directly below this paragraph, above the previous one (newest first, like the
 
 ## Unreleased
 
+### Stored-procedure storage slots and the reserved `dyncall-` prefix
+
+An account component can now keep the MAST root of a procedure exported by a *sibling* component
+(another component deployed on the same account) in one of its storage slots and call it. Declare
+the slot with its call signature spelled as a `fn` type:
+
+```rust
+use miden::{component_storage, AccountId, Felt, StorageValue, StoredProcedure};
+
+#[component_storage]
+pub struct AuthorityStorage {
+    #[storage(description = "authorization predicate")]
+    authority: StorageValue<StoredProcedure<fn(role: Felt, caller: AccountId) -> bool>>,
+    // A bare `#[storage]` is now accepted: it declares a slot with no description and no type
+    // override.
+    #[storage]
+    hook: StorageValue<StoredProcedure<fn()>>,
+}
+```
+
+The macro generates one trait per such field, named after the field (`AuthorityCall`, `HookCall`
+here) and with the storage struct's visibility. Its `call` method has exactly the declared
+signature and invokes the stored root in a new VM context:
+
+```rust
+let allowed = self.authority.get().call(role, caller);
+```
+
+The trait is in scope in the module declaring the storage struct; elsewhere, import it
+(`use crate::AuthorityCall;`).
+
+Signature parameters and the result must be Miden core types or WIT primitives — no references,
+no user-defined types, nothing that would travel through memory. The arguments travel on the
+operand stack next to the procedure root, which bounds the signature to at most 12 flat argument
+values and at most 12 argument field elements — 11 field elements when the result is returned
+through a pointer, which takes an element of its own. Wider signatures are rejected when the
+component is compiled.
+
+Roots are expected to be written by the host at deployment or update time; the SDK offers no
+constructor for a `StoredProcedure`, and neither the compiler nor the VM checks a stored root
+against the declared signature. Calling an unset slot fails the transaction, so check `is_set()`
+on a slot that may not have been populated yet.
+
+The generated imports are named `dyncall-<field>`, and that WIT function-name prefix is now
+reserved: the compiler lowers every imported function whose name starts with `dyncall-` as a
+stored-procedure dispatch instead of linking it. A dependency WIT interface that declares such a
+function is now rejected at compile time and has to rename it.
+
+Before:
+
+```
+interface api {
+    dyncall-notify: func(root: word, amount: felt);
+}
+```
+
+After:
+
+```
+interface api {
+    notify: func(root: word, amount: felt);
+}
+```
+
 ### Transaction summaries are six words (protocol 0.16)
 
 Custom authentication components sign a commitment to the transaction summary. Protocol 0.16

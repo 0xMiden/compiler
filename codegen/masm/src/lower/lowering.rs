@@ -7,7 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Felt, Immediate, Op, OpExt, Span, SymbolTable, Type, Value, ValueRange, ValueRef,
+    Felt, Immediate, Op, OpExt, Operation, SmallVec, Span, SymbolTable, Type, Value, ValueRange,
+    ValueRef,
     dialects::{builtin, debuginfo},
     traits::{BinaryOp, Commutative},
 };
@@ -128,30 +129,60 @@ pub trait HirLowering: Op {
     }
 }
 
-fn schedule_ext2_operands<T: HirLowering>(
-    inst: &T,
+/// Schedule `values` as operands of `op`, panicking if the solver cannot produce the layout.
+///
+/// The values are scheduled with the constraints [`BlockEmitter::constraints_for`] derives for
+/// them, after `adjust` has had a chance to rewrite both: a lowering that consumes its operands in
+/// an order other than the IR's, or that must copy rather than move one of them, permutes the two
+/// in step. `what` names the scheduled set in the panic message.
+///
+/// A solver failure is a codegen bug rather than invalid input — what a call site may ask of the
+/// operand stack is bounded by MASM legalization, and every other operation's operands fit by
+/// construction — so there is nothing to report and nothing to recover to. Every caller wants the
+/// same panic, carrying the operands, their constraints and the stack that defeated them.
+fn schedule_operands_or_panic<F>(
+    op: &Operation,
     emitter: &mut BlockEmitter<'_>,
-) -> Result<(), Report> {
-    let op = inst.as_operation();
-    let args = inst.required_operands();
-    let mut constraints = emitter.constraints_for(op, &args);
-    let mut args = args.into_smallvec();
-
-    // MASM extension-field ops consume limbs in stack order: rhs0, rhs1, lhs0, lhs1.
-    // The HIR op operands use semantic order: lhs0, lhs1, rhs0, rhs1.
-    args.rotate_left(2);
-    constraints.rotate_left(2);
+    values: ValueRange<'_, 4>,
+    options: SolverOptions,
+    what: &str,
+    adjust: F,
+) where
+    F: FnOnce(&mut SmallVec<[ValueRef; 4]>, &mut SmallVec<[Constraint; 4]>),
+{
+    let mut constraints = emitter.constraints_for(op, &values);
+    let mut args = values.into_smallvec();
+    adjust(&mut args, &mut constraints);
 
     emitter
-        .schedule_operands(&args, &constraints, op.span(), SolverOptions::default())
+        .schedule_operands(&args, &constraints, op.span(), options)
         .unwrap_or_else(|err| {
             panic!(
-                "failed to schedule ext2 operands: {args:?}\nfor inst '{}'\nwith error: \
+                "failed to schedule {what}: {args:?}\nfor inst '{}'\nwith error: \
                  {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
                 op.name(),
                 emitter.stack,
             )
         });
+}
+
+fn schedule_ext2_operands<T: HirLowering>(
+    inst: &T,
+    emitter: &mut BlockEmitter<'_>,
+) -> Result<(), Report> {
+    schedule_operands_or_panic(
+        inst.as_operation(),
+        emitter,
+        inst.required_operands(),
+        SolverOptions::default(),
+        "ext2 operands",
+        |args, constraints| {
+            // MASM extension-field ops consume limbs in stack order: rhs0, rhs1, lhs0, lhs1.
+            // The HIR op operands use semantic order: lhs0, lhs1, rhs0, rhs1.
+            args.rotate_left(2);
+            constraints.rotate_left(2);
+        },
+    );
 
     Ok(())
 }
@@ -1071,6 +1102,71 @@ impl HirLowering for hir::ExecIndirect {
     }
 }
 
+impl HirLowering for hir::Dyncall {
+    /// The root and the arguments are scheduled in two phases (see [`Self::schedule_operands`]),
+    /// spilling the root in between, so the emitted code never holds the root, the arguments and
+    /// the address element `dyncall` consumes at the same time. The spill analysis still counts
+    /// every operand of the operation together, though, so the root word and the arguments have
+    /// to share the 16-element window: at most twelve argument field elements, which MASM
+    /// legalization enforces.
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+        let span = self.span();
+        let signature = self.get_signature().clone();
+        let root_scratch_addr = crate::linker::ReservedCell::DyncallRoot.element_addr();
+
+        // The plain emitter, not the instruction emitter: the latter renames the stack top to the
+        // op's results when dropped, and the results only exist after the dispatch below
+        emitter.emitter().dyncall_spill_root(root_scratch_addr, span);
+
+        // Second phase: the arguments, in signature order, now that the root is off the stack
+        let arguments: ValueRange<'_, 4> = ValueRange::from(self.arguments());
+        if !arguments.is_empty() {
+            schedule_operands_or_panic(
+                op,
+                emitter,
+                arguments,
+                SolverOptions {
+                    strict: true,
+                    ..Default::default()
+                },
+                "arguments",
+                |_args, _constraints| {},
+            );
+        }
+
+        emitter.inst_emitter(op).dyncall_dispatch(root_scratch_addr, &signature, span);
+
+        Ok(())
+    }
+
+    /// First phase: only the root word is scheduled (element 0 on top); the arguments follow in
+    /// [`Self::emit`] once the root has been spilled. A root element that is also an argument
+    /// must be copied rather than moved, so it is still available for the second phase.
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+        let arguments: ValueRange<'_, 4> = ValueRange::from(self.arguments());
+        schedule_operands_or_panic(
+            op,
+            emitter,
+            ValueRange::from(self.root()),
+            SolverOptions {
+                strict: true,
+                ..Default::default()
+            },
+            "root",
+            |root, constraints| {
+                for (constraint, value) in constraints.iter_mut().zip(root.iter()) {
+                    if arguments.contains(value) {
+                        *constraint = Constraint::Copy;
+                    }
+                }
+            },
+        );
+        Ok(())
+    }
+}
+
 impl HirLowering for hir::Call {
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         use midenc_hir::{CallOpInterface, CallableOpInterface};
@@ -1570,36 +1666,27 @@ impl HirLowering for arith::Join {
             return Ok(());
         }
 
-        let mut constraints = emitter.constraints_for(op, &args);
-        let mut args = args.into_smallvec();
-
-        // For `i128`/`u128` we use a different stack order for 64-bit limbs.
-        //
-        // The IR specifies limbs most-significant to least-significant, but the runtime stack
-        // representation for two 64-bit limbs is (lo, hi).
-        if args.len() == 2 && matches!(&*self.get_ty(), Type::I128 | Type::U128) {
-            args.swap(0, 1);
-            constraints.swap(0, 1);
-        }
-
-        emitter
-            .schedule_operands(
-                &args,
-                &constraints,
-                op.span(),
-                SolverOptions {
-                    strict: true,
-                    ..Default::default()
-                },
-            )
-            .unwrap_or_else(|err| {
-                panic!(
-                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
-                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                    op.name(),
-                    emitter.stack,
-                )
-            });
+        let is_128_bit = matches!(&*self.get_ty(), Type::I128 | Type::U128);
+        schedule_operands_or_panic(
+            op,
+            emitter,
+            args,
+            SolverOptions {
+                strict: true,
+                ..Default::default()
+            },
+            "operands",
+            |args, constraints| {
+                // For `i128`/`u128` we use a different stack order for 64-bit limbs.
+                //
+                // The IR specifies limbs most-significant to least-significant, but the runtime
+                // stack representation for two 64-bit limbs is (lo, hi).
+                if args.len() == 2 && is_128_bit {
+                    args.swap(0, 1);
+                    constraints.swap(0, 1);
+                }
+            },
+        );
 
         Ok(())
     }

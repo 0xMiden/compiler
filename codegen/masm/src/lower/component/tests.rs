@@ -2,9 +2,12 @@ use alloc::{collections::BTreeMap, format, rc::Rc, string::String};
 use core::cell::RefCell;
 
 use midenc_hir::{
-    Context, OperationRef, PointerType,
+    CallConv, Context, OperationRef, PointerType,
     diagnostics::Uri,
-    dialects::builtin::{FunctionRef, attributes::UnitAttr},
+    dialects::builtin::{
+        FunctionRef,
+        attributes::{AbiParam, Signature, UnitAttr},
+    },
 };
 use midenc_session::{
     InputFile, Options, Session,
@@ -2073,6 +2076,218 @@ fn a_private_nested_module_is_not_part_of_the_package_surface() {
         !exports.iter().any(|export| export.contains("nested")),
         "a public procedure of a private *nested* module must not be exported, got: {exports:?}"
     );
+}
+
+/// A `hir.dyncall` at the full argument budget: its root word and twelve argument felts fill the
+/// 16-element operand stack window exactly, with the arguments in reverse order so every one has
+/// to move.
+const WORLD_WITH_A_WIDE_PERMUTED_DYNCALL: &str = r#"
+builtin.world {
+builtin.component private @"root_ns:root@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: felt, %a1: felt, %a2: felt, %a3: felt, %a4: felt, %a5: felt, %a6: felt, %a7: felt, %a8: felt, %a9: felt, %a10: felt, %a11: felt) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a11, %a10, %a9, %a8, %a7, %a6, %a5, %a4, %a3, %a2, %a1, %a0) : extern("component-model") (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt) -> (felt);
+            builtin.ret %result : (felt);
+        };
+    };
+};
+};
+"#;
+
+/// The root is spilled before the arguments are scheduled, so a call at the full 12-felt argument
+/// budget lowers even when the root and every argument must move.
+///
+/// `TransformSpills` runs first, as it does for every function in the backend pipeline: it is the
+/// pass that answers whether an operand set is reachable at all, and it panics rather than
+/// diagnosing when it is not. Legalization is what keeps a wider call from ever reaching it (see
+/// `oversized_dyncall_arguments_fail_legalization` in `crate::legalization`), so lowering alone
+/// would not prove this budget is the one the pipeline can carry.
+#[test]
+fn a_dyncall_at_the_argument_budget_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_WIDE_PERMUTED_DYNCALL);
+    transform_spills(&context, world);
+    let lowered = lower_world(world).expect("a dyncall at the argument budget lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("the lowered dyncall assembles");
+}
+
+/// Run `TransformSpills` over every function of `world`, as `pipeline::backend::apply_rewrites`
+/// does before codegen.
+///
+/// The spill analysis behind it requires every operand of a non-branch operation to be reachable
+/// within the operand stack window at once, so it is the only place a too-wide call site is
+/// noticed — lowering itself never asks.
+fn transform_spills(context: &Rc<Context>, world: builtin::WorldRef) {
+    use midenc_hir::pass::{Nesting, PassManager};
+
+    let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
+    {
+        let mut component_pm = pm.nest::<builtin::Component>();
+        let mut module_pm = component_pm.nest::<builtin::Module>();
+        let mut func_pm = module_pm.nest::<builtin::Function>();
+        func_pm.add_pass(alloc::boxed::Box::new(midenc_dialect_hir::transforms::TransformSpills));
+    }
+    pm.enable_verifier(false);
+    pm.run(world.as_operation_ref())
+        .expect("the world's functions fit the operand stack window");
+}
+
+/// A `hir.dyncall` in the shape canonical-ABI flattening produces for a stored procedure taking a
+/// `bool` and an `i8`: both parameters are flat `i32`s carrying the extension flattening recorded
+/// — `zext` for the `bool`, `sext` for the `i8` — while the arguments already have that flat type,
+/// so the extension is a no-op.
+///
+/// The markers are not in the fixture text because the textual signature parser derives extension
+/// from the parameter type alone; [`mark_dyncall_parameter_extensions`] adds them afterwards, as
+/// `flatten_type` does.
+const WORLD_WITH_AN_EXTENDED_DYNCALL: &str = r#"
+builtin.world {
+builtin.component private @"root_ns:root@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: i32, %a1: i32) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a0, %a1) : extern("component-model") (i32, i32) -> (felt);
+            builtin.ret %result : (felt);
+        };
+    };
+};
+};
+"#;
+
+/// Replace the signature of the one `hir.dyncall` in `world` with `signature`.
+///
+/// Extension markers on a signature's parameters have no textual spelling, so a fixture that
+/// needs them is parsed without and rewritten here — the same IR another producer could hand
+/// codegen directly.
+fn set_dyncall_signature(world: builtin::WorldRef, signature: Signature) {
+    let mut dyncall = None;
+    {
+        let root = world.as_operation_ref();
+        let root = root.borrow();
+        root.postwalk_all(|op| {
+            if op.downcast_ref::<midenc_dialect_hir::Dyncall>().is_some() {
+                dyncall = Some(op.as_operation_ref());
+            }
+        });
+    }
+    let mut dyncall = dyncall.expect("the fixture contains a hir.dyncall").borrow_mut();
+    let dyncall = dyncall
+        .downcast_mut::<midenc_dialect_hir::Dyncall>()
+        .expect("the walk selected a hir.dyncall");
+    dyncall.set_signature(signature.clone());
+    assert_eq!(
+        *dyncall.get_signature(),
+        signature,
+        "the rewritten signature is the one codegen will see"
+    );
+}
+
+/// Mark the fixture's dyncall parameters as [`WORLD_WITH_AN_EXTENDED_DYNCALL`] describes.
+fn mark_dyncall_parameter_extensions(context: &Rc<Context>, world: builtin::WorldRef) {
+    let signature = Signature {
+        params: vec![AbiParam::zext(Type::I32, context), AbiParam::sext(Type::I32, context)],
+        results: vec![AbiParam::new(Type::Felt)],
+        cc: CallConv::ComponentModel,
+    };
+    set_dyncall_signature(world, signature);
+}
+
+/// An extension the argument already satisfies is a no-op, so it must not stand between a stored
+/// procedure and its lowering: every signature taking a `bool`, `u8`, `u16`, `i8` or `i16` reaches
+/// codegen marked this way.
+#[test]
+fn an_extended_dyncall_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_AN_EXTENDED_DYNCALL);
+    mark_dyncall_parameter_extensions(&context, world);
+
+    let mut pm = midenc_hir::pass::PassManager::on::<builtin::World>(
+        context.clone(),
+        midenc_hir::pass::Nesting::Implicit,
+    );
+    pm.add_pass(alloc::boxed::Box::new(crate::LegalizeForMasm));
+    pm.enable_verifier(false);
+    pm.run(world.as_operation_ref())
+        .expect("a no-op extension is legal for hir.dyncall");
+
+    let lowered = lower_world(world).expect("a dyncall with extended parameters lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("the lowered dyncall assembles");
+}
+
+/// An extension that would really have to widen its argument is a different matter: the lowering
+/// would have to emit instructions on the stack top, which holds the address `dyncall` pops. That
+/// is unreachable from the frontend — the op's own verifier requires the argument types to match —
+/// so it is legalization that has to catch IR another producer could build.
+#[test]
+fn a_widening_dyncall_argument_fails_legalization() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_AN_EXTENDED_DYNCALL);
+    set_dyncall_signature(
+        world,
+        Signature {
+            params: vec![AbiParam::zext(Type::I64, &context), AbiParam::sext(Type::I32, &context)],
+            results: vec![AbiParam::new(Type::Felt)],
+            cc: CallConv::ComponentModel,
+        },
+    );
+
+    let mut pm = midenc_hir::pass::PassManager::on::<builtin::World>(
+        context.clone(),
+        midenc_hir::pass::Nesting::Implicit,
+    );
+    pm.add_pass(alloc::boxed::Box::new(crate::LegalizeForMasm));
+    pm.enable_verifier(false);
+    let err = pm
+        .run(world.as_operation_ref())
+        .expect_err("widening an i32 argument to an i64 parameter is not lowerable");
+    let message = format!("{err}");
+    assert!(message.contains("hir.dyncall"), "{message}");
+    assert!(message.contains("cannot extend the argument for parameter 0"), "{message}");
+    assert!(message.contains("from i32 to i64"), "{message}");
+}
+
+/// A `hir.dyncall` passing one of its own root elements as an argument.
+const WORLD_WITH_A_DYNCALL_REUSING_A_ROOT_ELEMENT: &str = r#"
+builtin.world {
+builtin.component private @"root_ns:root@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%r3, %r0) : extern("component-model") (felt, felt) -> (felt);
+            builtin.ret %result : (felt);
+        };
+    };
+};
+};
+"#;
+
+/// The root is spilled before the arguments are scheduled, so a root element that is also an
+/// argument must survive the spill: it is copied into the root word rather than moved.
+#[test]
+fn a_dyncall_reusing_a_root_element_as_an_argument_lowers() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_DYNCALL_REUSING_A_ROOT_ELEMENT);
+    let lowered = lower_world(world).expect("a dyncall reusing a root element lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("the lowered dyncall assembles");
 }
 
 /// The shape pure core-Wasm translation produces: a public module (the artifact's interface)

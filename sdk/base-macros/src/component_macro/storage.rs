@@ -4,7 +4,17 @@ use heck::ToSnakeCase;
 use quote::quote;
 use syn::{Field, Type, spanned::Spanned};
 
-use crate::{account_component_metadata::AccountComponentMetadataBuilder, types::StorageFieldType};
+use crate::{
+    account_component_metadata::AccountComponentMetadataBuilder, component_macro::stored_procedure,
+    types::StorageFieldType,
+};
+
+/// Rust crate the supported storage field types are expected to come from.
+const BASE_CRATE: &str = "miden";
+/// Rust type name of a storage map slot.
+const TYPENAME_MAP: &str = "StorageMap";
+/// Rust type name of a storage value slot.
+const TYPENAME_VALUE: &str = "StorageValue";
 
 /// Normalizes a storage slot name component into a valid identifier-like segment.
 ///
@@ -59,7 +69,7 @@ struct StorageAttributeArgs {
     type_attr: Option<String>,
 }
 
-/// Attempts to parse a `#[storage(...)]` attribute and returns the extracted arguments.
+/// Attempts to parse a `#[storage]` / `#[storage(...)]` attribute and returns its arguments.
 fn parse_storage_attribute(
     attr: &syn::Attribute,
 ) -> Result<Option<StorageAttributeArgs>, syn::Error> {
@@ -72,7 +82,16 @@ fn parse_storage_attribute(
 
     let list = match &attr.meta {
         syn::Meta::List(list) => list,
-        _ => return Err(syn::Error::new(attr.span(), "Expected #[storage(...)]")),
+        // Bare `#[storage]` is the shorthand for a slot that carries no optional arguments.
+        syn::Meta::Path(_) => {
+            return Ok(Some(StorageAttributeArgs {
+                description: None,
+                type_attr: None,
+            }));
+        }
+        _ => {
+            return Err(syn::Error::new(attr.span(), "Expected `#[storage]` or `#[storage(...)]`"));
+        }
     };
 
     let parser = syn::meta::parser(|meta| {
@@ -128,7 +147,14 @@ pub fn process_storage_fields(
     let mut slot_ids = HashMap::<(u64, u64), String>::new();
 
     for field in fields.named.iter_mut() {
-        if let Err(err) = typecheck_storage_field(field) {
+        let field_type = match typecheck_storage_field(field) {
+            Ok(field_type) => field_type,
+            Err(err) => {
+                errors.push(err);
+                continue;
+            }
+        };
+        if let Err(err) = reject_stored_procedure_in_map(field, &field_type) {
             errors.push(err);
             continue;
         }
@@ -236,11 +262,30 @@ pub fn process_storage_fields(
 /// * A developer defines their own `StorageMap` or `StorageValue`
 /// * A developer uses a valid type from miden but aliases it
 pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType, syn::Error> {
-    let type_path = match &field.ty {
-        Type::Path(type_path) => type_path,
-        _ => {
-            return Err(syn::Error::new(field.span(), "storage field type must be a path"));
-        }
+    if !matches!(&field.ty, Type::Path(_)) {
+        return Err(syn::Error::new(field.span(), "storage field type must be a path"));
+    }
+
+    storage_field_type(&field.ty).ok_or_else(|| {
+        syn::Error::new(
+            field.span(),
+            format!(
+                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
+                 `{BASE_CRATE}` crate"
+            ),
+        )
+    })
+}
+
+/// Classifies the written spelling of a storage field type, or `None` when it is neither of the
+/// supported types.
+///
+/// This is the single spelling rule for storage slots — `StorageMap`/`StorageValue`, optionally
+/// qualified with `miden::` — shared by [`typecheck_storage_field`] and the stored-procedure
+/// rewrite, so both agree on which fields are storage slots.
+pub(crate) fn storage_field_type(ty: &Type) -> Option<StorageFieldType> {
+    let Type::Path(type_path) = ty else {
+        return None;
     };
 
     let segments: Vec<String> = type_path
@@ -250,28 +295,64 @@ pub(crate) fn typecheck_storage_field(field: &Field) -> Result<StorageFieldType,
         .map(|segment| segment.ident.to_string())
         .collect();
 
-    const BASE_CRATE: &str = "miden";
-    const TYPENAME_MAP: &str = "StorageMap";
-    const TYPENAME_VALUE: &str = "StorageValue";
-
     match segments.as_slice() {
-        [a] if a == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a] if a == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Ok(StorageFieldType::StorageMap),
-        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Ok(StorageFieldType::StorageValue),
-        _ => Err(syn::Error::new(
-            field.span(),
-            format!(
-                "storage field type can only be `{TYPENAME_MAP}` or `{TYPENAME_VALUE}` from \
-                 `{BASE_CRATE}` crate"
-            ),
-        )),
+        [a] if a == TYPENAME_MAP => Some(StorageFieldType::StorageMap),
+        [a] if a == TYPENAME_VALUE => Some(StorageFieldType::StorageValue),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_MAP => Some(StorageFieldType::StorageMap),
+        [a, b] if a == BASE_CRATE && b == TYPENAME_VALUE => Some(StorageFieldType::StorageValue),
+        _ => None,
     }
+}
+
+/// Rejects a `StoredProcedure` used as the key or value type of a `StorageMap`.
+///
+/// A stored procedure root is bound to the one slot whose signature the macro generated, so it
+/// cannot be a map entry; without this check the user would face a sealed-trait error pointing at
+/// the SDK instead.
+fn reject_stored_procedure_in_map(
+    field: &Field,
+    field_type: &StorageFieldType,
+) -> Result<(), syn::Error> {
+    if !matches!(field_type, StorageFieldType::StorageMap) {
+        return Ok(());
+    }
+    if !stored_procedure::mentions_stored_procedure(&field.ty) {
+        return Ok(());
+    }
+
+    Err(syn::Error::new(
+        field.ty.span(),
+        "`StoredProcedure` is only supported in `StorageValue` slots",
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::derive_storage_slot_name;
+    use quote::quote;
+    use syn::parse::Parser;
+
+    use super::{
+        StorageFieldType, derive_storage_slot_name, reject_stored_procedure_in_map,
+        typecheck_storage_field,
+    };
+
+    /// Pins the map-slot diagnostic: a stored root is bound to the one slot whose signature the
+    /// macro generated, so it cannot be a map key or value.
+    #[test]
+    fn rejects_stored_procedures_in_map_slots() {
+        let field = syn::Field::parse_named
+            .parse2(quote!(hooks: StorageMap<Felt, StoredProcedure<fn()>>))
+            .expect("test field must parse");
+        let field_type = typecheck_storage_field(&field).expect("test field type must be valid");
+        let err = reject_stored_procedure_in_map(&field, &field_type).unwrap_err();
+        assert!(err.to_string().contains("only supported in `StorageValue` slots"), "{err}");
+
+        let field = syn::Field::parse_named
+            .parse2(quote!(count_map: StorageMap<Word, Felt>))
+            .expect("test field must parse");
+        reject_stored_procedure_in_map(&field, &StorageFieldType::StorageMap)
+            .expect("plain map slots are accepted");
+    }
 
     #[test]
     fn derives_slot_name_from_component_package_interface_and_field() {

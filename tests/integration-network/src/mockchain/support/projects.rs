@@ -10,6 +10,8 @@ use miden_protocol::account::StorageSlotName;
 use midenc_integration_test_support::compiler_test::sdk_crate_path;
 
 /// Returns a generated account project `miden-project.toml` exporting the given WIT interface.
+///
+/// `[dependencies]` is the last table so [`append_miden_project_dependencies`] can extend it.
 pub(crate) fn account_miden_project_toml_with_interface(
     account_name: &str,
     account_package: &str,
@@ -27,12 +29,12 @@ kind = "account-component"
 namespace = "{namespace}"
 path = "src/lib.rs"
 
+[package.metadata.miden]
+supported-types = ["RegularAccountUpdatableCode"]
+
 [dependencies]
 miden-core = "*"
 miden-protocol = "*"
-
-[package.metadata.miden]
-supported-types = ["RegularAccountUpdatableCode"]
 "#
     )
 }
@@ -244,11 +246,15 @@ pub(crate) fn append_miden_project_dependencies(
     }
 }
 
-/// Appends package metadata for dependencies to a generated Cargo manifest.
+/// Appends package metadata for dependencies to a generated Cargo manifest; a no-op without
+/// dependencies, like [`append_miden_project_dependencies`].
 pub(crate) fn append_cargo_dependency_metadata(
     manifest: &mut String,
     dependencies: &[(&str, &Path)],
 ) {
+    if dependencies.is_empty() {
+        return;
+    }
     manifest.push_str(
         r#"
 [package.metadata.miden.dependencies]
@@ -300,10 +306,20 @@ pub(crate) fn storage_slot_name_for_package(
     account_package: &str,
     interface_segment: &str,
 ) -> StorageSlotName {
+    storage_slot_name_for_field(account_package, interface_segment, "count_map")
+}
+
+/// Returns the storage slot name `#[component_storage]` derives for `field` of a generated
+/// account package whose `[lib].namespace` interface segment is `interface_segment`.
+pub(crate) fn storage_slot_name_for_field(
+    account_package: &str,
+    interface_segment: &str,
+    field: &str,
+) -> StorageSlotName {
     let package_name = account_package.strip_prefix("miden:").unwrap_or(account_package);
     let namespace = sanitize_slot_name_component(package_name);
-    StorageSlotName::new(format!("{namespace}::{interface_segment}::count_map"))
-        .expect("generated counter storage slot name must be valid")
+    StorageSlotName::new(format!("{namespace}::{interface_segment}::{field}"))
+        .expect("generated storage slot name must be valid")
 }
 
 /// Normalizes a generated component package into its storage slot namespace segment.

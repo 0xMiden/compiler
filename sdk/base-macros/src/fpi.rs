@@ -395,7 +395,10 @@ impl ProcedureRootKey {
 }
 
 /// Returns the fully-qualified import path used for a resolved interface.
-fn interface_import_path(resolve: &Resolve, interface_id: InterfaceId) -> Option<String> {
+pub(crate) fn interface_import_path(
+    resolve: &Resolve,
+    interface_id: InterfaceId,
+) -> Option<String> {
     let interface = &resolve.interfaces[interface_id];
     let interface_name = interface.name.as_deref()?;
     let package_id = interface.package?;

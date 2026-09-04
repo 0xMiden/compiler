@@ -20,8 +20,29 @@ use wit_bindgen_rust::{Opts, WithOption};
 
 use crate::{fpi, manifest_paths};
 
+/// WIT package name of the inline world `#[component_storage]` generates for stored-procedure
+/// slots.
+pub(crate) const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
+/// WIT function-name prefix the Wasm frontend reserves for stored-procedure dispatch imports.
+pub(crate) const DYNCALL_WIT_PREFIX: &str = "dyncall-";
+
 /// Fully-qualified WIT interface path for Miden SDK core types.
 pub(crate) const CORE_TYPES_INTERFACE: &str = "miden:base/core-types@1.0.0";
+
+/// Whether the world being generated may declare imports named with the reserved `dyncall-`
+/// prefix.
+///
+/// The exemption is a property of the generation path, not of the WIT being generated: only the
+/// world `#[component_storage]` builds from its own stored-procedure fields is exempt. Deciding
+/// it by inspecting the WIT — the package name, say — would let a dependency claim the exemption
+/// by naming itself accordingly and have its functions dispatched dynamically instead of linked.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DyncallPolicy {
+    /// The prefix is reserved; reject every imported function that uses it.
+    Reserved,
+    /// The prefix is expected; skip the check.
+    Generated,
+}
 
 #[derive(Default)]
 struct GenerateArgs {
@@ -214,6 +235,7 @@ fn generate_bindings(
         &args.with_entries,
         &[],
         false,
+        DyncallPolicy::Reserved,
     )
 }
 
@@ -232,6 +254,7 @@ pub(crate) fn generate_inline_fpi_bindings(
         with_entries,
         fpi_imports,
         true,
+        DyncallPolicy::Reserved,
     )
 }
 
@@ -252,6 +275,29 @@ pub(crate) fn generate_inline_import_bindings(
         with_entries,
         &[],
         false,
+        DyncallPolicy::Reserved,
+    )
+}
+
+/// Generates inline bindings for the hidden world backing stored-procedure storage slots.
+///
+/// Same as [`generate_inline_import_bindings`], except that the world is allowed to declare the
+/// `dyncall-` imports the Wasm frontend lowers as dynamic calls. `#[component_storage]` renders
+/// that world itself from the slot signatures, so no user-authored or dependency WIT can reach
+/// this entry point.
+pub(crate) fn generate_stored_procedure_bindings(
+    config: &manifest_paths::ResolvedWit,
+    inline_source: &str,
+    world: &str,
+) -> Result<TokenStream2, Error> {
+    generate_bindings_from_sources(
+        config,
+        Some(inline_source),
+        Some(world),
+        &[],
+        &[],
+        false,
+        DyncallPolicy::Generated,
     )
 }
 
@@ -263,6 +309,7 @@ fn generate_bindings_from_sources(
     with_entries: &[(String, WithOption)],
     fpi_imports: &[fpi::FpiImportSpec],
     scope_component_type_sections: bool,
+    dyncall_policy: DyncallPolicy,
 ) -> Result<TokenStream2, Error> {
     let mut wit_sources = load_wit_sources(config, inline_source)?;
 
@@ -270,6 +317,7 @@ fn generate_bindings_from_sources(
         .resolve
         .select_world(&wit_sources.packages, world)
         .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
+    validate_reserved_dyncall_namespace(&wit_sources.resolve, world_id, dyncall_policy)?;
     fpi::inject_imports(&mut wit_sources.resolve, world_id, fpi_imports)?;
     #[cfg(feature = "internal-wit-emit")]
     if inline_source.is_some() {
@@ -634,6 +682,51 @@ fn push_default_with_entries(opts: &mut Opts) {
 
 fn push_path_entry(opts: &mut Opts, key: &str, value: &str) {
     opts.with.push((key.to_string(), WithOption::Path(value.to_string())));
+}
+
+/// Rejects imported functions named with the `dyncall-` prefix the Wasm frontend reserves for
+/// stored-procedure dispatch imports.
+///
+/// The frontend classifies those imports by name, so a dependency function that happened to use
+/// the prefix would be dispatched as a dynamic call instead of linked. Only the world
+/// `#[component_storage]` generates for stored-procedure slots is exempt, and only because its
+/// caller says so through `policy`.
+fn validate_reserved_dyncall_namespace(
+    resolve: &Resolve,
+    world_id: WorldId,
+    policy: DyncallPolicy,
+) -> syn::Result<()> {
+    if policy == DyncallPolicy::Generated {
+        return Ok(());
+    }
+    let world = &resolve.worlds[world_id];
+    for item in world.imports.values() {
+        let (origin, functions): (String, Vec<&Function>) = match item {
+            WorldItem::Interface { id, .. } => {
+                let interface = &resolve.interfaces[*id];
+                let name = fpi::interface_import_path(resolve, *id)
+                    .or_else(|| interface.name.clone())
+                    .unwrap_or_else(|| "<anonymous>".to_string());
+                (format!("imported interface `{name}`"), interface.functions.values().collect())
+            }
+            WorldItem::Function(function) => (format!("world `{}`", world.name), vec![function]),
+            WorldItem::Type { .. } => continue,
+        };
+        if let Some(function) =
+            functions.iter().find(|function| function.name.starts_with(DYNCALL_WIT_PREFIX))
+        {
+            return Err(Error::new(
+                Span::call_site(),
+                format!(
+                    "{origin} defines function `{}` with reserved prefix `{DYNCALL_WIT_PREFIX}`; \
+                     the compiler lowers imports with that prefix as stored-procedure dispatches, \
+                     so an imported function must use a different name",
+                    function.name
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Returns true when the selected world references Miden SDK core types.
@@ -1201,6 +1294,116 @@ interface api {
         assert_eq!(parsed.with_entries.len(), 2);
         assert_eq!(parsed.with_entries[0].0, "miden:a/b");
         assert_eq!(parsed.with_entries[1].0, "miden:c/d");
+    }
+
+    /// Rejects the reserved prefix in a dependency interface reached through an import world.
+    #[test]
+    fn dependency_functions_with_the_dyncall_prefix_are_rejected() {
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "notifier.wit",
+            r#"
+package miden:notifier@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+    dyncall-notify: func(root: word, amount: felt);
+}
+
+world notifier-world {
+    export api;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+        let inline = crate::wit_world::import_world_wit(
+            "sibling-bindings",
+            &["miden:notifier/api@1.0.0".to_string()],
+        );
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("`miden:notifier/api@1.0.0`"), "{message}");
+        assert!(message.contains("`dyncall-notify`"), "{message}");
+        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+    }
+
+    /// Denies a dependency the exemption by naming itself like the generated bindings package:
+    /// the exemption belongs to the generation path, not to the WIT.
+    #[test]
+    fn a_dependency_named_like_the_stored_procedure_package_is_rejected() {
+        let mut resolve = Resolve::default();
+        let sdk_group =
+            UnresolvedPackageGroup::parse("miden.wit", manifest_paths::SDK_WIT_SOURCE).unwrap();
+        resolve.push_group(sdk_group).unwrap();
+        let dependency = UnresolvedPackageGroup::parse(
+            "spoofed.wit",
+            r#"
+package miden:stored-procedure-bindings@1.0.0;
+
+use miden:base/core-types@1.0.0;
+
+interface api {
+    use core-types.{felt, word};
+    dyncall-x: func(root: word, amount: felt);
+}
+
+world spoofed-world {
+    export api;
+}
+"#,
+        )
+        .unwrap();
+        resolve.push_group(dependency).unwrap();
+        let inline = crate::wit_world::import_world_wit(
+            "sibling-bindings",
+            &[format!("{STORED_PROCEDURE_BINDINGS_PACKAGE}/api@1.0.0")],
+        );
+        let group = UnresolvedPackageGroup::parse("inline", &inline).unwrap();
+        let package = resolve.push_group(group).unwrap();
+        let world = resolve.select_world(&[package], None).unwrap();
+
+        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("`dyncall-x`"), "{message}");
+        assert!(message.contains("reserved prefix `dyncall-`"), "{message}");
+
+        // The same world passes only when the caller opts out, which only the
+        // `#[component_storage]` expansion does.
+        validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Generated)
+            .expect("the generated stored-procedure world may declare `dyncall-` imports");
+    }
+
+    /// Names the world, not a "dependency interface", for a function imported at world level.
+    #[test]
+    fn a_world_level_dyncall_import_is_rejected_without_blaming_a_dependency() {
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:world-level@1.0.0;
+
+world world-level-world {
+    import dyncall-notify: func(amount: u32);
+}
+"#,
+        );
+
+        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("world `world-level-world`"), "{message}");
+        assert!(message.contains("`dyncall-notify`"), "{message}");
+        assert!(!message.contains("interface"), "{message}");
     }
 
     /// Parses a test WIT world with the bundled SDK WIT available in the resolver.

@@ -26,6 +26,7 @@ use crate::{
         storage::process_storage_fields,
     },
     dependency_ref::{DependencyRef, DependencyRefArgs},
+    generate::DYNCALL_WIT_PREFIX,
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
     },
@@ -35,6 +36,7 @@ use crate::{
 pub(crate) mod generate_wit;
 mod sibling;
 mod storage;
+mod stored_procedure;
 
 /// Fully-qualified identifier for the core types package used by exported component interfaces.
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
@@ -346,6 +348,7 @@ fn expand_component_storage(
     mut input_struct: ItemStruct,
 ) -> Result<TokenStream2, syn::Error> {
     let struct_name = &input_struct.ident;
+    let struct_vis = input_struct.vis.clone();
 
     // The expansion emits bare-ident impls (`Default`, the account traits, the marker constant),
     // which cannot compile for a generic struct; reject it here like the sibling expansions do.
@@ -358,8 +361,13 @@ fn expand_component_storage(
         metadata.description.clone(),
     );
 
+    let mut stored_procedure_slots = Vec::new();
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
+            // Rewrites the stored-procedure field types to their generated marker types before
+            // anything else inspects them, so the storage type checks and the metadata schema
+            // builder see an ordinary `StorageValue<StoredProcedure<Marker>>` path type.
+            stored_procedure_slots = stored_procedure::collect_stored_procedure_slots(fields)?;
             let storage_namespace = metadata.package.name().into_inner();
             // Slot names derive from the component's public identity (the `[lib].namespace`
             // interface segment) rather than the storage struct name, so renaming the private
@@ -398,6 +406,14 @@ fn expand_component_storage(
         }
     };
 
+    // Runs after the manifest check above: generating bindings needs the resolved WIT paths, and
+    // a missing `miden-project.toml` must surface as that check's actionable error.
+    let stored_procedure_items = stored_procedure::expand_stored_procedure_slots(
+        struct_name,
+        &struct_vis,
+        &stored_procedure_slots,
+    )?;
+
     let component_metadata = acc_builder.build(call_site_span.into())?;
 
     let mut metadata_bytes = component_metadata.to_bytes();
@@ -414,6 +430,7 @@ fn expand_component_storage(
     Ok(quote! {
         #runtime_boilerplate
         #input_struct
+        #stored_procedure_items
         #default_impl
         impl #struct_name {
             #[doc(hidden)]
@@ -1272,16 +1289,40 @@ fn parse_component_signature(
 
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
+    let wit_name = to_kebab_case(&sig.ident.to_string());
+    reject_reserved_dyncall_export(&sig.ident, &wit_name)?;
+
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
         doc_attrs,
         params,
         receiver_kind,
         return_info,
-        wit_name: to_kebab_case(&sig.ident.to_string()),
+        wit_name,
     };
 
     Ok((component_method, type_imports))
+}
+
+/// Rejects a component method whose WIT export name carries the prefix reserved for
+/// stored-procedure dispatch.
+///
+/// The Wasm frontend classifies imports named `dyncall-…` as dynamic calls on a stored procedure
+/// root, so exporting such a name only breaks the component's consumers — and there the
+/// diagnostic blames the dependency. Reject it where the name is written instead.
+fn reject_reserved_dyncall_export(fn_ident: &syn::Ident, wit_name: &str) -> Result<(), syn::Error> {
+    if !wit_name.starts_with(DYNCALL_WIT_PREFIX) {
+        return Ok(());
+    }
+
+    Err(syn::Error::new(
+        fn_ident.span(),
+        format!(
+            "component method `{fn_ident}` is exported as `{wit_name}`, but the \
+             `{DYNCALL_WIT_PREFIX}` WIT prefix (`dyncall_` in Rust) is reserved for \
+             stored-procedure dispatch; rename the method"
+        ),
+    ))
 }
 
 /// Attempts to recover the final identifier from a type path for use with `bindings::export!`.
@@ -1632,6 +1673,28 @@ mod tests {
                 method_path: "BasicWallet::receive_asset".into(),
                 export_name: "receive-asset".into(),
             }
+        );
+    }
+
+    /// Rejects a component export carrying the reserved stored-procedure dispatch prefix at the
+    /// producer, where the name is written, instead of in every consumer of the package.
+    #[test]
+    fn component_exports_cannot_use_the_reserved_dyncall_prefix() {
+        let exported_types = HashMap::new();
+        let reserved: syn::Signature = parse_quote!(fn dyncall_notify(&self, amount: u32));
+        let message = match parse_component_signature(&reserved, &[], &exported_types) {
+            Ok(_) => panic!("expected the reserved dyncall prefix to be rejected"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(message.contains("`dyncall_notify`"), "{message}");
+        assert!(message.contains("exported as `dyncall-notify`"), "{message}");
+        assert!(message.contains("reserved for stored-procedure dispatch"), "{message}");
+
+        let allowed: syn::Signature = parse_quote!(fn notify(&self, amount: u32));
+        assert!(
+            parse_component_signature(&allowed, &[], &exported_types).is_ok(),
+            "an unrelated export name is accepted"
         );
     }
 

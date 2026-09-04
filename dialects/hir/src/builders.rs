@@ -1001,6 +1001,30 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         op_builder(callee, signature, args)
     }
 
+    /// Invoke the procedure whose MAST root is `root` in a new context (`dyncall`); the
+    /// cross-context twin of `exec_indirect` for a root that is runtime data rather than a table
+    /// slot. See [crate::ops::Dyncall].
+    ///
+    /// `root` holds the four root felts, element 0 first; `signature` is the component-model
+    /// contract the call site expects of the callee.
+    fn dyncall<A>(
+        &mut self,
+        root: [ValueRef; crate::ops::Dyncall::ROOT_FELTS],
+        signature: Signature,
+        args: A,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::Dyncall>, Report>
+    where
+        A: IntoIterator<Item = ValueRef>,
+    {
+        let op_builder = self
+            .builder_mut()
+            .create::<crate::ops::Dyncall, (_, [ValueRef; crate::ops::Dyncall::ROOT_FELTS], A)>(
+                span,
+            );
+        op_builder(signature, root, args)
+    }
+
     fn syscall<C, A>(
         &mut self,
         callee: C,

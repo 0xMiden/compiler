@@ -39,6 +39,7 @@ use midenc_hir::{
 pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
+    emit::primop::UNSET_STORED_PROCEDURE_SLOT_MESSAGE,
     events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
     legalization::{LegalizeForMasm, masm_legalization_target, populate_masm_legalization_target},
     lower::{NativePtr, ToMasmComponent},
@@ -171,6 +172,7 @@ fn lower_hir_ops(info: &mut midenc_hir::DialectInfo) {
     info.register_operation_trait::<hir::ProcedureRoot, dyn HirLowering>();
     info.register_operation_trait::<hir::ExecFpi, dyn HirLowering>();
     info.register_operation_trait::<hir::Call, dyn HirLowering>();
+    info.register_operation_trait::<hir::Dyncall, dyn HirLowering>();
     info.register_operation_trait::<hir::Syscall, dyn HirLowering>();
     info.register_operation_trait::<hir::Store, dyn HirLowering>();
     info.register_operation_trait::<hir::StoreLocal, dyn HirLowering>();

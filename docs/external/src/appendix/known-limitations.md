@@ -147,27 +147,39 @@ and transfers control to it, so the callee observes its arguments in the normal 
 extra stack fixup (older VM versions kept the callee hash on the operand stack, which would have
 required per-callee stubs; that design is obsolete).
 
-Cross-context indirect calls via `dyncall` are not lowered yet; they additionally depend on
-[Cross-Context Procedure Invocation](#cross-context-procedure-invocation).
+Cross-context indirect calls are lowered to `dyncall` for stored procedure roots: an account
+component declares a `StorageValue<StoredProcedure<fn(..) -> R>>` slot, and the generated `call`
+method spills the root read from storage to a compiler-reserved memory word and dispatches to it in
+a new context. The root is runtime data that the assembler cannot validate: a root naming no
+procedure of the account, or one with a different stack contract, fails the transaction or yields
+wrong results. The `call` method is reached with an ordinary call that carries the root's four
+elements next to the arguments, and next to the result pointer when the result is returned by
+reference, so a stored procedure takes at most 12 argument field elements of the 16-element window
+(11 when its result is returned through a pointer), and at most 12 flat argument values of the
+canonical ABI's 16, the remaining four being the root's. Wider signatures are rejected at compile
+time.
 
 ### Cross-context procedure invocation
 
-- Status: **Unimplemented**
+- Status: **Implemented** via the component model described below, for direct calls to a known
+  procedure (`call`) and for stored procedure roots (`dyncall`, see the previous section)
 - Tracking Issue: [#303](https://github.com/0xMiden/compiler/issues/303)
-- Release Milestone: [Beta 2](https://github.com/0xMiden/compiler/milestone/5)
 
 This is required in order to support representing Miden accounts and note scripts in Rust, and
-compilation to Miden Assembly.
+compilation to Miden Assembly. Both can be written in Rust today: a cross-context call to a
+procedure the compiler knows by name is emitted as a `call` to that procedure, and a call to a
+procedure that is only known at run time goes through a procedure root held in account storage,
+dispatched with `dyncall` as described in
+[Dynamic procedure invocation](#dynamic-procedure-invocation) above, which also records the
+argument limits such a call is subject to.
 
-Currently, you can write code in Rust that is very close to how accounts and note scripts will
-look like in the language, but it is not possible to actually implement either of those in Rust
-today. The reasons for this are covered in depth in the tracking issue linked above, but to
-briefly summarize, the primary issue has to do with the fact that Rust programs are compiled
-for a "shared-everything" environment, i.e. you can pass references to memory from caller to
-callee, write to caller memory from the callee, etc. In Miden however, contexts are "shared-nothing"
-units of isolation, and thus cross-context operations, such as performing a `call` from a note script
-to a method on an account, are not compatible with the usual calling conventions used by Rust and
-LLVM.
+The rest of this section records the design rationale. The problem cross-context calls pose is
+covered in depth in the tracking issue linked above, but to briefly summarize, it has to do with
+the fact that Rust programs are compiled for a "shared-everything" environment, i.e. you can pass
+references to memory from caller to callee, write to caller memory from the callee, etc. In Miden
+however, contexts are "shared-nothing" units of isolation, and thus cross-context operations, such
+as performing a `call` from a note script to a method on an account, are not compatible with the
+usual calling conventions used by Rust and LLVM.
 
 The solution to this relies on compiling the Rust code for the `wasm32-wasip2` target, which emits
 a new kind of WebAssembly module, known as a _component_. These components adhere to the rules of
@@ -181,10 +193,8 @@ which ensures that the assumptions of the caller and callee with regard to what 
 operate in are preserved (i.e. a callee can never be inlined into the caller, and thus end up
 executing in the caller's context rather than the expected callee context).
 
-This is one of our top priorities, as it is critical to be able to use Rust to compile code for
-the Miden rollup, but it is also the most complex feature on our roadmap, hence why it is scheduled
-for our Beta 2 milestone, rather than Beta 1 (the next release), as it depends on multiple other
-subfeatures being implemented first.
+Being the most complex feature on our roadmap, and one depending on multiple other subfeatures,
+this was originally scheduled for the Beta 2 milestone rather than Beta 1.
 
 ## Packaging
 

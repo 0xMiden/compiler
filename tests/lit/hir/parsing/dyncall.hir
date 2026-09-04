@@ -1,0 +1,15 @@
+// RUN: hir-opt %s | filecheck %s
+
+builtin.module public @test attributes { reserved_memory = #builtin.u64<1114112> } {
+    builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a: felt, %b: u32) -> u32 {
+        %result = hir.dyncall [%r0, %r1, %r2, %r3](%a, %b) : extern("component-model") (felt, u32) -> (u32);
+        builtin.ret %result : (u32);
+    };
+};
+
+// CHECK: builtin.module public @test attributes { reserved_memory = #builtin.u64<1114112> } {
+// CHECK-NEXT:    builtin.function public extern("C") @dispatch([[R0:%\d+]]: felt, [[R1:%\d+]]: felt, [[R2:%\d+]]: felt, [[R3:%\d+]]: felt, [[A:%\d+]]: felt, [[B:%\d+]]: u32) -> u32 {
+// CHECK-NEXT:        [[RET:%\d+]] = hir.dyncall [[[R0]], [[R1]], [[R2]], [[R3]]]([[A]], [[B]]) : extern("component-model") (felt, u32) -> u32;
+// CHECK-NEXT:        builtin.ret [[RET]] : (u32);
+// CHECK-NEXT:    };
+// CHECK-NEXT: };
