@@ -189,8 +189,9 @@ pub fn component(
 
 /// Wires storage metadata for an account component's storage struct.
 ///
-/// Apply this to the `struct` that declares the component's `#[storage(...)]` fields. It generates
-/// the `Default` implementation and implements the account traits so the component's methods can
+/// Apply this to the `struct` that declares the component's `#[storage(...)]` fields (a bare
+/// `#[storage]` declares a slot without a description or type override). It generates the
+/// `Default` implementation and implements the account traits so the component's methods can
 /// access storage and account operations. Use it together with a `#[component]` trait (the API) and
 /// a `#[component]` trait implementation (the behavior).
 ///
@@ -243,17 +244,21 @@ pub fn component(
 /// storage struct; elsewhere, import it (`use crate::AuthorityCall;`). Signature parameters and
 /// the result must be Miden core types or WIT primitives.
 ///
-/// The root is set from off-chain code only: the guest cannot construct a `StoredProcedure` or
-/// obtain procedure roots. Neither the compiler nor the VM checks the stored root against the
-/// declared signature; a root that names no procedure of the account, or one with a different
-/// stack contract, fails the transaction or yields wrong in-VM results, but never breaks Rust
-/// memory safety. Use `is_set()` to check whether the slot has been populated.
+/// The root is set from off-chain code: the SDK offers no constructor for a `StoredProcedure`,
+/// and the guest has no way to obtain procedure roots. Neither the compiler nor the VM checks the
+/// stored root against the declared signature; a root that names no procedure of the account, or
+/// one with a different stack contract, fails the transaction or yields wrong in-VM results, but
+/// never breaks Rust memory safety. Use `is_set()` to check whether the slot has been populated.
 ///
-/// Arguments reach the procedure first parameter on top of the operand stack, each flattened to
-/// its field elements in declaration order. A Rust-compiled sibling expects exactly that layout.
+/// Arguments reach the procedure with the first parameter on top of the operand stack, each
+/// flattened to its field elements in declaration order. A Rust-compiled sibling expects exactly
+/// that layout.
 /// A MASM procedure documents its own stack contract; spell the signature to match it, e.g. an
 /// account id expected as `[account_suffix, account_prefix]` is two `Felt` parameters in that
 /// order rather than one `AccountId` (which flattens to prefix, then suffix).
+///
+/// The generated imports are named `dyncall-<field>`; that WIT name prefix is reserved, and a
+/// dependency interface defining a function with it is rejected.
 #[proc_macro_attribute]
 pub fn component_storage(
     attr: proc_macro::TokenStream,

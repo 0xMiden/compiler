@@ -27,12 +27,15 @@ use crate::{
     wit_builder::WitBuilder,
 };
 
-/// Name of the inline WIT package, world and bindings module generated for stored-procedure slots.
+/// Name of the inline WIT world generated for stored-procedure slots.
 const STORED_PROCEDURE_BINDINGS_WORLD: &str = "stored-procedure-bindings";
 /// WIT package name of the generated inline world.
-const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = "miden:stored-procedure-bindings";
-/// Prefix of the generated import functions recognized by the Wasm frontend.
+const STORED_PROCEDURE_BINDINGS_PACKAGE: &str = generate::STORED_PROCEDURE_BINDINGS_PACKAGE;
+/// Prefix of the generated import functions recognized by the Wasm frontend, without the
+/// separator: it is joined with `-` in WIT names and with `_` in Rust names.
 const DYNCALL_PREFIX: &str = "dyncall";
+/// Name synthesized for unnamed signature parameters, suffixed with the parameter index.
+const UNNAMED_PARAM_PREFIX: &str = "arg";
 /// WIT name of the leading procedure-root parameter of every generated import.
 const PROC_ROOT_PARAM: &str = "proc-root";
 /// WIT name of the core `word` type carrying a procedure root.
@@ -161,6 +164,20 @@ pub(super) fn expand_stored_procedure_slots(
     if slots.is_empty() {
         return Ok(TokenStream2::new());
     }
+    for slot in slots {
+        for generated in [&slot.marker_ident, &slot.trait_ident] {
+            if generated == struct_ident {
+                return Err(Error::new(
+                    slot.field_ident.span(),
+                    format!(
+                        "stored procedure slot `{}` generates the item `{generated}`, which \
+                         collides with the storage struct; rename the field or the struct",
+                        slot.field_ident
+                    ),
+                ));
+            }
+        }
+    }
 
     let inline_wit = build_stored_procedure_wit(struct_ident, slots);
     let wit_config = manifest_paths::resolve_wit_paths(manifest_paths::ResolveOptions {
@@ -213,11 +230,29 @@ fn build_slot(field_ident: &Ident, signature: &Type) -> Result<StoredProcedureSl
     let bare_fn = bare_fn_signature(signature)?;
     let exported_types = registered_export_type_map();
 
+    // `_` is an unnamed parameter as far as the generated names are concerned
+    let explicit_name = |input: &syn::BareFnArg| {
+        input.name.as_ref().map(|(ident, _)| ident.clone()).filter(|ident| ident != "_")
+    };
+    let explicit_names = bare_fn.inputs.iter().filter_map(explicit_name).collect::<Vec<_>>();
+
     let mut params = Vec::with_capacity(bare_fn.inputs.len());
     for (index, input) in bare_fn.inputs.iter().enumerate() {
-        let ident = match &input.name {
-            Some((ident, _)) => ident.clone(),
-            None => format_ident!("arg{}", index, span = input.ty.span()),
+        let ident = match explicit_name(input) {
+            Some(ident) => ident,
+            None => {
+                let ident = format_ident!("{UNNAMED_PARAM_PREFIX}{index}", span = input.ty.span());
+                if explicit_names.contains(&ident) {
+                    return Err(Error::new(
+                        input.ty.span(),
+                        format!(
+                            "unnamed stored procedure parameter #{index} would be named \
+                             `{ident}`, which another parameter already uses; name it explicitly"
+                        ),
+                    ));
+                }
+                ident
+            }
         };
         let type_ref = map_type_to_type_ref(&input.ty, &exported_types)?;
         reject_custom_type(&type_ref, input.ty.span())?;
@@ -286,7 +321,8 @@ fn bare_fn_signature(signature: &Type) -> Result<&syn::TypeBareFn, Error> {
     }
 }
 
-/// Rejects signature types that are not Miden core types or WIT primitives.
+/// Rejects signature types that are not Miden core types or WIT primitives, including custom
+/// types wrapped in `Option` or `Result`.
 fn reject_custom_type(type_ref: &TypeRef, span: proc_macro2::Span) -> Result<(), Error> {
     if type_ref.is_custom {
         return Err(Error::new(
@@ -294,7 +330,10 @@ fn reject_custom_type(type_ref: &TypeRef, span: proc_macro2::Span) -> Result<(),
             "stored procedure signatures support only Miden core types and primitives",
         ));
     }
-    Ok(())
+    type_ref
+        .dependencies
+        .iter()
+        .try_for_each(|dependency| reject_custom_type(dependency, span))
 }
 
 /// Returns true for the unit type `()`.
@@ -406,8 +445,8 @@ fn build_slot_items(
     let trait_doc = format!(
         "Typed call into the procedure whose root is stored in the `{field_ident}` storage \
          slot.\n\nThe procedure runs in a new VM context on the account this component is \
-         deployed on. The root is set off-chain only; a root that does not match the declared \
-         signature fails the transaction or yields wrong results."
+         deployed on. The root is set from off-chain code; a root that does not match the \
+         declared signature fails the transaction or yields wrong results."
     );
 
     quote! {
@@ -575,6 +614,69 @@ world stored-procedure-bindings {
             stored_procedure_wit_signature(&slots[0]),
             "dyncall-hook: func(proc-root: word, arg0: felt, arg1: u32);"
         );
+    }
+
+    #[test]
+    fn treats_an_underscore_parameter_name_as_unnamed() {
+        let mut fields = fields(quote! {
+            {
+                hook: StorageValue<StoredProcedure<fn(_: Felt, amount: u32)>>,
+            }
+        });
+        let slots = collect_stored_procedure_slots(&mut fields).unwrap();
+
+        assert_eq!(
+            stored_procedure_wit_signature(&slots[0]),
+            "dyncall-hook: func(proc-root: word, arg0: felt, amount: u32);"
+        );
+    }
+
+    #[test]
+    fn rejects_an_explicit_name_colliding_with_a_synthesized_one() {
+        let mut fields = fields(quote! {
+            {
+                hook: StorageValue<StoredProcedure<fn(Felt, arg0: u32)>>,
+            }
+        });
+        let message = collect_error(&mut fields);
+
+        assert!(message.contains("would be named `arg0`"), "{message}");
+    }
+
+    #[test]
+    fn rejects_custom_types_nested_in_option_and_result() {
+        for signature in [quote!(fn(x: Option<MyStruct>)), quote!(fn() -> Result<Felt, MyError>)] {
+            let mut fields = fields(quote! {
+                {
+                    authority: StorageValue<StoredProcedure<#signature>>,
+                }
+            });
+            let message = collect_error(&mut fields);
+            assert!(
+                message.contains(
+                    "stored procedure signatures support only Miden core types and primitives"
+                ),
+                "{message}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_generated_items_colliding_with_the_storage_struct() {
+        let mut fields = fields(quote! {
+            {
+                hook: StorageValue<StoredProcedure<fn()>>,
+            }
+        });
+        let slots = collect_stored_procedure_slots(&mut fields).unwrap();
+        let err = expand_stored_procedure_slots(
+            &format_ident!("HookCall"),
+            &Visibility::Inherited,
+            &slots,
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("collides with the storage struct"), "{err}");
     }
 
     #[test]

@@ -82,7 +82,9 @@ fn parse_storage_attribute(
                 type_attr: None,
             }));
         }
-        _ => return Err(syn::Error::new(attr.span(), "Expected #[storage(...)]")),
+        _ => {
+            return Err(syn::Error::new(attr.span(), "Expected `#[storage]` or `#[storage(...)]`"));
+        }
     };
 
     let parser = syn::meta::parser(|meta| {
