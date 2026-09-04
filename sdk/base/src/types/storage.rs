@@ -231,8 +231,8 @@ pub mod __stored_procedure_sealed {
 /// stored in the slot in a new VM context (`dyncall`), the same way a direct call into a sibling
 /// component works.
 ///
-/// The root can only be set from off-chain code, through the sibling package's exports: there is
-/// no in-guest constructor, and the guest cannot obtain its own procedure roots. The stored root
+/// The root is set from off-chain code, through the sibling package's exports: the SDK offers no
+/// constructor, and the guest has no way to obtain procedure roots. The stored root
 /// is not validated by the compiler or the VM against the declared signature. A root that names
 /// no procedure of the account, or one with a different stack contract, makes the transaction
 /// fail or yields wrong in-VM results, but never breaks Rust memory safety in the caller. Calling
