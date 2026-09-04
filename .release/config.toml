@@ -245,6 +245,10 @@ unit = "sdk"
 name = "miden-note-codec-wit"
 unit = "sdk"
 
+[[packages]]
+name = "midenc-package-interface"
+unit = "sdk"
+
 # --- private: repository infrastructure, never published ----------------------
 
 [[packages]]

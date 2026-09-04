@@ -1,0 +1,26 @@
+[package]
+name = "midenc-package-interface"
+description = "Package interface model and Miden ABI lowering rules shared by the compiler and binding generators"
+version = "0.15.0-rc.3"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-assembly-syntax.workspace = true
+miden-mast-package.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+miden-assembly = { workspace = true, features = ["std"] }

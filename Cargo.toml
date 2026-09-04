@@ -41,6 +41,7 @@ members = [
     "sdk/note-codec/wit-crate",
     "sdk/note-schema",
     "sdk/note-schema/codegen",
+    "sdk/package-interface",
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/tx-script-args",

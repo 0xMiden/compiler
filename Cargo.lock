@@ -4643,6 +4643,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-package-interface"
+version = "0.15.0-rc.3"
+dependencies = [
+ "miden-assembly",
+ "miden-assembly-syntax",
+ "miden-mast-package",
+ "miden-thiserror",
+ "smallvec",
+]
+
+[[package]]
 name = "midenc-session"
 version = "0.11.0"
 dependencies = [
