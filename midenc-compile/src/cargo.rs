@@ -25,11 +25,17 @@ use wit_parser::{
 
 use crate::{CodegenOutput, CompilerResult};
 
-/// Metadata table that points to an author-side note codec crate.
-pub(crate) const NOTE_CODEC_CRATE_METADATA: &str = "note-codec-crate";
+/// Defines the metadata namespace for compiler plugin configuration.
+const NOTE_CODEC_NAMESPACE: &str = "midenc";
 
-/// Metadata field that contains the codec crate directory.
-const NOTE_CODEC_CRATE_PATH: &str = "path";
+/// Names the metadata table that configures the author-side note codec.
+const NOTE_CODEC_TABLE: &str = "note-codec";
+
+/// Defines the dotted metadata table name for the author-side note codec.
+pub(crate) const NOTE_CODEC_TABLE_NAME: &str = "midenc.note-codec";
+
+/// Names the metadata key that contains the codec crate directory.
+const NOTE_CODEC_CRATE_KEY: &str = "crate";
 
 /// Rust target used to build note codec components; rustc links the cdylib as a
 /// Wasm component, so no separate encoding step is necessary.
@@ -333,7 +339,9 @@ pub fn write_package_atomic(
 
 /// Returns true when project metadata declares an author-side note codec crate.
 pub(crate) fn has_project_note_codec(metadata: &miden_project::MetadataSet) -> bool {
-    metadata.get(NOTE_CODEC_CRATE_METADATA).is_some()
+    metadata
+        .get(NOTE_CODEC_NAMESPACE)
+        .is_some_and(|namespace| namespace.get(NOTE_CODEC_TABLE).is_some())
 }
 
 /// Builds the optional note codec component declared by a project package.
@@ -342,7 +350,6 @@ pub(crate) fn build_project_note_codec(
     project_manifest_path: &Path,
     note_project_dir: &Path,
     note_package: &MastPackage,
-    session: &Session,
 ) -> CompilerResult<Option<Vec<u8>>> {
     let Some(codec_crate_dir) =
         note_codec_crate_dir(project_package.metadata(), project_manifest_path, note_project_dir)?
@@ -350,7 +357,7 @@ pub(crate) fn build_project_note_codec(
         return Ok(None);
     };
 
-    build_note_codec_component(&codec_crate_dir, note_package, session).map(Some)
+    build_note_codec_component(&codec_crate_dir, note_package).map(Some)
 }
 
 /// Reads the optional codec crate path from Miden project metadata.
@@ -359,31 +366,46 @@ fn note_codec_crate_dir(
     project_manifest_path: &Path,
     project_dir: &Path,
 ) -> CompilerResult<Option<PathBuf>> {
-    let Some(codec_metadata) = metadata.get(NOTE_CODEC_CRATE_METADATA) else {
+    let Some(namespace) = metadata.get(NOTE_CODEC_NAMESPACE) else {
         return Ok(None);
     };
-    let path = codec_metadata
-        .get(NOTE_CODEC_CRATE_PATH)
-        .ok_or_else(|| {
-            Report::msg(format!(
-                "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}]` in '{}' must define a string \
-                 `{NOTE_CODEC_CRATE_PATH}`",
+    let Some(value) = namespace.get(NOTE_CODEC_TABLE) else {
+        return Ok(None);
+    };
+    let table = value.inner().as_table().ok_or_else(|| {
+        Report::msg(format!(
+            "`[package.metadata.{NOTE_CODEC_TABLE_NAME}]` in '{}' must be a table, but it is {}",
+            project_manifest_path.display(),
+            value.inner().type_str()
+        ))
+    })?;
+    for key in table.keys() {
+        if key != NOTE_CODEC_CRATE_KEY {
+            return Err(Report::msg(format!(
+                "`[package.metadata.{NOTE_CODEC_TABLE_NAME}]` in '{}' has unknown key '{key}'; \
+                 the table accepts only '{NOTE_CODEC_CRATE_KEY}'",
                 project_manifest_path.display()
-            ))
-        })?
-        .inner()
-        .as_str()
-        .ok_or_else(|| {
-            Report::msg(format!(
-                "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}].{NOTE_CODEC_CRATE_PATH}` in '{}' \
-                 must be a string",
-                project_manifest_path.display()
-            ))
-        })?;
+            )));
+        }
+    }
+    let path = table.get(NOTE_CODEC_CRATE_KEY).ok_or_else(|| {
+        Report::msg(format!(
+            "`[package.metadata.{NOTE_CODEC_TABLE_NAME}]` in '{}' must define a string \
+             `{NOTE_CODEC_CRATE_KEY}`",
+            project_manifest_path.display()
+        ))
+    })?;
+    let path = path.as_str().ok_or_else(|| {
+        Report::msg(format!(
+            "`[package.metadata.{NOTE_CODEC_TABLE_NAME}].{NOTE_CODEC_CRATE_KEY}` in '{}' must be \
+             a string",
+            project_manifest_path.display()
+        ))
+    })?;
     if path.is_empty() {
         return Err(Report::msg(format!(
-            "`[package.metadata.{NOTE_CODEC_CRATE_METADATA}].{NOTE_CODEC_CRATE_PATH}` in '{}' \
-             must not be empty",
+            "`[package.metadata.{NOTE_CODEC_TABLE_NAME}].{NOTE_CODEC_CRATE_KEY}` in '{}' must not \
+             be empty",
             project_manifest_path.display()
         )));
     }
@@ -392,33 +414,33 @@ fn note_codec_crate_dir(
     let codec_crate_dir = codec_crate_dir.canonicalize().map_err(|error| {
         Report::msg(format!(
             "note codec crate '{}' does not exist; update \
-             `[package.metadata.{NOTE_CODEC_CRATE_METADATA}].{NOTE_CODEC_CRATE_PATH}` in '{}': \
-             {error}",
+             `[package.metadata.{NOTE_CODEC_TABLE_NAME}].{NOTE_CODEC_CRATE_KEY}` in '{}': {error}",
             codec_crate_dir.display(),
             project_manifest_path.display()
         ))
     })?;
     if !codec_crate_dir.is_dir() {
         return Err(Report::msg(format!(
-            "note codec crate path '{}' is not a directory",
-            codec_crate_dir.display()
+            "note codec crate path '{}' is not a directory; update \
+             `[package.metadata.{NOTE_CODEC_TABLE_NAME}].{NOTE_CODEC_CRATE_KEY}` in '{}'",
+            codec_crate_dir.display(),
+            project_manifest_path.display()
         )));
     }
     Ok(Some(codec_crate_dir))
 }
 
 /// Builds and componentizes one author-side note codec crate.
+///
+/// The codec crate contains the work directory at `<codec crate>/target/midenc.note-codec`. The
+/// build does not use the session target directory. It never shares a build lock with the outer
+/// build. This layout matches the VM event handler plugin. That plugin uses `<guest
+/// crate>/target/midenc.event-handlers`.
 fn build_note_codec_component(
     codec_crate_dir: &Path,
     note_package: &MastPackage,
-    session: &Session,
 ) -> CompilerResult<Vec<u8>> {
-    let session_target_dir = if session.options.target_dir.is_absolute() {
-        session.options.target_dir.clone()
-    } else {
-        session.options.current_dir.join(&session.options.target_dir)
-    };
-    let work_dir = session_target_dir.join(&session.options.profile).join("note-codec");
+    let work_dir = codec_crate_dir.join("target").join(NOTE_CODEC_TABLE_NAME);
     let staged_package = stage_note_package(&work_dir, codec_crate_dir, note_package)?;
     let manifest_path = codec_crate_dir.join("Cargo.toml");
     if !manifest_path.is_file() {
@@ -435,11 +457,7 @@ fn build_note_codec_component(
     } else {
         None
     };
-    crate::rust::install_wasm32_target(
-        "wasip2",
-        toolchain.as_deref(),
-        session.options.cargo_offline,
-    )?;
+    crate::rust::install_wasm32_target("wasip2", toolchain.as_deref(), false)?;
 
     // Give nested Cargo a separate target directory. Sharing the outer lock can deadlock.
     let cargo_target_dir = work_dir.join("cargo-target");
@@ -468,7 +486,6 @@ fn build_note_codec_component(
         cargo.env_remove(variable);
     }
     cargo.stdout(Stdio::piped()).stderr(Stdio::inherit());
-    cargo.args(apply_cargo_policy(session.options.cargo_locked, session.options.cargo_offline));
 
     let manifest_path = manifest_path.canonicalize().map_err(|error| {
         Report::msg(format!(
@@ -476,14 +493,8 @@ fn build_note_codec_component(
             manifest_path.display()
         ))
     })?;
-    let artifacts = crate::rust::run_cargo(cargo, cargo_path).map_err(|error| {
-        note_codec_cargo_error(
-            error,
-            &manifest_path,
-            session.options.cargo_locked,
-            session.options.cargo_offline,
-        )
-    })?;
+    let artifacts = crate::rust::run_cargo(cargo, cargo_path)
+        .map_err(|error| note_codec_cargo_error(error, &manifest_path))?;
     let mut wasm_paths = artifacts
         .into_iter()
         .filter(|artifact| {
@@ -648,29 +659,12 @@ pub(crate) fn apply_cargo_policy(
         .flatten()
 }
 
-/// Attributes a nested Cargo failure and adds applicable lockfile and network guidance.
-fn note_codec_cargo_error(
-    error: Report,
-    manifest_path: &Path,
-    locked: bool,
-    offline: bool,
-) -> Report {
-    let mut guidance =
-        format!("the nested note codec build for '{}' failed: {error}", manifest_path.display());
-    if locked || offline {
-        guidance.push_str(". If this failure is about the lockfile or the network:");
-        if locked {
-            guidance.push_str(
-                " update and commit the codec workspace Cargo.lock before retrying with --locked.",
-            );
-        }
-        if offline {
-            guidance.push_str(
-                " fetch the codec dependencies while online before retrying with --offline.",
-            );
-        }
-    }
-    Report::msg(guidance)
+/// Attributes a nested Cargo failure to the codec manifest.
+fn note_codec_cargo_error(error: Report, manifest_path: &Path) -> Report {
+    Report::msg(format!(
+        "the nested note codec build for '{}' failed: {error}",
+        manifest_path.display()
+    ))
 }
 
 /// Verifies the component sandbox and the versioned codec interface export.
@@ -982,7 +976,103 @@ pub fn parse_cargo_frontmatter(
 
 #[cfg(test)]
 mod tests {
+    use miden_assembly_syntax::debuginfo::Span;
+
     use super::*;
+
+    /// Builds metadata with one value in the note codec namespace.
+    fn note_codec_metadata(value: miden_project::Value) -> miden_project::MetadataSet {
+        let mut namespace = miden_project::Metadata::default();
+        namespace.insert(Span::unknown(Arc::<str>::from(NOTE_CODEC_TABLE)), Span::unknown(value));
+        let mut metadata = miden_project::MetadataSet::default();
+        metadata.insert(Span::unknown(Arc::<str>::from(NOTE_CODEC_NAMESPACE)), namespace);
+        metadata
+    }
+
+    /// Builds a note codec metadata table from the given entries.
+    fn note_codec_table(
+        entries: impl IntoIterator<Item = (&'static str, miden_project::Value)>,
+    ) -> miden_project::Value {
+        miden_project::Value::Table(
+            entries.into_iter().map(|(key, value)| (key.to_string(), value)).collect(),
+        )
+    }
+
+    #[test]
+    fn note_codec_crate_resolves_from_namespaced_metadata() {
+        let root = tempfile::TempDir::new().unwrap();
+        let codec_crate = root.path().join("codec");
+        fs::create_dir(&codec_crate).unwrap();
+        let metadata = note_codec_metadata(note_codec_table([(
+            NOTE_CODEC_CRATE_KEY,
+            miden_project::Value::String("codec".to_string()),
+        )]));
+
+        let resolved =
+            note_codec_crate_dir(&metadata, &root.path().join("miden-project.toml"), root.path())
+                .unwrap();
+
+        assert_eq!(resolved, Some(codec_crate.canonicalize().unwrap()));
+    }
+
+    #[test]
+    fn note_codec_metadata_requires_crate_key() {
+        let root = tempfile::TempDir::new().unwrap();
+        let manifest_path = root.path().join("miden-project.toml");
+        let metadata = note_codec_metadata(note_codec_table([]));
+
+        let error = note_codec_crate_dir(&metadata, &manifest_path, root.path())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains(&manifest_path.display().to_string()));
+        assert!(error.contains("must define a string `crate`"));
+    }
+
+    #[test]
+    fn note_codec_metadata_rejects_unknown_key() {
+        let root = tempfile::TempDir::new().unwrap();
+        let manifest_path = root.path().join("miden-project.toml");
+        let metadata = note_codec_metadata(note_codec_table([
+            (NOTE_CODEC_CRATE_KEY, miden_project::Value::String("codec".to_string())),
+            ("module", miden_project::Value::String("codec.wasm".to_string())),
+        ]));
+
+        let error = note_codec_crate_dir(&metadata, &manifest_path, root.path())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains(&manifest_path.display().to_string()));
+        assert!(error.contains("unknown key 'module'"));
+    }
+
+    #[test]
+    fn note_codec_metadata_value_must_be_a_table() {
+        let root = tempfile::TempDir::new().unwrap();
+        let manifest_path = root.path().join("miden-project.toml");
+        let metadata = note_codec_metadata(miden_project::Value::String("codec".to_string()));
+
+        let error = note_codec_crate_dir(&metadata, &manifest_path, root.path())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains(&manifest_path.display().to_string()));
+        assert!(error.contains("must be a table"));
+    }
+
+    #[test]
+    fn note_codec_metadata_without_namespace_is_absent() {
+        let root = tempfile::TempDir::new().unwrap();
+
+        let resolved = note_codec_crate_dir(
+            &miden_project::MetadataSet::default(),
+            &root.path().join("miden-project.toml"),
+            root.path(),
+        )
+        .unwrap();
+
+        assert_eq!(resolved, None);
+    }
 
     #[test]
     fn codec_interface_validation_compares_function_signatures() {
@@ -1053,43 +1143,14 @@ mod tests {
 
     #[test]
     fn note_codec_cargo_errors_are_always_attributed() {
-        let error = note_codec_cargo_error(
-            Report::msg("rustc failed"),
-            Path::new("/codec/Cargo.toml"),
-            false,
-            false,
-        )
-        .to_string();
+        let error =
+            note_codec_cargo_error(Report::msg("rustc failed"), Path::new("/codec/Cargo.toml"))
+                .to_string();
 
         assert_eq!(
             error,
             "the nested note codec build for '/codec/Cargo.toml' failed: rustc failed"
         );
-    }
-
-    #[test]
-    fn note_codec_cargo_error_guidance_is_conditional() {
-        let locked = note_codec_cargo_error(
-            Report::msg("resolution failed"),
-            Path::new("/codec/Cargo.toml"),
-            true,
-            false,
-        )
-        .to_string();
-        assert!(locked.contains("If this failure is about the lockfile or the network:"));
-        assert!(locked.contains("retrying with --locked"));
-        assert!(!locked.contains("retrying with --offline"));
-
-        let offline = note_codec_cargo_error(
-            Report::msg("resolution failed"),
-            Path::new("/codec/Cargo.toml"),
-            false,
-            true,
-        )
-        .to_string();
-        assert!(offline.contains("If this failure is about the lockfile or the network:"));
-        assert!(!offline.contains("retrying with --locked"));
-        assert!(offline.contains("retrying with --offline"));
     }
 
     #[test]
@@ -1120,13 +1181,6 @@ mod tests {
             .expect("the probe must reject different bytes at the writer path")
             .to_string();
         assert!(error.contains("contains different bytes"), "unexpected error: {error}");
-    }
-
-    #[test]
-    fn note_codec_cargo_policy_is_forwarded() {
-        let args = apply_cargo_policy(true, true).collect::<Vec<_>>();
-
-        assert_eq!(args, ["--locked", "--offline"]);
     }
 
     #[test]

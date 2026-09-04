@@ -20,11 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   macros generate host types from a note package, `AuthorTypeCodec` defines text conversion and
   validation, `#[note_codec]` registers each custom type, and `export_codecs!` exports the
   registered codecs as a component. Add this package-level metadata to `miden-project.toml` to
-  enable the codec build; `path` is relative to that manifest:
+  enable the codec build. The `crate` directory is relative to that manifest:
 
   ```toml
-  [package.metadata.note-codec-crate]
-  path = "../my-note-codec"
+  [package.metadata.midenc.note-codec]
+  crate = "../my-note-codec"
   ```
 - Added the dependency-free `miden-note-codec-wit` crate as the canonical source for the note
   codec component WIT contract.

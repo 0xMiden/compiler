@@ -12,6 +12,6 @@ miden-core = "*"
 miden-protocol = "*"
 basic-wallet = { path = "../basic-wallet" }
 
-# MetadataSet represents each named metadata entry as a table.
-[package.metadata.note-codec-crate]
-path = "../dex-note-codec"
+# The `midenc` namespace table groups compiler plugin configuration.
+[package.metadata.midenc.note-codec]
+crate = "../dex-note-codec"

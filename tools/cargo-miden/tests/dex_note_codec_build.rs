@@ -28,7 +28,7 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         .format_timestamp(None)
         .try_init();
 
-    // Clear the outer override so the nested example build uses its own target layout.
+    // Clear the outer override. The example package then uses its own target layout.
     let _restore_environment = RestoreEnvironment::new(["CARGO_TARGET_DIR"]);
     unsafe {
         env::remove_var("CARGO_TARGET_DIR");
@@ -46,6 +46,15 @@ fn dex_note_build_embeds_schema_and_wasi_only_codec_component() {
         .expect("cargo miden build for dex-note failed")
         .expect("expected BuildCommandOutput")
         .unwrap_build_output();
+    let codec_work_dir = workspace.join("examples/dex-note-codec/target/midenc.note-codec");
+    assert!(
+        codec_work_dir.join("package-cache").is_dir(),
+        "the codec package cache is outside the codec crate"
+    );
+    assert!(
+        codec_work_dir.join("cargo-target").is_dir(),
+        "the codec Cargo target directory is outside the codec crate"
+    );
     assert_eq!(output.len(), 1, "expected one dex-note package artifact, got {output:?}");
     let package = Package::deserialize_from_file(&output[0])
         .expect("failed to read the built dex-note package");
