@@ -863,8 +863,8 @@ pub struct Dyncall {
 }
 
 impl Dyncall {
-    /// Number of felt operands forming the callee's MAST root.
-    pub const ROOT_FELTS: usize = 4;
+    /// Number of felt operands forming the callee's MAST root: one digest word.
+    pub const ROOT_FELTS: usize = ProcedureRoot::DIGEST_FELTS;
 }
 
 impl InferTypeOpInterface for Dyncall {
