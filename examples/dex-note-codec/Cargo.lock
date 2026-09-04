@@ -1821,7 +1821,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "miden-field",
  "miden-field-repr-derive",
@@ -1829,7 +1829,7 @@ dependencies = [
 
 [[package]]
 name = "miden-field-repr-derive"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1938,7 +1938,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-codec"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "miden-field",
  "miden-field-repr",
@@ -1950,7 +1950,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-codec-macros"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "heck",
  "miden-note-codec-wit",
@@ -1965,11 +1965,11 @@ dependencies = [
 
 [[package]]
 name = "miden-note-codec-wit"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 
 [[package]]
 name = "miden-note-schema"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "miden-field",
  "miden-field-repr",
@@ -1982,7 +1982,7 @@ dependencies = [
 
 [[package]]
 name = "miden-note-schema-codegen"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "heck",
  "miden-note-schema",
@@ -2229,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-frontend-wasm-metadata"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 dependencies = [
  "miden-mast-package",
  "serde",
