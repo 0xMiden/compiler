@@ -2097,10 +2097,13 @@ builtin.component private @"root_ns:root@1.0.0" {
 /// budget lowers even when the root and every argument must move.
 ///
 /// `TransformSpills` runs first, as it does for every function in the backend pipeline: it is the
-/// pass that answers whether an operand set is reachable at all, and it panics rather than
-/// diagnosing when it is not. Legalization is what keeps a wider call from ever reaching it (see
-/// `oversized_dyncall_arguments_fail_legalization` in `crate::legalization`), so lowering alone
-/// would not prove this budget is the one the pipeline can carry.
+/// pass that answers whether an operand set is reachable at all, and it runs *before* MASM
+/// legalization, so it — not legalization — is what a wider call meets first. It reports one as a
+/// diagnostic (see `apply_rewrites_rejects_operands_that_cannot_fit_the_operand_stack` in
+/// `midenc-compile/tests/codegen_legalization.rs`), while legalization states the same bound as
+/// part of the IR contract codegen accepts (see `oversized_dyncall_arguments_fail_legalization`
+/// in `crate::legalization`). Lowering alone would not prove this budget is the one the pipeline
+/// can carry.
 #[test]
 fn a_dyncall_at_the_argument_budget_lowers_and_assembles() {
     let context = Rc::new(Context::default());
@@ -2121,8 +2124,8 @@ fn a_dyncall_at_the_argument_budget_lowers_and_assembles() {
 /// does before codegen.
 ///
 /// The spill analysis behind it requires every operand of a non-branch operation to be reachable
-/// within the operand stack window at once, so it is the only place a too-wide call site is
-/// noticed — lowering itself never asks.
+/// within the operand stack window at once, so it is where a too-wide call site is noticed on this
+/// pipeline — lowering itself never asks.
 fn transform_spills(context: &Rc<Context>, world: builtin::WorldRef) {
     use midenc_hir::pass::{Nesting, PassManager};
 

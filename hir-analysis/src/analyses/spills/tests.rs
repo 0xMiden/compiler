@@ -817,3 +817,58 @@ fn spills_dyncall_arguments() -> AnalysisResult<()> {
 
     Ok(())
 }
+
+/// An operation whose own operands cannot all be reachable at once is a diagnostic, not a panic.
+///
+/// Spilling frees space by evicting values the operation does not use, so once those are gone the
+/// analysis has nothing left to give. A `hir.dyncall` is the shape that reaches this first: its
+/// callee root word and its arguments are operands of the same operation, so thirteen argument
+/// field elements beside the four-element root ask for seventeen. Neither the Wasm frontend, which
+/// bounds a stored procedure's arguments at translation, nor MASM legalization, which runs after
+/// this analysis in the backend pipeline, stands between `.hir` text and this point.
+#[test]
+fn reports_an_operation_whose_operands_exceed_the_operand_stack() {
+    let mut test = Test::named("oversized_dyncall").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+    const NUM_ARGUMENTS: usize = 13;
+
+    test.with_function("oversized_dyncall", &[], &[]);
+    let func = test.function();
+    let callee = test.define_function("callee", &[], &[]);
+    let context = test.context_rc();
+    let signature = Signature::with_convention(
+        &context,
+        CallConv::ComponentModel,
+        vec![Type::U32; NUM_ARGUMENTS],
+        [],
+    );
+
+    {
+        let mut b = test.function_builder();
+        let procedure_root = b.procedure_root(callee, span).unwrap();
+        let root = procedure_root
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect::<alloc::vec::Vec<_>>();
+        let arguments = (0..NUM_ARGUMENTS)
+            .map(|i| b.u32(i as u32, span))
+            .collect::<alloc::vec::Vec<_>>();
+        b.dyncall([root[0], root[1], root[2], root[3]], signature, arguments, span)
+            .unwrap();
+        b.ret(None, span).unwrap();
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let err = am
+        .get_analysis_for::<SpillAnalysis, Function>()
+        .expect_err("seventeen operands do not fit the operand stack");
+    let message = format!("{err}");
+
+    assert!(message.contains("hir.dyncall"), "{message}");
+    assert!(message.contains("needs 17 operand stack elements at once"), "{message}");
+    assert!(message.contains("only 16 are addressable"), "{message}");
+}
