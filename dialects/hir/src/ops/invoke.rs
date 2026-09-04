@@ -812,9 +812,12 @@ impl CallOpInterface for Call {
 /// the callee's MAST root as four felts, element 0 first, typically read from an account storage
 /// slot populated off-chain with a sibling component's procedure root. As with `hir.call`, the
 /// callee runs in a fresh context under `signature`, which must use the component-model calling
-/// convention: arguments are passed and results returned on the operand stack only. The VM takes a
-/// `dyncall` target address as one stack element, which caps the flattened arguments at fifteen
-/// felts; MASM legalization enforces the bound.
+/// convention: arguments are passed and results returned on the operand stack only. The MASM
+/// lowering spills the root to memory before placing the arguments, so the emitted code never
+/// holds both at once — but the root word and the arguments are still operands of the same
+/// operation, and all of them must be reachable within the 16-element operand stack window at
+/// once. That caps the flattened arguments at twelve felts, three fewer than [`ExecIndirect`]
+/// gets from its single-element table index; MASM legalization enforces the bound.
 ///
 /// The signature is the contract the lowering emits against, exactly as for [`ExecIndirect`];
 /// nothing ties it to the procedure the root names. A root that names no procedure of the
@@ -837,6 +840,7 @@ pub struct Dyncall {
     /// The callee's MAST root, element 0 first
     #[operands]
     root: IntFelt,
+    /// The arguments to pass to the callee, one per parameter of `signature`
     #[operands]
     arguments: AnyType,
 }
@@ -1096,7 +1100,8 @@ mod tests {
 
     use midenc_dialect_arith::ArithOpBuilder;
     use midenc_hir::{
-        CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type, Usable,
+        CallConv, CallOpInterface, Operation, SourceSpan, Symbol, SymbolTable, Type,
+        UnsafeIntrusiveEntityRef, Usable,
         conversion::{
             TypeConversion, TypeConverter, converted_resolved_call_signature_1_to_1,
             verify_call_signature_operands_and_results,
@@ -1107,7 +1112,7 @@ mod tests {
         testing::Test,
     };
 
-    use super::ExecIndirect;
+    use super::{Dyncall, ExecIndirect};
     use crate::HirOpBuilder;
 
     /// Build a module with a one-slot table and a `dispatch` function whose `hir.exec_indirect`
@@ -1165,6 +1170,158 @@ mod tests {
         let message = format!("{err}");
         assert!(message.contains("hir.exec_indirect"), "{message}");
         assert!(message.contains("parameter 0"), "{message}");
+    }
+
+    /// Build a `dispatch` function whose `hir.dyncall` declares `signature_params` under calling
+    /// convention `cc` but passes `argument_count` `u32` constants, hand the built op and the
+    /// context to `mutate`, then verify the module.
+    ///
+    /// Every argument is a `u32` constant, so a `signature_params` entry of any other type is how
+    /// the mistyped case is built — no other constant builder is needed. `mutate` is how the cases
+    /// the builder's fixed-size root array makes unreachable are built.
+    fn verify_dyncall_with(
+        cc: CallConv,
+        signature_params: &[Type],
+        argument_count: usize,
+        mutate: impl FnOnce(&alloc::rc::Rc<midenc_hir::Context>, UnsafeIntrusiveEntityRef<Dyncall>),
+    ) -> Result<(), midenc_hir::Report> {
+        use midenc_hir::{Felt, Op, ValueRef};
+
+        let mut test = Test::named("verify_dyncall").in_module("m");
+        test.with_function("dispatch", &[], &[]);
+        let context = test.context_rc();
+        let signature = Signature::with_convention(
+            &context,
+            cc,
+            signature_params.to_vec(),
+            core::iter::empty(),
+        );
+        let dyncall = {
+            let mut builder = test.function_builder();
+            let root: [ValueRef; Dyncall::ROOT_FELTS] = core::array::from_fn(|element| {
+                builder
+                    .felt(Felt::new(element as u64 + 1).expect("a small felt"), SourceSpan::UNKNOWN)
+            });
+            let args = (0..argument_count)
+                .map(|_| builder.u32(0, SourceSpan::UNKNOWN))
+                .collect::<alloc::vec::Vec<_>>();
+            let dyncall = builder.dyncall(root, signature, args, SourceSpan::UNKNOWN).unwrap();
+            builder.ret(None, SourceSpan::UNKNOWN).unwrap();
+            dyncall
+        };
+        mutate(&context, dyncall);
+
+        test.module().borrow().as_operation().recursively_verify()
+    }
+
+    /// A signature declaring a parameter the call does not pass would pop an empty operand stack
+    /// in the emitter; verification must reject it first.
+    #[test]
+    fn dyncall_with_too_few_arguments_fails_verification() {
+        let err = verify_dyncall_with(CallConv::ComponentModel, &[Type::U32], 0, |_, _| {})
+            .expect_err("a missing argument must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("1 parameter"), "{message}");
+    }
+
+    /// An argument whose type differs from its parameter reaches an `assert_eq!` in the emitter;
+    /// verification must reject it first.
+    #[test]
+    fn dyncall_with_mistyped_argument_fails_verification() {
+        let err = verify_dyncall_with(CallConv::ComponentModel, &[Type::I32], 1, |_, _| {})
+            .expect_err("a mistyped argument must fail verification");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("parameter 0"), "{message}");
+    }
+
+    /// The callee runs in a fresh context, which only operand-stack arguments and results can
+    /// cross; a signature under any other convention promises a transfer through caller memory or
+    /// a return pointer that the callee cannot reach.
+    #[test]
+    fn dyncall_under_another_calling_convention_fails_verification() {
+        let err = verify_dyncall_with(CallConv::C, &[Type::U32], 1, |_, _| {})
+            .expect_err("only the component-model convention crosses a context switch");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("component-model calling convention"), "{message}");
+    }
+
+    /// A MAST root is a whole word, and the lowering spills exactly one word to the address the
+    /// VM reads the `dyncall` target from. The builder's fixed-size root array and the parser's
+    /// arity guard both rule a partial word out, which leaves the verifier answering for IR a
+    /// transform mangled — so it is rebuilt here by rewriting the operand group directly.
+    #[test]
+    fn dyncall_with_a_partial_root_word_fails_verification() {
+        let err = verify_dyncall_with(
+            CallConv::ComponentModel,
+            &[Type::U32],
+            1,
+            |context, mut dyncall| {
+                use midenc_hir::Op;
+
+                let root = dyncall
+                    .borrow()
+                    .root()
+                    .iter()
+                    .take(Dyncall::ROOT_FELTS - 1)
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<alloc::vec::Vec<_>>();
+                let mut dyncall = dyncall.borrow_mut();
+                let owner = dyncall.as_operation_ref();
+                dyncall
+                    .as_operation_mut()
+                    .operands_mut()
+                    .group_mut(0)
+                    .set_operands(root, owner, context);
+            },
+        )
+        .expect_err("a root operand group narrower than a word must be rejected");
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("expected 4 root felt operand(s), but got 3"), "{message}");
+    }
+
+    /// The bracketed root word and the `(arguments) : signature` tail have to survive a print and
+    /// re-parse, as `midenc compile --emit=hir | midenc compile` reads back what the printer
+    /// wrote.
+    #[test]
+    fn dyncall_prints_and_reparses() {
+        let source = r#"
+builtin.world {
+builtin.module public @m {
+    builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a: felt, %b: u32) -> u32 {
+        %result = hir.dyncall [%r0, %r1, %r2, %r3](%a, %b) : extern("component-model") (felt, u32) -> (u32);
+        builtin.ret %result : (u32);
+    };
+};
+};"#;
+
+        let test = Test::default();
+        let world = parse::parse_any(
+            ParserConfig::new(test.context_rc()),
+            Uri::new("dyncall_prints_and_reparses.hir"),
+            source,
+        )
+        .expect("a hir.dyncall must parse and verify");
+        let printed = format!("{}", world.borrow());
+        assert!(printed.contains("hir.dyncall ["), "expected the root word to print: {printed}");
+
+        // Re-parse in a fresh context: the printing context already owns the `@m` symbols. The
+        // handle is kept here so the context outlives the parsed operation's destruction.
+        let reparse_context = Test::default().context_rc();
+        let reparsed = parse::parse_any(
+            ParserConfig::new(reparse_context.clone()),
+            Uri::new("dyncall_prints_and_reparses.reparsed.hir"),
+            printed.as_str(),
+        )
+        .expect("the printed hir.dyncall must re-parse");
+        assert_eq!(
+            printed,
+            format!("{}", reparsed.borrow()),
+            "printing a hir.dyncall is not a parse/print fixpoint"
+        );
     }
 
     #[test]

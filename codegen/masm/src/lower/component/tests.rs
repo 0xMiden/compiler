@@ -2078,14 +2078,15 @@ fn a_private_nested_module_is_not_part_of_the_package_surface() {
     );
 }
 
-/// A `hir.dyncall` whose root word and fifteen argument felts together exceed the 16-element
-/// operand stack window, with the arguments in reverse order so every one has to move.
+/// A `hir.dyncall` at the full argument budget: its root word and twelve argument felts fill the
+/// 16-element operand stack window exactly, with the arguments in reverse order so every one has
+/// to move.
 const WORLD_WITH_A_WIDE_PERMUTED_DYNCALL: &str = r#"
 builtin.world {
 builtin.component private @"root_ns:root@1.0.0" {
     builtin.module public @wasm {
-        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: felt, %a1: felt, %a2: felt, %a3: felt, %a4: felt, %a5: felt, %a6: felt, %a7: felt, %a8: felt, %a9: felt, %a10: felt, %a11: felt, %a12: felt, %a13: felt, %a14: felt) -> felt {
-            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a14, %a13, %a12, %a11, %a10, %a9, %a8, %a7, %a6, %a5, %a4, %a3, %a2, %a1, %a0) : extern("component-model") (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt) -> (felt);
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: felt, %a1: felt, %a2: felt, %a3: felt, %a4: felt, %a5: felt, %a6: felt, %a7: felt, %a8: felt, %a9: felt, %a10: felt, %a11: felt) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a11, %a10, %a9, %a8, %a7, %a6, %a5, %a4, %a3, %a2, %a1, %a0) : extern("component-model") (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt) -> (felt);
             builtin.ret %result : (felt);
         };
     };
@@ -2093,14 +2094,20 @@ builtin.component private @"root_ns:root@1.0.0" {
 };
 "#;
 
-/// The root is spilled before the arguments are scheduled, so a call at the full 15-felt argument
-/// budget lowers even when the root and every argument must move: scheduled together they would
-/// be 19 operands, past what the operand stack window can reach.
+/// The root is spilled before the arguments are scheduled, so a call at the full 12-felt argument
+/// budget lowers even when the root and every argument must move.
+///
+/// `TransformSpills` runs first, as it does for every function in the backend pipeline: it is the
+/// pass that answers whether an operand set is reachable at all, and it panics rather than
+/// diagnosing when it is not. Legalization is what keeps a wider call from ever reaching it (see
+/// `oversized_dyncall_arguments_fail_legalization` in `crate::legalization`), so lowering alone
+/// would not prove this budget is the one the pipeline can carry.
 #[test]
-fn a_wide_permuted_dyncall_lowers_and_assembles() {
+fn a_dyncall_at_the_argument_budget_lowers_and_assembles() {
     let context = Rc::new(Context::default());
     let world = parse_world(&context, WORLD_WITH_A_WIDE_PERMUTED_DYNCALL);
-    let lowered = lower_world(world).expect("a wide permuted dyncall lowers");
+    transform_spills(&context, world);
+    let lowered = lower_world(world).expect("a dyncall at the argument budget lowers");
     let target = library_target("root_ns:root@1.0.0");
 
     let sources = lowered
@@ -2109,6 +2116,27 @@ fn a_wide_permuted_dyncall_lowers_and_assembles() {
     miden_assembly::Assembler::new(context.session().source_manager.clone())
         .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
         .expect("the lowered dyncall assembles");
+}
+
+/// Run `TransformSpills` over every function of `world`, as `pipeline::backend::apply_rewrites`
+/// does before codegen.
+///
+/// The spill analysis behind it requires every operand of a non-branch operation to be reachable
+/// within the operand stack window at once, so it is the only place a too-wide call site is
+/// noticed — lowering itself never asks.
+fn transform_spills(context: &Rc<Context>, world: builtin::WorldRef) {
+    use midenc_hir::pass::{Nesting, PassManager};
+
+    let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
+    {
+        let mut component_pm = pm.nest::<builtin::Component>();
+        let mut module_pm = component_pm.nest::<builtin::Module>();
+        let mut func_pm = module_pm.nest::<builtin::Function>();
+        func_pm.add_pass(alloc::boxed::Box::new(midenc_dialect_hir::transforms::TransformSpills));
+    }
+    pm.enable_verifier(false);
+    pm.run(world.as_operation_ref())
+        .expect("the world's functions fit the operand stack window");
 }
 
 /// A `hir.dyncall` in the shape canonical-ABI flattening produces for a stored procedure taking a
