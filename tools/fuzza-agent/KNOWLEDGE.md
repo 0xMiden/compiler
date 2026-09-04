@@ -72,9 +72,16 @@ Maintenance rules:
     discriminators thread as SSA).
   - The five scf while/switch arg-and-result canonicalization interiors and
     cfg-to-scf undef/latch threading are structurally unproducible.
-  - Spill-analysis W at any block/region boundary holds at most one value →
-    proactive block-arg spilling, `spill_trailing_until_fits`, loop-header
-    `w_used >= K` arms, and region-branch spill arms are unproducible.
+  - Spill-analysis W at a block/region boundary carries no USER values
+    (locals are reloaded per block; Local2Reg promotes only same-block
+    store/load pairs with no control flow between them — local2reg.rs). The
+    2026-07 corollary that W <= 1 at every boundary was WRONG (struck
+    2026-08-27): midenc-CSE'd masked shift/rotate-count bands cross edges
+    as SSA and can carry 16+ felts — see "Spill analysis & the edge-split
+    cluster". `spill_trailing_until_fits` and proactive block-arg spilling
+    remain unproducible (>16-felt block params have no producer), but the
+    loop-header `w_used >= K` arm and the CFG edge-split machinery are
+    reachable.
   - The >16-felt pressure differential cases trigger is largely
     *self-inflicted*: the frontend batches `load_local`s at block tops and
     `SinkOperandDefs` sinks arithmetic but not loads (original wasm operand
@@ -86,13 +93,20 @@ Maintenance rules:
   always turned into a strict compare with inverted arms. `le_s`/`ge_s` (and
   the `lte`/`gte` emitter arms) are reachable **only** by materializing the
   boolean as a value inside a `#[inline(never)]` helper (`case_scmp_bool.rs`).
+  The same holds for the UNSIGNED non-strict compares: `i64.ge_u` (the
+  `gte_u64` emitter arm) has no producer besides a materialized
+  `(a >= b) as u32` helper (`case_ucmp_ge.rs`, 2026-08-27) — the u128
+  compare legalization only ever materializes an inline `i64.le_u` pair
+  (which is what keeps `lte_u64` warm), never `ge_u`.
 - The harness prepends a `loop {}` panic handler, so `panic!` **never** lowers
   to wasm `unreachable`. To get a genuine trap edge, plant
   `core::arch::wasm32::unreachable()` behind an impossible cross-modulus guard
   (`case_unreachable_exits.rs`).
-- `Operator::CallIndirect` is `todo!()` in the frontend — function-pointer /
-  dyn-dispatch cases panic the compiler. Recursion (self or mutual) is a clean
-  "found a cycle in the call graph" linker error. Neither is testable.
+- `Operator::CallIndirect` is fully supported (PR #1251 + signature-tag-check
+  follow-up, 2026-08): function-pointer and dyn-dispatch cases compile and run
+  — see the "Indirect calls / funcref tables" section for the verified facts.
+  Recursion (self or mutual) remains a clean "found a cycle in the call graph"
+  linker error and is untestable.
 - Flat function signatures are capped at **16 stack felts** (16×u32 or 8×u64 is
   the at-limit case, `case_wide_calls.rs`); one felt more currently fails the
   build inside the spill analysis — treat wider signatures as unwritable, not
@@ -109,15 +123,37 @@ Maintenance rules:
   except `eq/lt/gt/lte_imm`, which switch lowering calls with **U32 selectors
   only**. `shr_imm_*` is dead: `arith::Shr` lowering always calls `shr()`;
   constant shift counts are materialized as pushed operands.
-- Memory-op immediate/typed arms: the `load_imm` family has only unit-test
-  callers; `store_imm` non-u32 arms require GlobalVariables (only
-  `__stack_pointer` exists); felt load/store has no in-scope producer
-  (f32 bit transport is out of scope by decision — see "Out-of-scope
-  surfaces" — and LLVM int-ifies plain from_bits/to_bits memory traffic
-  anyway); `repr(packed)` / dynamically-unaligned access adds
-  nothing (dynamic-pointer load/store delegates wholesale to intrinsics —
-  alignment branching is imm-pointer-only); wasm `memory.copy` is always
-  u8-typed (typed memcpy arms dead).
+- Memory-op immediate/typed arms (re-verified 2026-08-27 on the
+  element-address-space rewrite of emit/mem.rs): the `load_imm` family has
+  only unit-test callers; `store_imm`'s sole producer is the
+  GlobalVariable-initializer lowering (lower/component.rs), and the only
+  global in a plain no_std module is the element-aligned I32
+  `__stack_pointer` — so every non-I32/unaligned `Some(imm)` arm
+  (`store_small_imm`, `store/load_double/quad_word_imm`, the felt `_imm`s,
+  `store_word_imm`'s unaligned else, `push_native_ptr`) is unreachable.
+  Constant-address user stores do NOT reach `store_imm`: no HIR
+  constant-address store/load canonicalization exists — the frontend always
+  materializes a pointer value through `prepare_addr`. Felt load/store has
+  no in-scope producer (f32 bit transport is out of scope by decision — see
+  "Out-of-scope surfaces" — and LLVM int-ifies plain from_bits/to_bits
+  memory traffic anyway); `repr(packed)` / dynamically-unaligned access
+  adds nothing (dynamic-pointer load/store delegates wholesale to
+  intrinsics — alignment branching is imm-pointer-only); wasm `memory.copy`
+  is always u8-typed, so the byte-`memcpy` runtime element-alignment split
+  (memcopy_elements fast path vs fallback loop) is the ONLY reachable
+  memcpy fork (both arms warm), and the word-sized `memcopy_words` fast
+  paths (pointee size 16 / multiple of 16), the other-size fallback call,
+  and `emit_word_aligned_element_addr_from_byte_ptr` (called only from
+  those paths) are dead; `realign_double_word`/`realign_quad_word` remain
+  zero-caller dead API; `OpEmitter::mem_stream` is dead in this pipeline
+  (HIR MemStream is built only by the MASM-frontend lifter);
+  `store_array`/`store_struct` are todo!() stubs with no producer (wasm
+  stores are scalar-only). `prepare_addr`/`enforce_alignment` are WARM via
+  the frontend `FunctionBuilderExt` monomorph (their cold remainder is the
+  assert message + `?` error edges); their two fully-cold report rows are
+  the `FunctionBuilder<OpBuilder>` instantiation (used only by the
+  aligned_memory.rs unit tests) plus a `<_, _>` phantom row — do not
+  re-read them as a coverage regression.
 - Wasm has no 128-bit memory ops: `[u128; N]` array (runtime-indexed,
   loads AND stores) and u128-static traffic all legalize to `i64.load`/
   `i64.store` PAIRS (wat+masm probe-verified 2026-07-23, deleted `u128_arr`
@@ -196,6 +232,144 @@ Maintenance rules:
   so a dead `end` never resumes at a following block WITH arguments (the
   next_block_args closure is unproducible).
 
+## Module-structure payload closure (verified 2026-08-27, global mop-up)
+
+The cold remainder of `module_env.rs::parse_payload` and its section handlers
+is toolchain-gated for cargo-miden no_std cdylib builds — not case-producible:
+
+- `import_section`/`declare_import` (0-cov): harness modules are import-less;
+  an undefined import is a clean link error, and intrinsic/stub imports are
+  the out-of-scope linker-stub surface.
+- `start_section` (0-cov): rustc/wasm-ld never emit a wasm start section for
+  a no_std cdylib (no life-before-main in Rust).
+- `dwarf_section` (0-cov): differential builds carry no DWARF (see the
+  Local2Reg section's synthesized-debug-info fact).
+- `TagSection` is `unreachable!()` (exceptions feature disabled).
+- Partials: `global_section` (the I32 `__stack_pointer` is the only wasm
+  global this toolchain emits), `data_section` (no passive-segment producer
+  without shared-memory init), `element_section`/`table_section` (multi-table
+  / passive / null-hole / PIC-base shapes — see the indirect-calls section),
+  `name_section` (subsections beyond function names are not emitted).
+  The remaining error arms (Encoding::Component, duplicate custom sections)
+  are diagnostics backstops.
+
+## Local2Reg & data-segment layout (verified 2026-08-27, memory gap-check)
+
+The pass lives at `dialects/hir/src/transforms/local2reg.rs` (NOT
+hir-transform/) — scope FUZZA_AREA accordingly.
+
+- **Every function parameter gets an unconditional `hir.store_local` at
+  entry** (frontend/wasm func_translator.rs `declare_parameters`); wasm
+  local.get/set/tee are the only other load/store_local producers.
+  Consequences (`case_local_shapes.rs`): an UNUSED parameter of a kept
+  function (`#[no_mangle]` defeats dead-arg elimination, `#[inline(never)]`
+  keeps the call) is a stored-but-never-loaded local and reaches the pass's
+  dead-store-erasure arm; a zero-param/zero-local helper reaches the
+  no-locals early return; a by-value aggregate param (passed indirectly)
+  gives a promotable single-use pointer local.
+- **Harness debug info is frontend-synthesized, not DWARF**: cargo-miden
+  differential builds carry no DWARF, so the frontend synthesizes plain
+  `[DW_OP_WASM_local(N)]` `di.debug_value` records itself (probe: HIR shows
+  `producer = midenc-frontend-wasm`, file "unknown"). `di.debug_declare`
+  and non-trivial expressions (Deref, FrameBase) are emitted only from real
+  DWARF location schedules (function_builder_ext.rs
+  `emit_scheduled_dbg_value`) — the declare-conversion loop,
+  `declares_are_safe`, the FrameBase matcher arm, and the
+  unsafe-expression preserve/return-false paths of
+  `convert_debug_references_for_local` are pipeline-gated. The
+  `di.debug_value` rewrite path is warm.
+- Other closed Local2Reg arms: ExecFpi prefix-local pinning (SDK-only
+  producer); the loaded-but-never-stored "poison" arm (no safe-Rust
+  producer of a read-before-any-write wasm local — LLVM materializes
+  constants for known-zero and deletes unreachable-path merges); the
+  neither-loaded-nor-stored else (structurally dead — candidates come from
+  the load/store maps); `is_declaration` (import-less harness modules have
+  no function declarations); log bodies.
+- **Data-segment layout arms are toolchain-bounded**: wasm-ld emits active
+  segments sorted by offset, unique, non-overlapping, so
+  `DataSegmentLayout::insert` always takes the push_back path
+  (middle-insert / same-offset-dedup / Mismatch / Overlapping arms
+  unproducible) and `validate_no_overlaps`' error interior is a backstop
+  behind it. The end-of-address-space edges (insert's OutOfBounds,
+  `next_available_offset`'s overflow Nones) need a segment ending at/past
+  2^32 — covered by the linker.rs unit test
+  `link_fails_when_data_segments_fill_the_address_space`, and inherently a
+  link error, not differential material. `DataSegmentLayout::len`/
+  `pop_front`/`Segment::alloc_default` are dead API (no pipeline callers).
+
+## Indirect calls / funcref tables (verified 2026-08-27)
+
+Corpus cases: `case_call_indirect`, `case_indirect_sigs`,
+`case_indirect_collision`, `case_dyn_trait`, `case_fnptr_value`,
+`case_indirect_chain`, `case_indirect_wide`; all probe- and/or
+region-verified.
+
+- **Pipeline**: wasm funcref table → `builtin.function_table` (two words of
+  linear memory per slot: MAST-root digest word + signature-tag word) →
+  linker allocates the table word-aligned in the page after the globals;
+  component `init` fills initialized slots via `procref`; each
+  `call_indirect` becomes `hir.exec_indirect` → bounds check + signature-tag
+  check + `dynexec`. Tables are lowered lazily on the first dispatching
+  `call_indirect`. The runtime failure modes (OOB index, null slot,
+  tag-mismatched slot) are UB natively and are asserted NON-differentially in
+  `end_to_end/indirect_call_traps.rs` — differential cases must stay on safe
+  dispatches and never duplicate them.
+- **Tag interning**: tag = structurally-interned wasm signature index + 1
+  (`signature_type_tag`; 0 reserved for null slots). Structurally-equal fn
+  types share one tag; distinct fn-ptr types in one program produce distinct
+  tags inside the ONE shared table (`case_indirect_sigs`, entries tag 1 + 2).
+  A multi-tag table is also what reaches the tag-mismatch skip arms of
+  `ExecIndirect::verify` and `possible_callees`.
+- **Toolchain shape**: rustc + wasm-ld emit exactly one funcref table
+  (`__indirect_function_table`), slot 0 = reserved null pointer, all live
+  address-taken functions contiguous from slot 1, initialized by a single
+  active element segment at offset 1 with no `ref.null` holes. Hence
+  `collect_table_image`'s FuncRef-whole-table-initializer, `precomputed`
+  Null-image, global-relative(PIC)-base, and null-hole arms, plus every
+  multi-table shape, are toolchain-unproducible.
+- **Devirtualization** (the enemy): a provably-single-target fn ptr or a
+  constant table index is devirtualized to a direct call. What survives as
+  `call_indirect`: runtime-indexed loads from a `static` fn-ptr array
+  (`OPS[(x & 3) as usize]`), runtime-indexed `[&dyn Trait; N]` selection, and
+  fn-ptr values crossing `#[inline(never)]` boundaries (returned from or
+  passed to noinline helpers, incl. loop-carried fn-ptr state machines) —
+  LLVM does not do indirect-call promotion without PGO.
+- **dyn Trait**: vtables are `.rodata` arrays of funcref-table indices; each
+  method dispatch loads its vtable slot and `call_indirect`s with the
+  method's own wasm signature (receiver pointer + args → its own tag)
+  (`case_dyn_trait`, 3 dispatch sites, tags 1/2).
+- **Non-capturing closures** coerced to `fn` become anonymous
+  `FnOnce::call_once` shim entries in the table; **fn-ptr `==`** compiles to
+  `i32.eq` on table indices, agreeing with native address comparison for
+  distinct-bodied functions (`case_fnptr_value`; wasm-ld does no ICF, which
+  also closes `possible_callees`' duplicate-callee dedup arm).
+- **Table symbol collisions**: the generated table symbol is
+  `__indirect_function_table_<idx>`, probed against the module symbol table
+  with a counter bump — a user `#[no_mangle]` fn named exactly that forces
+  the rename path (`case_indirect_collision`, table becomes `..._0_1`).
+- **Width cap**: the lowering schedules the arguments plus the table index in
+  Miden's 16-felt operand-stack window ⇒ at most 15 argument felts. 7×u64
+  (14 felts) dispatches end-to-end (`case_indirect_wide`); one felt more is a
+  clean translation-time diagnostic (code_translator/mod.rs `unsupported
+  call_indirect ... operand stack window`), not a panic.
+- **Verified dead ends**: `add_table_entry`'s Intrinsic arm
+  (`CallableFunction::Intrinsic` is unconstructible today — the only
+  `register_linker_stub` caller pre-filters on `is_operation()`) and
+  Instruction arm (an intrinsic in a table = linker-stub surface, out of
+  scope); `live_entries`' empty-entries arm (a lazily-built table always
+  holds ≥1 entry — safe Rust cannot dispatch without an address-taken
+  function); `exec_indirect`'s argument-extension assert (indirect
+  signatures come from `sig_from_func_type`/`AbiParam::new`, which never set
+  extension attrs — extension attrs exist only on `Signature::new` canon-ABI
+  component paths); the legalization illegal arms for
+  FunctionTable/FunctionTableEntry/ExecIndirect (invalid-IR backstops; the
+  frontend pre-diagnoses the producible ones at translation).
+- `OpEmitter::assert`/`assert_eq` have only felt-intrinsic (SDK) HIR
+  producers (`frontend/wasm/src/intrinsics/felt.rs`); `assert_eq_imm` has
+  only `#[cfg(test)]` callers; `assertz`'s harness producer is only the
+  `prepare_addr` align-hint — their cold arms are closed for plain-Rust
+  cases.
+
 ## Rewrite-pass scope closures (CSE / SCCP / DCE / folder / scf patterns)
 
 Verified 2026-07-23 (region-level coverage + source audit of the pass
@@ -232,6 +406,17 @@ pipeline in midenc-compile/src/stages/rewrite.rs):
   arms are dead (fresh folder per driver iteration, each op visited once),
   and `notify_removal`'s main body is dead (nothing erases a folder-owned
   constant while its folder lives).
+- Greedy-driver region simplification runs at `RegionSimplificationLevel::
+  Normal` everywhere (the driver default; the one pipeline config-setter,
+  midenc-compile backend.rs, also sets Normal). `merge_identical_blocks` and
+  `drop_redundant_arguments`/`drop_redundant_block_arguments` run only under
+  `Aggressive` — config-gated, no case producer (2026-08-27).
+- The MASM legalization pass (codegen/masm/src/legalization.rs) runs
+  `apply_full_conversion` on every compile, but wasm-derived HIR arrives
+  already-legal, so `FullConversionDriver::legalize_operation` only verifies
+  legality: its pattern-rewrite/materialization interiors and
+  `reconcile_unrealized_conversion_casts` are invalid-IR backstops
+  (2026-08-27).
 - `DeadCodeAnalysis` has exactly two pipeline loaders — SCCP's solver
   (pre-lift) and `LivenessAnalysis` inside TransformSpills (pre- AND
   post-lift; the latter is what warms the scf region-branch/terminator arms)
@@ -255,6 +440,88 @@ pipeline in midenc-compile/src/stages/rewrite.rs):
   propagates up to a condition; and a direct duplicate would need one
   stack-resident value used twice on one exit edge — killed by the locals
   argument.
+
+## cf/scf canonicalization & cfg-to-scf closures (verified 2026-08-27)
+
+Region-level audit of everything still cold under
+`dialects/cf/,dialects/scf/,hir-transform/src/cfg_to_scf` (control-flow
+gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
+
+- **Returns are always per-site.** The LLVM wasm backend emits an explicit
+  (tail-duplicated) `return` at every return site and never branches to the
+  outermost frame; probe- and corpus-wat-verified, it also never emits
+  result-typed `block`/`loop` frames — no `br`/`br_if` in our pipeline ever
+  carries a value on the wasm stack (div-bearing two/three-arm tail merges
+  and early-return+loop shapes all come out as per-site `return`s).
+  Value-carrying HIR successor args therefore exist only in cfg-to-scf's own
+  synthesized dispatch (e.g. the residual `cf.cond_br .. ^ret(%v)` exit).
+- Consequences, all structurally closed for wasm-derived IR: the function's
+  ret-only exit block (`^exit(%v): builtin.ret %v`, built by the final
+  reachable `End`) always has exactly ONE unconditional-br predecessor, and
+  `SimplifyBrToBlockWithSinglePred` (registered before `SimplifyBrToReturn`
+  on cf.br, equal MAX benefit) always claims it — `SimplifyBrToReturn`'s
+  interior, `collapse_branch`'s block-arg check/remap paths (a passthrough
+  block with arguments needs back-to-back result-typed frame ends), and the
+  branch-region entry-argument replacement in
+  `transform_to_structured_cf_branches` (transform.rs ~725) are all
+  unproducible.
+- **`SimplifyPassthroughCondBr` can never rewrite**: collapsing an arm of a
+  multi-successor predecessor requires the passthrough's target to have a
+  UNIQUE predecessor (critical-edge guard), but a wasm frame is emitted only
+  because something branches to it — a target whose only pred is the
+  passthrough block would be a frame nothing branches to. The plain-br
+  variant (`SimplifyPassthroughBr`) fires routinely (1-successor preds skip
+  the guard). A frame-end passthrough to a *self-loop* is producible: a bare
+  `loop {}` behind an impossible guard leaves a header block containing only
+  its own back-edge `cf.br`, taking `collapse_branch`'s
+  collapse-into-self-loop bail (`case_spin_guard.rs`; `unreachable_exits`
+  deliberately keeps its infinite loop body non-empty, which hides this
+  shape).
+- **`cf.Switch`/`cf.CondBr::get_successor_for_operands` interiors are
+  closed**: the only callers workspace-wide are DCA's
+  `visit_branch_operation` (dce.rs) and the spill analysis'
+  single-successor resolution (spills.rs), both passing SCCP-lattice
+  constants — a cf selector/condition is never a lattice constant (SCCP
+  cannot out-prove LLVM pre-lift; the post-lift residual dispatch selects on
+  scf results, which are runtime).
+- **`cf.Select::fold` interior is closed**: it folds only on a constant
+  BoolAttr condition; wasm `select` conditions are LLVM-pre-folded and
+  `ConvertTrivialIfToSelect`-created discriminator selects have runtime
+  compare conditions; nothing post-lift constant-ifies an i1 (SCCP is
+  pre-lift only, and no cf constant-condition pattern exists).
+- **`FoldConstantIndexSwitch` is closed**: an `scf.index_switch` selector is
+  either a user `br_table` selector (LLVM deletes constant-selector
+  br_tables) or a cfg-to-scf discriminator (multiplexer block-arg/op-result
+  by construction). `FoldRedundantYields` (the only use-replacer that could
+  constant-ify one) needs ALL regions to yield the same SSA value in the
+  selector column, but discriminator columns carry distinct per-continuation
+  constants by construction — an all-same column would mean a single
+  continuation, for which no dispatch switch is synthesized. Note
+  `builtin.ret_imm` has NO pipeline producer (frontend always emits
+  `builtin.ret`; ret_imm appears only in unit tests and global-variable
+  initializers), so exit kinds are exactly {ret, unreachable}, the combined
+  exit dispatch is at most one `cf.cond_br`, and a 3+-way residual exit
+  switch cannot exist.
+- **cfg-to-scf transform cold interiors are logs/errors or recorded
+  closures**: `combine_exit` and `EdgeMultiplexer::redirect_edge` are fully
+  warm except `log::trace!` bodies and `?` error edges; `check_value`'s
+  nested-region grandparent walk needs an SSA value crossing sibling loops
+  (locals argument); the undef-threading arm and `loop_block_dominates`
+  cache need an escaping value not defined in the latch (latch-multiplexer
+  construction, recorded); the latch→header carried-values loop
+  (transform.rs ~891) and prior latch/header-arg checks need loop-header
+  block args (irreducible/multi-entry CFG, unproducible from wasm); the
+  reduce-time successor-swap arm is dead by the
+  `create_single_exiting_latch` invariant (recorded). The
+  `<_ as CFGToSCFInterface>` builder rows are duplicate unresolved-receiver
+  monomorphs of warm concrete impls. `LiftControlFlowToSCF`'s
+  World/Component/Module recursion arms never run (FUNCTION pass manager).
+- The remaining cold cf/scf rows are OpParser/OpPrinter impls (textual HIR),
+  SwitchCase KeyedSuccessor rewrite-API, rewriter-instantiated scf builder
+  monomorphs of the closed canonicalization interiors, and the
+  `get_region_invocation_bounds`/`get_entry_successor_regions`/
+  `get_successor_regions` region-analysis arms (liveness/DCA-adjacent —
+  candidates for a spill-focused area, not for CF cases).
 
 ## Block-emitter operand-drop facts (codegen/masm emitter.rs / emit/mod.rs / stack.rs)
 
@@ -297,6 +564,11 @@ corroborate each closure below):
   `OpEmitter::bnot` and its `emit_repeat`/`emit_template` 64/128-bit arms are
   unreachable; `emit_all::<[_;13]>/<[_;14]>` likewise (callers are the
   checked/overflowing `mul_u64` arms the frontend never builds).
+- **Dead emit-helper API** (zero callers workspace-wide, 2026-08-27):
+  `dup_select_int32`/`mov_select_int32` (int32.rs); `zext_int64` and
+  `move_int64_up` (int64.rs) are called only from the dead cast/felt/i128
+  paths. `LoopForest::verify`/`compare_loops`/`verify_loop` (hir ir/loops.rs)
+  are self-check API with no pipeline caller.
 - **`OperandStack::get` is SDK-only** (emit/events.rs, emit/merkle.rs);
   `IndexMut` remains closed with the same-value-operand-pair fact. Refinement:
   cfg-to-scf DOES synthesize repeated-operand lists (`scf.yield %v, %v, %v,
@@ -310,33 +582,72 @@ linker.rs, cfg_to_scf); the corpus's scale cases are `case_chain300` (~400-op
 single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
 `case_seg24`.
 
-- **The solver has no fallback scheduler and no reachable failure arm.**
-  Production fuel is always the default 40, charged once per tactic tried
-  (cost 1 for the four pattern tactics, `max(num_copies,1)` for
-  CopyAll/Linear/LinearStackWindow; chains are ≤5 tactics). Exhausted fuel
-  only stops the search for a *better* solution — with no solution yet, the
-  remaining tactics run regardless (regression-test-pinned). Reaching the
-  exhaustion break needs ≥14 Copy-constrained operands in one problem;
-  all-tactics-fail (`NoSolution` → compile panic) needs >16 felts of live
-  operands below the problem. Both are forbidden by the locals argument +
-  SpillAnalysis (K=16) + block-entry dead-operand drops → closed from
-  wasm-derived IR (the solver's own unit tests cover them with fuel 0/10).
+- **The solver has no fallback scheduler.** Production fuel is always the
+  default 40, charged once per tactic tried (cost 1 for the four pattern
+  tactics, `max(num_copies,1)` for CopyAll/Linear/LinearStackWindow; chains
+  are ≤5 tactics). Exhausted fuel only stops the search for a *better*
+  solution — with no solution yet, the remaining tactics run regardless
+  (regression-test-pinned). Reaching the exhaustion break needs ≥14
+  Copy-constrained operands in one problem (still no known producer). The
+  2026-07-23 claim that all-tactics-fail (`NoSolution` → compile panic) is
+  closed from wasm-derived IR was WRONG (struck 2026-08-27): LLVM
+  runtime-unrolls a `% 97`-bounded `acc = acc.wrapping_mul(33) ^ i` loop 8x
+  into a single block interleaving eight mul/xor rounds with eight distinct
+  `i+k` operands, and scheduling that block panics with `NoSolution` on safe
+  Rust (`unroll_chain`, kept `#[ignore]`d; specifics at the test). The
+  mul-only and xor-only bodies of the same loop collapse when unrolled and
+  pass, so the trigger is the unroll-produced *interleaved* chain — plain
+  chain length is fine (`case_chain300`). ROOT-CAUSED 2026-08-27: the
+  unroll-family panics (`unroll_chain`, `unroll_rotmix`) are NOT solver
+  limitations — the unroll forces spilling, and TransformSpills hands the
+  solver SSA-invalid IR (see the spill section's phi-insertion fact); the
+  scheduling problems are *unsatisfiable* (an expected operand absent from
+  the operand stack), not hard. Panic site depends only on arity: arity-2 →
+  `TwoArgs` NotApplicable → `NoSolution` at lowering.rs:109; arity≥3 →
+  `MoveDownAndSwap` walks the model past its end → subtract-with-overflow
+  in `Stack::movdn` (stack.rs:80). The solver never validates that expected
+  Move operands exist on the stack, so out-of-contract input surfaces as
+  these arbitrary panics.
+- **Arity-2 problems are TwoArgs-only** (`solver.rs` `is_binary` branch):
+  no other tactic is pushed for binary ops, so when TwoArgs' fixed
+  dup/movup pattern needs a stack access past the 16-felt MASM window (a
+  Copy-constrained operand near the bottom of a full 15-felt window — copy
+  materialization adds transient depth the K=16 spill cap does not model),
+  the window check rejects the solution and there is no fallback →
+  `NoSolution` on an *in-contract, solvable* problem
+  (`LinearStackWindow`+`Linear` produce a valid in-window schedule for the
+  same shape at other arities). Reproducer: `rotl_window` (ten shared
+  count bands + u64 rotl; the six-count `spill_switch` passes) — a
+  root-cause distinct from the unroll-family panics above.
 - **No size-gated compiler path exists at single-block scale**: a ~400-op
   non-reassociable chain (139 spill locals, 267 stack-motion ops in MASM)
   compiles in about a second and passes differentially — no cliff, no
   fuel/scale arm. Scale DID warm `TwoArgs::move_copy`'s commutative
   sub-arms (non-strict scheduling of commutative binops under reload
   interleavings) — the only tactic interior that responded to scale.
-- **MoveDownAndSwap's evict arms and MoveUpAndSwap's final NotApplicable
-  arm remain unproducible**: they need a live non-operand value on top of
-  the stack at an arity≥3 no-copy problem, but RegStackify moves every
-  single-use def to its use and SinkOperandDefs sinks the whole operand
-  cluster together, so operands stay adjacent to their op; the 400-op storm
-  never produced the shape. CopyAll's success loop and SwapAndMoveUp's real
-  arms likewise have no plain-Rust producer in this corpus (campaign-2
-  verdict: no deterministic lever) — the four tactics' *precondition* arms
-  are structurally dead (each tactic is only pushed when its precondition
-  already holds).
+- **MoveDownAndSwap's FIRST evict arm and MoveUpAndSwap's final
+  NotApplicable arm remain unproducible**: they need a live non-operand
+  value on top of the stack at an arity≥3 no-copy problem, but RegStackify
+  moves every single-use def to its use and SinkOperandDefs sinks the whole
+  operand cluster together, so operands stay adjacent to their op; the
+  400-op storm never produced the shape. Refinement (2026-08-27):
+  MoveDownAndSwap's SECOND evict arm (the post-move eviction) IS warm in
+  the current corpus, so the old "evict arms unproducible" plural was too
+  strong. CopyAll's success loop and SwapAndMoveUp's real arms still have
+  no plain-Rust producer — the four tactics' *precondition* arms are
+  structurally dead (each tactic is only pushed when its precondition
+  already holds). The unroll-interleave lever (2026-08-27) DOES reopen the
+  solver interiors, but every u64 trigger found so far panics before
+  contributing coverage (NoSolution at lowering.rs:109 — also producible
+  WITHOUT unrolling by an arity-2 rotl with a copy-constrained shared
+  count band under ~10 felts of crossing-band freight — and a second
+  unroll-family panic in `Stack::movdn`; both live as ignored reproducers
+  in the spills test module). The schedulable u32 twin (`case_unroll_u32`)
+  adds no new interior regions. `preemptively_move_endangered_operands_to_
+  top`'s interior is closed-in-practice: it needs missing-copy felts plus
+  a deep move operand in one problem, but exec args are always fresh
+  single-use loads (no aliases) and alias-bearing small ops have
+  SinkOperandDefs-adjacent operands.
 - **Switch lowering is width-insensitive past 8 arms**: a 64-arm dense
   `match` survives as one 65-target `br_table` (structurally-varied arm
   bodies defeat LLVM's lookup-table and arm-merging transforms), and adds
@@ -355,11 +666,104 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   irreducible CFG (wasm is reducible by construction). The latch's
   successor 0 is always the loop header (create_single_exiting_latch
   construction invariant), so the reduce-time successor-swap arm is dead.
-- **codegen/masm/src/linker.rs is data-layout only** (segments + globals —
-  call-graph/MAST ordering lives in the assembler, not here) and closed:
-  its cold surface is error paths, disabled log bodies, the multi-module
-  `__stack_pointer` dedup (the harness always links exactly one HIR
-  module), the page_size=0 arm, and dead accessors.
+- **codegen/masm/src/linker.rs is data-layout only** (segments + globals +
+  function-table bases — call-graph/MAST ordering lives in the assembler,
+  not here) and closed: its cold surface is error paths, disabled log
+  bodies, the multi-module `__stack_pointer` dedup (the harness always links
+  exactly one HIR module), the page_size=0 arm, and dead accessors —
+  including `FunctionTableLayout::is_empty` (sole caller
+  `has_function_tables` sits behind `requires_init`'s `has_globals()`
+  short-circuit, and `__stack_pointer` makes has_globals always true) and
+  `element_addr_of`'s None edge (2026-08-27; the table layout loop itself is
+  warm from the call_indirect cases).
+
+## Spill analysis & the edge-split cluster (verified 2026-08-27)
+
+Corpus cases: `case_spill_split` (asymmetric diamond, both split flavors),
+`case_spill_loop_mix` (loop-header over-capacity + backedge splits),
+`case_spill_switch` (dispatch under crossing freight), plus the revived
+`case_spill_edge`. All trace-verified with `MIDENC_TRACE=
+'analysis:spills=trace,pass:spills=trace'` — the spill pass/analysis logs
+(edge splits, W^entry sets, loop pressure) are the cheapest way to check a
+spill shape BEFORE paying a coverage step.
+
+- **The only plain-Rust producer of cross-block W traffic is the
+  masked-count band**: the translator wraps every shift/rotate count in
+  `arith.band(count, mask)`; the canonicalizer's folder dedups the constant
+  operands function-wide and CSE merges the structurally-identical bands
+  into the dominating occurrence — so a count CONSTANT reused in two blocks
+  becomes ONE u32 SSA value (one felt) live across the edges between them.
+  User values never cross in W (locals are reloaded per block; Local2Reg is
+  same-block-only). N shared counts = N felts of freight across any chosen
+  edge; CSE needs the first use to dominate the later ones (e.g. a do-while
+  body dominates the post-loop code, a `while` body does not dominate its
+  exit).
+- **Edge splits (`SpillAnalysis::split`, the transform's split loop,
+  `Placement::Split`) fire on ASYMMETRIC pressure**: a value in W^entry(B)
+  that is missing from one predecessor's W^exit gets a reload split on that
+  edge, and the compensating spill lands as a split on the other edge —
+  produced by a diamond whose arms differ in pressure while shared bands
+  cross both (`case_spill_split`); symmetric-pressure shapes (spill_branch/
+  twin/edge) spill the value in BOTH arms and never trigger reconciliation
+  (that is why the cluster stayed cold until now). Loop preheader and
+  BACKEDGE splits come from over-capacity loop headers the same way.
+- **Loop-header `w_used >= K`** (the over-capacity arm incl. its sort and
+  take_while closures) is reachable with 16+ shared counts used both before
+  the loop and on the loop-carried accumulator inside it (LICM cannot hoist
+  rotates of a loop-carried value; rotates of loop-invariant operands DO
+  get hoisted and defeat the shape).
+- **Pre-lift spilling bounds the post-lift pass**: the first TransformSpills
+  caps SSA values crossing any CFG edge at <= K felts and rewrites spilled
+  values' downstream uses to reloads placed at those uses, so after
+  cfg-to-scf no scf op can have >16 felts of results and no post-lift
+  block boundary exceeds K. Consequently `spill_trailing_until_fits`, the
+  w_exit>K result-spill arm of `compute_w_exit_region_branch_op`, the
+  region-branch entry-spill arm of `visit_region_branch_operation` (min()
+  also caps W right before every op, and scf operands — if conditions,
+  switch selectors — are always freshly computed there), and the loop-LIKE
+  over-capacity closures are all unproducible.
+- **Terminator operands are always fresh**: yield/condition/ret operands
+  are constants, local loads, or tail-computed values, never
+  spilled-and-unreloaded — MIN's terminator-reload interiors are closed.
+  Splits carrying successor ARGUMENTS are likewise unproducible (arg
+  sources are computed immediately before the terminator).
+- **Pre-lift "live through loop" is always empty** (three shapes): the
+  loop-exit +LOOP_EXIT_DISTANCE increment never survives into the header's
+  next-use set, so post-loop-used values arrive classified as in-loop
+  candidates; the pre-lift live-through sort closure is out of reach (the
+  post-lift loop-LIKE counterpart does fire).
+- **`max_block_pressure`'s region-branch arm is empirically unproducible**:
+  the loop-pressure walk only visits the scf.while's own region-graph
+  entries, and top-test, light-header, and bottom-test diamond-in-loop
+  variants never place the nested scf.if in a walked block.
+- **`get_region_invocation_bounds` (and the entry-successor arms it feeds)
+  is pass-config-gated**: its sole caller is ControlFlowSink
+  (hir-transform/src/sink.rs), which is registered but never scheduled in
+  the pipeline. (This refutes the 2026-08 CF-iteration lead that
+  liveness/DCA under TransformSpills reach it.)
+- **Test-only API**: `is_spilled_at`/`is_reloaded_at`/`is_spilled_in_split`/
+  `is_reloaded_in_split`/`set_materialized_split`/`get_split` are called
+  only from the analysis' own unit tests.
+- The spill freight has a scheduler ceiling: crossing-band freight around
+  10 felts combined with an in-loop multi-arm dispatch currently fails to
+  schedule (see the ignored reproducers in the spills test module); keep
+  deliberate freight around 6-8 felts in cases that must pass.
+- **`insert_required_phis` seeds every predecessor edge with the spilled
+  value itself** (hir-transform/src/spill.rs, phi-insertion for DF+ of the
+  reload blocks): for a join reachable via a path the definition does not
+  dominate (e.g. a loop-bypass edge when the spill lives in the loop body),
+  no reaching definition exists on that edge, so the seeded successor
+  argument is never rewritten and the function leaves the pass SSA-invalid;
+  the phi is provably dead on such edges (a real use would have been
+  invalid pre-pass), the pass itself warns "unused phi ... encountered
+  during rewrite phase" (removal is an open TODO in `rewrite_inserted_phi_
+  uses`), and nothing downstream verifies dominance (the per-op verifier
+  has no SSA-dominance check). cfg-to-scf then threads the dead phi args
+  into sibling-region scf.yield operands, and codegen panics scheduling an
+  operand that is not on the operand stack — the mechanism behind the
+  ignored unroll-family reproducers (specifics at the test sites). Because
+  the poisoned phi can never feed a live use, this defect cannot silently
+  miscompile; it always surfaces as a compile-time panic.
 
 ## Case-writing tricks that work
 
@@ -402,6 +806,14 @@ single-block chain), `case_match64`, `case_deep_nest`, `case_call_web`,
   (`u32mod`, `u64::mod`, `i32::wrapping_mod`) never execute. Give remainders a
   mirrored/rotated operand pair with no matching div (masm-verified both ways,
   `case_udiv_bounds.rs`, `case_sdiv_bounds.rs`).
+- **Pure defs (and pure `#[inline(never)]` calls!) sink to their use**:
+  LLVM infers readnone on internal helpers and moves the computation into
+  the use's block, destroying any "defined before the branch, used after
+  the join" liveness you were counting on. Pin a call in place by giving
+  the helper an opaque atomic side effect that never changes state:
+  `PIN.fetch_add(0, Ordering::Relaxed)` folded into the result
+  (`case_spill_split`) — deterministic across the 16 reused native
+  invocations, unfoldable, and unsinkable.
 - An **opaquely-zero value** (impossible cross-modulus guard `as usize`, times
   an input-derived factor) keeps a copy alive that LLVM would elide when it
   can prove `len == 0` or `src == dst` — how a len-0 same-position
@@ -459,6 +871,12 @@ at the test site.
 - The report's `Area delta` line inflates by a constant when duplicate
   monomorphized `(file, name)` rows exist — judge productivity by the
   difference of the area *headline* between steps.
+- Generic compiler functions can appear as SEVERAL rows: the pipeline's
+  live instantiation, unit-test-only instantiations, and `<_, _>`
+  unresolved-receiver phantom rows. A "fully untouched" row does not mean
+  the function is cold — check the partially-covered table (and
+  report.json) for a warm sibling monomorph before treating it as a target
+  (2026-08-27: prepare_addr/enforce_alignment read as untouched this way).
 - A `fuzza-cov-step` launched immediately after a backgrounded `fuzza-cov` can
   produce an empty report (0 tests, 0 regions) — rerun the step; note the
   `report.prev.json` delta chain is polluted for that step.
@@ -475,6 +893,11 @@ at the test site.
   cold (that is how translate_unreachable_operator's warm End-of-Loop arm
   read as a target). Before betting a case on a specific arm, verify at
   region level — `report.json` carries exact `line:col` spans per region.
+  Even REGION-level cold on a dispatch arm can be attribution noise: the
+  `OpEmitter::shr` U64 arm's region reads count-0 while its unique callee
+  `shr_u64` is 6/6 warm and the corpus HIR provably contains u64 `arith.shr`
+  (2026-08-27). When a cold arm has a dedicated callee, check the callee's
+  coverage before treating the arm as a gap.
 - `MIDENC_EMIT` paths must be ABSOLUTE `kind=DIR` specs: bare kinds dump into
   the test process CWD (that is how stray `.masm`/`.hir` files end up in the
   source tree), and *relative* dirs silently vanish into the ephemeral

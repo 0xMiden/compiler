@@ -64,19 +64,24 @@ fn trap_branch() {
 /// Four-exit loop plus eq-chains that canonicalize into contiguous-at-7 and
 /// sparse cf.switch ops — exercises binary-search (interval guard) and
 /// linear-search switch lowering.
+///
+/// Formerly `#[ignore]`d: the frontend re-typed the `br_table` selector with
+/// a checked I32->U32 cast, but LLVM rebases contiguous switches by
+/// wrapping-subtracting the smallest case, so a selector below the minimum
+/// wrapped negative and the VM aborted with 'value does not fit in i32'
+/// (issues #1235/#1243, fixed by PR #1245: `pop1_bitcasted` in
+/// `translate_br_table`). Re-verified passing 2026-08-27.
 #[test]
-#[ignore = "flaky native/MASM divergence: mismatch on inputs (1669775643, 1062584501); separate \
-            run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("../cases/case_switch_shapes.rs"));
 }
 
-/// Deterministic reproducer for the `switch_shapes` divergence: pins the
-/// exact `(input1, input2)` pair the fuzzer flagged, so the bug fails
-/// reliably on that input rather than only when proptest happens to draw it.
+/// Pinned regression guard for the fixed #1235/#1243 `br_table` selector
+/// wrap: input pair (1669775643, 1062584501) makes the rebased selector wrap
+/// below the smallest case, which must dispatch to the default arm (random
+/// draws hit an `h < 7` pair only ~7/251 of the time, so the pin keeps the
+/// wrap path exercised on every run).
 #[test]
-#[ignore = "MASM VM aborts on pinned input (1669775643, 1062584501): 'value does not fit in i32'; \
-            deterministic reproducer for the switch_shapes divergence"]
 fn switch_shapes_repro() {
     run_case_with_inputs(
         "switch_shapes_repro",
@@ -134,4 +139,41 @@ fn unreachable_exits() {
 #[test]
 fn switch_loop_mix() {
     run_case("switch_loop_mix", include_str!("../cases/case_switch_loop_mix.rs"));
+}
+
+/// Bare `loop {}` behind an impossible cross-modulus guard — the loop header
+/// is a block containing only its own back-edge br, exercising the
+/// collapse-into-self-loop bail of the passthrough-branch canonicalizations.
+#[test]
+fn spin_guard() {
+    run_case("spin_guard", include_str!("../cases/case_spin_guard.rs"));
+}
+
+/// COMPILE-TIME COMPILER PANIC (safe Rust, 2026-08-27): building this case
+/// panics in the MASM operand scheduler with `NoSolution` at
+/// codegen/masm/src/lower/lowering.rs:109. Trigger: LLVM runtime-unrolls the
+/// `% 97`-bounded loop 8x into a single block computing the interleaved
+/// non-reassociable chain `((((acc*33)^i)*33)^(i+1))*33 ...`, whose live
+/// state spills. Root cause (triage 2026-08-27): NOT a hard scheduling
+/// problem — TransformSpills' `insert_required_phis`
+/// (hir-transform/src/spill.rs) seeds EVERY predecessor edge of a
+/// dominance-frontier join with the spilled value itself; on the loop-BYPASS
+/// edge (this zero-trip-capable `while`) the definition does not dominate,
+/// the seed is never rewritten (the pass warns "unused phi"; dead-phi
+/// removal is an open TODO), no verifier checks SSA dominance, and
+/// cfg-to-scf threads the dead phi args into a sibling-region `scf.yield` —
+/// so the scheduler receives an UNSATISFIABLE problem (an operand that is
+/// not on the operand stack). With yield arity 2 the TwoArgs-only tactic
+/// list returns NotApplicable and NoSolution panics; the arity-3 twin of
+/// the same defect is `unroll_rotmix` (spills.rs), and the independent
+/// in-contract arity-2 solver gap is `rotl_window` (spills.rs). Bounded by:
+/// the xor-only and mul-only bodies of the identical loop compile and pass,
+/// and `case_chain300`'s ~400-op straight-line chain passes. Un-ignore when
+/// this case compiles (after a spills fix it may still hit the rotl_window
+/// gap — then re-triage).
+#[test]
+#[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
+            while scheduling the 8x-unrolled mul-xor loop chain (compile-time, no inputs involved)"]
+fn unroll_chain() {
+    run_case("unroll_chain", include_str!("../cases/case_unroll_chain.rs"));
 }
