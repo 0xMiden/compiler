@@ -306,7 +306,24 @@ fn reject_stored_procedure_in_map(field: &Field) -> Result<(), syn::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::derive_storage_slot_name;
+    use quote::quote;
+    use syn::parse::Parser;
+
+    use super::{derive_storage_slot_name, reject_stored_procedure_in_map};
+
+    #[test]
+    fn rejects_stored_procedures_in_map_slots() {
+        let field = syn::Field::parse_named
+            .parse2(quote!(hooks: StorageMap<Felt, StoredProcedure<fn()>>))
+            .expect("test field must parse");
+        let err = reject_stored_procedure_in_map(&field).unwrap_err();
+        assert!(err.to_string().contains("only supported in `StorageValue` slots"), "{err}");
+
+        let field = syn::Field::parse_named
+            .parse2(quote!(count_map: StorageMap<Word, Felt>))
+            .expect("test field must parse");
+        reject_stored_procedure_in_map(&field).expect("plain map slots are accepted");
+    }
 
     #[test]
     fn derives_slot_name_from_component_package_interface_and_field() {
