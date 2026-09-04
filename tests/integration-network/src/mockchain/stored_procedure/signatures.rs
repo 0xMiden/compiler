@@ -1,5 +1,6 @@
 //! Stored-procedure signatures at the edges of what a dispatched call supports: a narrow scalar
-//! (`bool`) argument, and an argument list filling the twelve-field-element budget.
+//! (`bool`) argument, an argument list filling the twelve-field-element budget, and an empty
+//! signature returning nothing.
 
 use miden_client::{
     account::{
@@ -19,7 +20,9 @@ use miden_testing::{AccountState, Auth, MockChain};
 use midenc_expect_test::expect;
 
 use super::{
-    super::support::{execute_tx_measurements, note_script_root, single_note_cycles},
+    super::support::{
+        execute_tx_measurements, note_script_root, single_note_cycles, storage_slot_name_for_field,
+    },
     common::{
         DispatchProjectNames, assert_word_value_slots, build_dispatcher_package,
         build_note_package, build_target_package, lifted_export_root,
@@ -30,11 +33,17 @@ use super::{
 /// halves of the `u64` result are non-zero.
 const EXPECTED_SUM: u64 = 15 + (1 << 40);
 
-/// Deploys a target component exporting a procedure with a leading `bool` argument and one
-/// taking six `u64`s (the full twelve-field-element argument budget), and a dispatcher whose two
-/// stored-procedure slots hold their lifted export roots. A note drives the dispatcher, which
-/// checks both results in-guest and records the sum's halves in a plain value slot the host
-/// asserts after the transaction.
+/// Number of times the dispatcher calls the target's unit-returning `bump` procedure, and hence
+/// the value of the target's counter after the transaction.
+const EXPECTED_BUMPS: u64 = 2;
+
+/// Deploys a target component exporting a procedure with a leading `bool` argument, one taking
+/// six `u64`s (the full twelve-field-element argument budget), and one taking no arguments and
+/// returning nothing, and a dispatcher whose three stored-procedure slots hold their lifted
+/// export roots. A note drives the dispatcher, which checks the returned results in-guest and
+/// records the sum's halves in a plain value slot the host asserts after the transaction. The unit-returning
+/// procedure has no result to check in-guest, so it is observed through the target's counter,
+/// which the host asserts as well.
 #[test]
 fn dispatches_bool_and_twelve_felt_signatures() {
     let names = DispatchProjectNames::new("stored_procedure_signatures");
@@ -46,11 +55,22 @@ fn dispatches_bool_and_twelve_felt_signatures() {
 
     let scale_slot = names.dispatcher_slot("scale");
     let sum6_slot = names.dispatcher_slot("sum6");
+    let bump_slot = names.dispatcher_slot("bump");
     let last_sum_slot = names.dispatcher_slot("last_sum");
-    assert_word_value_slots(&dispatcher_package, &[scale_slot.clone(), sum6_slot.clone()]);
+    let count_slot =
+        storage_slot_name_for_field(&names.target_account_package, "signature_target", "count");
+    assert_word_value_slots(
+        &dispatcher_package,
+        &[scale_slot.clone(), sum6_slot.clone(), bump_slot.clone()],
+    );
 
-    let target_component =
-        AccountComponent::from_package(&target_package, &InitStorageData::default()).unwrap();
+    let target_component = {
+        let mut init_storage_data = InitStorageData::default();
+        init_storage_data
+            .insert_value(StorageValueName::from_slot_name(&count_slot), Felt::ZERO)
+            .unwrap();
+        AccountComponent::from_package(&target_package, &init_storage_data).unwrap()
+    };
     let dispatcher_component = {
         let mut init_storage_data = InitStorageData::default();
         init_storage_data
@@ -63,6 +83,12 @@ fn dispatches_bool_and_twelve_felt_signatures() {
             .insert_value(
                 StorageValueName::from_slot_name(&sum6_slot),
                 lifted_export_root(&target_package, "sum6"),
+            )
+            .unwrap();
+        init_storage_data
+            .insert_value(
+                StorageValueName::from_slot_name(&bump_slot),
+                lifted_export_root(&target_package, "bump"),
             )
             .unwrap();
         // Every value slot needs an initial value, including the one the dispatch writes.
@@ -106,13 +132,11 @@ fn dispatches_bool_and_twelve_felt_signatures() {
         .build()
         .unwrap();
     let tx_measurements = execute_tx_measurements(&mut chain, mock_tx);
-    expect!["6436"].assert_eq(single_note_cycles(&tx_measurements));
+    expect!["13333"].assert_eq(single_note_cycles(&tx_measurements));
 
     // The dispatcher recorded the low and high halves of the `u64` sum it received.
-    let recorded = chain
-        .committed_account(account.id())
-        .unwrap()
-        .storage()
+    let committed_storage = chain.committed_account(account.id()).unwrap().storage();
+    let recorded = committed_storage
         .get_item(&last_sum_slot)
         .expect("dispatcher should expose the recorded-sum slot");
     let expected = Word::new([
@@ -122,21 +146,37 @@ fn dispatches_bool_and_twelve_felt_signatures() {
         Felt::ZERO,
     ]);
     assert_eq!(recorded, expected, "recorded sum halves mismatch");
+
+    // The unit-returning procedure returns nothing to check in-guest: the two dispatched calls
+    // are observed through the target's committed counter. A felt value slot is stored as
+    // `[felt, 0, 0, 0]`.
+    let count = committed_storage
+        .get_item(&count_slot)
+        .expect("target should expose the counter slot");
+    assert_eq!(
+        count,
+        Word::new([Felt::new(EXPECTED_BUMPS).unwrap(), Felt::ZERO, Felt::ZERO, Felt::ZERO]),
+        "counter of the unit-returning procedure mismatch"
+    );
 }
 
-/// Target component exporting the two procedures dispatched through stored roots.
+/// Target component exporting the three procedures dispatched through stored roots.
 const TARGET_SOURCE: &str = r#"
 #![no_std]
 #![feature(alloc_error_handler)]
 
-use miden::{component, component_storage, Felt};
+use miden::{component, component_storage, felt, Felt, StorageValue};
 
-/// Storage-less sibling account component: the procedures are pure.
+/// Storage of the sibling component: only the unit-returning procedure writes to it, the others
+/// are pure.
 #[component_storage]
-struct SignatureTargetStorage;
+struct SignatureTargetStorage {
+    #[storage(description = "counter incremented by the argument-less procedure")]
+    count: StorageValue<Felt>,
+}
 
-/// Sibling account component exporting procedures with a narrow-scalar argument and with the
-/// widest argument list a dispatched call supports.
+/// Sibling account component exporting procedures with a narrow-scalar argument, with the widest
+/// argument list a dispatched call supports, and with neither arguments nor a result.
 #[component]
 trait SignatureTarget {
     /// Returns `amount` doubled when `enabled`, and `amount` unchanged otherwise.
@@ -145,6 +185,9 @@ trait SignatureTarget {
     /// Returns the sum of six 64-bit values.
     #[account_procedure]
     fn sum6(&self, a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> u64;
+    /// Increments the stored counter, returning nothing.
+    #[account_procedure]
+    fn bump(&mut self);
 }
 
 #[component]
@@ -155,6 +198,10 @@ impl SignatureTarget for SignatureTargetStorage {
 
     fn sum6(&self, a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> u64 {
         a + b + c + d + e + f
+    }
+
+    fn bump(&mut self) {
+        self.count.set(self.count.get() + felt!(1));
     }
 }
 "#;
@@ -173,15 +220,17 @@ struct DispatcherStorage {
     scale: StorageValue<StoredProcedure<fn(enabled: bool, amount: Felt) -> Felt>>,
     #[storage(description = "root of a procedure summing six 64-bit values")]
     sum6: StorageValue<StoredProcedure<fn(a: u64, b: u64, c: u64, d: u64, e: u64, f: u64) -> u64>>,
+    #[storage(description = "root of an argument-less procedure incrementing a counter")]
+    bump: StorageValue<StoredProcedure<fn()>>,
     #[storage(description = "low and high 32-bit halves of the last dispatched sum")]
     last_sum: StorageValue<Word>,
 }
 
-/// Account component dispatching both stored procedures with fixed arguments.
+/// Account component dispatching all three stored procedures with fixed arguments.
 #[component]
 trait Dispatcher {
-    /// Dispatches both stored procedures, checks their results, records the sum in storage, and
-    /// returns the scaled value.
+    /// Dispatches the stored procedures, checks the results of those that return one, records
+    /// the sum in storage, and returns the scaled value.
     #[account_procedure]
     fn dispatch(&mut self) -> Felt;
 }
@@ -189,6 +238,12 @@ trait Dispatcher {
 #[component]
 impl Dispatcher for DispatcherStorage {
     fn dispatch(&mut self) -> Felt {
+        // An empty signature: no arguments to place and no result to receive. The two calls are
+        // observable only through the counter the callee writes, which the host asserts.
+        let bump = self.bump.get();
+        bump.call();
+        bump.call();
+
         // A `bool` argument is a narrow scalar: it occupies one field element on the wire, and
         // both of its values must survive the dispatch.
         let scale = self.scale.get();
@@ -232,7 +287,7 @@ struct DispatchNote;
 
 #[note]
 impl DispatchNote {
-    /// Dispatches both stored procedures and checks the returned scaled value.
+    /// Dispatches the stored procedures and checks the returned scaled value.
     #[note_script]
     pub fn run(self, _arg: Word, account: &mut Account) {
         assert_eq(account.dispatch(), felt!(42));
