@@ -990,6 +990,10 @@ impl SpillAnalysis {
         let place = Placement::At(before_op);
         let span = op.span();
 
+        // Like an unstructured branch, and unlike ordinary operations (see `min`), only group 0
+        // holds the inputs needed to begin evaluating `branch`. Operands in groups >= 1 are
+        // successor operands forwarded into a region, and are handled in phase 2 below, when we
+        // propagate W and S across the edge into that region.
         let args = ValueRange::<2>::from(op.operands().group(0));
         let mut to_reload = args.iter().map(ValueOrAlias::new).collect::<SmallVec<[_; 2]>>();
 
@@ -2288,7 +2292,19 @@ impl SpillAnalysis {
         // independently, as if they occur on exit from this instruction. The result is that
         // we may or may not have all successor arguments in W on exit from I, but by the time
         // each successor block is reached, all block parameters are guaranteed to be in W
-        let args = ValueRange::<4>::from(op.operands().group(0));
+        //
+        // Of the operations reaching this point, only branches reserve operand groups for
+        // something other than their own inputs, so every other operation must be modeled using
+        // _all_ of its operands: ops such as `hir.exec_indirect` and `hir.dyncall` split their
+        // inputs across groups (the callee selector in group 0, the call arguments in group 1),
+        // and modeling only group 0 would both fail to reload arguments that were spilled
+        // earlier, and treat arguments consumed by the op as live across it - the latter making
+        // them eligible for a spill immediately before the very op that consumes them.
+        let args = if op.implements::<dyn BranchOpInterface>() {
+            ValueRange::<4>::from(op.operands().group(0))
+        } else {
+            ValueRange::<4>::from(op.operands().all())
+        };
         let mut to_reload = args.iter().map(ValueOrAlias::new).collect::<SmallVec<[_; 2]>>();
 
         // Remove the first occurrance of any operand already in W, remaining uses
