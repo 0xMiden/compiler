@@ -6,9 +6,9 @@ use midenc_dialect_hir::HirOpBuilder;
 use midenc_dialect_scf::StructuredControlFlowOpBuilder as Scf;
 use midenc_expect_test::expect_file;
 use midenc_hir::{
-    AddressSpace, BlockRef, Op, OperationRef, PointerType, ProgramPoint, Report, SourceSpan, Type,
-    ValueRef,
-    dialects::builtin::{BuiltinOpBuilder, Function},
+    AddressSpace, BlockRef, CallConv, Op, OperationRef, PointerType, ProgramPoint, Report,
+    SourceSpan, Type, ValueRef,
+    dialects::builtin::{BuiltinOpBuilder, Function, attributes::Signature},
     pass::AnalysisManager,
     testing::Test,
 };
@@ -690,6 +690,130 @@ fn spills_region_branch_results_over_k() -> AnalysisResult<()> {
         *if_results.last().expect("expected at least one `scf.if` result in over-K test");
     assert!(spills.is_spilled(&spilled_result));
     assert!(spills.is_spilled_at(spilled_result, after_if));
+
+    Ok(())
+}
+
+/// Operations which keep their call arguments in an operand group other than group 0 - namely
+/// `hir.dyncall` (group 0 = the callee's MAST root word, group 1 = the arguments) and
+/// `hir.exec_indirect` (group 0 = the table index, group 1 = the arguments) - must be modeled as
+/// consuming _all_ of their operands, not just those of group 0.
+///
+/// Modeling only group 0 treats the arguments as live across the call, overestimating the stack
+/// pressure on exit from the op. Worse, since a value that is dead after an op has an infinite
+/// next-use distance, the arguments then sort _first_ among the spill candidates, so the analysis
+/// emits a spill of an argument immediately before the very op which consumes it.
+///
+/// The function built here holds exactly K=16 elements in W at the `hir.dyncall`, of which the op
+/// consumes 12 (the 4 root felts, plus 4 `u64` arguments) and produces 5, so nothing needs to be
+/// spilled anywhere in the function:
+///
+/// ```text,ignore
+/// (func (export #spills_dyncall_arguments) (result u32)
+///   (block 0
+///     (let (v0 v1 v2 v3 felt) (procedure_root #callee))   ; W=4  (operand group 0 of the call)
+///     (let (v4 u64) (const.u64 1))                        ; W=6  (operand group 1 of the call)
+///     (let (v5 u64) (const.u64 2))                        ; W=8
+///     (let (v6 u64) (const.u64 3))                        ; W=10
+///     (let (v7 u64) (const.u64 4))                        ; W=12
+///     (let (v8 u64) (const.u64 5))                        ; W=14, live across the call
+///     (let (v9 u64) (const.u64 6))                        ; W=16, live across the call
+///     (let (v10 u64) (v11 u64) (v12 u32)
+///          (dyncall [v0 v1 v2 v3] v4 v5 v6 v7))           ; consumes 12, produces 5 => W=9
+///     (let (v13 u64) (add v8 v10))
+///     (let (v14 u64) (add v9 v11))
+///     (let (v15 u64) (add v13 v14))
+///     (let (v16 u32) (trunc v15))
+///     (let (v17 u32) (add v16 v12))
+///     (ret v17))
+/// ```
+#[test]
+fn spills_dyncall_arguments() -> AnalysisResult<()> {
+    let mut test = Test::named("spills_dyncall_arguments").in_module("test");
+
+    let span = SourceSpan::UNKNOWN;
+
+    test.with_function("spills_dyncall_arguments", &[], &[Type::U32]);
+    let func = test.function();
+    let callee = test.define_function("callee", &[], &[]);
+    let context = test.context_rc();
+    // The contract the call site expects of the callee: 8 felts of arguments in, 5 felts of
+    // results out. A dynamic call must use the component-model convention.
+    let signature = Signature::with_convention(
+        &context,
+        CallConv::ComponentModel,
+        [Type::U64, Type::U64, Type::U64, Type::U64],
+        [Type::U64, Type::U64, Type::U32],
+    );
+
+    let dyncall_op: OperationRef;
+    let root: alloc::vec::Vec<ValueRef>;
+    let arguments: alloc::vec::Vec<ValueRef>;
+    {
+        let mut b = test.function_builder();
+
+        // The callee's MAST root word, i.e. operand group 0 of the call
+        let procedure_root = b.procedure_root(callee, span)?;
+        root = procedure_root
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect();
+        let root_word = [root[0], root[1], root[2], root[3]];
+
+        // The call arguments, i.e. operand group 1 of the call, all dead after the call
+        arguments = (1..=4).map(|i| b.u64(i, span)).collect();
+
+        // Two values live across the call, which fill W to exactly K along with the operands
+        let live0 = b.u64(5, span);
+        let live1 = b.u64(6, span);
+
+        let dyncall = b.dyncall(root_word, signature, arguments.iter().copied(), span)?;
+        dyncall_op = dyncall.as_operation_ref();
+        let results = dyncall
+            .borrow()
+            .results()
+            .all()
+            .iter()
+            .map(|r| r.borrow().as_value_ref())
+            .collect::<alloc::vec::Vec<_>>();
+
+        let sum0 = b.add_unchecked(live0, results[0], span)?;
+        let sum1 = b.add_unchecked(live1, results[1], span)?;
+        let sum = b.add_unchecked(sum0, sum1, span)?;
+        let truncated = b.trunc(sum, Type::U32, span)?;
+        let out = b.add_unchecked(truncated, results[2], span)?;
+        b.ret(Some(out), span)?;
+    }
+
+    let am = AnalysisManager::new(func.as_operation_ref(), None);
+    let spills = am.get_analysis_for::<SpillAnalysis, Function>()?;
+
+    // The call frees all 12 of its operands, so it fits within K and nothing is spilled. In
+    // particular, no argument may be spilled immediately before the call which consumes it.
+    let before_dyncall = ProgramPoint::before(dyncall_op);
+    for (index, argument) in arguments.iter().enumerate() {
+        assert!(
+            !spills.is_spilled_at(*argument, before_dyncall),
+            "argument {index} was spilled immediately before the dyncall which consumes it"
+        );
+        assert!(!spills.is_spilled(argument), "argument {index} of the dyncall was spilled");
+    }
+    for (index, felt) in root.iter().enumerate() {
+        assert!(!spills.is_spilled(felt), "root felt {index} of the dyncall was spilled");
+    }
+    assert!(
+        !spills.has_spills(),
+        "expected no spills, got {} spill(s)",
+        spills.spills().len()
+    );
+    assert!(
+        spills.reloads().is_empty(),
+        "expected no reloads, got {} reload(s)",
+        spills.reloads().len()
+    );
 
     Ok(())
 }
