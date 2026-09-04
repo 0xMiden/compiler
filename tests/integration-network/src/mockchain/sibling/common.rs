@@ -13,6 +13,9 @@ use midenc_integration_test_support::{cargo_proj::Project, project};
 
 use super::super::support::*;
 
+/// Interface segment of the generated caller component (`[lib].namespace` and trait name).
+const CALLER_INTERFACE: &str = "caller-account";
+
 /// Builds sibling counter, caller component, and note projects for a sibling-call test case.
 ///
 /// The caller component declares the sibling counter package as a dependency and calls it through
@@ -130,23 +133,18 @@ fn build_sibling_caller_project(
     dependencies: &[(&str, &Path)],
     caller_source: &str,
 ) -> (Project, Arc<Package>) {
+    let mut miden_project_toml = account_miden_project_toml_with_interface(
+        &names.caller_account_name,
+        &names.caller_account_package,
+        CALLER_INTERFACE,
+    );
+    append_miden_project_dependencies(&mut miden_project_toml, dependencies);
+    let mut cargo_toml =
+        account_cargo_toml_for(&names.caller_account_name, &names.caller_account_package);
+    append_cargo_dependency_metadata(&mut cargo_toml, dependencies);
     let caller_project = project(&names.caller_account_name)
-        .file(
-            "miden-project.toml",
-            &caller_account_miden_project_toml(
-                &names.caller_account_name,
-                &names.caller_account_package,
-                dependencies,
-            ),
-        )
-        .file(
-            "Cargo.toml",
-            &caller_account_cargo_toml(
-                &names.caller_account_name,
-                &names.caller_account_package,
-                dependencies,
-            ),
-        )
+        .file("miden-project.toml", &miden_project_toml)
+        .file("Cargo.toml", &cargo_toml)
         .file("src/lib.rs", caller_source)
         .build();
     let caller_package = compile_rust_package(caller_project.root(), true);
@@ -180,47 +178,6 @@ fn build_sibling_note_package(
         .file("src/lib.rs", note_source)
         .build();
     compile_rust_package(note_project.root(), true)
-}
-
-/// Returns a generated caller-account `miden-project.toml` with the given sibling dependencies.
-fn caller_account_miden_project_toml(
-    account_name: &str,
-    account_package: &str,
-    dependencies: &[(&str, &Path)],
-) -> String {
-    let namespace = account_component_namespace(account_package, "caller-account");
-    let mut manifest = format!(
-        r#"
-[package]
-name = "{account_name}"
-version = "0.0.1"
-
-[lib]
-kind = "account-component"
-namespace = "{namespace}"
-path = "src/lib.rs"
-
-[package.metadata.miden]
-supported-types = ["RegularAccountUpdatableCode"]
-
-[dependencies]
-miden-core = "*"
-miden-protocol = "*"
-"#
-    );
-    append_miden_project_dependencies(&mut manifest, dependencies);
-    manifest
-}
-
-/// Returns a generated caller-account `Cargo.toml` with the given sibling dependencies.
-fn caller_account_cargo_toml(
-    account_name: &str,
-    account_package: &str,
-    dependencies: &[(&str, &Path)],
-) -> String {
-    let mut manifest = account_cargo_toml_for(account_name, account_package);
-    append_cargo_dependency_metadata(&mut manifest, dependencies);
-    manifest
 }
 
 /// Names derived from a sibling-call test for the sibling counter, caller, and note projects.
