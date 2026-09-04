@@ -46,8 +46,9 @@ The trait is in scope in the module declaring the storage struct; elsewhere, imp
 Signature parameters and the result must be Miden core types or WIT primitives — no references,
 no user-defined types, nothing that would travel through memory. The arguments travel on the
 operand stack next to the procedure root, which bounds the signature to at most 12 flat argument
-values and at most 12 argument field elements, one fewer of each when the result is returned
-through a pointer. Wider signatures are rejected when the component is compiled.
+values and at most 12 argument field elements — 11 field elements when the result is returned
+through a pointer, which takes an element of its own. Wider signatures are rejected when the
+component is compiled.
 
 Roots are expected to be written by the host at deployment or update time; the SDK offers no
 constructor for a `StoredProcedure`, and neither the compiler nor the VM checks a stored root

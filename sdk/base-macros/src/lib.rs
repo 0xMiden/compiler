@@ -245,9 +245,9 @@ pub fn component(
 /// the result must be Miden core types or WIT primitives.
 ///
 /// The arguments travel on the VM's operand stack next to the procedure root, which bounds the
-/// signature: at most 12 flat argument values and at most 12 argument field elements — one fewer
-/// of each when the result is returned through a pointer, which takes an argument slot of its
-/// own. Wider signatures are rejected when the component is compiled.
+/// signature: at most 12 flat argument values, and at most 12 argument field elements — 11 when
+/// the result is returned through a pointer, which takes an element of its own. Wider signatures
+/// are rejected when the component is compiled.
 ///
 /// Roots are expected to be written by the host at deployment or update time; the SDK offers no
 /// constructor for a `StoredProcedure`. Neither the compiler nor the VM checks the stored root

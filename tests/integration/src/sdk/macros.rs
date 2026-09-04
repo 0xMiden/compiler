@@ -1258,6 +1258,43 @@ impl TestComponent for TestComponentStorage {
 }
 
 #[test]
+fn component_export_with_the_dyncall_prefix_is_rejected() {
+    // A component exporting `dyncall-…` compiles fine on its own today and only breaks its
+    // consumers, where the diagnostic blames the dependency; reject it at the producer.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, Felt};
+
+#[component_storage]
+pub struct TestComponentStorage;
+
+#[component]
+pub trait TestComponent {
+    #[account_procedure]
+    fn dyncall_notify(&self, amount: Felt);
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn dyncall_notify(&self, amount: Felt) {
+        let _ = amount;
+    }
+}
+"#;
+
+    let cargo_proj = account_component_project("component_export_reserved_dyncall_prefix", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    assert!(!output.status.success(), "expected the reserved dyncall prefix to be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("exported as `dyncall-notify`")
+            && stderr.contains("reserved for stored-procedure dispatch"),
+        "unexpected stderr: {stderr}"
+    );
+}
+
+#[test]
 fn component_sibling_trait_name_must_differ_from_the_component_trait() {
     // A sibling reference whose interface segment equals the component trait name would generate a
     // second `trait TestComponent` next to the user's. The collision check runs before WIT
@@ -1753,6 +1790,47 @@ impl TestComponent for TestComponentStorage {
     let output = cargo_check_miden_target(&cargo_proj);
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "expected stored-procedure slots to compile: {stderr}");
+}
+
+#[test]
+fn component_storage_stored_procedure_slot_with_wit_keyword_params_compiles() {
+    // Signature parameter names are lifted into the generated inline WIT world, where `flags`,
+    // `result` and `type` are keywords; without escaping, the world fails to parse.
+    let lib_rs = r#"#![no_std]
+#![feature(alloc_error_handler)]
+
+use miden::{component, component_storage, Felt, StorageValue, StoredProcedure};
+
+#[component_storage]
+pub struct TestComponentStorage {
+    #[storage]
+    hook: StorageValue<
+        StoredProcedure<fn(amount: u64, flags: u32, result: Felt, r#type: Felt) -> Felt>,
+    >,
+}
+
+#[component]
+pub trait TestComponent {
+    #[account_procedure]
+    fn run(&self, amount: u64, mask: u32, value: Felt) -> Felt;
+}
+
+#[component]
+impl TestComponent for TestComponentStorage {
+    fn run(&self, amount: u64, mask: u32, value: Felt) -> Felt {
+        self.hook.get().call(amount, mask, value, value)
+    }
+}
+"#;
+
+    let cargo_proj =
+        account_component_project("component_storage_stored_procedure_wit_keyword_params", lib_rs);
+    let output = cargo_check_miden_target(&cargo_proj);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "expected a slot with WIT-keyword parameter names to compile: {stderr}"
+    );
 }
 
 #[test]

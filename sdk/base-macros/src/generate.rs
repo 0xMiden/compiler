@@ -701,17 +701,15 @@ fn validate_reserved_dyncall_namespace(
     }
     let world = &resolve.worlds[world_id];
     for item in world.imports.values() {
-        let (owner, functions): (String, Vec<&Function>) = match item {
+        let (origin, functions): (String, Vec<&Function>) = match item {
             WorldItem::Interface { id, .. } => {
                 let interface = &resolve.interfaces[*id];
-                let owner = fpi::interface_import_path(resolve, *id)
+                let name = fpi::interface_import_path(resolve, *id)
                     .or_else(|| interface.name.clone())
                     .unwrap_or_else(|| "<anonymous>".to_string());
-                (owner, interface.functions.values().collect())
+                (format!("imported interface `{name}`"), interface.functions.values().collect())
             }
-            WorldItem::Function(function) => {
-                (resolve.worlds[world_id].name.clone(), vec![function])
-            }
+            WorldItem::Function(function) => (format!("world `{}`", world.name), vec![function]),
             WorldItem::Type { .. } => continue,
         };
         if let Some(function) =
@@ -720,10 +718,9 @@ fn validate_reserved_dyncall_namespace(
             return Err(Error::new(
                 Span::call_site(),
                 format!(
-                    "dependency interface `{owner}` defines function `{}` with reserved prefix \
-                     `{DYNCALL_WIT_PREFIX}`; the compiler lowers imports with that prefix as \
-                     stored-procedure dispatches, so dependency functions must use a different \
-                     name",
+                    "{origin} defines function `{}` with reserved prefix `{DYNCALL_WIT_PREFIX}`; \
+                     the compiler lowers imports with that prefix as stored-procedure dispatches, \
+                     so an imported function must use a different name",
                     function.name
                 ),
             ));
@@ -1386,6 +1383,27 @@ world spoofed-world {
         // `#[component_storage]` expansion does.
         validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Generated)
             .expect("the generated stored-procedure world may declare `dyncall-` imports");
+    }
+
+    /// Names the world, not a "dependency interface", for a function imported at world level.
+    #[test]
+    fn a_world_level_dyncall_import_is_rejected_without_blaming_a_dependency() {
+        let (resolve, world) = parse_test_world(
+            r#"
+package miden:world-level@1.0.0;
+
+world world-level-world {
+    import dyncall-notify: func(amount: u32);
+}
+"#,
+        );
+
+        let err = validate_reserved_dyncall_namespace(&resolve, world, DyncallPolicy::Reserved)
+            .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("world `world-level-world`"), "{message}");
+        assert!(message.contains("`dyncall-notify`"), "{message}");
+        assert!(!message.contains("interface"), "{message}");
     }
 
     /// Parses a test WIT world with the bundled SDK WIT available in the resolver.
