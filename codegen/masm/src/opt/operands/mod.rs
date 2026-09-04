@@ -11,7 +11,10 @@ pub use self::solver::{OperandMovementConstraintSolver, SolverError, SolverOptio
 use self::{context::SolverContext, stack::Stack};
 
 /// The number of field elements addressable by MASM stack manipulation instructions.
-pub(crate) const MASM_STACK_WINDOW_FELTS: usize = 16;
+///
+/// This is the same window MASM legalization bounds a call's operands by, so both take it from the
+/// VM's minimum stack depth rather than each restating the number.
+pub(crate) const MASM_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
 /// This represents a specific action that should be taken by
 /// the code generator with regard to an operand on the stack.
