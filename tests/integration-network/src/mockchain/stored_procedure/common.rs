@@ -24,10 +24,15 @@ pub(super) const DISPATCHER_INTERFACE: &str = "dispatcher";
 
 /// Names derived from a dispatch test for its target, dispatcher, and note projects.
 pub(super) struct DispatchProjectNames {
+    /// Kebab-cased test name every generated project name is prefixed with.
     pub base_name: String,
+    /// Cargo crate name of the target (sibling) component project.
     pub target_account_name: String,
+    /// Cargo crate name of the dispatcher component project.
     pub dispatcher_account_name: String,
+    /// WIT package name of the target component, as `miden:<target-account-name>`.
     pub target_account_package: String,
+    /// WIT package name of the dispatcher component, as `miden:<dispatcher-account-name>`.
     pub dispatcher_account_package: String,
 }
 
