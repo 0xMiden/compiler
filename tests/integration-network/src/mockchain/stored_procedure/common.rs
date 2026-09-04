@@ -6,7 +6,7 @@
 
 use std::{path::Path, sync::Arc};
 
-use miden_core::{Felt, Word, serde::Deserializable};
+use miden_core::{Word, serde::Deserializable};
 use miden_mast_package::{Package, SectionId};
 use miden_protocol::account::{
     AccountComponentMetadata, StorageSlotName,
@@ -14,6 +14,9 @@ use miden_protocol::account::{
 };
 use midenc_integration_test_support::{cargo_proj::Project, project};
 
+/// The non-zero storage key the counter fixtures use (matching the note sources), shared with
+/// the sibling tests driving the same counter component.
+pub(super) use super::super::sibling::counter_storage_key;
 use super::super::support::*;
 
 /// Interface segment of every generated dispatcher component (`[lib].namespace` and trait name).
@@ -109,16 +112,6 @@ pub(super) fn build_dispatcher_package_with_dependencies(
         .build();
     let package = compile_rust_package(project.root(), true);
     (project, package)
-}
-
-/// Returns the non-zero storage key the counter fixtures use (matching the note sources).
-pub(super) fn counter_storage_key() -> Word {
-    Word::new([
-        Felt::new(13).unwrap(),
-        Felt::new(21).unwrap(),
-        Felt::new(34).unwrap(),
-        Felt::new(55).unwrap(),
-    ])
 }
 
 /// Target counter component: a read, an increment, and an order-sensitive two-argument update.

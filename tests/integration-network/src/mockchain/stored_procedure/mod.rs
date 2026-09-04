@@ -11,3 +11,4 @@ mod common;
 mod masm_standard;
 mod overhead;
 mod rust_sibling;
+mod signatures;
