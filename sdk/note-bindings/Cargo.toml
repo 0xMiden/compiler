@@ -1,0 +1,30 @@
+[package]
+name = "miden-note-bindings"
+description = "Typed host bindings for Miden note storage schemas"
+version = "0.14.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-field.workspace = true
+miden-field-repr.workspace = true
+miden-note-bindings-macros.workspace = true
+miden-note-schema.workspace = true
+miden-protocol = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+miden-mast-package = { workspace = true, features = ["std"] }
+midenc-frontend-wasm-metadata.workspace = true
+midenc-integration-test-support.workspace = true
+tempfile.workspace = true

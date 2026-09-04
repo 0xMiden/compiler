@@ -34,6 +34,13 @@ members = [
     "sdk/base-macros",
     "sdk/base-sys",
     "sdk/build-script-support",
+    "sdk/note-bindings",
+    "sdk/note-bindings/macros",
+    "sdk/note-codec",
+    "sdk/note-codec/macros",
+    "sdk/note-codec/wit-crate",
+    "sdk/note-schema",
+    "sdk/note-schema/codegen",
     "sdk/sdk",
     "sdk/stdlib-sys",
     "sdk/tx-script-args",
@@ -52,7 +59,6 @@ exclude = [
     # `name = "{{crate_name}}"`, and a nested workspace, neither of which Cargo
     # should ever try to interpret as part of this workspace.
     "extra",
-    "sdk/.cargo",
     "tests/",
     "examples",
     "tools/fuzza-agent",
@@ -139,6 +145,14 @@ serde = { version = "1.0", default-features = false, features = [
 ] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 heck = "0.5"
+prettyplease = "0.2"
+proc-macro-crate = "3.5"
+# Deliberate skew: WIT emission (wit-bindgen-core 0.57) and attach/consume validation
+# (workspace wit-parser/wit-component) parse with 0.247; 0.233 enters only through wasmtime's
+# component bindgen macros on the codec-consumption path.
+wit-bindgen-core = "0.57"
+wit-bindgen-rust = { version = "0.57", default-features = false }
+wit-bindgen = { version = "0.57", default-features = false, features = ["macros"] }
 smallvec = { version = "1.15", default-features = false, features = [
     "union",
     "const_generics",
@@ -166,6 +180,13 @@ wasmparser = { version = "^0.248", default-features = false, features = [
     "simd",
 ] }
 wit-component = "0.247"
+wit-parser = "0.247"
+wasmtime = { version = "34.0.0", default-features = false, features = [
+    "component-model",
+    "cranelift",
+    "runtime",
+    "std",
+] }
 
 # Workspace crates
 midenc-codegen-masm = { version = "0.10.0", path = "codegen/masm" }
@@ -192,6 +213,11 @@ midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
 miden-base-sys = { version = "0.14.0", path = "sdk/base-sys" }
 miden-field-repr = { version = "0.14.0", path = "sdk/field-repr/repr" }
+miden-note-bindings-macros = { version = "0.14.0", path = "sdk/note-bindings/macros" }
+miden-note-codec-macros = { version = "0.14.0", path = "sdk/note-codec/macros" }
+miden-note-codec-wit = { version = "0.14.0", path = "sdk/note-codec/wit-crate" }
+miden-note-schema = { version = "0.14.0", path = "sdk/note-schema" }
+miden-note-schema-codegen = { version = "0.14.0", path = "sdk/note-schema/codegen" }
 miden-stdlib-sys = { version = "0.14.0", path = "sdk/stdlib-sys" }
 miden-tx-script-args = { version = "0.14.0", path = "sdk/tx-script-args" }
 

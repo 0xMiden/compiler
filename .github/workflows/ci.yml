@@ -144,8 +144,10 @@ jobs:
         run: |
           cargo make check --tests
       - name: Test
+        # The p2id end-to-end tests drive full nested Cargo builds, so the
+        # release-profile job runs them.
         run: |
-          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests))'
+          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests) or test(~p2id_schema_builds_and_decodes_account_id_storage) or test(~generated_p2id_bindings_compile_and_run_in_a_consumer_crate))'
 
   release_profile_tests:
     name: midenc release-profile tests

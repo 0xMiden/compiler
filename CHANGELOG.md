@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Migration and breaking changes
+
+- BREAKING: `#[export_type]` now rejects conflicting registrations for the same WIT type and
+  reserves the inherent associated constant name `__MIDEN_EXPORT_TYPE_SHAPE`. See the
+  [migration guide](./sdk/sdk/MIGRATION.md) for both required source changes.
+
 ## [0.10.0]
 
 ### Compiler and `midenc`

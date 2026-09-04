@@ -400,9 +400,8 @@ fn expand_component_storage(
 
     let component_metadata = acc_builder.build(call_site_span.into())?;
 
-    let mut metadata_bytes = component_metadata.to_bytes();
-    let padded_len = metadata_bytes.len().div_ceil(16) * 16;
-    metadata_bytes.resize(padded_len, 0);
+    let metadata_bytes =
+        midenc_frontend_wasm_metadata::pad_to_link_section_alignment(component_metadata.to_bytes());
 
     let link_section = generate_link_section(&metadata_bytes);
     let runtime_boilerplate = runtime_boilerplate();
@@ -1527,6 +1526,7 @@ mod tests {
     #[test]
     fn build_custom_with_entries_prefers_custom_paths() {
         let exported_types = vec![ExportedTypeDef {
+            docs: Vec::new(),
             rust_name: "StructA".into(),
             wit_name: "struct-a".into(),
             kind: ExportedTypeKind::Record { fields: Vec::new() },

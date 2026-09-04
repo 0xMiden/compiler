@@ -11,10 +11,11 @@ use syn::{
 
 use crate::{
     boilerplate::runtime_boilerplate,
+    note_schema::{expand_note_storage_schema, note_storage_schema_uniqueness_guard},
     types::{TypeRef, map_type_to_type_ref, registered_export_type_map},
     util::{
-        generate_frontend_link_section, generate_wit_link_section, is_type_named,
-        is_unit_return_type,
+        NOTE_NAMED_FIELDS_ERROR, generate_frontend_link_section, generate_wit_link_section,
+        is_type_named, is_unit_return_type,
     },
     wit_builder::WitBuilder,
     wit_world::{ManifestPackage, write_world_block},
@@ -123,8 +124,10 @@ fn expand_method_marker_attr(
     quote!(#item_fn)
 }
 
+/// Expands a note input struct with felt encoding, decoding, and schema metadata.
 fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
     let struct_ident = &item_struct.ident;
+    let uniqueness_guard = note_storage_schema_uniqueness_guard();
 
     if !item_struct.generics.params.is_empty() {
         return syn::Error::new(
@@ -133,11 +136,14 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
         )
         .into_compile_error();
     }
+    if let syn::Fields::Unnamed(fields) = &item_struct.fields {
+        return syn::Error::new(fields.span(), NOTE_NAMED_FIELDS_ERROR).into_compile_error();
+    }
 
     let to_felt_repr_impl = note_storage_encoding(&item_struct);
-    let from_impl = match &item_struct.fields {
+    let (from_impl, schema_static) = match &item_struct.fields {
         syn::Fields::Unit => {
-            quote! {
+            let from_impl = quote! {
                 impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
                     type Error = ::miden::felt_repr::FeltReprError;
 
@@ -148,9 +154,14 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                         Ok(Self)
                     }
                 }
-            }
+            };
+            (from_impl, quote! {})
         }
         syn::Fields::Named(fields) => {
+            let schema_static = match expand_note_storage_schema(&item_struct) {
+                Ok(schema_static) => schema_static,
+                Err(err) => return err.into_compile_error(),
+            };
             let field_inits = fields.named.iter().map(|field| {
                 let ident = field.ident.as_ref().expect("named fields must have identifiers");
                 let ty = &field.ty;
@@ -159,7 +170,7 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                 }
             });
 
-            quote! {
+            let from_impl = quote! {
                 impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
                     type Error = ::miden::felt_repr::FeltReprError;
 
@@ -171,30 +182,10 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
                         Ok(value)
                     }
                 }
-            }
+            };
+            (from_impl, schema_static)
         }
-        syn::Fields::Unnamed(fields) => {
-            let field_inits = fields.unnamed.iter().map(|field| {
-                let ty = &field.ty;
-                quote! {
-                    <#ty as ::miden::felt_repr::FromFeltRepr>::from_felt_repr(&mut reader)?
-                }
-            });
-
-            quote! {
-                impl ::core::convert::TryFrom<&[::miden::Felt]> for #struct_ident {
-                    type Error = ::miden::felt_repr::FeltReprError;
-
-                    #[inline(always)]
-                    fn try_from(felts: &[::miden::Felt]) -> Result<Self, Self::Error> {
-                        let mut reader = ::miden::felt_repr::FeltReader::new(felts);
-                        let value = Self(#(#field_inits),*);
-                        reader.ensure_eof()?;
-                        Ok(value)
-                    }
-                }
-            }
-        }
+        syn::Fields::Unnamed(_) => unreachable!("tuple note structs are rejected above"),
     };
 
     quote! {
@@ -203,6 +194,8 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
         #to_felt_repr_impl
 
         impl ::miden::active_note::ActiveNote for #struct_ident {}
+        #schema_static
+        #uniqueness_guard
     }
 }
 
@@ -226,17 +219,9 @@ fn note_storage_encoding(item_struct: &ItemStruct) -> TokenStream2 {
                 }
             })
             .collect(),
-        syn::Fields::Unnamed(fields) => fields
-            .unnamed
-            .iter()
-            .enumerate()
-            .map(|(index, _)| {
-                let index = syn::Index::from(index);
-                quote! {
-                    ::miden::felt_repr::ToFeltRepr::write_felt_repr(&self.#index, writer);
-                }
-            })
-            .collect(),
+        syn::Fields::Unnamed(_) => {
+            unreachable!("tuple note structs are rejected before storage encoding")
+        }
     };
 
     let writer_ident = if field_writes.is_empty() {
@@ -355,8 +340,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
         Ok(metadata) => metadata,
         Err(err) => return err.to_compile_error(),
     };
-    let component_package =
-        format!("miden:{}", metadata.package.name().into_inner().to_kebab_case());
+    let component_package = metadata.component_package();
     let interface_name = component_package.to_kebab_case();
     let world_name = format!("{interface_name}-world");
     let interface_module = interface_name.to_snake_case();
@@ -371,7 +355,7 @@ fn expand_note_impl(item_impl: ItemImpl) -> TokenStream2 {
 
     let inline_wit = build_note_script_wit(
         &component_package,
-        metadata.package.version().inner(),
+        metadata.component_version(),
         &interface_name,
         &world_name,
         &export_name,
@@ -1196,6 +1180,47 @@ mod tests {
     use syn::parse_quote;
 
     use super::*;
+    use crate::types::{lock_export_type_registry_for_tests, reset_export_type_registry_for_tests};
+
+    #[test]
+    fn named_note_struct_emits_storage_schema_static() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let item_struct: ItemStruct = parse_quote! {
+            struct PaymentNote {
+                target: AccountId,
+            }
+        };
+
+        let tokens = expand_note_struct(item_struct).to_string();
+
+        assert!(tokens.contains("__MIDEN_NOTE_STORAGE_SCHEMA_BYTES"));
+        assert!(tokens.contains(crate::note_schema::NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD_SYMBOL));
+        assert!(tokens.contains("miden_note_schema"));
+    }
+
+    #[test]
+    fn unit_note_struct_does_not_emit_storage_schema() {
+        let item_struct: ItemStruct = parse_quote!(
+            struct EmptyNote;
+        );
+
+        let tokens = expand_note_struct(item_struct).to_string();
+
+        assert!(!tokens.contains("__MIDEN_NOTE_STORAGE_SCHEMA_BYTES"));
+        assert!(tokens.contains(crate::note_schema::NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD_SYMBOL));
+    }
+
+    #[test]
+    fn tuple_note_struct_requires_named_fields() {
+        let item_struct: ItemStruct = parse_quote!(
+            struct TupleNote(Felt);
+        );
+
+        let tokens = expand_note_struct(item_struct).to_string();
+
+        assert!(tokens.contains(NOTE_NAMED_FIELDS_ERROR));
+    }
 
     #[test]
     fn entrypoint_signature_allows_non_run_name() {

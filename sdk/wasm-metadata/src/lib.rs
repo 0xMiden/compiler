@@ -13,6 +13,15 @@ use alloc::{string::String, vec::Vec};
 
 use serde::{Deserialize, Serialize};
 
+/// Environment variables that must not leak into nested Cargo builds.
+pub const NESTED_CARGO_SCRUB_ENV: &[&str] = &[
+    "CARGO_BUILD_RUSTFLAGS",
+    "CARGO_BUILD_TARGET",
+    "CARGO_ENCODED_RUSTFLAGS",
+    "CARGO_TARGET_WASM32_WASIP2_RUSTFLAGS",
+    "RUSTFLAGS",
+];
+
 /// Name of the Wasm custom section used to store frontend metadata bytes.
 pub const WASM_FRONTEND_METADATA_CUSTOM_SECTION_NAME: &str =
     "rodata,miden_account_component_frontend";
@@ -35,13 +44,53 @@ pub fn package_wit_section_id() -> miden_mast_package::SectionId {
         .expect("the WIT section id must be a valid custom section id")
 }
 
+/// Name of the Wasm custom section that stores a note storage schema.
+pub const WASM_NOTE_STORAGE_SCHEMA_CUSTOM_SECTION_NAME: &str = "rodata,miden_note_schema";
+
+/// Name of the Miden package section that stores a note storage schema.
+pub const PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID: &str = "note_storage_schema";
+
+/// Returns the Miden package section id that stores a note storage schema.
+///
+/// One accessor keeps every producer and consumer on the same section contract.
+pub fn package_note_storage_schema_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_NOTE_STORAGE_SCHEMA_SECTION_ID)
+        .expect("the note storage schema section id must be a valid custom section id")
+}
+
+/// Name of the Miden package section that stores a note codec.
+pub const PACKAGE_NOTE_CODEC_SECTION_ID: &str = "note_codec";
+
+/// Returns the Miden package section id that stores a note codec.
+///
+/// One accessor keeps every producer and consumer on the same section contract.
+pub fn package_note_codec_section_id() -> miden_mast_package::SectionId {
+    miden_mast_package::SectionId::custom(PACKAGE_NOTE_CODEC_SECTION_ID)
+        .expect("the note codec section id must be a valid custom section id")
+}
+
+/// Pads metadata bytes with NUL bytes to the 16-byte link-section alignment.
+///
+/// Account-component-metadata link sections use this 16-byte padding. Note storage schema link
+/// sections use the same contract.
+pub fn pad_to_link_section_alignment(mut bytes: Vec<u8>) -> Vec<u8> {
+    let padded_len = bytes.len().div_ceil(16) * 16;
+    bytes.resize(padded_len, 0);
+    bytes
+}
+
+/// Removes NUL padding from the end of a link-section payload.
+pub fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
+    let len = bytes.iter().rposition(|byte| *byte != 0).map_or(0, |index| index + 1);
+    &bytes[..len]
+}
+
 /// The filesystem package-cache exchange contract.
 ///
 /// The compiler publishes compiled dependency packages — and its recorded dependency
 /// resolution — into the directory named by [`package_cache::PACKAGE_CACHE_ENV`]; the SDK
 /// macros and the build-script support crate consume them. Every spelling of that contract lives
-/// here so the producer and the consumers cannot drift apart. (The support crate is the one
-/// deliberate exception: it is dependency-free by design and spells the same values inline.)
+/// here so the producer and the consumers cannot drift apart.
 pub mod package_cache {
     use alloc::{format, string::String};
 
@@ -250,6 +299,8 @@ pub struct PackageSections {
     pub account_component_metadata: Option<Vec<u8>>,
     /// The component's public WIT source emitted by the `#[component]` macro.
     pub component_wit: Option<Vec<u8>>,
+    /// The note storage schema.
+    pub note_storage_schema: Option<Vec<u8>>,
 }
 
 /// Frontend-only metadata emitted by the SDK macros into a dedicated Wasm custom section.
@@ -356,6 +407,16 @@ mod tests {
     use alloc::{format, string::ToString};
 
     use super::*;
+
+    /// Ensures shared link-section padding is reversible and aligned.
+    #[test]
+    fn link_section_padding_round_trips() {
+        let source = b"note schema";
+        let padded = pad_to_link_section_alignment(source.to_vec());
+
+        assert_eq!(padded.len() % 16, 0);
+        assert_eq!(trim_trailing_nuls(&padded), source);
+    }
 
     /// Ensures a single embedded component WIT source is recognized as one package.
     #[test]

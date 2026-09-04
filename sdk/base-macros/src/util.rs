@@ -19,6 +19,9 @@ const FRONTEND_METADATA_BYTES_STATIC_IDENT: &str = "__miden_frontend_metadata_by
 /// Linker symbol used to reject multiple frontend-marked procedures in one project.
 pub(crate) const FRONTEND_METADATA_UNIQUENESS_GUARD_SYMBOL: &str =
     "__MIDEN_FRONTEND_METADATA_UNIQUENESS_GUARD";
+/// Diagnostic emitted when `#[note]` is applied to a tuple struct.
+pub(crate) const NOTE_NAMED_FIELDS_ERROR: &str =
+    "#[note] requires named fields; tuple structs are no longer supported";
 
 /// Returns true if a function's return type is unit.
 pub(crate) fn is_unit_return_type(output: &syn::ReturnType) -> bool {

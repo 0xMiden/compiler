@@ -63,6 +63,31 @@ pub(crate) fn current_dir_lock() -> CurrentDirGuard {
     }
 }
 
+/// Restores selected process environment variables when dropped.
+pub(crate) struct RestoreEnvironment {
+    values: Vec<(&'static str, Option<std::ffi::OsString>)>,
+}
+
+impl RestoreEnvironment {
+    /// Captures the current values of the selected environment variables.
+    pub(crate) fn new<const N: usize>(names: [&'static str; N]) -> Self {
+        Self {
+            values: names.into_iter().map(|name| (name, env::var_os(name))).collect(),
+        }
+    }
+}
+
+impl Drop for RestoreEnvironment {
+    fn drop(&mut self) {
+        for (name, value) in self.values.drain(..) {
+            match value {
+                Some(value) => unsafe { env::set_var(name, value) },
+                None => unsafe { env::remove_var(name) },
+            }
+        }
+    }
+}
+
 /// The directory the post-build package tests hand to the compiler as its package cache.
 ///
 /// A lease the compiler mints itself is deleted when the compiler finishes, so a test that
@@ -297,12 +322,4 @@ fn write_template(
     fs::write(template_root.join("Cargo.toml"), cargo_toml)?;
     fs::write(template_root.join("src/lib.rs"), lib_rs)?;
     Ok(())
-}
-
-pub(crate) fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("cargo-miden should live under tools/cargo-miden")
-        .to_path_buf()
 }

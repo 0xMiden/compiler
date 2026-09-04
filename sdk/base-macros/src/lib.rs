@@ -75,6 +75,7 @@ mod fpi;
 mod generate;
 mod manifest_paths;
 mod note;
+mod note_schema;
 mod script;
 #[cfg(test)]
 mod test_support;
@@ -285,8 +286,11 @@ pub fn account_procedure(
     component_macro::expand_account_procedure(attr, item)
 }
 
-/// Generates an equvalent type in the WIT interface.
-/// Required for every type mentioned in the public methods of an account component.
+/// Generates an equivalent type in the WIT interface.
+///
+/// Use this macro for every custom type in the public methods of an account component. Exported
+/// records and enums can also appear in note storage schemas. The macro emits a hidden shape
+/// constant that lets `#[note]` confirm the exact Rust type at compile time.
 ///
 /// Intended to be used together with `#[component]` attribute macro.
 #[proc_macro_attribute]
@@ -303,6 +307,19 @@ pub fn export_type(
 /// - a note input type definition (`struct MyNote { ... }`)
 /// - the associated inherent `impl` block that contains an entrypoint method annotated with
 ///   `#[note_script]`
+///
+/// # Note storage schema
+///
+/// A named-field `#[note]` struct emits a WIT storage schema into the package's
+/// `note_storage_schema` section. Field doc comments are copied into the schema.
+///
+/// A note struct must use named fields or no fields. A tuple struct is a compile error. A storage
+/// field cannot use `Vec`. Apply `#[export_type]` to each nested custom type, and place that type
+/// definition before the `#[note]` struct. Each field must use the exact registered
+/// `#[export_type]` Rust type. A different type with the same name fails the hidden shape check.
+///
+/// A crate can contain only one `#[note]` struct. A second struct fails at link time because it
+/// defines the duplicate `__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
 ///
 /// # Foreign Procedure Invocation (FPI)
 ///

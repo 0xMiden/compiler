@@ -5,6 +5,7 @@ use miden_core::serde::Serializable;
 use miden_mast_package::{Package, PackageExport, ProcedureExport, QualifiedProcedureName};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
+use midenc_integration_test_support::write_masp_file_atomic;
 
 use crate::{
     CompilerTest, CompilerTestBuilder,
@@ -917,11 +918,9 @@ fn rust_sdk_fpi_reexpands_after_only_package_cache_env_changes() {
     for cache in [&first_cache, &second_cache] {
         fs::create_dir_all(cache).unwrap();
     }
-    first_package
-        .write_masp_file(&first_cache)
+    write_masp_file_atomic(&first_package, &first_cache)
         .expect("failed to prepopulate the first package cache");
-    second_package
-        .write_masp_file(&second_cache)
+    write_masp_file_atomic(&second_package, &second_cache)
         .expect("failed to prepopulate the second package cache");
 
     let cargo_target_dir = project.root().join("option-env-cargo-target");

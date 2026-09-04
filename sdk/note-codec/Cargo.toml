@@ -1,0 +1,31 @@
+[package]
+name = "miden-note-codec"
+description = "Author-side codecs for typed Miden note storage"
+version = "0.14.0"
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+categories.workspace = true
+keywords.workspace = true
+license.workspace = true
+readme.workspace = true
+edition.workspace = true
+
+[lib]
+doctest = false
+
+[dependencies]
+miden-field.workspace = true
+miden-field-repr.workspace = true
+miden-note-codec-macros.workspace = true
+miden-note-codec-wit.workspace = true
+miden-protocol.workspace = true
+wit-bindgen = { workspace = true }
+
+[dev-dependencies]
+midenc-frontend-wasm-metadata.workspace = true
+tempfile.workspace = true
+wit-component.workspace = true
+wit-parser.workspace = true

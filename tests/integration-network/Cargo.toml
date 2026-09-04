@@ -33,3 +33,7 @@ tokio.workspace = true
 
 # For accessing shared compiler test builders and helpers
 midenc-integration-test-support.workspace = true
+
+[dev-dependencies]
+miden-note-schema = { workspace = true, features = ["codec-component"] }
+midenc-frontend-wasm-metadata.workspace = true

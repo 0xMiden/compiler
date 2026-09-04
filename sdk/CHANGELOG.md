@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Note codec crates build for the `wasm32-wasip2` target, and rustc links them directly as
+  Wasm components. The standard library imports WASI interfaces, so a codec component may
+  import `wasi:*` interfaces only; consumers stub every import as a trap at instantiation,
+  so no host capability is reachable from codec code.
+- Added optional `codec-component` support to the new `miden-note-schema` host crate. It can
+  load author-defined note codecs from a package without adding Wasmtime to the default feature
+  set or the guest SDK dependency graph.
+- Added the `miden-note-codec` author crate. Its codec-side `from_project!` and `from_package!`
+  macros generate host types from a note package, `AuthorTypeCodec` defines text conversion and
+  validation, `#[note_codec]` registers each custom type, and `export_codecs!` exports the
+  registered codecs as a component. Add this package-level metadata to `miden-project.toml` to
+  enable the codec build. The `crate` directory is relative to that manifest:
+
+  ```toml
+  [package.metadata.midenc.note-codec]
+  crate = "../my-note-codec"
+  ```
+- Added the dependency-free `miden-note-codec-wit` crate as the canonical source for the note
+  codec component WIT contract.
+- Added typed host note-storage bindings through the new `miden-note-bindings` macros. Bindings
+  can load a built note project or an exact `.masp`, generate native Rust storage types, and convert
+  typed values to and from note storage. Its facade supplies all generated runtime dependencies,
+  and generated string, validation, and display APIs keep stable standard-registry and
+  caller-provided-registry forms as schemas gain nested types.
+- The `FromFeltRepr`/`ToFeltRepr` derives accept an internal `#[felt_repr(crate_path = "...")]`
+  attribute so macro-generated code can reference the runtime crate through a facade re-export.
+- `#[note]` now embeds a WIT storage schema for named-field note structs in the
+  `note_storage_schema` section of the compiled `.masp`. Schema records preserve Rust doc comments
+  and can include nested types declared with `#[export_type]` before the note struct. Unit structs
+  emit no schema.
+
+### Fixed
+
+- Note storage schema handling now rejects conflicting `#[export_type]` registrations and local
+  types that only collide by name with SDK core types, resolves schema types through a bounded,
+  memoized graph, uses one canonical standard-leaf set across consumers, and caps untrusted author
+  codec components before compilation and during table allocation. (#1307)
+- Note package macros now select artifacts by canonical package identity and support shared Cargo
+  target directories. The note codec macros support renamed facade dependencies, reject a second
+  distinct schema in one crate, and report `export_codecs!` calls that appear before all codec
+  declarations. (#1307)
+
+### Migration and breaking changes
+
+- `#[note]` storage types now require named-field or unit structs. Tuple structs no longer compile,
+  and note storage fields no longer accept `Vec`. Follow the
+  [migration guidance](./sdk/MIGRATION.md#rewrite-tuple-note-and-vec-storage-layouts) to preserve
+  field order with named fields and replace dynamic vectors with a fixed schema. (#1307)
+
 ## [0.14.0]
 
 ### Added

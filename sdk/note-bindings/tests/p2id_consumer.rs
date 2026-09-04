@@ -1,0 +1,190 @@
+//! End-to-end test for package discovery and generated p2id consumer bindings.
+
+use std::{env, fs, path::Path, process::Command};
+
+use miden_mast_package::Section;
+use midenc_frontend_wasm_metadata::package_note_storage_schema_section_id;
+use midenc_integration_test_support::{
+    compile_project, scrub_nested_cargo_env, workspace_root, write_masp_file_atomic,
+};
+
+/// Returns the native rustc host target.
+fn host_target() -> String {
+    let output = Command::new(env::var_os("RUSTC").unwrap_or_else(|| "rustc".into()))
+        .arg("-vV")
+        .output()
+        .expect("failed to query the rustc host target");
+    assert!(output.status.success(), "rustc -vV failed");
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .find_map(|line| line.strip_prefix("host: "))
+        .expect("rustc -vV did not report a host target")
+        .to_owned()
+}
+
+/// Copies the workspace patch table into an isolated consumer manifest.
+fn workspace_patch_section(workspace: &Path) -> String {
+    let manifest = fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
+    let mut section = String::new();
+    let mut copying = false;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed == "[patch.crates-io]" {
+            copying = true;
+        } else if copying && trimmed.starts_with('[') {
+            break;
+        }
+        if copying {
+            section.push_str(line);
+            section.push('\n');
+        }
+    }
+    assert!(!section.is_empty(), "workspace manifest has no [patch.crates-io] section");
+    section
+}
+
+#[test]
+fn generated_p2id_bindings_compile_and_run_in_a_consumer_crate() {
+    let workspace = workspace_root();
+    let examples = workspace.join("examples");
+    let wallet_dir = examples.join("basic-wallet");
+    let wallet = compile_project(&wallet_dir);
+    write_masp_file_atomic(&wallet, wallet_dir.join("target/miden/release"))
+        .expect("failed to persist the basic-wallet dependency package");
+
+    let p2id_dir = examples.join("p2id-note");
+    let p2id = compile_project(&p2id_dir);
+    let package_dir = p2id_dir.join("target/miden/release");
+    write_masp_file_atomic(&p2id, &package_dir).expect("failed to persist the p2id package");
+    let package_path = package_dir.join("p2id.masp");
+
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join("src")).unwrap();
+    // Seed the workspace lockfile so the offline build resolves to the versions that the
+    // workspace already downloaded instead of racing the registry index.
+    fs::copy(workspace.join("Cargo.lock"), temp.path().join("Cargo.lock")).unwrap();
+    let second_package_dir = temp.path().join("packages/counter");
+    fs::create_dir_all(&second_package_dir).unwrap();
+    let mut second_package = (*p2id).clone();
+    let schema_id = package_note_storage_schema_section_id();
+    second_package.sections.retain(|section| section.id != schema_id);
+    second_package.sections.push(Section::new(
+        schema_id,
+        br#"package example:counter-schema@1.0.0;
+
+interface note-storage {
+    record counter-note { value: u64 }
+    type storage = counter-note;
+}
+"#
+        .to_vec(),
+    ));
+    write_masp_file_atomic(&second_package, &second_package_dir)
+        .expect("failed to persist the second schema package");
+    let second_package_path = second_package_dir.join("p2id.masp");
+
+    let bindings_dir = workspace.join("sdk/note-bindings");
+    let patches = workspace_patch_section(&workspace);
+    fs::write(
+        temp.path().join("Cargo.toml"),
+        format!(
+            r#"[package]
+name = "note-bindings-consumer"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+# Keep only file/line debug information: this project exists to prove the
+# generated bindings compile and run, and full DWARF for the native Miden
+# dependency cone costs gigabytes in the shared test build directory.
+[profile.dev]
+debug = "line-tables-only"
+
+[dependencies]
+miden-note-bindings = {{ path = {bindings_dir:?} }}
+
+{patches}
+"#,
+            bindings_dir = bindings_dir.to_string_lossy(),
+        ),
+    )
+    .unwrap();
+
+    let source = format!(
+        r#"use std::collections::BTreeMap;
+
+use miden_note_bindings::{{account::AccountId, address::NetworkId}};
+
+mod project_bindings {{
+    miden_note_bindings::from_project!({project_dir:?});
+}}
+
+mod package_bindings {{
+    miden_note_bindings::from_package!({package_path:?});
+    miden_note_bindings::from_package!({second_package_path:?});
+}}
+
+fn main() {{
+    let account_id =
+        AccountId::try_from(0xaa00_0000_0000_bc11_0000_bc00_0000_de00u128).unwrap();
+    let bech32 = account_id.to_bech32(NetworkId::Mainnet);
+    let mut values = BTreeMap::new();
+    values.insert("target_account_id".to_owned(), bech32.clone());
+
+    let typed = project_bindings::P2idNote::from_str_values(&values).unwrap();
+    assert_eq!(typed.target_account_id, account_id);
+    let storage = typed.to_note_storage().unwrap();
+    assert_eq!(
+        storage.items(),
+        &[account_id.prefix().as_felt(), account_id.suffix()],
+    );
+    typed.validate().unwrap();
+    assert_eq!(
+        typed.display().unwrap(),
+        format!("{{{{target-account-id: {{bech32}}}}}}"),
+    );
+
+    let decoded = project_bindings::P2idNote::from_note_storage(&storage).unwrap();
+    assert_eq!(decoded, typed);
+
+    let exact = package_bindings::P2idNote::from_note_storage(&storage).unwrap();
+    assert_eq!(exact.target_account_id, account_id);
+
+    let counter = package_bindings::CounterNote {{ value: 9 }};
+    let counter_storage = counter.to_note_storage().unwrap();
+    assert_eq!(counter_storage.items()[0].as_canonical_u64(), 9);
+    assert_eq!(counter_storage.items()[1].as_canonical_u64(), 0);
+}}
+"#,
+        project_dir = p2id_dir.to_string_lossy(),
+        package_path = package_path.to_string_lossy(),
+        second_package_path = second_package_path.to_string_lossy(),
+    );
+    fs::write(temp.path().join("src/main.rs"), source).unwrap();
+
+    let mut cargo = Command::new(env::var_os("CARGO").unwrap_or_else(|| "cargo".into()));
+    cargo
+        .args(["run", "--quiet", "--target"])
+        .arg(host_target())
+        .arg("--manifest-path")
+        .arg(temp.path().join("Cargo.toml"))
+        .current_dir(temp.path())
+        .env("CARGO_TARGET_DIR", workspace.join("target/note-bindings-consumer"))
+        // Share the hash-keyed intermediates with the other test builds; only the
+        // name-keyed final artifacts stay in the directory above. Convention from
+        // `tests/support`.
+        .env("CARGO_BUILD_BUILD_DIR", workspace.join("target/miden_build_cache"))
+        .env("CARGO_NET_OFFLINE", "true");
+    scrub_nested_cargo_env(&mut cargo);
+    let output = cargo
+        .output()
+        .expect("failed to spawn Cargo for the generated bindings consumer");
+    assert!(
+        output.status.success(),
+        "generated bindings consumer failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}

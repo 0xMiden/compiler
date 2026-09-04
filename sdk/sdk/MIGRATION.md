@@ -90,6 +90,19 @@ constructors can commit to the note script's MAST root. Rename any inherent item
 including methods, `#[note_constructor]` methods, associated constants, and items declared in a
 separate impl block.
 
+### Keep duplicate `#[export_type]` registrations nominally unique and shape-compatible
+
+Two different Rust types that map to the same WIT name are now a compile error, even when their
+record fields or enum cases are identical. Shape-identical duplicate registrations of the same Rust
+type remain allowed, while conflicting shapes do not. Previously, the last registration silently
+replaced the first. Rename one Rust type so it maps to a different WIT name.
+
+### `#[export_type]` reserves `__MIDEN_EXPORT_TYPE_SHAPE`
+
+The `#[export_type]` macro now emits an inherent public associated constant named
+`__MIDEN_EXPORT_TYPE_SHAPE` on the annotated type. Rename any user-defined associated item with
+that exact name.
+
 ### Contract crates gain a `build.rs` for IDE and plain-cargo builds
 
 New projects created by `cargo miden new` include a small `build.rs` in each contract crate and a
@@ -145,6 +158,57 @@ One sharing caveat: cargo keys build-script output by crate name and version, no
 path. Two different projects that contain a contract crate with the same package name and
 version and share one `CARGO_TARGET_DIR` reuse each other's build-script output — including
 the staged package cache. Use per-checkout target directories for such layouts.
+
+### Keep one `#[note]` struct in each crate
+
+A crate can now contain only one `#[note]` struct. Two note structs compiled before this change.
+Now the linker rejects the second struct because both structs define the
+`__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
+
+Keep one note struct in the current crate. Move each extra note struct and its implementation into
+a separate note crate.
+
+### Rewrite tuple-note and `Vec` storage layouts
+
+`#[note]` now emits a WIT storage schema and therefore requires each stored value to have a stable,
+named position. Unit structs remain valid, but tuple structs must become named-field structs. Keep
+the fields in the same order to preserve the existing felt layout:
+
+```rust
+// before
+#[note]
+struct PaymentNote(AccountId, u64);
+
+// after
+#[note]
+struct PaymentNote {
+    target: AccountId,
+    amount: u64,
+}
+```
+
+Dynamic `Vec` fields have no fixed note-storage layout and are no longer accepted. Replace a vector
+with explicit fields. Use `Option` for fixed optional positions, or use a named `#[export_type]`
+record when the same fixed group is nested or reused:
+
+```rust
+// before
+#[note]
+struct ValuesNote {
+    values: Vec<Felt>,
+}
+
+// after
+#[note]
+struct ValuesNote {
+    first: Felt,
+    second: Option<Felt>,
+}
+```
+
+There is no direct replacement for an unbounded vector. Choose a fixed maximum represented by
+named and optional fields, or redesign the note so variable-sized data is committed outside its
+storage payload.
 
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
