@@ -40,7 +40,7 @@ impl ReservedCell {
     /// All reserved cells, in address order.
     pub const ALL: [Self; 2] = [Self::HeapInfo, Self::DyncallRoot];
     /// Number of elements every cell spans: one word.
-    pub const ELEMENTS: u32 = 4;
+    pub const ELEMENTS: u32 = miden_core::WORD_SIZE as u32;
     /// First element address past guest-reachable memory: 2^32 bytes, in elements.
     pub const GUEST_ADDRESS_LIMIT: u64 = (u32::MAX as u64 + 1) / Self::ELEMENTS as u64;
     /// The VM's initial frame pointer, from which procedure locals are allocated upwards.
