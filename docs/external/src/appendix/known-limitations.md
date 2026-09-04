@@ -157,12 +157,13 @@ elements of the 16-element window, one element being reserved for the root's add
 
 ### Cross-context procedure invocation
 
-- Status: **Unimplemented**
+- Status: **Implemented** via the component model described below, for direct calls to a known
+  procedure (`call`) and for stored procedure roots (`dyncall`, see the previous section)
 - Tracking Issue: [#303](https://github.com/0xMiden/compiler/issues/303)
 - Release Milestone: [Beta 2](https://github.com/0xMiden/compiler/milestone/5)
 
 This is required in order to support representing Miden accounts and note scripts in Rust, and
-compilation to Miden Assembly.
+compilation to Miden Assembly. The rest of this section records the design rationale.
 
 Currently, you can write code in Rust that is very close to how accounts and note scripts will
 look like in the language, but it is not possible to actually implement either of those in Rust

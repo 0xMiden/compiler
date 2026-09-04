@@ -8,7 +8,10 @@ use std::{path::Path, sync::Arc};
 
 use miden_core::{Felt, Word, serde::Deserializable};
 use miden_mast_package::{Package, SectionId};
-use miden_protocol::account::{AccountComponentMetadata, StorageSlotName};
+use miden_protocol::account::{
+    AccountComponentMetadata, StorageSlotName,
+    component::{StorageSlotSchema, storage::SchemaType},
+};
 use midenc_integration_test_support::{cargo_proj::Project, project};
 
 use super::super::support::*;
@@ -90,35 +93,15 @@ pub(super) fn build_dispatcher_package_with_dependencies(
     dependencies: &[(&str, &Path)],
     source: &str,
 ) -> (Project, Arc<Package>) {
-    // `[dependencies]` must be the last table: the dependency entries are appended to the end
-    let namespace =
-        account_component_namespace(&names.dispatcher_account_package, DISPATCHER_INTERFACE);
-    let mut miden_project_toml = format!(
-        r#"
-[package]
-name = "{name}"
-version = "0.0.1"
-
-[lib]
-kind = "account-component"
-namespace = "{namespace}"
-path = "src/lib.rs"
-
-[package.metadata.miden]
-supported-types = ["RegularAccountUpdatableCode"]
-
-[dependencies]
-miden-core = "*"
-miden-protocol = "*"
-"#,
-        name = names.dispatcher_account_name,
+    let mut miden_project_toml = account_miden_project_toml_with_interface(
+        &names.dispatcher_account_name,
+        &names.dispatcher_account_package,
+        DISPATCHER_INTERFACE,
     );
     append_miden_project_dependencies(&mut miden_project_toml, dependencies);
     let mut cargo_toml =
         account_cargo_toml_for(&names.dispatcher_account_name, &names.dispatcher_account_package);
-    if !dependencies.is_empty() {
-        append_cargo_dependency_metadata(&mut cargo_toml, dependencies);
-    }
+    append_cargo_dependency_metadata(&mut cargo_toml, dependencies);
     let project = project(&names.dispatcher_account_name)
         .file("miden-project.toml", &miden_project_toml)
         .file("Cargo.toml", &cargo_toml)
@@ -260,18 +243,16 @@ pub(super) fn assert_word_value_slots(package: &Package, slots: &[StorageSlotNam
         .find(|section| section.id == SectionId::ACCOUNT_COMPONENT_METADATA)
         .map(|section| section.data.as_ref())
         .expect("dispatcher package should embed account component metadata");
-    let toml = AccountComponentMetadata::read_from_bytes(metadata_bytes)
-        .expect("account component metadata should deserialize")
-        .to_toml()
-        .expect("account component metadata should render as TOML");
+    let metadata = AccountComponentMetadata::read_from_bytes(metadata_bytes)
+        .expect("account component metadata should deserialize");
     for slot in slots {
-        let entry = toml
-            .split("[[storage.slots]]")
-            .find(|entry| entry.contains(&format!("name = \"{slot}\"")))
-            .unwrap_or_else(|| panic!("slot `{slot}` missing from metadata:\n{toml}"));
-        assert!(
-            entry.contains("type = \"word\""),
-            "slot `{slot}` should be a `word` value slot:\n{entry}"
-        );
+        match metadata.storage_schema().slots().get(slot) {
+            Some(StorageSlotSchema::Value(value)) => assert_eq!(
+                value.word().word_type(),
+                SchemaType::native_word(),
+                "slot `{slot}` should be a `word` value slot"
+            ),
+            other => panic!("slot `{slot}` should be a value slot, got {other:?}"),
+        }
     }
 }
