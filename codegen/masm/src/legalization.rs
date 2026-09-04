@@ -29,24 +29,30 @@ const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 /// Legality of an indirect call's signature, shared by `hir.exec_indirect` and `hir.dyncall`.
 ///
 /// Both lowerings consume the arguments as-is while the callee's memory address sits on the stack
-/// top (`what` names it in diagnostics): an extension requirement would need instructions
-/// operating on that top, and the arguments plus the address element must fit the addressable
-/// operand stack window.
+/// top (`what` names it in diagnostics), so they cannot emit the widening instructions a direct
+/// call would: those operate on that occupied top. A parameter's extension is only a demand for
+/// them when the argument is actually narrower than the parameter. Canonical-ABI flattening marks
+/// the parameters it widened — `bool`/`u8`/`u16` as `zext`, `i8`/`i16` as `sext`, both to `i32` —
+/// while handing over an argument that already has the flat type, which makes the extension a
+/// no-op, exactly as `process_call_signature` treats it for a direct call. Beyond that, the
+/// arguments plus the address element must fit the addressable operand stack window.
 fn indirect_call_signature_legality(
     op: &Operation,
     signature: &midenc_hir::dialects::builtin::attributes::Signature,
+    arg_types: &[midenc_hir::Type],
     what: &str,
 ) -> DynamicLegalityResult {
     use midenc_hir::dialects::builtin::attributes::ArgumentExtension;
 
-    if let Some(index) = signature
-        .params
-        .iter()
-        .position(|param| !matches!(param.extension(), ArgumentExtension::None))
-    {
+    for (index, (param, arg_ty)) in signature.params.iter().zip(arg_types.iter()).enumerate() {
+        if matches!(param.extension(), ArgumentExtension::None) || *arg_ty == param.ty {
+            continue;
+        }
         return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-            "operation '{}' does not support argument extension, which parameter {index} requires",
-            op.name()
+            "operation '{}' cannot extend the argument for parameter {index} from {arg_ty} to {}; \
+             extension is only supported when the argument already has the parameter type",
+            op.name(),
+            param.ty
         )));
     }
     let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
@@ -58,6 +64,16 @@ fn indirect_call_signature_legality(
         )));
     }
     DynamicLegalityResult::legal()
+}
+
+/// The types of an indirect call's arguments, which both `hir.exec_indirect` and `hir.dyncall`
+/// hold in operand group 1 — group 0 being the table index, respectively the root word.
+fn argument_types(op: &Operation) -> Vec<midenc_hir::Type> {
+    op.operands()
+        .group(1)
+        .iter()
+        .map(|operand| operand.borrow().as_value_ref().borrow().ty().clone())
+        .collect()
 }
 
 /// Validate every `hir.procedure_root` below `root` before MASM procedures begin snapshotting HIR
@@ -453,13 +469,23 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             let exec = op
                 .downcast_ref::<hir::ExecIndirect>()
                 .expect("this legality rule is registered for hir.exec_indirect");
-            indirect_call_signature_legality(op, &exec.get_signature(), "the table index")
+            indirect_call_signature_legality(
+                op,
+                &exec.get_signature(),
+                &argument_types(op),
+                "the table index",
+            )
         })
         .add_dynamically_legal_op::<hir::Dyncall, _>(|op| {
             let call = op
                 .downcast_ref::<hir::Dyncall>()
                 .expect("this legality rule is registered for hir.dyncall");
-            indirect_call_signature_legality(op, &call.get_signature(), "the root address")
+            indirect_call_signature_legality(
+                op,
+                &call.get_signature(),
+                &argument_types(op),
+                "the root address",
+            )
         })
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
@@ -667,17 +693,33 @@ mod tests {
     }
 
     /// The indirect-call lowering cannot apply argument extension, since the stack top holds the
-    /// transient slot address while arguments are consumed.
+    /// transient slot address while arguments are consumed. Only a parameter that would really
+    /// have to widen its argument demands it, so this passes a `u32` where an `i64` is expected.
     #[test]
     fn extension_requiring_exec_indirect_arguments_fail_legalization() {
         let mut test = Test::named("extension_exec_indirect").in_module("m");
-        let mut signature = Signature::new(&test.context_rc(), [Type::U32], []);
-        signature.params[0] = AbiParam::sext(Type::U32, &test.context_rc());
+        let mut signature = Signature::new(&test.context_rc(), [Type::I64], []);
+        signature.params[0] = AbiParam::sext(Type::I64, &test.context_rc());
         test_with_exec_indirect(&mut test, signature);
 
         let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
         let message = format!("{err}");
         assert!(message.contains("hir.exec_indirect"), "{message}");
-        assert!(message.contains("argument extension"), "{message}");
+        assert!(message.contains("cannot extend the argument for parameter 0"), "{message}");
+    }
+
+    /// Canonical-ABI flattening marks the parameters it widened and hands over an argument that
+    /// already has the flat type, so the extension is a no-op the lowering can serve — the same
+    /// conclusion a direct call reaches. Rejecting these outright would make every stored
+    /// procedure taking a `bool`, `u8`, `u16`, `i8` or `i16` unlowerable.
+    #[test]
+    fn no_op_extension_exec_indirect_arguments_pass_legalization() {
+        let mut test = Test::named("no_op_extension_exec_indirect").in_module("m");
+        let mut signature = Signature::new(&test.context_rc(), [Type::U32, Type::U32], []);
+        signature.params[0] = AbiParam::zext(Type::U32, &test.context_rc());
+        signature.params[1] = AbiParam::sext(Type::U32, &test.context_rc());
+        test_with_exec_indirect(&mut test, signature);
+
+        test.apply_pass::<LegalizeForMasm>(true).unwrap();
     }
 }
