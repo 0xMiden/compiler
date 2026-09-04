@@ -110,6 +110,18 @@ pub fn generate_import_lowering_function(
                      '{import_func_path}' requires classification"
                 )
             })?;
+        // A dyncall import's felt budget is checked before the tuple rejection below so that every
+        // over-budget stored procedure gets the tailored diagnostic: an argument list far enough
+        // past the budget is collapsed into a tuple pointer by canonical flattening, and would
+        // otherwise be reported as an (unsupported) tupled parameter list instead.
+        if call_kind == ImportCallKind::Dyncall {
+            reject_oversized_dyncall_call_site(
+                &context,
+                &import_func_path,
+                &budgeted_ty,
+                transformation,
+            )?;
+        }
         // Import flattening appends a result out-pointer after tuple classification, so the
         // final flattened parameter list can exceed the budget even when classification
         // reported no parameter tuple.
@@ -119,9 +131,6 @@ pub fn generate_import_lowering_function(
         Some(transformation)
     };
     import_lowered_sig.params.splice(0..0, root_flat_params);
-    if call_kind == ImportCallKind::Dyncall {
-        reject_oversized_dyncall_call_site(&import_func_path, &import_lowered_sig, transformation)?;
-    }
 
     let core_func_ref = module_builder
         .define_function(core_func_path.name().into(), Visibility::Internal, core_func_sig.clone())
@@ -842,7 +851,7 @@ fn leads_with_proc_root_word(params: &[Type]) -> bool {
 /// are applied to, and the root's flat parameters (four felts) to re-prepend to the flattened
 /// signature so it keeps matching the core Wasm import.
 ///
-/// The budget is checked on the completed signature by [`reject_oversized_dyncall_call_site`].
+/// The budget is checked on the argument type by [`reject_oversized_dyncall_call_site`].
 /// The bound wit-bindgen flattened against (twelve argument values, the canonical ABI's sixteen
 /// flat parameters less the root's four) needs no check of its own, as every flat value costs at
 /// least one felt and the shim's argument budget is the same twelve felts.
@@ -872,20 +881,32 @@ fn split_dyncall_root(
 /// result pointer when the results do not fit a single flat value. All of them travel through
 /// Miden's directly addressable operand stack window, so an over-wide signature has to be
 /// diagnosed here rather than left to spilling, which cannot serve a same-context call this wide.
+///
+/// The arguments are measured by flattening `arguments_ty`, the import's type with the procedure
+/// root split off, rather than by summing the flattened signature: canonical flattening collapses
+/// an argument list that is far enough over the budget into a single tuple pointer, which hides
+/// the very width reported here.
 fn reject_oversized_dyncall_call_site(
+    context: &Rc<Context>,
     import_func_path: &SymbolPath,
-    import_lowered_sig: &Signature,
-    transformation: Option<CanonicalAbiIndirection>,
+    arguments_ty: &FunctionType,
+    transformation: CanonicalAbiIndirection,
 ) -> WasmResult<()> {
-    let stack_felts: usize =
-        import_lowered_sig.params.iter().map(|param| param.ty.size_in_felts()).sum();
+    let arg_felts: usize = flatten_types(context, &arguments_ty.params)
+        .wrap_err_with(|| format!("failed to flatten the arguments of '{import_func_path}'"))?
+        .iter()
+        .map(|param| param.ty.size_in_felts())
+        .sum();
+    // Import flattening appends the result pointer to the parameters exactly when classification
+    // reports output indirection, whether or not the parameters are tupled as well.
+    let result_ptr_felts = usize::from(matches!(
+        transformation,
+        CanonicalAbiIndirection::Out | CanonicalAbiIndirection::InOut
+    ));
+    let stack_felts = DYNCALL_ROOT_FELTS + arg_felts + result_ptr_felts;
     if stack_felts <= MAX_DIRECT_STACK_FELTS {
         return Ok(());
     }
-    // Import flattening appends the result pointer to the parameters exactly when classification
-    // reports output indirection; parameter indirection was rejected before this point.
-    let result_ptr_felts = usize::from(transformation == Some(CanonicalAbiIndirection::Out));
-    let arg_felts = stack_felts - DYNCALL_ROOT_FELTS - result_ptr_felts;
     let max_arg_felts = MAX_DIRECT_STACK_FELTS - DYNCALL_ROOT_FELTS - result_ptr_felts;
     let result_ptr = if result_ptr_felts == 0 {
         ""
@@ -2166,6 +2187,8 @@ mod tests {
         signatures
     }
 
+    /// A dyncall import is reached through its runtime root, so its lowering emits `hir.dyncall`
+    /// and declares nothing on the import's component.
     #[test]
     fn dyncall_import_direct_lowering_emits_dyncall_without_declaring_the_import() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
@@ -2215,6 +2238,8 @@ mod tests {
         assert!(world_builder.find_component(&id).is_none());
     }
 
+    /// A dyncall import whose results need the canonical out-pointer keeps that transformation:
+    /// the root is still consumed as the dyncall operand and the flat results are stored out.
     #[test]
     fn dyncall_import_transformed_lowering_stores_results_through_out_pointer() {
         let (_context, mut world_builder, mut module_builder) = world_with_core_module();
@@ -2365,6 +2390,39 @@ mod tests {
                 assert!(
                     message
                         .contains("16 argument field elements plus the 4 procedure-root elements")
+                        && message.contains("use at most 12 argument field elements"),
+                    "unexpected diagnostic: {message}"
+                );
+            }
+        }
+    }
+
+    /// An argument list far enough past the budget is collapsed into a tuple pointer by canonical
+    /// flattening; the stored-procedure diagnostic has to win over the generic tuple rejection.
+    #[test]
+    fn dyncall_import_tupled_by_flattening_is_rejected_with_the_budget_diagnostic() {
+        let (_context, mut world_builder, mut module_builder) = world_with_core_module();
+
+        // Nine `u64` values are 18 argument felts, past the sixteen flat felts above which
+        // canonical flattening replaces the whole parameter list with a tuple pointer
+        let (import_func_ty, core_func_sig) = wide_dyncall_import(9, 0, None);
+
+        let result = generate_import_lowering_function(
+            &mut world_builder,
+            &mut module_builder,
+            component_import_path("dyncall-wide"),
+            &import_func_ty,
+            core_function_path("dyncall-wide"),
+            core_func_sig,
+        );
+
+        match result {
+            Ok(_) => panic!("expected the over-budget dyncall import to be rejected"),
+            Err(err) => {
+                let message = err.to_string();
+                assert!(
+                    message
+                        .contains("18 argument field elements plus the 4 procedure-root elements")
                         && message.contains("use at most 12 argument field elements"),
                     "unexpected diagnostic: {message}"
                 );
