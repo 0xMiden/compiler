@@ -35,6 +35,7 @@ use crate::{
 pub(crate) mod generate_wit;
 mod sibling;
 mod storage;
+mod stored_procedure;
 
 /// Fully-qualified identifier for the core types package used by exported component interfaces.
 const CORE_TYPES_PACKAGE: &str = "miden:base/core-types@1.0.0";
@@ -346,6 +347,7 @@ fn expand_component_storage(
     mut input_struct: ItemStruct,
 ) -> Result<TokenStream2, syn::Error> {
     let struct_name = &input_struct.ident;
+    let struct_vis = input_struct.vis.clone();
 
     // The expansion emits bare-ident impls (`Default`, the account traits, the marker constant),
     // which cannot compile for a generic struct; reject it here like the sibling expansions do.
@@ -358,8 +360,13 @@ fn expand_component_storage(
         metadata.description.clone(),
     );
 
+    let mut stored_procedure_slots = Vec::new();
     let default_impl = match &mut input_struct.fields {
         syn::Fields::Named(fields) => {
+            // Rewrites the stored-procedure field types to their generated marker types before
+            // anything else inspects them, so the storage type checks and the metadata schema
+            // builder see an ordinary `StorageValue<StoredProcedure<Marker>>` path type.
+            stored_procedure_slots = stored_procedure::collect_stored_procedure_slots(fields)?;
             let storage_namespace = metadata.package.name().into_inner();
             // Slot names derive from the component's public identity (the `[lib].namespace`
             // interface segment) rather than the storage struct name, so renaming the private
@@ -398,6 +405,14 @@ fn expand_component_storage(
         }
     };
 
+    // Runs after the manifest check above: generating bindings needs the resolved WIT paths, and
+    // a missing `miden-project.toml` must surface as that check's actionable error.
+    let stored_procedure_items = stored_procedure::expand_stored_procedure_slots(
+        struct_name,
+        &struct_vis,
+        &stored_procedure_slots,
+    )?;
+
     let component_metadata = acc_builder.build(call_site_span.into())?;
 
     let mut metadata_bytes = component_metadata.to_bytes();
@@ -414,6 +429,7 @@ fn expand_component_storage(
     Ok(quote! {
         #runtime_boilerplate
         #input_struct
+        #stored_procedure_items
         #default_impl
         impl #struct_name {
             #[doc(hidden)]

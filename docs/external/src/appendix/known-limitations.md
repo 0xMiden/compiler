@@ -147,8 +147,13 @@ and transfers control to it, so the callee observes its arguments in the normal 
 extra stack fixup (older VM versions kept the callee hash on the operand stack, which would have
 required per-callee stubs; that design is obsolete).
 
-Cross-context indirect calls via `dyncall` are not lowered yet; they additionally depend on
-[Cross-Context Procedure Invocation](#cross-context-procedure-invocation).
+Cross-context indirect calls are lowered to `dyncall` for stored procedure roots: an account
+component declares a `StorageValue<StoredProcedure<fn(..) -> R>>` slot, and the generated `call`
+method spills the root read from storage to a compiler-reserved memory word and dispatches to it in
+a new context. The root is runtime data that the assembler cannot validate: a root naming no
+procedure of the account, or one with a different stack contract, fails the transaction or yields
+wrong results. The root is spilled rather than passed, so the call's arguments may occupy up to 15
+elements of the 16-element window, one element being reserved for the root's address.
 
 ### Cross-context procedure invocation
 

@@ -302,4 +302,6 @@ and `syscall`, as caller memory is not accessible to the callee with those instr
 
 While ostensibly 16 elements is the maximum number of operands on the operand stack that can represent function arguments, indirect calls
 (`dynexec`/`dyncall`) reserve one element for the memory address of the word holding the callee's MAST root, limiting their arguments to 15
-elements; the compiler rejects indirect callee signatures that exceed this instead of spilling.
+elements; the compiler rejects indirect callee signatures that exceed this instead of spilling. This holds for a `dyncall` to a stored
+procedure root too: the root is spilled to a reserved memory word rather than counted as an argument, so its arguments are bounded by the
+same 15 elements (and by the canonical ABI's 16 flat values, four of which the root occupies in the generated import).
