@@ -39,6 +39,7 @@ use midenc_hir::{
 pub(crate) use self::lower::HirLowering;
 pub use self::{
     artifact::{MasmComponent, Rodata},
+    emit::primop::UNSET_STORED_PROCEDURE_SLOT_MESSAGE,
     events::{Event, FRAME_END_EVENT, FRAME_START_EVENT, PRINT_LN_EVENT},
     legalization::{LegalizeForMasm, masm_legalization_target, populate_masm_legalization_target},
     lower::{NativePtr, ToMasmComponent},

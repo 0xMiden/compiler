@@ -8,6 +8,16 @@ use midenc_hir::{
 use super::{OpEmitter, int64, masm};
 use crate::Event;
 
+/// The message of the assertion guarding a `dyncall` against an unset stored-procedure slot.
+///
+/// An all-zero root word is what an account storage slot reads as before it is populated with a
+/// sibling component's procedure root, so the guard reports it as such instead of leaving the VM
+/// to fail later with "procedure not found". A transaction surfaces an account-code assertion only
+/// as the error code derived from its message, so tests matching on that code need this exact
+/// text; it is public for them.
+pub const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
+    "stored procedure slot is unset: no procedure root to dyncall";
+
 impl OpEmitter<'_> {
     /// Push the caller procedure hash as a word.
     pub fn caller(&mut self, span: SourceSpan) {
@@ -448,13 +458,7 @@ impl OpEmitter<'_> {
             self.emit(masm::Instruction::EqImm(Felt::ZERO.into()), span);
             self.emit(masm::Instruction::And, span);
         }
-        self.emit(
-            Self::assertz_with_message_inst(
-                "stored procedure slot is unset: no procedure root to dyncall",
-                span,
-            ),
-            span,
-        );
+        self.emit(Self::assertz_with_message_inst(UNSET_STORED_PROCEDURE_SLOT_MESSAGE, span), span);
 
         // Spill the root to the scratch word: [r0, r1, r2, r3, ..] -> [..]
         //
@@ -849,7 +853,7 @@ mod tests {
             assert_eq!(insts[base + 2], masm::Instruction::And);
         }
         assert!(
-            matches!(&insts[11], masm::Instruction::AssertzWithError(masm::Immediate::Value(msg)) if msg.inner().contains("stored procedure slot is unset")),
+            matches!(&insts[11], masm::Instruction::AssertzWithError(masm::Immediate::Value(msg)) if &**msg.inner() == UNSET_STORED_PROCEDURE_SLOT_MESSAGE),
             "expected unset-slot assertion, got {:?}",
             insts[11]
         );
