@@ -42,11 +42,12 @@ wasmparser.workspace = true
 wasmprinter = { workspace = true, optional = true }
 
 [dev-dependencies]
-gimli = { workspace = true, features = ["write"] }
 miden-assembly.workspace = true
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-codegen-masm = { path = "../../codegen/masm" }
 wat.workspace = true
 midenc-expect-test = { path = "../../tools/expect-test" }
+# Tests need the `write` feature to synthesize DWARF
+gimli = { workspace = true, features = ["read", "write"] }
 # Matching the wasmparser/wasmprinter pinned in the workspace
 wasm-encoder = "^0.248"
