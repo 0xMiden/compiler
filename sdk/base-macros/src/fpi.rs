@@ -303,6 +303,8 @@ fn import_synthetic_interface(
             id: synthetic_id,
             stability: Default::default(),
             span: WitSpan::default(),
+            docs: Docs::default(),
+            external_id: None,
         },
     );
     if previous.is_some() {
@@ -795,6 +797,7 @@ fn alias_wit_type(
             docs: source_type.docs,
             stability: source_type.stability,
             span: source_type.span,
+            external_id: None,
         });
         aliases.insert(source_id_value, clone_id);
         *source_id = clone_id;
@@ -809,6 +812,7 @@ fn alias_wit_type(
         docs: Docs::default(),
         stability: Default::default(),
         span: WitSpan::default(),
+        external_id: None,
     });
     aliases.insert(source_id_value, alias_id);
     interface_types.push((name, alias_id));
@@ -933,6 +937,7 @@ fn build_import_function(function: Function, fpi_name: String, core_types: CoreT
         // feature metadata cannot be copied across package ownership boundaries.
         stability: Default::default(),
         span: WitSpan::default(),
+        external_id: None,
     }
 }
 
@@ -2012,6 +2017,7 @@ interface api {
             docs: Docs::default(),
             stability: Default::default(),
             span: WitSpan::default(),
+            external_id: None,
         }
     }
 }

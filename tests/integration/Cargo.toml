@@ -48,5 +48,8 @@ blake3 = "1.5"
 cargo_metadata = "0.19"
 concat-idents = "1.1"
 libloading = "0.8"
-wasmi = "1.1.0"
+wasmi = { version = "2.0.0", default-features = false, features = ["stable", "std", "wat", "validate"] }
 wat.workspace = true
+
+[package.metadata.cargo-shear]
+ignored-paths = ["src/end_to_end/differential/cases/*"]

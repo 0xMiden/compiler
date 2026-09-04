@@ -6,6 +6,7 @@ publish = false
 
 [lib]
 doctest = false
+test = false
 
 [dependencies]
 # By path, not by version: `cargo-miden` statically links the compiler, so this
@@ -13,4 +14,3 @@ doctest = false
 # checkout rather than a published one. The generated projects depend on the
 # SDK from the same checkout, via the `--compiler-path` these tests pass.
 cargo-miden = { path = "../../tools/cargo-miden" }
-

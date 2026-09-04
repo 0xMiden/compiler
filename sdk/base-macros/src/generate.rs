@@ -596,7 +596,7 @@ fn load_wit_sources(
         // remain in the resolver - they provide type definitions that the inline world imports.
         packages.clear();
         let group = UnresolvedPackageGroup::parse("inline", src)
-            .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
+            .map_err(|(source_map, err)| Error::new(Span::call_site(), err.render(&source_map)))?;
         let pkg = resolve
             .push_group(group)
             .map_err(|err| Error::new(Span::call_site(), err.to_string()))?;
