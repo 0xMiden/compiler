@@ -13,9 +13,9 @@ use crate::Event;
 /// An all-zero root word is what an account storage slot reads as before it is populated with a
 /// sibling component's procedure root, so the guard reports it as such instead of leaving the VM
 /// to fail later with "procedure not found". A transaction surfaces an account-code assertion only
-/// as the error code derived from its message, so tests matching on that code need this exact
-/// text; it is public for them.
-pub const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
+/// as the error code derived from its message, which makes the exact text load-bearing; naming it
+/// here spells it once for the emitter below and the unit test asserting what it emits.
+pub(crate) const UNSET_STORED_PROCEDURE_SLOT_MESSAGE: &str =
     "stored procedure slot is unset: no procedure root to dyncall";
 
 impl OpEmitter<'_> {
@@ -444,7 +444,13 @@ impl OpEmitter<'_> {
             );
         }
 
-        // Unset-slot guard: [r0, r1, r2, r3, ..] -> [all_zero, r0, r1, r2, r3, ..] -> [r0, ..]
+        // Unset-slot guard: [r0, r1, r2, r3, ..] -> [all_zero, r0, r1, r2, r3, ..]
+        //                                        -> [r0, r1, r2, r3, ..]
+        //
+        // The accumulated flag rides the stack top throughout the fold, shifting every root
+        // element down by one, so `r1`, `r2` and `r3` are reached at depth 2, 3 and 4 rather than
+        // 1, 2 and 3. `assertz` then consumes the flag, leaving the whole root word untouched for
+        // the spill below.
         self.emit(masm::Instruction::Dup0, span);
         self.emit(masm::Instruction::EqImm(Felt::ZERO.into()), span);
         for dup in [masm::Instruction::Dup2, masm::Instruction::Dup3, masm::Instruction::Dup4] {

@@ -7,8 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Context, EntityMut, Op, Operation, OperationName, OperationRef, Report, Symbol, SymbolRef,
-    Visibility, WalkResult,
+    CallConv, Context, EntityMut, Op, Operation, OperationName, OperationRef, Report, Symbol,
+    SymbolRef, Visibility, WalkResult,
     conversion::{
         ConversionConfig, ConversionPatternSet, ConversionTarget, DynamicLegalityResult,
         apply_full_conversion,
@@ -510,9 +510,30 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             let call = op
                 .downcast_ref::<hir::Dyncall>()
                 .expect("this legality rule is registered for hir.dyncall");
+            // The lowering spills the whole root word to the cell the VM reads the callee digest
+            // from, so anything but a full word would spill operands it does not own
+            let num_root_felts = call.root().len();
+            if num_root_felts != hir::Dyncall::ROOT_FELTS {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' selects its callee with {num_root_felts} root field \
+                     element(s), but the lowering spills exactly {} of them as the root word",
+                    op.name(),
+                    hir::Dyncall::ROOT_FELTS
+                )));
+            }
+            let signature = call.get_signature();
+            if signature.cc != CallConv::ComponentModel {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' uses the '{}' calling convention, but only the \
+                     component-model calling convention is supported: the lowering has no \
+                     return-pointer handling for the others",
+                    op.name(),
+                    signature.cc
+                )));
+            }
             indirect_call_signature_legality(
                 op,
-                &call.get_signature(),
+                &signature,
                 &argument_types(op),
                 hir::Dyncall::ROOT_FELTS,
                 "procedure root",
@@ -752,7 +773,7 @@ mod tests {
 
     /// A `hir.dyncall`'s callee root is a whole word, not one element, so it is bounded three
     /// elements tighter than an `hir.exec_indirect`. Scheduling thirteen argument field elements
-    /// beside it would ask the spill analysis for nineteen reachable operands, which it answers
+    /// beside it would ask the spill analysis for seventeen reachable operands, which it answers
     /// with a panic rather than a diagnostic — so this bound has to be enforced here.
     #[test]
     fn oversized_dyncall_arguments_fail_legalization() {
@@ -849,27 +870,95 @@ mod tests {
         assert!(message.contains("cannot convert"), "{message}");
     }
 
+    /// The lowering spills a whole word to the cell the VM reads the callee digest from, so a
+    /// narrower root operand group would spill stack elements the call does not own. The op
+    /// verifier rejects this too, but legalization runs with the verifier off here.
+    #[test]
+    fn dyncall_with_a_partial_root_word_fails_legalization() {
+        let mut test = Test::named("partial_root_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        // The builder always passes a whole word, so drop one element afterwards to build the IR
+        // a producer that did not go through the builder could hand codegen
+        {
+            let context = test.context_rc();
+            let mut dyncall = find_dyncall(&test);
+            let root = {
+                let dyncall = dyncall.borrow();
+                dyncall
+                    .downcast_ref::<hir::Dyncall>()
+                    .expect("the walk selected a hir.dyncall")
+                    .root()
+                    .iter()
+                    .take(hir::Dyncall::ROOT_FELTS - 1)
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<alloc::vec::Vec<_>>()
+            };
+            let mut dyncall = dyncall.borrow_mut();
+            let owner = dyncall.as_operation_ref();
+            dyncall.operands_mut().group_mut(0).set_operands(root, owner, &context);
+        }
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("3 root field element(s)"), "{message}");
+    }
+
+    /// Only the component-model convention crosses the context switch on the operand stack alone;
+    /// the lowering has no return-pointer handling, so any other convention is unlowerable. The op
+    /// verifier rejects this too, but legalization runs with the verifier off here.
+    #[test]
+    fn dyncall_with_a_foreign_calling_convention_fails_legalization() {
+        let mut test = Test::named("wasm_cc_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        set_indirect_call_signature(
+            &test,
+            Signature::with_convention(&test.context_rc(), CallConv::Wasm, [Type::U32], []),
+        );
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("component-model calling convention is supported"), "{message}");
+    }
+
     /// Replace the signature of the one `hir.dyncall` in `test`'s primary function.
     ///
     /// The op builder derives the operands from the signature, so a call disagreeing with its
     /// signature can only be built by rewriting the signature afterwards — which is exactly the
     /// IR another producer could hand codegen.
     fn set_indirect_call_signature(test: &Test, signature: Signature) {
-        let mut dyncall = None;
-        {
-            let function = test.function().as_operation_ref();
-            let function = function.borrow();
-            function.postwalk_all(|op| {
-                if op.downcast_ref::<hir::Dyncall>().is_some() {
-                    dyncall = Some(op.as_operation_ref());
-                }
-            });
-        }
-        let mut dyncall = dyncall.expect("the test builds a hir.dyncall").borrow_mut();
+        let mut dyncall = find_dyncall(test);
+        let mut dyncall = dyncall.borrow_mut();
         dyncall
             .downcast_mut::<hir::Dyncall>()
             .expect("the walk selected a hir.dyncall")
             .set_signature(signature);
+    }
+
+    /// The one `hir.dyncall` in `test`'s primary function.
+    fn find_dyncall(test: &Test) -> OperationRef {
+        let mut dyncall = None;
+        let function = test.function().as_operation_ref();
+        let function = function.borrow();
+        function.postwalk_all(|op| {
+            if op.downcast_ref::<hir::Dyncall>().is_some() {
+                dyncall = Some(op.as_operation_ref());
+            }
+        });
+        dyncall.expect("the test builds a hir.dyncall")
     }
 
     /// The indirect-call lowering cannot apply argument extension, since the stack top holds the
