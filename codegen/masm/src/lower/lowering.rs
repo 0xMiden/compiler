@@ -170,6 +170,11 @@ fn schedule_operands_or_panic<F>(
         });
 }
 
+/// Schedule the operands of a binary extension-field operation, which every `ext2` lowering shares.
+///
+/// The IR gives the operands in semantic order — `lhs0, lhs1, rhs0, rhs1` — while the MASM `ext2`
+/// instructions consume them in stack order, the right-hand limbs first. This rotates them into
+/// that order before handing them to [`schedule_operands_or_panic`].
 fn schedule_ext2_operands<T: HirLowering>(
     inst: &T,
     emitter: &mut BlockEmitter<'_>,
@@ -1455,25 +1460,19 @@ impl HirLowering for cf::CondBr {
             emitter.stack.drop();
         }
 
-        let span = self.span();
         let then_blk = {
             let mut emitter = emitter.nest();
 
             // At this point is when we need to schedule the successor operands for this block
             let then_operand = self.then_dest();
-            let successor_operands = ValueRange::from(then_operand.arguments);
-            let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
-            let successor_operands = successor_operands.into_smallvec();
-            emitter
-                .schedule_operands(&successor_operands, &constraints, span, Default::default())
-                .unwrap_or_else(|err| {
-                    panic!(
-                        "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
-                         error: {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                        self.as_operation().name(),
-                        emitter.stack,
-                    )
-                });
+            schedule_operands_or_panic(
+                self.as_operation(),
+                &mut emitter,
+                ValueRange::from(then_operand.arguments),
+                SolverOptions::default(),
+                "then-successor operands",
+                |_operands, _constraints| {},
+            );
 
             // Rename any uses of the block arguments of `then_dest` to the values given as
             // successor operands.
@@ -1490,19 +1489,14 @@ impl HirLowering for cf::CondBr {
 
             // At this point is when we need to schedule the successor operands for this block
             let else_operand = self.else_dest();
-            let successor_operands = ValueRange::from(else_operand.arguments);
-            let constraints = emitter.constraints_for(self.as_operation(), &successor_operands);
-            let successor_operands = successor_operands.into_smallvec();
-            emitter
-                .schedule_operands(&successor_operands, &constraints, span, Default::default())
-                .unwrap_or_else(|err| {
-                    panic!(
-                        "failed to schedule operands: {successor_operands:?}\nfor inst '{}'\nwith \
-                         error: {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                        self.as_operation().name(),
-                        emitter.stack,
-                    )
-                });
+            schedule_operands_or_panic(
+                self.as_operation(),
+                &mut emitter,
+                ValueRange::from(else_operand.arguments),
+                SolverOptions::default(),
+                "else-successor operands",
+                |_operands, _constraints| {},
+            );
 
             // Rename any uses of the block arguments of `else_dest` to the values given as
             // successor operands.
