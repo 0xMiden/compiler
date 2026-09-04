@@ -12,6 +12,7 @@ use core::{hash::Hash, ops::Index};
 use anyhow::{Result, bail};
 use cranelift_entity::{EntityRef, PrimaryMap};
 use indexmap::IndexMap;
+use miden_core::program::MIN_STACK_DEPTH;
 use midenc_hir::{
     CallConv, EnumType, FunctionType, FxHashMap, SmallVec, StructType, Type, Variant,
 };
@@ -54,12 +55,12 @@ pub const MAX_FLAT_RESULTS: usize = 1;
 
 /// Maximum operand stack felts a direct cross-context wrapper call may require.
 ///
-/// Calls pass all their operands on the MASM operand stack, whose directly addressable window
-/// is 16 elements, so a generated wrapper cannot be invoked with more than 16 felts of flattened
-/// parameters (including the canonical ABI output pointer, when present). This is a Miden VM
-/// constraint, distinct from the spec's count-based [`MAX_FLAT_PARAMS`]: a signature can stay
-/// within 16 flat values while 64-bit values expand it past 16 stack felts.
-pub const MAX_DIRECT_STACK_FELTS: usize = 16;
+/// Calls pass all their operands on the MASM operand stack, whose directly addressable window is
+/// [`MIN_STACK_DEPTH`] elements, so a generated wrapper cannot be invoked with more felts of
+/// flattened parameters than that (including the canonical ABI output pointer, when present).
+/// This is a Miden VM constraint, distinct from the spec's count-based [`MAX_FLAT_PARAMS`]: a
+/// signature can stay within 16 flat values while 64-bit values expand it past the window.
+pub const MAX_DIRECT_STACK_FELTS: usize = MIN_STACK_DEPTH;
 
 indices! {
     // ========================================================================
