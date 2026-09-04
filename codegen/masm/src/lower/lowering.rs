@@ -1072,18 +1072,81 @@ impl HirLowering for hir::ExecIndirect {
 }
 
 impl HirLowering for hir::Dyncall {
+    /// The root and the arguments are scheduled in two phases (see [`Self::schedule_operands`]),
+    /// spilling the root in between: the root, the arguments, and the address element `dyncall`
+    /// consumes then never need more than the 16-element window at once.
     fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+        let span = self.span();
         let signature = self.get_signature().clone();
+        let root_scratch_addr = crate::linker::ReservedCell::DyncallRoot.element_addr();
 
-        // The default operand schedule puts the root word on top of the stack (element 0 on
-        // top), followed by the arguments in signature order — exactly the layout `dyncall`
-        // expects
-        emitter.inst_emitter(self.as_operation()).dyncall(
-            crate::linker::ReservedCell::DyncallRoot.element_addr(),
-            &signature,
-            self.span(),
-        );
+        // The plain emitter, not the instruction emitter: the latter renames the stack top to the
+        // op's results when dropped, and the results only exist after the dispatch below
+        emitter.emitter().dyncall_spill_root(root_scratch_addr, span);
 
+        // Second phase: the arguments, in signature order, now that the root is off the stack
+        let arguments: ValueRange<'_, 4> = ValueRange::from(self.arguments());
+        if !arguments.is_empty() {
+            let constraints = emitter.constraints_for(op, &arguments);
+            let arguments = arguments.into_smallvec();
+            emitter
+                .schedule_operands(
+                    &arguments,
+                    &constraints,
+                    span,
+                    SolverOptions {
+                        strict: true,
+                        ..Default::default()
+                    },
+                )
+                .unwrap_or_else(|err| {
+                    panic!(
+                        "failed to schedule arguments: {arguments:?}\nfor inst '{}'\nwith error: \
+                         {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                        op.name(),
+                        emitter.stack,
+                    )
+                });
+        }
+
+        emitter.inst_emitter(op).dyncall_dispatch(root_scratch_addr, &signature, span);
+
+        Ok(())
+    }
+
+    /// First phase: only the root word is scheduled (element 0 on top); the arguments follow in
+    /// [`Self::emit`] once the root has been spilled. A root element that is also an argument
+    /// must be copied rather than moved, so it is still available for the second phase.
+    fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        let op = self.as_operation();
+        let root: ValueRange<'_, 4> = ValueRange::from(self.root());
+        let arguments: ValueRange<'_, 4> = ValueRange::from(self.arguments());
+        let mut constraints = emitter.constraints_for(op, &root);
+        for (constraint, value) in constraints.iter_mut().zip(root.iter()) {
+            if arguments.contains(value) {
+                *constraint = Constraint::Copy;
+            }
+        }
+        let root = root.into_smallvec();
+        emitter
+            .schedule_operands(
+                &root,
+                &constraints,
+                op.span(),
+                SolverOptions {
+                    strict: true,
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to schedule root: {root:?}\nfor inst '{}'\nwith error: \
+                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
+                    op.name(),
+                    emitter.stack,
+                )
+            });
         Ok(())
     }
 }

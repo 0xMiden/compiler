@@ -26,6 +26,40 @@ use crate::HirLowering;
 /// root address) inside this window, which bounds the argument size its lowering can support.
 const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
 
+/// Legality of an indirect call's signature, shared by `hir.exec_indirect` and `hir.dyncall`.
+///
+/// Both lowerings consume the arguments as-is while the callee's memory address sits on the stack
+/// top (`what` names it in diagnostics): an extension requirement would need instructions
+/// operating on that top, and the arguments plus the address element must fit the addressable
+/// operand stack window.
+fn indirect_call_signature_legality(
+    op: &Operation,
+    signature: &midenc_hir::dialects::builtin::attributes::Signature,
+    what: &str,
+) -> DynamicLegalityResult {
+    use midenc_hir::dialects::builtin::attributes::ArgumentExtension;
+
+    if let Some(index) = signature
+        .params
+        .iter()
+        .position(|param| !matches!(param.extension(), ArgumentExtension::None))
+    {
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "operation '{}' does not support argument extension, which parameter {index} requires",
+            op.name()
+        )));
+    }
+    let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
+    if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
+        return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+            "operation '{}' schedules {arg_felts} argument field elements plus {what}, which \
+             exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand stack window",
+            op.name()
+        )));
+    }
+    DynamicLegalityResult::legal()
+}
+
 /// Validate every `hir.procedure_root` below `root` before MASM procedures begin snapshotting HIR
 /// visibility.
 ///
@@ -419,63 +453,13 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
             let exec = op
                 .downcast_ref::<hir::ExecIndirect>()
                 .expect("this legality rule is registered for hir.exec_indirect");
-            let signature = exec.get_signature();
-            // The lowering consumes the arguments as-is: an extension requirement would need
-            // instructions operating on the stack top, which the transient slot address holds
-            if let Some(index) = signature.params.iter().position(|param| {
-                !matches!(
-                    param.extension(),
-                    midenc_hir::dialects::builtin::attributes::ArgumentExtension::None
-                )
-            }) {
-                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-                    "operation '{}' does not support argument extension, which parameter {index} \
-                     requires",
-                    op.name()
-                )));
-            }
-            let arg_felts: usize =
-                signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
-            if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
-                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-                    "operation '{}' schedules {arg_felts} argument field elements plus the table \
-                     index, which exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand stack \
-                     window",
-                    op.name()
-                )));
-            }
-            DynamicLegalityResult::legal()
+            indirect_call_signature_legality(op, &exec.get_signature(), "the table index")
         })
         .add_dynamically_legal_op::<hir::Dyncall, _>(|op| {
             let call = op
                 .downcast_ref::<hir::Dyncall>()
                 .expect("this legality rule is registered for hir.dyncall");
-            let signature = call.get_signature();
-            // The lowering consumes the arguments as-is: an extension requirement would need
-            // instructions operating on the stack top, which the transient root address holds
-            if let Some(index) = signature.params.iter().position(|param| {
-                !matches!(
-                    param.extension(),
-                    midenc_hir::dialects::builtin::attributes::ArgumentExtension::None
-                )
-            }) {
-                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-                    "operation '{}' does not support argument extension, which parameter {index} \
-                     requires",
-                    op.name()
-                )));
-            }
-            let arg_felts: usize =
-                signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
-            if arg_felts + 1 > OPERAND_STACK_WINDOW_FELTS {
-                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
-                    "operation '{}' schedules {arg_felts} argument field elements plus the root \
-                     address, which exceeds the {OPERAND_STACK_WINDOW_FELTS}-element operand \
-                     stack window",
-                    op.name()
-                )));
-            }
-            DynamicLegalityResult::legal()
+            indirect_call_signature_legality(op, &call.get_signature(), "the root address")
         })
         .add_dynamically_legal_op::<builtin::UnrealizedConversionCast, _>(|op| {
             DynamicLegalityResult::illegal_with_reason(Report::msg(format!(

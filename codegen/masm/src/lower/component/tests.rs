@@ -2075,6 +2075,70 @@ fn a_private_nested_module_is_not_part_of_the_package_surface() {
     );
 }
 
+/// A `hir.dyncall` whose root word and fifteen argument felts together exceed the 16-element
+/// operand stack window, with the arguments in reverse order so every one has to move.
+const WORLD_WITH_A_WIDE_PERMUTED_DYNCALL: &str = r#"
+builtin.world {
+builtin.component private @"root_ns:root@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt, %a0: felt, %a1: felt, %a2: felt, %a3: felt, %a4: felt, %a5: felt, %a6: felt, %a7: felt, %a8: felt, %a9: felt, %a10: felt, %a11: felt, %a12: felt, %a13: felt, %a14: felt) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%a14, %a13, %a12, %a11, %a10, %a9, %a8, %a7, %a6, %a5, %a4, %a3, %a2, %a1, %a0) : extern("component-model") (felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt, felt) -> (felt);
+            builtin.ret %result : (felt);
+        };
+    };
+};
+};
+"#;
+
+/// The root is spilled before the arguments are scheduled, so a call at the full 15-felt argument
+/// budget lowers even when the root and every argument must move: scheduled together they would
+/// be 19 operands, past what the operand stack window can reach.
+#[test]
+fn a_wide_permuted_dyncall_lowers_and_assembles() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_WIDE_PERMUTED_DYNCALL);
+    let lowered = lower_world(world).expect("a wide permuted dyncall lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("the lowered dyncall assembles");
+}
+
+/// A `hir.dyncall` passing one of its own root elements as an argument.
+const WORLD_WITH_A_DYNCALL_REUSING_A_ROOT_ELEMENT: &str = r#"
+builtin.world {
+builtin.component private @"root_ns:root@1.0.0" {
+    builtin.module public @wasm {
+        builtin.function public extern("C") @dispatch(%r0: felt, %r1: felt, %r2: felt, %r3: felt) -> felt {
+            %result = hir.dyncall [%r0, %r1, %r2, %r3](%r3, %r0) : extern("component-model") (felt, felt) -> (felt);
+            builtin.ret %result : (felt);
+        };
+    };
+};
+};
+"#;
+
+/// The root is spilled before the arguments are scheduled, so a root element that is also an
+/// argument must survive the spill: it is copied into the root word rather than moved.
+#[test]
+fn a_dyncall_reusing_a_root_element_as_an_argument_lowers() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, WORLD_WITH_A_DYNCALL_REUSING_A_ROOT_ELEMENT);
+    let lowered = lower_world(world).expect("a dyncall reusing a root element lowers");
+    let target = library_target("root_ns:root@1.0.0");
+
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("its source inputs are what the assembler is handed");
+    miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library("root_ns:root@1.0.0", sources.root, sources.support)
+        .expect("the lowered dyncall assembles");
+}
+
 /// The shape pure core-Wasm translation produces: a public module (the artifact's interface)
 /// holding a private, address-taken function in a function table.
 const WORLD_WITH_A_PRIVATE_TABLE_CALLEE: &str = r#"
