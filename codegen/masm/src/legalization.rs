@@ -18,14 +18,7 @@ use midenc_hir::{
 };
 use midenc_session::diagnostics::{Severity, Spanned};
 
-use crate::HirLowering;
-
-/// The number of operand stack elements addressable by Miden Assembly instructions.
-///
-/// An indirect call schedules its arguments together with the operands selecting the callee — the
-/// table index for `hir.exec_indirect`, the root word for `hir.dyncall` — inside this window,
-/// which bounds the argument size its lowering can support.
-const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
+use crate::{HirLowering, opt::operands::MASM_STACK_WINDOW_FELTS};
 
 /// Legality of an indirect call's signature, shared by `hir.exec_indirect` and `hir.dyncall`.
 ///
@@ -84,11 +77,11 @@ fn indirect_call_signature_legality(
         )));
     }
     let arg_felts: usize = signature.params.iter().map(|param| param.ty.size_in_felts()).sum();
-    if selector_felts + arg_felts > OPERAND_STACK_WINDOW_FELTS {
+    if selector_felts + arg_felts > MASM_STACK_WINDOW_FELTS {
         return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
             "operation '{}' schedules {arg_felts} argument field elements plus the \
-             {selector_felts}-element {what}, which exceeds the \
-             {OPERAND_STACK_WINDOW_FELTS}-element operand stack window",
+             {selector_felts}-element {what}, which exceeds the {MASM_STACK_WINDOW_FELTS}-element \
+             operand stack window",
             op.name()
         )));
     }
@@ -521,6 +514,22 @@ pub fn populate_masm_legalization_target(target: &mut ConversionTarget) {
                     hir::Dyncall::ROOT_FELTS
                 )));
             }
+            // The lowering pops one field element per root operand, which the emitter asserts,
+            // and it has no conversion to apply on the way: the root is spilled verbatim to the
+            // cell the VM reads the callee digest from
+            if let Some((index, ty)) = call
+                .root()
+                .iter()
+                .map(|operand| operand.borrow().as_value_ref().borrow().ty().clone())
+                .enumerate()
+                .find(|(_, ty)| *ty != midenc_hir::Type::Felt)
+            {
+                return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
+                    "operation '{}' selects its callee with root element {index} of type {ty}, \
+                     but the lowering spills the root word as field elements",
+                    op.name()
+                )));
+            }
             let signature = call.get_signature();
             if signature.cc != CallConv::ComponentModel {
                 return DynamicLegalityResult::illegal_with_reason(Report::msg(format!(
@@ -773,8 +782,13 @@ mod tests {
 
     /// A `hir.dyncall`'s callee root is a whole word, not one element, so it is bounded three
     /// elements tighter than an `hir.exec_indirect`. Scheduling thirteen argument field elements
-    /// beside it would ask the spill analysis for seventeen reachable operands, which it answers
-    /// with a panic rather than a diagnostic — so this bound has to be enforced here.
+    /// beside it would ask the spill analysis for seventeen reachable operands, which it cannot
+    /// deliver.
+    ///
+    /// That analysis runs *before* this pass in the backend pipeline, so it, not this rule, is
+    /// what such a call meets there — it reports one as a diagnostic of its own. This rule is what
+    /// makes the bound part of the IR contract codegen accepts, for the callers that legalize
+    /// without running the rewrites.
     #[test]
     fn oversized_dyncall_arguments_fail_legalization() {
         let mut test = Test::named("oversized_dyncall").in_module("m");
@@ -908,6 +922,55 @@ mod tests {
         let message = format!("{err}");
         assert!(message.contains("hir.dyncall"), "{message}");
         assert!(message.contains("3 root field element(s)"), "{message}");
+    }
+
+    /// The lowering pops the root word element by element as field elements, which the emitter
+    /// asserts, so a root element of any other type would reach that assertion. The op's operand
+    /// type constraint says the same thing, but legalization runs with the verifier off here.
+    #[test]
+    fn dyncall_with_a_mistyped_root_element_fails_legalization() {
+        let mut test = Test::named("mistyped_root_dyncall").in_module("m");
+        let signature = Signature::with_convention(
+            &test.context_rc(),
+            CallConv::ComponentModel,
+            [Type::U32],
+            [],
+        );
+        test_with_dyncall(&mut test, signature);
+        // The builder derives the root operands from felt values, so substitute the call's `u32`
+        // argument for one of them afterwards, as a producer that did not go through the builder
+        // could hand codegen
+        {
+            let context = test.context_rc();
+            let mut dyncall = find_dyncall(&test);
+            let root = {
+                let dyncall = dyncall.borrow();
+                let dyncall = dyncall
+                    .downcast_ref::<hir::Dyncall>()
+                    .expect("the walk selected a hir.dyncall");
+                let mut root = dyncall
+                    .root()
+                    .iter()
+                    .map(|operand| operand.borrow().as_value_ref())
+                    .collect::<alloc::vec::Vec<_>>();
+                root[hir::Dyncall::ROOT_FELTS - 1] = dyncall
+                    .arguments()
+                    .iter()
+                    .next()
+                    .expect("the call passes one argument")
+                    .borrow()
+                    .as_value_ref();
+                root
+            };
+            let mut dyncall = dyncall.borrow_mut();
+            let owner = dyncall.as_operation_ref();
+            dyncall.operands_mut().group_mut(0).set_operands(root, owner, &context);
+        }
+
+        let err = test.apply_pass::<LegalizeForMasm>(false).unwrap_err();
+        let message = format!("{err}");
+        assert!(message.contains("hir.dyncall"), "{message}");
+        assert!(message.contains("root element 3 of type u32"), "{message}");
     }
 
     /// Only the component-model convention crosses the context switch on the operand stack alone;

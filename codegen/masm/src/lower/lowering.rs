@@ -70,55 +70,33 @@ pub trait HirLowering: Op {
     /// and provide a custom schedule.
     fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let op = self.as_operation();
-        let trace_target = emitter.trace_target.clone().with_topic("operand-scheduling");
 
         // Move instruction operands into place, minimizing unnecessary stack manipulation ops
         //
         // NOTE: This does not include block arguments for control flow instructions, those are
         // handled separately within the specific handlers for those instructions
-        let args = self.required_operands();
-        if args.is_empty() {
-            return Ok(());
-        }
-
-        let mut constraints = emitter.constraints_for(op, &args);
-        let mut args = args.into_smallvec();
-
-        // All of Miden's binary ops expect the right-hand operand on top of the stack, this
-        // requires us to invert the expected order of operands from the standard ordering in the
-        // IR
-        //
-        // TODO(pauls): We should probably assign a dedicated trait for this type of argument
-        // ordering override, rather than assuming that all BinaryOp impls need it
-        if op.implements::<dyn BinaryOp>() {
-            args.swap(0, 1);
-            constraints.swap(0, 1);
-        }
-
-        log::trace!(target: &trace_target, "scheduling operands for {op}");
-        for arg in args.iter() {
-            log::trace!(target: &trace_target, "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
-        }
-        log::trace!(target: &trace_target, "starting with stack: {:#?}", emitter.stack);
-        emitter
-            .schedule_operands(
-                &args,
-                &constraints,
-                op.span(),
-                SolverOptions {
-                    strict: !op.implements::<dyn Commutative>(),
-                    ..Default::default()
-                },
-            )
-            .unwrap_or_else(|err| {
-                panic!(
-                    "failed to schedule operands: {args:?}\nfor inst '{}'\nwith error: \
-                     {err:?}\nconstraints: {constraints:?}\nstack: {:#?}",
-                    op.name(),
-                    emitter.stack,
-                )
-            });
-        log::trace!(target: &trace_target, "stack after scheduling: {:#?}", emitter.stack);
+        schedule_operands_or_panic(
+            op,
+            emitter,
+            self.required_operands(),
+            SolverOptions {
+                strict: !op.implements::<dyn Commutative>(),
+                ..Default::default()
+            },
+            "operands",
+            |args, constraints| {
+                // All of Miden's binary ops expect the right-hand operand on top of the stack,
+                // this requires us to invert the expected order of operands from the standard
+                // ordering in the IR
+                //
+                // TODO(pauls): We should probably assign a dedicated trait for this type of
+                // argument ordering override, rather than assuming that all BinaryOp impls need it
+                if op.implements::<dyn BinaryOp>() {
+                    args.swap(0, 1);
+                    constraints.swap(0, 1);
+                }
+            },
+        );
 
         Ok(())
     }
@@ -138,7 +116,8 @@ pub trait HirLowering: Op {
 /// The values are scheduled with the constraints [`BlockEmitter::constraints_for`] derives for
 /// them, after `adjust` has had a chance to rewrite both: a lowering that consumes its operands in
 /// an order other than the IR's, or that must copy rather than move one of them, permutes the two
-/// in step. `what` names the scheduled set in the panic message.
+/// in step. `what` names the scheduled set in the trace log and in the panic message. An empty
+/// set is a no-op: the solver reports it as already solved.
 ///
 /// A solver failure is a codegen bug rather than invalid input — what a call site may ask of the
 /// operand stack is bounded by MASM legalization, and every other operation's operands fit by
@@ -154,10 +133,16 @@ fn schedule_operands_or_panic<F>(
 ) where
     F: FnOnce(&mut SmallVec<[ValueRef; 4]>, &mut SmallVec<[Constraint; 4]>),
 {
+    let trace_target = emitter.trace_target.clone().with_topic("operand-scheduling");
     let mut constraints = emitter.constraints_for(op, &values);
     let mut args = values.into_smallvec();
     adjust(&mut args, &mut constraints);
 
+    log::trace!(target: &trace_target, "scheduling {what} for {op}");
+    for arg in args.iter() {
+        log::trace!(target: &trace_target, "{arg} is live at/after entry: {}", emitter.liveness.is_live_after_entry(*arg, op));
+    }
+    log::trace!(target: &trace_target, "starting with stack: {:#?}", emitter.stack);
     emitter
         .schedule_operands(&args, &constraints, op.span(), options)
         .unwrap_or_else(|err| {
@@ -168,6 +153,7 @@ fn schedule_operands_or_panic<F>(
                 emitter.stack,
             )
         });
+    log::trace!(target: &trace_target, "stack after scheduling: {:#?}", emitter.stack);
 }
 
 /// Schedule the operands of a binary extension-field operation, which every `ext2` lowering shares.
@@ -1129,20 +1115,14 @@ impl HirLowering for hir::Dyncall {
         emitter.emitter().dyncall_spill_root(root_scratch_addr, span);
 
         // Second phase: the arguments, in signature order, now that the root is off the stack
-        let arguments: ValueRange<'_, 4> = ValueRange::from(self.arguments());
-        if !arguments.is_empty() {
-            schedule_operands_or_panic(
-                op,
-                emitter,
-                arguments,
-                SolverOptions {
-                    strict: true,
-                    ..Default::default()
-                },
-                "arguments",
-                |_args, _constraints| {},
-            );
-        }
+        schedule_operands_or_panic(
+            op,
+            emitter,
+            ValueRange::from(self.arguments()),
+            SolverOptions::default(),
+            "arguments",
+            |_args, _constraints| {},
+        );
 
         emitter.inst_emitter(op).dyncall_dispatch(root_scratch_addr, &signature, span);
 
@@ -1159,10 +1139,7 @@ impl HirLowering for hir::Dyncall {
             op,
             emitter,
             ValueRange::from(self.root()),
-            SolverOptions {
-                strict: true,
-                ..Default::default()
-            },
+            SolverOptions::default(),
             "root",
             |root, constraints| {
                 for (constraint, value) in constraints.iter_mut().zip(root.iter()) {
@@ -1665,20 +1642,12 @@ impl HirLowering for arith::Join {
     fn schedule_operands(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
         let op = self.as_operation();
 
-        let args = self.required_operands();
-        if args.is_empty() {
-            return Ok(());
-        }
-
         let is_128_bit = matches!(&*self.get_ty(), Type::I128 | Type::U128);
         schedule_operands_or_panic(
             op,
             emitter,
-            args,
-            SolverOptions {
-                strict: true,
-                ..Default::default()
-            },
+            self.required_operands(),
+            SolverOptions::default(),
             "operands",
             |args, constraints| {
                 // For `i128`/`u128` we use a different stack order for 64-bit limbs.
