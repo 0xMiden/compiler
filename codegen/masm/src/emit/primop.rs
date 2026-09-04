@@ -420,8 +420,14 @@ impl OpEmitter<'_> {
     /// memory, and dropped. The arguments are scheduled afterwards, so the root and the
     /// arguments never have to share the addressable operand stack window.
     ///
-    /// Reusing one fixed scratch word is safe: the VM reads the root before the context switch,
-    /// and the callee runs in a fresh context where the caller's memory is invisible.
+    /// Reusing one fixed scratch word is safe from both sides of the call. From the callee's:
+    /// the VM reads the root before the context switch, and the callee then runs in a fresh
+    /// context where the caller's memory is invisible. From the caller's: nothing may write
+    /// memory between the spill and the `dyncall` that reads it, and nothing does — the only
+    /// code emitted in between is the operand scheduler's, placing the arguments, and its output
+    /// is exclusively operand-stack manipulation (`Copy`/`Swap`/`MoveUp`/`MoveDown`; no memory
+    /// instruction is emitted anywhere under `crate::opt::operands`). So no second `dyncall`
+    /// lowering, and no other user of the cell, can interleave a write.
     pub fn dyncall_spill_root(&mut self, root_scratch_addr: u32, span: SourceSpan) {
         // Consume the root word; all further effects on it are transient
         for i in 0..midenc_dialect_hir::Dyncall::ROOT_FELTS {
@@ -451,6 +457,10 @@ impl OpEmitter<'_> {
         );
 
         // Spill the root to the scratch word: [r0, r1, r2, r3, ..] -> [..]
+        //
+        // The little-endian variant is the one that round-trips: it stores the stack top, `r0`,
+        // at the lowest address, so the word reads back in element order — which is the order
+        // `dyncall` expects of the digest at the address it pops.
         self.emit(masm::Instruction::MemStoreWLeImm(root_scratch_addr.into()), span);
         self.emit(masm::Instruction::DropW, span);
     }
@@ -530,15 +540,13 @@ impl OpEmitter<'_> {
     ///
     /// Used by the indirect-call lowerings (`exec_indirect`, `dyncall`), whose physical stack
     /// top holds the callee's memory address at this point: `process_call_signature`'s zext/sext
-    /// paths emit instructions operating on the stack top, so argument extension is rejected
-    /// here and argument types must match the parameter types exactly. `op_name` labels the
-    /// assertion messages.
+    /// paths emit instructions operating on that top, which is unavailable here. Requiring the
+    /// argument types to match the parameter types exactly is what makes that irrelevant — a
+    /// parameter's `zext`/`sext` is then a no-op, the same conclusion `process_call_signature`
+    /// reaches in its `Zext | Sext => ()` arm — so no extension is inspected here. Legalization
+    /// rejects the calls this cannot serve. `op_name` labels the assertion messages.
     fn consume_exact_call_signature(&mut self, signature: &Signature, op_name: &str) {
         for (i, param) in signature.params.iter().enumerate() {
-            assert!(
-                matches!(param.extension(), ArgumentExtension::None),
-                "invalid {op_name}: argument extension is not supported for parameter at index {i}"
-            );
             let arg = self.stack.pop().expect("operand stack is empty");
             assert_eq!(
                 arg.ty(),
