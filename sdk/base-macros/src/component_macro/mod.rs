@@ -26,9 +26,10 @@ use crate::{
         storage::process_storage_fields,
     },
     dependency_ref::{DependencyRef, DependencyRefArgs},
-    generate::DYNCALL_WIT_PREFIX,
+    generate::reject_reserved_dyncall_export,
     types::{
         ExportedTypeDef, ExportedTypeKind, TypeRef, map_type_to_type_ref, registered_export_types,
+        rust_ident_to_wit_name,
     },
     util::{generate_frontend_link_section, generate_wit_link_section, is_type_named},
 };
@@ -1290,7 +1291,14 @@ fn parse_component_signature(
     let doc_attrs = attrs.iter().filter(|attr| attr.path().is_ident("doc")).cloned().collect();
 
     let wit_name = to_kebab_case(&sig.ident.to_string());
-    reject_reserved_dyncall_export(&sig.ident, &wit_name)?;
+    // Guarded on the un-rawed name: a raw identifier keeps its `r#` through kebab-casing
+    // (`r#dyncall_notify` renders as `r-dyncall-notify`) and would slip past the prefix check
+    // while still being written as a reserved export by its author.
+    reject_reserved_dyncall_export(
+        &sig.ident,
+        &rust_ident_to_wit_name(&sig.ident),
+        "component method",
+    )?;
 
     let component_method = ComponentMethod {
         fn_ident: sig.ident.clone(),
@@ -1302,27 +1310,6 @@ fn parse_component_signature(
     };
 
     Ok((component_method, type_imports))
-}
-
-/// Rejects a component method whose WIT export name carries the prefix reserved for
-/// stored-procedure dispatch.
-///
-/// The Wasm frontend classifies imports named `dyncall-…` as dynamic calls on a stored procedure
-/// root, so exporting such a name only breaks the component's consumers — and there the
-/// diagnostic blames the dependency. Reject it where the name is written instead.
-fn reject_reserved_dyncall_export(fn_ident: &syn::Ident, wit_name: &str) -> Result<(), syn::Error> {
-    if !wit_name.starts_with(DYNCALL_WIT_PREFIX) {
-        return Ok(());
-    }
-
-    Err(syn::Error::new(
-        fn_ident.span(),
-        format!(
-            "component method `{fn_ident}` is exported as `{wit_name}`, but the \
-             `{DYNCALL_WIT_PREFIX}` WIT prefix (`dyncall_` in Rust) is reserved for \
-             stored-procedure dispatch; rename the method"
-        ),
-    ))
 }
 
 /// Attempts to recover the final identifier from a type path for use with `bindings::export!`.
@@ -1696,6 +1683,20 @@ mod tests {
             parse_component_signature(&allowed, &[], &exported_types).is_ok(),
             "an unrelated export name is accepted"
         );
+    }
+
+    /// Catches the reserved prefix behind a raw identifier: kebab-casing keeps the `r#`, so the
+    /// guard reads the un-rawed name the author wrote.
+    #[test]
+    fn a_raw_identifier_cannot_evade_the_reserved_dyncall_prefix() {
+        let exported_types = HashMap::new();
+        let reserved: syn::Signature = parse_quote!(fn r#dyncall_notify(&self, amount: u32));
+        let message = match parse_component_signature(&reserved, &[], &exported_types) {
+            Ok(_) => panic!("expected the reserved dyncall prefix to be rejected"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(message.contains("exported as `dyncall-notify`"), "{message}");
     }
 
     #[test]

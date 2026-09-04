@@ -182,6 +182,12 @@ pub fn process_storage_fields(
         }
 
         if let Some(args) = storage_args {
+            if let Err(err) =
+                reject_stored_procedure_type_override(field, args.type_attr.as_deref())
+            {
+                errors.push(err);
+                continue;
+            }
             // `StorageSlotId` values are derived from slot names, so keep this format stable.
             let slot_name_str =
                 derive_storage_slot_name(storage_namespace, component_interface, &field_name_str);
@@ -326,6 +332,25 @@ fn reject_stored_procedure_in_map(
     ))
 }
 
+/// Rejects a `#[storage(type = "...")]` override on a stored-procedure slot.
+///
+/// The generated call always reads a four-felt procedure root out of the slot, so an override
+/// would only make the schema the component advertises disagree with what the code does.
+fn reject_stored_procedure_type_override(
+    field: &Field,
+    type_attr: Option<&str>,
+) -> Result<(), syn::Error> {
+    if type_attr.is_none() || !stored_procedure::mentions_stored_procedure(&field.ty) {
+        return Ok(());
+    }
+
+    Err(syn::Error::new(
+        field.span(),
+        "the schema type of a `StoredProcedure` slot is fixed (a word holding the procedure \
+         root); remove the `type` argument from its `#[storage(...)]` attribute",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use quote::quote;
@@ -333,7 +358,7 @@ mod tests {
 
     use super::{
         StorageFieldType, derive_storage_slot_name, reject_stored_procedure_in_map,
-        typecheck_storage_field,
+        reject_stored_procedure_type_override, typecheck_storage_field,
     };
 
     /// Pins the map-slot diagnostic: a stored root is bound to the one slot whose signature the
@@ -352,6 +377,29 @@ mod tests {
             .expect("test field must parse");
         reject_stored_procedure_in_map(&field, &StorageFieldType::StorageMap)
             .expect("plain map slots are accepted");
+    }
+
+    /// Pins the type-override diagnostic: the metadata would honour the override while the
+    /// generated call keeps reading a procedure root, so the advertised schema would lie.
+    #[test]
+    fn rejects_a_type_override_on_a_stored_procedure_slot() {
+        let field = syn::Field::parse_named
+            .parse2(quote!(authority: StorageValue<StoredProcedure<fn()>>))
+            .expect("test field must parse");
+        let err = reject_stored_procedure_type_override(&field, Some("u32")).unwrap_err();
+        assert!(
+            err.to_string().contains("is fixed (a word holding the procedure root)"),
+            "{err}"
+        );
+
+        reject_stored_procedure_type_override(&field, None)
+            .expect("a stored-procedure slot without an override is accepted");
+
+        let field = syn::Field::parse_named
+            .parse2(quote!(count: StorageValue<Felt>))
+            .expect("test field must parse");
+        reject_stored_procedure_type_override(&field, Some("u32"))
+            .expect("ordinary value slots keep their type override");
     }
 
     #[test]

@@ -1289,7 +1289,10 @@ fn build_wrapper_method(
 }
 
 /// Appends a generated Rust module path to a tokenized base path.
-fn append_module_path(mut base: TokenStream2, module_path: &[syn::Ident]) -> TokenStream2 {
+pub(crate) fn append_module_path(
+    mut base: TokenStream2,
+    module_path: &[syn::Ident],
+) -> TokenStream2 {
     for ident in module_path {
         base = quote! { #base :: #ident };
     }

@@ -251,19 +251,24 @@ pub fn component(
 ///
 /// Roots are expected to be written by the host at deployment or update time; the SDK offers no
 /// constructor for a `StoredProcedure`. Neither the compiler nor the VM checks the stored root
-/// against the declared signature; a root that names no procedure of the account, or one with a
-/// different stack contract, fails the transaction or yields wrong in-VM results, but never
-/// breaks Rust memory safety. Use `is_set()` to check whether the slot has been populated.
+/// against the declared signature: the called procedure is trusted to honour it. A wrong or stale
+/// root — one that names no procedure of the account, or one with a different stack contract —
+/// fails the transaction or returns wrong values. A result of a variant type (`Option`, `Result`)
+/// is lifted from the returned discriminant without validation, so a root returning an
+/// out-of-range discriminant is undefined behaviour in the caller, like any other canonical-ABI
+/// lift. Use `is_set()` to check whether the slot has been populated.
 ///
 /// Arguments reach the procedure with the first parameter on top of the operand stack, each
 /// flattened to its field elements in declaration order. A Rust-compiled sibling expects exactly
 /// that layout.
+///
 /// A MASM procedure documents its own stack contract; spell the signature to match it, e.g. an
 /// account id expected as `[account_suffix, account_prefix]` is two `Felt` parameters in that
 /// order rather than one `AccountId` (which flattens to prefix, then suffix).
 ///
-/// The generated imports are named `dyncall-<field>`; that WIT name prefix is reserved, and a
-/// dependency interface defining a function with it is rejected.
+/// The generated imports are named `dyncall-<field>`, with the field name kebab-cased (`last_sum`
+/// gives `dyncall-last-sum`); that WIT name prefix is reserved, and a dependency interface
+/// defining a function with it is rejected.
 #[proc_macro_attribute]
 pub fn component_storage(
     attr: proc_macro::TokenStream,
