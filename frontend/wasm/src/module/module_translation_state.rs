@@ -259,7 +259,7 @@ impl<'a> ModuleTranslationState<'a> {
                         "unsupported function table element: '{}' is an intrinsic whose signature \
                          '{callee_signature}' differs from the Wasm signature '{signature}' its \
                          table entry is typed by",
-                        module.func_name(func_index)
+                        module.source_func_name(func_index)
                     );
                 }
                 self.module_builder.append_function_table_entry(
@@ -275,7 +275,7 @@ impl<'a> ModuleTranslationState<'a> {
                     diagnostics,
                     "unsupported function table element: '{}' is an inlined intrinsic without a \
                      procedure body",
-                    module.func_name(func_index)
+                    module.source_func_name(func_index)
                 );
             }
         }
