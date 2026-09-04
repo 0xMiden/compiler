@@ -17,9 +17,12 @@ const PAGE_SIZE: usize = 2usize.pow(16);
 /// We require all allocations to be minimally word-aligned, i.e. 16 byte alignment
 const MIN_ALIGN: usize = 16;
 
-/// The linear memory heap must not spill over into the region reserved for procedure locals, which
-/// begins at 2^30 in Miden's address space. In Rust address space it should be 2^30 * 4 but since
-/// it overflows the usize which is 32-bit on wasm32 we use u32::MAX.
+/// The linear memory heap must not spill over into the address band the compiler reserves, which
+/// begins at 2^30 in Miden's element-addressed space. The word-aligned cells there hold the
+/// dynamic-heap metadata word and the scratch word a `dyncall` spills its callee's procedure root
+/// to (see `ReservedCell` in `codegen/masm/src/linker.rs`); procedure locals are framed upwards
+/// from 2^31, the VM's `FMP_INIT_VALUE`. In Rust address space 2^30 elements should be 2^30 * 4
+/// but since it overflows the usize which is 32-bit on wasm32 we use u32::MAX.
 const HEAP_END: *mut u8 = u32::MAX as *mut u8;
 
 /// A very simple allocator for Miden SDK-based programs.
