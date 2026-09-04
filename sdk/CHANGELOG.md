@@ -7,139 +7,128 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0]
+
 ### Added
 
-- `ActiveNote` trait with the `active_note` operations (`get_sender`, `get_recipient`,
-  `get_script_root`, `get_serial_number`, `get_metadata`, `is_public`, `is_private`,
-  `get_initial_assets`, and the attachment functions), implemented automatically for the
-  `#[note]` input struct, so a `#[note_script]` entrypoint can call them directly on `self`,
-  e.g. `self.get_sender()`. `get_storage` is not part of the trait: the `#[note]` macro already
-  decodes the note storage into the struct fields. The `active_note` module functions stay
-  available and unchanged. A user trait implemented for the note struct with an identically
-  named method now needs UFCS disambiguation at the call site #1010
-- The new `miden-sdk-build-script-support` crate owns the package-staging protocol needed by
-  plain Cargo builds and IDE analysis. Contract crates add it as a build dependency and call `prepare_package_cache()`
-- `println!` supports format arguments; formatted output requires `extern crate alloc` and a
-  configured global allocator.
-- `#[note]` impl blocks generate a `get_entrypoint_root()` associated method on the note type,
-  returning the MAST root digest of the note script defined by the current crate (the
-  `#[note_script]` entrypoint export). It is backed by a compiler intrinsic resolved at
-  assembly time, so a note constructor can build a `Recipient` committing to its own note
-  script root (e.g. via `note::build_recipient`). Compilation fails if the project defines no
-  `#[note_script]` entrypoint #786
-- `#[note_constructor]` marks a method of a `#[note]` impl block as an exported note
-  constructor: it is exported through the note's WIT interface, so other Miden packages — e.g.
-  transaction scripts — can declare the note package as a dependency and call the constructor
-  to compute the note's recipient (committing to the note script root). The caller turns the
-  recipient into an output note through an account procedure (e.g. the basic wallet's
-  `create-note`), because `output_note::create` requires the account-component context.
-  Constructors must be `pub`, must not take `self`, and their signatures are limited to SDK
-  core types and primitives; unannotated methods stay plain Rust helpers #786
-- The `#[note]` macro embeds the note's WIT interface (entrypoint plus constructors) into the
-  compiled Miden package, so dependent crates — e.g. transaction scripts — resolve it from the
-  note's `.masp` through a plain `[dependencies]` entry in `miden-project.toml` #786
-- `#[tx_script]` entrypoints now take typed script arguments: the entrypoint is a free function
-  of any name whose by-value parameter can be any `ScriptArgs` type (every
-  `FromFeltRepr + ToFeltRepr` type qualifies, e.g. `Felt`, `Word`, or a user struct deriving
-  both) and is decoded automatically from the `TX_SCRIPT_ARGS` word — packed directly in the
-  args word when the encoding statically fits its 4 felts, or fetched from the advice provider
-  and hash-verified against the args word otherwise. The parameters may appear in any order
-  (the account reference is optional); existing `fn run(arg: Word, ...)` signatures keep
-  compiling and behave unchanged. On the host, `ScriptArgs::encode` on a struct with the
-  identical layout yields the args word or the advice-map preimage (`EncodedScriptArgs`). The
-  trait lives in the new `miden-tx-script-args` crate (re-exported from `miden`), which
-  off-chain code can depend on without pulling in any on-chain SDK crates.
-  `ScriptArgs::decode` returns `Result<_, ScriptArgsError>`: the generated entrypoint wrapper
-  panics on decode errors (failing the transaction), while off-chain code handles them as
-  values. On the basic-wallet example script, typed decoding costs about 790 VM cycles and
-  4.4 KB of package size over the previous hand-rolled advice decode. See the
-  [migration guide](./sdk/MIGRATION.md) for adopting typed arguments #1291
-- `FromFeltRepr` gained a `FIXED_LEN: Option<usize>` associated constant — the statically known
-  encoded length in felts, used by `ScriptArgs` to pick the transport mode at compile time. It
-  defaults to `None` (variable length, the fail-safe commitment transport), so existing manual
-  implementations keep compiling; `#[derive(FromFeltRepr)]` computes the exact value #1291
-- `Tag`, `NoteType`, `Recipient`, and `Asset` now implement `FromFeltRepr`/`ToFeltRepr`, so
-  they can be used as fields of derived script-argument structs. The `miden` crate additionally
-  re-exports `miden_field_repr` under its own crate name, so the derives' generated code
-  resolves in crates that only depend on `miden` and glob-import it #1291
-- The SDK macros resolve dependencies through the artifact map the compiler writes into the
-  package cache, so workspace, workspace-path, git, and registry dependencies now resolve
-  during macro expansion exactly as the compiler resolved them. Entries the compiler records
-  as embedding no component WIT — the base link libraries, MASM-only dependencies — are
-  skipped without deserializing their packages. The name-probing of `.masp` files remains
-  only as a fallback for hand-assembled caches without a map #1328
-
-### Changed
-
-- `output_note::add_attachment_from_memory` now panics with a clear message when the attachment
-  is empty or contains more than 256 words. Before, such calls reached the transaction kernel
-  and failed there with an opaque assertion #1310
-
-### Migration and breaking changes
-
-- [BREAKING] The SDK and compiler now target Miden protocol `0.16.0-rc.4` and Miden VM `0.29`
-  #1310. Compiled packages link against the updated transaction kernel and core library, so
-  their commitments change. Hosts that execute or test the compiled packages must use matching
-  protocol `0.16.0-rc.4` crates (for example `miden-testing 0.16.0-rc.4` or
-  `miden-client 0.16.0-rc.1`). Guest code that does not build a transaction summary and does
-  not use the removed attachment aliases compiles and behaves unchanged. Custom authentication
-  components must adopt the six-word transaction summary: the old four-word layout compiles but
-  is rejected at runtime; see [MIGRATION.md](./sdk/MIGRATION.md) #1310
-- [BREAKING] `output_note::set_word_attachment` and `output_note::set_array_attachment` are
-  removed. They were backward-compatibility aliases from the protocol 0.15 rename, and their
-  names promised replace semantics the transaction kernel does not have: attachments are
-  append-only. Call `output_note::add_word_attachment` / `output_note::add_attachment` instead;
-  see [MIGRATION.md](./sdk/MIGRATION.md) #1310
-- `#[note]` reserves the inherent item name `get_entrypoint_root` for its generated note-script
-  root accessor. Rename existing methods, note constructors, or associated constants with that
-  name; see [MIGRATION.md](./sdk/MIGRATION.md).
-- `#[note]` structs now also implement `felt_repr::ToFeltRepr` (mirroring the generated storage
-  decoding), so note constructors can serialize the note inputs when computing the note
-  recipient. Note input struct fields must now implement `ToFeltRepr` in addition to
-  `FromFeltRepr`, and a manual `ToFeltRepr` impl on the note type now conflicts with the
-  generated one; see [MIGRATION.md](./sdk/MIGRATION.md) for the required changes. `AccountId`
-  implements `ToFeltRepr` #786
-- BREAKING: The component WIT generated by `#[component]` is now embedded in the compiled Miden
-  package (a `wit` section of the `.masp`) instead of being written to `target/generated-wit/`,
-  and the SDK macros read dependency WIT from the dependency's compiled package. The
-  `wit = "..."` keys in `miden-project.toml` are now only a fallback for dependency packages
-  without embedded WIT (e.g. produced by other toolchains): setting the key for a package that
-  embeds WIT is an error, and a package built by an older Miden toolchain is skipped unless the
-  key supplies its WIT — only a macro that references it reports the missing interface. See [MIGRATION.md](./sdk/MIGRATION.md) for the manifest edits and
-  rebuild steps #1248
-- BREAKING: The SDK macros now read dependency packages only from the `MIDENC_PACKAGE_CACHE`
-  directory (or from a manifest path that names a `.masp` file directly). The previous search
-  of `target/miden/<profile>` output directories — the dependency's own, surrounding
-  workspaces', and ambient (`CARGO_TARGET_DIR`, `OUT_DIR`, working-directory) targets — was
-  removed, along with its freshest-first selection and macro-side package id and version
-  checks; the cache is unique to each build and its contents are trusted.
-  Builds driven by `cargo miden build` export the variable already; plain `cargo build`,
-  `cargo check`, and IDE analysis need the template's thin `build.rs` and its
-  `miden-sdk-build-script-support` build dependency. An expansion without a configured cache now
-  fails with instructions instead of searching the filesystem; see
-  [MIGRATION.md](./sdk/MIGRATION.md) #1298
-
+- `#[note]` types implement `active_note::ActiveNote`, so note scripts can read the executing
+  note through methods such as `self.get_sender()`, `self.get_initial_assets()`, and
+  `self.get_metadata()`, including attachment readers. Note storage remains available through
+  the struct's fields #1010
+- `#[note_constructor]` exports public associated functions from a `#[note]` impl, allowing other
+  Miden packages to call constructors through a note package dependency. Constructors take no
+  `self` parameter and support primitives and SDK core types #786
+- `#[note]` impls generate `get_entrypoint_root() -> Word`, returning the note script's MAST root
+  for constructing its recipient. Use it from constructors; calling it from code reachable from
+  the note-script entrypoint creates a digest cycle and fails assembly. Running note scripts
+  should use `active_note::get_script_root()` instead #786
+- `#[tx_script]` accepts typed arguments implementing `FromFeltRepr` and `ToFeltRepr`. Statically
+  sized encodings of at most four felts travel directly in `TX_SCRIPT_ARGS`; larger or variable
+  encodings use an advice-map preimage whose Poseidon2 commitment is verified in the VM.
+  Entrypoints may have any name, with the optional account reference before or after the argument.
+  Ordinary `fn run(arg: Word, ...)` entrypoints keep their existing argument encoding #1291
+- The new `miden-tx-script-args` crate provides `ScriptArgs`, `EncodedScriptArgs`, and
+  `decode_preimage` for host-side encoding and decoding without guest bindings; these APIs are
+  also re-exported by `miden`. For `EncodedScriptArgs::Preimage`, the host hashes the returned
+  felts with `Poseidon2::hash_elements` and registers them in the advice map. Decoding returns
+  `ScriptArgsError` on malformed input; a generated guest entrypoint fails the transaction on a
+  decode error. Host and guest types must agree on the felt sequence and transport mode; see the
+  [typed-argument guide](./sdk/MIGRATION.md#typed-transaction-script-arguments) #1291
+- `FromFeltRepr::FIXED_LEN` exposes the statically known encoding length, and its derive computes
+  that length for structs and enums. Manual implementations default to `None` and continue to
+  compile; variable-length types use the commitment transport for typed script arguments #1291
+- `AccountId` implements `ToFeltRepr`; `Tag`, `NoteType`, `Recipient`, and `Asset` implement both
+  `FromFeltRepr` and `ToFeltRepr`. `miden` also re-exports `miden_field_repr`, allowing its derives
+  to resolve with an SDK dependency and `use miden::*` #1291
+- `println!` supports explicit format arguments, such as `println!("value={}", value)`, with
+  `extern crate alloc` and a configured global allocator. Captured names in a lone string literal,
+  such as `println!("value={value}")`, are still printed literally.
+- The new `miden-sdk-build-script-support` crate makes dependency packages available during plain
+  Cargo builds and IDE analysis through `prepare_package_cache()`. It stages dependencies without
+  compiling the consuming crate twice #1298
+- Package readers can obtain embedded component WIT with
+  `midenc_frontend_wasm_metadata::package_wit()` and identify its section with
+  `package_wit_section_id()`.
 
 ### Fixed
 
-- `adv_load_preimage` no longer truncates huge word counts into an undersized buffer on wasm32
-  (a potential guest heap overflow); it now traps for counts of `2^30` words or more, whose felt
-  total cannot be represented in the 32-bit address space #1291
-- The `#[note]` `get_entrypoint_root()` accessor now uses a word-aligned return area like every
-  other binding, so its result no longer depends on the target-conditional alignment of
-  `miden_field::Word`. The aligned slot costs 30 cycles on the note-constructor path #1310
-- The FPI macro diagnostic for a dependency package missing from a midenc-driven build now names
-  the searched `MIDENC_PACKAGE_CACHE` directory and the expected package file names, instead of
-  an empty candidate list and a `target/miden/<profile>` hint that the cache lookup never
-  consults #1302
-- FPI expansions record `option_env!("MIDENC_PACKAGE_CACHE")`, so a consumer crate recompiles —
-  and re-reads its dependency procedure roots — whenever the package-cache path changes. Every
-  `cargo miden build` uses a fresh per-build directory, so a midenc-driven build always
-  re-expands its consumers; builds against a stable exported directory re-expand only when
-  package contents change #1302
-- A dependency whose package embeds no component WIT (and has no `wit` key) — for example a
-  link-only MASM library — no longer fails every macro expansion; it is skipped, and only a
-  macro that actually references it reports the missing WIT, at the reference site #1328
+- Missing dependency diagnostics identify the configured package cache and expected files, or the
+  dependency whose interface is missing, instead of referring to unused output directories or
+  claiming that a declared dependency is undeclared #1302
+- SDK crates avoid unnecessary rebuilds when alternating ordinary Cargo invocations with builds
+  launched from a build script or test runner.
+
+### Migration and breaking changes
+
+- The SDK now targets Miden protocol and standards `0.16.0-rc.4`, VM `0.29`, and `miden-field 0.29`.
+  Update matching host dependencies and use compiler `0.10.0`; rebuild `.masp` packages because
+  the linked core library and transaction kernel change their commitments. SDK crates now declare
+  Rust `1.99` instead of `1.97`; update toolchain pins to `nightly-2026-09-01` #1310
+- Custom authentication components must construct six-word transaction summaries instead of four.
+  The summary includes the account-delta, input-note, output-note, and reference-block commitments,
+  followed by the expiration delta and seven user parameters; the standards convention places the
+  final nonce in the first user parameter. The old layout still compiles but fails signing with
+  `TransactionSummaryConstructionFailed`. Follow the
+  [six-word migration](./sdk/MIGRATION.md#transaction-summaries-are-six-words-protocol-016) #1310
+- Replace `output_note::set_word_attachment` with `output_note::add_word_attachment` and
+  `output_note::set_array_attachment` with `output_note::add_attachment`. Both take a `Word`:
+  the first takes the attachment value, the second its commitment with contents in the advice map.
+  Attachments are append-only; use `add_attachment_from_memory` for a slice of words #1310
+- `output_note::add_attachment_from_memory` now checks for 1–256 words before calling the kernel.
+  Invalid lengths fail with an SDK assertion instead of the kernel assertion; update tests that
+  depend on the previous failure message or location #1310
+- `#[note]` now generates `ToFeltRepr` in field order. Custom field types must implement
+  `ToFeltRepr` as well as `FromFeltRepr`; remove manual or separately derived `ToFeltRepr`
+  implementations on the note struct itself to avoid conflicting implementations #786
+- `#[note]` reserves the inherent name `get_entrypoint_root`. Rename existing methods or associated
+  constants with this name, including those in separate impl blocks #786
+- The automatically imported `ActiveNote` trait can make calls ambiguous when another trait defines
+  the same method. Disambiguate with a qualified call such as
+  `<MyNote as active_note::ActiveNote>::get_sender(&note)` #1010
+- `#[note_script(...)]` arguments that were silently ignored are now rejected. Use the bare
+  `#[note_script]` marker.
+- `#[tx_script]` entrypoints must be synchronous, safe, nongeneric Rust functions returning `()`,
+  without an explicit ABI or `where` clause. Move specialized code into helpers and handle results
+  inside the entrypoint; the old wrapper silently discarded non-unit return values #1291
+- Default `generate!` bindings now use `miden::Digest` for the SDK WIT `digest` type. Update
+  guest-trait implementations and values using the separately generated record to use the SDK
+  type, for example `Digest::from_word`.
+- The WIT generated by `#[component]` is now embedded in the compiled package's `wit` section
+  instead of being written to `target/generated-wit/`. Rebuild dependencies and remove their `wit`
+  keys from `[package.metadata.miden.dependencies]` when the packages embed WIT; keeping both is
+  an error. Read packaged interfaces from `.masp` files #1248
+- WIT selection and embedding now recognize escaped world names, including `%interface`, and
+  declarations separated by tabs, line breaks, or comments. Rebuild affected packages and
+  regenerate bindings whose interfaces were previously missed.
+- For packages without embedded WIT, a `wit` override must select one self-contained `.wit` file,
+  or a directory containing exactly one top-level `.wit` file. It must export a named interface
+  from a versioned package and resolve using bundled SDK WIT. Consolidate multi-file interfaces
+  or external WIT dependencies. Bare `generate!()` can embed local `wit/` interfaces meeting these
+  requirements. Packages without WIT are skipped unless a macro references their interface #1248
+- SDK macros no longer search old `target/miden/<profile>` outputs or dependency source `wit/`
+  directories for interfaces. Use `cargo miden build`, or add
+  `miden-sdk-build-script-support = "0.14.0"` under `[build-dependencies]` and call
+  `miden_sdk_build_script_support::prepare_package_cache()` from each contract's `build.rs` for
+  plain Cargo and IDE workflows. Merge the call into an existing build script. The helper needs
+  `cargo-miden` on `PATH`, or a binary selected by `CARGO_MIDEN` #1298
+- A nonempty `MIDENC_PACKAGE_CACHE` bypasses build-script staging, so custom callers must populate
+  and retain that directory themselves. An ordinary compiler build uses a temporary cache;
+  building a dependency once no longer makes it available to a later plain Cargo check. The helper
+  retains successful cache generations under `OUT_DIR` until cleanup and fails the outer build
+  when dependency staging fails #1298
+- Dependency macros now use the compiler's selected artifacts for workspace, path, git, and
+  registry dependencies. A present artifact map is authoritative: malformed, incompatible, or
+  incomplete maps fail expansion. Use compiler staging for workspace, git, and registry
+  dependencies. Caches without a map support path dependencies, including direct `.masp`
+  files #1328
+- Generated bindings and FPI procedure roots refresh when dependency bytes, the artifact map,
+  explicit WIT files, or `MIDENC_PACKAGE_CACHE` change. Rebuild consumers after interface changes
+  and update snapshots that depended on stale bindings or procedure roots #1302
+- `adv_load_preimage` now traps for `num_words >= 2^30`, preventing an overflowing felt count from
+  producing an undersized guest buffer. Keep supplied word counts below this bound #1291
+- `Vec<T>` felt decoding rejects impossible fixed-size element counts with `UnexpectedEof` before
+  allocating; malformed lengths could previously cause an allocation abort. Variable-size elements
+  are allocated as decoding proceeds. Update tests expecting the old failure #1291
 
 ## [0.14.0-rc.1]
 

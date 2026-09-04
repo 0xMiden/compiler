@@ -7,119 +7,164 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0]
+
 ### Compiler and `midenc`
 
-- Naming an operation in a dialect that is not registered now reports an unknown dialect,
-  which is a separate diagnostic from an unrecognised operation inside a dialect that does
-  exist. The dialect half of the name comes from the source, so it can name anything; it
-  previously reached a direct map index and aborted.
-
-- Parsing a module whose body is empty, or which defines the same symbol twice, now
-  succeeds or reports a redefinition rather than aborting. Building the symbol table
-  assumed a region with an entry block and uniquely named symbols, which is not something
-  parsed text can be relied on to provide.
-
-- The filesystem package cache is now per-build. When the calling process already exported
-  `MIDENC_PACKAGE_CACHE`, the compiler adopts that directory as its package cache and leaves
-  it in place — the caller owns its location and lifetime, which is how packages stay
-  readable after the compiler exits. Otherwise the compiler creates a globally unique lease
-  directory under the configured target directory (`<target-dir>/packages`, by default the
-  project's `target/miden/packages/`), exchanges dependency packages with
-  its nested builds through it, and deletes it when the compilation ends. A directory that is
-  never shared between builds cannot go stale, so the fingerprint derivation, permanent lock
-  files, and stale-cache pruning of the earlier design are removed. A killed build can leave
-  a remnant lease behind; remnants are inert and `cargo clean` removes them #1302
-- The compiler records its dependency resolution in the package cache: for every Rust project
-  it builds, a `miden-deps/<consumer>.deps.toml` maps each declared dependency — registry-resolved
-  components included — to the artifact the resolver selected, with a flag naming whether it
-  embeds component WIT so the macros can skip link-only packages without deserializing them.
-  The root consumer's versioned `miden-deps/build-inputs` record distinguishes dependency
-  inputs the frontends can enumerate completely from opaque provenance. Local non-Rust source
-  trees and preassembled artifacts can use selective Cargo change directives when the launcher
-  and Miden workspace boundary are also explicit; Rust/Cargo source builds, PATH-resolved
-  launchers, and undiscovered workspace boundaries remain opaque and are re-staged on every
-  relevant Cargo invocation rather than trusting an incomplete dep-info snapshot. The SDK macros
-  and the contract build script consume these records instead of re-deriving resolution #1328
-- `--stop-after=dependencies` stops a manifest-backed build after every dependency is
-  resolved, assembled, and published into the package cache together with the recorded
-  resolution — before the consumer project itself is compiled #1328
-- Package-cache leases and the compiled artifacts of nested builds are created under the
-  session's configured target directory (`--target-dir`/`MIDENC_TARGET_DIR`), so building from
-  a read-only checkout works with a writable target directory; the default location is
-  unchanged #1328
-- Nested cargo builds now treat a present-but-empty `CARGO_ENCODED_RUSTFLAGS` the way cargo
-  does — as authoritative suppression of `RUSTFLAGS` — instead of falling back to the plain
-  variable. The standalone-file route (`midenc` on a `.rs` file or stdin) composes its rustflags
-  through the same helper, so an inherited encoded value can no longer delete the mandatory
-  Miden flags there, and both routes share one mandatory-flag list #1328
+- Added Wasm `call_indirect` support for locally defined, statically initialized function tables,
+  enabling Rust function pointers and trait objects. Dispatch checks table bounds, null entries,
+  and callee signatures; calls may pass up to 15 field elements of arguments.
+- Typed foreign procedure calls now support payload-carrying variants, including `Option` and
+  `Result`. Invalid core signatures and unsupported payload layouts produce diagnostics.
+- Note packages can export constructors alongside their script entrypoint, and constructors can
+  obtain the note script's MAST root in the VM to build a recipient committing to that script.
+- Added support for the component initialization emitted by `nightly-2026-09-01`. The component
+  start runs after memory, globals, and function tables are initialized in each fresh context.
+- Manifest-backed Rust builds accept `--stop-after=dependencies` to resolve and assemble dependency
+  packages without compiling the consuming crate. Set `MIDENC_PACKAGE_CACHE` to retain the staged
+  packages after the command exits. Dependency consumers receive the compiler's selected artifacts,
+  including workspace, path, git, and registry dependencies.
+- Compilation now supports HIR modules nested inside other modules, including their globals and
+  data segments. Invalid memory layouts and unsupported indirect-call targets report errors instead
+  of panicking.
+- HIR parsing accepts empty symbol tables and reports duplicate symbols and unregistered dialects
+  without aborting. Unknown dialects are distinguished from unknown operations in a registered
+  dialect.
+- Artifact writes are atomic and create missing destination directories, so a failed write no
+  longer leaves a truncated replacement for a previously complete file.
+- The `local2reg` and `sink-operand-defs` passes are now available in registered pass pipelines,
+  including `hir-opt`.
 
 ### `cargo-miden`
 
-- Contract templates and the repository examples now include a thin `build.rs` that calls the
-  new `miden-sdk-build-script-support` crate to populate the package cache for builds `midenc`
-  does not drive. Keeping the staging protocol in this SDK-versioned crate avoids exposing and
-  duplicating compiler/proc-macro infrastructure across every generated project. Outside a
-  midenc-driven build it stages package-cache generations under its `OUT_DIR`, fills a private
-  generation with a nested
-  `cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports
-  the same variable to macro expansion. Plain `cargo check` and IDE analysis now resolve
-  dependency packages instead of reporting missing packages (#1215). Only a fully successful
-  nested build publishes an immutable content-addressed generation, and changed generations
-  remain under `OUT_DIR` for older IDE readers until `cargo clean`; byte-identical staging reuses
-  the existing generation. A staging failure fails the outer build rather than exporting stale
-  packages. Complete compiler-recorded inputs are watched selectively, while opaque provenance
-  deliberately re-stages on every relevant Cargo invocation; a build-input record the script
-  cannot read — missing, or written to a schema it does not know — is treated as opaque with a
-  `cargo:warning`, so a compiler and a build-script crate at different versions degrade to
-  always-re-stage instead of failing the build. Staging runs
-  `cargo miden build --release --stop-after=dependencies`, so the crate itself is never compiled
-  twice and its cargo
-  feature selection does not affect staging; the nested build's target directories live
-  under the script's `OUT_DIR`, honoring the outer build's configured target directory. The
-  helper uses `cargo miden` from `PATH`, or the binary named by the `CARGO_MIDEN`
-  environment variable #1298
-- Fixed the contract templates' `miden-project.toml` manifests, which were missing the
-  `[lib].path` key the VM v0.25 project model requires; projects generated from the templates
-  failed both `cargo miden build` and macro expansion with "unable to parse project manifest:
-  missing field `path`"
+- Added `cargo miden new --force-download` to require a downloaded and verified released template
+  bundle, failing if one cannot be obtained.
+- Generated contracts include build-script support for resolving Miden dependencies during plain
+  Cargo builds and IDE analysis.
 
-### Rust SDK
+### `miden-objtool`
 
-- The FPI macro diagnostic for a dependency package missing from a midenc-driven build now names
-  the searched `MIDENC_PACKAGE_CACHE` directory and the expected package file names, instead of
-  an empty candidate list and a `target/miden/<profile>` hint that the cache lookup never
-  consults #1302
-- FPI expansions record `option_env!("MIDENC_PACKAGE_CACHE")`, so a consumer crate recompiles —
-  and re-reads its dependency procedure roots — whenever the package-cache path changes. Every
-  `cargo miden build` uses a fresh per-build directory, so a midenc-driven build always
-  re-expands its consumers; builds against a stable exported directory re-expand only when
-  package contents change #1302
-- BREAKING: The component WIT generated by `#[component]` is now embedded in the compiled Miden
-  package (a `wit` section of the `.masp`) instead of being written to `target/generated-wit/`,
-  and the SDK macros read dependency WIT from the dependency's compiled package. The
-  `wit = "..."` keys in `miden-project.toml` are now only a fallback for dependency packages
-  without embedded WIT (e.g. produced by other toolchains): setting the key for a package that
-  embeds WIT is an error, and a package built by an older Miden toolchain is skipped unless the
-  key supplies its WIT — only a macro that references it reports the missing interface. See the [migration guide](./sdk/sdk/MIGRATION.md) for the manifest
-  edits and rebuild steps #1248
-- BREAKING: The SDK macros now read dependency packages only from the `MIDENC_PACKAGE_CACHE`
-  directory (or from a manifest path that names a `.masp` file directly). The previous search
-  of `target/miden/<profile>` output directories — the dependency's own, surrounding
-  workspaces', and ambient (`CARGO_TARGET_DIR`, `OUT_DIR`, working-directory) targets — was
-  removed, along with its freshest-first selection and macro-side package id and version
-  checks; the cache is unique to each build and its contents are trusted.
-  Builds driven by `cargo miden build` export the variable already; plain `cargo build`,
-  `cargo check`, and IDE analysis need the contract `build.rs`. An expansion without a
-  configured cache now fails with instructions instead of searching the filesystem #1298
-- The SDK macros resolve dependencies through the artifact map the compiler writes into the
-  package cache, so workspace, workspace-path, git, and registry dependencies now resolve
-  during macro expansion exactly as the compiler resolved them. Entries the compiler records
-  as embedding no component WIT — the base link libraries, MASM-only dependencies — are
-  skipped without deserializing their packages. The name-probing of `.masp` files remains
-  only as a fallback for hand-assembled caches without a map #1328
-- A dependency whose package embeds no component WIT (and has no `wit` key) — for example a
-  link-only MASM library — no longer fails every macro expansion; it is skipped, and only a
-  macro that actually references it reports the missing WIT, at the reference site #1328
+- `dump debug-info` displays resolved local and global frame-base expressions as readable locations.
+
+### Libraries and public APIs
+
+- Added MASM `disassemble_*_for_lint` APIs that return the procedures they could lift together with
+  the paths, spans, and reasons for skipped procedures. Bounded advice-taint analysis can return
+  partial results with an explanation when its work limit is reached.
+- Added `Operation::reachability` and `reachability_cached` for classifying whether execution can
+  reach another operation across blocks, loops, and nested regions.
+- HIR builders can define function tables, perform same-context indirect calls with
+  `hir.exec_indirect`, and obtain procedure digests with `hir.procedure_root`.
+- `cargo_miden::bundle` now exposes released-or-embedded template resolution and the selected
+  bundle's source and version.
+- `LinkLibrary::precompiles()` provides the separate precompiles package required by the core
+  library.
+
+### Migration and breaking changes
+
+- The compiler now targets Miden VM `0.29` and protocol `0.16.0-rc.4`. Update matching host and
+  library dependencies and rebuild `.masp` packages; core-library and transaction-kernel changes
+  affect package commitments. Building the compiler and Rust projects now uses
+  `nightly-2026-09-01` instead of `nightly-2026-04-30`, and compiler crates declare Rust `1.99`
+  instead of `1.97`. Apply the related SDK changes in its [migration guide](sdk/sdk/MIGRATION.md).
+- Running `midenc` with no input now compiles `miden-project.toml` in the working directory, fixing
+  the behavior advertised in the release candidate. Use `midenc --help` to request usage text.
+- Default `midenc` outputs now go to `<target-dir>/<profile>` (normally `target/miden/<profile>`)
+  instead of the working directory. Use `--output-dir .` to retain the previous location.
+  `cargo miden build` now honors the selected output destinations instead of always writing a
+  package in the default target directory. `--output-dir`, `--output-file`, and `--stdout` are
+  mutually exclusive; remove conflicting combinations.
+- `--emit=mast` now emits readable MAST text instead of binary package bytes. Use `--emit=masp`
+  for binary packages. `midenc` also prints `Compiled <path>` after emitting a package file; use
+  `--verbose=silent` if scripts require no status output.
+- Custom `--target-dir` settings now contain nested Cargo artifacts under `<target-dir>/cargo`
+  unless `CARGO_TARGET_DIR` or `CARGO_BUILD_TARGET_DIR` overrides that location. Update scripts
+  that inspect the previous Cargo target paths. Toolchain selection now reads `MIDENUP_TOOLCHAIN`;
+  `MIDEN_SYSROOT` remains the sysroot path and no longer also supplies the toolchain name.
+- Dependency packages no longer remain in a persistent shared `target/miden/packages` directory.
+  Each build uses a unique directory under `<target-dir>/packages`, removed when its session and
+  registries are dropped. Set `MIDENC_PACKAGE_CACHE` before invoking the compiler to use a
+  caller-owned directory whose lifetime you manage. Existing plain-Cargo and IDE workflows using
+  the SDK should add the contract build-script support described in the
+  [migration guide](sdk/sdk/MIGRATION.md).
+- Component WIT is carried in the compiled package's `wit` section. Tools should read interfaces
+  from `.masp` packages instead of `target/generated-wit/`. Rebuild dependencies and remove explicit
+  `wit` keys for packages that embed their interface; those keys are now only a fallback for
+  packages without embedded WIT.
+- Rust builds now preserve mandatory Miden flags alongside inherited flags and honor
+  `CARGO_ENCODED_RUSTFLAGS` over `RUSTFLAGS`, even when the encoded value is empty. Unset an empty
+  encoded variable if `RUSTFLAGS` should apply. Native build scripts and proc macros compiled by
+  nested Cargo builds now omit debug information to reduce disk use; debug those host tools in a
+  separate Cargo build if symbols are needed.
+- Default `cargo miden new` templates now come from the newest compatible `templates/v*` release
+  newer than the embedded bundle, with the embedded bundle used when no update is available or
+  release lookup fails. The old template repositories are no longer cloned. Use `--template-path`
+  to select a fixed local template; invalid downloaded checksums fail generation.
+- When generating custom templates, `cargo miden new` now uses Cargo's `[lib].path` and treats
+  `project-kind = "library"` as a library. It no longer creates a package manifest at a virtual
+  Cargo workspace root; workspace templates should provide manifests in their member crates.
+  Relative `--compiler-path` values are now stored as absolute paths in generated projects.
+- Shipped contract templates now include the required `[lib].path`. Add this key to older generated
+  manifests that lack it, pointing to the Rust library source, normally `src/lib.rs`.
+- Compiled packages no longer expose public procedures merely because they occur in a private
+  component module. Explicitly export procedures through a public module or component interface
+  if callers relied on those leaked exports.
+- Linear-memory layout now reserves the module's declared memory before allocating compiler globals,
+  function tables, and the heap, preventing overlap with zero-initialized Wasm memory. Values kept
+  across branches and loop iterations are also preserved correctly when spilled to locals. Layouts
+  that leave no representable heap address in the 32-bit address space now fail compilation instead
+  of wrapping. Rebuild affected programs and update memory-layout, generated-code, and commitment
+  baselines.
+- Checked and overflowing integer operations now test the intended result or converted value rather
+  than another stack operand, correcting range checks for small unsigned integers. Signed 1-bit
+  and unsigned 32-bit conversion masks no longer overflow during compilation. The HIR evaluator's
+  checked multiplication now multiplies instead of subtracting. Recheck results and expected traps
+  for affected arithmetic.
+- Typed FPI imports now reject mismatched core scalar types even when parameter counts match, and
+  reject canonical memory offsets that do not fit a signed 32-bit offset. Invalid C-like enum tags
+  now trap instead of passing through unchecked; fix mismatched declarations and invalid tags in
+  callers or custom bindings.
+- Advice-taint analysis now follows indirect callees and reports unconstrained arguments reaching
+  external indirect-call targets. Unresolved indirect calls conservatively taint their results and
+  memory, so existing analysis clients may receive additional findings.
+- `local2reg` now promotes locals in parsed HIR instead of silently doing nothing. Textual HIR
+  preserves layout attributes and debugger parameter metadata, and absolute symbol references are
+  verified against the returned root. Signature display now prints results instead of repeating
+  parameters. Regenerate affected HIR and diagnostic snapshots.
+- Debug information now preserves declaration files and remapped Rust source paths and tracks
+  variable lifetimes through optimization. Debuggers show unavailable values instead of stale
+  stack locations; missing DWARF line and column information no longer produces misleading source
+  locations. Update debug-info and source-location snapshots to reflect these corrections.
+- `Session::filesystem_package_cache_dir()` now returns `Result<Option<PathBuf>, Report>`; handle
+  cache-creation errors. `cargo_miden::BuildCommand::exec()` now returns `Result<Option<PathBuf>>`;
+  handle `None` when compilation stops at a checkpoint or no package file is selected.
+- `FrontendOutput`, `MidenComponent`, `CodegenOutput`, and `pipeline::backend::LoweredTarget`
+  replace `account_component_metadata_bytes` with a `sections` field of type
+  `midenc_frontend_wasm_metadata::PackageSections`. Move account metadata to
+  `sections.account_component_metadata` and preserve `sections.component_wit` through custom stages.
+- `ComponentId::is_synthetic_wrapper()` was removed. Mark generated wrappers with
+  `Component::mark_synthetic_wrapper()` and query `Component::is_synthetic_wrapper()` instead of
+  identifying wrappers by their name. `MasmComponent` struct literals must initialize
+  `synthetic_wrapper` and `executable_entrypoint_without_init`; preserve the values supplied by
+  lowering when rebuilding an artifact.
+- Custom `TransformSpillsInterface` implementations must accept the new `value: ValueRef` argument
+  in `convert_spill_to_store` and `convert_reload_to_load`. Use that analysis value to identify the
+  spill slot while storing the spill operation's current operand.
+- Replace `LogPrecompile`, `hir.log_precompile`, and `log_precompile` builder/emitter calls with
+  `LogDeferred`, `hir.log_deferred`, and `log_deferred`. The operation now folds a precomputed
+  statement digest into the VM's deferred root; adapt inputs to the new VM operation's contract.
+- `DataSegmentLayout::next_available_offset()` now returns `Option<u32>`; handle `None` when no
+  aligned address fits.
+- `Operation::set_attribute` replaces an existing attribute of the same name instead of inserting
+  a duplicate.
+- Exhaustive `ParserError` matches must handle `UnknownDialect` and `SymbolAlreadyDefined`.
+  `DisassembledWorld` struct literals must initialize `skipped_procedures`.
+- Debug-expression consumers must replace the frame-base high-bit encoding helpers with
+  `FrameBase` and `ResolvedFrameBase`. `ExpressionOp::FrameBase` now uses a typed `base` field
+  instead of `global_index`; exhaustive matches must handle `ExpressionOp::ResolvedFrameBase`.
+  Update readers of serialized HIR expressions for the typed local and global frame-base encodings;
+  legacy expression tag 12 now decodes as a global base. Textual HIR uses
+  `DW_OP_fbreg(local, 2+8)` in place of `DW_OP_fbreg(local, 2, 8)`.
 
 ## [0.10.0-rc.1]
 

@@ -1,7 +1,7 @@
 [package]
 name = "miden-tx-script-args"
 description = "Typed transaction-script argument transport for the Miden VM"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
