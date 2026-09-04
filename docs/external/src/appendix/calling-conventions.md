@@ -301,10 +301,14 @@ spilled to the caller's stack frame, or to the advice provider. The former is us
 and `syscall`, as caller memory is not accessible to the callee with those instructions.
 
 While ostensibly 16 elements is the maximum number of operands on the operand stack that can represent function arguments, indirect calls
-(`dynexec`/`dyncall`) reserve one element for the memory address of the word holding the callee's MAST root, limiting their arguments to 15
-elements; the compiler rejects indirect callee signatures that exceed this instead of spilling. A `dyncall` to a stored procedure root is
-bounded more tightly than that. The root is spilled to a reserved memory word rather than counted as an argument at the `dyncall` itself,
-but the caller reaches the generated dispatch function with an ordinary call carrying the root's four elements alongside the arguments, and
-alongside the result pointer when the result is returned by reference. A stored procedure therefore takes at most 12 argument field elements,
-or 11 when its result is returned through a pointer. Its arguments are also bounded by the canonical ABI's 16 flat values, four of which the
-root occupies in the generated import, i.e. at most 12 flat argument values.
+spend part of that window on selecting the callee, and the compiler rejects indirect callee signatures exceeding what is left instead of
+spilling. A `dynexec` selects its callee from a function table by index, one element, so its arguments are limited to 15 elements. A
+`dyncall` selects its callee by MAST root, a whole word. The root is spilled to a reserved memory word before the arguments are placed, so
+the emitted code never holds both at once, but the root and the arguments are operands of the same call site and all of them must be
+reachable within the 16-element window at once — which limits a `dyncall`'s arguments to 12 elements.
+
+A `dyncall` to a stored procedure root is bounded by the same 12 elements from the caller's side as well: the caller reaches the generated
+dispatch function with an ordinary call carrying the root's four elements alongside the arguments, and alongside the result pointer when the
+result is returned by reference. A stored procedure therefore takes at most 12 argument field elements, or 11 when its result is returned
+through a pointer. Its arguments are also bounded by the canonical ABI's 16 flat values, four of which the root occupies in the generated
+import, i.e. at most 12 flat argument values.
