@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Compiler and `midenc`
+
+- Support duplicate function names in the Wasm name section, which might occur for Wasm generated
+  by rustc for the Miden target. Functions with a duplicated name get a unique linkage name while
+  debug info keeps the original source name. DWARF subprograms with a duplicated name resolve to
+  their function through `DW_AT_low_pc` instead of the ambiguous name.
+- Honor Wasm function export names as primary HIR linkage symbols, exposing exported functions
+  under their exact export name for linkage and CLI entrypoint resolution while retaining raw
+  name-section names for source metadata and debug info.
+
 ## [0.10.0]
 
 ### Compiler and `midenc`

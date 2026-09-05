@@ -164,7 +164,7 @@ pub fn build_ir_module(
         }
 
         let func_index = parsed_module.module.func_index(defined_func_idx);
-        let func_name = parsed_module.module.func_name(func_index).as_str();
+        let func_name = parsed_module.module.source_func_name(func_index).as_str();
 
         // Try to parse the function name as a MASM function ident to get the symbol path
         let Ok(func_ident) = FunctionIdent::from_str(func_name) else {
@@ -214,8 +214,10 @@ pub fn build_ir_module(
 
         // If this is a linker stub that needs a synthesized body (function-type intrinsics,
         // module-context stubs, or Miden ABI calls), handle it here.
+        let source_name = parsed_module.module.source_func_name(func_index);
         if maybe_lower_linker_stub(
             function_ref,
+            source_name,
             &body_data.body,
             module_state,
             parsed_module.component_frontend_metadata.as_ref(),
