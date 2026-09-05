@@ -35,7 +35,7 @@ const PAGE_SIZE=65536
 
 # Checks the HEAP_INFO magic to ensure heap initialization has taken place
 #
-# This consumes the input element.
+# Leaves the operand stack unchanged.
 proc verify_heap_magic
     mem_load.HEAP_INFO_MAGIC
     push.MAGIC
@@ -89,11 +89,13 @@ pub proc memory_grow # [num_pages]
         drop drop
         push.NEG1
     else
-        # Success, recompute the heap_top, and make sure it doesn't exceed HEAP_END
+        # Compute the candidate heap_top before updating any heap metadata.
         mem_load.HEAP_INFO_BASE   # [heap_base, new_heap_size, heap_size]
         dup.1                     # [new_heap_size, heap_base, new_heap_size, heap_size]
         push.PAGE_SIZE            # [PAGE_SIZE, new_heap_size, heap_base, new_heap_size, heap_size]
-        u32widening_madd       # [overflowed, PAGE_SIZE * new_heap_size + heap_base, ..]
+        u32widening_madd       # [new_heap_top_lo, new_heap_top_hi, new_heap_size, heap_size]
+        # The high limb is not a boolean: large page counts can produce values greater than 1.
+        swap.1 neq.0          # [overflowed, new_heap_top_lo, new_heap_size, heap_size]
         if.true  # [new_heap_top, new_heap_size, heap_size]
             # Overflow, drop the changes and return -1
             drop drop drop
