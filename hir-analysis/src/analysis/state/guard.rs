@@ -363,8 +363,49 @@ impl<T: SparseLattice> SparseLattice for AnalysisStateGuardMut<'_, T> {
     }
 
     fn meet(&mut self, rhs: &Self::Lattice) -> ChangeResult {
-        let result = unsafe { self.state.as_mut().join(rhs) };
+        let result = unsafe { self.state.as_mut().meet(rhs) };
         self.changed |= result;
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DataFlowSolver, Lattice, LatticeLike};
+
+    #[derive(Clone, Debug, Default, PartialEq, Eq)]
+    struct Members(u8);
+
+    impl LatticeLike for Members {
+        fn join(&self, other: &Self) -> Self {
+            Self(self.0 | other.0)
+        }
+
+        fn meet(&self, other: &Self) -> Self {
+            Self(self.0 & other.0)
+        }
+    }
+
+    #[test]
+    fn sparse_meet_intersects_and_tracks_changes() {
+        let mut solver = DataFlowSolver::default();
+        let point = ProgramPoint::default();
+        {
+            let mut state = solver.get_or_create_mut::<Lattice<Members>, _>(point);
+            SparseLattice::join(&mut state, &Members(0b011));
+        }
+        {
+            let mut state = solver.get_or_create_mut::<Lattice<Members>, _>(point);
+            assert_eq!(SparseLattice::meet(&mut state, &Members(0b110)), ChangeResult::Changed);
+            assert_eq!(SparseLattice::lattice(&state), &Members(0b010));
+            assert!(state.changed.changed(), "a changed meet must notify dependent analyses");
+        }
+        {
+            let mut state = solver.get_or_create_mut::<Lattice<Members>, _>(point);
+            assert_eq!(SparseLattice::meet(&mut state, &Members(0b110)), ChangeResult::Unchanged);
+            assert_eq!(SparseLattice::lattice(&state), &Members(0b010));
+            assert!(!state.changed.changed(), "an unchanged meet must not requeue analyses");
+        }
     }
 }
