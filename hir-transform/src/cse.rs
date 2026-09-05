@@ -1601,3 +1601,7 @@ func.func @cse_recursive_effects_failure() -> (i32, i32, i32) {
   return %0, %2, %1 : i32, i32, i32
 }
 */
+
+#[cfg(test)]
+#[path = "cse/region_equivalence_tests.rs"]
+mod region_equivalence_tests;
