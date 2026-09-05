@@ -2,27 +2,15 @@
 
 use super::super::harness::{run_case, run_case_with_inputs};
 
-/// Signed widening shapes (the corpus otherwise never creates `arith.sext`):
-/// extend_i32_s, extend8/16/32_s, and `i64.mul_wide_s` whose constant
-/// multiplicand folds via `Sext::fold`'s I128 arm.
-///
-/// Passing siblings bound the divergence: `sext_widths` (pure extend chains),
-/// `mulwide_dyn` (dynamic-by-dynamic `mul_wide_s`), and `mulwide_fold`
-/// (positive-constant fold) all pass — suspicion falls on the
-/// negative-constant multiplicand path or a shape interaction.
+/// Signed widening, narrow re-extension, and signed wide multiplication with a
+/// negative constant operand.
 #[test]
-#[ignore = "native/masm divergence: inputs (3022925119, 3340151117) -> native 3550407903, masm \
-            3550391763; signed i128 widening-multiply/sign-extension shapes"]
 fn sext_shapes() {
     run_case("sext_shapes", include_str!("../cases/case_sext_shapes.rs"));
 }
 
-/// Deterministic reproducer for the `sext_shapes` divergence: pins the exact
-/// `(input1, input2)` pair the fuzzer flagged, so the mismatch fails reliably
-/// on that input rather than only when proptest happens to draw it.
+/// Pins an adversarial input combining signed extension widths and wide products.
 #[test]
-#[ignore = "native/masm divergence on pinned input (3022925119, 3340151117): native 3550407903 vs \
-            masm 3550391763; deterministic reproducer for the sext_shapes divergence"]
 fn sext_shapes_repro() {
     run_case_with_inputs(
         "sext_shapes_repro",
@@ -42,8 +30,7 @@ fn sext_widths() {
 
 /// Dynamic-by-dynamic `i64.mul_wide_s` — both operands sign-extended to i128
 /// (`sext_int64(128)`, its only Rust-reachable producer) plus the signed
-/// wide-multiply hi/lo recombination, without the constant-fold shape of the
-/// ignored sext_shapes case.
+/// wide-multiply hi/lo recombination, without the constant operand of `sext_shapes`.
 #[test]
 fn mulwide_dyn() {
     run_case("mulwide_dyn", include_str!("../cases/case_mulwide_dyn.rs"));

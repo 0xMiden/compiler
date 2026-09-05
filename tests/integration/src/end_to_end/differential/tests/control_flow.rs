@@ -65,18 +65,12 @@ fn trap_branch() {
 /// sparse cf.switch ops — exercises binary-search (interval guard) and
 /// linear-search switch lowering.
 #[test]
-#[ignore = "flaky native/MASM divergence: mismatch on inputs (1669775643, 1062584501); separate \
-            run hit VM assert 'value does not fit in i32' at cycle 2474"]
 fn switch_shapes() {
     run_case("switch_shapes", include_str!("../cases/case_switch_shapes.rs"));
 }
 
-/// Deterministic reproducer for the `switch_shapes` divergence: pins the
-/// exact `(input1, input2)` pair the fuzzer flagged, so the bug fails
-/// reliably on that input rather than only when proptest happens to draw it.
+/// Pins an adversarial input exercising wrapped switch selectors and default arms.
 #[test]
-#[ignore = "MASM VM aborts on pinned input (1669775643, 1062584501): 'value does not fit in i32'; \
-            deterministic reproducer for the switch_shapes divergence"]
 fn switch_shapes_repro() {
     run_case_with_inputs(
         "switch_shapes_repro",
