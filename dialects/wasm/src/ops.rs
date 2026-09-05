@@ -172,6 +172,7 @@ impl Foldable for SignExtend {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i32_load_8s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -196,6 +197,7 @@ impl InferTypeOpInterface for I32Load8S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i32_load_16s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -220,6 +222,7 @@ impl InferTypeOpInterface for I32Load16S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i64_load_8s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -244,6 +247,7 @@ impl InferTypeOpInterface for I64Load8S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i64_load_16s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -268,6 +272,7 @@ impl InferTypeOpInterface for I64Load16S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i64_load_32s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]

@@ -18,7 +18,7 @@ pub fn derive_dialect(input: &syn::DeriveInput) -> darling::Result<Dialect> {
     Dialect::from_derive_input(input)
 }
 
-use inflector::Inflector;
+use heck::ToSnakeCase;
 use quote::{format_ident, quote_spanned};
 use syn::Ident;
 

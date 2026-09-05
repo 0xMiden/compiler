@@ -4058,8 +4058,8 @@ dependencies = [
 name = "midenc-hir-macros"
 version = "0.10.0"
 dependencies = [
- "Inflector",
  "darling",
+ "heck",
  "proc-macro2",
  "quote",
  "syn 2.0.119",

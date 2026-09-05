@@ -145,13 +145,7 @@ smallvec = { version = "1.15", default-features = false, features = [
     "const_new",
     "drain_filter",
 ] }
-syn = { version = "2.0", features = [
-    "full",
-    "parsing",
-    "derive",
-    "extra-traits",
-    "printing",
-] }
+syn = "2.0"
 tempfile = "3.19"
 thiserror = { package = "miden-thiserror", version = "1.0" }
 toml = { version = "^1.1.2", features = ["preserve_order"] }

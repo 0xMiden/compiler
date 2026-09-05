@@ -9,7 +9,7 @@ mod spanned;
 #[cfg(test)]
 mod tests;
 
-use inflector::cases::kebabcase::to_kebab_case;
+use heck::ToKebabCase;
 use quote::{ToTokens, format_ident, quote};
 use syn::{Data, DeriveInput, Error, Ident, Token, parse_macro_input, spanned::Spanned};
 
@@ -202,7 +202,7 @@ pub fn derive_pass_info(item: proc_macro::TokenStream) -> proc_macro::TokenStrea
     let generics = derive_input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
     let name = derive_input.ident.to_string();
-    let pass_name = to_kebab_case(&name);
+    let pass_name = name.to_kebab_case();
     let pass_name_lit = syn::Lit::Str(syn::LitStr::new(&pass_name, id.span()));
 
     let doc_ident = format_ident!("doc", span = derive_span);

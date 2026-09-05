@@ -23,6 +23,7 @@ macro_rules! infer_ext2_result_types {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
+    name = "ext_2_add",
     traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -47,6 +48,7 @@ infer_ext2_result_types!(Ext2Add);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
+    name = "ext_2_sub",
     traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -71,6 +73,7 @@ infer_ext2_result_types!(Ext2Sub);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
+    name = "ext_2_mul",
     traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -95,6 +98,7 @@ infer_ext2_result_types!(Ext2Mul);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
+    name = "ext_2_div",
     traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -119,6 +123,7 @@ infer_ext2_result_types!(Ext2Div);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
+    name = "ext_2_neg",
     traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -139,6 +144,7 @@ infer_ext2_result_types!(Ext2Neg);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
+    name = "ext_2_inv",
     traits(SameTypeOperands, SameOperandsAndResultType),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]

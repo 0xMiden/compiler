@@ -318,6 +318,7 @@ infer_felt_outputs!(CryptoStream, "hir.crypto_stream", 14, 14);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = HirDialect,
+    name = "fri_ext_2_fold_4",
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
 #[effects(MemoryEffect(MemoryEffect::Read, MemoryEffect::Write))]

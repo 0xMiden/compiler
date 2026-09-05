@@ -16,7 +16,7 @@ publish = false
 doctest = false
 
 [dependencies]
-syn.workspace = true
+syn = { workspace = true, features = ["full"] }
 quote.workspace = true
 log.workspace = true
 miden-assembly.workspace = true
