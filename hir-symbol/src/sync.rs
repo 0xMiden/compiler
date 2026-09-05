@@ -1,4 +1,4 @@
-#[cfg(all(not(feature = "std"), target_family = "wasm"))]
+#[cfg(any(test, all(not(feature = "std"), target_family = "wasm")))]
 mod lazy_lock;
 #[cfg(all(not(feature = "std"), target_family = "wasm"))]
 mod rw_lock;

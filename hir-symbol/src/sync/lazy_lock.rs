@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use core::{
     fmt,
+    marker::PhantomData,
     ops::Deref,
     ptr,
     sync::atomic::{AtomicPtr, Ordering},
@@ -23,8 +24,13 @@ where
     F: Fn() -> T,
 {
     inner: AtomicPtr<T>,
+    owned: PhantomData<T>,
     f: F,
 }
+
+// The winning value can be initialized and later dropped on different threads, and
+// shared references may read it concurrently. The initializer is called through &F.
+unsafe impl<T: Send + Sync, F: Fn() -> T + Sync> Sync for RacyLock<T, F> {}
 
 impl<T, F> RacyLock<T, F>
 where
@@ -34,6 +40,7 @@ where
     pub const fn new(f: F) -> Self {
         Self {
             inner: AtomicPtr::new(ptr::null_mut()),
+            owned: PhantomData,
             f,
         }
     }
@@ -177,6 +184,25 @@ mod tests {
     fn type_inference() {
         // Check that we can infer `T` from closure's type.
         let _ = RacyLock::new(|| ());
+    }
+
+    #[test]
+    fn rejects_non_thread_safe_values() {
+        // Inference is ambiguous if either prohibited implementation exists.
+        trait NotSend<A> {
+            fn check() {}
+        }
+        impl<T: ?Sized> NotSend<()> for T {}
+        impl<T: ?Sized + Send> NotSend<u8> for T {}
+        trait NotSync<A> {
+            fn check() {}
+        }
+        impl<T: ?Sized> NotSync<()> for T {}
+        impl<T: ?Sized + Sync> NotSync<u8> for T {}
+
+        let _ = <RacyLock<alloc::rc::Rc<u32>> as NotSend<_>>::check;
+        let _ = <RacyLock<core::cell::Cell<u32>> as NotSync<_>>::check;
+        let _ = <RacyLock<std::sync::MutexGuard<'static, u32>> as NotSync<_>>::check;
     }
 
     #[test]
