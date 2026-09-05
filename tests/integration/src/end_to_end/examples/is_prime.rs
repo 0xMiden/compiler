@@ -31,8 +31,8 @@ fn is_prime() {
 
     let config = WasmTranslationConfig::default();
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/is-prime", config, []);
-    let package = test.compile_package();
     let hir = test.hir();
+    let package = test.compile_package();
 
     // Exhaust the small domain once, including zero and one.
     for a in 0u32..30 {
