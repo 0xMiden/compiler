@@ -109,12 +109,8 @@ fn i64_sdiv() {
     run_case("i64_sdiv", include_str!("../cases/case_i64_sdiv.rs"));
 }
 
-/// Reproducer for a compile-time gap: signed 64-bit `%` with a dynamic
-/// divisor — `arith.Mod` on I64 reaches `checked_mod`, whose dispatch has no
-/// I64 arm (and no wasm.I64RemS op or i64 mod intrinsic exists to back one).
+/// Signed i64 remainder with a dynamic divisor exercises the dedicated Wasm remainder lowering.
 #[test]
-#[ignore = "compile-time compiler panic: 'not implemented: checked_mod for i64 is not supported' \
-            (codegen/masm/src/emit/binary.rs:665); i64 % with a dynamic divisor cannot compile"]
 fn i64_srem() {
     run_case("i64_srem", include_str!("../cases/case_i64_srem.rs"));
 }

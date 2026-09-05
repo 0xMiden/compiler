@@ -702,6 +702,13 @@ impl OpEmitter<'_> {
         self.raw_exec("::intrinsics::i64::checked_div", span);
     }
 
+    /// Pops `b` and `a`, returning `a % b` with the sign of `a`.
+    ///
+    /// Traps on division by zero; `i64::MIN % -1` returns zero.
+    pub fn wrapping_mod_i64(&mut self, span: SourceSpan) {
+        self.raw_exec("::intrinsics::i64::wrapping_mod", span);
+    }
+
     /// Pops a i64 value off the stack, `a`, and performs `a / <imm>`.
     ///
     /// This function will panic if the divisor is zero.

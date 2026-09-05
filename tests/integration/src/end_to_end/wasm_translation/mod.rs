@@ -4,4 +4,5 @@
 
 mod component_start;
 pub(super) mod i32;
+mod i64;
 pub(super) mod wasm_interpreter;

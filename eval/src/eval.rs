@@ -2224,3 +2224,11 @@ impl Eval for wasm::I32RemS {
         Ok(ControlFlowEffect::None)
     }
 }
+
+impl Eval for wasm::I64RemS {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let result = binop_wrapping_nonzero_rhs!(self, evaluator, wrapping_rem);
+        evaluator.set_value(self.result().as_value_ref(), result);
+        Ok(ControlFlowEffect::None)
+    }
+}
