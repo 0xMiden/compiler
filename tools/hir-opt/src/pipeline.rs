@@ -9,7 +9,7 @@
 //! * `op-anchor` is the operation name that anchors execution of the pass manager, this must be
 //!   either a concrete operation name, or `any`, to apply against any operation type.
 //! * `pass-name` and `pass-pipeline-name` correspond to the argument name of a registered pass or
-//!   pass pipeline, e.g. `cse` or `canonicalize`
+//!   pass pipeline, e.g. `cse` or `canonicalizer`
 //! * `options` are specific key/value pairs representing options defined by a pass or pass pipeline,
 //!   as described in the _Instance Specific Pass Options_ section below.
 //!
@@ -19,10 +19,10 @@
 //! For example, the following pipeline:
 //!
 //! ```text
-//! $ hir-opt foo.hir --pass-pipeline='builtin.module(builtin.function(cse,canonicalize),convert-to-masm{key=value})'
+//! $ hir-opt foo.hir --pass-pipeline='builtin.module(builtin.function(cse,canonicalizer),convert-to-masm{key=value})'
 //! ```
 //!
-//! * Runs `cse` and `canonicalize` passes on any functions in the provided module operation
+//! * Runs `cse` and `canonicalizer` passes on any functions in the provided module operation
 //! * Applies the `convert-to-masm` pass to the module, with option `key` set to `value`
 
 use core::fmt;
@@ -39,85 +39,66 @@ use midenc_hir::{
 
 #[derive(Default, Debug, Clone)]
 pub struct PassPipeline {
-    /// The anchor operation - if `None`, any operation will do
+    /// The operation type on which this pipeline runs.
     pub anchor: Anchor,
-    /// The set of passes to be applied to the anchor operation type
-    pub passes: Vec<SelectedPass>,
-    /// The set of nested pass pipelines to be applied to operations contained in regions of the
-    /// anchor operation
-    pub nested: Vec<PassPipeline>,
+    /// Passes and nested pipelines, in execution order.
+    pub elements: Vec<PipelineElement>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PipelineElement {
+    Pass(SelectedPass),
+    Nested(PassPipeline),
 }
 
 impl PassPipeline {
     pub fn load(&self, context: Rc<Context>) -> Result<PassManager, Report> {
         let mut pm = PassManager::new(context.clone(), self.anchor.to_string(), Nesting::Explicit);
-
-        for nested in self.nested.iter() {
-            let Some(nested_pm) = nested.load_nested(context.clone())? else {
-                continue;
-            };
-            pm.nest_pass_manager(nested_pm);
-        }
-
-        for pass in self.passes.iter() {
-            pass.add_to_pipeline(pm.op_pass_manager_mut(), &context)?;
-        }
-
+        self.load_elements(pm.op_pass_manager_mut(), &context)?;
         Ok(pm)
     }
 
     fn load_nested(&self, context: Rc<Context>) -> Result<Option<OpPassManager>, Report> {
-        if self.nested.is_empty() && self.passes.is_empty() {
+        if self.elements.is_empty() {
             return Ok(None);
         }
-
         let mut pm =
             OpPassManager::new(&self.anchor.to_string(), Nesting::Explicit, context.clone());
-
-        let mut nested_pms = Vec::with_capacity(self.nested.len());
-        for nested in self.nested.iter() {
-            let Some(nested_pm) = nested.load_nested(context.clone())? else {
-                continue;
-            };
-            nested_pms.push(nested_pm);
-        }
-
-        if nested_pms.is_empty() && self.passes.is_empty() {
-            return Ok(None);
-        }
-
-        for nested in nested_pms {
-            pm.nest_pass_manager(nested);
-        }
-
-        for pass in self.passes.iter() {
-            pass.add_to_pipeline(&mut pm, &context)?;
-        }
-
+        self.load_elements(&mut pm, &context)?;
         Ok(Some(pm))
+    }
+
+    fn load_elements(&self, pm: &mut OpPassManager, context: &Rc<Context>) -> Result<(), Report> {
+        for element in &self.elements {
+            match element {
+                PipelineElement::Pass(pass) => pass.add_to_pipeline(pm, context)?,
+                PipelineElement::Nested(pipeline) => {
+                    if let Some(nested) = pipeline.load_nested(context.clone())? {
+                        pm.nest_pass_manager(nested);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 impl fmt::Display for PassPipeline {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.anchor)?;
-        let needs_parens = !self.nested.is_empty() || !self.passes.is_empty();
-        if needs_parens {
-            f.write_str("(")?;
-        }
-        if !self.nested.is_empty() {
-            write!(f, "{}", DisplayValues::new(self.nested.iter()))?;
-        }
-        if !self.passes.is_empty() {
-            if !self.nested.is_empty() {
-                f.write_str(", ")?;
-            }
-            write!(f, "{}", DisplayValues::new(self.passes.iter()))?;
-        }
-        if needs_parens {
-            f.write_str(")")?;
+        if !self.elements.is_empty() {
+            write!(f, "({})", DisplayValues::new(self.elements.iter()))?;
         }
         Ok(())
+    }
+}
+
+impl fmt::Display for PipelineElement {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Pass(pass) => pass.fmt(f),
+            Self::Nested(pipeline) => pipeline.fmt(f),
+        }
     }
 }
 
@@ -191,8 +172,7 @@ impl FromStr for PassPipeline {
         let mut context = PipelineParsingContext {
             stack: vec![PassPipeline {
                 anchor,
-                nested: vec![],
-                passes: vec![],
+                elements: vec![],
             }],
         };
 
@@ -254,10 +234,10 @@ fn parse_pipeline_recursively(
                     )));
                 }
 
-                context.stack.last_mut().unwrap().passes.push(SelectedPass {
+                let mut pass = SelectedPass {
                     name: Symbol::intern(anchor_or_pass_name),
                     options: Default::default(),
-                });
+                };
 
                 if token_stream.next_if_eq(Token::Lbrace)? {
                     // Parse options
@@ -283,18 +263,11 @@ fn parse_pipeline_recursively(
                                 }
                                 _ => None,
                             })?;
-                        context
-                            .stack
-                            .last_mut()
-                            .unwrap()
-                            .passes
-                            .last_mut()
-                            .unwrap()
-                            .options
-                            .insert(key.into_inner(), value.into_inner());
+                        pass.options.insert(key.into_inner(), value.into_inner());
                     }
                     token_stream.expect(Token::Rbrace)?;
                 }
+                context.stack.last_mut().unwrap().elements.push(PipelineElement::Pass(pass));
 
                 while !token_stream.next_if_eq(Token::Comma)? {
                     token_stream.expect(Token::Rparen)?;
@@ -305,7 +278,12 @@ fn parse_pipeline_recursively(
                     }
 
                     let pipeline = context.stack.pop().unwrap();
-                    context.stack.last_mut().unwrap().nested.push(pipeline);
+                    context
+                        .stack
+                        .last_mut()
+                        .unwrap()
+                        .elements
+                        .push(PipelineElement::Nested(pipeline));
                 }
             }
         }
@@ -410,11 +388,65 @@ mod tests {
     #[test]
     fn example_pipeline() -> Result<(), Report> {
         let pipeline_str =
-            "builtin.module(builtin.function(cse, canonicalize), convert-to-masm{key=value})";
+            "builtin.module(builtin.function(cse, canonicalizer), convert-to-masm{key=value})";
 
         let pipeline = pipeline_str.parse::<PassPipeline>()?;
         assert_eq!(pipeline.to_string(), pipeline_str);
 
+        Ok(())
+    }
+
+    #[test]
+    fn interleaved_pipeline_roundtrip() -> Result<(), Report> {
+        for source in [
+            "builtin.module(canonicalizer, builtin.function(cse))",
+            "builtin.module(cse, builtin.function(canonicalizer), cse)",
+            "builtin.module(builtin.module(cse, builtin.function(canonicalizer), cse))",
+        ] {
+            assert_eq!(source.parse::<PassPipeline>()?.to_string(), source);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn interleaved_pipeline_execution_order() -> Result<(), Report> {
+        use std::cell::RefCell;
+
+        use midenc_hir::{
+            OperationRef,
+            diagnostics::Uri,
+            parse::{ParserConfig, parse_any},
+            pass::{OperationPass, PassInstrumentation},
+        };
+
+        struct RecordPasses(Rc<RefCell<Vec<String>>>);
+        impl PassInstrumentation for RecordPasses {
+            fn run_before_pass(&mut self, pass: &dyn OperationPass, op: &OperationRef) {
+                if matches!(pass.argument(), "cse" | "canonicalizer") {
+                    self.0.borrow_mut().push(format!("{}:{}", op.borrow().name(), pass.argument()));
+                }
+            }
+        }
+
+        let context = Rc::new(Context::default());
+        let root = parse_any(
+            ParserConfig {
+                context: context.clone(),
+                verify: true,
+            },
+            Uri::new("pass-order.hir"),
+            "builtin.module public @root { builtin.module public @inner {}; };",
+        )?;
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let mut manager = "builtin.module(cse, builtin.module(canonicalizer), cse)"
+            .parse::<PassPipeline>()?
+            .load(context)?;
+        manager.add_instrumentation(Box::new(RecordPasses(observed.clone())));
+        manager.run(root)?;
+        assert_eq!(
+            *observed.borrow(),
+            ["builtin.module:cse", "builtin.module:canonicalizer", "builtin.module:cse"]
+        );
         Ok(())
     }
 }
