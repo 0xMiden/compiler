@@ -23,6 +23,8 @@ env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
   RUST_CACHE_KEY: rust-cache-20251212
+  # Both integration shards derive from this selection, so their partition stays complementary.
+  MIDENC_EXAMPLE_TEST_FILTER: "package(midenc-integration-tests) and test(~end_to_end::examples::)"
 
 jobs:
   workspace_inheritance:
@@ -218,7 +220,7 @@ jobs:
       - name: Test
         # Skip some tests cause they are a space hog and run them in the separate job
         run: |
-          cargo make test -E 'package(midenc-integration-tests) - (test(~rust_pipeline::expect::examples) or test(~rust_pipeline::functional::examples) or test(~rust_pipeline::property::examples))'
+          cargo make test -E "package(midenc-integration-tests) - (${MIDENC_EXAMPLE_TEST_FILTER})"
 
   midenc_integration_tests_examples:
     name: midenc integration tests
@@ -237,7 +239,7 @@ jobs:
       - name: Test
         # Skip some tests cause they are a space hog and run them in the separate job
         run: |
-          cargo make test -E 'test(~rust_pipeline::expect::examples) or test(~rust_pipeline::functional::examples) or test(~rust_pipeline::property::examples)'
+          cargo make test -E "${MIDENC_EXAMPLE_TEST_FILTER}"
 
   cargo_miden_integration_tests:
     name: cargo-miden integration tests
