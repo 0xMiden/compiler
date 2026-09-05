@@ -258,3 +258,15 @@ fn format_output(input: &str) -> String {
         Err(err) => panic!("command 'rustfmt' failed with {err}"),
     }
 }
+
+#[test]
+fn effect_derive_rejects_malformed_fields_before_expansion() {
+    let input: syn::DeriveInput = syn::parse_quote! {
+        #[effects(MemoryEffect(MemoryEffect::Read))]
+        struct InvalidEffects {
+            #[effects(MemoryEffect)]
+            value: ValueRef,
+        }
+    };
+    assert!(crate::operations::derive_effect_op_interface(&input).is_err());
+}
