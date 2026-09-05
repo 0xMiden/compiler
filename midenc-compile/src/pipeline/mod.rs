@@ -16,14 +16,11 @@
 //! the build; it is only validated against the resulting [`Goal`]. [`backend::hir_to_masm`] is
 //! the shared HIR backend, called by frontends that produce HIR.
 //!
-//! # Status
+//! # Dispatch and artifacts
 //!
-//! Increment 4 of the pipeline redesign. **Every input is compiled here** — there is no second
-//! compilation path. [`prepare`](Pipeline::compile) asks one question of the input: a `.toml`
-//! names a project to load, and everything else is a source file a project is synthesized
-//! around. Both produce a [`PreparedProject`], and everything past that point — frontend
-//! dispatch by the selected target's root extension, goal resolution, provider construction,
-//! assembly — is common to the two.
+//! [`Pipeline::compile`] loads a project for a `.toml` input and synthesizes one for
+//! source-file inputs. Both produce a [`PreparedProject`] and share frontend dispatch,
+//! goal resolution, provider construction, and assembly.
 //!
 //! All four shipped frontends are registered for every build, so a Miden Assembly dependency of
 //! a Rust project is compiled by [`frontends::masm::MasmProjectFrontend`] while the root is
@@ -42,14 +39,9 @@
 //! [`Pipeline::compile`] reads them off the session rather than off the request — see
 //! [`apply_stop_flags`], which reconciles them with a stop point the request may carry itself.
 //!
-//! The one thing that does **not** come out of a pipeline run is HIR handed back to a caller:
-//! each target's HIR is built in a [`Context`](midenc_hir::Context) the provider creates per
-//! assembler callback, so it does not outlive the run. A caller that wants HIR *renders* it from
-//! an [`Observer`], inside the callback, while that context is still alive — which is what
-//! `tests/support` does for `--emit=hir`-shaped assertions. Handing back a live component instead
-//! would mean retaining the root target's context, which is approved but has no consumer yet.
-//!
-//! See `tasks/specs/2026-07-25-midenc-compile-pipeline-design.md`.
+//! Each target's HIR belongs to the [`Context`](midenc_hir::Context) created for its
+//! assembler callback. Observers may render it at a checkpoint. A caller retaining
+//! a live component must also retain its owning context.
 
 mod artifact;
 pub(crate) mod artifacts;

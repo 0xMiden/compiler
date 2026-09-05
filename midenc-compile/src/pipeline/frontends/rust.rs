@@ -330,18 +330,9 @@ pub fn compile_manifest(
 /// [`compile_manifest`] nor [`crate::compile_to_memory`] can serve that: one returns a lowered
 /// component and the other an assembled package.
 ///
-/// # This is `CargoBuildStage`, and the path is the contract
-///
-/// `tests/support/src/compiler_test.rs` builds every Cargo-based fixture through here and then
-/// installs the result as `session.input`, which is how a fixture's WebAssembly is compiled
-/// with the very options the test declared. It reached that build as
-/// `midenc_compile::stages::CargoBuildStage` until that module was deleted; this path
-/// replaces it, and — like the type it replaces — moving or narrowing it breaks that crate.
-///
-/// The example below is the guard, and it is a **doctest** on purpose: doctests compile as an
-/// external crate, so this fails for the same reason `tests/support` would. An in-crate
-/// `#[test]` naming the same path cannot — it resolves through `crate::` and survives the item
-/// being narrowed to `pub(crate)`, which is precisely the edit that breaks the real consumer.
+/// `tests/support` uses this public entry point to compile Cargo fixtures to Wasm
+/// before translating them with the test's session options. The doctest checks that
+/// the entry point remains callable from another crate without running Cargo.
 ///
 /// ```
 /// use midenc_compile::pipeline::frontends::rust::build_manifest_to_wasm;
@@ -401,18 +392,13 @@ fn lower_wasm_artifact(wasm: InputFile, context: Rc<Context>) -> CompilerResult<
 
 /// Compile the Rust source `input` to WebAssembly, and hand back the file it produced.
 ///
-/// This is the `.rs → .wasm` half of the old `ParseRustStage`, and it is the *only* copy.
-///
-/// The result is a path rather than the bytes because that is the shape its caller wants it in:
-/// [`RustStandaloneFrontend`] reads it and attributes the translated module to it — which is what
-/// makes a standalone `.rs` build's HIR named after the artifact, exactly as the legacy
-/// `ParseRustStage → ParseWasmStage` chain named it.
+/// The returned path supplies both the bytes and artifact identity used by
+/// [`RustStandaloneFrontend`] when translating the module.
 ///
 /// # Where the output goes
 ///
 /// `<target_dir>/<artifact name>.wasm` on the `rustc` route, and wherever `cargo` put its
-/// single `cdylib` artifact on the other. Neither is chosen here; both are what the legacy
-/// stage did.
+/// single `cdylib` artifact on the other.
 pub fn compile_rust_to_wasm(input: &InputFile, session: &Session) -> CompilerResult<PathBuf> {
     let file_type = input.file_type();
     if !matches!(file_type, FileType::Rust) {
@@ -1786,20 +1772,10 @@ impl Frontend for RustStandaloneFrontend {
 pub(crate) mod manifest {
     //! The manifest-driven `cargo` build.
     //!
-    //! Everything here is a move: it ran as `midenc_compile::stages::cargo::support` and is
-    //! reached now through [`compile_manifest`](super::compile_manifest) and
-    //! [`build_manifest_to_wasm`](super::build_manifest_to_wasm), which are the two depths a
-    //! caller can want it to. The one change of substance is that the environment the nested
-    //! `cargo` is spawned with is now named — see [`cargo_env`] — so the filesystem package
-    //! cache can be asserted without running a build.
-    //!
-    //! It is a module rather than a set of free functions in the parent because the names
-    //! collide: `cargo_build` and `build_cargo_args` here are *not* the ones the standalone
-    //! entry point uses, and both pairs have to keep their own names to stay recognisable
-    //! against the code they were moved from. Disambiguate by path.
-    //!
-    //! No `#[cfg(feature = "std")]`: [`crate::pipeline`] is std-only, so the gate the original
-    //! carried is implied by where this now lives.
+    //! [`compile_manifest`](super::compile_manifest) produces a component, while
+    //! [`build_manifest_to_wasm`](super::build_manifest_to_wasm) stops at the Wasm file.
+    //! [`cargo_env`] composes the nested build environment, including the package cache.
+    //! These manifest-based build arguments are distinct from the standalone Rust path.
 
     use std::{
         boxed::Box,
@@ -1992,11 +1968,6 @@ pub(crate) mod manifest {
         _filesystem_cache_dir: Option<&std::path::Path>,
         _source_manager: Arc<dyn SourceManager>,
     ) -> CompilerResult<Vec<InputFile>> {
-        //let metadata = load_metadata(cargo_opts.manifest_path.as_deref())?;
-
-        //let mut packages =
-        //   load_component_metadata(&metadata, cargo_opts.packages.iter(), cargo_opts.workspace)?;
-
         if workspace.members().is_empty() {
             return Err(Report::msg(format!(
                 "workspace ({}) contains no members",
@@ -2014,35 +1985,6 @@ pub(crate) mod manifest {
         filesystem_cache_dir: Option<&std::path::Path>,
         _source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> CompilerResult<InputFile> {
-        /*
-        let tmp = tempfile::TempDir::new()
-            .map_err(|err| Report::msg(format!("could not create temporary directory: {err}")))?;
-        let mut default_registry =
-            midenc_session::registry::HybridPackageRegistry::new(compiler_opts)?;
-        let registry = registry.unwrap_or(&mut default_registry);
-        let package = project.package();
-        let dependency_graph = miden_project::ProjectDependencyGraphBuilder::new(&*registry)
-            .with_source_manager(source_manager.clone())
-            .with_git_cache_root(
-                compiler_opts
-                    .midenup_home
-                    .as_deref()
-                    .unwrap_or(tmp.path())
-                    .join("git")
-                    .join("checkouts"),
-            );
-
-        let dependency_graph = dependency_graph.build(package.clone())?;
-        crate::cargo::load_cargo_based_source_dependencies(
-            &package,
-            &dependency_graph,
-            registry,
-            compiler_opts,
-            cargo_opts,
-            source_manager,
-        )?;
-         */
-
         let rustup_toolchain = crate::rust::rustup_toolchain();
         let cargo_build_args = build_cargo_args(cargo_opts, compiler_opts.optimize);
 

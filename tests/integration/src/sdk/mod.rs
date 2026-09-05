@@ -703,17 +703,8 @@ fn rust_sdk_cross_ctx_account_and_note_word() {
 /// artifacts. A non-deterministic build changes the package digest between compilations, so a
 /// dependent package (e.g. a note script) records a dependency digest that no longer matches the
 /// account package loaded into the executor's dependency resolver.
-// This test compares the *MASM source* across five builds as well as the package digest, so that
-// a digest mismatch can be localized ("identical MASM source, so the divergence is introduced at
-// assembly").
-//
-// It was parked for the length of the pipeline redesign, because a Cargo fixture compiles through
-// `RUST_FRONTEND`, whose route was `[package.assembled]` alone: the root target was built by
-// recursing with its own `Session` and `Context`, so `masm.lowered` was never published to this
-// run. The root arm now runs the shared WebAssembly tail in this process and publishes it. The
-// MASM leg was deliberately never weakened to a digest-only comparison in the meantime, because
-// it is what tells a future reader whether a non-determinism was introduced before or during
-// assembly.
+/// Compare MASM source as well as package bytes to distinguish lowering differences
+/// from differences introduced during assembly.
 #[test]
 fn rust_sdk_account_package_build_is_deterministic() {
     let config = WasmTranslationConfig::default();

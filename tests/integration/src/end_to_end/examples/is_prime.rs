@@ -1,13 +1,4 @@
-// This test wants *two* artifacts from one build: the assembled package, and the optimized HIR
-// component, which it evaluates with `HirEvaluator` and compares against the Rust original.
-//
-// It was parked for the length of the pipeline redesign, because a Cargo fixture compiles through
-// `RUST_FRONTEND`, whose route was `[package.assembled]` alone: the root target was built by
-// recursing with its own `Session` and `Context`, so the outer run's observers never saw
-// `hir.transformed`. The root arm now runs the shared WebAssembly tail in this process and
-// publishes every checkpoint on that route, and `CompilerTest::hir` retains the run's `Context`
-// so the component is still evaluable after the run returns — HIR operations hold only a raw
-// pointer to the arena they were allocated in.
+// Compare MASM execution and retained HIR evaluation against the same Rust result.
 #[test]
 fn is_prime() {
     use miden_debug::ToMidenRepr;

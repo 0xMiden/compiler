@@ -31,12 +31,8 @@ use crate::{
     },
 };
 
-/// Translate a valid Wasm core module binary into Miden IR component building
-/// component imports for well-known Miden ABI functions
-///
-/// This is a temporary solution until we compile an account code as Wasm
-/// component. To be able to do it we need wit-bindgen type re-mapping implemented first (see
-/// https://github.com/0xMiden/compiler/issues/116)
+/// Translate a validated core Wasm module into a HIR component, including imports
+/// for recognized Miden ABI functions.
 pub fn translate_module_as_component(
     wasm: &[u8],
     config: &WasmTranslationConfig,
