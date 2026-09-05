@@ -392,20 +392,16 @@ impl TryFrom<&Path> for FileType {
 
 #[cfg(feature = "std")]
 fn parses_as_rust(src: &str) -> bool {
-    use std::{
-        io::Write,
-        process::{Command, Stdio},
-    };
+    let mut command = std::process::Command::new("rustc");
+    command.arg("-Zno-analysis").arg("-Zparse-crate-root-only=yes").arg("-");
+    run_rust_parser(command, src)
+}
 
-    let mut command = Command::new("rustc");
-    command
-        .arg("+nightly")
-        .arg("-Zno-analysis")
-        .arg("-Zparse-crate-root-only=yes")
-        .arg("-")
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .stdin(Stdio::piped());
+#[cfg(feature = "std")]
+fn run_rust_parser(mut command: std::process::Command, src: &str) -> bool {
+    use std::{io::Write, process::Stdio};
+
+    command.stderr(Stdio::null()).stdout(Stdio::null()).stdin(Stdio::piped());
 
     let Ok(mut child) = command.spawn() else {
         return false;
@@ -413,22 +409,58 @@ fn parses_as_rust(src: &str) -> bool {
 
     let Some(mut stdin) = child.stdin.take() else {
         let _ = child.kill();
+        let _ = child.wait();
         return false;
     };
 
-    let Ok(_) = stdin.write_all(src.as_bytes()) else {
+    if stdin.write_all(src.as_bytes()).is_err() {
+        drop(stdin);
         let _ = child.kill();
+        let _ = child.wait();
         return false;
-    };
+    }
 
-    let Ok(status) = child.wait() else {
-        return false;
-    };
-
-    status.success()
+    // `wait` closes only stdin still owned by Child. This handle was taken out,
+    // so close it explicitly to let the parser finish reading its source.
+    drop(stdin);
+    child.wait().is_ok_and(|status| status.success())
 }
 
 #[cfg(not(feature = "std"))]
 fn parses_as_rust(_src: &str) -> bool {
     false
+}
+
+#[cfg(all(test, feature = "std"))]
+mod tests {
+    #[test]
+    fn rust_parser_closes_stdin() {
+        use std::{io::Read, process::Command, string::String, time::Duration};
+
+        const SOURCE: &str = "use core::fmt;\nfn main() {}\n";
+        const CHILD_ENV: &str = "MIDENC_INPUT_PARSER_CHILD";
+        if std::env::var_os(CHILD_ENV).is_some() {
+            // Bound the regression: an open parent pipe must fail, not hang the suite.
+            std::thread::spawn(|| {
+                std::thread::sleep(Duration::from_secs(5));
+                std::process::exit(1);
+            });
+            let mut source = String::new();
+            std::io::stdin().read_to_string(&mut source).unwrap();
+            assert_eq!(source, SOURCE);
+            return;
+        }
+
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("--exact")
+            .arg(
+                concat!(module_path!(), "::rust_parser_closes_stdin")
+                    .split_once("::")
+                    .unwrap()
+                    .1,
+            )
+            .env(CHILD_ENV, "1");
+        assert!(super::run_rust_parser(command, SOURCE), "parser did not receive source and EOF");
+    }
 }
