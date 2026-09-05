@@ -191,7 +191,7 @@ miden-tx-script-args = { version = "0.14.0", path = "sdk/tx-script-args" }
 
 [profile.dev]
 lto = false
-# Needed for 'inventory' to work
+# Keep the conservative default; see docs/reviews/compiler-audit-codegen-units.md.
 codegen-units = 1
 
 # Keep only file/line debug information for non-workspace dependencies. Full
