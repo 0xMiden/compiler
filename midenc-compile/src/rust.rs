@@ -92,6 +92,9 @@ pub fn spawn_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifac
 
     log::debug!(target: "driver", "spawning command {cmd:?}");
 
+    let timing = std::env::var("MIDENC_TEST_TIMINGS")
+        .is_ok_and(|value| value == "1")
+        .then(std::time::Instant::now);
     let mut child = cmd.spawn().map_err(|err| {
         Report::msg(format!("failed to spawn `{cargo}`: {err}", cargo = cargo.display()))
     })?;
@@ -130,6 +133,14 @@ pub fn spawn_cargo(mut cmd: Command, cargo: &Path) -> CompilerResult<Vec<Artifac
             cargo = cargo.display()
         ))
     })?;
+
+    if let Some(started) = timing {
+        eprintln!(
+            "midenc-timing cargo_ms={:.3} status={status} directory={:?}",
+            started.elapsed().as_secs_f64() * 1000.0,
+            cmd.get_current_dir(),
+        );
+    }
 
     if !status.success() {
         std::process::exit(status.code().unwrap_or(1));

@@ -23,6 +23,7 @@ env:
   # Set the new value when the cache grows too much and we hit the runner's disk space limit
   # via https://github.com/rust-lang/docs.rs/pull/2433
   RUST_CACHE_KEY: rust-cache-20251212
+  NEXTEST_PROFILE: ci
   # Both integration shards derive from this selection, so their partition stays complementary.
   MIDENC_EXAMPLE_TEST_FILTER: "package(midenc-integration-tests) and test(~end_to_end::examples::)"
 
@@ -149,6 +150,14 @@ jobs:
         run: |
           cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests))'
 
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
   release_profile_tests:
     name: midenc release-profile tests
     runs-on: warp-ubuntu-latest-x64-8x
@@ -175,6 +184,14 @@ jobs:
         # own job.
         run: |
           cargo make test-release -E 'not package(midenc-template-tests)'
+
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   lit_tests:
     name: midenc lit/filecheck tests
@@ -222,6 +239,14 @@ jobs:
         run: |
           cargo make test -E "package(midenc-integration-tests) - (${MIDENC_EXAMPLE_TEST_FILTER})"
 
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
   midenc_integration_tests_examples:
     name: midenc integration tests
     runs-on: warp-ubuntu-latest-x64-8x
@@ -241,6 +266,14 @@ jobs:
         run: |
           cargo make test -E "${MIDENC_EXAMPLE_TEST_FILTER}"
 
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
   cargo_miden_integration_tests:
     name: cargo-miden integration tests
     runs-on: warp-ubuntu-latest-x64-8x
@@ -258,6 +291,14 @@ jobs:
       - name: Test
         run: |
           cargo make test -E 'package(cargo-miden)'
+
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   template_tests:
     name: project template tests
@@ -284,6 +325,14 @@ jobs:
         run: |
           cargo make test-templates
 
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
   miden_integration_node_tests:
     name: miden integration node tests
     runs-on: warp-ubuntu-latest-x64-8x
@@ -301,6 +350,14 @@ jobs:
       - name: Test
         run: |
           cargo make test -E 'package(midenc-integration-network-tests)'
+
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
   check_release:
     name: release checks

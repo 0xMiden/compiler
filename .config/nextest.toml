@@ -1,0 +1,4 @@
+# Opt in locally with `cargo nextest run --profile ci`.
+# CI uploads one report per job, including durations and failed-test output.
+[profile.ci.junit]
+path = "junit.xml"

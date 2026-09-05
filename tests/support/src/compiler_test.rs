@@ -1111,9 +1111,16 @@ impl CompilerTest {
         let mut request = CompilationRequest::new(self.session.clone(), input).with_outputs(
             OutputRequest::default().with_stop_after(Some(goal.checkpoint().as_str().to_string())),
         );
+        let timing = crate::timing::PipelineTiming::enabled()
+            .then(|| Rc::new(RefCell::new(crate::timing::PipelineTiming::new())));
+        let mut observers: Vec<Rc<RefCell<dyn Observer>>> = Vec::new();
         if let Some(observer) = &observer {
-            request = request.with_observers(vec![observer.clone() as Rc<RefCell<dyn Observer>>]);
+            observers.push(observer.clone());
         }
+        if let Some(timing) = &timing {
+            observers.push(timing.clone());
+        }
+        request = request.with_observers(observers);
 
         let mut registry = match self.session.package_registry() {
             Ok(registry) => registry,
@@ -1122,6 +1129,9 @@ impl CompilerTest {
         let outcome = Pipeline::with_default_frontends()
             .unwrap_or_else(|err| panic!("{}", format_report(err)))
             .compile(request, registry.as_mut());
+        if let Some(timing) = timing {
+            timing.borrow().report(self.artifact_name());
+        }
 
         if let Some(observer) = observer {
             let mut collected = observer.borrow_mut();
