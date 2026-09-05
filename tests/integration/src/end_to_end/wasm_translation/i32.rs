@@ -16,7 +16,13 @@ use crate::{
 /// Test harness for a binary `(i32, i32) -> i32` Wasm operation.
 ///
 /// The `wat_op` is executed in a function exported as `entrypoint`.
-fn test_i32_wasm_op_binary(wat_op: &str, cases: NumericCases<(i32, i32)>) {
+///
+/// `T` may be `i32` or `u32`: Wasm still sees `i32` parameters, but unsigned ops use a `u32`
+/// [`NumericCases`] plan so edge coverage matches unsigned semantics.
+fn test_i32_wasm_op_binary<T>(wat_op: &str, cases: NumericCases<(T, T)>)
+where
+    T: I32Operand + std::fmt::Debug + Clone,
+{
     let wat = format!(
         r#"(module
   (func $entrypoint (export "entrypoint") (param $a i32) (param $b i32) (result i32)
@@ -44,12 +50,12 @@ fn test_i32_wasm_op_binary(wat_op: &str, cases: NumericCases<(i32, i32)>) {
     cases.run(|(a, b)| {
         let expected = interpreter
             .borrow_mut()
-            .call_entrypoint::<(i32, i32), i32>("entrypoint", (a, b));
+            .call_entrypoint::<(i32, i32), i32>("entrypoint", (a.as_i32(), b.as_i32()));
 
         // The `(a, b)` entrypoint follows the C calling convention, so pass stack `[a, b]`
         let stack_inputs = StackInputs::new(&[
-            Felt::new(a as u32 as u64).expect("u32 values fit in a felt"),
-            Felt::new(b as u32 as u64).expect("u32 values fit in a felt"),
+            Felt::new(u64::from(a.as_u32())).expect("u32 values fit in a felt"),
+            Felt::new(u64::from(b.as_u32())).expect("u32 values fit in a felt"),
         ])
         .expect("invalid stack inputs");
 
@@ -91,9 +97,49 @@ fn test_i32_wasm_op_binary(wat_op: &str, cases: NumericCases<(i32, i32)>) {
     });
 }
 
+/// A value a case plan can supply as the operand of a Wasm `i32` operation, whether the operation
+/// interprets it as signed or unsigned.
+trait I32Operand {
+    /// The operand as passed to a Wasm `i32` parameter.
+    fn as_i32(&self) -> i32;
+
+    /// The operand's bit pattern as pushed onto the Miden VM stack.
+    fn as_u32(&self) -> u32;
+}
+
+impl I32Operand for i32 {
+    fn as_i32(&self) -> i32 {
+        *self
+    }
+
+    fn as_u32(&self) -> u32 {
+        *self as u32
+    }
+}
+
+impl I32Operand for u32 {
+    fn as_i32(&self) -> i32 {
+        *self as i32
+    }
+
+    fn as_u32(&self) -> u32 {
+        *self
+    }
+}
+
 #[test]
 fn i32_add() {
     test_i32_wasm_op_binary("i32.add", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_sub() {
+    test_i32_wasm_op_binary("i32.sub", NumericStrategy::<i32>::sub_signed());
+}
+
+#[test]
+fn i32_mul() {
+    test_i32_wasm_op_binary("i32.mul", NumericStrategy::<i32>::mul_signed());
 }
 
 #[test]
@@ -102,8 +148,60 @@ fn i32_div_s() {
 }
 
 #[test]
+fn i32_div_u() {
+    test_i32_wasm_op_binary("i32.div_u", NumericStrategy::<u32>::div_unsigned_checked());
+}
+
+#[test]
 fn i32_rem_s() {
     test_i32_wasm_op_binary("i32.rem_s", NumericStrategy::<i32>::rem_signed_checked());
+}
+
+#[test]
+fn i32_rem_u() {
+    test_i32_wasm_op_binary("i32.rem_u", NumericStrategy::<u32>::rem_unsigned_checked());
+}
+
+#[test]
+fn i32_and() {
+    test_i32_wasm_op_binary("i32.and", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_or() {
+    test_i32_wasm_op_binary("i32.or", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_xor() {
+    test_i32_wasm_op_binary("i32.xor", NumericStrategy::<i32>::add_signed());
+}
+
+#[test]
+fn i32_shl() {
+    // Wasm masks the movement count to five bits. The strategy includes negative and
+    // out-of-range bit patterns to cover that behavior.
+    test_i32_wasm_op_binary("i32.shl", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_shr_s() {
+    test_i32_wasm_op_binary("i32.shr_s", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_shr_u() {
+    test_i32_wasm_op_binary("i32.shr_u", NumericStrategy::<u32>::shr_unsigned_checked());
+}
+
+#[test]
+fn i32_rotl() {
+    test_i32_wasm_op_binary("i32.rotl", NumericStrategy::<i32>::shr_signed_checked());
+}
+
+#[test]
+fn i32_rotr() {
+    test_i32_wasm_op_binary("i32.rotr", NumericStrategy::<i32>::shr_signed_checked());
 }
 
 /// Convert a [`wasmi`] trap into the [`TrapExpectation`] describing the matching Miden VM trap.

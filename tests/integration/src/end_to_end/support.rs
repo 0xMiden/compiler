@@ -808,6 +808,43 @@ where
         }
     }
 
+    /// Out-of-range shift counts are covered by the bit width itself and by `T::MAX`, since
+    /// unsigned types have no negative counts to exercise.
+    pub fn shr_unsigned_checked() -> NumericCases<(T, T)>
+    where
+        T: Unsigned,
+    {
+        let v = NumericStrategyValues::<T>::new();
+        let bit_width = u32::try_from(std::mem::size_of::<T>() * 8).unwrap();
+        let max_shift = T::from(bit_width - 1).unwrap();
+        let overflow_shift = T::from(bit_width).unwrap();
+        NumericCases {
+            edges: vec![
+                (v.zero, v.zero),
+                (v.zero, v.one),
+                (v.zero, max_shift),
+                (v.one, v.zero),
+                (v.one, max_shift),
+                (v.half, v.one),
+                (v.half_plus_one, v.one),
+                (v.half_plus_one, max_shift),
+                (v.max, v.zero),
+                (v.max, v.one),
+                (v.max, max_shift),
+                (v.zero, overflow_shift),
+                (v.one, overflow_shift),
+                (v.half_plus_one, overflow_shift),
+                (v.max, overflow_shift),
+                (v.max, v.max),
+            ],
+            random: prop_oneof![
+                3 => (any::<T>(), v.zero..=max_shift),
+                3 => (any::<T>(), any::<T>()),
+            ]
+            .boxed(),
+        }
+    }
+
     pub fn shr_signed_checked() -> NumericCases<(T, T)>
     where
         T: num_traits::Signed + 'static,
