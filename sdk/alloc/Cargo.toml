@@ -13,7 +13,7 @@ edition.workspace = true
 
 [lib]
 crate-type = ["rlib"]
-test = false
+test = true
 doctest = false
 
 [dependencies]
