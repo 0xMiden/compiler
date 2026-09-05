@@ -15,7 +15,11 @@ use miden_client::{
     account::component::{BasicWallet, InitStorageData},
     transaction::RawOutputNote,
 };
-use miden_core::{Felt, crypto::hash::Poseidon2};
+use miden_core::{
+    Felt,
+    crypto::hash::Poseidon2,
+    serde::{Deserializable, Serializable},
+};
 use miden_mast_package::Package;
 use miden_protocol::{
     Word,
@@ -39,14 +43,15 @@ use midenc_expect_test::expect;
 use midenc_integration_test_support::testing::stripped_mast_size_str;
 
 use super::support::{
-    assert_account_has_fungible_asset, block_on, compile_rust_package, execute_tx,
-    note_script_root, single_note_cycles, to_core_felts,
+    assert_account_has_fungible_asset, block_on, compile_rust_package, execute_tx, load_or_build,
+    nextest_cache_dir, note_script_root, single_note_cycles, to_core_felts,
 };
 
 /// Tag used for the SWAPP notes themselves.
 const SWAPP_NOTE_TAG: u32 = 0;
 
 /// Compiled packages used by the SWAPP tests.
+#[derive(Clone)]
 struct SwappPackages {
     wallet: Arc<Package>,
     swapp: Arc<Package>,
@@ -58,17 +63,42 @@ struct SwappPackages {
 /// project which depends on it.
 #[track_caller]
 fn compile_swapp_packages() -> SwappPackages {
-    static WALLET: OnceLock<Arc<Package>> = OnceLock::new();
-    static SWAPP: OnceLock<Arc<Package>> = OnceLock::new();
-
-    let wallet = WALLET
-        .get_or_init(|| compile_rust_package("../../examples/basic-wallet", true))
-        .clone();
-    let swapp = SWAPP
-        .get_or_init(|| compile_rust_package("../fixtures/components/swapp-note", true))
-        .clone();
-
-    SwappPackages { wallet, swapp }
+    static PACKAGES: OnceLock<SwappPackages> = OnceLock::new();
+    PACKAGES
+        .get_or_init(|| {
+            let build = || SwappPackages {
+                wallet: compile_rust_package("../../examples/basic-wallet", true),
+                swapp: compile_rust_package("../fixtures/components/swapp-note", true),
+            };
+            let Some(directory) = nextest_cache_dir(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"),
+            )
+            .expect("could not locate fixture cache") else {
+                return build();
+            };
+            let bytes = load_or_build(&directory, || {
+                // Keep dependency order inside the lock: building the wallet publishes the
+                // artifacts required to compile the note. Cache the complete package pair.
+                let packages = build();
+                vec![packages.wallet.to_bytes(), packages.swapp.to_bytes()].to_bytes()
+            })
+            .expect("could not load or publish SWAPP fixture cache");
+            let bytes =
+                Vec::<Vec<u8>>::read_from_bytes(&bytes).expect("invalid SWAPP cache payload");
+            let [wallet, swapp]: [Vec<u8>; 2] =
+                bytes.try_into().expect("expected wallet and note packages");
+            // These are trusted compiler outputs from this test invocation. Preserve their
+            // debug sections, which normal untrusted package deserialization discards.
+            SwappPackages {
+                wallet: Arc::new(
+                    Package::read_from_bytes_unchecked(&wallet).expect("invalid cached wallet"),
+                ),
+                swapp: Arc::new(
+                    Package::read_from_bytes_unchecked(&swapp).expect("invalid cached note"),
+                ),
+            }
+        })
+        .clone()
 }
 
 /// Terms of a swap offer, encoded into the SWAPP note storage.
