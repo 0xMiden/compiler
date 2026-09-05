@@ -61,8 +61,8 @@ pub struct DataFlowSolver {
     analysis_state: Rc<RefCell<FxHashMap<AnalysisStateKey, NonNull<AnalysisStateInfo>>>>,
     /// Uniqued [LatticeAnchor] values.
     ///
-    /// Each lattice anchor will only be allocated a single time, uniqueness is established via Hash
-    anchors: RefCell<FxHashMap<u64, LatticeAnchorRef>>,
+    /// Hashes select candidate buckets; equality determines whether an anchor is already interned.
+    anchors: RefCell<FxHashMap<u64, SmallVec<[LatticeAnchorRef; 1]>>>,
     /// The current analysis being executed.
     current_analysis: Option<NonNull<dyn DataFlowAnalysis>>,
     /// A bump-allocator local to the solver, in which it allocates analyses, analysis states, and

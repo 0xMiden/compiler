@@ -253,6 +253,29 @@ pub proc checked_div # [b_lo, b_hi, a_lo, a_hi]
     end
 end
 
+# Computes `a % b`, validating the input limbs and trapping on division by zero.
+#
+# The result has the sign of `a`; i64::MIN % -1 returns zero, as required by Wasm.
+pub proc wrapping_mod # [b_lo, b_hi, a_lo, a_hi]
+    u32assertw
+
+    # sign(b), then sign(a); retain sign(a) below the operands for the result.
+    dup.1 push.SIGN_BIT u32and push.SIGN_BIT eq
+    dup.4 push.SIGN_BIT u32and push.SIGN_BIT eq
+    dup.0 movdn.6
+    # [sign_a, sign_b, b_lo, b_hi, a_lo, a_hi, sign_a]
+
+    # Unsigned magnitudes also represent abs(i64::MIN) without signed overflow.
+    movup.4 movup.5 swap
+    exec.cneg_u64 # [abs_a_lo, abs_a_hi, sign_b, b_lo, b_hi, sign_a]
+    movup.3 movup.4 swap
+    movup.4 movdn.2
+    exec.cneg_u64 # [abs_b_lo, abs_b_hi, abs_a_lo, abs_a_hi, sign_a]
+
+    exec.::miden::core::math::u64::mod
+    exec.cneg_u64 # [r_lo, r_hi]
+end
+
 # Given two i64 values in two's complement representation, compare them,
 # returning -1 if `a` < `b`, 0 if equal, and 1 if `a` > `b`.
 pub proc icmp # [b_lo, b_hi, a_lo, a_hi]

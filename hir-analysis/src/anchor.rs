@@ -3,7 +3,7 @@ use core::{fmt, hash::Hash, ptr::NonNull};
 use midenc_hir::{
     Block, BlockArgument, BlockArgumentRef, BlockRef, DynHash, DynPartialEq, FxHashMap, FxHasher,
     OpResult, OpResultRef, Operation, OperationRef, PartialEqable, ProgramPoint, RawEntityRef,
-    SourceSpan, Spanned, Value, ValueRef, any::AsAny,
+    SmallVec, SourceSpan, Spanned, Value, ValueRef, any::AsAny,
 };
 
 /// This represents a pointer to a type-erased [LatticeAnchor] value.
@@ -39,15 +39,21 @@ impl LatticeAnchorRef {
     pub fn intern<A>(
         anchor: &A,
         alloc: &blink_alloc::Blink,
-        interned: &mut FxHashMap<u64, LatticeAnchorRef>,
+        interned: &mut FxHashMap<u64, SmallVec<[LatticeAnchorRef; 1]>>,
     ) -> LatticeAnchorRef
     where
         A: LatticeAnchorExt,
     {
         let hash = anchor.anchor_id();
-        *interned
-            .entry(hash)
-            .or_insert_with(|| <A as LatticeAnchorExt>::alloc(anchor, alloc))
+        let candidates = interned.entry(hash).or_default();
+        if let Some(existing) =
+            candidates.iter().find(|existing| anchor.equivalent_to(existing.as_ref()))
+        {
+            return *existing;
+        }
+        let interned = <A as LatticeAnchorExt>::alloc(anchor, alloc);
+        candidates.push(interned);
+        interned
     }
 }
 
@@ -282,6 +288,9 @@ impl LatticeAnchor for BlockRef {
 pub trait LatticeAnchorExt: sealed::IsLatticeAnchor {
     fn anchor_id(&self) -> u64;
 
+    /// Compare the same canonical representation used by `anchor_id` and `alloc`.
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool;
+
     fn alloc(&self, alloc: &blink_alloc::Blink) -> LatticeAnchorRef;
 }
 
@@ -297,6 +306,10 @@ impl<A: LatticeAnchor + Clone> LatticeAnchorExt for A {
         LatticeAnchorRef::compute_hash(self)
     }
 
+    default fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(self)
+    }
+
     default fn alloc(&self, alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
         let ptr = alloc.put(self.clone());
         LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr) })
@@ -309,6 +322,10 @@ impl LatticeAnchorExt for LatticeAnchorRef {
     }
 
     #[inline(always)]
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(self.as_ref())
+    }
+
     fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
         *self
     }
@@ -317,6 +334,10 @@ impl LatticeAnchorExt for LatticeAnchorRef {
 impl LatticeAnchorExt for ValueRef {
     fn anchor_id(&self) -> u64 {
         LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(&*self.borrow())
     }
 
     fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
@@ -338,6 +359,10 @@ impl LatticeAnchorExt for BlockArgumentRef {
         LatticeAnchorRef::compute_hash(&*self.borrow())
     }
 
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(&*self.borrow())
+    }
+
     fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
         let ptr = &*self.borrow() as &dyn LatticeAnchor as *const dyn LatticeAnchor;
         LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
@@ -347,6 +372,10 @@ impl LatticeAnchorExt for BlockArgumentRef {
 impl LatticeAnchorExt for OpResultRef {
     fn anchor_id(&self) -> u64 {
         LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(&*self.borrow())
     }
 
     fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
@@ -360,6 +389,10 @@ impl LatticeAnchorExt for BlockRef {
         LatticeAnchorRef::compute_hash(&*self.borrow())
     }
 
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(&*self.borrow())
+    }
+
     fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
         let ptr = &*self.borrow() as &dyn LatticeAnchor as *const dyn LatticeAnchor;
         LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr.cast_mut()) })
@@ -369,6 +402,10 @@ impl LatticeAnchorExt for BlockRef {
 impl LatticeAnchorExt for OperationRef {
     fn anchor_id(&self) -> u64 {
         LatticeAnchorRef::compute_hash(&*self.borrow())
+    }
+
+    fn equivalent_to(&self, other: &dyn LatticeAnchor) -> bool {
+        other.dyn_eq(&*self.borrow())
     }
 
     fn alloc(&self, _alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
@@ -385,5 +422,75 @@ impl LatticeAnchorExt for ProgramPoint {
     fn alloc(&self, alloc: &blink_alloc::Blink) -> LatticeAnchorRef {
         let ptr = alloc.put(*self);
         LatticeAnchorRef::new(unsafe { NonNull::new_unchecked(ptr) })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+    use core::hash::Hasher;
+
+    use midenc_hir::{Context, Type};
+
+    use super::*;
+    use crate::{DataFlowSolver, Lattice};
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    struct CollidingAnchor(u8);
+
+    impl Hash for CollidingAnchor {
+        fn hash<H: Hasher>(&self, state: &mut H) {
+            0u8.hash(state);
+        }
+    }
+
+    impl fmt::Display for CollidingAnchor {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(f, "anchor({})", self.0)
+        }
+    }
+
+    impl Spanned for CollidingAnchor {
+        fn span(&self) -> SourceSpan {
+            SourceSpan::UNKNOWN
+        }
+    }
+
+    impl LatticeAnchor for CollidingAnchor {}
+
+    #[test]
+    fn colliding_anchors_keep_independent_analysis_states() {
+        let mut solver = DataFlowSolver::default();
+        for (anchor, value) in [(CollidingAnchor(1), 11), (CollidingAnchor(2), 22)] {
+            let mut state = solver.get_or_create_mut::<Lattice<u32>, _>(anchor);
+            *state.value_mut() = value;
+        }
+        assert_eq!(*solver.get::<Lattice<u32>, _>(&CollidingAnchor(1)).unwrap().value(), 11);
+        assert_eq!(*solver.get::<Lattice<u32>, _>(&CollidingAnchor(2)).unwrap().value(), 22);
+
+        let first = solver.create_lattice_anchor(CollidingAnchor(1));
+        let repeated = solver.create_lattice_anchor(CollidingAnchor(1));
+        let other = solver.create_lattice_anchor(CollidingAnchor(2));
+        assert!(core::ptr::addr_eq(first.as_ref(), repeated.as_ref()));
+        assert_ne!(first, other);
+    }
+
+    #[test]
+    fn typed_and_erased_value_anchors_share_analysis_state() {
+        let context = Rc::new(Context::default());
+        let block = context.create_block_with_params([Type::U32]);
+        let argument = block.borrow().arguments()[0];
+        let value = argument as ValueRef;
+        let mut solver = DataFlowSolver::default();
+        {
+            let mut state = solver.get_or_create_mut::<Lattice<u32>, _>(argument);
+            *state.value_mut() = 42;
+        }
+        assert_eq!(*solver.get::<Lattice<u32>, _>(&value).unwrap().value(), 42);
+        let typed = solver.create_lattice_anchor(argument);
+        let erased = solver.create_lattice_anchor(value);
+        let reinterned = solver.create_lattice_anchor(erased);
+        assert!(core::ptr::addr_eq(typed.as_ref(), erased.as_ref()));
+        assert!(core::ptr::addr_eq(typed.as_ref(), reinterned.as_ref()));
     }
 }

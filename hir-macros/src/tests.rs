@@ -3,6 +3,45 @@
 use quote::ToTokens;
 
 #[test]
+fn operation_names_with_digits_support_explicit_registration_spelling() {
+    for (override_name, expected) in [(None, "i32_load8_s"), (Some("i32_load_8s"), "i32_load_8s")] {
+        let name_option = override_name.map(|name| quote::quote! { name = #name, });
+        let input = syn::parse_quote! {
+            #[operation(dialect = WasmDialect, #name_option)]
+            pub struct I32Load8S {}
+        };
+        let output = crate::operation::derive_operation(input).unwrap();
+        let file: syn::File = syn::parse2(output).unwrap();
+        let registration = file
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Impl(item)
+                    if item.trait_.as_ref().is_some_and(|(_, path, _)| {
+                        path.segments.last().unwrap().ident == "OpRegistration"
+                    }) =>
+                {
+                    Some(item)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let name = registration
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Fn(method) if method.sig.ident == "name" => Some(&method.block),
+                _ => None,
+            })
+            .unwrap();
+        let expected: syn::Block = syn::parse_quote! {
+            { ::midenc_hir::interner::Symbol::intern(#expected) }
+        };
+        assert_eq!(name, &expected);
+    }
+}
+
+#[test]
 fn derive_attribute_test() {
     let item_input: syn::DeriveInput = syn::parse_quote! {
         /// A simple boolean attribute
@@ -257,4 +296,16 @@ fn format_output(input: &str) -> String {
         }
         Err(err) => panic!("command 'rustfmt' failed with {err}"),
     }
+}
+
+#[test]
+fn effect_derive_rejects_malformed_fields_before_expansion() {
+    let input: syn::DeriveInput = syn::parse_quote! {
+        #[effects(MemoryEffect(MemoryEffect::Read))]
+        struct InvalidEffects {
+            #[effects(MemoryEffect)]
+            value: ValueRef,
+        }
+    };
+    assert!(crate::operations::derive_effect_op_interface(&input).is_err());
 }

@@ -4,7 +4,10 @@ use bitflags::bitflags;
 use smallvec::SmallVec;
 
 use super::Operation;
-use crate::{OpOperand, Region, Value, ValueRef, traits::Commutative};
+use crate::{
+    BlockRef, FxHashMap, FxHashSet, FxHasher, OpOperand, Region, Value, ValueRef,
+    traits::Commutative,
+};
 
 bitflags! {
     #[derive(Copy, Clone)]
@@ -213,18 +216,18 @@ impl Operation {
 
         // Operands
         //
-        // Commutative operations are equivalent regardless of operand order, so their operands
-        // must be hashed in the same canonical order used by `is_equivalent_with_options`, or
-        // equal keys could hash differently.
+        // Hash commutative operands as a multiset under the chosen value-hashing strategy.
+        // Address ordering is not canonical for strategies which ignore value identity.
         self.operands().len().hash(hasher);
         if self.implements::<dyn Commutative>() {
-            let operands = self.operands().all();
-            let mut operands = SmallVec::<[_; 2]>::from_slice(operands.as_slice());
-            operands.sort_by(sort_operands);
-            for operand in operands {
-                let operand = operand.borrow();
-                operand_hasher.hash_value(operand.as_value_ref(), hasher);
+            let mut hashes = SmallVec::<[u64; 2]>::new();
+            for operand in self.operands().iter() {
+                let mut value_hash = FxHasher::default();
+                operand_hasher.hash_value(operand.borrow().as_value_ref(), &mut value_hash);
+                hashes.push(value_hash.finish());
             }
+            hashes.sort_unstable();
+            hashes.hash(hasher);
         } else {
             for operand in self.operands().iter() {
                 let operand = operand.borrow();
@@ -250,6 +253,16 @@ impl Operation {
         flags: OperationEquivalenceFlags,
         value_equivalence: impl ValueEquivalence,
     ) -> bool {
+        self.is_equivalent_with_mapping(rhs, flags, &value_equivalence, &|lhs, rhs| lhs == rhs)
+    }
+
+    fn is_equivalent_with_mapping(
+        &self,
+        rhs: &Operation,
+        flags: OperationEquivalenceFlags,
+        value_equivalence: &dyn ValueEquivalence,
+        block_equivalence: &dyn Fn(BlockRef, BlockRef) -> bool,
+    ) -> bool {
         if core::ptr::addr_eq(self, rhs) {
             return true;
         }
@@ -260,6 +273,21 @@ impl Operation {
             || self.num_successors() != rhs.num_successors()
             || self.num_operands() != rhs.num_operands()
             || self.num_results() != rhs.num_results()
+            || self
+                .operands()
+                .groups()
+                .map(|g| g.len())
+                .ne(rhs.operands().groups().map(|g| g.len()))
+            || self
+                .results()
+                .groups()
+                .map(|g| g.len())
+                .ne(rhs.results().groups().map(|g| g.len()))
+            || self
+                .successors()
+                .groups()
+                .map(|g| g.len())
+                .ne(rhs.successors().groups().map(|g| g.len()))
             || !self.properties().eq(rhs.properties())
             || self.attributes() != rhs.attributes()
         {
@@ -271,23 +299,28 @@ impl Operation {
         }
 
         // 2. Compare operands
+        let lhs_operands = self.operands.all();
+        let rhs_operands = rhs.operands.all();
         if self.implements::<dyn Commutative>() {
-            let lhs_operands = self.operands().all();
-            let rhs_operands = rhs.operands().all();
-            let mut lhs_operands = SmallVec::<[_; 2]>::from_slice(lhs_operands.as_slice());
-            lhs_operands.sort_by(sort_operands);
-            let mut rhs_operands = SmallVec::<[_; 2]>::from_slice(rhs_operands.as_slice());
-            rhs_operands.sort_by(sort_operands);
-            if !are_operands_equivalent(&lhs_operands, &rhs_operands, &value_equivalence) {
-                return false;
+            let mut unmatched = SmallVec::<[_; 2]>::from_slice(rhs_operands.as_slice());
+            for lhs in lhs_operands.iter() {
+                let Some(index) = unmatched.iter().position(|rhs| {
+                    are_operands_equivalent(
+                        core::slice::from_ref(lhs),
+                        core::slice::from_ref(rhs),
+                        value_equivalence,
+                    )
+                }) else {
+                    return false;
+                };
+                unmatched.swap_remove(index);
             }
-        } else {
-            // Check pair-wise for equivalence
-            let lhs = self.operands.all();
-            let rhs = rhs.operands.all();
-            if !are_operands_equivalent(lhs.as_slice(), rhs.as_slice(), &value_equivalence) {
-                return false;
-            }
+        } else if !are_operands_equivalent(
+            lhs_operands.as_slice(),
+            rhs_operands.as_slice(),
+            value_equivalence,
+        ) {
+            return false;
         }
 
         // 3. Compare result types
@@ -301,9 +334,24 @@ impl Operation {
             }
         }
 
+        // Successor keys and operand groups are part of the branch's semantics, in addition
+        // to the destination correspondence established by its containing region.
+        for (lhs, rhs) in self.successors().iter().zip(rhs.successors().iter()) {
+            if !block_equivalence(lhs.successor(), rhs.successor())
+                || lhs.operand_group != rhs.operand_group
+            {
+                return false;
+            }
+            match (lhs.key, rhs.key) {
+                (Some(lhs), Some(rhs)) if lhs.borrow() == rhs.borrow() => {}
+                (None, None) => {}
+                _ => return false,
+            }
+        }
+
         // 4. Compare regions
         for (lhs_region, rhs_region) in self.regions().iter().zip(rhs.regions().iter()) {
-            if !is_region_equivalent_to(&lhs_region, &rhs_region, flags, &value_equivalence) {
+            if !is_region_equivalent_to(&lhs_region, &rhs_region, flags, value_equivalence) {
                 return false;
             }
         }
@@ -312,32 +360,73 @@ impl Operation {
     }
 }
 
-fn is_region_equivalent_to<VE>(
-    _lhs: &Region,
-    _rhs: &Region,
-    _flags: OperationEquivalenceFlags,
-    _value_equivalence: &VE,
-) -> bool
-where
-    VE: ValueEquivalence + ?Sized,
-{
-    todo!()
+/// Compare corresponding blocks in layout order. Local definitions are mapped before uses are
+/// inspected, including forward references in graph regions; captures use the enclosing mapping.
+fn is_region_equivalent_to(
+    lhs: &Region,
+    rhs: &Region,
+    flags: OperationEquivalenceFlags,
+    value_equivalence: &dyn ValueEquivalence,
+) -> bool {
+    if lhs.body().len() != rhs.body().len() {
+        return false;
+    }
+
+    let mut blocks = FxHashMap::default();
+    let mut values = FxHashMap::default();
+    let mut rhs_values = FxHashSet::default();
+    for (lhs_block, rhs_block) in lhs.body().iter().zip(rhs.body().iter()) {
+        if lhs_block.arguments().len() != rhs_block.arguments().len()
+            || lhs_block.body().len() != rhs_block.body().len()
+        {
+            return false;
+        }
+        blocks.insert(lhs_block.as_block_ref(), rhs_block.as_block_ref());
+        for (lhs_arg, rhs_arg) in lhs_block.arguments().iter().zip(rhs_block.arguments().iter()) {
+            let lhs_arg = lhs_arg.borrow();
+            let rhs_arg = rhs_arg.borrow();
+            if lhs_arg.ty() != rhs_arg.ty() {
+                return false;
+            }
+            let lhs_addr = value_address(&*lhs_arg);
+            let rhs_addr = value_address(&*rhs_arg);
+            values.insert(lhs_addr, rhs_addr);
+            rhs_values.insert(rhs_addr);
+        }
+        for (lhs_op, rhs_op) in lhs_block.body().iter().zip(rhs_block.body().iter()) {
+            if lhs_op.num_results() != rhs_op.num_results() {
+                return false;
+            }
+            for (lhs_result, rhs_result) in lhs_op.results().iter().zip(rhs_op.results().iter()) {
+                let lhs_addr = value_address(&*lhs_result.borrow());
+                let rhs_addr = value_address(&*rhs_result.borrow());
+                values.insert(lhs_addr, rhs_addr);
+                rhs_values.insert(rhs_addr);
+            }
+        }
+    }
+
+    let mapped_values = |lhs: &dyn Value, rhs: &dyn Value| {
+        let lhs_addr = value_address(lhs);
+        let rhs_addr = value_address(rhs);
+        match values.get(&lhs_addr) {
+            Some(mapped) => *mapped == rhs_addr,
+            None => !rhs_values.contains(&rhs_addr) && value_equivalence.is_equivalent(lhs, rhs),
+        }
+    };
+    let mapped_blocks = |lhs, rhs| blocks.get(&lhs).map_or(lhs == rhs, |mapped| *mapped == rhs);
+    for (lhs_block, rhs_block) in lhs.body().iter().zip(rhs.body().iter()) {
+        for (lhs_op, rhs_op) in lhs_block.body().iter().zip(rhs_block.body().iter()) {
+            if !lhs_op.is_equivalent_with_mapping(&rhs_op, flags, &mapped_values, &mapped_blocks) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
-/// Orders operands canonically (by value address) for commutative operand comparison and
-/// hashing.
-///
-/// NOTE: address order is only a sound canonicalization for identity-based value equivalence
-/// ([DefaultValueEquivalence]/[DefaultValueHasher]), where equal operand sets sort identically
-/// on both sides. A commutative operation compared under an equivalence that ignores identity
-/// (e.g. [ValueTypeEquivalence]) would need a structural canonicalization instead; no such
-/// caller exists today.
-fn sort_operands(a: &OpOperand, b: &OpOperand) -> core::cmp::Ordering {
-    let a = a.borrow().as_value_ref();
-    let b = b.borrow().as_value_ref();
-    let a = ValueRef::as_ptr(&a).addr();
-    let b = ValueRef::as_ptr(&b).addr();
-    a.cmp(&b)
+fn value_address(value: &dyn Value) -> usize {
+    core::ptr::from_ref(value).addr()
 }
 
 fn are_operands_equivalent<VE>(a: &[OpOperand], b: &[OpOperand], value_equivalence: &VE) -> bool
@@ -350,9 +439,6 @@ where
         let b = b.borrow();
         let a = a.value();
         let b = b.value();
-        if core::ptr::addr_eq(&*a, &*b) {
-            continue;
-        }
         if !value_equivalence.is_equivalent(&*a, &*b) {
             return false;
         }

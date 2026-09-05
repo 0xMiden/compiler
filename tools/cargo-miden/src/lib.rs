@@ -37,7 +37,7 @@ where
     let collected: Vec<String> = args.collect();
     let command_tokens = extract_command_tokens(&collected);
 
-    let cli = cli::CargoMidenCli::parse_from(command_tokens);
+    let cli = parse_command_tokens(command_tokens).unwrap_or_else(|error| error.exit());
 
     match cli.command {
         cli::CargoMidenCommand::New(cmd) => {
@@ -55,6 +55,17 @@ where
             Ok(None)
         }
     }
+}
+
+/// Parse wrapper options while retaining the original argument boundary for `cargo test`.
+fn parse_command_tokens(tokens: Vec<String>) -> Result<cli::CargoMidenCli, clap::Error> {
+    let mut cli = cli::CargoMidenCli::try_parse_from(&tokens)?;
+    if let cli::CargoMidenCommand::Test(command) = &mut cli.command {
+        // Clap consumes a leading `--`, but Cargo needs that delimiter to distinguish
+        // its options from test-binary options. Dispatch/help remain Clap's responsibility.
+        command.args = tokens.into_iter().skip(2).collect();
+    }
+    Ok(cli)
 }
 
 fn extract_command_tokens(args: &[String]) -> Vec<String> {

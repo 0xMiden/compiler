@@ -618,7 +618,7 @@ pub fn translate_operator<B: ?Sized + Builder>(
         }
         Operator::I64RemS => {
             let (arg1, arg2) = state.pop2();
-            state.push1(builder.r#mod(arg1, arg2, span)?);
+            state.push1(builder.i64_rem_s(arg1, arg2, span)?);
         }
         /**************************** Comparison Operators **********************************/
         Operator::I32LtU => {

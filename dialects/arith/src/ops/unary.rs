@@ -82,6 +82,7 @@ infer_return_ty_for_unary_op!(Inv);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
+        name = "ilog_2",
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]
@@ -98,6 +99,7 @@ infer_return_ty_for_unary_op!(Ilog2);
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation (
         dialect = ArithDialect,
+        name = "pow_2",
         traits(UnaryOp, SameTypeOperands, SameOperandsAndResultType),
         implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
     )]

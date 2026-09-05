@@ -4,7 +4,7 @@ use darling::{
     Error, FromDeriveInput, FromField, FromMeta,
     util::{Flag, SpannedValue},
 };
-use inflector::Inflector;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use syn::{Ident, Token, parse_quote, parse_quote_spanned, spanned::Spanned};
 
@@ -2738,7 +2738,7 @@ impl OpCreateParam {
     pub fn all_binding_types(&self, allow_attr_conversions: bool) -> Vec<syn::Type> {
         match &self.param_ty {
             OpCreateParamType::Attr(OpAttribute { name, .. }) if allow_attr_conversions => {
-                vec![make_type(format!("T{}Value", name.to_string().to_pascal_case()))]
+                vec![make_type(format!("T{}Value", name.to_string().to_upper_camel_case()))]
             }
             OpCreateParamType::Attr(OpAttribute { value_ty, .. }) => {
                 vec![value_ty.clone()]
@@ -2750,15 +2750,15 @@ impl OpCreateParam {
             OpCreateParamType::OperandGroup(group_name, _)
             | OpCreateParamType::SuccessorGroupNamed(group_name)
             | OpCreateParamType::SuccessorGroupKeyed(group_name, _) => {
-                vec![make_type(format!("T{}", group_name.to_string().to_pascal_case()))]
+                vec![make_type(format!("T{}", group_name.to_string().to_upper_camel_case()))]
             }
             OpCreateParamType::Successor(name) => vec![
                 make_type("::midenc_hir::BlockRef"),
-                make_type(format!("T{}Args", name.to_string().to_pascal_case())),
+                make_type(format!("T{}Args", name.to_string().to_upper_camel_case())),
             ],
             OpCreateParamType::Symbol(Symbol { name, ty }) => match ty {
                 SymbolType::Any | SymbolType::Callable | SymbolType::Trait(_) => {
-                    vec![make_type(format!("T{}", name.to_string().to_pascal_case()))]
+                    vec![make_type(format!("T{}", name.to_string().to_upper_camel_case()))]
                 }
                 SymbolType::Concrete(ty) => {
                     vec![parse_quote! { ::midenc_hir::UnsafeIntrusiveEntityRef<#ty> }]
@@ -2798,7 +2798,7 @@ impl OpCreateParam {
             {
                 let param_ty = format_ident!(
                     "T{}Value",
-                    name.to_string().to_pascal_case(),
+                    name.to_string().to_upper_camel_case(),
                     span = name.span()
                 );
                 where_clause.predicates.push(parse_quote_spanned! { name.span() =>
@@ -2817,7 +2817,7 @@ impl OpCreateParam {
                     attrs: vec![],
                     ident: format_ident!(
                         "T{}Value",
-                        &name.to_string().to_pascal_case(),
+                        &name.to_string().to_upper_camel_case(),
                         span = name.span()
                     ),
                     colon_token: Some(syn::token::Colon(name.span())),
@@ -2833,7 +2833,7 @@ impl OpCreateParam {
                     attrs: vec![],
                     ident: format_ident!(
                         "T{}",
-                        &name.to_string().to_pascal_case(),
+                        &name.to_string().to_upper_camel_case(),
                         span = name.span()
                     ),
                     colon_token: Some(syn::token::Colon(name.span())),
@@ -2849,7 +2849,7 @@ impl OpCreateParam {
                     attrs: vec![],
                     ident: format_ident!(
                         "T{}Args",
-                        &name.to_string().to_pascal_case(),
+                        &name.to_string().to_upper_camel_case(),
                         span = name.span()
                     ),
                     colon_token: Some(syn::token::Colon(name.span())),
@@ -2868,7 +2868,7 @@ impl OpCreateParam {
                     attrs: vec![],
                     ident: format_ident!(
                         "T{}",
-                        &name.to_string().to_pascal_case(),
+                        &name.to_string().to_upper_camel_case(),
                         span = name.span()
                     ),
                     colon_token: Some(syn::token::Colon(name.span())),
@@ -2878,7 +2878,7 @@ impl OpCreateParam {
                 })]
             }
             OpCreateParamType::SuccessorGroupKeyed(name, ty) => {
-                let item_name = name.to_string().to_pascal_case();
+                let item_name = name.to_string().to_upper_camel_case();
                 let iterator_ty = format_ident!("T{item_name}", span = name.span());
                 vec![syn::parse_quote! {
                     #iterator_ty: IntoIterator<Item = #ty>
@@ -2890,7 +2890,7 @@ impl OpCreateParam {
                         syn::parse_str::<syn::TypeParamBound>("::midenc_hir::AsSymbolRef").unwrap();
                     vec![syn::GenericParam::Type(syn::TypeParam {
                         attrs: vec![],
-                        ident: format_ident!("T{}", name.to_string().to_pascal_case()),
+                        ident: format_ident!("T{}", name.to_string().to_upper_camel_case()),
                         colon_token: Some(syn::token::Colon(name.span())),
                         bounds: syn::punctuated::Punctuated::from_iter([as_symbol_ref_bound]),
                         eq_token: None,
@@ -2903,7 +2903,7 @@ impl OpCreateParam {
                             .unwrap();
                     vec![syn::GenericParam::Type(syn::TypeParam {
                         attrs: vec![],
-                        ident: format_ident!("T{}", name.to_string().to_pascal_case()),
+                        ident: format_ident!("T{}", name.to_string().to_upper_camel_case()),
                         colon_token: Some(syn::token::Colon(name.span())),
                         bounds: syn::punctuated::Punctuated::from_iter([
                             as_callable_symbol_ref_bound,
@@ -2917,7 +2917,7 @@ impl OpCreateParam {
                     let as_symbol_ref_bound = syn::parse_str("::midenc_hir::AsSymbolRef").unwrap();
                     vec![syn::GenericParam::Type(syn::TypeParam {
                         attrs: vec![],
-                        ident: format_ident!("T{}", name.to_string().to_pascal_case()),
+                        ident: format_ident!("T{}", name.to_string().to_upper_camel_case()),
                         colon_token: Some(syn::token::Colon(name.span())),
                         bounds: syn::punctuated::Punctuated::from_iter(
                             [as_symbol_ref_bound].into_iter().chain(bounds.iter().cloned()),

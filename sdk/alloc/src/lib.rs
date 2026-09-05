@@ -14,13 +14,13 @@ use core::{
 #[cfg(target_family = "wasm")]
 const PAGE_SIZE: usize = 2usize.pow(16);
 
-/// We require all allocations to be minimally word-aligned, i.e. 16 byte alignment
+/// Keep buffers word-aligned (16 bytes) so Rust/Miden FFI can pass them directly without copies.
 const MIN_ALIGN: usize = 16;
 
-/// The linear memory heap must not spill over into the region reserved for procedure locals, which
-/// begins at 2^30 in Miden's address space. In Rust address space it should be 2^30 * 4 but since
-/// it overflows the usize which is 32-bit on wasm32 we use u32::MAX.
-const HEAP_END: *mut u8 = u32::MAX as *mut u8;
+/// Exclusive byte-address limit for allocations. Heap metadata starts at VM element
+/// address 2^30, beyond the 32-bit byte-addressable range. Using u32::MAX avoids
+/// representing the unaddressable 2^32 endpoint on wasm32.
+const HEAP_END: usize = u32::MAX as usize;
 
 /// A very simple allocator for Miden SDK-based programs.
 ///
@@ -55,20 +55,13 @@ impl BumpAlloc {
         if top.is_null() {
             let base = unsafe { heap_base() };
             let size = core::arch::wasm32::memory_size(0);
-            self.top.store(unsafe { base.byte_add(size * PAGE_SIZE) }, Ordering::Relaxed);
+            let top = size
+                .checked_mul(PAGE_SIZE)
+                .and_then(|size| base.addr().checked_add(size))
+                .filter(|top| *top <= HEAP_END)
+                .unwrap_or(HEAP_END);
+            self.top.store(base.with_addr(top), Ordering::Relaxed);
         }
-        // TODO: Once treeify issue is fixed, switch to this implementation
-        /*
-        let _ = self.top.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |top| {
-            if top.is_null() {
-                let base = unsafe { heap_base() };
-                let size = core::arch::wasm32::memory_size(0);
-                Some(unsafe { base.byte_add(size * PAGE_SIZE) })
-            } else {
-                None
-            }
-        });
-        */
     }
 
     #[cfg(not(target_family = "wasm"))]
@@ -77,55 +70,38 @@ impl BumpAlloc {
 
 unsafe impl GlobalAlloc for BumpAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        // Force allocations to be at minimally word-aligned. This is wasteful of memory, but
-        // we don't need to be particularly conservative with memory anyway, as most, if not all,
-        // Miden programs will be relatively short-lived. This makes interop at the Rust/Miden
-        // call boundary less expensive, as we can typically pass pointers directly to Miden,
-        // whereas without this alignment guarantee, we would have to set up temporary buffers for
-        // Miden code to write to, and then copy out of that buffer to whatever Rust type, e.g.
-        // `Vec`, we actually want.
-        //
-        // NOTE: This cannot fail, because we're always meeting minimum alignment requirements
-        let layout = layout
-            .align_to(core::cmp::max(layout.align(), MIN_ALIGN))
-            .unwrap()
-            .pad_to_align();
-        let size = layout.size();
-        let align = layout.align();
-
         self.maybe_init();
 
         let top = self.top.load(Ordering::Relaxed);
-        let available = unsafe { HEAP_END.byte_offset_from(top) as usize };
-        if available >= size {
-            unsafe {
-                self.top.store(top.byte_add(size), Ordering::Relaxed);
-                top.byte_offset(align as isize)
-            }
-        } else {
-            null_mut()
-        }
+        let Some(range) = allocation_range(top.addr(), HEAP_END, layout) else {
+            return null_mut();
+        };
 
-        // TODO: Once treeify issue is fixed, switch to this implementation
-        /*
-        match self.top.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |top| {
-            let available = HEAP_END.byte_offset_from(top) as usize;
-            if available < size {
-                None
-            } else {
-                Some(top.byte_add(size))
-            }
-        }) {
-            Ok(prev_top) => {
-                unsafe { prev_top.byte_offset(align as isize) }
-            }
-            Err(_) => null_mut(),
-        }
-         */
+        // Preserve the heap pointer's provenance without requiring intermediate pointer
+        // arithmetic to stay within an allocation. The checked range covers every returned byte.
+        self.top.store(top.with_addr(range.end), Ordering::Relaxed);
+        top.with_addr(range.start)
     }
 
     unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
 }
+
+/// Reserve an aligned range in the target's byte-addressable heap.
+///
+/// Addresses are integers while checking bounds: the heap limit is not a pointer into the
+/// allocation, so subtracting it from the heap pointer would violate pointer provenance rules.
+fn allocation_range(top: usize, limit: usize, layout: Layout) -> Option<core::ops::Range<usize>> {
+    if top == 0 {
+        return None;
+    }
+    let align = core::cmp::max(layout.align(), MIN_ALIGN);
+    let start = top.checked_add(align - 1)? & !(align - 1);
+    let end = start.checked_add(layout.size())?;
+    (end <= limit).then_some(start..end)
+}
+
+#[cfg(test)]
+mod tests;
 
 #[cfg(target_family = "wasm")]
 unsafe extern "C" {

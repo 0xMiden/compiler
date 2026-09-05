@@ -10,45 +10,28 @@ The compilation artifacts to be examined must have been produced by a `midenup` 
 
 Running `cargo make install-miden-objtool` from the repository root installs the `miden-objtool` binary globally via the cargo bin directory. Alternatively, `cargo make install` installs multiple tools, including `miden-objtool`.
 
-Once installed, `miden-objtool` can be executed with:
+## Dumping debug information
+
+Inspect the debug metadata embedded in a compiled package:
 
 ```sh
-miden-objtool decorators ./mypkg.masp
+miden-objtool dump debug-info ./mypkg.masp
 ```
 
-# Commands
-
-## `decorators`
-
-Note that this computes sizes in memory and does *not* write packages stripped of decorators to disk.
-
-**Example usage**
+The package must contain debug information. Use `--summary` for record counts, or `--section`
+to select one section:
 
 ```sh
-miden-objtool decorators ./mypkg.masp
-
-Package kind: library
-Artifact: library
-
-Metric                 KB   Delta  Delta %
-original masp       36.65       -        -
-original forest     36.13    0.00   +0.00%
-without decorators  17.95  -18.19  -50.33%
-compacted forest    13.10  -23.03  -63.74%
+miden-objtool dump debug-info ./mypkg.masp --summary
+miden-objtool dump debug-info ./mypkg.masp --section functions
+miden-objtool dump debug-info ./mypkg.masp --section locations
 ```
 
-**Help**
+The available sections are `strings`, `types`, `files`, `functions`, `variables`, and `locations`.
+`--raw` prints indices instead of resolved names; `--verbose` includes additional function details.
+
+For the complete CLI options:
 
 ```sh
-miden-objtool decorators --help
-
-Compare serialized MAST forest sizes after stripping decorators
-
-Usage: miden-objtool decorators <PATH>
-
-Arguments:
-  <PATH>  Path to the input .masp file
-
-Options:
-  -h, --help  Print help
+miden-objtool dump debug-info --help
 ```

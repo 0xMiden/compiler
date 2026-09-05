@@ -26,7 +26,6 @@ compact_str.workspace = true
 hashbrown.workspace = true
 intrusive-collections.workspace = true
 inventory.workspace = true
-litcheck-filecheck.workspace = true
 log.workspace = true
 miden-core.workspace = true
 midenc-log = { workspace = true, optional = true }
@@ -42,6 +41,7 @@ smallvec.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+litcheck-filecheck.workspace = true
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
 midenc-expect-test = { path = "../tools/expect-test" }
 midenc-log = { path = "../midenc-log" }

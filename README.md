@@ -17,7 +17,8 @@ This repo is broken into the following high-level components:
   emit Miden Assembly for.
 - The Wasm frontend; a library which can be used to convert a program compiled to `.wasm` to HIR
 - The `midenc` executable, which provides a command-line tool that provides a convenient way
-  to compile Wasm or HIR modules/programs to Miden Assembly and test them.
+  to compile Wasm or HIR modules/programs to Miden Assembly. The separate `miden-debug`
+  tool executes and debugs compiled packages.
 
 > [!TIP]
 > We've published initial [documentation](https://0xMiden.github.io/compiler)
@@ -34,7 +35,7 @@ Additionally, you'll want to have [`cargo-make`](https://github.com/sagiegurari/
 
     $ cargo install cargo-make
 
-From there, you can build all of the tooling used for the compiler, including the compiler itself with:
+From there, build the compiler with:
 
     $ cargo make
 
@@ -48,9 +49,13 @@ To run the compiler test suite:
 
     $ cargo make test
 
-This will run all of the unit tests in the workspace, as well as all of our `lit` tests.
+This runs the Rust tests, including integration and template tests. To include the `lit`/FileCheck
+suite, run `cargo make test-all`.
 
 ## Debugging
+
+Use `miden-debug program.masp` to open a compiled program in the debugger. See the
+[debugger guide](docs/external/src/guides/debugger.md) for installation, inputs, and batch execution.
 
 ### Emitting internal sources/artifacts
 
@@ -68,7 +73,9 @@ This will run all of the unit tests in the workspace, as well as all of our `lit
 
 The documentation in the `docs/external` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://github.com/0xMiden/miden-docs) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
 
-The `docs/internal` folder corresponds to internal docs, which are hosted using mdbook and Github Pages here: [The Miden compiler](https://0xmiden.github.io/compiler/). These md files are not exported to the main docs.
+Run `cargo make docs` to install the public documentation dependencies and start the local Docusaurus server. For the same production build checked by CI, run `npm ci` and `npm run build:dev` from `docs/external`.
+
+Internal compiler notes start at [docs/internal/src/index.md](docs/internal/src/index.md). These Markdown files are maintained separately from the public Docusaurus site; the public documentation build does not publish them.
 
 ## Packaging
 

@@ -5,7 +5,8 @@ sidebar_position: 2
 
 # Getting started with `midenc`
 
-The `midenc` executable is the command-line interface for the compiler driver, as well as other helpful tools, such as the interactive debugger.
+The `midenc` executable is the command-line interface for the compiler driver. Use the separate
+`miden-debug` executable to execute and debug compiled packages.
 
 While it is a lower-level tool compared to `cargo-miden`, just like the difference between `rustc` and `cargo`, it provides a lot of functionality for emitting diagnostic information, controlling the output of the compiler, and configuring the compilation pipeline. Most users will want to use `cargo-miden`, but understanding `midenc` is helpful for those times where you need to get your hands dirty.
 
@@ -105,7 +106,7 @@ See [Debugging Programs](../guides/debugger.md) for details on how to debug Mide
 
 We have put together two useful guides to walk through more detail on compiling Rust to WebAssembly:
 
-1. To learn how to compile Rust to WebAssembly so that you can invoke `midenc compile` on the
+1. To learn how to compile Rust to WebAssembly so that you can invoke `midenc` on the
    resulting Wasm module, see [this guide](../guides/rust_to_wasm.md).
 2. If you already have a WebAssembly module, or know how to produce one, and want to learn how to
    compile it to Miden Assembly, see [this guide](../guides/wasm_to_masm.md).

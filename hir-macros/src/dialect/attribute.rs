@@ -1,5 +1,5 @@
 use darling::FromDeriveInput;
-use inflector::Inflector;
+use heck::ToSnakeCase;
 use quote::{format_ident, quote, quote_spanned};
 use syn::{Ident, parse_quote, parse_quote_spanned, spanned::Spanned};
 
@@ -339,5 +339,73 @@ impl quote::ToTokens for Attribute {
                 impl #attr_impl_generics #derived_trait for #attr_struct_name #attr_ty_generics #attr_where_clause {}
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod naming_tests {
+    use quote::{ToTokens, quote};
+
+    /// Inspect the registration method consumers use, rather than testing the case
+    /// conversion dependency independently of the generated attribute.
+    fn registered_name(type_name: &str) -> String {
+        let input = syn::parse_str(&format!(
+            "#[attribute(dialect = TestDialect)] struct {type_name}(bool);"
+        ))
+        .unwrap();
+        let output = crate::dialect::derive_attribute(&input).unwrap().into_token_stream();
+        let output: syn::File = syn::parse2(output).unwrap();
+        let registration = output
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::Item::Impl(item)
+                    if item.trait_.as_ref().is_some_and(|(_, path, _)| {
+                        path.segments.last().unwrap().ident == "AttributeRegistration"
+                    }) =>
+                {
+                    Some(item)
+                }
+                _ => None,
+            })
+            .unwrap();
+        let name = registration
+            .items
+            .iter()
+            .find_map(|item| match item {
+                syn::ImplItem::Fn(method) if method.sig.ident == "name" => Some(method),
+                _ => None,
+            })
+            .unwrap();
+        let [syn::Stmt::Expr(syn::Expr::Call(call), None)] = name.block.stmts.as_slice() else {
+            panic!("registration name must return the interned literal");
+        };
+        assert_eq!(
+            call.func.to_token_stream().to_string(),
+            quote!(::midenc_hir::interner::Symbol::intern).to_string()
+        );
+        let [
+            syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(name),
+                ..
+            }),
+        ] = call.args.iter().collect::<Vec<_>>().as_slice()
+        else {
+            panic!("registration name must contain exactly one string literal");
+        };
+        name.value()
+    }
+
+    #[test]
+    fn generated_attribute_names_split_acronyms() {
+        assert_eq!(registered_name("HTTPRequest"), "http_request");
+        assert_eq!(registered_name("XMLHttpRequest"), "xml_http_request");
+    }
+
+    #[test]
+    fn generated_attribute_names_lowercase_unicode() {
+        assert_eq!(registered_name("ÉclairValue"), "éclair_value");
+        assert_eq!(registered_name("ΔeltaValue"), "δelta_value");
+        assert_eq!(registered_name("HTTPÉclair"), "http_éclair");
     }
 }

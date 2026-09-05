@@ -257,3 +257,59 @@ impl<T: Effect> Iterator for RecursiveEffectIterator<T> {
         None
     }
 }
+
+#[cfg(test)]
+mod derive_tests {
+    use alloc::{rc::Rc, vec::Vec};
+
+    use super::*;
+    use crate::{Context, Type};
+
+    #[derive(crate::derive::EffectOpInterface)]
+    #[effects(MemoryEffect(MemoryEffect::Read))]
+    #[effects(MemoryEffect(MemoryEffect::Allocate))]
+    struct CombinedEffects {
+        #[effects(MemoryEffect(MemoryEffect::Write))]
+        #[effects(MemoryEffect(MemoryEffect::Free))]
+        value: ValueRef,
+    }
+
+    impl CombinedEffects {
+        fn value(&self) -> ValueRef {
+            self.value
+        }
+    }
+
+    #[derive(crate::derive::EffectOpInterface)]
+    #[effects(MemoryEffect())]
+    struct EmptyEffects {}
+
+    #[test]
+    fn effect_derive_combines_global_field_and_repeated_declarations() {
+        let context = Rc::new(Context::default());
+        let block = context.create_block_with_params([Type::U32]);
+        let value = block.borrow().arguments()[0] as ValueRef;
+        let op = CombinedEffects { value };
+        let effects = op
+            .effects()
+            .map(|instance| (*instance.effect(), instance.value()))
+            .collect::<Vec<_>>();
+        assert!(!op.has_no_effect());
+        assert_eq!(effects.len(), 4);
+        for expected in [
+            (MemoryEffect::Read, None),
+            (MemoryEffect::Allocate, None),
+            (MemoryEffect::Write, Some(value)),
+            (MemoryEffect::Free, Some(value)),
+        ] {
+            assert!(effects.contains(&expected), "missing declared effect {expected:?}");
+        }
+    }
+
+    #[test]
+    fn effect_derive_reports_empty_declarations_as_effect_free() {
+        let op = EmptyEffects {};
+        assert_eq!(op.effects().count(), 0);
+        assert!(op.has_no_effect());
+    }
+}

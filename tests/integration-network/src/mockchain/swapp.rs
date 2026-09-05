@@ -15,7 +15,11 @@ use miden_client::{
     account::component::{BasicWallet, InitStorageData},
     transaction::RawOutputNote,
 };
-use miden_core::{Felt, crypto::hash::Poseidon2};
+use miden_core::{
+    Felt,
+    crypto::hash::Poseidon2,
+    serde::{Deserializable, Serializable},
+};
 use miden_mast_package::Package;
 use miden_protocol::{
     Word,
@@ -39,14 +43,15 @@ use midenc_expect_test::expect;
 use midenc_integration_test_support::testing::stripped_mast_size_str;
 
 use super::support::{
-    assert_account_has_fungible_asset, block_on, compile_rust_package, execute_tx,
-    note_script_root, single_note_cycles, to_core_felts,
+    assert_account_has_fungible_asset, block_on, compile_rust_package, execute_tx, load_or_build,
+    nextest_cache_dir, note_script_root, single_note_cycles, to_core_felts,
 };
 
 /// Tag used for the SWAPP notes themselves.
 const SWAPP_NOTE_TAG: u32 = 0;
 
 /// Compiled packages used by the SWAPP tests.
+#[derive(Clone)]
 struct SwappPackages {
     wallet: Arc<Package>,
     swapp: Arc<Package>,
@@ -58,17 +63,42 @@ struct SwappPackages {
 /// project which depends on it.
 #[track_caller]
 fn compile_swapp_packages() -> SwappPackages {
-    static WALLET: OnceLock<Arc<Package>> = OnceLock::new();
-    static SWAPP: OnceLock<Arc<Package>> = OnceLock::new();
-
-    let wallet = WALLET
-        .get_or_init(|| compile_rust_package("../../examples/basic-wallet", true))
-        .clone();
-    let swapp = SWAPP
-        .get_or_init(|| compile_rust_package("../fixtures/components/swapp-note", true))
-        .clone();
-
-    SwappPackages { wallet, swapp }
+    static PACKAGES: OnceLock<SwappPackages> = OnceLock::new();
+    PACKAGES
+        .get_or_init(|| {
+            let build = || SwappPackages {
+                wallet: compile_rust_package("../../examples/basic-wallet", true),
+                swapp: compile_rust_package("../fixtures/components/swapp-note", true),
+            };
+            let Some(directory) = nextest_cache_dir(
+                &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"),
+            )
+            .expect("could not locate fixture cache") else {
+                return build();
+            };
+            let bytes = load_or_build(&directory, || {
+                // Keep dependency order inside the lock: building the wallet publishes the
+                // artifacts required to compile the note. Cache the complete package pair.
+                let packages = build();
+                vec![packages.wallet.to_bytes(), packages.swapp.to_bytes()].to_bytes()
+            })
+            .expect("could not load or publish SWAPP fixture cache");
+            let bytes =
+                Vec::<Vec<u8>>::read_from_bytes(&bytes).expect("invalid SWAPP cache payload");
+            let [wallet, swapp]: [Vec<u8>; 2] =
+                bytes.try_into().expect("expected wallet and note packages");
+            // These are trusted compiler outputs from this test invocation. Preserve their
+            // debug sections, which normal untrusted package deserialization discards.
+            SwappPackages {
+                wallet: Arc::new(
+                    Package::read_from_bytes_unchecked(&wallet).expect("invalid cached wallet"),
+                ),
+                swapp: Arc::new(
+                    Package::read_from_bytes_unchecked(&swapp).expect("invalid cached note"),
+                ),
+            }
+        })
+        .clone()
 }
 
 /// Terms of a swap offer, encoded into the SWAPP note storage.
@@ -267,7 +297,7 @@ fn assert_no_fungible_asset(account: &Account, faucet_id: AccountId) {
 #[test]
 fn swapp_note_package_size() {
     let packages = compile_swapp_packages();
-    expect!["38844"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
+    expect!["42586"].assert_eq(stripped_mast_size_str(packages.swapp.as_ref()).as_str());
 }
 
 /// Tests a full fill of a SWAPP note.
@@ -323,7 +353,7 @@ fn swapp_note_full_fill_transfers_assets() {
         vec![p2id_note.id()],
         "full fill must create exactly the P2ID routing note"
     );
-    expect!["12575"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["12839"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 50);
@@ -410,7 +440,7 @@ fn swapp_note_partial_fill_creates_remainder_and_chains() {
         vec![first_p2id_note.id(), remainder_note.id()],
         "partial fill must create the P2ID routing note and the remainder note"
     );
-    expect!["17645"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["17931"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let bob_account = chain.committed_account(bob.id()).unwrap();
     assert_account_has_fungible_asset(bob_account, usdc_faucet.id(), 3);
@@ -491,7 +521,7 @@ fn swapp_note_creator_reclaims_offered_asset() {
         output_note_ids(&executed_tx).is_empty(),
         "reclaiming the swap note must not create any output notes"
     );
-    expect!["5336"].assert_eq(single_note_cycles(executed_tx.measurements()));
+    expect!["5573"].assert_eq(single_note_cycles(executed_tx.measurements()));
 
     let alice_account = chain.committed_account(alice.id()).unwrap();
     assert_account_has_fungible_asset(alice_account, usdc_faucet.id(), 50);

@@ -121,9 +121,9 @@ pub trait Rewriter: Builder + RewriterListener {
                 while let Some(entry) = region_entry.take() {
                     erased_blocks.clear();
                     for block in PostOrderBlockIter::new(entry) {
-                        let mut next_op = block.borrow().body().front().as_pointer();
+                        let mut next_op = block.borrow().body().back().as_pointer();
                         while let Some(op) = next_op.take() {
-                            next_op = op.next();
+                            next_op = op.prev();
                             erase_tree(op, rewriter);
                         }
                         erased_blocks.push(block);

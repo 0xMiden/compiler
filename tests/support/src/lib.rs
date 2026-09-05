@@ -8,6 +8,7 @@ pub mod cargo_proj;
 pub mod compiler_test;
 /// VM execution, initialization, and session setup helpers.
 pub mod testing;
+mod timing;
 
 /// Represents an on-disk Cargo project generated for tests.
 pub use self::cargo_proj::Project;

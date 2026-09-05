@@ -698,6 +698,7 @@ impl OpEmitter<'_> {
         assert_eq!(ty, rhs.ty(), "expected wrapping_mod operands to be the same type");
         match &ty {
             Type::I32 => self.wrapping_mod_i32(span),
+            Type::I64 => self.wrapping_mod_i64(span),
             ty if !ty.is_integer() => {
                 panic!("invalid binary operand: wrapping_mod expects integer operands, got {ty}")
             }

@@ -1005,7 +1005,7 @@ impl CompilerTest {
     /// The goal is `hir.initial`, so the run stops as soon as the document exists rather than
     /// assembling a package nothing here looks at.
     pub fn expect_ir_unoptimized(&mut self, expected_hir_file: midenc_expect_test::ExpectFile) {
-        self.compile(Goal::at(CheckpointId::HIR_INITIAL));
+        self.compile(Goal::at(CheckpointId::HIR_INITIAL), Some(CheckpointId::HIR_INITIAL));
         let ir = self
             .hir_initial
             .as_ref()
@@ -1013,9 +1013,12 @@ impl CompilerTest {
         expected_hir_file.assert_eq(&demangle(ir.clone()));
     }
 
-    /// Lazily compiles the [miden_mast_package::Package]
+    /// Lazily compiles the [miden_mast_package::Package].
+    ///
+    /// Package-only tests do not capture intermediate HIR or MASM. To inspect one of those
+    /// artifacts, call its accessor first, then retrieve the package from the same compilation.
     pub fn compile_package(&mut self) -> Arc<miden_mast_package::Package> {
-        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), None);
         match self.package.as_ref().expect("a full run must produce a package").as_ref() {
             Ok(prog) => prog.clone(),
             Err(msg) => panic!("{msg}"),
@@ -1030,6 +1033,9 @@ impl CompilerTest {
     /// pointer — so the returned handle is valid for exactly as long as this value is. Dropping
     /// the test and keeping the component is a use-after-free.
     ///
+    /// Call this before the first compilation to request capture of live HIR. A subsequent
+    /// [`Self::compile_package`] call reuses the package from that same run.
+    ///
     /// # Why this asks for a full build
     ///
     /// The harness compiles **once**, and this artifact's callers want the package too. Capping
@@ -1037,7 +1043,10 @@ impl CompilerTest {
     /// which [`CompilerTest::compile`] refuses. Compare [`CompilerTest::expect_ir_unoptimized`],
     /// which does cap, because the HIR document is the whole of what its callers want.
     pub fn hir(&mut self) -> midenc_hir::dialects::builtin::ComponentRef {
-        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.compile(
+            Goal::at(CheckpointId::PACKAGE_ASSEMBLED),
+            Some(CheckpointId::HIR_TRANSFORMED),
+        );
         self.hir_transformed
             .as_ref()
             .expect(
@@ -1053,35 +1062,21 @@ impl CompilerTest {
     /// package is assembled *from*. Its caller compares it across repeated builds to localize a
     /// digest divergence — identical text means the divergence was introduced at assembly — so
     /// it is only meaningful beside the package from the same run, and asks for a full build for
-    /// the same reason [`CompilerTest::hir`] does.
+    /// the same reason [`CompilerTest::hir`] does. Call this before the first compilation to
+    /// request capture of the assembly source, then use [`Self::compile_package`] to obtain the
+    /// package from the same run.
     pub fn masm_src(&mut self) -> String {
-        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED));
+        self.compile(Goal::at(CheckpointId::PACKAGE_ASSEMBLED), Some(CheckpointId::MASM_LOWERED));
         self.masm_lowered
             .clone()
             .expect("the run must have published `masm.lowered`; this route does not reach it")
     }
 
-    /// Compile this test's input **once**, to `goal`, capturing every artifact on the way.
+    /// Compile once to `goal`, optionally capturing one intermediate checkpoint.
     ///
-    /// # One invocation, several artifacts
-    ///
-    /// This harness used to compile in two halves — `cargo` to WebAssembly, then a second
-    /// compilation of that WebAssembly under a project synthesized from the session — because it
-    /// once fed the intermediate outputs to expect-tests. Those became lit tests, and the
-    /// plumbing outlived them. The second compilation is what made the synthesized project
-    /// disagree with the crate's own manifest about namespace, target kind and dependencies,
-    /// which the assembler's root-module check turns into a hard error.
-    ///
-    /// So there is one invocation. Artifacts short of the goal are collected by an observer as
-    /// the run publishes them, which is also the only way to keep HIR at all: it is *rendered*
-    /// inside the callback, while the `Context` it points into is still alive.
-    ///
-    /// # Re-entry is refused rather than silently performed
-    ///
-    /// A second call with a goal the first run did not reach would need a second compilation,
-    /// which is the arrangement being removed. No test does it; if one starts to, it should say
-    /// so loudly rather than quietly paying for another build.
-    fn compile(&mut self, goal: Goal) {
+    /// Subsequent calls reuse the package and the requested intermediate artifact. They never
+    /// recompile to satisfy an artifact request made after the first run.
+    fn compile(&mut self, goal: Goal, capture: Option<CheckpointId>) {
         if let Some(reached) = self.compiled_to {
             assert!(
                 goal_is_reached_by(goal, reached),
@@ -1089,6 +1084,19 @@ impl CompilerTest {
                 reached.checkpoint(),
                 goal.checkpoint(),
             );
+            if let Some(checkpoint) = capture {
+                let available = match checkpoint {
+                    CheckpointId::HIR_INITIAL => self.hir_initial.is_some(),
+                    CheckpointId::HIR_TRANSFORMED => self.hir_transformed.is_some(),
+                    CheckpointId::MASM_LOWERED => self.masm_lowered.is_some(),
+                    _ => unreachable!("unsupported intermediate artifact: {checkpoint}"),
+                };
+                assert!(
+                    available,
+                    "'{checkpoint}' was not captured; request this artifact before the first \
+                     compilation"
+                );
+            }
             return;
         }
         self.compiled_to = Some(goal);
@@ -1098,13 +1106,21 @@ impl CompilerTest {
             .input
             .clone()
             .expect("a compiler test must have an input to compile");
-        let observer = Rc::new(RefCell::new(ArtifactCollector::default()));
-        let request = CompilationRequest::new(self.session.clone(), input)
-            .with_observers(vec![observer.clone() as Rc<RefCell<dyn Observer>>])
-            .with_outputs(
-                OutputRequest::default()
-                    .with_stop_after(Some(goal.checkpoint().as_str().to_string())),
-            );
+        let observer =
+            capture.map(|checkpoint| Rc::new(RefCell::new(ArtifactCollector::new(checkpoint))));
+        let mut request = CompilationRequest::new(self.session.clone(), input).with_outputs(
+            OutputRequest::default().with_stop_after(Some(goal.checkpoint().as_str().to_string())),
+        );
+        let timing = crate::timing::PipelineTiming::enabled()
+            .then(|| Rc::new(RefCell::new(crate::timing::PipelineTiming::new())));
+        let mut observers: Vec<Rc<RefCell<dyn Observer>>> = Vec::new();
+        if let Some(observer) = &observer {
+            observers.push(observer.clone());
+        }
+        if let Some(timing) = &timing {
+            observers.push(timing.clone());
+        }
+        request = request.with_observers(observers);
 
         let mut registry = match self.session.package_registry() {
             Ok(registry) => registry,
@@ -1113,8 +1129,11 @@ impl CompilerTest {
         let outcome = Pipeline::with_default_frontends()
             .unwrap_or_else(|err| panic!("{}", format_report(err)))
             .compile(request, registry.as_mut());
+        if let Some(timing) = timing {
+            timing.borrow().report(self.artifact_name());
+        }
 
-        {
+        if let Some(observer) = observer {
             let mut collected = observer.borrow_mut();
             self.hir_initial = collected.hir_initial.take();
             self.hir_transformed = collected.hir_transformed.take();
@@ -1147,29 +1166,18 @@ impl CompilerTest {
 
 /// Whether a run that stopped at `reached` also satisfies a request for `wanted`.
 ///
-/// Only the trivial case: the same checkpoint, or a full run, which passes every earlier
-/// checkpoint and therefore has had the chance to collect its artifact. Anything else needs a
-/// second compilation, which [`CompilerTest::compile`] refuses.
+/// The same checkpoint or a full run reaches the requested goal. Whether an intermediate was
+/// captured is checked separately; reaching its checkpoint alone does not retain the artifact.
 fn goal_is_reached_by(wanted: Goal, reached: Goal) -> bool {
     wanted == reached || reached.checkpoint() == CheckpointId::PACKAGE_ASSEMBLED
 }
 
-/// Collects the intermediate artifacts a test may ask for, as the run publishes them.
+/// Captures only the intermediate checkpoint explicitly requested by the test.
 ///
-/// # Two ways to survive the run, and the raw-pointer constraint decides which
-///
-/// HIR operations hold only a raw pointer to the `Context` they were allocated in, and a pipeline
-/// run builds each target's HIR in a `Context` created per assembler callback. So a document is
-/// either **rendered here**, inside the callback, or the `Context` itself is **retained** —
-/// `Operation::context_rc` hands back an owning `Rc`, so a handle taken while the callback is
-/// running keeps the arena alive for as long as this collector lives. There is no third option: a
-/// component cloned out of an observer without its context would dangle.
-///
-/// Rendering is the cheaper of the two and is what the text accessors use. Retention is what
-/// `hir.transformed` needs, because [`CompilerTest::hir`]'s caller evaluates the component
-/// *after* the run returns, and that capability is the compiler's, not a test workaround.
-#[derive(Default)]
+/// HIR handles contain raw pointers to their owning Context. Text is rendered during the
+/// checkpoint callback; a live HIR capture instead retains its Context until CompilerTest drops.
 struct ArtifactCollector {
+    checkpoint: CheckpointId,
     /// The pre-rewrite HIR document, if the run reached `hir.initial`.
     hir_initial: Option<String>,
     /// The post-rewrite HIR component, and the `Context` that keeps it alive.
@@ -1180,11 +1188,22 @@ struct ArtifactCollector {
     masm_lowered: Option<String>,
 }
 
+impl ArtifactCollector {
+    fn new(checkpoint: CheckpointId) -> Self {
+        Self {
+            checkpoint,
+            hir_initial: None,
+            hir_transformed: None,
+            masm_lowered: None,
+        }
+    }
+}
+
 impl Observer for ArtifactCollector {
     fn on_checkpoint(&mut self, checkpoint: CheckpointId, role: TargetRole, artifact: &Artifact) {
         // Only the root target's artifacts: a dependency's HIR is not what the test asked about,
         // and on a route where both are published the last one to arrive would win.
-        if !role.is_root() {
+        if !role.is_root() || checkpoint != self.checkpoint {
             return;
         }
         if checkpoint == CheckpointId::HIR_INITIAL {

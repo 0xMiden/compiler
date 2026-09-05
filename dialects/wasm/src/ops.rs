@@ -172,6 +172,7 @@ impl Foldable for SignExtend {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i32_load_8s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -196,6 +197,7 @@ impl InferTypeOpInterface for I32Load8S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i32_load_16s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -220,6 +222,7 @@ impl InferTypeOpInterface for I32Load16S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i64_load_8s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -244,6 +247,7 @@ impl InferTypeOpInterface for I64Load8S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i64_load_16s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -268,6 +272,7 @@ impl InferTypeOpInterface for I64Load16S {
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = WasmDialect,
+    name = "i64_load_32s",
     traits(UnaryOp),
     implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
 )]
@@ -308,6 +313,32 @@ pub struct I32RemS {
 impl InferTypeOpInterface for I32RemS {
     fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
         self.result_mut().set_type(Type::I32);
+        Ok(())
+    }
+}
+
+/// Signed integer remainder, trapping only on division by zero.
+///
+/// Corresponds to Wasm's `i64.rem_s`: the result has the dividend's sign, and
+/// `i64::MIN % -1` produces zero instead of overflowing.
+#[derive(EffectOpInterface, OpPrinter, OpParser)]
+#[operation(
+    dialect = WasmDialect,
+    traits(BinaryOp, SameTypeOperands, SameOperandsAndResultType),
+    implements(InferTypeOpInterface, MemoryEffectOpInterface, OpPrinter)
+)]
+pub struct I64RemS {
+    #[operand]
+    lhs: Int64,
+    #[operand]
+    rhs: Int64,
+    #[result]
+    result: Int64,
+}
+
+impl InferTypeOpInterface for I64RemS {
+    fn infer_return_types(&mut self, _context: &Context) -> Result<(), Report> {
+        self.result_mut().set_type(Type::I64);
         Ok(())
     }
 }

@@ -613,8 +613,11 @@ impl Eval for hir::MemGrow {
         let current_size = {
             let current_context = evaluator.current_context_mut();
             let current_size = current_context.memory_size();
-            current_context.memory_grow(pages as usize);
-            current_size as u32
+            if current_context.memory_grow(pages as usize) {
+                current_size as u32
+            } else {
+                u32::MAX
+            }
         };
         evaluator.set_value(self.result().as_value_ref(), Immediate::U32(current_size));
         Ok(ControlFlowEffect::None)
@@ -2215,6 +2218,14 @@ impl_eval_load_sext!(wasm::I64Load16S, I16, I64, i64);
 impl_eval_load_sext!(wasm::I64Load32S, I32, I64, i64);
 
 impl Eval for wasm::I32RemS {
+    fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
+        let result = binop_wrapping_nonzero_rhs!(self, evaluator, wrapping_rem);
+        evaluator.set_value(self.result().as_value_ref(), result);
+        Ok(ControlFlowEffect::None)
+    }
+}
+
+impl Eval for wasm::I64RemS {
     fn eval(&self, evaluator: &mut HirEvaluator) -> Result<ControlFlowEffect, Report> {
         let result = binop_wrapping_nonzero_rhs!(self, evaluator, wrapping_rem);
         evaluator.set_value(self.result().as_value_ref(), result);

@@ -2032,3 +2032,10 @@ impl HirLowering for wasm::I32RemS {
         Ok(())
     }
 }
+
+impl HirLowering for wasm::I64RemS {
+    fn emit(&self, emitter: &mut BlockEmitter<'_>) -> Result<(), Report> {
+        emitter.inst_emitter(self.as_operation()).wrapping_mod(self.span());
+        Ok(())
+    }
+}

@@ -5,13 +5,24 @@ sidebar_position: 5
 
 # Debugging programs
 
-A very useful tool in the Miden compiler suite, is its TUI-based interactive debugger, accessible via the `miden-debug` crate, which is available as the `miden debug` command in the `miden` CLI.
+The separate `miden-debug` executable loads compiled `.masp` packages and provides an interactive
+terminal UI, a command-line REPL, and non-interactive command scripts.
 
 ## Getting started
 
-The debugger is launched by executing `miden debug`, and giving it a path to a program compiled by `midenc`. See [Program Inputs](#program-inputs) for information on how to provide inputs to the program you wish to debug. Run `miden debug --help` for more detailed usage documentation.
+Install a debugger version compatible with the compiler's package and VM dependencies. This
+checkout pins `miden-debug` 0.10.3 in `Cargo.lock`:
 
-The debugger may also be used as a library, but that is left as an exercise for the reader for now.
+```shell
+cargo install miden-debug --version 0.10.3 --locked
+```
+
+The default features include the TUI and REPL. When using another compiler release, use its
+matching toolchain/debugger version.
+
+The debugger is launched by executing `miden-debug`, and giving it a path to a program compiled by `midenc`. See [Program Inputs](#program-inputs) for information on how to provide inputs to the program you wish to debug. Run `miden-debug --help` for more detailed usage documentation.
+
+Add `--repl` to use debugger commands in a terminal instead of the TUI.
 
 ## Example
 
@@ -20,15 +31,34 @@ The debugger may also be used as a library, but that is left as an exercise for 
 midenc foo.wasm -o foo.masp
 
 # Load that program into the debugger and start executing it
-miden debug foo.masp
+miden-debug foo.masp
 ```
+
+## Non-interactive execution
+
+Create a command file, for example `run.commands`:
+
+```text
+continue
+stack
+quit
+```
+
+Run the program to completion and print its operand stack:
+
+```shell
+miden-debug foo.masp --commands run.commands -- 10
+```
+
+Command scripts use the REPL command syntax. Use `miden-debug --repl foo.masp` and enter `help`
+to explore the commands interactively.
 
 ## Program inputs
 
 To pass arguments to the program on the operand stack, or via the advice provider, you have two
 options, depending on the needs of the program:
 
-1. Pass arguments to `miden debug` in the same order you wish them to appear on the stack. That
+1. Pass arguments to `miden-debug` in the same order you wish them to appear on the stack. That
    is, the first argument you specify will be on top of the stack, and so on.
 2. Specify a configuration file from which to load inputs for the program, via the `--inputs` option.
 
@@ -38,7 +68,7 @@ To specify the contents of the operand stack, you can do so by following the raw
 Each operand must be a valid field element value, in either decimal or hexadecimal format. For example:
 
 ```shell
-miden debug foo.masp -- 1 2 0xdeadbeef
+miden-debug foo.masp -- 1 2 0xdeadbeef
 ```
 
 If you pass arguments via the command line in conjunction with `--inputs`, then the command line arguments
@@ -47,7 +77,7 @@ set of inputs, and then try out different arguments using the command line.
 
 ### Via inputs config
 
-While simply passing operands to the `miden debug` command is useful, it only allows you to specify
+While simply passing operands to the `miden-debug` command is useful, it only allows you to specify
 inputs to be passed via operand stack. To provide inputs via the advice provider, you will need to use
 the `--inputs` option. The configuration file expected by `--inputs` also lets you tweak the execution
 options for the VM, such as the maximum and expected cycle counts.

@@ -277,3 +277,33 @@ fn println_reports_invalid_utf8() -> Result<(), Report> {
 
     Ok(())
 }
+
+#[test]
+fn wasm_i64_remainder() -> Result<(), Report> {
+    use midenc_dialect_wasm::WasmOpBuilder;
+
+    let mut test = EvalTest::named("wasm_i64_remainder");
+    test.with_function(&[Type::I64, Type::I64], &[Type::I64]);
+    {
+        let mut builder = test.function_builder();
+        let block = builder.current_block();
+        let lhs = block.borrow().arguments()[0] as ValueRef;
+        let rhs = block.borrow().arguments()[1] as ValueRef;
+        let result = builder.i64_rem_s(lhs, rhs, SourceSpan::default())?;
+        builder.ret(Some(result), SourceSpan::default())?;
+    }
+    let function = test.function();
+    let callable = function.borrow();
+    for (lhs, rhs, expected) in [
+        (-7i64, 3i64, -1i64),
+        (7, -3, 1),
+        (-7, -3, -1),
+        (i64::MIN, -1, 0),
+        (i64::MAX, i64::MIN, i64::MAX),
+    ] {
+        let results = test.evaluator.eval_callable(&*callable, [lhs.into(), rhs.into()])?;
+        assert_eq!(results.as_slice(), &[Value::Immediate(expected.into())]);
+    }
+    assert!(test.evaluator.eval_callable(&*callable, [1i64.into(), 0i64.into()]).is_err());
+    Ok(())
+}

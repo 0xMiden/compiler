@@ -13,4 +13,6 @@ mod codegen;
 #[cfg(test)]
 mod end_to_end;
 #[cfg(test)]
+mod harness;
+#[cfg(test)]
 mod sdk;

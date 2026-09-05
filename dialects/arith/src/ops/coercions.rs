@@ -11,6 +11,30 @@ use midenc_hir::{
 
 use crate::*;
 
+/// Coercions produce a new attribute: operand attributes may be shared by other uses, and the
+/// result's inferred attribute type must reflect the coerced value.
+fn fold_integer_coercion(
+    op: &Operation,
+    operand: &Option<AttributeRef>,
+    results: &mut SmallVec<[OpFoldResult; 1]>,
+    coerce: impl FnOnce(Immediate) -> Option<Immediate>,
+) -> FoldResult {
+    let Some(operand) = operand else {
+        return FoldResult::Failed;
+    };
+    let operand = operand.borrow();
+    let Some(value) = operand
+        .as_attr()
+        .as_trait::<dyn IntegerLikeAttr>()
+        .and_then(|attr| coerce(attr.as_immediate()))
+    else {
+        return FoldResult::Failed;
+    };
+    let result = op.context_rc().create_attribute::<ImmediateAttr, _>(value);
+    results.push(OpFoldResult::Attribute(result));
+    FoldResult::Ok(())
+}
+
 #[derive(EffectOpInterface, OpPrinter, OpParser)]
 #[operation(
     dialect = ArithDialect,
@@ -36,32 +60,8 @@ impl InferTypeOpInterface for Trunc {
 
 impl Foldable for Trunc {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut attr_value) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
-            .matches(&self.operand().as_operand_ref())
-        {
-            let mut attr_value_mut = attr_value.borrow_mut();
-            let value = attr_value_mut.as_immediate();
-            let truncated = match &*self.get_ty() {
-                Type::I1 => value.as_u64().map(|v| Immediate::I1((v & 0x01u64) == 1)),
-                Type::I8 => value.as_i64().map(|v| Immediate::I8(v as i8)),
-                Type::U8 => value.as_u64().map(|v| Immediate::U8(v as u8)),
-                Type::I16 => value.as_i64().map(|v| Immediate::I16(v as i16)),
-                Type::U16 => value.as_u64().map(|v| Immediate::U16(v as u16)),
-                Type::I32 => value.as_i64().map(|v| Immediate::I32(v as i32)),
-                Type::U32 => value.as_u64().map(|v| Immediate::U32(v as u32)),
-                Type::I64 => value.as_i128().map(|v| Immediate::I64(v as i64)),
-                Type::U64 => value.as_u128().map(|v| Immediate::U64(v as u64)),
-                _ => return FoldResult::Failed,
-            };
-
-            if let Some(truncated) = truncated {
-                attr_value_mut.set_from_immediate_lossy(truncated);
-                results.push(OpFoldResult::Attribute(attr_value as AttributeRef));
-                return FoldResult::Ok(());
-            }
-        }
-
-        FoldResult::Failed
+        let operand = matchers::foldable_operand().matches(&self.operand().as_operand_ref());
+        self.fold_with(&[operand], results)
     }
 
     fn fold_with(
@@ -69,16 +69,8 @@ impl Foldable for Trunc {
         operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(attr) = operands[0].as_ref().and_then(|o| {
-            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
-            if attr.implements::<dyn IntegerLikeAttr>() {
-                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
-            } else {
-                None
-            }
-        }) {
-            let value = attr.as_immediate();
-            let truncated = match &*self.get_ty() {
+        fold_integer_coercion(self.as_operation(), &operands[0], results, |value| {
+            match &*self.get_ty() {
                 Type::I1 => value.as_u64().map(|v| Immediate::I1((v & 0x01u64) == 1)),
                 Type::I8 => value.as_i64().map(|v| Immediate::I8(v as i8)),
                 Type::U8 => value.as_u64().map(|v| Immediate::U8(v as u8)),
@@ -88,22 +80,9 @@ impl Foldable for Trunc {
                 Type::U32 => value.as_u64().map(|v| Immediate::U32(v as u32)),
                 Type::I64 => value.as_i128().map(|v| Immediate::I64(v as i64)),
                 Type::U64 => value.as_u128().map(|v| Immediate::U64(v as u64)),
-                _ => return FoldResult::Failed,
-            };
-            if let Some(truncated) = truncated {
-                let mut new_attr = attr.name().dyn_clone(&*attr);
-                let mut new_attr_mut = new_attr.borrow_mut();
-                new_attr_mut
-                    .as_attr_mut()
-                    .as_trait_mut::<dyn IntegerLikeAttr>()
-                    .unwrap()
-                    .set_from_immediate_lossy(truncated);
-                results.push(OpFoldResult::Attribute(new_attr));
-                return FoldResult::Ok(());
+                _ => None,
             }
-        }
-
-        FoldResult::Failed
+        })
     }
 }
 
@@ -132,28 +111,8 @@ impl InferTypeOpInterface for Zext {
 
 impl Foldable for Zext {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut attr) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
-            .matches(&self.operand().as_operand_ref())
-        {
-            let mut attr_mut = attr.borrow_mut();
-            let value = attr_mut.as_immediate();
-            let extended = match &*self.get_ty() {
-                Type::U8 => value.as_u32().and_then(|v| u8::try_from(v).ok()).map(Immediate::U8),
-                Type::U16 => value.as_u32().and_then(|v| u16::try_from(v).ok()).map(Immediate::U16),
-                Type::U32 => value.as_u32().map(Immediate::U32),
-                Type::U64 => value.as_u64().map(Immediate::U64),
-                Type::U128 => value.as_u128().map(Immediate::U128),
-                _ => return FoldResult::Failed,
-            };
-
-            if let Some(extended) = extended {
-                attr_mut.set_from_immediate_lossy(extended);
-                results.push(OpFoldResult::Attribute(attr));
-                return FoldResult::Ok(());
-            }
-        }
-
-        FoldResult::Failed
+        let operand = matchers::foldable_operand().matches(&self.operand().as_operand_ref());
+        self.fold_with(&[operand], results)
     }
 
     fn fold_with(
@@ -161,37 +120,16 @@ impl Foldable for Zext {
         operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(attr) = operands[0].as_ref().and_then(|o| {
-            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
-            if attr.implements::<dyn IntegerLikeAttr>() {
-                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
-            } else {
-                None
-            }
-        }) {
-            let value = attr.as_immediate();
-            let extended = match &*self.get_ty() {
+        fold_integer_coercion(self.as_operation(), &operands[0], results, |value| {
+            match &*self.get_ty() {
                 Type::U8 => value.as_u32().and_then(|v| u8::try_from(v).ok()).map(Immediate::U8),
                 Type::U16 => value.as_u32().and_then(|v| u16::try_from(v).ok()).map(Immediate::U16),
                 Type::U32 => value.as_u32().map(Immediate::U32),
                 Type::U64 => value.as_u64().map(Immediate::U64),
                 Type::U128 => value.as_u128().map(Immediate::U128),
-                _ => return FoldResult::Failed,
-            };
-            if let Some(extended) = extended {
-                let mut new_attr = attr.name().dyn_clone(&*attr);
-                let mut new_attr_mut = new_attr.borrow_mut();
-                new_attr_mut
-                    .as_attr_mut()
-                    .as_trait_mut::<dyn IntegerLikeAttr>()
-                    .unwrap()
-                    .set_from_immediate_lossy(extended);
-                results.push(OpFoldResult::Attribute(new_attr));
-                return FoldResult::Ok(());
+                _ => None,
             }
-        }
-
-        FoldResult::Failed
+        })
     }
 }
 
@@ -220,28 +158,8 @@ impl InferTypeOpInterface for Sext {
 
 impl Foldable for Sext {
     fn fold(&self, results: &mut SmallVec<[OpFoldResult; 1]>) -> FoldResult {
-        if let Some(mut attr) = matchers::foldable_operand_of_trait::<dyn IntegerLikeAttr>()
-            .matches(&self.operand().as_operand_ref())
-        {
-            let mut attr_mut = attr.borrow_mut();
-            let value = attr_mut.as_immediate();
-            let extended = match &*self.get_ty() {
-                Type::I8 => value.as_i32().and_then(|v| i8::try_from(v).ok()).map(Immediate::I8),
-                Type::I16 => value.as_i32().and_then(|v| i16::try_from(v).ok()).map(Immediate::I16),
-                Type::I32 => value.as_i32().map(Immediate::I32),
-                Type::I64 => value.as_i64().map(Immediate::I64),
-                Type::I128 => value.as_i128().map(Immediate::I128),
-                _ => return FoldResult::Failed,
-            };
-
-            if let Some(extended) = extended {
-                attr_mut.set_from_immediate_lossy(extended);
-                results.push(OpFoldResult::Attribute(attr));
-                return FoldResult::Ok(());
-            }
-        }
-
-        FoldResult::Failed
+        let operand = matchers::foldable_operand().matches(&self.operand().as_operand_ref());
+        self.fold_with(&[operand], results)
     }
 
     fn fold_with(
@@ -249,37 +167,16 @@ impl Foldable for Sext {
         operands: &[Option<AttributeRef>],
         results: &mut SmallVec<[OpFoldResult; 1]>,
     ) -> FoldResult {
-        if let Some(attr) = operands[0].as_ref().and_then(|o| {
-            let attr = EntityRef::map(o.borrow(), |o| o.as_attr());
-            if attr.implements::<dyn IntegerLikeAttr>() {
-                Some(EntityRef::map(attr, |attr| attr.as_trait::<dyn IntegerLikeAttr>().unwrap()))
-            } else {
-                None
-            }
-        }) {
-            let value = attr.as_immediate();
-            let extended = match &*self.get_ty() {
+        fold_integer_coercion(self.as_operation(), &operands[0], results, |value| {
+            match &*self.get_ty() {
                 Type::I8 => value.as_i32().and_then(|v| i8::try_from(v).ok()).map(Immediate::I8),
                 Type::I16 => value.as_i32().and_then(|v| i16::try_from(v).ok()).map(Immediate::I16),
                 Type::I32 => value.as_i32().map(Immediate::I32),
                 Type::I64 => value.as_i64().map(Immediate::I64),
                 Type::I128 => value.as_i128().map(Immediate::I128),
-                _ => return FoldResult::Failed,
-            };
-            if let Some(extended) = extended {
-                let mut new_attr = attr.name().dyn_clone(&*attr);
-                let mut new_attr_mut = new_attr.borrow_mut();
-                new_attr_mut
-                    .as_attr_mut()
-                    .as_trait_mut::<dyn IntegerLikeAttr>()
-                    .unwrap()
-                    .set_from_immediate_lossy(extended);
-                results.push(OpFoldResult::Attribute(new_attr));
-                return FoldResult::Ok(());
+                _ => None,
             }
-        }
-
-        FoldResult::Failed
+        })
     }
 }
 
@@ -499,5 +396,73 @@ impl InferTypeOpInterface for Split {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::rc::Rc;
+
+    use super::*;
+
+    #[test]
+    fn coercion_folds_preserve_shared_constants() {
+        for (input, expected) in [
+            (Immediate::U32(257), Immediate::U8(1)),
+            (Immediate::U8(255), Immediate::U32(255)),
+            (Immediate::I8(-1), Immediate::I32(-1)),
+        ] {
+            for explicit_operands in [false, true] {
+                let context = Rc::new(Context::default());
+                let mut builder = OpBuilder::new(context);
+                let source = builder.imm(input, SourceSpan::UNKNOWN);
+                let independent_use = builder.add(source, source, SourceSpan::UNKNOWN).unwrap();
+                let result = match input {
+                    Immediate::U32(_) => builder.trunc(source, expected.ty(), SourceSpan::UNKNOWN),
+                    Immediate::U8(_) => builder.zext(source, expected.ty(), SourceSpan::UNKNOWN),
+                    Immediate::I8(_) => builder.sext(source, expected.ty(), SourceSpan::UNKNOWN),
+                    _ => unreachable!(),
+                }
+                .unwrap();
+                let constant = source.borrow().get_defining_op().unwrap();
+                let attribute = constant
+                    .borrow()
+                    .downcast_ref::<Constant>()
+                    .unwrap()
+                    .value()
+                    .as_attribute_ref();
+                let coercion = result.borrow().get_defining_op().unwrap();
+                let coercion = coercion.borrow();
+                let foldable = coercion.as_trait::<dyn Foldable>().unwrap();
+                let mut results = SmallVec::default();
+                let outcome = if explicit_operands {
+                    foldable.fold_with(&[Some(attribute)], &mut results)
+                } else {
+                    foldable.fold(&mut results)
+                };
+                assert!(outcome.is_ok());
+                assert_eq!(
+                    attribute
+                        .borrow()
+                        .as_attr()
+                        .as_trait::<dyn IntegerLikeAttr>()
+                        .unwrap()
+                        .as_immediate(),
+                    input,
+                    "source constant changed"
+                );
+                assert_eq!(source.borrow().ty(), &input.ty());
+                assert_eq!(independent_use.borrow().ty(), &input.ty());
+                let [OpFoldResult::Attribute(folded)] = results.as_slice() else {
+                    panic!("expected a single folded attribute");
+                };
+                let folded = folded.borrow();
+                assert_eq!(
+                    folded.as_attr().as_trait::<dyn IntegerLikeAttr>().unwrap().as_immediate(),
+                    expected
+                );
+                assert_eq!(folded.ty(), &expected.ty());
+            }
+        }
     }
 }

@@ -357,6 +357,23 @@ fn i64_checked_div() {
 }
 
 #[test]
+fn i64_wrapping_mod() {
+    test_i64_intrinsic(
+        "exec.::intrinsics::i64::wrapping_mod",
+        NumericStrategy::<i64>::rem_signed_checked(),
+        binary_i64op_inputs_to_stack,
+        |(a, b): &(i64, i64)| {
+            if *b == 0 {
+                Err(TrapExpectation::DivideByZero)
+            } else {
+                Ok(vec![a.wrapping_rem(*b)])
+            }
+        },
+        |stack: &[Felt]| decode_outputs_i64_only(stack, 1),
+    );
+}
+
+#[test]
 fn i64_checked_shr() {
     let proc_body = r#"
     # Stack: [b, a_lo, a_hi]

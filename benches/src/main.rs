@@ -23,9 +23,8 @@ struct Args {
     commit: Option<String>,
     /// Skip examples whose build fails instead of failing the whole run.
     ///
-    /// For the baseline side of a comparison, whose (older) compiler may not build every
-    /// example of the candidate workspace. Skipped cases appear in the report without a
-    /// baseline value.
+    /// Allows partial reports when testing a compiler against incompatible example sources.
+    /// CI leaves this disabled for both revisions.
     #[arg(long)]
     skip_failed_builds: bool,
 }

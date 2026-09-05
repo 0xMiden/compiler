@@ -29,7 +29,7 @@ miden-project.workspace = true
 miden-debug-types.workspace = true
 semver.workspace = true
 toml.workspace = true
-syn.workspace = true
+syn = { workspace = true, features = ["full"] }
 heck.workspace = true
 miden-formatting.workspace = true
 midenc-frontend-wasm-metadata.workspace = true

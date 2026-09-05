@@ -1,7 +1,5 @@
 use midenc_frontend_wasm::WasmTranslationConfig;
 use midenc_hir::Felt;
-use prop::test_runner::TestRunner;
-use proptest::prelude::*;
 
 use crate::{CompilerTest, testing::executor_with_std};
 
@@ -22,16 +20,11 @@ fn fibonacci() {
     let mut test = CompilerTest::rust_source_cargo_miden("../../examples/fibonacci", config, []);
     let package = test.compile_package();
 
-    // Run the Rust and compiled MASM code against a bunch of random inputs and compare the results
-    TestRunner::default()
-        .run(&(1u32..30), move |a| {
-            let rust_out = expected_fib(a);
-            let exec = executor_with_std(vec![Felt::new_unchecked(a as u64)]);
-            let output: u32 =
-                exec.execute_into(package.clone(), test.session.source_manager.clone());
-            dbg!(output);
-            prop_assert_eq!(rust_out, output);
-            Ok(())
-        })
-        .unwrap_or_else(|err| panic!("{err}"));
+    // Exhaust the small domain once, including the zero boundary.
+    for a in 0u32..30 {
+        let rust_out = expected_fib(a);
+        let exec = executor_with_std(vec![Felt::new_unchecked(a as u64)]);
+        let output: u32 = exec.execute_into(package.clone(), test.session.source_manager.clone());
+        assert_eq!(rust_out, output, "fibonacci({a})");
+    }
 }
