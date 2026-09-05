@@ -16,10 +16,11 @@
 
 ;; CHECK: Types:
 
+;; Function totals include the compiler's intrinsic library.
 ;; CHECK: Functions:
-;; CHECK-NEXT: records:          72
+;; CHECK-NEXT: records:          71
 ;; CHECK-NEXT: with source info: 2
-;; CHECK-NEXT: w/o source info:  70
+;; CHECK-NEXT: w/o source info:  69
 
 ;; CHECK: Source Files:
 ;; CHECK-NEXT: records: 4
