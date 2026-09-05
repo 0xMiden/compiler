@@ -28,9 +28,10 @@ miden-mast-package.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-standards = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
-miden-debug = { workspace = true, features = ["proptest", "tui"] }
+miden-debug = { workspace = true, features = ["proptest", "std"] }
 midenc-expect-test.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-hir = { workspace = true, features = ["logging"] }
 midenc-session.workspace = true
 midenc-compile.workspace = true

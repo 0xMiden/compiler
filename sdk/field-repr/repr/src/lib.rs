@@ -257,13 +257,75 @@ impl<'a> FeltWriter<'a> {
     }
 }
 
+/// Sums statically known encoded lengths; a variable-length (`None`) entry makes the total
+/// variable.
+///
+/// Used by the `FromFeltRepr` derive to compute [`FromFeltRepr::FIXED_LEN`] for structs (and for
+/// enum variant payloads) as a fold over the field types' lengths.
+#[doc(hidden)]
+pub const fn sum_fixed_len(lens: &[Option<usize>]) -> Option<usize> {
+    let mut total = 0usize;
+    let mut i = 0;
+    while i < lens.len() {
+        match lens[i] {
+            Some(len) => total += len,
+            None => return None,
+        }
+        i += 1;
+    }
+    Some(total)
+}
+
+/// Merges per-variant payload lengths into an enum-wide payload length.
+///
+/// Returns the common length when every variant's payload has the same statically known length,
+/// and `None` (variable length) otherwise. An empty variant list yields `Some(0)`.
+#[doc(hidden)]
+pub const fn uniform_fixed_len(lens: &[Option<usize>]) -> Option<usize> {
+    if lens.is_empty() {
+        return Some(0);
+    }
+    let first = match lens[0] {
+        Some(len) => len,
+        None => return None,
+    };
+    let mut i = 1;
+    while i < lens.len() {
+        match lens[i] {
+            Some(len) => {
+                if len != first {
+                    return None;
+                }
+            }
+            None => return None,
+        }
+        i += 1;
+    }
+    Some(first)
+}
+
 /// Trait for deserialization from felt memory representation.
 pub trait FromFeltRepr: Sized {
+    /// Total encoded length in felts, when statically known.
+    ///
+    /// `None` marks a variable-length encoding: a type containing `Vec` or `Option` fields, or an
+    /// enum whose variants encode to different lengths. When `Some(n)`, `n` must equal the exact
+    /// number of felts consumed by [`Self::from_felt_repr`] (and produced by the matching
+    /// `ToFeltRepr` implementation, if any).
+    ///
+    /// Defaults to `None`, which is always correct for a manual implementation — consumers that
+    /// dispatch on the length (e.g. the tx-script args transport) merely fall back to their
+    /// variable-length path. Override it with the exact count to enable fixed-length dispatch;
+    /// `#[derive(FromFeltRepr)]` computes it automatically.
+    const FIXED_LEN: Option<usize> = None;
+
     /// Deserializes from a `FeltReader`, consuming the required elements.
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self>;
 }
 
 impl FromFeltRepr for Felt {
+    const FIXED_LEN: Option<usize> = Some(1);
+
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         reader.read()
@@ -272,6 +334,8 @@ impl FromFeltRepr for Felt {
 
 /// Encodes a `Word` as its 4 felt elements in order.
 impl FromFeltRepr for Word {
+    const FIXED_LEN: Option<usize> = Some(4);
+
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let a = reader.read()?;
@@ -283,6 +347,8 @@ impl FromFeltRepr for Word {
 }
 
 impl FromFeltRepr for u64 {
+    const FIXED_LEN: Option<usize> = Some(2);
+
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         // Encode u64 as 2 u32 limbs
@@ -293,6 +359,8 @@ impl FromFeltRepr for u64 {
 }
 
 impl FromFeltRepr for u32 {
+    const FIXED_LEN: Option<usize> = Some(1);
+
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         reader.read_u32()
@@ -300,6 +368,8 @@ impl FromFeltRepr for u32 {
 }
 
 impl FromFeltRepr for u8 {
+    const FIXED_LEN: Option<usize> = Some(1);
+
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         reader.read_u8()
@@ -307,6 +377,8 @@ impl FromFeltRepr for u8 {
 }
 
 impl FromFeltRepr for bool {
+    const FIXED_LEN: Option<usize> = Some(1);
+
     #[inline(always)]
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         reader.read_bool()
@@ -345,7 +417,20 @@ where
     fn from_felt_repr(reader: &mut FeltReader<'_>) -> FeltReprResult<Self> {
         let len = reader.read_len_u32()?;
 
-        let mut result = Vec::with_capacity(len);
+        // Reserve only what the reader can actually supply: a lying length prefix must surface
+        // as a decode error, not an allocation abort.
+        let mut result = match T::FIXED_LEN {
+            Some(width) if width > 0 => match len.checked_mul(width) {
+                Some(total) if total <= reader.remaining() => Vec::with_capacity(len),
+                _ => {
+                    return Err(FeltReprError::UnexpectedEof {
+                        pos: reader.pos(),
+                        len: reader.len(),
+                    });
+                }
+            },
+            _ => Vec::new(),
+        };
 
         let mut i = 0usize;
         while i < len {

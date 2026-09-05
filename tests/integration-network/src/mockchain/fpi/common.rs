@@ -39,11 +39,8 @@ pub(super) fn build_fpi_test_packages(
     let counter_package = compile_rust_package(account_project.root(), true);
 
     let note_project = project(&names.note_name)
-        .file(
-            "miden-project.toml",
-            &note_miden_project_toml(&names, account_project.root().as_path()),
-        )
-        .file("Cargo.toml", &note_cargo_toml(&names, account_project.root().as_path()))
+        .file("miden-project.toml", &note_miden_project_toml(&names, account_project.root()))
+        .file("Cargo.toml", &note_cargo_toml(&names, account_project.root()))
         .file("src/lib.rs", caller_source)
         .build();
     let caller_note_package = compile_rust_package(note_project.root(), true);
@@ -113,8 +110,8 @@ pub(super) fn build_multi_package_fpi_test_packages(
     let first_account_root = first_account_project.root();
     let second_account_root = second_account_project.root();
     let dependencies = [
-        (names.first_account_package.as_str(), first_account_root.as_path()),
-        (names.second_account_package.as_str(), second_account_root.as_path()),
+        (names.first_account_package.as_str(), first_account_root),
+        (names.second_account_package.as_str(), second_account_root),
     ];
     let note_project = project(&names.note_name)
         .file(
@@ -173,7 +170,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
                 &names.caller_account_name,
                 &names.caller_account_package,
                 &names.callee_account_package,
-                callee_project.root().as_path(),
+                callee_project.root(),
             ),
         )
         .file(
@@ -182,7 +179,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
                 &names.caller_account_name,
                 &names.caller_account_package,
                 &names.callee_account_package,
-                callee_project.root().as_path(),
+                callee_project.root(),
             ),
         )
         .file("src/lib.rs", caller_source)
@@ -196,7 +193,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
                 &names.note_name,
                 &names.note_package,
                 &names.caller_account_package,
-                caller_project.root().as_path(),
+                caller_project.root(),
             ),
         )
         .file(
@@ -204,7 +201,7 @@ pub(super) fn build_account_to_account_fpi_test_packages(
             &note_cargo_toml_for_dependency(
                 &names.note_name,
                 &names.caller_account_package,
-                caller_project.root().as_path(),
+                caller_project.root(),
             ),
         )
         .file("src/lib.rs", note_source)
@@ -323,7 +320,7 @@ pub(super) fn execute_counter_caller_note(
     let mut builder = MockChain::builder();
     let counter_account = AccountBuilder::new([0_u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(counter_component)
         .build_existing()
@@ -366,16 +363,101 @@ pub(super) fn execute_counter_caller_note(
         expected_count,
     );
 
-    let tx_context_builder = chain
-        .build_tx_context(caller_account.clone(), &[caller_note.id()], &[])
-        .unwrap()
-        .foreign_accounts([chain.get_foreign_account_inputs(counter_account.id()).unwrap()]);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = chain
+        .build_transaction(caller_account.clone())
+        .authenticated_input_note(caller_note.id())
+        .foreign_accounts([chain.get_foreign_account_inputs(counter_account.id()).unwrap()])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mock_tx);
 
     assert_counter_storage_at_key(
         chain.committed_account(counter_account.id()).unwrap().storage(),
         &counter_storage_slot,
         counter_storage_key,
+        expected_count,
+    );
+}
+
+/// Deploys a callee account and a caller account, then consumes the forwarding note.
+pub(super) fn execute_account_to_account_note(
+    callee_package: Arc<Package>,
+    caller_package: Arc<Package>,
+    note_package: Arc<Package>,
+    callee_storage_slot: StorageSlotName,
+    callee_storage_key: Word,
+    expected_count: u64,
+) {
+    let callee_component = {
+        let mut init_storage_data = InitStorageData::default();
+        init_storage_data
+            .insert_map_entry(callee_storage_slot.clone(), callee_storage_key, expected_count)
+            .unwrap();
+        AccountComponent::from_package(&callee_package, &init_storage_data).unwrap()
+    };
+    let caller_component =
+        AccountComponent::from_package(&caller_package, &InitStorageData::default()).unwrap();
+
+    let mut builder = MockChain::builder();
+    let callee_account = AccountBuilder::new([0_u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(NoAuth)
+        .with_component(BasicWallet)
+        .with_component(callee_component)
+        .build_existing()
+        .expect("failed to build callee account");
+    builder
+        .add_account(callee_account.clone())
+        .expect("failed to add callee account to mock chain builder");
+
+    let caller_builder = AccountBuilder::new([1_u8; 32])
+        .account_type(AccountType::Public)
+        .with_component(BasicWallet)
+        .with_component(caller_component);
+    let caller_account = builder
+        .add_account_from_builder(
+            Auth::BasicAuth {
+                auth_scheme: AuthScheme::Falcon512Poseidon2,
+            },
+            caller_builder,
+            AccountState::Exists,
+        )
+        .expect("failed to add caller account to mock chain builder");
+
+    let rng = RandomCoin::new(note_script_root(note_package.as_ref()));
+    let caller_note = NoteBuilder::new(caller_account.id(), rng)
+        .package((*note_package).clone())
+        .note_storage(to_core_felts(&callee_account.id()))
+        .unwrap()
+        .tag(NoteTag::with_account_target(caller_account.id()).into())
+        .build()
+        .unwrap();
+    builder.add_output_note(RawOutputNote::Full(caller_note.clone()));
+
+    let mut chain = builder.build().expect("failed to build mock chain");
+    chain.prove_next_block().unwrap();
+    chain.prove_next_block().unwrap();
+
+    assert_counter_storage_at_key(
+        chain.committed_account(callee_account.id()).unwrap().storage(),
+        &callee_storage_slot,
+        callee_storage_key,
+        expected_count,
+    );
+
+    let foreign_account_inputs = chain.get_foreign_account_inputs(callee_account.id()).unwrap();
+    let consume_tx = chain
+        .build_transaction(caller_account.clone())
+        .authenticated_input_note(caller_note.id())
+        .foreign_accounts([foreign_account_inputs])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, consume_tx);
+
+    assert_counter_storage_at_key(
+        chain.committed_account(callee_account.id()).unwrap().storage(),
+        &callee_storage_slot,
+        callee_storage_key,
         expected_count,
     );
 }
@@ -404,7 +486,6 @@ fn dependent_account_miden_project_toml(
 ) -> String {
     let namespace = account_component_namespace(account_package, "caller-account");
     let dependency_name = miden_dependency_name(dependency_package);
-    let dependency_wit_path = dependency_root.join("target/generated-wit");
     format!(
         r#"
 [package]
@@ -423,12 +504,8 @@ miden-protocol = "*"
 
 [package.metadata.miden]
 supported-types = ["RegularAccountUpdatableCode"]
-
-[package.metadata.miden.dependencies]
-"{dependency_name}" = {{ wit = "{dependency_wit_path}" }}
 "#,
         dependency_root = dependency_root.display(),
-        dependency_wit_path = dependency_wit_path.display(),
     )
 }
 
@@ -440,18 +517,13 @@ fn dependent_account_cargo_toml(
     dependency_root: &Path,
 ) -> String {
     let mut manifest = account_cargo_toml_for(account_name, account_package);
-    let dependency_wit_path = dependency_root.join("target/generated-wit");
     manifest.push_str(&format!(
         r#"
 [package.metadata.miden.dependencies]
 "{dependency_package}" = {{ path = "{dependency_root}" }}
-
-[package.metadata.component.target.dependencies]
-"{dependency_package}" = {{ path = "{dependency_wit_path}" }}
 "#,
         dependency_package = dependency_package,
         dependency_root = dependency_root.display(),
-        dependency_wit_path = dependency_wit_path.display(),
     ));
     manifest
 }

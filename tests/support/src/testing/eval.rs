@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use miden_core::Felt;
-use miden_core_lib::CoreLibrary;
 use miden_debug::{ExecutionTrace, Executor, FromMidenRepr};
 use miden_processor::advice::AdviceInputs;
 use miden_protocol::{ProtocolLib, transaction::TransactionKernel};
@@ -119,8 +118,10 @@ where
                 let mut felts = felts.into_owned();
                 felts.resize(padded, Felt::ZERO);
                 felts
-                    .chunks_exact(4)
-                    .map(|chunk| miden_core::Word::new([chunk[0], chunk[1], chunk[2], chunk[3]]))
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .map(|chunk| miden_core::Word::new(*chunk))
                     .collect()
             }
             Initializer::MemoryWords { words, .. } => words.into_owned(),
@@ -163,21 +164,7 @@ where
     .map_err(|err| TestCaseError::fail(err.to_string()))?;
     let mut exec = Executor::new(args.to_vec()).with_registry(registry);
 
-    // Register the standard library so dependencies can be resolved at runtime.
-    let core_library = CoreLibrary::default();
-    exec.with_package(core_library.package())
-        .map_err(|err| TestCaseError::fail(err.to_string()))?;
-    // The debug executor path does not automatically install core-library event handlers, but
-    // integration tests execute core helpers such as `u64::div` through the VM.
-    for (event, handler) in core_library.handlers() {
-        if matches!(
-            miden_debug::Event::from(event.clone()),
-            miden_debug::Event::UserDefined(_) | miden_debug::Event::Unknown(_)
-        ) {
-            exec.register_event_handler(event, handler)
-                .expect("failed to register core library event handler");
-        }
-    }
+    register_core_packages(&mut exec).map_err(TestCaseError::fail)?;
 
     let tx_kernel = TransactionKernel::package();
     let protocol_lib = ProtocolLib::default().package();
@@ -188,7 +175,7 @@ where
     exec.with_package(Arc::new(StandardsLib::default().as_ref().clone()))
         .map_err(|err| TestCaseError::fail(err.to_string()))?;
 
-    exec.with_advice_inputs(AdviceInputs::default().with_stack(advice_stack));
+    exec.with_advice_inputs(AdviceInputs::default().with_advice_stack(advice_stack.into()));
 
     let trace = exec.execute(package, session.source_manager.clone());
     verify_trace(&trace)?;
@@ -269,7 +256,7 @@ pub fn compile_miden_component_to_package(
     let artifact = compile_link_output_to_masm_with_pre_assembly_stage(
         component,
         |lowered: &LoweredTarget| {
-            println!("# Assembled\n{}", &lowered.component);
+            println!("# Assembled\n{}", lowered.component);
             Ok(())
         },
     )

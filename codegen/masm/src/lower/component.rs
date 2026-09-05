@@ -45,6 +45,10 @@ use crate::{
 /// to reach the top-level ones; that is the shape a single component-global table would want.
 const FUNCTION_TABLE_INIT_PROC: &str = "__init_function_table";
 
+/// The private canonical-ABI entry body generated only for executable dispatch after `main` has
+/// already initialized the component.
+const EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC: &str = "__midenc_entrypoint_without_init";
+
 /// This trait represents a conversion pass from some HIR entity to a Miden Assembly component.
 pub trait ToMasmComponent {
     fn to_masm_component(&self, analysis_manager: AnalysisManager)
@@ -435,10 +439,21 @@ fn world_body_to_masm_component(
         }
         None => None,
     };
+    let executable_entrypoint = classify_marked_canonical_abi_entrypoint(
+        world.as_operation_ref(),
+        &[],
+        &link_info,
+        entrypoint.as_ref(),
+    )?;
+    let executable_entrypoint_without_init = lower_executable_entrypoint_without_init(
+        executable_entrypoint,
+        &analysis_manager,
+        &link_info,
+    )?;
 
-    // If we have global variables, data segments, or function tables, we will require a
-    // component initializer function, as well as a module to hold component-level functions
-    // such as init
+    // If we have global variables, data segments, function tables, or a core Wasm start, we will
+    // require a component initializer function, as well as a module to hold component-level
+    // functions such as init
     let requires_init = link_info.requires_init();
     let toplevel_namespaces = world
         .body()
@@ -501,6 +516,7 @@ fn world_body_to_masm_component(
         root,
         init,
         entrypoint,
+        executable_entrypoint_without_init,
         rodata,
         heap_base,
         stack_pointer,
@@ -567,7 +583,7 @@ fn component_to_masm_component(
         .to_library_path()
         .to_absolute()
         .map_err(|err| {
-            Report::msg(format!("unable to canonicalize '{}': {err}", &id.to_library_path()))
+            Report::msg(format!("unable to canonicalize '{}': {err}", id.to_library_path()))
         })?
         .into_owned();
 
@@ -605,10 +621,21 @@ fn component_to_masm_component(
         }
         None => None,
     };
+    let executable_entrypoint = classify_marked_canonical_abi_entrypoint(
+        component.as_operation_ref(),
+        supporting,
+        &link_info,
+        entrypoint.as_ref(),
+    )?;
+    let executable_entrypoint_without_init = lower_executable_entrypoint_without_init(
+        executable_entrypoint,
+        &analysis_manager,
+        &link_info,
+    )?;
 
-    // If we have global variables, data segments, or function tables, we will require a
-    // component initializer function, as well as a module to hold component-level functions
-    // such as init
+    // If we have global variables, data segments, function tables, or a core Wasm start, we will
+    // require a component initializer function, as well as a module to hold component-level
+    // functions such as init
     let requires_init = link_info.requires_init();
     let init = if requires_init {
         let name = masm::ProcedureName::new("init").unwrap();
@@ -638,6 +665,7 @@ fn component_to_masm_component(
         root,
         init,
         entrypoint,
+        executable_entrypoint_without_init,
         rodata,
         heap_base,
         stack_pointer,
@@ -690,6 +718,99 @@ fn data_segments_to_rodata(link_info: &LinkInfo) -> Result<Vec<crate::Rodata>, R
     })
 }
 
+/// Identify the selected canonical-ABI wrapper that needs a private no-init executable copy.
+///
+/// Generated executable `main` must remain the initialization owner so that component startup runs
+/// before test-harness memory initialization. The public canonical wrapper must also retain its
+/// prologue so that a direct `call` initializes its fresh MASM context. For the exact combination
+/// of a component start and a selected same-component canonical wrapper, codegen therefore emits a
+/// private no-init copy for `main` alone. Calling convention by itself is deliberately insufficient:
+/// every unmarked input retains the existing path, regardless of its Wasm target.
+fn classify_marked_canonical_abi_entrypoint(
+    component: midenc_hir::OperationRef,
+    supporting: &[builtin::ModuleRef],
+    link_info: &LinkInfo,
+    entrypoint: Option<&masm::InvocationTarget>,
+) -> Result<Option<builtin::FunctionRef>, Report> {
+    let (Some(_), Some(entrypoint)) = (link_info.component_start(), entrypoint) else {
+        return Ok(None);
+    };
+    let entrypoint_path = entrypoint
+        .unwrap_path()
+        .to_absolute()
+        .map_err(|err| Report::msg(format!("invalid executable entrypoint path: {err}")))?;
+
+    let find_canonical_entrypoint = |root: midenc_hir::OperationRef| {
+        let mut canonical_entrypoint = None;
+        root.borrow().prewalk_all(|op| {
+            let Some(function) = op.downcast_ref::<builtin::Function>() else {
+                return;
+            };
+            if !function.signature().cc.is_wasm_canonical_abi() {
+                return;
+            }
+
+            let function_target = super::lowering::invocation_target_from_symbol_path(
+                &function.path(),
+                function.span(),
+            );
+            if function_target.unwrap_path() == entrypoint_path.as_ref() {
+                canonical_entrypoint = Some(function.as_function_ref());
+            }
+        });
+        canonical_entrypoint
+    };
+
+    if let Some(function) = find_canonical_entrypoint(component) {
+        if function.borrow().as_operation().parent_op() != Some(component) {
+            let path = function.borrow().path();
+            return Err(Report::msg(format!(
+                "unsupported executable entrypoint '{path}': a canonical-ABI entrypoint for a \
+                 component with a core Wasm start function must be defined directly in the \
+                 selected component"
+            )));
+        }
+        return Ok(Some(function));
+    }
+
+    let supporting_entrypoint = supporting
+        .iter()
+        .find_map(|module| find_canonical_entrypoint(module.borrow().as_operation_ref()));
+    if let Some(function) = supporting_entrypoint {
+        let path = function.borrow().path();
+        return Err(Report::msg(format!(
+            "unsupported executable entrypoint '{path}': a canonical-ABI entrypoint cannot be \
+             selected for a component with a core Wasm start function because it would execute \
+             component initialization twice in the same context"
+        )));
+    }
+
+    Ok(None)
+}
+
+/// Lower the executable-only copy selected by [`classify_marked_canonical_abi_entrypoint`].
+fn lower_executable_entrypoint_without_init(
+    function: Option<builtin::FunctionRef>,
+    analysis_manager: &AnalysisManager,
+    link_info: &LinkInfo,
+) -> Result<Option<masm::Procedure>, Report> {
+    let Some(function) = function else {
+        return Ok(None);
+    };
+    let function = function.borrow();
+    let mut builder = MasmFunctionBuilder::new(&function)?;
+    builder.name = masm::ProcedureName::new(EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC).unwrap();
+    builder.visibility = masm::Visibility::Private;
+    builder
+        .build(
+            &function,
+            analysis_manager.nest(function.as_operation_ref()),
+            link_info,
+            FunctionLoweringMode::ExecutableEntrypointWithoutInit,
+        )
+        .map(Some)
+}
+
 struct MasmComponentBuilder<'a> {
     component: &'a mut MasmComponent,
     analysis_manager: AnalysisManager,
@@ -708,6 +829,14 @@ impl MasmComponentBuilder<'_> {
         supporting: &[builtin::ModuleRef],
     ) -> Result<(), Report> {
         use masm::{Instruction as Inst, InvocationTarget, Op};
+
+        // Validate exactly the operations this builder will emit. In particular, a world may
+        // contain declaration-only or memory-owning siblings which codegen deliberately omits;
+        // invalid roots in those items must not mask the established omission diagnostic.
+        crate::legalization::validate_procedure_roots(component)?;
+        for module in supporting {
+            crate::legalization::validate_procedure_roots(module.borrow().as_operation())?;
+        }
 
         // If a component-level init is required, emit code to initialize the heap before any other
         // initialization code.
@@ -889,6 +1018,21 @@ impl MasmComponentBuilder<'_> {
                     .push(masm::Op::Inst(Span::new(span, masm::Instruction::Exec(target))));
             }
 
+            // The core Wasm start function is the final phase of initialization. It must observe
+            // the initialized heap, data, globals, and function tables, and `exec` keeps it in the
+            // same MASM context that `init` is preparing.
+            if let Some(start) = self.link_info.component_start() {
+                let start = start.borrow();
+                let target = super::lowering::invocation_target_from_symbol_path(
+                    &start.path(),
+                    start.span(),
+                );
+                self.invoked_from_init
+                    .insert(masm::Invoke::new(masm::InvokeKind::Exec, target.clone()));
+                self.init_body
+                    .push(masm::Op::Inst(Span::new(start.span(), masm::Instruction::Exec(target))));
+            }
+
             let module =
                 Arc::get_mut(&mut self.component.modules[0]).expect("expected unique reference");
 
@@ -964,10 +1108,9 @@ impl MasmComponentBuilder<'_> {
         // The submodule declaration's visibility decides whether the module's public procedures
         // belong to the public surface of the assembled package: the assembler derives that
         // surface from the modules reachable from the root through *public* submodule
-        // declarations. Core modules are private in HIR, so their procedures — including ones
-        // promoted to public so cross-module `procref`/`exec` can reach them, such as function
-        // table callees — stay resolvable package-internally (a private submodule is visible to
-        // its parent and siblings) without becoming part of the package's interface.
+        // declarations. Core modules are private in HIR, so their public procedures stay
+        // resolvable package-internally (a private submodule is visible to its parent and siblings)
+        // without becoming part of the package's interface.
         //
         // Two of the shapes reaching here have no component boundary to speak of, and in both
         // the modules *are* the artifact's interface, so they keep public submodules. A world
@@ -1085,6 +1228,7 @@ impl MasmComponentBuilder<'_> {
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
+            FunctionLoweringMode::Normal,
         )?;
 
         let module =
@@ -1357,6 +1501,7 @@ impl MasmModuleBuilder<'_> {
             function,
             self.analysis_manager.nest(function.as_operation_ref()),
             self.link_info,
+            FunctionLoweringMode::Normal,
         )?;
 
         self.module
@@ -1427,6 +1572,15 @@ struct MasmFunctionBuilder {
     num_locals: u16,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FunctionLoweringMode {
+    /// Emit a procedure with all prologues and public metadata implied by its HIR function.
+    Normal,
+    /// Emit the selected canonical entry body for generated executable `main`, which has already
+    /// initialized the component and must not repeat the public wrapper's `init` prologue.
+    ExecutableEntrypointWithoutInit,
+}
+
 impl MasmFunctionBuilder {
     /// Prepare to translate `function`, or report why it cannot be translated.
     ///
@@ -1484,6 +1638,7 @@ impl MasmFunctionBuilder {
         function: &builtin::Function,
         analysis_manager: AnalysisManager,
         link_info: &LinkInfo,
+        mode: FunctionLoweringMode,
     ) -> Result<masm::Procedure, Report> {
         use alloc::collections::BTreeSet;
 
@@ -1517,7 +1672,10 @@ impl MasmFunctionBuilder {
 
         // For component export functions, invoke the `init` procedure first if needed.
         // It loads the data segments, global vars, and function tables into memory.
-        if function.signature().cc.is_wasm_canonical_abi() && link_info.requires_init() {
+        if mode == FunctionLoweringMode::Normal
+            && function.signature().cc.is_wasm_canonical_abi()
+            && link_info.requires_init()
+        {
             // Resolve `init` symbolically within the containing module instead of through a
             // fully-qualified component path, which depends on the (user-editable)
             // `[lib].namespace` matching the component's library identity.
@@ -1592,11 +1750,18 @@ impl MasmFunctionBuilder {
 
         let mut procedure = masm::Procedure::new(span, visibility, name, num_locals, body);
         procedure.set_signature(signature);
-        for attribute in ["account_procedure", "auth_script", "note_script", "transaction_script"] {
-            if function.has_attribute(attribute) {
-                procedure
-                    .attributes_mut()
-                    .insert(Attribute::Marker(masm::Ident::new(attribute).unwrap()));
+        if mode == FunctionLoweringMode::Normal {
+            for attribute in [
+                midenc_dialect_hir::ACCOUNT_PROCEDURE_EXPORT_ATTR,
+                midenc_dialect_hir::AUTH_SCRIPT_EXPORT_ATTR,
+                midenc_dialect_hir::NOTE_SCRIPT_EXPORT_ATTR,
+                midenc_dialect_hir::TRANSACTION_SCRIPT_EXPORT_ATTR,
+            ] {
+                if function.has_attribute(attribute) {
+                    procedure
+                        .attributes_mut()
+                        .insert(Attribute::Marker(masm::Ident::new(attribute).unwrap()));
+                }
             }
         }
         procedure.extend_invoked(invoked);

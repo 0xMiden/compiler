@@ -455,3 +455,62 @@ impl ParserTest {
         parse::parse_any(config, Uri::new(name), source)
     }
 }
+
+/// An unregistered dialect is a different failure from an unregistered operation inside a dialect
+/// that exists, and the diagnostic has to say which one it is.
+#[test]
+fn an_unregistered_dialect_is_named_in_the_diagnostic() {
+    let test = ParserTest::default();
+    let Err(err) =
+        test.parse_any("unknown_dialect.hir", "builtin.module public @t { nosuchdialect.op; };")
+    else {
+        panic!("an unregistered dialect must not parse");
+    };
+    let rendered = alloc::string::ToString::to_string(&err);
+    assert!(
+        rendered.contains("unknown dialect") && rendered.contains("nosuchdialect"),
+        "the diagnostic must name the unregistered dialect, got: {rendered}"
+    );
+}
+
+/// The control: an unknown operation inside a dialect that is registered still reports as an
+/// invalid operation, not as an unknown dialect.
+#[test]
+fn an_unknown_operation_in_a_known_dialect_still_reports_separately() {
+    let test = ParserTest::default();
+    let Err(err) = test.parse_any("unknown_op.hir", "builtin.module public @t { builtin.nope; };")
+    else {
+        panic!("an unregistered operation must not parse");
+    };
+    let rendered = alloc::string::ToString::to_string(&err);
+    assert!(
+        !rendered.contains("unknown dialect"),
+        "a known dialect must not be reported as unknown, got: {rendered}"
+    );
+}
+
+/// A module with an empty body defines no symbols; building its symbol table must not unwrap the
+/// missing entry block.
+#[test]
+fn an_empty_module_body_parses() {
+    let test = ParserTest::default();
+    test.parse_any("empty.hir", "builtin.module public @t {};")
+        .expect("an empty module body should parse");
+}
+
+/// Two symbols with one name is something the author wrote, so it must be reported rather than
+/// tripping the uniqueness assertion inside the symbol table.
+#[test]
+fn a_duplicate_symbol_is_reported() {
+    let test = ParserTest::default();
+    let source = "\
+builtin.module public @t {
+    builtin.function internal extern(\"C\") @f(%a: i32) -> i32 {
+        builtin.ret %a : (i32);
+    };
+    builtin.function internal extern(\"C\") @f(%b: i32) -> i32 {
+        builtin.ret %b : (i32);
+    };
+};";
+    assert!(test.parse_any("dup.hir", source).is_err(), "a duplicate symbol must not parse");
+}

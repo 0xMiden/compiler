@@ -103,10 +103,17 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
         let cargo_manifest = cargo_manifest
             .parse::<DocumentMut>()
             .context("Failed to parse generated Cargo.toml")?;
-        fs::write(
-            &miden_project_toml,
-            render_miden_project_manifest(&project_name, &cargo_manifest),
-        )?;
+        if cargo_manifest.contains_key("package") {
+            let root_path = cargo_manifest
+                .get("lib")
+                .and_then(|lib| lib.get("path").and_then(|path| path.as_str()))
+                .map(Path::new)
+                .unwrap_or(Path::new("src/lib.rs"));
+            fs::write(
+                &miden_project_toml,
+                render_miden_project_manifest(&project_name, root_path, &cargo_manifest),
+            )?;
+        }
     }
 
     if args.force_git_init {
@@ -122,7 +129,11 @@ pub fn generate(args: GenerateArgs) -> Result<PathBuf> {
     Ok(project_dir)
 }
 
-fn render_miden_project_manifest(project_name: &str, cargo_manifest: &DocumentMut) -> String {
+fn render_miden_project_manifest(
+    project_name: &str,
+    root_path: &Path,
+    cargo_manifest: &DocumentMut,
+) -> String {
     let cargo_package_name = toml_str(cargo_manifest, &["package", "name"]).unwrap_or(project_name);
     let package_name = toml_str(cargo_manifest, &["package", "metadata", "component", "package"])
         .and_then(component_package_name)
@@ -146,7 +157,7 @@ version = \"{}\"
         "account" | "account-component" | "authentication-component" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"account-component\"\n");
-            manifest.push_str("path = \"src/lib.rs\"\n");
+            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
             manifest.push_str(&format!(
                 "namespace = \"{}\"\n\n",
                 account_component_namespace(package_name, package_version)
@@ -155,7 +166,7 @@ version = \"{}\"
         "note" | "note-script" => {
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"note\"\n");
-            manifest.push_str("path = \"src/lib.rs\"\n");
+            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
             manifest.push_str(&format!(
                 "namespace = \"{}\"\n\n",
                 component_namespace(package_name, package_version)
@@ -165,12 +176,16 @@ version = \"{}\"
             manifest.push_str("[lib]\n");
             manifest.push_str("kind = \"tx-script\"\n");
             manifest.push_str("namespace = \"miden:base/transaction-script@1.0.0\"\n\n");
-            manifest.push_str("path = \"src/lib.rs\"\n");
+            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
+        }
+        "library" => {
+            manifest.push_str("[lib]\n");
+            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
         }
         _ => {
             manifest.push_str("[[bin]]\n");
             manifest.push_str(&format!("name = \"{}\"\n", toml_escape(package_name)));
-            manifest.push_str("path = \"src/lib.rs\"\n\n");
+            manifest.push_str(&format!("path = \"{}\"\n", root_path.display()));
         }
     }
 
@@ -179,13 +194,6 @@ version = \"{}\"
         .and_then(|package| package.get("metadata"))
         .and_then(|metadata| metadata.get("miden"))
         .and_then(|miden| miden.get("dependencies"))
-        .and_then(|dependencies| dependencies.as_table_like());
-    let component_target_dependencies = cargo_manifest
-        .get("package")
-        .and_then(|package| package.get("metadata"))
-        .and_then(|metadata| metadata.get("component"))
-        .and_then(|component| component.get("target"))
-        .and_then(|target| target.get("dependencies"))
         .and_then(|dependencies| dependencies.as_table_like());
 
     manifest.push_str("[dependencies]\n");
@@ -211,42 +219,11 @@ version = \"{}\"
         .and_then(|package| package.get("metadata"))
         .and_then(|metadata| metadata.get("miden"))
         .and_then(|miden| miden.get("supported-types"));
-    let mut wit_dependencies = Vec::new();
-    if let Some(dependencies) = metadata_dependencies {
-        for (name, dependency) in dependencies.iter() {
-            if let Some(wit) = dependency.get("wit").and_then(|wit| wit.as_str()) {
-                wit_dependencies.push((miden_dependency_name(name).to_string(), wit.to_string()));
-            }
-        }
-    }
-    if let Some(dependencies) = component_target_dependencies {
-        for (name, dependency) in dependencies.iter() {
-            let wit = dependency
-                .get("wit")
-                .or_else(|| dependency.get("path"))
-                .and_then(|wit| wit.as_str());
-            if let Some(wit) = wit {
-                wit_dependencies.push((miden_dependency_name(name).to_string(), wit.to_string()));
-            }
-        }
-    }
 
-    if supported_types.is_some() || !wit_dependencies.is_empty() {
-        manifest.push('\n');
-    }
     if let Some(supported_types) = supported_types {
+        manifest.push('\n');
         manifest.push_str("[package.metadata.miden]\n");
         manifest.push_str(&format!("supported-types = {supported_types}\n"));
-    }
-    if !wit_dependencies.is_empty() {
-        manifest.push_str("\n[package.metadata.miden.dependencies]\n");
-        for (name, wit) in wit_dependencies {
-            manifest.push_str(&format!(
-                "{} = {{ wit = \"{}\" }}\n",
-                toml_key(&name),
-                toml_escape(&wit)
-            ));
-        }
     }
 
     manifest
@@ -324,8 +301,8 @@ fn prepare_template(template_path: &TemplatePath) -> Result<TemplateSource> {
             crate::bundle::Fetch::IfAvailable
         };
         let resolved = crate::bundle::resolve(temp_dir.path(), fetch)?;
-        // Worth saying out loud: which templates a project was generated from
-        // is the first thing anyone asks when a generated project misbehaves.
+        // Notify the user where the template was generated from, in case anything goes wrong
+        // with the generated project.
         if let crate::bundle::Source::Released { version } = &resolved.source {
             println!("Using templates {version} from GitHub");
         }
@@ -780,6 +757,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use anyhow::Result;
+    use midenc_session::miden_project;
     use tempfile::tempdir;
 
     use super::*;
@@ -888,6 +866,94 @@ ignore = ["skip-me"]
 
         assert!(project_dir.join("keep-me").join("file.txt").exists());
         assert!(!project_dir.join("skip-me").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn generate_does_not_create_manifest_for_workspace_template_roots() -> Result<()> {
+        let template_dir = tempdir()?;
+        let template_root = template_dir.path().join("template");
+        fs::create_dir_all(&template_root)?;
+        fs::write(
+            template_root.join("Cargo.toml"),
+            r#"[workspace]
+    members = ["contracts/demo"]
+    resolver = "2"
+    "#,
+        )?;
+        fs::create_dir_all(template_root.join("contracts").join("demo"))?;
+        fs::write(
+            template_root.join("contracts").join("demo").join("miden-project.toml"),
+            "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+        )?;
+
+        let destination_dir = tempdir()?;
+        let args = GenerateArgs {
+            template_path: TemplatePath {
+                path: Some(template_dir.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+            destination: Some(destination_dir.path().to_path_buf()),
+            name: Some("workspace-project".into()),
+            force: true,
+            ..Default::default()
+        };
+
+        let project_dir = generate(args)?;
+
+        assert!(!project_dir.join("miden-project.toml").exists());
+        assert!(project_dir.join("contracts").join("demo").join("miden-project.toml").exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn generate_respects_cargo_lib_target_path() -> Result<()> {
+        let template_dir = tempdir()?;
+        let template_root = template_dir.path().join("template");
+        fs::create_dir_all(&template_root)?;
+        fs::write(
+            template_root.join("Cargo.toml"),
+            r#"[package]
+    name = "foo"
+    version = "1.0.0"
+
+    [lib]
+    path = "src/other.rs"
+
+    [package.metadata.miden]
+    project-kind = "library"
+    "#,
+        )?;
+
+        let destination_dir = tempdir()?;
+        let args = GenerateArgs {
+            template_path: TemplatePath {
+                path: Some(template_dir.path().to_string_lossy().into_owned()),
+                ..Default::default()
+            },
+            destination: Some(destination_dir.path().to_path_buf()),
+            name: Some("custom-lib-path".into()),
+            force: true,
+            ..Default::default()
+        };
+
+        let project_dir = generate(args)?;
+        let project_toml_path = project_dir.join("miden-project.toml");
+
+        assert!(project_toml_path.exists());
+
+        let source_manager = midenc_session::diagnostics::DefaultSourceManager::default();
+        let miden_project_toml = miden_project::Project::load(&project_toml_path, &source_manager)
+            .expect("failed to load project");
+        let project_package = miden_project_toml.package();
+        let lib_target = project_package.library_target().expect("expected library target");
+        assert_eq!(
+            lib_target.path.as_str(),
+            "src/other.rs",
+            "expected Cargo.toml lib path to be respected"
+        );
 
         Ok(())
     }

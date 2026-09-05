@@ -385,7 +385,70 @@ impl FunctionTypeInfo {
 /// Index into the funcref table
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Debug)]
 pub struct FuncRefIndex(u32);
-cranelift_entity::entity_impl!(FuncRefIndex);
+
+impl cranelift_entity::EntityRef for FuncRefIndex {
+    #[inline]
+    fn new(index: usize) -> Self {
+        debug_assert!(index < u32::MAX as usize);
+        Self(index as u32)
+    }
+
+    #[inline]
+    fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl cranelift_entity::packed_option::ReservedValue for FuncRefIndex {
+    #[inline]
+    fn reserved_value() -> Self {
+        Self(u32::MAX)
+    }
+
+    #[inline]
+    fn is_reserved_value(&self) -> bool {
+        self.0 == u32::MAX
+    }
+}
+
+impl FuncRefIndex {
+    /// Create a new instance from a `u32`.
+    #[inline]
+    pub fn from_u32(x: u32) -> Self {
+        debug_assert!(x < u32::MAX);
+        Self(x)
+    }
+
+    /// Return the underlying index value as a `u32`.
+    #[inline]
+    pub fn as_u32(self) -> u32 {
+        self.0
+    }
+
+    /// Return the raw bit encoding for this instance.
+    ///
+    /// __Warning__: the raw bit encoding is opaque and has no
+    /// guaranteed correspondence to the entity's index. It encodes the
+    /// entire state of this index value: either a valid index or an
+    /// invalid-index sentinel. The value returned by this method should
+    /// only be passed to `from_bits`.
+    #[inline]
+    pub fn as_bits(self) -> u32 {
+        self.0
+    }
+
+    /// Create a new instance from the raw bit encoding.
+    ///
+    /// __Warning__: the raw bit encoding is opaque and has no
+    /// guaranteed correspondence to the entity's index. It encodes the
+    /// entire state of this index value: either a valid index or an
+    /// invalid-index sentinel. The value returned by this method should
+    /// only be given bits from `as_bits`.
+    #[inline]
+    pub fn from_bits(x: u32) -> Self {
+        Self(x)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct NameSection {

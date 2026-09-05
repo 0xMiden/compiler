@@ -13,9 +13,8 @@ use crate::{CompilerTest, project, testing::executor_with_std};
 /// function pointer, and at the Wasm level a function pointer *is* its table index, so the
 /// dispatched slot is entirely input-controlled. The `OPS` dispatch keeps the two-argument
 /// entries alive, and `op_neg` is placed in the table by taking its address in the discovery
-/// mode (`input2 == u32::MAX`), which returns its table index so the test can target the
-/// differently-signed slot without assuming toolchain slot ordering (rustc reserves slot 0 as
-/// the null function pointer, so the three functions land in slots 1 through 3).
+/// modes, which return exact table indices so the test does not assume which function addresses
+/// the optimizer otherwise keeps alive or how the toolchain orders their slots.
 const SOURCE: &str = r#"
 #[inline(never)]
 fn op_add(a: u32, b: u32) -> u32 {
@@ -40,6 +39,11 @@ pub extern "C" fn entrypoint(input1: u32, input2: u32) -> u32 {
         // Reveal the table index of the differently-signed function; taking its address here
         // is also what places it in the function table
         return op_neg as fn(u32) -> u32 as usize as u32;
+    }
+    if input2 == u32::MAX - 1 {
+        // Likewise reveal one matching-signature slot. Newer rustc/LLVM versions can devirtualize
+        // OPS and otherwise omit both entries from the emitted table.
+        return op_add as fn(u32, u32) -> u32 as usize as u32;
     }
     let base = OPS[(input2 & 1) as usize](1, 2);
     let f: fn(u32, u32) -> u32 = unsafe { core::mem::transmute(input1 as usize) };
@@ -95,17 +99,17 @@ fn indirect_call_runtime_traps() {
             || err.contains(&miden_core::mast::error_code_from_msg(message).to_string())
     };
 
-    // Discover which slot holds the differently-signed `op_neg`; the two-argument ops occupy
-    // the remaining live slots
+    // Discover exact slots for a differently-signed callee and a matching-signature callee. The
+    // optimizer is free to devirtualize `OPS`, so neither slot number nor adjacency is assumed.
     let neg_idx = run(0, u32::MAX).expect("index discovery should succeed");
-    assert!((1..=3).contains(&neg_idx), "unexpected op_neg table index: {neg_idx}");
+    let good_idx = run(0, u32::MAX - 1).expect("matching index discovery should succeed");
+    assert_ne!(good_idx, 0, "a live function cannot occupy the reserved null slot");
+    assert_ne!(good_idx, neg_idx, "different functions must occupy different slots");
 
-    // In-bounds dispatch through a live slot with the matching signature succeeds; slot
-    // numbering between the two ops is a toolchain detail, so accept either callee: with
-    // input2 = 5, base = op_mul(1, 2) = 2, and f(5, 2) is 7 (op_add) or 10 (op_mul)
-    let good_idx = (1..=3).find(|idx| *idx != neg_idx).unwrap();
+    // In-bounds dispatch through the discovered matching-signature slot succeeds. With input2 =
+    // 5, base = op_mul(1, 2) = 2, and op_add(5, 2) is 7.
     let result = run(good_idx, 5).expect("in-bounds dispatch should succeed");
-    assert!(matches!(result, 7 | 10), "unexpected dispatch result: {result}");
+    assert_eq!(result, 7, "unexpected dispatch result");
 
     // Dispatching the one-argument `op_neg` from the two-argument call site trips the emitted
     // signature check instead of silently reinterpreting the operand stack

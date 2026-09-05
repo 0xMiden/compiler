@@ -234,7 +234,7 @@ impl Attr {
 impl fmt::Debug for Attr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Attr")
-            .field_with("name", |f| write!(f, "{}", &self.name))
+            .field_with("name", |f| write!(f, "{}", self.name))
             .field("ty", &self.ty)
             .field("offset", &self.offset)
             .finish_non_exhaustive()
@@ -249,7 +249,7 @@ impl fmt::Debug for UnsafeIntrusiveEntityRef<Attr> {
 
 impl fmt::Display for UnsafeIntrusiveEntityRef<Attr> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.borrow().name())
+        write!(f, "{}", self.borrow().name())
     }
 }
 

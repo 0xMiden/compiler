@@ -140,7 +140,7 @@ impl fmt::Debug for Block {
             .field_with("arguments", |f| {
                 let mut list = f.debug_list();
                 for arg in self.arguments.iter() {
-                    list.entry_with(|f| f.write_fmt(format_args!("{}", &arg.borrow())));
+                    list.entry_with(|f| f.write_fmt(format_args!("{}", arg.borrow())));
                 }
                 list.finish()
             })
@@ -1251,7 +1251,7 @@ impl BlockOperand {
             panic!(
                 "block operand is dead at index {} in {}",
                 self.index,
-                &self.owner.borrow().name()
+                self.owner.borrow().name()
             )
         })
     }
@@ -1277,7 +1277,7 @@ impl fmt::Debug for BlockOperand {
 }
 impl fmt::Display for BlockOperand {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", &self.block_id())
+        write!(f, "{}", self.block_id())
     }
 }
 impl StorableEntity for BlockOperand {

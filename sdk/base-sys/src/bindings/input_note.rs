@@ -3,12 +3,13 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::types::{
-    AccountId, Asset, NoteIdx, NoteMetadata, RawAccountId, RawAttachmentLocation, Recipient,
+use super::{
+    MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, assert_attachment_count,
+    assert_attachment_word_count,
+    types::{
+        AccountId, Asset, NoteIdx, NoteMetadata, RawAccountId, RawAttachmentLocation, Recipient,
+    },
 };
-
-const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
-const MAX_ATTACHMENT_WORDS: usize = 256;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -200,10 +201,7 @@ pub fn write_attachment_commitments_to_memory(note_index: NoteIdx) -> Vec<Word> 
         let ptr = (commitments.as_mut_ptr() as usize) / 4;
         extern_input_note_write_attachment_commitments_to_memory(ptr as *mut Felt, note_index.inner)
     };
-    assert!(
-        num_attachments <= MAX_ATTACHMENTS_PER_NOTE,
-        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
-    );
+    assert_attachment_count(num_attachments);
     unsafe {
         commitments.set_len(num_attachments);
     }
@@ -221,10 +219,7 @@ pub fn write_attachment_to_memory(note_index: NoteIdx, attachment_idx: u32) -> V
             note_index.inner,
         )
     };
-    assert!(
-        num_words <= MAX_ATTACHMENT_WORDS,
-        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
-    );
+    assert_attachment_word_count(num_words);
     unsafe {
         attachment.set_len(num_words);
     }

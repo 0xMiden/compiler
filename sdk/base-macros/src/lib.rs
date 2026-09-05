@@ -67,6 +67,7 @@ extern crate proc_macro;
 mod account_component_metadata;
 mod boilerplate;
 mod component_macro;
+mod dependency_package;
 mod dependency_ref;
 mod export_type;
 mod foreign_account;
@@ -75,6 +76,8 @@ mod generate;
 mod manifest_paths;
 mod note;
 mod script;
+#[cfg(test)]
+mod test_support;
 mod types;
 mod util;
 mod wit_builder;
@@ -348,17 +351,55 @@ pub fn export_type(
 ///
 /// #[note]
 /// struct MyNote {
-///     recipient: AccountId,
+///     target: AccountId,
 /// }
 ///
 /// #[note]
 /// impl MyNote {
+///     /// Exported note constructor: computes the recipient digest of this note.
+///     #[note_constructor]
+///     pub fn build_recipient(target: AccountId, serial_num: Word) -> Recipient {
+///         let inputs = MyNote { target };
+///         note::build_recipient(
+///             serial_num,
+///             MyNote::get_entrypoint_root(),
+///             inputs.to_felt_repr(),
+///         )
+///     }
+///
 ///     #[note_script]
 ///     pub fn run(self, _arg: Word, account: &mut Wallet) {
-///         assert_eq!(account.get_id(), self.recipient);
+///         assert_eq!(account.get_id(), self.target);
 ///     }
 /// }
 /// ```
+///
+/// The caller turns the returned recipient into an output note through an account procedure
+/// (e.g. the basic wallet's `create-note`), because `output_note::create` requires the
+/// account-component context.
+///
+/// # Note constructors
+///
+/// Methods annotated with `#[note_constructor]` are exported through the note's WIT interface
+/// as note constructors. Other Miden packages — e.g. transaction scripts — can declare the note
+/// package as a dependency and create the note by calling its constructor. Unannotated methods
+/// stay plain Rust helpers and are not exported.
+///
+/// The note input struct also implements [`ToFeltRepr`](miden_field_repr::ToFeltRepr)
+/// (mirroring the generated storage decoding), so constructors can serialize the note inputs
+/// when computing the note recipient.
+///
+/// # Generated `get_entrypoint_root()` method
+///
+/// The impl-block expansion also generates a `pub fn get_entrypoint_root() -> Word` associated
+/// method on the note type. It returns the MAST root digest of the `#[note_script]` entrypoint
+/// export as executed by the transaction kernel — resolved by the compiler at assembly time —
+/// for use when building the note recipient in constructors (see the example above).
+///
+/// The method must not be called from code reachable from the `#[note_script]` entrypoint
+/// itself: the note script's MAST root would then depend on its own digest, and assembly fails
+/// with a call-graph cycle error. A note script that needs its own root at runtime (e.g. to
+/// re-emit itself) should call `active_note::get_script_root()` instead.
 #[proc_macro_attribute]
 pub fn note(
     attr: proc_macro::TokenStream,
@@ -391,7 +432,77 @@ pub fn note_script(
     note::expand_note_script(attr, item)
 }
 
-/// Marks the function as a transaction script
+/// Marks a method as an exported note constructor (`#[note_constructor]`).
+///
+/// The method must be contained within an inherent `impl` block annotated with `#[note]`. It is
+/// exported through the note's WIT interface (named by the kebab-cased method name), so other
+/// Miden packages — e.g. transaction scripts — can declare the note package as a dependency and
+/// call the constructor to compute the note's recipient. The caller turns the recipient into an
+/// output note through an account procedure, because `output_note::create` requires the
+/// account-component context.
+///
+/// # Supported constructor signature
+///
+/// - The method must be `pub` and must not take `self`: constructors run before the note exists
+///   (typically computing the note recipient via the generated `get_entrypoint_root()` method
+///   and `note::build_recipient`).
+/// - Parameter and return types are limited to SDK core types (e.g. `Felt`, `Word`, `AccountId`,
+///   `Tag`, `NoteType`, `NoteIdx`) and primitives.
+/// - Generic, `const`, `async`, `unsafe`, `extern`, and variadic methods are not supported.
+#[proc_macro_attribute]
+pub fn note_constructor(
+    attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    note::expand_note_constructor(attr, item)
+}
+
+/// Marks a free function as the transaction-script entrypoint.
+///
+/// The transaction kernel passes a single `Word` of script arguments (`TX_SCRIPT_ARGS`) to the
+/// script. The generated guest wrapper decodes it through the `ScriptArgs` trait and instantiates
+/// the account parameter before calling the annotated function.
+///
+/// # Supported entrypoint signature
+///
+/// - Must be a free function (any name) returning `()`.
+/// - Accepts 1 or 2 parameters, in any order:
+///   - one by-value script-args parameter (required) — any type implementing `ScriptArgs` (every
+///     `FromFeltRepr + ToFeltRepr` type qualifies, e.g. `Felt`, `Word`, or a user struct deriving
+///     both); an encoding of at most 4 felts travels in the args word directly, longer or
+///     variable-length encodings travel through the advice provider, verified against the args
+///     word as their commitment;
+///   - optionally one reference to an `#[account(...)]` type (`&MyAccount` or `&mut MyAccount`)
+///     bound to the active (native) account.
+/// - Generic functions and `async fn` are not supported.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use miden::*;
+///
+/// #[account(basic_wallet::BasicWallet)]
+/// struct Wallet;
+///
+/// /// Arguments of the transaction script, transported via `TX_SCRIPT_ARGS`.
+/// #[derive(FromFeltRepr, ToFeltRepr)]
+/// struct TxScriptArgs {
+///     tag: Tag,
+///     note_type: NoteType,
+///     recipient: Recipient,
+///     asset: Asset,
+/// }
+///
+/// #[tx_script]
+/// fn run(args: TxScriptArgs, account: &mut Wallet) {
+///     let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+///     account.move_asset_to_note(args.asset, note_idx);
+/// }
+/// ```
+///
+/// On the host, build the transaction from the same struct with `ScriptArgs::encode`: word-mode
+/// values become the script-args word; commitment-mode values are hashed by the caller to produce
+/// the script-args word plus the matching advice-map entry.
 #[proc_macro_attribute]
 pub fn tx_script(
     attr: proc_macro::TokenStream,

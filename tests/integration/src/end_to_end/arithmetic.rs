@@ -8,7 +8,7 @@ use proptest::{
     test_runner::{TestError, TestRunner},
 };
 
-use super::support::NumericStrategy;
+use super::support::{NumericCases, NumericStrategy};
 use crate::{
     CompilerTest,
     testing::{eval_package, run_masm_vs_rust},
@@ -217,6 +217,114 @@ macro_rules! test_unary_op_total {
     };
 }
 
+macro_rules! test_saturating_arith {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_binary_fn(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_overflowing_arith {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_overflowing_arith(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_checked_arith {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_checked_arith(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_shift {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_binary_fn(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_checked_shift {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_checked_arith(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
+macro_rules! test_overflowing_shift {
+    ($fn_name:ident, $strategy:ident, $($(#[$a:meta])* $op_ty:ty),+ $(,)?) => {
+        $(
+            concat_idents::concat_idents!(test_name = $fn_name, _, $op_ty {
+                #[test]
+                $(#[$a])*
+                fn test_name() {
+                    test_overflowing_arith(
+                        $op_ty::$fn_name,
+                        stringify!($fn_name),
+                        NumericStrategy::<$op_ty>::$strategy(),
+                    );
+                }
+            });
+        )+
+    };
+}
+
 // Arithmetic ops
 //
 // NOTE: We're testing a limited range of inputs for now to sidestep overflow
@@ -306,761 +414,90 @@ test_func_two_arg!(min, core::cmp::min, u32, u32, u32);
 test_func_two_arg!(min, core::cmp::min, u8, u8, u8);
 test_func_two_arg!(max, core::cmp::max, u8, u8, u8);
 
-#[test]
-fn overflowing_add_u8() {
-    test_overflowing_arith(u8::overflowing_add, "overflowing_add", NumericStrategy::add_unsigned());
-}
-
-#[test]
-fn overflowing_add_u16() {
-    test_overflowing_arith(
-        u16::overflowing_add,
-        "overflowing_add",
-        NumericStrategy::add_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_add_u32() {
-    test_overflowing_arith(
-        u32::overflowing_add,
-        "overflowing_add",
-        NumericStrategy::add_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_add_u64() {
-    test_overflowing_arith(
-        u64::overflowing_add,
-        "overflowing_add",
-        NumericStrategy::add_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_add_u128() {
-    test_overflowing_arith(
-        u128::overflowing_add,
-        "overflowing_add",
-        NumericStrategy::add_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_add_i8() {
-    test_overflowing_arith(i8::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn overflowing_add_i16() {
-    test_overflowing_arith(i16::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn overflowing_add_i32() {
-    test_overflowing_arith(i32::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn overflowing_add_i64() {
-    test_overflowing_arith(i64::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn overflowing_add_i128() {
-    test_overflowing_arith(i128::overflowing_add, "overflowing_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn overflowing_sub_u8() {
-    test_overflowing_arith(u8::overflowing_sub, "overflowing_sub", NumericStrategy::sub_unsigned());
-}
-
-#[test]
-fn overflowing_sub_u16() {
-    test_overflowing_arith(
-        u16::overflowing_sub,
-        "overflowing_sub",
-        NumericStrategy::sub_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_sub_u32() {
-    test_overflowing_arith(
-        u32::overflowing_sub,
-        "overflowing_sub",
-        NumericStrategy::sub_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_sub_u64() {
-    test_overflowing_arith(
-        u64::overflowing_sub,
-        "overflowing_sub",
-        NumericStrategy::sub_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_sub_u128() {
-    test_overflowing_arith(
-        u128::overflowing_sub,
-        "overflowing_sub",
-        NumericStrategy::sub_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_sub_i8() {
-    test_overflowing_arith(i8::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn overflowing_sub_i16() {
-    test_overflowing_arith(i16::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn overflowing_sub_i32() {
-    test_overflowing_arith(i32::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn overflowing_sub_i64() {
-    test_overflowing_arith(i64::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn overflowing_sub_i128() {
-    test_overflowing_arith(i128::overflowing_sub, "overflowing_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn overflowing_mul_u8() {
-    test_overflowing_arith(u8::overflowing_mul, "overflowing_mul", NumericStrategy::mul_unsigned());
-}
-
-#[test]
-fn overflowing_mul_u16() {
-    test_overflowing_arith(
-        u16::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::mul_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_mul_u32() {
-    test_overflowing_arith(
-        u32::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::mul_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_mul_u64() {
-    test_overflowing_arith(
-        u64::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::mul_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_mul_u128() {
-    test_overflowing_arith(
-        u128::overflowing_mul,
-        "overflowing_mul",
-        NumericStrategy::mul_unsigned(),
-    );
-}
-
-#[test]
-fn overflowing_mul_i8() {
-    test_overflowing_arith(i8::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn overflowing_mul_i16() {
-    test_overflowing_arith(i16::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn overflowing_mul_i32() {
-    test_overflowing_arith(i32::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn overflowing_mul_i64() {
-    test_overflowing_arith(i64::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn overflowing_mul_i128() {
-    test_overflowing_arith(i128::overflowing_mul, "overflowing_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn overflowing_div_u8() {
-    test_overflowing_arith(
-        u8::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_u16() {
-    test_overflowing_arith(
-        u16::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_u32() {
-    test_overflowing_arith(
-        u32::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_u64() {
-    test_overflowing_arith(
-        u64::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_u128() {
-    test_overflowing_arith(
-        u128::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_i8() {
-    test_overflowing_arith(
-        i8::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_signed_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_i16() {
-    test_overflowing_arith(
-        i16::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_signed_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_i32() {
-    test_overflowing_arith(
-        i32::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_signed_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_i64() {
-    test_overflowing_arith(
-        i64::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_signed_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_div_i128() {
-    test_overflowing_arith(
-        i128::overflowing_div,
-        "overflowing_div",
-        NumericStrategy::div_signed_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_rem_u8() {
-    test_overflowing_arith(
-        u8::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_rem_u16() {
-    test_overflowing_arith(
-        u16::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_rem_u32() {
-    test_overflowing_arith(
-        u32::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_rem_u64() {
-    test_overflowing_arith(
-        u64::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_unsigned_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_rem_u128() {
-    test_overflowing_arith(
-        u128::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_unsigned_overflowing(),
-    );
-}
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1173"]
-fn overflowing_rem_i8() {
-    test_overflowing_arith(
-        i8::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_signed_overflowing(),
-    );
-}
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1173"]
-fn overflowing_rem_i16() {
-    test_overflowing_arith(
-        i16::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_signed_overflowing(),
-    );
-}
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1173"]
-fn overflowing_rem_i32() {
-    test_overflowing_arith(
-        i32::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_signed_overflowing(),
-    );
-}
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
-fn overflowing_rem_i64() {
-    test_overflowing_arith(
-        i64::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_signed_overflowing(),
-    );
-}
-
-#[test]
-fn overflowing_rem_i128() {
-    test_overflowing_arith(
-        i128::overflowing_rem,
-        "overflowing_rem",
-        NumericStrategy::rem_signed_overflowing(),
-    );
-}
-
-#[test]
-fn checked_add_u8() {
-    test_checked_arith(u8::checked_add, "checked_add", NumericStrategy::add_unsigned());
-}
-
-#[test]
-fn checked_add_u16() {
-    test_checked_arith(u16::checked_add, "checked_add", NumericStrategy::add_unsigned());
-}
-
-#[test]
-fn checked_add_u32() {
-    test_checked_arith(u32::checked_add, "checked_add", NumericStrategy::add_unsigned());
-}
-
-#[test]
-fn checked_add_u64() {
-    test_checked_arith(u64::checked_add, "checked_add", NumericStrategy::add_unsigned());
-}
-
-#[test]
-fn checked_add_i8() {
-    test_checked_arith(i8::checked_add, "checked_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn checked_add_i16() {
-    test_checked_arith(i16::checked_add, "checked_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn checked_add_i32() {
-    test_checked_arith(i32::checked_add, "checked_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn checked_add_i64() {
-    test_checked_arith(i64::checked_add, "checked_add", NumericStrategy::add_signed());
-}
-
-#[test]
-fn checked_sub_u8() {
-    test_checked_arith(u8::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
-}
-
-#[test]
-fn checked_sub_u16() {
-    test_checked_arith(u16::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
-}
-
-#[test]
-fn checked_sub_u32() {
-    test_checked_arith(u32::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
-}
-
-#[test]
-fn checked_sub_u64() {
-    test_checked_arith(u64::checked_sub, "checked_sub", NumericStrategy::sub_unsigned());
-}
-
-#[test]
-fn checked_sub_i8() {
-    test_checked_arith(i8::checked_sub, "checked_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn checked_sub_i16() {
-    test_checked_arith(i16::checked_sub, "checked_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn checked_sub_i32() {
-    test_checked_arith(i32::checked_sub, "checked_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn checked_sub_i64() {
-    test_checked_arith(i64::checked_sub, "checked_sub", NumericStrategy::sub_signed());
-}
-
-#[test]
-fn checked_mul_u8() {
-    test_checked_arith(u8::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
-}
-
-#[test]
-fn checked_mul_u16() {
-    test_checked_arith(u16::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
-}
-
-#[test]
-fn checked_mul_u32() {
-    test_checked_arith(u32::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
-}
-
-#[test]
-fn checked_mul_u64() {
-    test_checked_arith(u64::checked_mul, "checked_mul", NumericStrategy::mul_unsigned());
-}
-
-#[test]
-fn checked_mul_i8() {
-    test_checked_arith(i8::checked_mul, "checked_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn checked_mul_i16() {
-    test_checked_arith(i16::checked_mul, "checked_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn checked_mul_i32() {
-    test_checked_arith(i32::checked_mul, "checked_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn checked_mul_i64_happy_path() {
-    test_checked_arith(i64::checked_mul, "checked_mul", (any::<i64>(), any::<i64>()));
-}
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1144 once this is resolved, remove \
-            checked_mul_i64_happy_path"]
-fn checked_mul_i64() {
-    test_checked_arith(i64::checked_mul, "checked_mul", NumericStrategy::mul_signed());
-}
-
-#[test]
-fn checked_div_u8() {
-    test_checked_arith(u8::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
-}
-
-#[test]
-fn checked_div_u16() {
-    test_checked_arith(u16::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
-}
-
-#[test]
-fn checked_div_u32() {
-    test_checked_arith(u32::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
-}
-
-#[test]
-fn checked_div_u64() {
-    test_checked_arith(u64::checked_div, "checked_div", NumericStrategy::div_unsigned_checked());
-}
-
-#[test]
-fn checked_div_i8() {
-    test_checked_arith(i8::checked_div, "checked_div", NumericStrategy::div_signed_checked());
-}
-
-#[test]
-fn checked_div_i16() {
-    test_checked_arith(i16::checked_div, "checked_div", NumericStrategy::div_signed_checked());
-}
-
-#[test]
-fn checked_div_i32() {
-    test_checked_arith(i32::checked_div, "checked_div", NumericStrategy::div_signed_checked());
-}
-
-#[test]
-fn checked_div_i64() {
-    test_checked_arith(i64::checked_div, "checked_div", NumericStrategy::div_signed_checked());
-}
-
-#[test]
-fn checked_rem_u8() {
-    test_checked_arith(u8::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
-}
-
-#[test]
-fn checked_rem_u16() {
-    test_checked_arith(u16::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
-}
-
-#[test]
-fn checked_rem_u32() {
-    test_checked_arith(u32::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
-}
-
-#[test]
-fn checked_rem_u64() {
-    test_checked_arith(u64::checked_rem, "checked_rem", NumericStrategy::rem_unsigned_checked());
-}
-
-#[test]
-fn checked_rem_i8() {
-    test_checked_arith(i8::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
-}
-
-#[test]
-fn checked_rem_i16() {
-    test_checked_arith(i16::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
-}
-
-#[test]
-fn checked_rem_i32() {
-    test_checked_arith(i32::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
-}
-
-#[test]
-#[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
-fn checked_rem_i64() {
-    test_checked_arith(i64::checked_rem, "checked_rem", NumericStrategy::rem_signed_checked());
-}
-
-fn test_overflowing_arith<T>(
-    op: fn(T, T) -> (T, bool),
-    fn_name: &str,
-    strategy: impl Strategy<Value = (T, T)>,
-) where
-    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary,
-{
-    // The return value of `type_name` isn't stable, but it's good enough for this test.
-    let ty_name = type_name::<T>();
-    let main_fn = format!(
-        r#"(a: {ty_name}, b: {ty_name}) -> ({ty_name}, bool) {{
-        a.{fn_name}(b)
-    }}"#
-    );
-    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
-    let package = test.compile_package();
-
-    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
-        let rust_out = op(a, b);
-
-        // Write the operation result to 20 * PAGE_SIZE.
-        let out_addr = 20u32 * 65536;
-
-        let mut args = Vec::<midenc_hir::Felt>::default();
-        out_addr.push_to_operand_stack(&mut args);
-        push_wasm_ty_to_operand_stack(a, &mut args);
-        push_wasm_ty_to_operand_stack(b, &mut args);
-
-        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
-            let ty_byte_size = std::mem::size_of::<T>();
-            assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
-            // At most 17 bytes are written to memory: ty_byte_size <= 16 and 1 byte for the bool.
-            let x: [u8; 17] =
-                trace.read_from_rust_memory(out_addr).expect("output was not written");
-            let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
-
-            let rs_out_bytes =
-                [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
-
-            prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
-            Ok(())
-        })?;
-        Ok(())
-    });
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
-}
-
-fn test_binary_fn<T, U>(op: fn(T, U) -> T, fn_name: &str, strategy: impl Strategy<Value = (T, U)>)
-where
-    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + std::fmt::Debug,
-    U: ToMidenRepr + PrimInt + Arbitrary,
-{
-    // The return value of `type_name` isn't stable, but it's good enough for this test.
-    let lhs_ty_name = type_name::<T>();
-    let rhs_ty_name = type_name::<U>();
-
-    // Write the result to memory to handle all integer widths with one `main_fn`.
-    // If the result were to be returned, it would be written to memory for 128 bit wide ints
-    // and returned on the stack for smaller ints.
-    let main_fn = format!(
-        r#"(out: *mut {lhs_ty_name}, a: {lhs_ty_name}, b: {rhs_ty_name}) -> u32 {{
-        unsafe {{ core::ptr::write(out, a.{fn_name}(b)); }}
-        0
-    }}"#
-    );
-    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
-    let package = test.compile_package();
-
-    let res = TestRunner::default().run(&strategy, move |(a, b)| {
-        let rust_out = op(a, b);
-
-        // Write the operation result to 20 * PAGE_SIZE.
-        let out_addr = 20u32 * 65536;
-        let mut args = Vec::<midenc_hir::Felt>::default();
-        out_addr.push_to_operand_stack(&mut args);
-        push_wasm_ty_to_operand_stack(a, &mut args);
-        push_wasm_ty_to_operand_stack(b, &mut args);
-
-        eval_package::<u32, _, _>(package.clone(), None, &args, &test.session, |trace| {
-            let ty_byte_size = std::mem::size_of::<T>();
-            // At most 16 bytes are written to memory.
-            assert!(ty_byte_size <= 16, "cannot handle types larger than 16 bytes");
-            let x: [u8; 16] =
-                trace.read_from_rust_memory(out_addr).expect("output was not written");
-            let vm_out_bytes = x[..ty_byte_size].to_vec(); // only take what's written
-            let rs_out_bytes = rust_out.to_le_bytes();
-
-            prop_assert_eq!(rs_out_bytes.as_ref(), &vm_out_bytes, "VM output mismatch");
-            Ok(())
-        })?;
-        Ok(())
-    });
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
-}
-
-fn test_checked_arith<T>(
-    op: fn(T, T) -> Option<T>,
-    fn_name: &str,
-    strategy: impl Strategy<Value = (T, T)>,
-) where
-    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary,
-{
-    // The return value of `type_name` isn't stable, but it's good enough for this test.
-    let ty_name = type_name::<T>();
-    let main_fn = format!(
-        r#"(a: {ty_name}, b: {ty_name}) -> ({ty_name}, bool) {{
-        // Convert `Option<T>` to (T, bool) bool as `Option` is not yet supported (#111)
-        match a.{fn_name}(b) {{
-            Some(value) => (value, true),
-            None => (0 as {ty_name}, false),
-        }}
-    }}"#
-    );
-    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
-    let package = test.compile_package();
-
-    let res = NumericStrategy::<T>::test_runner().run(&strategy, move |(a, b)| {
-        let rust_out = match op(a, b) {
-            Some(value) => (value, true),
-            None => (T::zero(), false),
-        };
-
-        // Write the operation result to 20 * PAGE_SIZE.
-        let out_addr = 20u32 * 65536;
-
-        let mut args = Vec::<midenc_hir::Felt>::default();
-        out_addr.push_to_operand_stack(&mut args);
-        push_wasm_ty_to_operand_stack(a, &mut args);
-        push_wasm_ty_to_operand_stack(b, &mut args);
-
-        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
-            let ty_byte_size = std::mem::size_of::<T>();
-            assert!(ty_byte_size <= 8, "cannot handle types larger than 8 bytes");
-            // At most 9 bytes are written to memory: ty_byte_size <= 8 and 1 byte for the bool.
-            let x: [u8; 9] = trace.read_from_rust_memory(out_addr).expect("output was not written");
-            let vm_out_bytes = x[..ty_byte_size + 1].to_vec(); // only take what's actually written
-
-            let rs_out_bytes =
-                [rust_out.0.to_le_bytes().as_ref(), &[u8::from(rust_out.1)]].concat();
-
-            prop_assert_eq!(&rs_out_bytes, &vm_out_bytes, "VM output mismatch");
-            Ok(())
-        })?;
-        Ok(())
-    });
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal(shrinked) failing case: {value:?}\nFailure: {reason:?}");
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
-}
+test_overflowing_arith!(overflowing_add, add_unsigned, u8, u16, u32, u64, u128);
+test_overflowing_arith!(overflowing_add, add_signed, i8, i16, i32, i64, i128);
+test_overflowing_arith!(overflowing_sub, sub_unsigned, u8, u16, u32, u64, u128);
+test_overflowing_arith!(overflowing_sub, sub_signed, i8, i16, i32, i64, i128);
+test_overflowing_arith!(overflowing_mul, mul_unsigned, u8, u16, u32, u64, u128);
+test_overflowing_arith!(overflowing_mul, mul_signed, i8, i16, i32, i128);
+test_overflowing_arith!(overflowing_div, div_unsigned_overflowing, u8, u16, u32, u64, u128);
+test_overflowing_arith!(overflowing_div, div_signed_overflowing, i8, i16, i32, i64, i128);
+test_overflowing_arith!(overflowing_rem, rem_unsigned_overflowing, u8, u16, u32, u64, u128);
+test_overflowing_arith!(
+    overflowing_rem,
+    rem_signed_overflowing,
+    i8,
+    i16,
+    i32,
+    #[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
+    i64,
+    i128
+);
+
+test_checked_arith!(checked_add, add_unsigned, u8, u16, u32, u64, u128);
+test_checked_arith!(checked_add, add_signed, i8, i16, i32, i64, i128);
+test_checked_arith!(checked_sub, sub_unsigned, u8, u16, u32, u64, u128);
+test_checked_arith!(checked_sub, sub_signed, i8, i16, i32, i64, i128);
+test_checked_arith!(checked_mul, mul_unsigned, u8, u16, u32, u64, u128);
+test_checked_arith!(
+    checked_mul,
+    mul_signed,
+    i8,
+    i16,
+    i32,
+    #[ignore = "https://github.com/0xMiden/compiler/issues/1144"]
+    i64,
+    i128
+);
+test_checked_arith!(checked_div, div_unsigned_checked, u8, u16, u32, u64, u128);
+test_checked_arith!(checked_div, div_signed_checked, i8, i16, i32, i64, i128);
+test_checked_arith!(checked_rem, rem_unsigned_checked, u8, u16, u32, u64, u128);
+test_checked_arith!(
+    checked_rem,
+    rem_signed_checked,
+    i8,
+    i16,
+    i32,
+    #[ignore = "https://github.com/0xMiden/compiler/issues/1000"]
+    i64,
+    i128
+);
+
+test_saturating_arith!(
+    saturating_add,
+    add_unsigned,
+    u8,
+    u16,
+    u32,
+    u64,
+    #[ignore = "https://github.com/0xMiden/compiler/issues/1355"]
+    u128
+);
+test_saturating_arith!(saturating_add, add_signed, i8, i16, i32, i64, i128);
+test_saturating_arith!(
+    saturating_sub,
+    sub_unsigned,
+    u8,
+    u16,
+    u32,
+    u64,
+    #[ignore = "https://github.com/0xMiden/compiler/issues/1355"]
+    u128
+);
+test_saturating_arith!(saturating_sub, sub_signed, i8, i16, i32, i64, i128);
+test_saturating_arith!(saturating_mul, mul_unsigned, u8, u16, u32, u64, u128);
+test_saturating_arith!(
+    saturating_mul,
+    mul_signed,
+    i8,
+    i16,
+    i32,
+    #[ignore = "https://github.com/0xMiden/compiler/issues/1144"]
+    i64,
+    i128
+);
+test_saturating_arith!(saturating_div, div_unsigned_overflowing, u8, u16, u32, u64, u128);
+test_saturating_arith!(saturating_div, div_signed_overflowing, i8, i16, i32, i64, i128);
 
 test_bool_op_total!(ge, >=, u64);
 test_bool_op_total!(ge, >=, i64);
@@ -1151,56 +588,6 @@ test_int_op!(shl, <<, i32, 0..i32::MAX, 0u32..32);
 test_int_op!(shl, <<, i16, 0..i16::MAX, 0u16..16);
 test_int_op!(shl, <<, i8, 0..i8::MAX, 0u8..8);
 
-#[test]
-fn wrapping_shl_u8() {
-    test_binary_fn(u8::wrapping_shl, "wrapping_shl", (any::<u8>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_u16() {
-    test_binary_fn(u16::wrapping_shl, "wrapping_shl", (any::<u16>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_u32() {
-    test_binary_fn(u32::wrapping_shl, "wrapping_shl", (any::<u32>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_u64() {
-    test_binary_fn(u64::wrapping_shl, "wrapping_shl", (any::<u64>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_u128() {
-    test_binary_fn(u128::wrapping_shl, "wrapping_shl", (any::<u128>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_i8() {
-    test_binary_fn(i8::wrapping_shl, "wrapping_shl", (any::<i8>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_i16() {
-    test_binary_fn(i16::wrapping_shl, "wrapping_shl", (any::<i16>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_i32() {
-    test_binary_fn(i32::wrapping_shl, "wrapping_shl", (any::<i32>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_i64() {
-    test_binary_fn(i64::wrapping_shl, "wrapping_shl", (any::<i64>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shl_i128() {
-    test_binary_fn(i128::wrapping_shl, "wrapping_shl", (any::<i128>(), any::<u32>()));
-}
-
 test_int_op!(shr, >>, i64, i64::MIN..=i64::MAX, 0u64..=63);
 test_int_op!(shr, >>, u64, 0..=u64::MAX, 0u64..=63);
 test_int_op!(shr, >>, u32, 0..u32::MAX, 0u32..32);
@@ -1211,55 +598,26 @@ test_int_op!(shr, >>, u8, 0..u8::MAX, 0u32..8);
 //test_int_op!(shr, >>, i16, i16::MIN..=i16::MAX, 0..=15);
 //test_int_op!(shr, >>, i32, i32::MIN..=i32::MAX, 0..=31);
 
-#[test]
-fn wrapping_shr_u8() {
-    test_binary_fn(u8::wrapping_shr, "wrapping_shr", (any::<u8>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_u16() {
-    test_binary_fn(u16::wrapping_shr, "wrapping_shr", (any::<u16>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_u32() {
-    test_binary_fn(u32::wrapping_shr, "wrapping_shr", (any::<u32>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_u64() {
-    test_binary_fn(u64::wrapping_shr, "wrapping_shr", (any::<u64>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_u128() {
-    test_binary_fn(u128::wrapping_shr, "wrapping_shr", (any::<u128>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_i8() {
-    test_binary_fn(i8::wrapping_shr, "wrapping_shr", (any::<i8>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_i16() {
-    test_binary_fn(i16::wrapping_shr, "wrapping_shr", (any::<i16>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_i32() {
-    test_binary_fn(i32::wrapping_shr, "wrapping_shr", (any::<i32>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_i64() {
-    test_binary_fn(i64::wrapping_shr, "wrapping_shr", (any::<i64>(), any::<u32>()));
-}
-
-#[test]
-fn wrapping_shr_i128() {
-    test_binary_fn(i128::wrapping_shr, "wrapping_shr", (any::<i128>(), any::<u32>()));
-}
+test_shift!(wrapping_shl, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(wrapping_shl, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(wrapping_shr, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(wrapping_shr, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(rotate_left, rotate_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(rotate_left, rotate_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(rotate_right, rotate_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(rotate_right, rotate_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(unbounded_shl, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(unbounded_shl, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_shift!(unbounded_shr, unbounded_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_shift!(unbounded_shr, unbounded_shift_signed_u32, i8, i16, i32, i64, i128);
+test_checked_shift!(checked_shl, checked_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_checked_shift!(checked_shl, checked_shift_signed_u32, i8, i16, i32, i64, i128);
+test_checked_shift!(checked_shr, checked_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_checked_shift!(checked_shr, checked_shift_signed_u32, i8, i16, i32, i64, i128);
+test_overflowing_shift!(overflowing_shl, overflowing_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_overflowing_shift!(overflowing_shl, overflowing_shift_signed_u32, i8, i16, i32, i64, i128);
+test_overflowing_shift!(overflowing_shr, overflowing_shift_unsigned_u32, u8, u16, u32, u64, u128);
+test_overflowing_shift!(overflowing_shr, overflowing_shift_signed_u32, i8, i16, i32, i64, i128);
 
 test_unary_op!(neg, -, i32, (i32::MIN + 1)..=i32::MAX);
 test_unary_op!(neg, -, i16, (i16::MIN + 1)..=i16::MAX);
@@ -1274,3 +632,181 @@ test_unary_op_total!(bnot, !, u32);
 test_unary_op_total!(bnot, !, u16);
 test_unary_op_total!(bnot, !, u8);
 test_unary_op_total!(bnot, !, bool);
+
+fn test_overflowing_arith<T, U>(
+    op: fn(T, U) -> (T, bool),
+    fn_name: &str,
+    cases: NumericCases<(T, U)>,
+) where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
+    U: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
+    let main_fn = format!(
+        r#"(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs_ty_name}) -> bool {{
+        let (value, flag) = a.{fn_name}(b);
+        unsafe {{ *addr = value; }}
+        flag
+    }}"#
+    );
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+    let package = test.compile_package();
+
+    cases.run(move |(a, b)| {
+        let rust_out = op(a, b);
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
+        out_addr.push_to_operand_stack(&mut args);
+
+        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
+            let success = trace
+                .parse_result::<bool>()
+                .expect("expected a boolean value on the operand stack");
+            prop_assert_eq!(
+                success,
+                rust_out.1,
+                "the Miden VM and Rust disagree on the outcome of this operation"
+            );
+            let x = trace
+                .read_from_rust_memory::<T>(out_addr)
+                .expect("expected valid value of input type");
+            prop_assert_eq!(
+                x,
+                rust_out.0,
+                "the Miden VM and Rust disagree on the value produced by this operation"
+            );
+            Ok(())
+        })?;
+        Ok(())
+    });
+}
+
+fn test_checked_arith<T, U>(op: fn(T, U) -> Option<T>, fn_name: &str, cases: NumericCases<(T, U)>)
+where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
+    U: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + 'static,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
+    let source_code = format!(
+        r#"
+#![no_std]
+#![no_main]
+#![feature(alloc_error_handler)]
+
+#[panic_handler]
+fn my_panic(_info: &core::panic::PanicInfo) -> ! {{
+    core::arch::wasm32::unreachable()
+}}
+
+#[alloc_error_handler]
+fn my_alloc_error(_info: core::alloc::Layout) -> ! {{
+    core::arch::wasm32::unreachable()
+}}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn entrypoint(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs_ty_name}) -> bool {{
+    match a.{fn_name}(b) {{
+        Some(value) => {{
+            unsafe {{ *addr = value; }}
+            true
+        }}
+        None => false,
+    }}
+}}
+"#
+    );
+    let mut test = CompilerTest::rust_source_program_with_entrypoint(source_code, "entrypoint");
+    let package = test.compile_package();
+
+    cases.run(move |(a, b)| {
+        let rust_out = match op(a, b) {
+            Some(value) => (value, true),
+            None => (T::zero(), false),
+        };
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
+        out_addr.push_to_operand_stack(&mut args);
+
+        eval_package::<Felt, _, _>(package.clone(), None, &args, &test.session, |trace| {
+            let success = trace
+                .parse_result::<bool>()
+                .expect("expected a boolean value on the operand stack");
+            prop_assert_eq!(
+                success,
+                rust_out.1,
+                "the Miden VM and Rust disagree on the outcome of this operation"
+            );
+            if success {
+                let x = trace
+                    .read_from_rust_memory::<T>(out_addr)
+                    .expect("expected valid value of input type");
+                prop_assert_eq!(
+                    x,
+                    rust_out.0,
+                    "the Miden VM and Rust disagree on the value produced by this operation"
+                );
+            }
+            Ok(())
+        })?;
+        Ok(())
+    });
+}
+
+fn test_binary_fn<T, U>(op: fn(T, U) -> T, fn_name: &str, cases: NumericCases<(T, U)>)
+where
+    T: ToBytes + ToMidenRepr + FromMidenRepr + PrimInt + Arbitrary + std::fmt::Debug + 'static,
+    U: ToMidenRepr + PrimInt + Arbitrary,
+{
+    // The return value of `type_name` isn't stable, but it's good enough for this test.
+    let lhs_ty_name = type_name::<T>();
+    let rhs_ty_name = type_name::<U>();
+
+    // Write the result to memory to handle all integer widths with one `main_fn`.
+    // If the result were to be returned, it would be written to memory for 128 bit wide ints
+    // and returned on the stack for smaller ints.
+    let main_fn = format!(
+        r#"(a: {lhs_ty_name}, b: {rhs_ty_name}, addr: *mut {lhs_ty_name}) {{
+        unsafe {{ *addr = a.{fn_name}(b); }}
+    }}"#
+    );
+    let mut test = CompilerTest::rust_fn_body(&main_fn, None);
+    let package = test.compile_package();
+
+    cases.run(move |(a, b)| {
+        let rust_out = op(a, b);
+
+        // Write the operation result to 20 * PAGE_SIZE.
+        let out_addr = 20u32 * 65536;
+        let mut args = Vec::<midenc_hir::Felt>::default();
+        push_wasm_ty_to_operand_stack(a, &mut args);
+        push_wasm_ty_to_operand_stack(b, &mut args);
+        out_addr.push_to_operand_stack(&mut args);
+
+        eval_package::<u32, _, _>(package.clone(), None, &args, &test.session, |trace| {
+            let x = trace
+                .read_from_rust_memory::<T>(out_addr)
+                .expect("expected valid value of input type");
+            prop_assert_eq!(
+                x,
+                rust_out,
+                "the Miden VM and Rust disagree on the value produced by this operation"
+            );
+            Ok(())
+        })?;
+        Ok(())
+    });
+}

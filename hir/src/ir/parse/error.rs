@@ -191,6 +191,13 @@ pub enum ParserError {
         span: SourceSpan,
         reason: String,
     },
+    #[error("unknown dialect '{dialect}'")]
+    #[diagnostic(help("only dialects registered in this context can be named here"))]
+    UnknownDialect {
+        #[label("this dialect is not registered")]
+        span: SourceSpan,
+        dialect: interner::Symbol,
+    },
     #[error("invalid operation")]
     #[diagnostic()]
     NonTerminatorWithSuccessors {
@@ -252,6 +259,13 @@ pub enum ParserError {
         #[label]
         span: SourceSpan,
         name: BlockId,
+    },
+    #[error("redefinition of symbol {name}")]
+    #[diagnostic()]
+    SymbolAlreadyDefined {
+        #[label]
+        span: SourceSpan,
+        name: interner::Symbol,
     },
     #[error("too many arguments specified in argument list")]
     #[diagnostic()]

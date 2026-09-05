@@ -11,17 +11,19 @@
 //! frontend invents. The distinction is why [`CompiledArtifact`] carries the longer name; it
 //! is the *finished* artifact of one whole compilation, not the artifact of a checkpoint.
 
-use alloc::{sync::Arc, vec::Vec};
+use alloc::sync::Arc;
 
 use miden_mast_package::Package;
 use midenc_codegen_masm::MasmComponent;
+use midenc_frontend_wasm_metadata::PackageSections;
 use midenc_hir::dialects::builtin;
 
 /// A parsed Miden component, together with everything assembly will need from the parse.
 pub struct MidenComponent {
     pub world: builtin::WorldRef,
     pub component: Option<builtin::ComponentRef>,
-    pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// Out-of-band payloads destined for the compiled package's sections.
+    pub sections: PackageSections,
     #[cfg(feature = "std")]
     pub source_provenance: miden_assembly::ProjectSourceProvenanceInputs,
 }
@@ -31,7 +33,7 @@ impl Clone for MidenComponent {
         Self {
             world: self.world,
             component: self.component,
-            account_component_metadata_bytes: self.account_component_metadata_bytes.clone(),
+            sections: self.sections.clone(),
             #[cfg(feature = "std")]
             source_provenance: miden_assembly::ProjectSourceProvenanceInputs {
                 root: miden_assembly::SourceFileProvenance {
@@ -55,8 +57,8 @@ impl Clone for MidenComponent {
 /// The Miden Assembly a component was lowered to, ready to be assembled.
 pub struct CodegenOutput {
     pub component: Arc<MasmComponent>,
-    /// The serialized AccountComponentMetadata (name, description, storage layout, etc.)
-    pub account_component_metadata_bytes: Option<Vec<u8>>,
+    /// Out-of-band payloads destined for the compiled package's sections.
+    pub sections: PackageSections,
     #[cfg(feature = "std")]
     pub source_provenance: miden_assembly::ProjectSourceProvenanceInputs,
 }
@@ -87,7 +89,7 @@ impl Clone for CodegenOutput {
     fn clone(&self) -> Self {
         Self {
             component: self.component.clone(),
-            account_component_metadata_bytes: self.account_component_metadata_bytes.clone(),
+            sections: self.sections.clone(),
             source_provenance: self.source_provenance(),
         }
     }

@@ -1,7 +1,7 @@
 [package]
 name = "miden-base-macros"
 description = "Provides proc macro support for Miden rollup SDK"
-version = "0.14.0-rc.1"
+version = "0.14.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true
@@ -39,6 +39,7 @@ wit-component = { workspace = true, optional = true }
 
 [dev-dependencies]
 # NOTE: Use local paths for dev-only dependency to avoid relying on crates.io during packaging
+miden-assembly = { workspace = true, features = ["std"] }
 miden-protocol = { workspace = true, features = ["std"] }
 miden-field.workspace = true
 miden-field-repr.workspace = true

@@ -1351,7 +1351,7 @@ impl crate::formatter::PrettyPrint for PrintLoop<'_> {
             }
 
             if self.verbose {
-                doc += text(format!("{:?}", &block.borrow()));
+                doc += text(format!("{:?}", block.borrow()));
             }
         }
 

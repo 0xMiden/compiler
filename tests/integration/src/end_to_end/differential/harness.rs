@@ -119,7 +119,7 @@ fn run_case_inner(name: &str, source: &str, inputs: Inputs<'_>) {
         .file("Cargo.toml", &manifest)
         .file("src/lib.rs", &full_source)
         .build();
-    let dylib_path = build_host_cdylib(&native_proj.root(), &pkg_name);
+    let dylib_path = build_host_cdylib(native_proj.root(), &pkg_name);
 
     let lib = unsafe { libloading::Library::new(&dylib_path) }
         .unwrap_or_else(|e| panic!("failed to load {}: {e}", dylib_path.display()));
@@ -250,13 +250,16 @@ fn build_host_cdylib(project_root: &std::path::Path, pkg_name: &str) -> PathBuf 
     // link the default platform libs (libSystem/libc) so the resulting dylib is
     // loadable via `libloading`.
     //
-    // Clear `CARGO_TARGET_DIR` so the case project uses its own `target/` rather
-    // than the parent's redirected one.
+    // `CARGO_TARGET_DIR` is inherited rather than cleared, so this build joins the
+    // one build directory the rest of the suite shares (`cargo_proj::shared_build_dir`)
+    // instead of giving each of the 90+ cases a private `target/`. Nothing here
+    // depends on where the artifact lands: the path is read back out of cargo's JSON
+    // output, and these units differ from every other unit in the directory by their
+    // `RUSTFLAGS`, which Cargo already folds into the metadata hash.
     let mut child = Command::new("cargo")
         .current_dir(project_root)
         .args(["build", "--release", "--lib", "--message-format=json-render-diagnostics"])
         .env("RUSTFLAGS", "-C default-linker-libraries=yes")
-        .env_remove("CARGO_TARGET_DIR")
         .stdout(Stdio::piped())
         .spawn()
         .expect("failed to spawn cargo for native build");

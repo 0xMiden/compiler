@@ -1,4 +1,4 @@
-use alloc::rc::Rc;
+use alloc::{rc::Rc, vec::Vec};
 
 use midenc_dialect_arith as arith;
 use midenc_dialect_cf as cf;
@@ -7,7 +7,8 @@ use midenc_dialect_scf as scf;
 use midenc_dialect_ub as ub;
 use midenc_dialect_wasm as wasm;
 use midenc_hir::{
-    Context, EntityMut, Operation, OperationName, Report,
+    Context, EntityMut, Op, Operation, OperationName, OperationRef, Report, Symbol, SymbolRef,
+    Visibility, WalkResult,
     conversion::{
         ConversionConfig, ConversionPatternSet, ConversionTarget, DynamicLegalityResult,
         apply_full_conversion,
@@ -15,6 +16,7 @@ use midenc_hir::{
     dialects::{builtin, debuginfo},
     pass::{Pass, PassExecutionState, PostPassStatus},
 };
+use midenc_session::diagnostics::{Severity, Spanned};
 
 use crate::HirLowering;
 
@@ -23,6 +25,246 @@ use crate::HirLowering;
 /// An indirect call schedules its arguments plus the table index inside this window, which
 /// bounds the argument size its lowering can support.
 const OPERAND_STACK_WINDOW_FELTS: usize = miden_core::program::MIN_STACK_DEPTH;
+
+/// Validate every `hir.procedure_root` below `root` before MASM procedures begin snapshotting HIR
+/// visibility.
+///
+/// MASM dialect legalization establishes that this operation has a lowering, while this preflight
+/// checks linkability only for the operations the component builder selected for emission. Running
+/// it at that boundary keeps invalid input from reaching instruction emission without inspecting
+/// intentionally omitted world siblings.
+pub(crate) fn validate_procedure_roots(root: &Operation) -> Result<(), Report> {
+    root.prewalk(|op| {
+        let Some(procedure_root) = op.downcast_ref::<hir::ProcedureRoot>() else {
+            return WalkResult::Continue(());
+        };
+        match validate_procedure_root(procedure_root) {
+            Ok(_) => WalkResult::Continue(()),
+            Err(err) => WalkResult::Break(err),
+        }
+    })
+    .into_result()
+}
+
+/// Resolve and validate one `hir.procedure_root` for MASM lowering.
+///
+/// A private procedure is linkable only from within the MASM module that defines it. HIR symbol
+/// tables are the ownership boundaries lowered to MASM modules for components, interfaces, and
+/// modules. The one exception is a component-less world with exactly one module: its world-level
+/// functions and that module intentionally coalesce into the same MASM root. Comparing the
+/// effective owners determines whether a private reference crosses a boundary without making
+/// visibility depend on lowering order.
+pub(crate) fn validate_procedure_root(
+    procedure_root: &hir::ProcedureRoot,
+) -> Result<SymbolRef, Report> {
+    let op = procedure_root.as_operation();
+    let context = op.context();
+    let caller_symbol_table = op.nearest_symbol_table().ok_or_else(|| {
+        context
+            .diagnostics()
+            .diagnostic(Severity::Error)
+            .with_message("invalid procedure_root operation: no containing symbol table")
+            .with_primary_label(
+                procedure_root.span(),
+                "this operation must be nested in a symbol table",
+            )
+            .into_report()
+    })?;
+    let callee = {
+        let symbol_table = caller_symbol_table.borrow();
+        symbol_table
+            .as_symbol_table()
+            .expect("nearest_symbol_table returned a non-symbol-table operation")
+            .resolve(procedure_root.callee().path())
+    }
+    .ok_or_else(|| {
+        context
+            .diagnostics()
+            .diagnostic(Severity::Error)
+            .with_message("invalid procedure_root operation: unable to resolve callee")
+            .with_primary_label(
+                procedure_root.span(),
+                "this symbol path is not resolvable from this operation",
+            )
+            .into_report()
+    })?;
+
+    let callee_op = callee.borrow();
+
+    // An op marked as the note script root must have been repointed at the lifted note-script
+    // export by component export lifting. Check this before ordinary visibility so a missed
+    // retarget keeps its more specific diagnostic.
+    if op.get_attribute(hir::ProcedureRoot::NOTE_SCRIPT_ROOT_ATTR).is_some()
+        && callee_op
+            .as_symbol_operation()
+            .get_attribute(hir::NOTE_SCRIPT_EXPORT_ATTR)
+            .is_none()
+    {
+        return Err(context
+            .diagnostics()
+            .diagnostic(Severity::Error)
+            .with_message(
+                "invalid procedure_root operation: expected the note script root, but the callee \
+                 is not the `note_script`-attributed export",
+            )
+            .with_primary_label(
+                procedure_root.span(),
+                "this operation must reference the lifted note-script export",
+            )
+            .with_help(
+                "the containing component must define a note-script export, and operations marked \
+                 as the note script root must be retargeted at it during component export lifting",
+            )
+            .into_report());
+    }
+
+    let callee_symbol_table = callee_op.as_symbol_operation().nearest_symbol_table();
+    if callee_op.visibility() == Visibility::Private
+        && callee_symbol_table
+            .is_none_or(|callee_owner| !share_masm_module(caller_symbol_table, callee_owner))
+    {
+        return Err(context
+            .diagnostics()
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "invalid hir.procedure_root: private callee '{}' is not linkable from another \
+                 Miden Assembly module",
+                callee_op.path()
+            ))
+            .with_primary_label(
+                procedure_root.span(),
+                "this reference crosses a Miden Assembly module boundary",
+            )
+            .with_secondary_label(
+                callee_op.as_symbol_operation().span(),
+                "this callee is private to its defining module",
+            )
+            .with_help(
+                "declare the callee internal or public and ensure any intervening module is \
+                 public, or materialize the root within its defining module",
+            )
+            .into_report());
+    }
+
+    if let Some(callee_symbol_table) = callee_symbol_table
+        && let Some(inaccessible_module) =
+            first_inaccessible_callee_module(caller_symbol_table, callee_symbol_table)
+    {
+        let inaccessible_module = inaccessible_module.borrow();
+        let module = inaccessible_module
+            .downcast_ref::<builtin::Module>()
+            .expect("only a module can make a MASM module path inaccessible");
+        return Err(context
+            .diagnostics()
+            .diagnostic(Severity::Error)
+            .with_message(format!(
+                "invalid hir.procedure_root: callee '{}' is nested beneath private module '{}'",
+                callee_op.path(),
+                module.path()
+            ))
+            .with_primary_label(
+                procedure_root.span(),
+                "this reference cannot reach the callee's Miden Assembly module",
+            )
+            .with_secondary_label(
+                module.as_operation().span(),
+                "this module is private outside its parent and sibling modules",
+            )
+            .with_help(
+                "declare the intervening module public, or materialize the root within its parent \
+                 or a sibling module",
+            )
+            .into_report());
+    }
+
+    drop(callee_op);
+    Ok(callee)
+}
+
+/// Whether two HIR symbol-table owners emit procedures into the same MASM module.
+fn share_masm_module(lhs: OperationRef, rhs: OperationRef) -> bool {
+    if lhs == rhs {
+        return true;
+    }
+
+    fn is_the_only_module_of_world(module: OperationRef, world: OperationRef) -> bool {
+        if module.borrow().parent_op() != Some(world) {
+            return false;
+        }
+        let world = world.borrow();
+        let Some(world) = world.downcast_ref::<builtin::World>() else {
+            return false;
+        };
+        let body = world.body();
+        let entry = body.entry();
+        let ops = entry.body();
+        let mut modules = ops.iter().filter(|op| op.is::<builtin::Module>());
+        modules.next().is_some_and(|only| only.as_operation_ref() == module)
+            && modules.next().is_none()
+            && !ops.iter().any(|op| op.is::<builtin::Component>())
+    }
+
+    (lhs.borrow().is::<builtin::World>() && is_the_only_module_of_world(rhs, lhs))
+        || (rhs.borrow().is::<builtin::World>() && is_the_only_module_of_world(lhs, rhs))
+}
+
+/// Return the first module on the callee side which is not visible from the caller's MASM module.
+///
+/// A private MASM submodule is visible to its parent and every descendant of that parent.
+/// Consequently, the first callee branch below the owners' common ancestor may remain private;
+/// every deeper callee-only module must be public.
+fn first_inaccessible_callee_module(
+    caller_owner: OperationRef,
+    callee_owner: OperationRef,
+) -> Option<OperationRef> {
+    fn owner_ancestry(mut owner: OperationRef) -> Vec<OperationRef> {
+        let mut ancestry = Vec::new();
+        loop {
+            ancestry.push(owner);
+            let parent = owner.borrow().nearest_symbol_table();
+            let Some(parent) = parent else {
+                break;
+            };
+            owner = parent;
+        }
+        ancestry.reverse();
+        ancestry
+    }
+
+    let caller_ancestry = owner_ancestry(caller_owner);
+    let callee_ancestry = owner_ancestry(callee_owner);
+    let common_len = caller_ancestry
+        .iter()
+        .zip(callee_ancestry.iter())
+        .take_while(|(caller, callee)| caller == callee)
+        .count();
+    callee_ancestry[common_len..].iter().enumerate().find_map(|(index, owner)| {
+        let owner_op = owner.borrow();
+        let module = owner_op.downcast_ref::<builtin::Module>()?;
+        let private_in_masm = !modules_form_the_artifact_interface(*owner)
+            && *module.get_visibility() != Visibility::Public;
+        (private_in_masm && index != 0).then_some(*owner)
+    })
+}
+
+/// Whether lowering forces modules in this artifact to be public regardless of HIR visibility.
+fn modules_form_the_artifact_interface(mut owner: OperationRef) -> bool {
+    loop {
+        let op = owner.borrow();
+        if let Some(component) = op.downcast_ref::<builtin::Component>() {
+            return component.is_synthetic_wrapper();
+        }
+        if let Some(world) = op.downcast_ref::<builtin::World>() {
+            let body = world.body();
+            return !body.entry().body().iter().any(|op| op.is::<builtin::Component>());
+        }
+        let Some(parent) = op.parent_op() else {
+            return false;
+        };
+        drop(op);
+        owner = parent;
+    }
+}
 
 midenc_hir::inventory::submit!(::midenc_hir::pass::registry::PassInfo::new::<LegalizeForMasm>(
     LegalizeForMasm::ARGUMENT,

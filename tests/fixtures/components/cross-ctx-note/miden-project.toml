@@ -9,6 +9,3 @@ path = "src/lib.rs"
 
 [dependencies]
 cross-ctx-account = { path = "../cross-ctx-account" }
-
-[package.metadata.miden.dependencies]
-cross-ctx-account = { wit = "../cross-ctx-account/wit/cross-ctx-account.wit" }

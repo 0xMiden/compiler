@@ -9,7 +9,7 @@ use midenc_hir::{
     interner::{Symbol, symbols},
 };
 
-use super::{advice, crypto, debug, felt, mem};
+use super::{advice, crypto, debug, felt, mem, note};
 
 /// Error raised when an attempt is made to use or load an unrecognized intrinsic
 #[derive(Debug, thiserror::Error, Diagnostic)]
@@ -33,6 +33,8 @@ pub enum Intrinsic {
     Crypto(Symbol),
     /// An advice intrinsic
     Advice(Symbol),
+    /// A note intrinsic
+    Note(Symbol),
 }
 
 /// Attempt to recognize an intrinsic function from the given [SymbolPath].
@@ -72,6 +74,7 @@ impl TryFrom<&SymbolPath> for Intrinsic {
             symbols::FeltModule => Ok(Self::Felt(function)),
             symbols::Crypto => Ok(Self::Crypto(function)),
             symbols::Advice => Ok(Self::Advice(function)),
+            symbols::Note => Ok(Self::Note(function)),
             _ => Err(UnknownIntrinsicError(path.clone())),
         }
     }
@@ -94,6 +97,7 @@ impl Intrinsic {
             Self::Felt(_) => symbols::FeltModule,
             Self::Crypto(_) => symbols::Crypto,
             Self::Advice(_) => symbols::Advice,
+            Self::Note(_) => symbols::Note,
         }
     }
 
@@ -105,6 +109,7 @@ impl Intrinsic {
             Self::Felt(_) => SymbolPath::from_iter(felt::MODULE_PREFIX.iter().copied()),
             Self::Crypto(_) => SymbolPath::from_iter(crypto::MODULE_PREFIX.iter().copied()),
             Self::Advice(_) => SymbolPath::from_iter(advice::MODULE_PREFIX.iter().copied()),
+            Self::Note(_) => SymbolPath::from_iter(note::MODULE_PREFIX.iter().copied()),
         }
     }
 
@@ -115,7 +120,8 @@ impl Intrinsic {
             | Self::Mem(function)
             | Self::Felt(function)
             | Self::Crypto(function)
-            | Self::Advice(function) => *function,
+            | Self::Advice(function)
+            | Self::Note(function) => *function,
         }
     }
 
@@ -132,6 +138,8 @@ impl Intrinsic {
             // Crypto intrinsics are converted to function calls
             Self::Crypto(function) => crypto::function_type(*function),
             Self::Advice(function) => advice::function_type(*function),
+            // Note intrinsics synthesize their linker-stub bodies in place
+            Self::Note(_) => None,
         }
     }
 
@@ -145,6 +153,8 @@ impl Intrinsic {
             Self::Advice(function) => advice::as_intrinsic(*function),
             // Crypto intrinsics are converted to function calls
             Self::Crypto(function) => crypto::as_intrinsic(*function),
+            // Note intrinsics need module context that only the linker-stub path provides
+            Self::Note(_) => Some(IntrinsicsConversionResult::ModuleContextStub),
         }
     }
 }
@@ -158,6 +168,9 @@ pub enum IntrinsicsConversionResult {
     },
     /// As a native instruction
     MidenVmOp,
+    /// As a linker stub whose body is synthesized from module-level context (e.g. frontend
+    /// metadata); never inlined at call sites and not backed by a MASM import.
+    ModuleContextStub,
 }
 
 pub enum IntrinsicEffect {

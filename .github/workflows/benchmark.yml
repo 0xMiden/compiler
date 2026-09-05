@@ -40,6 +40,12 @@ jobs:
           prefix-key: ${{ env.RUST_CACHE_KEY }}
           cache-targets: false
 
+      - name: Install cargo-make
+        run: |
+          if ! cargo make --version 2>/dev/null; then
+            cargo install cargo-make --force
+          fi
+
       - name: Test benchmark report formatter
         run: python3 -m unittest discover -s .github/scripts -p 'test_compare_example_benchmarks.py'
 
@@ -47,33 +53,32 @@ jobs:
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/target/benchmark-candidate
         run: |
-          cargo build --release -p cargo-miden
+          cargo make cargo-miden
           cargo build --release -p midenc-benchmark-runner --bin example-benchmarks
 
       - name: Build next cargo-miden
         run: |
           git fetch --no-tags origin next:refs/remotes/origin/next
-          git worktree add --detach "$RUNNER_TEMP/compiler-next" origin/next
-          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/benchmark-next" \
-            cargo build \
-              --manifest-path "$RUNNER_TEMP/compiler-next/Cargo.toml" \
-              --release \
-              -p cargo-miden
+          git worktree add --detach "${RUNNER_TEMP}/compiler-next" origin/next
+          pushd "${RUNNER_TEMP}/compiler-next"
+          CARGO_TARGET_DIR="${GITHUB_WORKSPACE}/target/benchmark-next" cargo make cargo-miden
+          popd
 
       - name: Benchmark next
         run: |
           target/benchmark-candidate/release/example-benchmarks \
             --workspace-root "$GITHUB_WORKSPACE" \
-            --cargo-miden target/benchmark-next/release/cargo-miden \
+            --cargo-miden "${RUNNER_TEMP}/compiler-next/bin/cargo-miden" \
             --commit "$(git rev-parse origin/next)" \
             --output-dir target/example-benchmarks/baseline \
-            --build-dir target/example-benchmark-build/baseline
+            --build-dir target/example-benchmark-build/baseline \
+            --skip-failed-builds
 
       - name: Benchmark candidate
         run: |
           target/benchmark-candidate/release/example-benchmarks \
             --workspace-root "$GITHUB_WORKSPACE" \
-            --cargo-miden target/benchmark-candidate/release/cargo-miden \
+            --cargo-miden bin/cargo-miden \
             --commit "$GITHUB_SHA" \
             --output-dir target/example-benchmarks/candidate \
             --build-dir target/example-benchmark-build/candidate

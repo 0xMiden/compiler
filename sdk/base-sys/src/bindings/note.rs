@@ -4,11 +4,12 @@ use alloc::vec::Vec;
 
 use miden_stdlib_sys::{Felt, Word, WordAligned};
 
-use super::{AccountId, NoteType, RawAccountId, RawAttachmentLocation, Recipient, Tag};
+use super::{
+    AccountId, MAX_ATTACHMENT_WORDS, MAX_ATTACHMENTS_PER_NOTE, NoteType, RawAccountId,
+    RawAttachmentLocation, Recipient, Tag, assert_attachment_count, assert_attachment_word_count,
+};
 
 const MAX_NOTE_STORAGE_ITEMS: usize = 1024;
-const MAX_ATTACHMENTS_PER_NOTE: usize = 4;
-const MAX_ATTACHMENT_WORDS: usize = 256;
 
 #[allow(improper_ctypes)]
 unsafe extern "C" {
@@ -121,6 +122,37 @@ unsafe extern "C" {
         metadata_f3: Felt,
         ptr: *mut RawAttachmentLocation,
     );
+    // The name must stay in lockstep with the stub's `export_name` (`stubs/note.rs`) and
+    // `SCRIPT_ROOT_STUB_NAME` in the compiler frontend (`frontend/wasm/src/intrinsics/note.rs`).
+    #[cfg_attr(target_family = "wasm", linkage = "extern_weak")]
+    #[link_name = "intrinsics::note::script_root"]
+    fn extern_note_script_root(ptr: *mut Word);
+}
+
+/// Returns the MAST root digest of the note script defined by the current crate.
+///
+/// Macro plumbing behind the `get_entrypoint_root()` associated method that `#[note]` generates
+/// on the note input type — call that method instead of this function. It lives here because
+/// the underlying weak extern requires `feature(linkage)`, which user crates do not enable.
+///
+/// This is a compiler intrinsic: the call compiles to a MASM `procref` of the crate's
+/// `#[note_script]` entrypoint export, so the digest is the note script root observed by the
+/// transaction kernel when the note is executed. The digest is computed at assembly time.
+///
+/// Compilation fails if the current project does not define a `#[note_script]` entrypoint.
+///
+/// Must not be called from code reachable from the `#[note_script]` entrypoint itself: the note
+/// script's MAST root would then depend on its own digest, and assembly fails with a call-graph
+/// cycle error. Inside a running note script, use [`active_note::get_script_root`] instead.
+///
+/// [`active_note::get_script_root`]: crate::bindings::active_note::get_script_root
+#[doc(hidden)]
+pub fn __entrypoint_root() -> Word {
+    unsafe {
+        let mut ret_area = WordAligned::new(::core::mem::MaybeUninit::<Word>::uninit());
+        extern_note_script_root(ret_area.as_mut_ptr());
+        ret_area.into_inner().assume_init()
+    }
 }
 
 /// Computes and stores a note recipient from serial number, script root, and storage elements.
@@ -220,10 +252,7 @@ pub fn write_attachment_commitments_to_memory(attachments_commitment: Word) -> V
             ptr as *mut Felt,
         )
     };
-    assert!(
-        num_attachments <= MAX_ATTACHMENTS_PER_NOTE,
-        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
-    );
+    assert_attachment_count(num_attachments);
     unsafe {
         commitments.set_len(num_attachments);
     }
@@ -245,10 +274,7 @@ pub fn write_attachment_to_memory(attachment_commitment: Word) -> Vec<Word> {
             ptr as *mut Felt,
         )
     };
-    assert!(
-        num_words <= MAX_ATTACHMENT_WORDS,
-        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
-    );
+    assert_attachment_word_count(num_words);
     unsafe {
         attachment.set_len(num_words);
     }
@@ -262,10 +288,7 @@ pub fn write_indexed_attachment_to_memory(
     attachment_commitments: &[Word],
     attachment_idx: u32,
 ) -> Vec<Word> {
-    assert!(
-        attachment_commitments.len() <= MAX_ATTACHMENTS_PER_NOTE,
-        "note cannot contain more than {MAX_ATTACHMENTS_PER_NOTE} attachments"
-    );
+    assert_attachment_count(attachment_commitments.len());
 
     let mut attachment: Vec<Word> = Vec::with_capacity(MAX_ATTACHMENT_WORDS);
     let num_words = unsafe {
@@ -282,10 +305,7 @@ pub fn write_indexed_attachment_to_memory(
             dest_ptr as *mut Felt,
         )
     };
-    assert!(
-        num_words <= MAX_ATTACHMENT_WORDS,
-        "note attachment cannot contain more than {MAX_ATTACHMENT_WORDS} words"
-    );
+    assert_attachment_word_count(num_words);
     unsafe {
         attachment.set_len(num_words);
     }

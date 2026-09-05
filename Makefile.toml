@@ -285,11 +285,96 @@ description = "Clean build artifacts"
 command = "cargo"
 args = ["clean", "${@}"]
 
+[tasks.sweep]
+category = "Build"
+description = "Garbage-collect the target directory: mark the live units by replaying the workspace build/test graphs, keep unmarked units younger than --age days (default 1; --cache-age 14 for directories the marks never reach), delete the rest; pass --dry-run to only report"
+command = "python3"
+args = [
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/sweep-target.py",
+    "${CARGO_TARGET_DIR}",
+    "${@}",
+]
+
+[tasks.sweep-deep]
+category = "Build"
+description = "Garbage-collect the target directory with no age guards: keep only the units the workspace build/test graphs mark live. Run after switching branch bases (a rebase orphans a whole build generation at once). Deletes IDE/clippy checker layers and the nested build caches; the next test run rebuilds them"
+command = "python3"
+args = [
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/sweep-target.py",
+    "${CARGO_TARGET_DIR}",
+    "--age",
+    "0",
+    "--cache-age",
+    "0",
+    "${@}",
+]
+
+# Runs at the end of `cargo make test-all`, the one flow after which the mark
+# step compiles nothing (the whole graph was just built). Skips any directory a
+# running build holds locked, and a failure (for example, no `python3` on the
+# machine) never fails the flow. Set `MIDEN_SKIP_SWEEP` to disable it, for
+# example when alternating between branches that supersede each other's builds.
+[tasks.sweep-flow]
+private = true
+ignore_errors = true
+condition = { env_not_set = ["MIDEN_SKIP_SWEEP"] }
+command = "python3"
+args = [
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools/sweep-target.py",
+    "${CARGO_TARGET_DIR}",
+]
+
+[tasks.test-sweep]
+category = "Test"
+description = "Run target-sweeper unit tests"
+command = "python3"
+args = [
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/tools",
+    "-p",
+    "test_sweep_target.py",
+]
+
 [tasks.update]
 category = "Dependencies"
 description = "Update dependencies to latest semver-compatible version"
 command = "cargo"
 args = ["update"]
+
+[tasks.refresh-example-lockfiles]
+category = "Dependencies"
+description = "Refresh checked-in example and fixture lockfiles without compiling crates"
+script = ['''
+#!/usr/bin/env bash
+set -euo pipefail
+
+WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
+refreshed=0
+
+while IFS= read -r -d '' lockfile; do
+    manifest="${WORKSPACE}/${lockfile%/Cargo.lock}/Cargo.toml"
+    if [[ ! -f "${manifest}" ]]; then
+        echo "missing manifest for ${lockfile}: ${manifest}" >&2
+        exit 1
+    fi
+
+    echo "Refreshing ${lockfile}"
+    cargo update --workspace --manifest-path "${manifest}"
+    refreshed=$((refreshed + 1))
+done < <(git -C "${WORKSPACE}" ls-files -z -- \
+    'examples/**/Cargo.lock' \
+    'tests/fixtures/**/Cargo.lock')
+
+if [[ "${refreshed}" -eq 0 ]]; then
+    echo "no checked-in example or fixture lockfiles found" >&2
+    exit 0
+fi
+
+echo "Refreshed ${refreshed} lockfiles"
+''']
 
 [tasks.outdated]
 category = "Dependencies"
@@ -329,12 +414,12 @@ args = ["audit"]
 [tasks.test-all]
 category = "Test"
 description = "Runs the complete set of compiler tests"
-dependencies = ["test-rust", "test-lit"]
+run_task = { name = ["test-sweep", "test-rust", "test-lit"], fork = true, cleanup_task = "sweep-flow" }
 
 [tasks.test]
 category = "Test"
 description = "Runs all Rust-based tests including network integration tests"
-dependencies = ["test-rust"]
+dependencies = ["test-sweep", "test-rust"]
 
 [tasks.test-release]
 category = "Test"
@@ -563,7 +648,7 @@ script = ['''
 #!/usr/bin/env bash
 set -euo pipefail
 WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
-OUT="${WORKSPACE}/target/fuzza-coverage"
+OUT="${CARGO_TARGET_DIR}/fuzza-coverage"
 mkdir -p "${OUT}"
 
 cargo llvm-cov clean --workspace
@@ -601,7 +686,7 @@ script = ['''
 #!/usr/bin/env bash
 set -euo pipefail
 WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
-OUT="${WORKSPACE}/target/fuzza-coverage"
+OUT="${CARGO_TARGET_DIR}/fuzza-coverage"
 
 if [[ ! -f "${OUT}/report.json" ]]; then
     echo "no baseline report at ${OUT}/report.json — run \`cargo make fuzza-cov\` first" >&2
@@ -647,7 +732,7 @@ script = ['''
 set -euo pipefail
 WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
 cargo llvm-cov clean --workspace
-rm -rf "${WORKSPACE}/target/fuzza-coverage"
+rm -rf "${CARGO_TARGET_DIR}/fuzza-coverage"
 ''']
 
 [tasks.fuzza-probe]
@@ -660,7 +745,7 @@ WORKSPACE="${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}"
 FILTER="${1:?usage: cargo make fuzza-probe <test-filter> [emit-kinds, default hir]}"
 EMIT="${2:-hir}"
 CASE="${FILTER##*::}"
-OUT="${WORKSPACE}/target/fuzza-probe/${CASE}"
+OUT="${CARGO_TARGET_DIR}/fuzza-probe/${CASE}"
 # Fresh output dir per probe so stale dumps can't be mistaken for this run's.
 rm -rf "${OUT}"
 mkdir -p "${OUT}"
@@ -678,7 +763,7 @@ for k in "${KINDS[@]}"; do SPEC="${SPEC:+${SPEC},}${k}=${OUT}"; done
 # across probes. --include-ignored lets a case wired with a temporary
 # #[ignore] (the recommended probe setup) run without un-ignoring it.
 status=0
-MIDENC_EMIT="${SPEC}" CARGO_TARGET_DIR="${WORKSPACE}/target" \
+MIDENC_EMIT="${SPEC}" \
     cargo test --package midenc-integration-tests "${FILTER}" -- \
     --include-ignored --test-threads=1 --nocapture || status=$?
 
@@ -690,6 +775,17 @@ ls -l "${OUT}" 2>/dev/null || true
 exit "${status}"
 ''']
 
+[tasks.test-templates]
+category = "Test"
+description = "Scaffold a project from every template and build it, dev and release"
+# An ordinary workspace member, so it shares the workspace's target directory,
+# profile and lockfile with every other test. Each test generates a project and
+# builds it, which takes minutes -- hence its own task and its own CI job rather
+# than running inside the general test task.
+dependencies = ["cargo-miden"]
+command = "cargo"
+args = ["make", "test", "-E", "package(midenc-template-tests)", "${@}"]
+
 # Release tooling
 # ============================================================
 # Local, read-only or repository-local commands only. `publish` and `finalize`
@@ -698,38 +794,13 @@ exit "${status}"
 # them and production. A convenient local shortcut for them would be a way to
 # skip that by accident.
 
-[tasks.release-tool]
-category = "Build"
-description = "Builds release-tool and installs it to the bin folder"
-command = "cargo"
-args = [
-    "-Z",
-    "unstable-options",
-    "build",
-    "-p",
-    "midenc-release",
-    "--bin",
-    "release-tool",
-    "--artifact-dir",
-    "${MIDENC_BIN_DIR}",
-]
-
 [tasks.release]
 category = "Release"
-command = "${MIDENC_BIN_DIR}/release-tool"
 description = "Invoke a `release-tool` command"
+command = "release-tool"
+install_crate = { crate_name = "miden-release-tool", binary = "release-tool", test_arg = "--help" }
+install_crate_args = ["--locked"]
 args = [
     "${@}"
 ]
-dependencies = ["release-tool"]
 env = { "GITHUB_REPOSITORY" = "0xMiden/compiler" }
-
-[tasks.test-templates]
-category = "Test"
-description = "Scaffold a project from every template and build it, dev and release"
-# An ordinary workspace member, so it shares the workspace's target directory,
-# profile and lockfile with every other test. Each test generates a project and
-# builds it, which takes minutes -- hence its own task and its own CI job rather
-# than running inside the general test task.
-command = "cargo"
-args = ["make", "test", "-E", "package(midenc-template-tests)", "${@}"]

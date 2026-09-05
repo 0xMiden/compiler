@@ -1,0 +1,14 @@
+[package]
+name = "p2id-tx-script"
+version = "0.1.0"
+
+[lib]
+kind = "tx-script"
+path = "src/lib.rs"
+namespace = "miden:base/transaction-script@1.0.0"
+
+[dependencies]
+miden-core = "*"
+miden-protocol = "*"
+basic-wallet = { path = "../basic-wallet" }
+p2id = { path = "../p2id-note" }

@@ -39,11 +39,32 @@ struct BenchmarkCase {
     execute: bool,
 }
 
+/// Marker wrapping a compile-step failure, so `--skip-failed-builds` skips exactly those.
+#[derive(Debug)]
+struct BuildFailure(anyhow::Error);
+
+impl std::fmt::Display for BuildFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:#}", self.0)
+    }
+}
+
+impl std::error::Error for BuildFailure {}
+
 pub struct BenchmarkRunner {
     workspace_root: PathBuf,
     output_dir: PathBuf,
     build_dir: PathBuf,
     cargo_miden: Option<PathBuf>,
+    /// Whether a case whose build fails is skipped instead of failing the whole run.
+    ///
+    /// The baseline side of a benchmark comparison drives the previous compiler over the
+    /// candidate's examples and SDK, so a candidate change that old compilers cannot build
+    /// — for example, macros that require package features the old compiler does not
+    /// produce — would otherwise fail the baseline outright. Skipped cases appear in the
+    /// comparison report without a baseline value. The candidate run must never set this:
+    /// a candidate build failure is a real regression.
+    skip_failed_builds: bool,
 }
 
 impl BenchmarkRunner {
@@ -52,6 +73,7 @@ impl BenchmarkRunner {
         output_dir: impl Into<PathBuf>,
         build_dir: impl Into<PathBuf>,
         cargo_miden: Option<PathBuf>,
+        skip_failed_builds: bool,
     ) -> Result<Self> {
         let workspace_root = workspace_root
             .into()
@@ -68,6 +90,7 @@ impl BenchmarkRunner {
             output_dir,
             build_dir,
             cargo_miden,
+            skip_failed_builds,
         })
     }
 
@@ -79,7 +102,16 @@ impl BenchmarkRunner {
         let mut benchmarks = Vec::with_capacity(cases.len());
         for case in cases {
             eprintln!("Benchmarking {}", case.name);
-            benchmarks.push(self.run_case(&case)?);
+            match self.run_case(&case) {
+                Ok(benchmark) => benchmarks.push(benchmark),
+                // Only compile-step failures are skippable: a malformed inputs.toml or an
+                // executor failure is a harness problem, not an old-compiler limitation,
+                // and must fail the run.
+                Err(err) if self.skip_failed_builds && err.is::<BuildFailure>() => {
+                    eprintln!("Skipping {}: {err:#}", case.name);
+                }
+                Err(err) => return Err(err),
+            }
         }
 
         let report = BenchmarkReport {
@@ -103,8 +135,13 @@ impl BenchmarkRunner {
             case.name
         );
 
-        let optimized = self.compile(&project_dir, "none")?;
-        let saved_package = self.output_dir.join("packages").join(format!("{}.masp", case.name));
+        let optimized = self
+            .compile(&project_dir, "none")
+            .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
+        let saved_package =
+            self.output_dir
+                .join("packages")
+                .join(format!("{}.{}", case.name, Package::EXTENSION));
         fs::copy(&optimized, &saved_package).with_context(|| {
             format!(
                 "failed to copy optimized package from {} to {}",
@@ -119,7 +156,9 @@ impl BenchmarkRunner {
             let inputs = project_dir.join("inputs.toml");
             let optimized_profile = self.profile(optimized_package, &inputs, &project_dir, None)?;
 
-            let debuggable = self.compile(&project_dir, "full")?;
+            let debuggable = self
+                .compile(&project_dir, "full")
+                .map_err(|err| anyhow::Error::new(BuildFailure(err)))?;
             let relative_flamegraph = format!("flamegraphs/{}.svg", case.name);
             let flamegraph_path = self.output_dir.join(&relative_flamegraph);
             self.profile(
@@ -142,7 +181,19 @@ impl BenchmarkRunner {
         })
     }
 
+    /// Compiles an example, keeping its dependency packages readable for [`Self::profile`].
+    ///
+    /// The build runs with `MIDENC_PACKAGE_CACHE` naming a runner-owned directory. The
+    /// current compiler adopts the directory as its package cache and leaves the packages
+    /// in place after it exits. Old compiler versions — one runner binary drives both
+    /// during a benchmark comparison — ignore the inherited variable and persist their
+    /// packages in the project cache instead, which the legacy scan picks up.
     fn compile(&self, project_dir: &Path, debug: &str) -> Result<PathBuf> {
+        // The export directory is runner-owned and stable across invocations; recreate it so
+        // this compile's output is the only content. Without the clear, an old compiler that
+        // ignores the variable would leave the previous invocation's export in place, and
+        // its non-empty state would suppress the legacy-cache fallback in `profile`.
+        recreate_dir(&self.package_cache_dir(project_dir))?;
         let mut command = if let Some(cargo_miden) = self.cargo_miden.as_ref() {
             let mut command = Command::new(cargo_miden);
             command.arg("miden");
@@ -166,6 +217,7 @@ impl BenchmarkRunner {
             .arg("--color")
             .arg("never")
             .env("CARGO_TARGET_DIR", self.build_dir.join("cargo-target"))
+            .env("MIDENC_PACKAGE_CACHE", self.package_cache_dir(project_dir))
             .current_dir(project_dir);
 
         let output = command
@@ -176,6 +228,12 @@ impl BenchmarkRunner {
         }
 
         parse_compiled_package(&output, project_dir)
+    }
+
+    /// The per-example package-cache directory this run hands to the compiler.
+    fn package_cache_dir(&self, project_dir: &Path) -> PathBuf {
+        let case = project_dir.file_name().unwrap_or_default();
+        self.build_dir.join("package-cache").join(case)
     }
 
     fn profile(
@@ -190,12 +248,25 @@ impl BenchmarkRunner {
         let config = ExecutionConfig::parse_file(inputs_path)
             .with_context(|| format!("failed to parse {}", inputs_path.display()))?;
         let mut executor = Executor::from_config(config);
-        let packages_dir = project_dir.join("target/miden/packages");
-        let mut dependencies = fs::read_dir(&packages_dir)
-            .with_context(|| format!("failed to read {}", packages_dir.display()))?
-            .map(|entry| entry.map(|entry| entry.path()))
-            .collect::<std::io::Result<Vec<_>>>()?;
-        dependencies.retain(|path| path.extension().is_some_and(|ext| ext == "masp"));
+        // Load exactly one package generation. The current compiler adopts the runner-owned
+        // cache directory (see `Self::compile`), so when that directory holds packages it is
+        // the generation this run produced and the only one loaded. The legacy project-cache
+        // scan serves old compiler versions only — combining generations could pair a stale
+        // package with the current one under the same name and version but a different
+        // digest, which package installation rejects.
+        let export_dir = self.package_cache_dir(project_dir);
+        let mut dependencies: Vec<PathBuf> = if export_dir.is_dir() {
+            read_dir_paths(&export_dir)?
+                .into_iter()
+                .filter(|path| is_package_path(path))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if dependencies.is_empty() {
+            let packages_dir = project_dir.join("target/miden/packages");
+            dependencies = collect_dependency_packages(&packages_dir)?;
+        }
         dependencies.sort();
         for dependency in dependencies {
             executor
@@ -212,6 +283,46 @@ impl BenchmarkRunner {
         }
         Ok(profile)
     }
+}
+
+/// Collects the legacy-layout dependency packages that the executor must load for an example.
+///
+/// One runner binary drives both compiler versions during a benchmark comparison. The current
+/// compiler adopts the runner-provided `MIDENC_PACKAGE_CACHE` directory and leaves its packages
+/// there (see `BenchmarkRunner::compile`). Old compiler versions
+/// persist packages in the project cache: either directly in `target/miden/packages/` or in a
+/// fingerprinted subdirectory of it, so the scan reads the cache directory and one level of
+/// subdirectories, and tolerates the directory being absent. Package resolution at execution
+/// time is digest-addressed, so packages from a stale cache entry are inert.
+fn collect_dependency_packages(packages_dir: &Path) -> Result<Vec<PathBuf>> {
+    if !packages_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut dependencies = Vec::new();
+    for path in read_dir_paths(packages_dir)? {
+        if path.is_dir() {
+            dependencies
+                .extend(read_dir_paths(&path)?.into_iter().filter(|path| is_package_path(path)));
+        } else if is_package_path(&path) {
+            dependencies.push(path);
+        }
+    }
+    dependencies.sort();
+    Ok(dependencies)
+}
+
+/// Lists the entry paths of a directory.
+fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
+    fs::read_dir(dir)
+        .with_context(|| format!("failed to read {}", dir.display()))?
+        .map(|entry| entry.map(|entry| entry.path()))
+        .collect::<std::io::Result<Vec<_>>>()
+        .with_context(|| format!("failed to read {}", dir.display()))
+}
+
+/// Returns true when a path names a serialized Miden package file.
+fn is_package_path(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == Package::EXTENSION)
 }
 
 fn discover_cases(workspace_root: &Path) -> Result<Vec<BenchmarkCase>> {
@@ -355,6 +466,22 @@ mod tests {
                     execute: true,
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn collects_packages_from_flat_and_fingerprinted_cache_layouts() {
+        let cache = tempfile::tempdir().unwrap();
+        fs::write(cache.path().join("legacy.masp"), []).unwrap();
+        fs::write(cache.path().join("1234567890abcdef.lock"), []).unwrap();
+        let fingerprint = cache.path().join("1234567890abcdef");
+        fs::create_dir_all(&fingerprint).unwrap();
+        fs::write(fingerprint.join("miden-core.masp"), []).unwrap();
+        fs::write(fingerprint.join("README.txt"), []).unwrap();
+
+        assert_eq!(
+            collect_dependency_packages(cache.path()).unwrap(),
+            vec![fingerprint.join("miden-core.masp"), cache.path().join("legacy.masp")]
         );
     }
 

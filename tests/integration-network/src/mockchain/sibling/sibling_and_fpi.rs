@@ -62,7 +62,7 @@ fn sibling_and_fpi() {
     let mut builder = MockChain::builder();
     let remote_account = AccountBuilder::new([0_u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(remote_counter_component)
         .build_existing()
@@ -114,11 +114,13 @@ fn sibling_and_fpi() {
     );
 
     let foreign_account_inputs = chain.get_foreign_account_inputs(remote_account.id()).unwrap();
-    let tx_context_builder = chain
-        .build_tx_context(account.clone(), &[note.id()], &[])
-        .unwrap()
-        .foreign_accounts([foreign_account_inputs]);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = chain
+        .build_transaction(account.clone())
+        .authenticated_input_note(note.id())
+        .foreign_accounts([foreign_account_inputs])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mock_tx);
 
     // The local sibling counter was incremented; the remote counter was only read through FPI.
     assert_counter_storage_at_key(

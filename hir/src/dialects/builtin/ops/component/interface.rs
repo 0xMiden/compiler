@@ -22,7 +22,7 @@ pub struct ComponentId {
 
 impl fmt::Display for ComponentId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}:{}@{}", &self.namespace, &self.name, &self.version)
+        write!(f, "{}:{}@{}", self.namespace, self.name, self.version)
     }
 }
 
@@ -45,7 +45,7 @@ impl ComponentId {
     pub fn to_library_path(&self) -> midenc_session::LibraryPath {
         use midenc_session::LibraryPath;
 
-        let ns = format!("{}:{}@{}", &self.namespace, &self.name, &self.version);
+        let ns = format!("{}:{}@{}", self.namespace, self.name, self.version);
         let mut path = LibraryPath::default();
         path.push_component(&ns);
         path

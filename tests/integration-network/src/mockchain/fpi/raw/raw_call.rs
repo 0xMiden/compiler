@@ -72,7 +72,7 @@ fn build_raw_fpi_component(procedure_name: &str) -> (AccountComponent, Word) {
         .expect("failed to compile raw FPI callee account component");
     let procedure_path = format!("{RAW_CALLEE_MODULE}::{procedure_name}");
     let procedure_root = component_code
-        .as_library()
+        .as_package()
         .get_procedure_root_by_path(procedure_path.as_str())
         .expect("failed to resolve raw FPI callee procedure root");
     let raw_component = AccountComponent::new(
@@ -129,7 +129,7 @@ fn execute_raw_fpi_note(raw_component: AccountComponent, note_package: Arc<Packa
     let mut builder = MockChain::builder();
     let foreign_account = AccountBuilder::new([0_u8; 32])
         .account_type(AccountType::Public)
-        .with_auth_component(NoAuth)
+        .with_component(NoAuth)
         .with_component(BasicWallet)
         .with_component(raw_component)
         .build_existing()
@@ -166,11 +166,13 @@ fn execute_raw_fpi_note(raw_component: AccountComponent, note_package: Arc<Packa
     chain.prove_next_block().unwrap();
 
     let foreign_account_inputs = chain.get_foreign_account_inputs(foreign_account.id()).unwrap();
-    let tx_context_builder = chain
-        .build_tx_context(caller_account, &[caller_note.id()], &[])
-        .unwrap()
-        .foreign_accounts([foreign_account_inputs]);
-    execute_tx(&mut chain, tx_context_builder);
+    let mock_tx = chain
+        .build_transaction(caller_account)
+        .authenticated_input_note(caller_note.id())
+        .foreign_accounts([foreign_account_inputs])
+        .build()
+        .unwrap();
+    execute_tx(&mut chain, mock_tx);
 }
 
 /// Returns the generated note manifest for a raw FPI SDK binding test.

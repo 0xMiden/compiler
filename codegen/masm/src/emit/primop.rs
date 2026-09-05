@@ -430,6 +430,17 @@ impl OpEmitter<'_> {
         self.emit(masm::Instruction::EmitImm(Event::FrameEnd.as_event_id().as_felt().into()), span);
     }
 
+    /// Push the MAST root digest of `callee` onto the operand stack as one word.
+    ///
+    /// This emits a `procref` instruction; the assembler computes the digest at assembly time
+    /// and pushes it with `root[0]` on top.
+    pub fn procedure_root(&mut self, callee: masm::InvocationTarget, span: SourceSpan) {
+        for _ in 0..midenc_dialect_hir::ProcedureRoot::DIGEST_FELTS {
+            self.push(Type::Felt);
+        }
+        self.emit(masm::Instruction::ProcRef(callee), span);
+    }
+
     /// Execute the given procedure in a new context.
     ///
     /// A function called using this operation is invoked in a new memory context.
@@ -493,7 +504,7 @@ impl OpEmitter<'_> {
                     ty.is_pointer(),
                     "invalid exec to {callee}: invalid argument for sret parameter, expected {}, \
                      got {ty}",
-                    &param.ty
+                    param.ty
                 );
             }
             // Validate that the argument type is valid for the parameter ABI
@@ -652,42 +663,42 @@ mod tests {
         assert!(
             matches!(&insts[1], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == num_slots.into()),
             "expected push of the slot count, got {:?}",
-            &insts[1]
+            insts[1]
         );
         assert_eq!(insts[2], masm::Instruction::U32Lt);
         assert!(
             matches!(&insts[3], masm::Instruction::AssertWithError(masm::Immediate::Value(msg)) if msg.inner().contains("function table index out of bounds")),
             "expected bounds-check assertion, got {:?}",
-            &insts[3]
+            insts[3]
         );
         // Rewrite the index to the slot's element address
         assert!(
             matches!(&insts[4], masm::Instruction::MulImm(masm::Immediate::Value(value)) if *value.inner() == Felt::new_unchecked(FunctionTableLayout::SLOT_SIZE_ELEMENTS as u64)),
             "expected multiply by the slot size, got {:?}",
-            &insts[4]
+            insts[4]
         );
         assert!(
             matches!(&insts[5], masm::Instruction::AddImm(masm::Immediate::Value(value)) if *value.inner() == Felt::new_unchecked(base_elem_addr as u64)),
             "expected add of the table base address, got {:?}",
-            &insts[5]
+            insts[5]
         );
         // Signature check: load the slot's tag and assert it matches the expected tag
         assert_eq!(insts[6], masm::Instruction::Dup0);
         assert!(
             matches!(&insts[7], masm::Instruction::AddImm(masm::Immediate::Value(value)) if *value.inner() == Felt::new_unchecked(FunctionTableLayout::TYPE_TAG_OFFSET_ELEMENTS as u64)),
             "expected add of the tag offset, got {:?}",
-            &insts[7]
+            insts[7]
         );
         assert_eq!(insts[8], masm::Instruction::MemLoad);
         assert!(
             matches!(&insts[9], masm::Instruction::Push(masm::Immediate::Value(value)) if *value.inner() == type_tag.into()),
             "expected push of the expected signature tag, got {:?}",
-            &insts[9]
+            insts[9]
         );
         assert!(
             matches!(&insts[10], masm::Instruction::AssertEqWithError(masm::Immediate::Value(msg)) if msg.inner().contains("callee signature mismatch")),
             "expected signature-check assertion, got {:?}",
-            &insts[10]
+            insts[10]
         );
         // Frame-traced dynexec, which itself pops the slot address
         assert!(matches!(&insts[11], masm::Instruction::EmitImm(_)));

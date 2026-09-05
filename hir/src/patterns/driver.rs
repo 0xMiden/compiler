@@ -656,7 +656,7 @@ impl GreedyPatternRewriteDriver {
         let result = if let Some(listener) = self.config.listener.as_deref() {
             let op_name = op_ref.name();
             let can_apply = |pattern: &dyn RewritePattern| {
-                log::trace!(target: "pattern-rewrite-driver", "applying pattern {} to op {}", pattern.name(), &op_name);
+                log::trace!(target: "pattern-rewrite-driver", "applying pattern {} to op {}", pattern.name(), op_name);
                 listener.notify_pattern_begin(pattern, op_ref);
                 true
             };

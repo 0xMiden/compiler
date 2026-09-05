@@ -18,5 +18,16 @@ miden = { git = "https://github.com/0xMiden/compiler", branch = "{{ compiler_bra
 {% elsif compiler_rev %}
 miden = { git = "https://github.com/0xMiden/compiler", rev = "{{ compiler_rev }}" }
 {% else %}
-miden = { version = "0.14.0-rc.1" }
+miden = { version = "0.14" }
+{% endif %}
+
+[build-dependencies]
+{% if compiler_path %}
+miden-sdk-build-script-support = { path = "{{ compiler_path }}/sdk/build-script-support" }
+{% elsif compiler_branch %}
+miden-sdk-build-script-support = { git = "https://github.com/0xMiden/compiler", branch = "{{ compiler_branch }}" }
+{% elsif compiler_rev %}
+miden-sdk-build-script-support = { git = "https://github.com/0xMiden/compiler", rev = "{{ compiler_rev }}" }
+{% else %}
+miden-sdk-build-script-support = { version = "0.14" }
 {% endif %}

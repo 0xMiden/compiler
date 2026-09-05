@@ -1,7 +1,6 @@
 #![no_std]
 #![feature(unboxed_closures)]
 #![feature(fn_traits)]
-#![feature(specialization)]
 #![allow(incomplete_features)]
 #![deny(warnings)]
 

@@ -9,6 +9,3 @@ path = "src/lib.rs"
 
 [dependencies]
 basic-wallet = { path = "../../../../examples/basic-wallet" }
-
-[package.metadata.miden.dependencies]
-basic-wallet = { wit = "../../../../examples/basic-wallet/target/generated-wit/" }

@@ -428,7 +428,7 @@ impl<T> SpecArenaExtend for Vec<T> {
 impl<T> SpecArenaExtend for Box<[T]> {
     fn extend_arena(self, chunks: &mut ChunkList<Self::Item>) -> NonNull<[T]> {
         let capacity = self.len();
-        let ptr = unsafe { NonNull::new_unchecked(Box::into_raw(self)) };
+        let ptr = NonNull::from_mut(Box::leak(self));
         let mut cursor = chunks.back_mut();
         cursor.insert_before(Rc::new(ChunkHeader {
             link: LinkedListLink::new(),

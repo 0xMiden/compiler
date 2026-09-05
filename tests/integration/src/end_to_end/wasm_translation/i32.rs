@@ -3,24 +3,25 @@ use std::cell::RefCell;
 use miden_core::Felt;
 use miden_processor::{ExecutionOptions, StackInputs, advice::AdviceInputs, execute_sync};
 use midenc_hir::{FunctionIdent, Ident, interner::Symbol};
-use proptest::{
-    prelude::*,
-    test_runner::{TestCaseError, TestError},
-};
+use proptest::{prelude::*, test_runner::TestCaseError};
 
 use super::wasm_interpreter::WasmInterpreter;
 use crate::{
     CompilerTestBuilder,
-    end_to_end::support::{NumericStrategy, TrapExpectation, default_host_with_core_lib},
+    end_to_end::support::{
+        NumericCases, NumericStrategy, TrapExpectation, default_host_with_core_lib,
+    },
 };
 
-/// Proptest harness for a binary `(i32, i32) -> i32` Wasm operation.
+/// Test harness for a binary `(i32, i32) -> i32` Wasm operation.
 ///
 /// The `wat_op` is executed in a function exported as `entrypoint`.
-fn test_i32_wasm_op_binary<S, T>(wat_op: &str, strategy: S)
+///
+/// `T` may be `i32` or `u32`: Wasm still sees `i32` parameters, but unsigned ops use a `u32`
+/// [`NumericCases`] plan so edge coverage matches unsigned semantics.
+fn test_i32_wasm_op_binary<T>(wat_op: &str, cases: NumericCases<(T, T)>)
 where
-    S: Strategy<Value = (T, T)>,
-    T: I32Operand + std::fmt::Debug,
+    T: I32Operand + std::fmt::Debug + Clone,
 {
     let wat = format!(
         r#"(module
@@ -46,7 +47,7 @@ where
     let package = test.compile_package();
     let program = package.unwrap_program();
 
-    let res = NumericStrategy::<T>::test_runner().run(&strategy, |(a, b)| {
+    cases.run(|(a, b)| {
         let expected = interpreter
             .borrow_mut()
             .call_entrypoint::<(i32, i32), i32>("entrypoint", (a.as_i32(), b.as_i32()));
@@ -94,17 +95,9 @@ where
             }
         }
     });
-
-    match res {
-        Err(TestError::Fail(reason, value)) => {
-            panic!("Found minimal failing case: {value:?}\n{reason}")
-        }
-        Ok(_) => (),
-        _ => panic!("Unexpected test result: {:?}", res),
-    }
 }
 
-/// A value a strategy can generate as the operand of a Wasm `i32` operation, whether the operation
+/// A value a case plan can supply as the operand of a Wasm `i32` operation, whether the operation
 /// interprets it as signed or unsigned.
 trait I32Operand {
     /// The operand as passed to a Wasm `i32` parameter.

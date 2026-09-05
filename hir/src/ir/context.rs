@@ -120,6 +120,19 @@ impl Context {
         self.registered_dialects.borrow()[&dialect].clone()
     }
 
+    /// Like [`Context::get_registered_dialect`], but returns `None` when the dialect is not
+    /// registered, rather than panicking.
+    ///
+    /// Callers that name a dialect from source text must use this: the name is only known at
+    /// runtime, so it cannot be assumed to correspond to a registered dialect.
+    pub fn find_registered_dialect(
+        &self,
+        dialect: impl Into<interner::Symbol>,
+    ) -> Option<Rc<dyn Dialect>> {
+        let dialect = dialect.into();
+        self.registered_dialects.borrow().get(&dialect).cloned()
+    }
+
     pub fn get_registered_name<T>(&self) -> OperationName
     where
         T: OpRegistration,

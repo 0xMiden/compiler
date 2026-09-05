@@ -24,7 +24,7 @@ fn build_advice_inputs_for_smt(smt: &Smt) -> AdviceInputs {
         .collect::<Vec<_>>();
 
     AdviceInputs::default()
-        .with_stack([Felt::ZERO])
+        .with_advice_stack(vec![Felt::ZERO].into())
         .with_map(map)
         .with_merkle_store(store)
 }

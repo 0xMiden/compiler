@@ -320,6 +320,12 @@ impl CompilerTestBuilder {
         // Build test
         match source {
             CompilerTestInputType::CargoMiden(config) => {
+                // Every route into a nested `cargo` has to redirect it, not just the generated-
+                // project one: a test naming a checked-in fixture project never calls
+                // `cargo_proj::project`, and without this it builds a private `target/` into the
+                // source tree instead of sharing one.
+                crate::cargo_proj::use_shared_build_dir();
+
                 let mut argv = vec![];
                 if config.release {
                     argv.push("--release".to_string());
@@ -330,8 +336,6 @@ impl CompilerTestBuilder {
                 } else {
                     None
                 };
-
-                maybe_dump_cargo_expand(&config, rustflags_env.as_deref());
 
                 argv.extend(self.midenc_flags.iter().cloned());
 
@@ -344,7 +348,7 @@ impl CompilerTestBuilder {
                     argv,
                 )
                 .unwrap_or_else(|err| err.exit());
-                options.rustflags = rustflags_env;
+                options.rustflags = rustflags_env.clone();
                 options.link_modules.extend(self.link_masm_modules);
                 let source_manager = Arc::new(DefaultSourceManager::default());
                 let session =
@@ -355,12 +359,6 @@ impl CompilerTestBuilder {
                 // dependencies the crate declares are the ones the build uses. Extracting the
                 // WebAssembly here and re-entering the compiler with it — which is what this did
                 // — synthesized a project from the session instead, and the two disagreed.
-                //
-                // Keep generated WIT available when Cargo fails after macro expansion but before
-                // producing the final Wasm artifact. It is emitted during the build, which now
-                // happens inside `compile`, so this is a no-op here for a failure that has not
-                // occurred yet; it stays because the dump is keyed on the fixture, not on timing.
-                maybe_dump_public_generated_wit(&config);
 
                 let artifact_name = config
                     .project_dir
@@ -376,6 +374,11 @@ impl CompilerTestBuilder {
                     context,
                     artifact_name: artifact_name.into(),
                     entrypoint: self.entrypoint,
+                    cargo_expand_dump: Some(CargoExpandDump {
+                        project_dir: cargo_test_project_dir(&config),
+                        name: config.name.to_string(),
+                        release: config.release,
+                    }),
                     ..Default::default()
                 }
             }
@@ -511,6 +514,22 @@ impl CompilerTestBuilder {
         let rust_source = rust_source.into();
         let name = format!("test_rust_{}", hash_string(&rust_source));
         CompilerTestBuilder::new(RustcTest::new(name, rust_source))
+    }
+
+    /// Set the Rust source code to compile, to be executed with the given entrypoint
+    pub fn rust_source_program_with_entrypoint(
+        rust_source: impl Into<Cow<'static, str>>,
+        entrypoint: &str,
+    ) -> Self {
+        let rust_source = rust_source.into();
+        let name = format!("test_rust_{}", hash_string(&rust_source));
+        let module_name = Ident::with_empty_span(Symbol::intern(&name));
+        let mut builder = CompilerTestBuilder::new(RustcTest::new(name, rust_source));
+        builder.with_entrypoint(FunctionIdent {
+            module: module_name,
+            function: Ident::with_empty_span(Symbol::intern(entrypoint)),
+        });
+        builder
     }
 
     /// Set the Rust source code to compile and add a binary operation test
@@ -861,6 +880,21 @@ pub struct CompilerTest {
     package: Option<Result<Arc<miden_mast_package::Package>, String>>,
     /// The goal of the one compilation this test performs, once it has been performed.
     compiled_to: Option<Goal>,
+    /// The cargo-backed fixture to dump `cargo expand` output for, when the emit flag asks.
+    ///
+    /// Consumed after the pipeline has run, so the expansion sees the session's populated
+    /// package cache; see [`maybe_dump_cargo_expand`].
+    cargo_expand_dump: Option<CargoExpandDump>,
+}
+
+/// What [`maybe_dump_cargo_expand`] needs from a cargo-backed fixture.
+struct CargoExpandDump {
+    /// The fixture project directory, absolute.
+    project_dir: PathBuf,
+    /// The fixture name, used for the dump's file name.
+    name: String,
+    /// Whether the fixture builds with `--release`, mirrored by the expansion.
+    release: bool,
 }
 
 impl fmt::Debug for CompilerTest {
@@ -892,6 +926,7 @@ impl Default for CompilerTest {
             masm_lowered: None,
             package: None,
             compiled_to: None,
+            cargo_expand_dump: None,
         }
     }
 }
@@ -929,6 +964,14 @@ impl CompilerTest {
     /// Set the Rust source code to compile
     pub fn rust_source_program(rust_source: impl Into<Cow<'static, str>>) -> Self {
         CompilerTestBuilder::rust_source_program(rust_source).build()
+    }
+
+    /// Set the Rust source code to compile, with the given entrypoint
+    pub fn rust_source_program_with_entrypoint(
+        rust_source: impl Into<Cow<'static, str>>,
+        entrypoint: &str,
+    ) -> Self {
+        CompilerTestBuilder::rust_source_program_with_entrypoint(rust_source, entrypoint).build()
     }
 
     /// Set the Rust source code to compile and add a binary operation test
@@ -1084,6 +1127,21 @@ impl CompilerTest {
             Ok(_) => None,
             Err(err) => Some(Err(format_report(err))),
         };
+        if let Some(Ok(package)) = self.package.as_ref() {
+            maybe_dump_public_package_wit(&self.artifact_name, package);
+        }
+        // After the pipeline, so the session's package cache holds the fixture's dependency
+        // packages: expansion reads them, and the freshly minted lease at session creation
+        // is empty. A failed run still dumps — expansions of a failing fixture are exactly
+        // the debugging case.
+        if let Some(dump) = self.cargo_expand_dump.take() {
+            let package_cache_dir = self.session.filesystem_package_cache_dir().ok().flatten();
+            maybe_dump_cargo_expand(
+                &dump,
+                self.session.options.rustflags.as_deref(),
+                package_cache_dir.as_deref(),
+            );
+        }
     }
 }
 
@@ -1205,55 +1263,22 @@ fn get_workspace_dir() -> String {
     compiler_workspace_dir.to_string()
 }
 
-/// Copies public component WIT for a Cargo test fixture when `MIDENC_EMIT_WIT[=<path>]` is set.
+/// Writes the component WIT embedded in a compiled package when `MIDENC_EMIT_WIT[=<path>]` is set.
 ///
-/// An empty value or `1` writes `<test_name>.wit` to the current working directory. Any other
-/// non-empty value is treated as the output directory.
-fn maybe_dump_public_generated_wit(test: &CargoTest) {
+/// An empty value or `1` writes `<artifact_name>.wit` to the current working directory. Any other
+/// non-empty value is treated as the output directory. A package without a WIT section (a fixture
+/// with no `#[component]`) is skipped.
+fn maybe_dump_public_package_wit(artifact_name: &str, package: &miden_mast_package::Package) {
     let Some(out_dir) = emit_output_dir("MIDENC_EMIT_WIT") else {
         return;
     };
 
-    let generated_wit_dir = cargo_test_project_dir(test).join("target/generated-wit");
-    let mut wit_files = match fs::read_dir(&generated_wit_dir) {
-        Ok(entries) => entries
-            .map(|entry| {
-                entry.unwrap_or_else(|err| {
-                    panic!(
-                        "failed to inspect generated WIT directory '{}': {err}",
-                        generated_wit_dir.display()
-                    )
-                })
-            })
-            .map(|entry| entry.path())
-            .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("wit"))
-            .collect::<Vec<_>>(),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return,
-        Err(err) => {
-            panic!(
-                "failed to read generated WIT directory '{}': {err}",
-                generated_wit_dir.display()
-            )
-        }
-    };
-    wit_files.sort();
-
-    let [wit_file] = wit_files.as_slice() else {
-        if wit_files.is_empty() {
-            return;
-        }
-        panic!(
-            "expected one generated WIT file in '{}', found {}",
-            generated_wit_dir.display(),
-            wit_files.len()
-        );
+    let Some(wit_bytes) = midenc_frontend_wasm_metadata::package_wit(package) else {
+        return;
     };
 
-    let out_file = out_dir.join(format!("{}.wit", sanitize_filename_component(test.name.as_ref())));
-    let wit_source = fs::read(wit_file).unwrap_or_else(|err| {
-        panic!("failed to read generated WIT file '{}': {err}", wit_file.display())
-    });
-    fs::write(&out_file, wit_source).unwrap_or_else(|err| {
+    let out_file = out_dir.join(format!("{}.wit", sanitize_filename_component(artifact_name)));
+    fs::write(&out_file, wit_bytes).unwrap_or_else(|err| {
         panic!("failed to write generated WIT to '{}': {err}", out_file.display())
     });
     eprintln!("wrote generated WIT to '{}'", out_file.display());
@@ -1266,14 +1291,18 @@ fn maybe_dump_public_generated_wit(test: &CargoTest) {
 /// the current working directory. When set to `1`, it is treated as enabled and also defaults to
 /// the current working directory. When set to a non-empty value other than `1`, it is treated as
 /// the output directory.
-fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
+fn maybe_dump_cargo_expand(
+    dump: &CargoExpandDump,
+    rustflags_env: Option<&str>,
+    package_cache_dir: Option<&Path>,
+) {
     let Some(out_dir) = emit_output_dir("MIDENC_EMIT_MACRO_EXPAND") else {
         return;
     };
 
-    let project_dir = cargo_test_project_dir(test);
+    let project_dir = dump.project_dir.clone();
 
-    let filename = format!("{}.expanded.rs", sanitize_filename_component(test.name.as_ref()));
+    let filename = format!("{}.expanded.rs", sanitize_filename_component(&dump.name));
     let out_file = out_dir.join(filename);
 
     let manifest_path = project_dir.join("Cargo.toml");
@@ -1289,11 +1318,20 @@ fn maybe_dump_cargo_expand(test: &CargoTest, rustflags_env: Option<&str>) {
         // Ensure the output we write doesn't include ANSI codes.
         .env("CARGO_TERM_COLOR", "never");
 
-    if test.release {
+    if dump.release {
         cmd.arg("--release");
     }
     if let Some(rustflags_env) = rustflags_env {
         cmd.env("RUSTFLAGS", rustflags_env);
+    }
+    // Point macro expansion at the session's package cache. This is also the contract-build
+    // script's recursion guard, so a fixture with a `build.rs` expands instead of spawning a
+    // nested `cargo miden build` from inside `cargo expand`.
+    if let Some(package_cache_dir) = package_cache_dir {
+        cmd.env(
+            midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV,
+            package_cache_dir,
+        );
     }
 
     let output = cmd.output().unwrap_or_else(|err| {

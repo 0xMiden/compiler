@@ -469,8 +469,8 @@ impl fmt::Display for ProgramPoint {
                 block,
                 position: point,
             } => match point {
-                Position::Before => write!(f, "start({})", &block.borrow().id()),
-                Position::After => write!(f, "end({})", &block.borrow().id()),
+                Position::Before => write!(f, "start({})", block.borrow().id()),
+                Position::After => write!(f, "end({})", block.borrow().id()),
             },
             Self::Op {
                 op,
@@ -483,10 +483,10 @@ impl fmt::Display for ProgramPoint {
                     .unwrap_or_else(|| const_text("null"));
                 match point {
                     Position::Before => {
-                        write!(f, "before({} in {block})", &op.borrow().name())
+                        write!(f, "before({} in {block})", op.borrow().name())
                     }
                     Position::After => {
-                        write!(f, "after({} in {block})", &op.borrow().name())
+                        write!(f, "after({} in {block})", op.borrow().name())
                     }
                 }
             }

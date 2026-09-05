@@ -429,7 +429,7 @@ mod tests {
 
         // Run transformation on function body
         let test_name = test.name();
-        let input = format!("{}", &operation.borrow());
+        let input = format!("{}", operation.borrow());
         let before_path = format!("expected/{test_name}_before.hir");
         expect_file![&before_path].assert_eq(&input);
 
@@ -437,7 +437,7 @@ mod tests {
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
-        let output = format!("{}", &operation.borrow());
+        let output = format!("{}", operation.borrow());
         let after_path = format!("expected/{test_name}_after.hir");
         expect_file![&after_path].assert_eq(&output);
 
@@ -543,7 +543,7 @@ mod tests {
         let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
-        let input = format!("{}", &operation.borrow());
+        let input = format!("{}", operation.borrow());
         let test_name = test.name();
         let before_path = format!("expected/{test_name}_before.hir");
         expect_file![&before_path].assert_eq(&input);
@@ -552,7 +552,7 @@ mod tests {
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // a `cf.switch`, which branches to either a return, or an unreachable.
-        let output = format!("{}", &operation.borrow());
+        let output = format!("{}", operation.borrow());
         let after_path = format!("expected/{test_name}_after.hir");
         expect_file![&after_path].assert_eq(&output);
 
@@ -596,7 +596,7 @@ mod tests {
         let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
-        let input = format!("{}", &operation.borrow());
+        let input = format!("{}", operation.borrow());
         let test_name = test.name();
         let before_path = format!("expected/{test_name}_before.hir");
         expect_file![&before_path].assert_eq(&input);
@@ -605,7 +605,7 @@ mod tests {
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
-        let output = format!("{}", &operation.borrow());
+        let output = format!("{}", operation.borrow());
         let after_path = format!("expected/{test_name}_after.hir");
         expect_file![&after_path].assert_eq(&output);
 
@@ -700,7 +700,7 @@ mod tests {
         let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
-        let input = format!("{}", &operation.borrow());
+        let input = format!("{}", operation.borrow());
         let test_name = test.name();
         let before_path = format!("expected/{test_name}_before.hir");
         expect_file![&before_path].assert_eq(&input);
@@ -709,7 +709,7 @@ mod tests {
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
-        let output = format!("{}", &operation.borrow());
+        let output = format!("{}", operation.borrow());
         let after_path = format!("expected/{test_name}_after.hir");
         expect_file![&after_path].assert_eq(&output);
 
@@ -819,7 +819,7 @@ mod tests {
         let operation = test.function().as_operation_ref();
 
         // Run transformation on function body
-        let input = format!("{}", &operation.borrow());
+        let input = format!("{}", operation.borrow());
         let test_name = test.name();
         let before_path = format!("expected/{test_name}_before.hir");
         expect_file![&before_path].assert_eq(&input);
@@ -831,7 +831,7 @@ mod tests {
 
         // Verify that the function body now consists of a single `scf.if` operation, followed by
         // an `builtin.return`.
-        let output = format!("{}", &operation.borrow());
+        let output = format!("{}", operation.borrow());
         let after_path = format!("expected/{test_name}_after.hir");
         expect_file![&after_path].assert_eq(&output);
 
@@ -891,13 +891,13 @@ mod tests {
 
         let operation = test.function().as_operation_ref();
 
-        let input_ir = format!("{}", &operation.borrow());
+        let input_ir = format!("{}", operation.borrow());
         expect_file!["expected/cfg_to_scf_debug_value_preservation_before.hir"]
             .assert_eq(&input_ir);
 
         test.apply_pass::<LiftControlFlowToSCF>(true)?;
 
-        let output = format!("{}", &operation.borrow());
+        let output = format!("{}", operation.borrow());
         expect_file!["expected/cfg_to_scf_debug_value_preservation_after.hir"].assert_eq(&output);
 
         Ok(())

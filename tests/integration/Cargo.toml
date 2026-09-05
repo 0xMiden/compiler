@@ -26,13 +26,14 @@ miden-core = { workspace = true, features = ["testing"] }
 miden-mast-package.workspace = true
 miden-protocol = { workspace = true, features = ["std"] }
 miden-processor.workspace = true
-miden-debug = { workspace = true, features = ["proptest", "tui"] }
+miden-debug = { workspace = true, features = ["proptest", "std"] }
 midenc-dialect-arith.workspace = true
 midenc-dialect-cf.workspace = true
 midenc-dialect-hir.workspace = true
 midenc-dialect-scf.workspace = true
 midenc-dialect-wasm.workspace = true
 midenc-frontend-wasm.workspace = true
+midenc-frontend-wasm-metadata.workspace = true
 midenc-hir = { workspace = true, features = ["logging"] }
 midenc-hir-eval.workspace = true
 midenc-session.workspace = true

@@ -27,6 +27,8 @@ mod inputs;
 mod libs;
 mod options;
 mod outputs;
+#[cfg(feature = "std")]
+mod package_lease;
 pub mod path;
 pub mod registry;
 #[cfg(feature = "std")]
@@ -79,6 +81,14 @@ pub struct Session {
     /// Statistics gathered from the current compiler session
     #[cfg(feature = "std")]
     pub statistics: Statistics,
+    /// The per-build package-exchange directory, created once for the root build.
+    ///
+    /// Shared by `Arc`, so every clone of this session observes the same lease and no clone
+    /// can mint a second directory. The `Result` memoizes a creation failure, which is
+    /// re-reported identically on every access (fail closed). Dropping the last owner
+    /// deletes the directory; see the `package_lease` module for the lifecycle.
+    #[cfg(feature = "std")]
+    package_cache_lease: package_lease::SharedPackageCacheLease,
 }
 
 impl fmt::Debug for Session {
@@ -263,25 +273,25 @@ impl Session {
             emitter.unwrap_or_else(|| options.default_emitter()),
         ));
 
+        let profile_target_dir = options.target_dir.join(&options.profile);
+        create_target_dir(&profile_target_dir);
+
         let output_dir = options
             .output_dir
             .as_deref()
             .or_else(|| options.output_file.as_ref().and_then(|of| of.parent()))
-            .map(|path| path.to_path_buf());
+            .map(|path| path.to_path_buf())
+            .unwrap_or_else(|| profile_target_dir.clone());
+        create_target_dir(&output_dir);
 
-        if let Some(output_dir) = output_dir.as_deref() {
-            log::debug!(target: "driver", " | output dir = {}", output_dir.display());
-        } else {
-            log::debug!(target: "driver", " | output dir = <unset>");
-        }
-
+        log::debug!(target: "driver", " | output dir = {}", output_dir.display());
         log::debug!(target: "driver", " | target = {}", options.target_type.map(|tt| tt.to_string()).unwrap_or("none specified".to_string()));
         if log::log_enabled!(target: "driver", log::Level::Debug) {
             for lib in options.link_libraries.iter() {
                 if let Some(path) = lib.path.as_deref() {
-                    log::debug!(target: "driver", " | linking library '{}' from {}", &lib.name, path.display());
+                    log::debug!(target: "driver", " | linking library '{}' from {}", lib.name, path.display());
                 } else {
-                    log::debug!(target: "driver", " | linking library '{}'", &lib.name);
+                    log::debug!(target: "driver", " | linking library '{}'", lib.name);
                 }
             }
         }
@@ -289,14 +299,11 @@ impl Session {
         let output_files = OutputFiles::new(
             name.clone(),
             options.current_dir.clone(),
-            options.output_dir.clone().unwrap_or_else(|| options.current_dir.clone()),
+            output_dir.clone(),
             options.output_file.clone(),
-            options.target_dir.clone(),
+            profile_target_dir.clone(),
             options.output_types.clone(),
         );
-
-        create_target_dir(options.target_dir.as_path());
-        create_target_dir(&options.target_dir.as_path().join(&options.profile));
 
         // Link against implicitly required libraries
         let requires_protocol = options.target_requires_protocol();
@@ -311,6 +318,8 @@ impl Session {
             output_files,
             #[cfg(feature = "std")]
             statistics: Default::default(),
+            #[cfg(feature = "std")]
+            package_cache_lease: Default::default(),
         }
     }
 
@@ -352,40 +361,84 @@ impl Session {
 
     /// Get a new package registry instance for this session
     pub fn package_registry(&self) -> Result<Box<registry::HybridPackageRegistry>, Report> {
-        registry::HybridPackageRegistry::new_with_filesystem_cache(
+        #[cfg(feature = "std")]
+        let filesystem_cache = self.filesystem_package_cache_dir()?;
+        #[cfg(not(feature = "std"))]
+        let filesystem_cache = None;
+        #[allow(unused_mut)]
+        let mut registry = registry::HybridPackageRegistry::new_with_filesystem_cache(
             &self.options,
-            self.filesystem_package_cache_dir(),
-        )
-        .map(Box::new)
+            filesystem_cache,
+        )?;
+        // The registry publishes into the leased directory and may outlive every clone of
+        // this session; retaining the shared lease keeps the directory alive for as long
+        // as the registry is.
+        #[cfg(feature = "std")]
+        registry.retain_session_package_cache(self.package_cache_lease.clone());
+        Ok(Box::new(registry))
     }
 
-    /// Where compiled dependency packages of this session's project are published and looked for.
+    /// Where compiled dependency packages of this build are published and looked for.
     ///
-    /// `None` unless this session's input is a project locator: the cache lives under the
-    /// project's own `target/` directory, and a session compiling a standalone source file has no
-    /// project directory to put one under. Both readers — this session's package registry and the
-    /// nested `cargo` builds a Rust project's dependencies run through — must agree on the answer,
-    /// which is why there is one derivation of it.
+    /// `Ok(None)` unless this session's input is a project locator: a session compiling a
+    /// standalone source file has no project to exchange packages for. When the calling
+    /// process already exported `MIDENC_PACKAGE_CACHE`, that directory is adopted as-is and
+    /// left in place — the caller owns its location and lifetime (this is how a contract
+    /// `build.rs` keeps the packages readable after the compiler exits). Otherwise the
+    /// directory is a per-build lease with a globally unique name under the session's
+    /// configured target directory (`<target-dir>/packages`), created on first access and
+    /// deleted when the last clone of this session drops; see the `package_lease` module for
+    /// both lifecycles. Anchoring at the target directory honors a caller-supplied
+    /// `--target-dir` — a writable location for a read-only checkout, for example.
+    ///
+    /// Both readers — this session's package registry and the nested `cargo` builds a Rust
+    /// project's dependencies run through — must agree on the answer, which is why there is
+    /// one derivation of it. Only the root compilation session derives the path. Nested
+    /// dependency sessions receive the root value threaded through their build environment,
+    /// rather than deriving paths from their own locators: a dependency with a private
+    /// directory could not see its already-assembled transitive dependencies.
+    ///
+    /// [`Session`] is [`Clone`], and clones share the lease cell, so every clone observes the
+    /// same directory and no clone can mint a second one. Errors when the directory cannot be
+    /// created — fail closed, so the build stops here instead of failing later inside a macro
+    /// expansion with a confusing missing-package diagnostic; the failure is memoized and
+    /// re-reported on every access.
     ///
     /// Derived from the input locator rather than from a loaded manifest, which is what
     /// [`Session::new`] no longer has. That is also a repair: the manifest path was previously
     /// taken from a package that `fixup_cargo_target` had rebuilt for every executable
     /// `Cargo.toml` input, and a rebuilt package has no manifest path — so an executable project
     /// silently got no filesystem cache at all, while a library project of the same shape got one.
-    pub fn filesystem_package_cache_dir(&self) -> Option<PathBuf> {
-        let input = self.input.as_ref()?;
-        if !matches!(input.file_type(), FileType::Toml) {
-            return None;
+    #[cfg(feature = "std")]
+    pub fn filesystem_package_cache_dir(&self) -> Result<Option<PathBuf>, Report> {
+        if !self.is_project_session() {
+            return Ok(None);
         }
-        let project_dir = input.as_path()?.parent()?;
-        // Canonicalized because the loaded manifest path this replaces was: the cache directory
-        // is compared by path across nested builds, so `.`-relative and symlinked spellings of
-        // one directory must not resolve to two caches.
-        #[cfg(feature = "std")]
-        let project_dir = project_dir.canonicalize().unwrap_or_else(|_| project_dir.to_path_buf());
-        #[cfg(not(feature = "std"))]
-        let project_dir = project_dir.to_path_buf();
-        Some(project_dir.join("target").join("miden").join("packages"))
+        let lease = self
+            .package_cache_lease
+            .get_or_init(|| package_lease::PackageCacheLease::create(&self.options.target_dir));
+        match lease {
+            Ok(lease) => Ok(Some(lease.path().to_path_buf())),
+            Err(message) => Err(Report::msg(message.clone())),
+        }
+    }
+
+    /// Without `std` there is no filesystem package exchange.
+    #[cfg(not(feature = "std"))]
+    pub fn filesystem_package_cache_dir(&self) -> Result<Option<PathBuf>, Report> {
+        Ok(None)
+    }
+
+    /// Whether this session compiles a project — the gate for having a package cache at all.
+    ///
+    /// Mirrors [`Session::filesystem_package_cache_dir`]: a session compiling a standalone
+    /// source file has no project to exchange packages for. The cache itself is anchored at
+    /// the configured target directory.
+    #[cfg(feature = "std")]
+    fn is_project_session(&self) -> bool {
+        self.input
+            .as_ref()
+            .is_some_and(|input| matches!(input.file_type(), FileType::Toml))
     }
 
     /// Get the [OutputFile] to write the assembled MAST output to
@@ -498,23 +551,39 @@ impl Session {
     #[cfg(feature = "std")]
     pub fn emit<E: Emit>(&self, mode: OutputMode, item: &E) -> anyhow::Result<()> {
         let output_type = item.output_type(mode);
-        if self.should_emit(output_type) {
-            let name = item.name().map(|n| n.as_str());
-            match self.output_files.output_file(output_type, name) {
-                OutputFile::Real(path) => {
-                    item.write_to_file(&path, mode, self)?;
-                }
-                OutputFile::Directory(_) => {
-                    unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
-                }
-                OutputFile::Stdout => {
-                    let stdout = std::io::stdout().lock();
-                    item.write_to(stdout, mode, self)?;
-                }
+        let name = item.name().map(|n| n.as_str());
+        match self.output_path_for(output_type, name) {
+            Some(OutputFile::Real(path)) => {
+                item.write_to_file(&path, mode, self)?;
             }
+            Some(OutputFile::Directory(_)) => {
+                unreachable!("OutputFiles::output_file never returns OutputFile::Directory")
+            }
+            Some(OutputFile::Stdout) => {
+                let stdout = std::io::stdout().lock();
+                item.write_to(stdout, mode, self)?;
+            }
+            None => (),
         }
 
         Ok(())
+    }
+
+    /// Given an [OutputType] and an optional name, return the output file path that would be
+    /// written to.
+    ///
+    /// Returns `Some` if the specified output type should be emitted, and `None` if it should not.
+    #[cfg(feature = "std")]
+    pub fn output_path_for(
+        &self,
+        output_type: OutputType,
+        name: Option<&str>,
+    ) -> Option<OutputFile> {
+        if self.should_emit(output_type) {
+            Some(self.output_files.output_file(output_type, name))
+        } else {
+            None
+        }
     }
 
     #[cfg(not(feature = "std"))]
@@ -724,3 +793,73 @@ fn create_target_dir(path: &Path) {
 
 #[cfg(not(feature = "std"))]
 fn create_target_dir(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use alloc::sync::Arc;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn relative_manifest_locator_uses_the_configured_current_directory() {
+        let temp = TempDir::new().unwrap();
+        let options = Options {
+            current_dir: temp.path().to_path_buf(),
+            target_dir: temp.path().join("target"),
+            ..Options::default()
+        };
+        let input = InputFile::new(FileType::Toml, InputType::Real("Cargo.toml".into()));
+        let session = Session::new_project(
+            "relative-manifest".into(),
+            Some(input),
+            Box::new(options),
+            None,
+            Arc::new(diagnostics::DefaultSourceManager::default()),
+        );
+
+        let cache_dir = session.filesystem_package_cache_dir().unwrap().unwrap();
+        // The lease is anchored at the configured target directory, honoring `--target-dir`.
+        let expected_parent = temp.path().join("target/packages");
+        assert_eq!(cache_dir.parent(), Some(expected_parent.as_path()));
+        assert!(cache_dir.is_dir(), "the lease directory must exist once derived");
+
+        let clone_dir = session.clone().filesystem_package_cache_dir().unwrap().unwrap();
+        assert_eq!(cache_dir, clone_dir, "clones must share one lease, never mint a second");
+
+        drop(session);
+        assert!(!cache_dir.exists(), "dropping the last session must delete the lease");
+    }
+
+    #[test]
+    fn a_registry_keeps_the_leased_cache_alive_after_the_session_drops() {
+        let temp = TempDir::new().unwrap();
+        let options = Options {
+            current_dir: temp.path().to_path_buf(),
+            target_dir: temp.path().join("target"),
+            ..Options::default()
+        };
+        let input = InputFile::new(FileType::Toml, InputType::Real("Cargo.toml".into()));
+        let session = Session::new_project(
+            "registry-outlives".into(),
+            Some(input),
+            Box::new(options),
+            None,
+            Arc::new(diagnostics::DefaultSourceManager::default()),
+        );
+
+        let registry = session.package_registry().unwrap();
+        let cache_dir = registry.filesystem_cache_dir().unwrap().to_path_buf();
+        assert!(cache_dir.is_dir());
+
+        drop(session);
+        assert!(
+            cache_dir.is_dir(),
+            "the registry publishes into the leased directory, so it must keep the lease alive"
+        );
+
+        drop(registry);
+        assert!(!cache_dir.exists(), "dropping the last owner must delete the lease");
+    }
+}

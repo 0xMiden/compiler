@@ -58,10 +58,10 @@ pub fn dump(config: &Config) -> Result<(), DumpError> {
     // Print header
     println!("{}", "=".repeat(80));
     println!("Package Info:");
-    println!("  | Name:               {}", &package.name);
-    println!("  | Version:            {}", &package.version);
-    println!("  | Kind:               {}", &package.kind);
-    println!("  | Debug Info Version: {}", &debug_info.version());
+    println!("  | Name:               {}", package.name);
+    println!("  | Version:            {}", package.version);
+    println!("  | Kind:               {}", package.kind);
+    println!("  | Debug Info Version: {}", debug_info.version());
     println!("{}", "=".repeat(80));
     println!();
 
@@ -141,18 +141,18 @@ fn print_summary(debug_info: &PackageDebugInfo) {
     println!();
 
     println!("Strings:");
-    println!("  | records: {}", &debug_info.strings().len());
+    println!("  | records: {}", debug_info.strings().len());
     println!();
 
     println!("Types:");
-    println!("  | records: {}", &debug_info.types().len());
+    println!("  | records: {}", debug_info.types().len());
     println!();
 
     println!("Functions:");
-    println!("  | records:          {}", &debug_info.functions().len());
+    println!("  | records:          {}", debug_info.functions().len());
     println!(
         "  | with source info: {}",
-        &debug_info
+        debug_info
             .functions()
             .iter()
             .filter(|f| f.source_node.into_option().is_some())
@@ -160,7 +160,7 @@ fn print_summary(debug_info: &PackageDebugInfo) {
     );
     println!(
         "  | w/o source info:  {}",
-        &debug_info
+        debug_info
             .functions()
             .iter()
             .filter(|f| f.source_node.into_option().is_none())
@@ -169,11 +169,11 @@ fn print_summary(debug_info: &PackageDebugInfo) {
     println!();
 
     println!("Source Files:");
-    println!("  | records: {}", &debug_info.files().len());
+    println!("  | records: {}", debug_info.files().len());
     println!();
 
     println!("Locations:");
-    println!("  | records: {}", &debug_info.locations().len());
+    println!("  | records: {}", debug_info.locations().len());
     println!();
 
     let (total_vars, total_inlined) =
@@ -185,8 +185,8 @@ fn print_summary(debug_info: &PackageDebugInfo) {
             });
 
     println!("Source Nodes:");
-    println!("  | records: {}", &debug_info.nodes().len());
-    println!("  | roots:   {}", &debug_info.roots().len());
+    println!("  | records: {}", debug_info.nodes().len());
+    println!("  | roots:   {}", debug_info.roots().len());
     println!("  | debug variables (total): {total_vars}");
     println!("  | inline calls (total):    {total_inlined}");
     println!();
@@ -316,7 +316,7 @@ fn print_type(ty: &DebugTypeInfo, debug_info: &PackageDebugInfo, raw: bool, inde
                         print!("<invalid type>");
                     }
                 }
-                println!(" = {}", &variant.discriminant);
+                println!(" = {}", variant.discriminant);
             }
         }
         DebugTypeInfo::Function {

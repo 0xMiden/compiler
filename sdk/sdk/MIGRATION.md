@@ -8,9 +8,143 @@ The most recent migration is at the top. When cutting a new release, add its mig
 directly below this paragraph, above the previous one (newest first, like the
 [CHANGELOG](./CHANGELOG.md)).
 
-<!-- Add the next migration section here, above `## 0.12.0 -> 0.13.0`. -->
+<!-- Add the next migration section here, above `## Unreleased`. -->
 
 ## Unreleased
+
+### Transaction summaries are six words (protocol 0.16)
+
+Custom authentication components sign a commitment to the transaction summary. Protocol 0.16
+extends the summary from four words to six: it now also binds the reference block commitment,
+the transaction's expiration block delta, and seven user-defined parameters. The host rebuilds
+the summary from the advice-map preimage and rejects the signing request unless its commitment
+matches, so a component that still hashes the old four-word layout fails at runtime with
+`TransactionSummaryConstructionFailed` even though it compiles unchanged.
+
+Build the six words in this order and place the final nonce in the first user parameter, as the
+standards components do:
+
+Before:
+
+```rust
+let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
+let tx_summary = [acct_delta_commit, input_notes_commit, output_notes_commit, salt];
+let msg: Word = hash_words(&tx_summary).into();
+adv_insert(msg, &tx_summary);
+```
+
+After:
+
+```rust
+let block_commit = tx::get_block_commitment();
+let expiration_delta = tx::get_expiration_block_delta();
+
+// [expiration_delta, user_param0..2] and [user_param3..6]; the first user parameter carries
+// the final nonce for replay protection.
+let params_head = Word::from([expiration_delta.into(), final_nonce.into(), felt!(0), felt!(0)]);
+let params_tail = Word::from([felt!(0), felt!(0), felt!(0), felt!(0)]);
+
+let tx_summary = [
+    acct_delta_commit,
+    input_notes_commit,
+    output_notes_commit,
+    block_commit,
+    params_head,
+    params_tail,
+];
+let msg: Word = hash_words(&tx_summary).into();
+adv_insert(msg, &tx_summary);
+```
+
+See `examples/auth-component-rpo-falcon512` for the complete component.
+
+### Attachment setter aliases are removed
+
+`output_note::set_word_attachment` and `output_note::set_array_attachment` are removed. They
+were aliases from the protocol 0.15 rename, and their names promised replace semantics the
+transaction kernel does not have: attachments are append-only.
+
+Before:
+
+```rust
+output_note::set_word_attachment(note_idx, scheme, word);
+output_note::set_array_attachment(note_idx, scheme, attachment_commitment);
+```
+
+After:
+
+```rust
+output_note::add_word_attachment(note_idx, scheme, word);
+output_note::add_attachment(note_idx, scheme, attachment_commitment);
+```
+
+Both functions take a `Word`: `add_word_attachment` takes the attachment value itself, and
+`add_attachment` takes a commitment to attachment elements that the advice map holds. If your
+code holds the attachment contents as words in memory, call
+`output_note::add_attachment_from_memory(note_idx, scheme, &words)` instead.
+
+### `#[note]` reserves `get_entrypoint_root`
+
+The `#[note]` macro now generates a `get_entrypoint_root()` associated method on the note type so
+constructors can commit to the note script's MAST root. Rename any inherent item with that name,
+including methods, `#[note_constructor]` methods, associated constants, and items declared in a
+separate impl block.
+
+### Contract crates gain a `build.rs` for IDE and plain-cargo builds
+
+New projects created by `cargo miden new` include a small `build.rs` in each contract crate and a
+build dependency on `miden-sdk-build-script-support` at the same version as the SDK. The script
+delegates to [`prepare_package_cache`](https://docs.rs/miden-sdk-build-script-support/latest/miden_sdk_build_script_support/fn.prepare_package_cache.html),
+which makes plain `cargo check`, `cargo build`, and IDE analysis (rust-analyzer) resolve compiled
+dependency packages: outside a `cargo miden build`, it stages package-cache
+generations under its `OUT_DIR`, fills a private generation with a nested
+`cargo miden build --release` that adopts it through `MIDENC_PACKAGE_CACHE`, and exports the
+same variable to the crate's macro expansion. Inside a midenc-driven build the script does
+nothing: the compiler exchanges packages with its nested builds through a directory of its
+own, which it deletes when the build ends.
+
+The nested build runs whenever Cargo re-runs the script. The compiler writes a versioned input
+record next to the staged packages. Inputs a frontend can enumerate completely — local MASM
+source trees and preassembled packages, for example — become selective Cargo change directives
+when the cargo-miden launcher and Miden workspace boundary are also explicit. Rust/Cargo source
+dependencies, launchers resolved through `PATH`, and packages whose future parent workspace
+cannot be watched completely are marked opaque; those graphs deliberately re-stage dependencies
+on every relevant Cargo invocation instead of risking stale metadata. Set `CARGO_MIDEN` to an
+explicit binary path and build from an established Miden workspace to enable selective behavior
+for an otherwise-complete dependency graph.
+
+The build script is now required for plain cargo builds of crates with Miden source
+dependencies. The SDK macros read dependency packages only from the `MIDENC_PACKAGE_CACHE`
+directory (or from a manifest path naming a `.masp` file directly); they no longer search
+`target/miden/<profile>` output directories, so a plain `cargo check` without the script fails
+with instructions instead of finding previously built artifacts. Add the support crate and the
+following wrapper to every contract crate (using the same version requirement as `miden`):
+
+```toml
+[build-dependencies]
+miden-sdk-build-script-support = "0.14.0-rc.1"
+```
+
+```rust
+fn main() {
+    miden_sdk_build_script_support::prepare_package_cache();
+}
+```
+
+The helper needs `cargo miden` on `PATH`; set the `CARGO_MIDEN` environment variable to use a
+specific `cargo-miden` binary instead. A missing tool fails the build script with an install
+hint.
+
+Each successful staging run publishes an immutable content-addressed generation. Changed
+generations remain until Cargo removes `OUT_DIR`, so an IDE expansion that still references an
+older path continues to see one coherent dependency set; byte-identical staging reuses the
+existing generation. If the nested `cargo miden build` fails, the outer check fails with its error
+rather than compiling against stale dependency metadata.
+
+One sharing caveat: cargo keys build-script output by crate name and version, not by project
+path. Two different projects that contain a contract crate with the same package name and
+version and share one `CARGO_TARGET_DIR` reuse each other's build-script output — including
+the staged package cache. Use per-checkout target directories for such layouts.
 
 ### Kernel scalars are typed instead of `Felt` (counts, block heights, nonces, attachments)
 
@@ -55,12 +189,17 @@ converts the same way):
 ```rust
 // before
 let final_nonce: Felt = self.incr_nonce();
-let salt = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
+let params = Word::from([felt!(0), felt!(0), ref_block_num, final_nonce]);
 
 // after
 let final_nonce: Nonce = self.incr_nonce();
-let salt = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
+let params = Word::from([felt!(0), felt!(0), ref_block_num.into(), final_nonce.into()]);
 ```
+
+This example shows only the type conversions. Do not reuse the word layout: protocol 0.16
+replaces the four-word transaction summary that packed the nonce this way — see
+[Transaction summaries are six words (protocol 0.16)](#transaction-summaries-are-six-words-protocol-016)
+at the top of this guide for the required six-word layout.
 
 Attachment lookups return `Option<u32>` instead of the removed `AttachmentLocation` struct, and
 attachment indexes are passed as `u32`:
@@ -75,6 +214,97 @@ if location.found() {
 // after
 if let Some(index) = active_note::find_attachment(scheme) {
     let attachment = active_note::write_attachment_to_memory(index);
+}
+```
+
+### Typed transaction-script arguments
+
+`#[tx_script]` entrypoints now receive typed script arguments decoded from the `TX_SCRIPT_ARGS`
+word. Existing `fn run(arg: Word, ...)` entrypoints keep compiling and behave unchanged (`Word`
+decodes as itself), so no edit is required — but scripts that manually fetch their arguments from
+the advice provider can delete that plumbing: declare a struct deriving
+`FromFeltRepr`/`ToFeltRepr` and take it by value. The entrypoint may have any name and accept
+the script-args and account parameters in any order (the account reference is optional);
+encodings of at most 4 felts
+travel in the args word directly, longer or variable-length ones travel through the advice
+provider, hash-verified against the args word. The derives' generated code refers to the
+`miden_field_repr` crate, which the `miden` crate re-exports under its own name: `use miden::*;`
+makes it resolve. A module that does not glob-import `miden` needs `use miden::miden_field_repr;`
+(or a direct `miden-field-repr` dependency) alongside the struct.
+
+Before:
+
+```rust
+use miden::{intrinsics::advice::adv_push_mapvaln, *};
+
+#[tx_script]
+fn run(arg: Word, account: &mut Wallet) {
+    let num_felts = adv_push_mapvaln(arg);
+    let num_felts_u64 = num_felts.as_canonical_u64();
+    assert_eq(Felt::from_u32((num_felts_u64 % 4) as u32), felt!(0));
+    let num_words = Felt::new(num_felts_u64 / 4).unwrap();
+    let input = adv_load_preimage(num_words, arg);
+    let tag = input[0];
+    let note_type = input[1];
+    let recipient: [Felt; 4] = input[2..6].try_into().unwrap();
+    let note_idx = account.create_note(tag.into(), note_type.into(), recipient.into());
+    // ...
+}
+```
+
+After:
+
+```rust
+use miden::*;
+
+/// Arguments of the transaction script, transported via the `TX_SCRIPT_ARGS` word.
+#[derive(FromFeltRepr, ToFeltRepr)]
+pub struct TxScriptArgs {
+    pub tag: Tag,
+    pub note_type: NoteType,
+    pub recipient: Recipient,
+}
+
+#[tx_script]
+fn run(args: TxScriptArgs, account: &mut Wallet) {
+    let note_idx = account.create_note(args.tag, args.note_type, args.recipient);
+    // ...
+}
+```
+
+On the host, build the transaction with `ScriptArgs::encode` on a mirror struct that reproduces
+the guest type's *felt-repr wire sequence* — the felts, in order; the Rust fields may differ, e.g.
+a guest `Asset` field can be mirrored as its key and value `Word`s (sharing the schema through
+the Miden package is planned). Pin the mirror against drift: assert its
+`<Mirror as ScriptArgs>::FIXED_LEN` equals the guest type's, and ideally assert a golden encoding
+with distinct sentinel values, which also catches same-length field reorders. This matters
+because one drift direction fails silently: if the guest type is word mode and the mirror grows
+past 4 felts, the host switches to commitment mode and the guest decodes the hash limbs as
+argument values. The trait lives in the `miden-tx-script-args` crate, whose off-chain
+dependencies are only `miden-field` and `miden-field-repr` — host code does not need the
+on-chain SDK.
+
+`EncodedScriptArgs` carries `miden-field` felts, while the protocol crates use their own felt
+type — convert between them via `as_canonical_u64`:
+
+```rust
+/// Converts `miden-field` felts into the protocol crate's felt type.
+fn to_protocol_felts(felts: &[miden_field::Felt]) -> Vec<Felt> {
+    felts.iter().map(|felt| Felt::new_unchecked(felt.as_canonical_u64())).collect()
+}
+
+match script_args.encode() {
+    // Word mode: the encoding is the script-args word; no advice map involved.
+    EncodedScriptArgs::Word(word) => builder.tx_script_args(Word::new(
+        [0, 1, 2, 3].map(|i| Felt::new_unchecked(word[i].as_canonical_u64())),
+    )),
+    // Commitment mode: hash the preimage into the script-args word and register the
+    // advice-map entry (Poseidon2 is the Miden VM's native hash).
+    EncodedScriptArgs::Preimage(felts) => {
+        let preimage = to_protocol_felts(&felts);
+        let args_word = Poseidon2::hash_elements(&preimage);
+        builder.tx_script_args(args_word).extend_advice_map([(args_word, preimage)])
+    }
 }
 ```
 
@@ -241,6 +471,75 @@ let asset = miden::native_account::get_initial_asset(asset_key);
 **`output_note::create` is account-context only.** It can now only be called from account-component
 context (runtime-enforced). Tx/note scripts must create notes through an account component wrapper
 method (see the `basic-wallet` example's `create_note`).
+
+### `#[note]` structs now also implement `ToFeltRepr`
+
+`#[note]` on a struct now generates a `felt_repr::ToFeltRepr` impl encoding the note inputs in
+field order (mirroring the generated `TryFrom<&[Felt]>` decoding), so note constructors can
+serialize the inputs when computing the note recipient.
+
+Both directions are generated by the macro — do not add `FromFeltRepr`/`ToFeltRepr` derives to
+the note struct itself. For the typical note struct, whose fields are SDK-provided types
+(`Felt`, `AccountId`, primitives, ...), upgrading requires no changes.
+
+Changes are only required if:
+
+1. The note type has a manual `ToFeltRepr` impl: remove it — it now conflicts with the
+   generated impl. If its encoding differed from the generated field-order encoding, move the
+   logic to a differently named helper method instead.
+
+2. A field has a custom type that only implements `FromFeltRepr`: that field type (not the note
+   struct) must now also implement `ToFeltRepr`, e.g. via `#[derive(ToFeltRepr)]` next to its
+   existing `FromFeltRepr`.
+
+### Component WIT is embedded in the compiled package
+
+The component WIT generated by `#[component]` is now embedded in the compiled Miden package (a
+`wit` section of the `.masp`) instead of being written to `target/generated-wit/`. The
+`#[account(...)]`, sibling `#[component(pkg::Interface)]`, `#[note]`, and `#[tx_script]` macros
+read dependency WIT from the dependency's compiled `.masp`, and every Miden path dependency must
+be a built package (cargo-miden builds path dependencies automatically; a dependency that points
+directly at a prebuilt `.masp` file is self-contained).
+
+Remove the `wit = "..."` entries from `[package.metadata.miden.dependencies]` in
+`miden-project.toml` for dependencies whose packages embed WIT — a leftover key is now an error
+("remove the `wit` key"). The key remains available as an escape hatch for dependency packages
+*without* embedded WIT (e.g. produced by another toolchain); it must point at a single
+self-contained `.wit` file, or a directory containing exactly one top-level `.wit` file.
+
+Before:
+
+```toml
+[dependencies]
+basic-wallet = { path = "../basic-wallet" }
+
+[package.metadata.miden.dependencies]
+basic-wallet = { wit = "../basic-wallet/target/generated-wit/" }
+```
+
+After:
+
+```toml
+[dependencies]
+basic-wallet = { path = "../basic-wallet" }
+```
+
+A `.masp` built by an older SDK has no embedded WIT: the macros skip it, and a macro that
+references it reports the missing interface at the reference site; rebuild each dependency with
+the current toolchain (`cargo miden build`), or supply the WIT manually via the `wit` key as
+above. Components written
+without the `#[component]` macro — a hand-written `wit/` directory and a bare
+`miden::generate!()` — embed their WIT automatically when the `wit/` directory contains a single
+`.wit` file, so no changes are needed there. WIT split across multiple files, or referencing
+packages under `wit/deps/` other than the bundled SDK WIT, cannot be embedded verbatim yet;
+consolidate it into one self-contained file if the component is consumed as a Miden dependency.
+
+Note for the editor workflow: previously, `cargo check` (or rust-analyzer) of the dependency crate
+regenerated its WIT under `target/generated-wit` as a macro side effect. Dependency WIT now comes
+from the compiled package. A consumer crate carrying the contract `build.rs` (see "Contract
+crates gain a `build.rs`" above) rebuilds its dependencies automatically; without the script,
+run `cargo miden build` for the dependency once (and again after changing its interface) before
+checking a dependent crate.
 
 ## 0.13.0 -> 0.13.1
 

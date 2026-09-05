@@ -11,19 +11,19 @@ impl fmt::Display for TypePrinter<'_> {
             Type::Unknown => f.write_str("?"),
             Type::Never => f.write_str("never"),
             Type::Ptr(ty) => {
-                write!(f, "ptr<{}, {}>", &TypePrinter(ty.pointee()), &ty.addrspace())
+                write!(f, "ptr<{}, {}>", TypePrinter(ty.pointee()), ty.addrspace())
             }
             Type::Array(ty) => {
-                write!(f, "array<{}; {}>", &TypePrinter(ty.element_type()), &ty.len())
+                write!(f, "array<{}; {}>", TypePrinter(ty.element_type()), ty.len())
             }
             Type::List(ty) => {
-                write!(f, "list<{}>", &TypePrinter(ty))
+                write!(f, "list<{}>", TypePrinter(ty))
             }
             Type::Struct(ty) => {
                 let fields =
                     crate::formatter::DisplayValues::new(ty.fields().iter().map(|field| {
                         let align = if field.align as usize != field.ty.min_alignment() {
-                            Cow::Owned(format!(" align({})", &field.align))
+                            Cow::Owned(format!(" align({})", field.align))
                         } else {
                             Cow::Borrowed("")
                         };

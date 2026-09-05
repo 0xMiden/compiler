@@ -1,7 +1,11 @@
 use alloc::{collections::BTreeMap, format, rc::Rc, string::String};
 use core::cell::RefCell;
 
-use midenc_hir::{Context, OperationRef, PointerType, diagnostics::Uri};
+use midenc_hir::{
+    Context, OperationRef, PointerType,
+    diagnostics::Uri,
+    dialects::builtin::{FunctionRef, attributes::UnitAttr},
+};
 use midenc_session::{
     InputFile, Options, Session,
     diagnostics::{CaptureEmitter, DefaultSourceManager},
@@ -323,6 +327,28 @@ fn library_target(namespace: &str) -> midenc_session::miden_project::Target {
     )
 }
 
+/// Assemble `component` as a library and return its complete, sorted public procedure surface.
+fn assembled_library_exports(
+    context: &Rc<Context>,
+    component: &MasmComponent,
+    namespace: &str,
+) -> Vec<String> {
+    let target = library_target(namespace);
+    let sources = component
+        .source_inputs(&target, context.session())
+        .expect("the lowered component should provide assembler inputs");
+    let package = miden_assembly::Assembler::new(context.session().source_manager.clone())
+        .assemble_library(namespace, sources.root, sources.support)
+        .expect("the lowered component should assemble as a library");
+    let mut exports = package
+        .manifest
+        .exports()
+        .map(|export| export.path().as_ref().as_str().to_string())
+        .collect::<Vec<_>>();
+    exports.sort();
+    exports
+}
+
 /// Parse `text`, returning the top-level operation it holds.
 ///
 /// `verify: true` matches what the `.hir` frontend does, since HIR that arrives as text has
@@ -357,6 +383,38 @@ fn lower_component(context: &Rc<Context>, text: &str) -> Result<MasmComponent, R
     component.borrow().to_masm_component(analysis_manager)
 }
 
+/// Lower a component through the MASM legalization boundary used by the compiler pipeline.
+fn legalize_and_lower_component(
+    context: &Rc<Context>,
+    text: &str,
+) -> Result<MasmComponent, Report> {
+    use midenc_hir::pass::{Nesting, PassManager};
+
+    let op = parse(context, text);
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    let mut pm = PassManager::on::<builtin::Component>(context.clone(), Nesting::Implicit);
+    pm.add_pass(alloc::boxed::Box::new(crate::LegalizeForMasm));
+    pm.enable_verifier(false);
+    pm.run(component.as_operation_ref())?;
+
+    let analysis_manager = AnalysisManager::new(op, None);
+    component.borrow().to_masm_component(analysis_manager)
+}
+
+/// Lower a world through the MASM legalization boundary used by the compiler pipeline.
+fn legalize_and_lower_world(context: &Rc<Context>, text: &str) -> Result<MasmComponent, Report> {
+    use midenc_hir::pass::{Nesting, PassManager};
+
+    let world = parse_world(context, text);
+    let mut pm = PassManager::on::<builtin::World>(context.clone(), Nesting::Implicit);
+    pm.add_pass(alloc::boxed::Box::new(crate::LegalizeForMasm));
+    pm.enable_verifier(false);
+    pm.run(world.as_operation_ref())?;
+    lower_world(world)
+}
+
 /// Parse `text`, whose top-level operation must be a `builtin.world`.
 fn parse_world(context: &Rc<Context>, text: &str) -> builtin::WorldRef {
     parse(context, text)
@@ -389,6 +447,32 @@ fn capturing_context() -> (Rc<Context>, alloc::sync::Arc<CaptureEmitter>) {
     (Rc::new(Context::new(Rc::new(session))), emitter)
 }
 
+fn context_with_entrypoint(entrypoint: &str) -> Rc<Context> {
+    let options = Options {
+        entrypoint: Some(entrypoint.to_string()),
+        ..Default::default()
+    };
+    let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
+    let session =
+        Session::new(InputFile::empty(), alloc::boxed::Box::new(options), None, source_manager)
+            .expect("should build a session");
+    Rc::new(Context::new(Rc::new(session)))
+}
+
+fn context_with_entrypoint_and_test_harness(entrypoint: &str) -> Rc<Context> {
+    let options = Options {
+        entrypoint: Some(entrypoint.to_string()),
+        flags: midenc_session::CompileFlags::new(["--test-harness"])
+            .expect("the test-harness flag must parse"),
+        ..Default::default()
+    };
+    let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
+    let session =
+        Session::new(InputFile::empty(), alloc::boxed::Box::new(options), None, source_manager)
+            .expect("should build a session");
+    Rc::new(Context::new(Rc::new(session)))
+}
+
 /// Everything a caller can observe about a lowered component, as one comparable value.
 fn summarize(component: &MasmComponent) -> String {
     format!(
@@ -402,6 +486,52 @@ fn summarize(component: &MasmComponent) -> String {
         component.stack_pointer,
         component.rodata,
     )
+}
+
+/// Find and mark a uniquely named function as the component's core Wasm start function.
+fn mark_start_function(context: &Rc<Context>, root: OperationRef, name: &str) -> FunctionRef {
+    let mut found = None;
+    root.borrow().prewalk_all(|op| {
+        let Some(function) = op.downcast_ref::<builtin::Function>() else {
+            return;
+        };
+        if function.name().as_str() == name {
+            assert!(found.is_none(), "fixture function name '{name}' must be unique");
+            found = Some(function.as_function_ref());
+        }
+    });
+    let mut function = found.unwrap_or_else(|| panic!("fixture must define function '{name}'"));
+    let marker = context.create_attribute::<UnitAttr, _>(());
+    function
+        .borrow_mut()
+        .as_operation_mut()
+        .set_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR, marker);
+    function
+}
+
+fn exec_paths(block: &masm::Block) -> Vec<String> {
+    block
+        .iter()
+        .filter_map(|op| match op {
+            masm::Op::Inst(inst) => match inst.inner() {
+                masm::Instruction::Exec(masm::InvocationTarget::Path(path)) => {
+                    Some(path.inner().as_str().to_string())
+                }
+                masm::Instruction::Exec(masm::InvocationTarget::Symbol(name)) => {
+                    Some(name.as_str().to_string())
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+fn component_init(component: &MasmComponent) -> &masm::Procedure {
+    component.modules[0]
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == "init")
+        .expect("a marked component must define `init`")
 }
 
 /// A world holding a single component lowers to exactly what that component lowers to.
@@ -472,6 +602,355 @@ fn a_component_lowers_rooted_at_its_own_id() {
     assert!(
         format!("{lowered}").contains("main"),
         "and its function must have been lowered: {lowered}"
+    );
+}
+
+/// A start marker is sufficient to create component `init`, and the marked function is its final
+/// same-context invocation even when the component has no ordinary memory initialization needs.
+#[test]
+fn a_marked_start_is_the_final_component_initialization_step() {
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT);
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    mark_start_function(&context, op, "main");
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a component whose only initialization is its start must lower");
+
+    let init = component_init(&lowered);
+    let execs = exec_paths(init.body());
+    assert_eq!(
+        execs.last().map(String::as_str),
+        Some("::\"hir_ns:test@1.0.0\"::test::main"),
+        "the start function must be the final `exec` in `init`: {execs:?}"
+    );
+    assert!(
+        init.invoked().any(|invoke| {
+            invoke.kind == masm::InvokeKind::Exec
+                && invoke.target.unwrap_path().as_str() == "::\"hir_ns:test@1.0.0\"::test::main"
+        }),
+        "the start edge must be present in `init`'s invocation metadata"
+    );
+
+    let lowered_start = lowered
+        .modules
+        .iter()
+        .find(|module| module.path().as_str().ends_with("::test"))
+        .and_then(|module| {
+            module.procedures().find(|procedure| procedure.name().as_str() == "main")
+        })
+        .expect("the marked function must still be lowered");
+    assert!(
+        !lowered_start.has_attribute(midenc_dialect_hir::WASM_COMPONENT_START_ATTR),
+        "the HIR-only marker must be consumed rather than copied to MASM"
+    );
+}
+
+#[test]
+fn a_marked_start_remains_resolvable_when_a_synthetic_wrapper_is_rebased() {
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT);
+    let mut component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    component.borrow_mut().mark_synthetic_wrapper();
+    mark_start_function(&context, op, "main");
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a marked synthetic wrapper must lower");
+
+    let target = library_target("rebased");
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("the marked wrapper must produce rebased assembler inputs");
+    let mut assembler = miden_assembly::Assembler::new(context.session().source_manager.clone());
+    assembler
+        .link_package(crate::intrinsics::load(), miden_assembly::Linkage::Static)
+        .expect("the compiler intrinsics should link");
+    assembler
+        .assemble_library("rebased", sources.root, sources.support)
+        .expect("rebasing must update the start target recorded in `init`");
+}
+
+/// Add a global and table to the marked component so the start's position is tested against both
+/// phases whose ordering is semantically observable to constructors.
+fn component_with_global_table_and_start() -> String {
+    WORLD_WITH_A_PRIVATE_TABLE_CALLEE.replace(
+        "builtin.function private extern(\"C\") @private_callee() {",
+        "builtin.global_variable private @g : i32 {\n            builtin.ret_imm 1 : i32;\n        };\n\n        builtin.function public extern(\"C\") @component_start() {\n            builtin.ret;\n        };\n\n        builtin.function private extern(\"C\") @private_callee() {",
+    )
+}
+
+#[test]
+fn component_start_runs_after_globals_and_function_tables() {
+    let context = Rc::new(Context::default());
+    let world = parse_world(&context, &component_with_global_table_and_start());
+    mark_start_function(&context, world.as_operation_ref(), "component_start");
+    let lowered = lower_world(world).expect("a fully initialized marked component must lower");
+
+    let execs = exec_paths(component_init(&lowered).body());
+    let table = execs
+        .iter()
+        .position(|target| target.ends_with("::wasm::__init_function_table"))
+        .expect("function-table initialization must be invoked");
+    let start = execs
+        .iter()
+        .position(|target| target.ends_with("::wasm::component_start"))
+        .expect("the component start must be invoked");
+    assert!(table < start, "table initialization must precede start: {execs:?}");
+    assert_eq!(start + 1, execs.len(), "nothing may execute after start in `init`: {execs:?}");
+}
+
+const COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("component-model") @entry() {
+        builtin.ret;
+    };
+    builtin.module private @core {
+        builtin.global_variable private @g : i32 {
+            builtin.ret_imm 1 : i32;
+        };
+        builtin.function public extern("C") @component_start() {
+            builtin.ret;
+        };
+        builtin.function public extern("C") @core_entry() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+/// Generated `main` retains component-init ownership and the public canonical wrapper retains its
+/// fresh-context prologue. Only the selected marked executable gets a private no-init body.
+#[test]
+fn marked_component_uses_private_no_init_canonical_executable_entrypoint() {
+    let context = context_with_entrypoint_and_test_harness("\"hir_ns:test@1.0.0\"::entry");
+    let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
+    mark_start_function(&context, op, "component_start");
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a marked canonical executable entrypoint must lower through its private copy");
+
+    let public_entry = lowered.modules[0]
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == "entry")
+        .expect("the public canonical wrapper must remain defined");
+    assert_eq!(
+        exec_paths(public_entry.body()).first().map(String::as_str),
+        Some("init"),
+        "fresh-context calls through the public wrapper must still initialize"
+    );
+    let private_entry = lowered
+        .executable_entrypoint_without_init
+        .as_ref()
+        .expect("the marked executable must carry a private no-init entry body");
+    assert_eq!(private_entry.name().as_str(), EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC);
+    assert_eq!(private_entry.visibility(), masm::Visibility::Private);
+    assert!(
+        !exec_paths(private_entry.body()).iter().any(|target| target == "init"),
+        "the executable-only entry body must not repeat component initialization"
+    );
+
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("the marked canonical executable should generate main and its private entry");
+    let private_entry = sources
+        .root
+        .procedures()
+        .find(|procedure| procedure.name().as_str() == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC)
+        .expect("the no-init entry body must be private to the executable module");
+    assert_eq!(private_entry.visibility(), masm::Visibility::Private);
+    let main = sources
+        .root
+        .procedures()
+        .find(|procedure| procedure.name().is_main())
+        .expect("the executable root must define main");
+    let init = main
+        .body()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                masm::Op::Inst(inst)
+                    if matches!(
+                        inst.inner(),
+                        masm::Instruction::Exec(masm::InvocationTarget::Path(path))
+                            if path.inner().as_str() == "::\"hir_ns:test@1.0.0\"::init"
+                    )
+            )
+        })
+        .expect("generated main must retain component init");
+    let harness = main
+        .body()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                masm::Op::Inst(inst) if matches!(inst.inner(), masm::Instruction::AdvPush)
+            )
+        })
+        .expect("the fixture enables test-harness initialization");
+    let entry = main
+        .body()
+        .iter()
+        .position(|op| {
+            matches!(
+                op,
+                masm::Op::Inst(inst)
+                    if matches!(
+                        inst.inner(),
+                        masm::Instruction::Exec(masm::InvocationTarget::Symbol(name))
+                            if name.as_str() == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC
+                    )
+            )
+        })
+        .expect("generated main must invoke the private no-init entry body");
+    assert!(
+        init < harness && harness < entry,
+        "generated main must preserve init -> harness -> entry ordering"
+    );
+}
+
+#[test]
+fn unmarked_canonical_executable_keeps_the_existing_entrypoint_path() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::entry");
+    let lowered = lower_component(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START)
+        .expect("the unmarked canonical executable must remain supported");
+    assert!(lowered.executable_entrypoint_without_init.is_none());
+
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
+    let sources = lowered.source_inputs(&target, context.session()).unwrap();
+    let main = sources.root.procedures().find(|procedure| procedure.name().is_main()).unwrap();
+    let execs = exec_paths(main.body());
+    assert!(execs.iter().any(|target| target.ends_with("::init")));
+    assert!(execs.iter().any(|target| target.ends_with("::entry")));
+    assert!(!execs.iter().any(|target| target == EXECUTABLE_ENTRYPOINT_WITHOUT_INIT_PROC));
+}
+
+const COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module public @api {
+        builtin.function public extern("component-model") @entry() {
+            builtin.ret;
+        };
+    };
+    builtin.module private @core {
+        builtin.function public extern("C") @component_start() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+#[test]
+fn nested_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::api::entry");
+    let op = parse(&context, COMPONENT_WITH_NESTED_CANONICAL_ENTRYPOINT_AND_START);
+    mark_start_function(&context, op, "component_start");
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    let analysis_manager = AnalysisManager::new(op, None);
+
+    let err = match component.borrow().to_masm_component(analysis_manager) {
+        Ok(_) => panic!("a nested canonical entrypoint has ambiguous init ownership"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("must be defined directly"), "{err}");
+}
+
+const WORLD_WITH_SUPPORTING_CANONICAL_ENTRYPOINT_AND_START: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module private @core {
+            builtin.function public extern("C") @component_start() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.module public @supporting {
+        builtin.function public extern("component-model") @entry() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+#[test]
+fn supporting_canonical_entrypoint_cannot_bypass_marked_component_rejection() {
+    let context = context_with_entrypoint("supporting::entry");
+    let world = parse_world(&context, WORLD_WITH_SUPPORTING_CANONICAL_ENTRYPOINT_AND_START);
+    mark_start_function(&context, world.as_operation_ref(), "component_start");
+
+    let err = match lower_world(world) {
+        Ok(_) => {
+            panic!("a supporting canonical entrypoint would still initialize the component twice")
+        }
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("initialization twice"), "{err}");
+}
+
+#[test]
+fn generated_executable_main_owns_marked_core_entrypoint_initialization_once() {
+    let context = context_with_entrypoint("\"hir_ns:test@1.0.0\"::core::core_entry");
+    let op = parse(&context, COMPONENT_WITH_CANONICAL_ENTRYPOINT_AND_START);
+    let component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    mark_start_function(&context, op, "component_start");
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a marked core-C executable entrypoint remains supported");
+
+    let target = midenc_session::miden_project::Target::executable(
+        "component-start",
+        Uri::new("component-start.hir"),
+    );
+    let sources = lowered
+        .source_inputs(&target, context.session())
+        .expect("the marked executable should generate its main module");
+    let main = sources
+        .root
+        .procedures()
+        .find(|procedure| procedure.name().is_main())
+        .expect("the executable root should define main");
+    let execs = exec_paths(main.body());
+    let init = "::\"hir_ns:test@1.0.0\"::init";
+    let entry = "\"hir_ns:test@1.0.0\"::core::core_entry";
+    assert_eq!(execs.iter().filter(|target| target.as_str() == init).count(), 1);
+    let init = execs
+        .iter()
+        .position(|target| target == init)
+        .expect("generated main must invoke component init");
+    let entry = execs
+        .iter()
+        .position(|target| target == entry)
+        .unwrap_or_else(|| panic!("generated main must invoke the core entrypoint: {execs:?}"));
+    assert!(
+        init < entry,
+        "generated main must initialize once before executing the core entrypoint: {execs:?}"
     );
 }
 
@@ -1037,6 +1516,372 @@ fn type_expr_from_hir_pointer_conversion_preserves_address_space() {
             panic!("expected pointer type expression");
         };
         assert_eq!(ptr.address_space(), addrspace);
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ProcedureRootCallerOwner {
+    Component,
+    Interface,
+    Module,
+}
+
+/// A component whose procedure-root user and callee lower to different MASM modules.
+///
+/// `callee_first` lets the regressions prove that visibility behavior is independent of lowering
+/// order. `callee_visibility` is substituted as HIR source so the same fixture covers the rejected
+/// private target and the explicitly cross-module-linkable internal target.
+fn component_with_cross_module_procedure_root(
+    caller_owner: ProcedureRootCallerOwner,
+    callee_visibility: &str,
+    callee_first: bool,
+) -> String {
+    let callee_module = format!(
+        r#"    builtin.module private @callee_mod {{
+        builtin.function {callee_visibility} extern("C") @callee() {{
+            builtin.ret;
+        }};
+    }};"#
+    );
+    let caller_function = r#"builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@callee_mod::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };"#;
+    let caller = match caller_owner {
+        ProcedureRootCallerOwner::Component => format!("    {caller_function}"),
+        ProcedureRootCallerOwner::Interface => format!(
+            r#"    builtin.interface @caller {{
+        {caller_function}
+    }};"#
+        ),
+        ProcedureRootCallerOwner::Module => format!(
+            r#"    builtin.module public @caller_mod {{
+        {caller_function}
+    }};"#
+        ),
+    };
+    let (first, second) = if callee_first {
+        (callee_module.as_str(), caller.as_str())
+    } else {
+        (caller.as_str(), callee_module.as_str())
+    };
+
+    format!(
+        r#"builtin.component private @"hir_ns:test@1.0.0" {{
+{first}
+{second}
+}};
+"#
+    )
+}
+
+/// A component whose procedure-root user and private callee share one MASM module.
+fn component_with_same_owner_private_procedure_root(
+    owner: ProcedureRootCallerOwner,
+    callee_first: bool,
+) -> String {
+    let callee = r#"builtin.function private extern("C") @callee() {
+        builtin.ret;
+    };"#;
+    let root = r#"builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root @callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };"#;
+    let (first, second) = if callee_first {
+        (callee, root)
+    } else {
+        (root, callee)
+    };
+    let owner = match owner {
+        ProcedureRootCallerOwner::Component => format!("    {first}\n\n    {second}"),
+        ProcedureRootCallerOwner::Interface => format!(
+            r#"    builtin.interface @api {{
+        {first}
+
+        {second}
+    }};"#
+        ),
+        ProcedureRootCallerOwner::Module => format!(
+            r#"    builtin.module public @api {{
+        {first}
+
+        {second}
+    }};"#
+        ),
+    };
+
+    format!(
+        r#"builtin.component private @"hir_ns:test@1.0.0" {{
+{owner}
+}};
+"#
+    )
+}
+
+#[test]
+fn cross_module_private_procedure_roots_are_rejected_for_every_owner_in_both_orders() {
+    for caller_owner in [
+        ProcedureRootCallerOwner::Component,
+        ProcedureRootCallerOwner::Interface,
+        ProcedureRootCallerOwner::Module,
+    ] {
+        for callee_first in [true, false] {
+            let context = Rc::new(Context::default());
+            let source =
+                component_with_cross_module_procedure_root(caller_owner, "private", callee_first);
+            let err = legalize_and_lower_component(&context, &source)
+                .err()
+                .expect("a cross-module procedure_root must not target a private callee");
+            let message = err.to_string();
+            assert!(
+                message.contains("private callee")
+                    && message.contains("callee_mod/callee")
+                    && message.contains("not linkable from another Miden Assembly module"),
+                "owner: {caller_owner:?}, callee_first: {callee_first}, error: {message}"
+            );
+        }
+    }
+}
+
+#[test]
+fn direct_lowering_reports_both_sides_of_a_private_cross_module_procedure_root() {
+    let context = Rc::new(Context::default());
+    let source = component_with_cross_module_procedure_root(
+        ProcedureRootCallerOwner::Module,
+        "private",
+        true,
+    );
+    let err = legalize_and_lower_component(&context, &source)
+        .err()
+        .expect("the compiler lowering path must preflight procedure_root visibility");
+    let labels = err
+        .labels()
+        .expect("the structured diagnostic must label both operations")
+        .filter_map(|label| label.label().map(str::to_string))
+        .collect::<Vec<_>>();
+    assert!(
+        labels
+            .iter()
+            .any(|label| { label == "this reference crosses a Miden Assembly module boundary" }),
+        "the root use must be the primary diagnostic site: {labels:?}"
+    );
+    assert!(
+        labels
+            .iter()
+            .any(|label| label == "this callee is private to its defining module"),
+        "the private callee must be identified as the secondary site: {labels:?}"
+    );
+    let help = err.help().expect("the diagnostic must explain the valid remedies").to_string();
+    assert!(
+        help.contains("declare the callee internal or public"),
+        "the diagnostic must explain both valid remedies: {help}"
+    );
+}
+
+const COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@outer::@hidden::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+    builtin.module public @outer {
+        builtin.module private @hidden {
+            builtin.function internal extern("C") @callee() {
+                builtin.ret;
+            };
+        };
+    };
+};
+"#;
+
+#[test]
+fn procedure_root_rejects_an_internal_callee_beneath_a_private_nested_module() {
+    let context = Rc::new(Context::default());
+    let err =
+        legalize_and_lower_component(&context, COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET)
+            .err()
+            .expect("an internal procedure is not reachable through a private nested module");
+    let message = err.to_string();
+    assert!(
+        message.contains("callee")
+            && message.contains("private module")
+            && message.contains("hidden"),
+        "the diagnostic must identify the inaccessible module path: {message}"
+    );
+}
+
+#[test]
+fn synthetic_wrapper_procedure_roots_use_effective_module_visibility() {
+    let context = Rc::new(Context::default());
+    let op = parse(&context, COMPONENT_WITH_PRIVATE_NESTED_PROCEDURE_ROOT_TARGET);
+    let mut component = op
+        .try_downcast_op::<builtin::Component>()
+        .unwrap_or_else(|_| panic!("the fixture should parse as a component"));
+    component.borrow_mut().mark_synthetic_wrapper();
+    let analysis_manager = AnalysisManager::new(op, None);
+    let lowered = component
+        .borrow()
+        .to_masm_component(analysis_manager)
+        .expect("a synthetic wrapper exposes its nested module path");
+
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
+    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+}
+
+const COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT: &str = r#"
+builtin.world {
+    builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root @only::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+    builtin.module public @only {
+        builtin.function private extern("C") @callee() {
+            builtin.ret;
+        };
+    };
+};
+"#;
+
+#[test]
+fn a_component_less_world_procedure_root_shares_its_single_modules_masm_root() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_world(
+        &context,
+        COMPONENT_LESS_WORLD_WITH_COALESCED_PRIVATE_PROCEDURE_ROOT,
+    )
+    .expect("the world-level caller and sole module callee share one MASM module");
+    let exports = assembled_library_exports(&context, &lowered, "only");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
+}
+
+const COMPONENT_LESS_WORLD_WITH_EFFECTIVELY_PUBLIC_NESTED_MODULES: &str = r#"
+builtin.world {
+    builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+        %r0, %r1, %r2, %r3 = hir.procedure_root @only::@hidden::@callee;
+        builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+    };
+    builtin.module private @only {
+        builtin.module private @hidden {
+            builtin.function internal extern("C") @callee() {
+                builtin.ret;
+            };
+        };
+    };
+};
+"#;
+
+#[test]
+fn component_less_world_procedure_roots_use_effective_module_visibility() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_world(
+        &context,
+        COMPONENT_LESS_WORLD_WITH_EFFECTIVELY_PUBLIC_NESTED_MODULES,
+    )
+    .expect("component-less world modules form the public artifact interface");
+    let exports = assembled_library_exports(&context, &lowered, "only");
+    assert!(exports.iter().any(|export| export.ends_with("root")), "exports: {exports:?}");
+    assert!(exports.iter().any(|export| export.ends_with("callee")), "exports: {exports:?}");
+}
+
+const COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE: &str = r#"
+builtin.component private @"hir_ns:test@1.0.0" {
+    builtin.module private @internal {
+        builtin.function internal extern("C") @callee() {
+            builtin.ret;
+        };
+    };
+    builtin.module public @api {
+        builtin.module public @deep {
+            builtin.function public extern("C") @root() -> (felt, felt, felt, felt) {
+                %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@internal::@callee;
+                builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+            };
+        };
+    };
+};
+"#;
+
+#[test]
+fn a_deep_procedure_root_caller_can_reach_its_ancestors_private_child() {
+    let context = Rc::new(Context::default());
+    let lowered = legalize_and_lower_component(
+        &context,
+        COMPONENT_WITH_DEEP_CALLER_AND_PRIVATE_SIBLING_CALLEE_MODULE,
+    )
+    .expect("a private child is visible to every descendant of its parent");
+    let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+    assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+    assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
+}
+
+const WORLD_WITH_OMITTED_INVALID_PROCEDURE_ROOT_USER: &str = r#"
+builtin.world {
+    builtin.component private @"hir_ns:test@1.0.0" {
+        builtin.module public @api {
+            builtin.function private extern("C") @callee() {
+                builtin.ret;
+            };
+        };
+    };
+    builtin.interface @omitted {
+        builtin.function public extern("C") @unused() -> (felt, felt, felt, felt) {
+            %r0, %r1, %r2, %r3 = hir.procedure_root ::@"hir_ns:test@1.0.0"::@api::@callee;
+            builtin.ret %r0, %r1, %r2, %r3 : (felt, felt, felt, felt);
+        };
+    };
+};
+"#;
+
+#[test]
+fn legalization_does_not_validate_procedure_roots_in_an_omitted_world_sibling() {
+    let (context, emitter) = capturing_context();
+    legalize_and_lower_world(&context, WORLD_WITH_OMITTED_INVALID_PROCEDURE_ROOT_USER)
+        .expect("an omitted sibling must not fail the selected component's build");
+    let captured = emitter.captured();
+    assert!(
+        captured.contains("this build omits"),
+        "the established omission warning must still be emitted: {captured}"
+    );
+}
+
+#[test]
+fn cross_module_internal_procedure_roots_assemble_in_both_module_orders() {
+    for callee_first in [true, false] {
+        let context = Rc::new(Context::default());
+        let source = component_with_cross_module_procedure_root(
+            ProcedureRootCallerOwner::Component,
+            "internal",
+            callee_first,
+        );
+        let lowered = legalize_and_lower_component(&context, &source)
+            .expect("an explicitly internal cross-module procedure_root target must lower");
+        let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+        assert_eq!(exports.len(), 1, "only the public root should be exported: {exports:?}");
+        assert!(exports[0].ends_with("root"), "unexpected package surface: {exports:?}");
+    }
+}
+
+#[test]
+fn same_owner_private_procedure_roots_stay_private_in_both_orders() {
+    for owner in [ProcedureRootCallerOwner::Component, ProcedureRootCallerOwner::Module] {
+        for callee_first in [true, false] {
+            let context = Rc::new(Context::default());
+            let source = component_with_same_owner_private_procedure_root(owner, callee_first);
+            let lowered = legalize_and_lower_component(&context, &source)
+                .expect("a procedure_root may target a private callee in its own MASM module");
+            let exports = assembled_library_exports(&context, &lowered, "hir_ns:test@1.0.0");
+            assert_eq!(
+                exports.len(),
+                1,
+                "owner: {owner:?}, callee_first: {callee_first}, exports: {exports:?}"
+            );
+            assert!(
+                exports[0].ends_with("root"),
+                "owner: {owner:?}, callee_first: {callee_first}, exports: {exports:?}"
+            );
+        }
     }
 }
 

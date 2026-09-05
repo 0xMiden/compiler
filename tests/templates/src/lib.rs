@@ -70,28 +70,51 @@ fn current_dir_lock() -> CurrentDirGuard {
 ///
 /// It must not simply inherit the ambient `CARGO_TARGET_DIR` either, since
 /// `cargo make` points that at the workspace's own target directory.
-struct TargetDirGuard(Option<String>);
+///
+/// Only the name-keyed *final* artifacts need this separation. The hash-keyed
+/// intermediates — the whole dependency cone, identical across every template —
+/// go to the one shared build cache (`CARGO_BUILD_BUILD_DIR`), following the
+/// `target/miden_build_cache` convention that `tests/support` establishes.
+struct TargetDirGuard {
+    target_dir: Option<String>,
+    build_dir: Option<String>,
+}
 
 impl TargetDirGuard {
     fn for_template(template: &str) -> Self {
-        let previous = env::var("CARGO_TARGET_DIR").ok();
+        let previous_target = env::var("CARGO_TARGET_DIR").ok();
+        let previous_build = env::var("CARGO_BUILD_BUILD_DIR").ok();
         let dir = workspace_root()
             .join("target/miden_test_template_projects")
             .join(template.replace('-', "_"));
         fs::create_dir_all(&dir).expect("create the template build directory");
+        let cache = workspace_root().join("target/miden_build_cache");
+        fs::create_dir_all(&cache).expect("create the shared build cache");
         // Safety: `set_var` is unsafe because of threads elsewhere in the
         // process; under nextest each test is its own process, and this is set
         // once before any subprocess is spawned.
-        unsafe { env::set_var("CARGO_TARGET_DIR", &dir) };
-        Self(previous)
+        unsafe {
+            env::set_var("CARGO_TARGET_DIR", &dir);
+            env::set_var("CARGO_BUILD_BUILD_DIR", &cache);
+        }
+        Self {
+            target_dir: previous_target,
+            build_dir: previous_build,
+        }
     }
 }
 
 impl Drop for TargetDirGuard {
     fn drop(&mut self) {
-        match self.0.take() {
-            Some(previous) => unsafe { env::set_var("CARGO_TARGET_DIR", previous) },
-            None => unsafe { env::remove_var("CARGO_TARGET_DIR") },
+        unsafe {
+            match self.target_dir.take() {
+                Some(previous) => env::set_var("CARGO_TARGET_DIR", previous),
+                None => env::remove_var("CARGO_TARGET_DIR"),
+            }
+            match self.build_dir.take() {
+                Some(previous) => env::set_var("CARGO_BUILD_BUILD_DIR", previous),
+                None => env::remove_var("CARGO_BUILD_BUILD_DIR"),
+            }
         }
     }
 }
@@ -113,8 +136,11 @@ fn templates_root() -> PathBuf {
 /// Builds the `cargo miden new` argument vector for `template` into a project
 /// named `name`, sourcing the template locally and the SDK from the compiler
 /// branch.
-fn new_project_args(name: &str, template: &str) -> Vec<String> {
-    let template_path = templates_root().join(template);
+fn new_project_args(name: &str, template: Option<&str>) -> Vec<String> {
+    let template_path = match template {
+        Some(template) => templates_root().join(template),
+        None => workspace_root().join("extra/templates/project"),
+    };
     let compiler_path = workspace_root();
     vec![
         "cargo".into(),
@@ -196,7 +222,7 @@ pub fn build_new_project_from_template(template: &str) {
     let _target_dir = TargetDirGuard::for_template(template);
 
     if matches!(template, "note" | "tx-script") {
-        run(new_project_args("add-contract", "account").into_iter())
+        run(new_project_args("add-contract", Some("account")).into_iter())
             .expect("failed to create the add-contract dependency project")
             .expect("`cargo miden new` should return a command output");
         env::set_current_dir(temp_dir.join("add-contract")).unwrap();
@@ -208,7 +234,7 @@ pub fn build_new_project_from_template(template: &str) {
     }
 
     let project_name = "template_test";
-    run(new_project_args(project_name, template).into_iter())
+    run(new_project_args(project_name, Some(template)).into_iter())
         .unwrap_or_else(|e| panic!("failed to create project from `{template}` template: {e}"))
         .expect("`cargo miden new` should return a command output");
     let project_dir = temp_dir.join(project_name);
@@ -217,6 +243,54 @@ pub fn build_new_project_from_template(template: &str) {
 
     build_and_assert(false);
     build_and_assert(true);
+
+    // Leave the temp dir (cwd is restored by the guard on drop).
+    env::set_current_dir(workspace_root()).unwrap();
+    let _ = fs::remove_dir_all(&temp_dir);
+}
+
+pub fn build_new_project_from_project_template(project_name: &str) {
+    let _cwd = current_dir_lock();
+
+    let temp_dir = env::temp_dir().join(format!(
+        "rust_templates_{}_{}",
+        project_name.replace('-', "_"),
+        SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+    ));
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).unwrap();
+    }
+    fs::create_dir_all(&temp_dir).unwrap();
+    env::set_current_dir(&temp_dir).unwrap();
+
+    let _target_dir = TargetDirGuard::for_template(project_name);
+
+    run(new_project_args(project_name, None).into_iter())
+        .unwrap_or_else(|e| panic!("failed to create project from project template: {e}"))
+        .expect("`cargo miden new` should return a command output");
+    let project_dir = temp_dir.join(project_name);
+    assert!(project_dir.exists(), "generated project is missing: {}", project_dir.display());
+    env::set_current_dir(&project_dir).unwrap();
+
+    let integration_test_dir = project_dir.join("integration");
+
+    {
+        let cargo_miden_bin =
+            PathBuf::from(std::env::var_os("MIDENC_BIN_DIR").expect("MIDENC_BIN_DIR was unset"))
+                .join("cargo-miden");
+        assert!(
+            cargo_miden_bin.exists(),
+            "cargo-miden binary is missing: {}",
+            cargo_miden_bin.display()
+        );
+        let mut cmd = std::process::Command::new("cargo");
+        cmd.arg("test")
+            .current_dir(&integration_test_dir)
+            .env("CARGO_MIDEN", cargo_miden_bin.as_os_str());
+        let mut child = cmd.spawn().expect("failed to spawn 'cargo test'");
+        let exit_status = child.wait().expect("'cargo test' failed");
+        assert!(exit_status.success(), "expected 'cargo test' to succeed, got {exit_status}");
+    }
 
     // Leave the temp dir (cwd is restored by the guard on drop).
     env::set_current_dir(workspace_root()).unwrap();

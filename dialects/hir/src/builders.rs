@@ -477,8 +477,8 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         Ok(op_results!(op))
     }
 
-    /// Log a precompile event into the VM precompile transcript.
-    fn log_precompile<A>(
+    /// Folds a precomputed statement digest into the rolling deferred root.
+    fn log_deferred<A>(
         &mut self,
         stack: A,
         span: SourceSpan,
@@ -486,7 +486,7 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
     where
         A: IntoIterator<Item = ValueRef>,
     {
-        let op_builder = self.builder_mut().create::<crate::ops::LogPrecompile, (A,)>(span);
+        let op_builder = self.builder_mut().create::<crate::ops::LogDeferred, (A,)>(span);
         let op = op_builder(stack)?;
         Ok(op_results!(op))
     }
@@ -949,6 +949,21 @@ pub trait HirOpBuilder<'f, B: ?Sized + Builder> {
         let op_builder =
             self.builder_mut().create::<crate::ops::ExecIndirect, (_, _, _, _, A)>(span);
         op_builder(table, signature, type_tag, index, args)
+    }
+
+    /// Materialize the MAST root digest of `callee` as four felt values (one word).
+    ///
+    /// The callee is referenced, not invoked; see [crate::ops::ProcedureRoot].
+    fn procedure_root<C>(
+        &mut self,
+        callee: C,
+        span: SourceSpan,
+    ) -> Result<UnsafeIntrusiveEntityRef<crate::ops::ProcedureRoot>, Report>
+    where
+        C: AsCallableSymbolRef,
+    {
+        let op_builder = self.builder_mut().create::<crate::ops::ProcedureRoot, (C,)>(span);
+        op_builder(callee)
     }
 
     /// Invoke a foreign account procedure via the transaction kernel FPI executor.

@@ -12,16 +12,16 @@ units = [
 ]
 
 [compiler]
-version = "0.10.0-rc.1"
-tag = "v0.10.0-rc.1"
-prerelease = true
+version = "0.10.0"
+tag = "v0.10.0"
+prerelease = false
 
 [sdk]
-version = "0.14.0-rc.1"
-tag = "sdk/v0.14.0-rc.1"
-prerelease = true
+version = "0.14.0"
+tag = "sdk/v0.14.0"
+prerelease = false
 
 [templates]
-version = "0.32.0-rc.1"
-tag = "templates/v0.32.0-rc.1"
-prerelease = true
+version = "0.32.0"
+tag = "templates/v0.32.0"
+prerelease = false
