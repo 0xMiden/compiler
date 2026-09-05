@@ -12,6 +12,7 @@ const PAGE_SIZE: usize = 64 * 1024;
 const MAX_ADDRESSABLE_HEAP: usize = (2usize.pow(30) - 1) * 4;
 
 /// The execution context associated with Miden context boundaries
+#[derive(Default)]
 pub struct ExecutionContext {
     /// The identifier for this context, if known
     ///
@@ -159,16 +160,6 @@ impl ExecutionContext {
         memory::write_value(addr, value, &mut self.memory);
 
         Ok(())
-    }
-}
-
-impl Default for ExecutionContext {
-    fn default() -> Self {
-        Self {
-            id: None,
-            memory: Vec::new(),
-            pages: 0,
-        }
     }
 }
 
