@@ -58,12 +58,8 @@ pub struct BenchmarkRunner {
     cargo_miden: Option<PathBuf>,
     /// Whether a case whose build fails is skipped instead of failing the whole run.
     ///
-    /// The baseline side of a benchmark comparison drives the previous compiler over the
-    /// candidate's examples and SDK, so a candidate change that old compilers cannot build
-    /// — for example, macros that require package features the old compiler does not
-    /// produce — would otherwise fail the baseline outright. Skipped cases appear in the
-    /// comparison report without a baseline value. The candidate run must never set this:
-    /// a candidate build failure is a real regression.
+    /// Allows partial reports when manually testing a compiler against incompatible example
+    /// sources. CI compares each compiler with its own sources and requires every build to pass.
     skip_failed_builds: bool,
 }
 

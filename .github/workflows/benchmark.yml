@@ -67,19 +67,16 @@ jobs:
       - name: Benchmark next
         run: |
           target/benchmark-candidate/release/example-benchmarks \
-            --workspace-root "$GITHUB_WORKSPACE" \
+            --workspace-root "${RUNNER_TEMP}/compiler-next" \
             --cargo-miden "${RUNNER_TEMP}/compiler-next/bin/cargo-miden" \
-            --commit "$(git rev-parse origin/next)" \
             --output-dir target/example-benchmarks/baseline \
-            --build-dir target/example-benchmark-build/baseline \
-            --skip-failed-builds
+            --build-dir target/example-benchmark-build/baseline
 
       - name: Benchmark candidate
         run: |
           target/benchmark-candidate/release/example-benchmarks \
             --workspace-root "$GITHUB_WORKSPACE" \
             --cargo-miden bin/cargo-miden \
-            --commit "$GITHUB_SHA" \
             --output-dir target/example-benchmarks/candidate \
             --build-dir target/example-benchmark-build/candidate
 
