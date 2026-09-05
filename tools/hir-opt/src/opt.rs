@@ -12,10 +12,7 @@ use midenc_session::{
     diagnostics::{Emitter, Report},
 };
 
-use crate::{
-    ClapDiagnostic,
-    pipeline::{Anchor, PassPipeline},
-};
+use crate::{ClapDiagnostic, pipeline::PassPipeline};
 
 /// This struct provides the command-line interface used by `hir-opt`
 #[derive(Debug, Parser)]
@@ -119,44 +116,20 @@ impl HirOpt {
             context: context.clone(),
             verify,
         };
+        let anchor = pass_pipeline.anchor.resolve(&context)?;
         let parsed = match &context.session().input.as_ref().unwrap().file {
-            InputType::Real(path) => match pass_pipeline.anchor {
-                Anchor::Any => midenc_hir::parse::parse_file_any(config, path)?,
-                Anchor::Operation { dialect, opcode } => {
-                    let dialect = config.context.get_registered_dialect(dialect);
-                    let Some(name) =
-                        dialect.registered_ops().iter().find(|name| name.name() == opcode).cloned()
-                    else {
-                        return Err(Report::msg(format!(
-                            "invalid anchor: unknown operation type '{}.{opcode}'",
-                            dialect.name()
-                        )));
-                    };
-                    midenc_hir::parse::parse_file_anchored(name, config, path)?
-                }
+            InputType::Real(path) => match anchor {
+                None => midenc_hir::parse::parse_file_any(config, path)?,
+                Some(name) => midenc_hir::parse::parse_file_anchored(name, config, path)?,
             },
             InputType::Stdin { name, input } => {
                 let source = core::str::from_utf8(input).map_err(|err| {
                     Report::msg(format!("unable to load input: invalid utf8 ({err})"))
                 })?;
                 let uri = Uri::new(name.as_str());
-                match pass_pipeline.anchor {
-                    Anchor::Any => midenc_hir::parse::parse_any(config, uri, source)?,
-                    Anchor::Operation { dialect, opcode } => {
-                        let dialect = config.context.get_registered_dialect(dialect);
-                        let Some(name) = dialect
-                            .registered_ops()
-                            .iter()
-                            .find(|name| name.name() == opcode)
-                            .cloned()
-                        else {
-                            return Err(Report::msg(format!(
-                                "invalid anchor: unknown operation type '{}.{opcode}'",
-                                dialect.name()
-                            )));
-                        };
-                        midenc_hir::parse::parse_anchored(name, config, uri, source)?
-                    }
+                match anchor {
+                    None => midenc_hir::parse::parse_any(config, uri, source)?,
+                    Some(name) => midenc_hir::parse::parse_anchored(name, config, uri, source)?,
                 }
             }
         };

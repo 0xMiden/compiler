@@ -53,12 +53,14 @@ pub enum PipelineElement {
 
 impl PassPipeline {
     pub fn load(&self, context: Rc<Context>) -> Result<PassManager, Report> {
+        self.anchor.resolve(&context)?;
         let mut pm = PassManager::new(context.clone(), self.anchor.to_string(), Nesting::Explicit);
         self.load_elements(pm.op_pass_manager_mut(), &context)?;
         Ok(pm)
     }
 
     fn load_nested(&self, context: Rc<Context>) -> Result<Option<OpPassManager>, Report> {
+        self.anchor.resolve(&context)?;
         if self.elements.is_empty() {
             return Ok(None);
         }
@@ -300,6 +302,27 @@ pub enum Anchor {
     },
 }
 
+impl Anchor {
+    /// Resolve a CLI anchor before passing it to infallible pass-manager constructors.
+    pub fn resolve(self, context: &Context) -> Result<Option<midenc_hir::OperationName>, Report> {
+        let Self::Operation { dialect, opcode } = self else {
+            return Ok(None);
+        };
+        let registered = context.find_registered_dialect(dialect).ok_or_else(|| {
+            Report::msg(format!("invalid anchor '{self}': unknown dialect '{dialect}'"))
+        })?;
+        let name = registered
+            .registered_ops()
+            .iter()
+            .find(|name| name.name() == opcode)
+            .cloned()
+            .ok_or_else(|| {
+            Report::msg(format!("invalid anchor: unknown operation type '{self}'"))
+        })?;
+        Ok(Some(name))
+    }
+}
+
 impl fmt::Display for Anchor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -448,6 +471,24 @@ mod tests {
             ["builtin.module:cse", "builtin.module:canonicalizer", "builtin.module:cse"]
         );
         Ok(())
+    }
+
+    #[test]
+    fn invalid_pipeline_anchors_return_errors() {
+        for source in [
+            "nosuch.op",
+            "builtin.nosuch",
+            "builtin.module(nosuch.op(cse))",
+            "builtin.module(builtin.nosuch(cse))",
+            "builtin.module(builtin.module(nosuch.op(cse)))",
+        ] {
+            let pipeline = source.parse::<PassPipeline>().unwrap();
+            let error = match pipeline.load(Rc::new(Context::default())) {
+                Ok(_) => panic!("unknown anchor should fail: {source}"),
+                Err(error) => error,
+            };
+            assert!(error.to_string().contains("invalid anchor"), "{source}: {error}");
+        }
     }
 }
 
