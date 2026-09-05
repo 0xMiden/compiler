@@ -613,8 +613,11 @@ impl Eval for hir::MemGrow {
         let current_size = {
             let current_context = evaluator.current_context_mut();
             let current_size = current_context.memory_size();
-            current_context.memory_grow(pages as usize);
-            current_size as u32
+            if current_context.memory_grow(pages as usize) {
+                current_size as u32
+            } else {
+                u32::MAX
+            }
         };
         evaluator.set_value(self.result().as_value_ref(), Immediate::U32(current_size));
         Ok(ControlFlowEffect::None)

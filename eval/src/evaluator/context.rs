@@ -7,7 +7,9 @@ use super::memory::{self, ReadFailed, WriteFailed};
 use crate::Value;
 
 const PAGE_SIZE: usize = 64 * 1024;
-const MAX_ADDRESSABLE_HEAP: usize = 2usize.pow(30) - 1;
+// Match HEAP_END in codegen/masm/intrinsics/mem.masm: convert the last usable
+// element address to the byte-addressed heap boundary used by the evaluator.
+const MAX_ADDRESSABLE_HEAP: usize = (2usize.pow(30) - 1) * 4;
 
 /// The execution context associated with Miden context boundaries
 pub struct ExecutionContext {
@@ -18,6 +20,8 @@ pub struct ExecutionContext {
     id: Option<ComponentId>,
     /// Heap memory
     memory: Vec<u8>,
+    /// Pages requested through memory_grow; independent of materialized bytes.
+    pages: usize,
 }
 
 impl ExecutionContext {
@@ -28,21 +32,30 @@ impl ExecutionContext {
         }
     }
 
-    /// Grow the heap of this context to be at least `n` pages
-    pub fn memory_grow(&mut self, n: usize) {
-        assert!(((n * PAGE_SIZE) as u32) < u32::MAX, "cannot grow heap larger than u32::MAX");
-        self.memory.resize(n * PAGE_SIZE, 0);
+    /// Grow the logical heap by `n` pages, preserving its contents on failure.
+    ///
+    /// Storage is materialized by writes. Growing does not allocate a host buffer for
+    /// untouched zero-filled pages, just as ordinary reads do not materialize memory.
+    pub fn memory_grow(&mut self, n: usize) -> bool {
+        let Some(pages) = self.pages.checked_add(n) else {
+            return false;
+        };
+        if pages > MAX_ADDRESSABLE_HEAP / PAGE_SIZE {
+            return false;
+        }
+        self.pages = pages;
+        true
     }
 
-    /// Return the size of this context's heap in pages
+    /// Return the logical heap size in pages, excluding unrelated memory writes.
     pub fn memory_size(&self) -> usize {
-        self.memory.len() / PAGE_SIZE
+        self.pages
     }
 
-    /// Reset the memory of this context to its initial state
+    /// Restore the initial empty logical heap and discard materialized bytes.
     pub fn reset(&mut self) {
         self.memory.clear();
-        self.memory.resize(4 * PAGE_SIZE, 0);
+        self.pages = 0;
     }
 
     /// Read a value of type `ty` from `addr`
@@ -153,7 +166,87 @@ impl Default for ExecutionContext {
     fn default() -> Self {
         Self {
             id: None,
-            memory: Vec::with_capacity(4 * PAGE_SIZE),
+            memory: Vec::new(),
+            pages: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn growth_is_additive_and_preserves_data() {
+        let mut context = ExecutionContext::default();
+        context.memory_grow(2);
+        context
+            .write_memory(0, midenc_hir::Immediate::U8(17), SourceSpan::UNKNOWN)
+            .unwrap();
+        context.memory_grow(0);
+        assert_eq!(context.memory_size(), 2);
+        assert_eq!(context.memory[0], 17);
+        context.memory_grow(1);
+        assert_eq!(context.memory_size(), 3);
+        assert_eq!(context.memory[0], 17);
+    }
+
+    #[test]
+    fn materialized_bytes_do_not_change_logical_pages() {
+        let mut context = ExecutionContext::default();
+        context.memory.resize(2 * PAGE_SIZE, 0);
+        assert_eq!(context.memory_size(), 0);
+    }
+
+    #[test]
+    fn failed_growth_preserves_pages_and_bytes() {
+        let mut context = ExecutionContext::default();
+        assert!(context.memory_grow(1));
+        context
+            .write_memory(0, midenc_hir::Immediate::U8(17), SourceSpan::UNKNOWN)
+            .unwrap();
+        assert!(!context.memory_grow(usize::MAX));
+        assert!(!context.memory_grow(MAX_ADDRESSABLE_HEAP / PAGE_SIZE));
+        assert_eq!(context.memory_size(), 1);
+        assert_eq!(context.memory[0], 17);
+    }
+
+    #[test]
+    fn growth_uses_the_byte_addressable_heap_limit() {
+        let mut context = ExecutionContext::default();
+        assert!(context.memory_grow(16_384));
+        assert_eq!(context.memory_size(), 16_384);
+        assert!(context.memory_grow(65_535 - 16_384));
+        assert_eq!(context.memory_size(), 65_535);
+        assert!(!context.memory_grow(1));
+        assert_eq!(context.memory_size(), 65_535);
+        assert!(context.memory.is_empty());
+
+        let mut empty = ExecutionContext::default();
+        assert!(!empty.memory_grow(65_536));
+        assert_eq!(empty.memory_size(), 0);
+    }
+
+    #[test]
+    fn high_byte_addresses_read_as_zero_without_materializing_memory() {
+        let context = ExecutionContext::default();
+        for addr in [1u32 << 30, 0xffff_fff8] {
+            assert_eq!(
+                context.read_memory(addr, &Type::U32, SourceSpan::UNKNOWN).unwrap(),
+                Value::Immediate(midenc_hir::Immediate::U32(0))
+            );
+            assert_eq!(context.read_memory_bytes(addr, 4, SourceSpan::UNKNOWN).unwrap(), [0; 4]);
+        }
+        assert!(context.read_memory(0xffff_fffc, &Type::U8, SourceSpan::UNKNOWN).is_err());
+        assert!(context.memory.is_empty());
+    }
+
+    #[test]
+    fn reset_restores_initial_page_count() {
+        let mut context = ExecutionContext::default();
+        let initial_size = context.memory_size();
+        context.memory_grow(2);
+        context.reset();
+        assert_eq!(context.memory_size(), initial_size);
     }
 }
