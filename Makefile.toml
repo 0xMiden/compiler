@@ -569,40 +569,6 @@ cwd = "./docs/external"
 command = "npm"
 args = ["install"]
 
-[tasks.internal-docs]
-category = "Documentation"
-description = "Builds the internal compiler documentation"
-dependencies = ["mdbook", "mdbook-linkcheck", "mdbook-alerts", "mdbook-katex"]
-command = "mdbook"
-args = ["build", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/docs/internal"]
-
-[tasks.mdbook]
-category = "Build"
-install_crate = { crate_name = "mdbook", binary = "mdbook", test_arg = [
-    "--help",
-] }
-
-[tasks.mdbook-linkcheck]
-category = "Build"
-install_crate = { crate_name = "mdbook-linkcheck" }
-
-[tasks.mdbook-alerts]
-category = "Build"
-install_crate = { crate_name = "mdbook-alerts" }
-
-[tasks.mdbook-katex]
-category = "Build"
-install_crate = { crate_name = "mdbook-katex" }
-
-[tasks.book]
-category = "Build"
-description = "Opens the compiler documentation"
-install_crate = { crate_name = "mdbook", binary = "mdbook", test_arg = [
-    "--help",
-] }
-command = "mdbook"
-args = ["serve", "--open", "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/docs"]
-
 [tasks.clippy]
 description = "Runs clippy on the workspace"
 category = "Development"

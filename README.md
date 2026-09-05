@@ -68,7 +68,9 @@ This will run all of the unit tests in the workspace, as well as all of our `lit
 
 The documentation in the `docs/external` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://github.com/0xMiden/miden-docs) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
 
-The `docs/internal` folder corresponds to internal docs, which are hosted using mdbook and Github Pages here: [The Miden compiler](https://0xmiden.github.io/compiler/). These md files are not exported to the main docs.
+Run `cargo make docs` to install the public documentation dependencies and start the local Docusaurus server. For the same production build checked by CI, run `npm ci` and `npm run build:dev` from `docs/external`.
+
+Internal compiler notes start at [docs/internal/src/index.md](docs/internal/src/index.md). These Markdown files are maintained separately from the public Docusaurus site; the public documentation build does not publish them.
 
 ## Packaging
 
