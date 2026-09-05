@@ -42,7 +42,7 @@ The compiler toolchain consists of the following primary components:
   and compiling Rust projects targeting Miden. It contains a project template for a basic Rust crate,
   and handles orchestrating `rustc` and `midenc` to compile the crate to WebAssembly, and then to
   Miden Assembly.
-- A terminal-based interactive debugger, available via `midenc debug`, which provides a UI very
+- A terminal-based interactive debugger, available as the separate `miden-debug` executable, which provides a UI very
   similar to `lldb` or `gdb` when using the TUI mode. You can use this to run a program, or step
   through it cycle-by-cycle. You can set various types of breakpoints; see the source code, call
   stack, and contents of the operand stack at the current program point; as well as interactively

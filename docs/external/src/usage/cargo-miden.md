@@ -89,19 +89,16 @@ the compiled Miden package on success.
 
 ## Running a compiled Miden VM program
 
-:::warning
-
-To run the compiled Miden VM program you need to have `midenc` installed. See [`midenc` docs](./midenc.md) for the installation instructions.
-
-:::
-
-The compiled Miden VM program can be run from the Miden package with the following:
+Use `miden-debug` to execute the compiled package. See [Debugging programs](../guides/debugger.md)
+for installation and the input-file format.
 
 ```bash
-midenc run target/miden/release/foo.masp --inputs some_inputs.toml
+miden-debug target/miden/release/foo.masp --inputs some_inputs.toml
 ```
 
-See `midenc run --help` for the inputs file format.
+This opens the interactive debugger. For terminal commands, add `--repl`; for a non-interactive
+run, use `--commands` with a debugger command file, as described in the guide. Run
+`miden-debug --help` for the available options.
 
 ## Examples
 

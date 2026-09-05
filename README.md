@@ -17,7 +17,8 @@ This repo is broken into the following high-level components:
   emit Miden Assembly for.
 - The Wasm frontend; a library which can be used to convert a program compiled to `.wasm` to HIR
 - The `midenc` executable, which provides a command-line tool that provides a convenient way
-  to compile Wasm or HIR modules/programs to Miden Assembly and test them.
+  to compile Wasm or HIR modules/programs to Miden Assembly. The separate `miden-debug`
+  tool executes and debugs compiled packages.
 
 > [!TIP]
 > We've published initial [documentation](https://0xMiden.github.io/compiler)
@@ -34,7 +35,7 @@ Additionally, you'll want to have [`cargo-make`](https://github.com/sagiegurari/
 
     $ cargo install cargo-make
 
-From there, you can build all of the tooling used for the compiler, including the compiler itself with:
+From there, build the compiler with:
 
     $ cargo make
 
@@ -48,9 +49,13 @@ To run the compiler test suite:
 
     $ cargo make test
 
-This will run all of the unit tests in the workspace, as well as all of our `lit` tests.
+This runs the Rust tests, including integration and template tests. To include the `lit`/FileCheck
+suite, run `cargo make test-all`.
 
 ## Debugging
+
+Use `miden-debug program.masp` to open a compiled program in the debugger. See the
+[debugger guide](docs/external/src/guides/debugger.md) for installation, inputs, and batch execution.
 
 ### Emitting internal sources/artifacts
 

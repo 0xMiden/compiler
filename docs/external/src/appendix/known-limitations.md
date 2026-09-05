@@ -210,17 +210,14 @@ that meets the minimum requirements to support libraries and programs compiled f
 - Dependency information (optional, specifies what libraries were linked against during compilation)
 - Debug information (optional)
 
-However, this package format is not yet understood by the Miden VM itself. This means you cannot,
-currently, compile a package and then run it using `miden run` directly. Instead, you can use
-`midenc run` to load and run code from a package, as the compiler ships with the VM embedded for
-use with the interactive debugger, and provides native support for packaging on top of it. You can
-also use `midenc debug` to execute your program interactively in the debugger, depending on your
-needs. See [Debugging Programs](../guides/debugger.md) for more information on how to use the
-debugger, and `midenc help run` for more information on executing programs with the `midenc run`
-command.
+Use a compatible `miden-debug` executable to load and execute `.masp` packages, including their
+metadata and dependencies. The compiler's `midenc` executable compiles artifacts; execution and
+debugging are provided by the separate debugger.
 
-While it is possible to emit raw MAST from `midenc`, rather than the experimental package format,
-the resulting artifact cannot be run without some fragile and error-prone manual setup, in order
-to ensure that the advice provider is correctly initialized with any read-only data segments. For
-now, it is recommended that you use the `midenc` tooling for testing programs, until the format
-is stabilized.
+```shell
+miden-debug program.masp --inputs inputs.toml
+```
+
+See [Debugging programs](../guides/debugger.md) for installation, interactive use, and command-script
+execution. Keep the debugger's package and VM versions compatible with the compiler that produced
+the artifact; a package produced by another toolchain version may require that toolchain's debugger.
