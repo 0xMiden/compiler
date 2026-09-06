@@ -6,53 +6,7 @@ use miden_field::{Felt, Word};
 use miden_field_repr::{FeltReader, FeltWriter, FromFeltRepr, ToFeltRepr};
 use miden_protocol::{account::AccountId, address::NetworkId, asset::AssetAmount};
 
-use crate::{Error, Result};
-
-/// The canonical WIT FQN for `felt`.
-pub const FELT_FQN: &str = "miden:base/core-types@1.0.0.felt";
-/// The canonical WIT FQN for `word`.
-pub const WORD_FQN: &str = "miden:base/core-types@1.0.0.word";
-/// The canonical WIT FQN for `account-id`.
-pub const ACCOUNT_ID_FQN: &str = "miden:base/core-types@1.0.0.account-id";
-/// The canonical WIT FQN for `asset-amount`.
-pub const ASSET_AMOUNT_FQN: &str = "miden:base/core-types@1.0.0.asset-amount";
-
-/// A protocol type whose schema leaf maps directly to an existing host type and standard codec.
-///
-/// This is the canonical standard-leaf definition used by schema traversal, Rust code generation,
-/// and author-codec registration. Named types outside this set remain schema-owned, including
-/// other records in the `miden:base/core-types` interface.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum StandardLeaf {
-    /// The one-element Miden base-field type.
-    Felt,
-    /// A group of four Miden base-field elements.
-    Word,
-    /// A two-element protocol account identifier.
-    AccountId,
-    /// A validated fungible-asset amount.
-    AssetAmount,
-}
-
-impl StandardLeaf {
-    /// Every standard leaf in canonical registry order.
-    pub const ALL: [Self; 4] = [Self::Felt, Self::Word, Self::AccountId, Self::AssetAmount];
-
-    /// Returns the canonical WIT FQN for this standard leaf.
-    pub const fn fqn(self) -> &'static str {
-        match self {
-            Self::Felt => FELT_FQN,
-            Self::Word => WORD_FQN,
-            Self::AccountId => ACCOUNT_ID_FQN,
-            Self::AssetAmount => ASSET_AMOUNT_FQN,
-        }
-    }
-
-    /// Classifies a canonical WIT FQN as a standard leaf.
-    pub fn from_fqn(fqn: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|leaf| leaf.fqn() == fqn)
-    }
-}
+use crate::{Error, Result, StandardLeaf};
 
 /// Parses, displays, and validates one fully-qualified WIT leaf type.
 pub trait ConsumerTypeCodec: Send + Sync {
@@ -284,6 +238,7 @@ fn read_asset_amount(felts: &[Felt]) -> Result<AssetAmount> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, FELT_FQN, WORD_FQN};
 
     /// Returns a valid account ID and its mainnet bech32 form.
     fn account_id() -> (AccountId, String) {

@@ -19,7 +19,7 @@ doctest = false
 
 [dependencies]
 miden-note-codec-wit.workspace = true
-miden-note-schema.workspace = true
+miden-note-schema = { workspace = true, features = ["protocol"] }
 miden-note-schema-codegen.workspace = true
 midenc-frontend-wasm-metadata.workspace = true
 proc-macro2 = { workspace = true, features = ["span-locations"] }

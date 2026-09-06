@@ -56,6 +56,7 @@ impl Error {
     }
 
     /// Adds context before the current error message.
+    #[cfg(feature = "protocol")]
     pub(crate) fn context(self, context: impl fmt::Display) -> Self {
         Self {
             message: format!("{context}: {}", self.message),
