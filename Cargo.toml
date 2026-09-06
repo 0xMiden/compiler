@@ -53,6 +53,7 @@ members = [
     "tests/support",
     "tests/integration",
     "tests/integration-network",
+    "tests/integration-protocol",
     "tests/templates",
 ]
 exclude = [
@@ -124,7 +125,6 @@ miden-core-lib = { version = "0.35.0", default-features = false }
 miden-mast-package = { version = "0.35.0", default-features = false }
 miden-package-registry = { version = "0.35.0", default-features = false }
 miden-project = { version = "0.35.0", default-features = false }
-miden-utils-sync = { version = "0.35.0", default-features = false }
 miden-field = { version = "0.35.0", default-features = false }
 midenc-hir-type = "0.17"
 
@@ -204,6 +204,7 @@ midenc-frontend-wasm-metadata = { version = "0.15.0", path = "sdk/wasm-metadata"
 midenc-compile = { version = "0.11.0", path = "midenc-compile" }
 midenc-driver = { version = "0.11.0", path = "midenc-driver" }
 midenc-log = { version = "0.11.0", path = "midenc-log", features = ["kv"] }
+midenc-package-interface = { version = "0.15.0", path = "sdk/package-interface" }
 midenc-session = { version = "0.11.0", path = "midenc-session" }
 midenc-integration-test-support = { path = "tests/support" }
 midenc-expect-test = { path = "tools/expect-test" }
@@ -212,7 +213,9 @@ miden-field-repr = { version = "0.15.0", path = "sdk/field-repr/repr" }
 miden-note-bindings-macros = { version = "0.15.0", path = "sdk/note-bindings/macros" }
 miden-note-codec-macros = { version = "0.15.0", path = "sdk/note-codec/macros" }
 miden-note-codec-wit = { version = "0.15.0", path = "sdk/note-codec/wit-crate" }
-miden-note-schema = { version = "0.15.0", path = "sdk/note-schema" }
+# Without default features: the compiler uses the schema model only, and must not link the
+# protocol crate through it. The SDK crates enable `protocol` where they depend on it.
+miden-note-schema = { version = "0.15.0", path = "sdk/note-schema", default-features = false }
 miden-note-schema-codegen = { version = "0.15.0", path = "sdk/note-schema/codegen" }
 miden-stdlib-sys = { version = "0.15.0", path = "sdk/stdlib-sys" }
 miden-tx-script-args = { version = "0.15.0", path = "sdk/tx-script-args" }

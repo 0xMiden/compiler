@@ -464,6 +464,7 @@ impl WasmFrontend {
             remap_path_prefixes: session.options.remap_path_prefixes.clone(),
             world: Some(world),
             generate_native_debuginfo: session.options.emit_source_locations(),
+            linked_packages: Some(session.package_interfaces()?),
             ..Default::default()
         };
 
@@ -1014,8 +1015,13 @@ mod tests {
         let sources = lowered_sources(&project, context);
 
         let mut assembler = miden_assembly::Assembler::new(source_manager);
+        let intrinsics_session = testing::session_linked_to_the_toolchain();
         assembler
-            .link_package(midenc_codegen_masm::intrinsics::load(), miden_assembly::Linkage::Static)
+            .link_package(
+                midenc_codegen_masm::intrinsics::load(&intrinsics_session)
+                    .expect("the compiler intrinsics should load"),
+                miden_assembly::Linkage::Static,
+            )
             .expect("the compiler intrinsics should link");
         assembler
             .assemble_library("wasm_frontend_library_assembles", sources.root, sources.support)
@@ -1151,7 +1157,10 @@ mod tests {
         let cx = TargetContext::for_testing(&assembly, context(), TargetRole::Root, &state);
 
         let frontend = WASM_FRONTEND.instantiate(cx.session());
-        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let intrinsics_session = testing::session_linked_to_the_toolchain();
+        let mut package = (*midenc_codegen_masm::intrinsics::load(&intrinsics_session)
+            .expect("the intrinsics should load"))
+        .clone();
         let err = frontend
             .post_process(&mut package, &cx)
             .expect_err("nothing was compiled for this target");

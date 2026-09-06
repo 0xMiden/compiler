@@ -118,7 +118,9 @@ fn module_with_func_names(names: &[(u32, &str)]) -> Module {
 fn duplicate_func_names_are_renamed() {
     let mut module = module_with_func_names(&[(0, "foo"), (2, "foo"), (1, "bar")]);
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo_func0");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "bar");
@@ -134,8 +136,12 @@ fn duplicate_func_names_are_renamed() {
 fn unique_func_names_are_kept() {
     let mut module = module_with_func_names(&[(0, "foo"), (1, "bar")]);
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "bar");
@@ -151,7 +157,9 @@ fn unique_func_names_are_kept() {
 fn linkage_names_do_not_modify_name_section() {
     let mut module = module_with_func_names(&[(0, "foo"), (2, "foo")]);
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     // Name section is unmodified
     assert_eq!(
@@ -183,7 +191,9 @@ fn unnamed_functions_keep_fallback_name() {
     module.push_function(sig);
     module.push_function(sig);
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.source_func_name(FuncIndex::new(0)).as_str(), "func0");
     assert_eq!(module.source_func_name(FuncIndex::new(1)).as_str(), "func1");
@@ -207,7 +217,9 @@ fn duplicated_intrinsic_stub_name_is_an_error() {
     let mut module =
         module_with_func_names(&[(0, "intrinsics::felt::add"), (1, "intrinsics::felt::add")]);
 
-    let err = module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap_err();
+    let err = module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap_err();
 
     assert!(
         err.to_string().contains("identifies an intrinsic or Miden ABI linker stub"),
@@ -219,7 +231,9 @@ fn duplicated_intrinsic_stub_name_is_an_error() {
 fn renamed_func_name_colliding_with_a_survivor_gets_trailing_underscore() {
     let mut module = module_with_func_names(&[(0, "foo"), (1, "foo"), (2, "foo_func1")]);
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo_func0");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "foo_func1_");
@@ -236,7 +250,9 @@ fn renamed_func_name_appends_underscores_until_free() {
     let mut module =
         module_with_func_names(&[(0, "foo"), (1, "foo"), (2, "foo_func1"), (3, "foo_func1_")]);
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo_func0");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "foo_func1__");
@@ -256,7 +272,9 @@ fn renamed_func_name_colliding_with_a_global_gets_trailing_underscore() {
         .globals_names
         .insert(global_idx, Symbol::intern("foo_func1"));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo_func0");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "foo_func1_");
@@ -273,7 +291,9 @@ fn export_name_becomes_linkage_name_while_source_name_is_kept() {
         .exports
         .insert("foo_ex".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo_ex");
     assert_eq!(module.source_func_name(FuncIndex::new(0)).as_str(), "foo_src");
@@ -293,7 +313,9 @@ fn export_name_without_name_section_becomes_linkage_name() {
         .exports
         .insert("foo".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo");
     assert_eq!(module.source_func_name(FuncIndex::new(0)).as_str(), "func0");
@@ -310,7 +332,9 @@ fn export_name_identical_to_source_name_records_no_linkage_override() {
         .exports
         .insert("foo".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo");
     assert_eq!(module.source_func_name(FuncIndex::new(0)).as_str(), "foo");
@@ -326,7 +350,9 @@ fn multiple_exports_for_single_function_is_an_error() {
         .exports
         .insert("export_2".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    let err = module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap_err();
+    let err = module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap_err();
 
     assert!(
         err.to_string()
@@ -350,7 +376,9 @@ fn export_name_colliding_with_global_name_is_an_error() {
         .exports
         .insert("colliding_name".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    let err = module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap_err();
+    let err = module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap_err();
 
     assert!(
         err.to_string().contains("conflicts with a global variable name"),
@@ -365,7 +393,9 @@ fn export_name_identifying_intrinsic_is_an_error() {
         .exports
         .insert("intrinsics::felt::add".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    let err = module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap_err();
+    let err = module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap_err();
 
     assert!(
         err.to_string().contains("identifies an intrinsic or Miden ABI linker stub"),
@@ -380,7 +410,9 @@ fn export_name_takes_precedence_over_unexported_source_name_collision() {
         .exports
         .insert("bar".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "bar");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "bar_func1");
@@ -397,7 +429,9 @@ fn export_name_colliding_with_fallback_renames_fallback() {
         .exports
         .insert("func1".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     // Export wins, the unnamed function's fallback is renamed
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "func1");
@@ -413,7 +447,9 @@ fn duplicate_source_names_with_one_member_exported() {
         .exports
         .insert("foo".to_string(), EntityIndex::Function(FuncIndex::new(0)));
 
-    module.resolve_func_symbols(&DiagnosticsHandler::default()).unwrap();
+    module
+        .resolve_func_symbols(&WasmTranslationConfig::default(), &DiagnosticsHandler::default())
+        .unwrap();
 
     assert_eq!(module.func_name(FuncIndex::new(0)).as_str(), "foo");
     assert_eq!(module.func_name(FuncIndex::new(1)).as_str(), "foo_func1");

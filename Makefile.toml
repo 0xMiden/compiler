@@ -21,6 +21,12 @@ RUST_BACKTRACE = { value = "${BACKTRACE_DEFAULT}", condition = { env_not_set = [
 MIDENC_BIN_DIR = "${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/bin"
 MIDENC_INSTALL_DIR = "${MIDENC_BIN_DIR}/${CARGO_MAKE_RUST_TARGET_TRIPLE}"
 
+# Where the test suites find the Miden library packages. Set explicitly in CI; derived from the
+# repository's miden-toolchain.toml and midenup's default home otherwise.
+MIDENUP_HOME = { value = "${HOME}/.local/share/midenup", condition = { env_not_set = ["MIDENUP_HOME"] } }
+MIDEN_TOOLCHAIN_CHANNEL = { script = ["sed -n 's/^channel = \"\\(.*\\)\"/\\1/p' ${CARGO_MAKE_WORKSPACE_WORKING_DIRECTORY}/miden-toolchain.toml"] }
+MIDEN_SYSROOT = { value = "${MIDENUP_HOME}/toolchains/${MIDEN_TOOLCHAIN_CHANNEL}", condition = { env_not_set = ["MIDEN_SYSROOT"] } }
+
 # Workaround for https://github.com/0xMiden/miden-vm/issues/2025
 RUST_MIN_STACK = 16777216
 

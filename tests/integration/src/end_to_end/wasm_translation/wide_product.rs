@@ -2,7 +2,7 @@ use miden_debug::{FromMidenRepr, ToMidenRepr};
 use miden_processor::{FastProcessor, StackInputs};
 use midenc_hir::{FunctionIdent, Ident, interner::Symbol};
 
-use crate::{CompilerTestBuilder, end_to_end::support::default_host_with_core_lib};
+use crate::{CompilerTestBuilder, end_to_end::support::default_host_with_core_package};
 
 /// Preserve the wide-product and local-use ordering of a producer artifact independently
 /// of Rust optimization choices. Wasm semantics, including zero-initialized locals, are the oracle.
@@ -76,7 +76,7 @@ fn wide_product_local_order_matches_wasm() {
         inputs.0.push_to_operand_stack(&mut stack);
         inputs.1.push_to_operand_stack(&mut stack);
         let output = FastProcessor::new(StackInputs::new(&stack).unwrap())
-            .execute_sync(&program, &mut default_host_with_core_lib())
+            .execute_sync(&program, &mut default_host_with_core_package())
             .unwrap();
         assert_eq!(
             u32::from_felts(output.stack.get_num_elements(1)),

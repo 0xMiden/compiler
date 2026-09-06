@@ -1,0 +1,19 @@
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
+    builtin.function private extern("C") @lib::write(%0: i32, %1: felt) {
+        %2 = hir.int_to_ptr %0 <{ ty = #builtin.type<ptr<felt, element>> }>;
+        hir.exec ::@lib::@write(%2, %1) : extern("C") (ptr<felt, element>, felt) -> ();
+        cf.br ^block5;
+    ^block5:
+        builtin.ret;
+    };
+    builtin.function public extern("C") @probe(%3: i32, %4: felt) {
+        hir.store_local %3 <{ local = #builtin.local_variable<0, i32> }> : (i32);
+        hir.store_local %4 <{ local = #builtin.local_variable<1, felt> }> : (felt);
+        %5 = hir.load_local <{ local = #builtin.local_variable<0, i32> }>;
+        %6 = hir.load_local <{ local = #builtin.local_variable<1, felt> }>;
+        hir.exec ::@root_ns:root@1.0.0::@noname::@lib::write(%5, %6) : extern("C") (i32, felt) -> ();
+        cf.br ^block7;
+    ^block7:
+        builtin.ret;
+    };
+};

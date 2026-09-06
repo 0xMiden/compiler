@@ -10,8 +10,8 @@ use midenc_session::DiagnosticsHandler;
 
 use self::types::*;
 use crate::{
-    component::SignatureIndex, error::WasmResult, intrinsics::Intrinsic,
-    miden_abi::is_miden_abi_module, unsupported_diag,
+    WasmTranslationConfig, component::SignatureIndex, error::WasmResult,
+    module::linker_stubs::names_a_linker_stub, unsupported_diag,
 };
 
 pub mod build_ir;
@@ -385,13 +385,18 @@ impl Module {
     ///
     /// Intrinsics and Miden ABI linker stubs are identified by name (see
     /// [`maybe_lower_linker_stub`]) and considered internal, so an export or duplicate name that
-    /// identifies a known stub is an error.
+    /// identifies one — per [`names_a_linker_stub`], against the packages `config` links — is an
+    /// error.
     ///
     /// This method is idempotent.
     ///
     /// [name section]: https://webassembly.github.io/spec/core/appendix/custom.html#name-section
     /// [`maybe_lower_linker_stub`]: linker_stubs::maybe_lower_linker_stub
-    pub fn resolve_func_symbols(&mut self, diagnostics: &DiagnosticsHandler) -> WasmResult<()> {
+    pub fn resolve_func_symbols(
+        &mut self,
+        config: &WasmTranslationConfig,
+        diagnostics: &DiagnosticsHandler,
+    ) -> WasmResult<()> {
         self.func_linkages.clear();
         self.duplicate_source_names.clear();
 
@@ -416,7 +421,7 @@ impl Module {
 
             if let Ok(func_ident) = FunctionIdent::from_str(export_name.as_str()) {
                 let path = SymbolPath::from_masm_function_id(func_ident);
-                if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                if names_a_linker_stub(&path, config) {
                     unsupported_diag!(
                         diagnostics,
                         "export name '{export_name}' identifies an intrinsic or Miden ABI linker \
@@ -507,7 +512,7 @@ impl Module {
                     let cand_str = candidate.as_str();
                     if let Ok(func_id) = FunctionIdent::from_str(cand_str) {
                         let path = SymbolPath::from_masm_function_id(func_id);
-                        if Intrinsic::try_from(&path).is_ok() || is_miden_abi_module(&path) {
+                        if names_a_linker_stub(&path, config) {
                             unsupported_diag!(
                                 diagnostics,
                                 "duplicated function name '{cand_str}' identifies an intrinsic or \

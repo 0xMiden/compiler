@@ -31,7 +31,7 @@ pub(crate) fn prepare_assembler(
     session: &Session,
 ) -> Result<(), Report> {
     // Link the compiler intrinsics statically
-    assembler.link_package(intrinsics::load(), miden_assembly::Linkage::Static)?;
+    assembler.link_package(intrinsics::load(session)?, miden_assembly::Linkage::Static)?;
 
     // Link extra standalone modules
     let mut link_modules = Vec::default();
@@ -53,7 +53,7 @@ pub(crate) fn prepare_assembler(
         if !project_package
             .dependencies()
             .iter()
-            .any(|dep| dep.name().as_ref() == link_lib.name.as_ref())
+            .any(|dep| dep.name().as_ref() == link_lib.canonical_name())
         {
             let package = link_lib.load(&session.options)?;
             assembler.link_package(package, link_lib.linkage)?;
@@ -277,16 +277,105 @@ fn extend_rodata_advice_map(package: &mut Package, rodata: &[midenc_codegen_masm
 
 #[cfg(test)]
 mod tests {
-    use alloc::string::ToString;
+    use alloc::{string::ToString, sync::Arc, vec};
 
+    use miden_assembly_syntax::debuginfo::Span;
     use miden_mast_package::SectionId;
-    use midenc_session::miden_project::TargetType;
+    use midenc_session::{
+        InputFile, LinkLibrary, Options,
+        miden_project::{
+            Dependency, DependencyVersionScheme, Linkage, Package as ProjectPackage, Target,
+            TargetType, VersionReq, VersionRequirement,
+        },
+    };
 
     use super::*;
+    use crate::pipeline::testing::{fixture_source, options_linked_to_the_toolchain};
+
+    /// A link library whose path names a file that is not a package, so `prepare_assembler`
+    /// reaching for it fails with a message naming that path — which is how these tests observe
+    /// whether the library was linked at all.
+    fn unloadable(name: &'static str, dir: &str) -> LinkLibrary {
+        let path = fixture_source(dir, "not-a-package.masp", "this is not a Miden package");
+        LinkLibrary {
+            name: name.into(),
+            path: Some(path),
+            linkage: Linkage::Dynamic,
+        }
+    }
+
+    /// A package with one library target, depending on `dependencies` by name.
+    fn project_package(dependencies: &[&str]) -> Arc<ProjectPackage> {
+        let target = Target::library(
+            Arc::from(
+                midenc_session::miden_assembly_syntax::PathBuf::new("::probe")
+                    .unwrap()
+                    .into_boxed_path(),
+            ),
+            midenc_session::diagnostics::Uri::new("lib.wasm"),
+        );
+        assert_eq!(target.ty, TargetType::Library);
+        Arc::from(ProjectPackage::new("probe", target).with_dependencies(dependencies.iter().map(
+            |name| {
+                Dependency::new(
+                    Span::unknown((*name).to_string().into()),
+                    DependencyVersionScheme::Registry(VersionRequirement::Semantic(Span::unknown(
+                        VersionReq::STAR.clone(),
+                    ))),
+                    Linkage::Dynamic,
+                )
+            },
+        )))
+    }
+
+    fn session_linking(libraries: Vec<LinkLibrary>) -> Session {
+        let options = Options {
+            link_libraries: libraries,
+            ..options_linked_to_the_toolchain()
+        };
+        Session::new(
+            InputFile::empty(),
+            alloc::boxed::Box::new(options),
+            None,
+            Arc::new(midenc_session::diagnostics::DefaultSourceManager::default()),
+        )
+        .expect("should build a session")
+    }
+
+    fn prepare(package: &ProjectPackage, session: &Session) -> Result<(), Report> {
+        let mut assembler = miden_assembly::Assembler::new(session.source_manager.clone());
+        prepare_assembler(&mut assembler, package, session)
+    }
+
+    /// `-l std` and a `miden-core` dependency name the same library, so core must not be linked a
+    /// second time. The comparison is over canonical names, which is what makes the two match;
+    /// comparing the alias as written would not, and core would be loaded and linked twice.
+    #[test]
+    fn a_link_library_that_aliases_a_dependency_is_not_linked_again() {
+        let session = session_linking(vec![unloadable("std", "assembly-alias-dependency")]);
+        prepare(&project_package(&["miden-core"]), &session)
+            .expect("core is already a dependency, so `-l std` must not be loaded again");
+    }
+
+    /// The converse, so the test above cannot pass by the loop doing nothing: a link library that
+    /// is not among the package's dependencies *is* loaded and linked.
+    #[test]
+    fn a_link_library_that_is_not_a_dependency_is_linked() {
+        let session = session_linking(vec![unloadable("std", "assembly-non-dependency")]);
+        let err = prepare(&project_package(&["miden-protocol"]), &session)
+            .expect_err("nothing depends on core, so `-l std` must be loaded")
+            .to_string();
+        assert!(err.contains("not-a-package.masp"), "{err}");
+    }
+
+    /// A package to attach sections to.
+    fn some_package() -> miden_mast_package::Package {
+        (*crate::pipeline::testing::some_package()).clone()
+    }
 
     #[test]
     fn attach_rejects_a_schema_that_consumers_cannot_read() {
-        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let mut package = some_package();
 
         let error = attach_note_storage_schema(&mut package, Some(b"not wit at all"))
             .unwrap_err()
@@ -297,7 +386,7 @@ mod tests {
 
     #[test]
     fn attach_accepts_a_schema_that_consumers_can_read() {
-        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let mut package = some_package();
         let schema = b"package test:note-schema@1.0.0;
 
 interface note-storage {
@@ -317,7 +406,7 @@ interface note-storage {
 
     #[test]
     fn unique_sections_reject_an_existing_identifier() {
-        let mut package = (*midenc_codegen_masm::intrinsics::load()).clone();
+        let mut package = some_package();
         let id = SectionId::custom("test_unique_section").unwrap();
 
         set_unique_section(&mut package, id.clone(), vec![1], "test section").unwrap();

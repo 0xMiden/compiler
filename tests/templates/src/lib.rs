@@ -283,9 +283,20 @@ pub fn build_new_project_from_project_template(project_name: &str) {
             "cargo-miden binary is missing: {}",
             cargo_miden_bin.display()
         );
+        // The scaffolded project's test helper builds with `miden build` whenever
+        // `MIDENUP_HOME` is set and only otherwise honours `CARGO_MIDEN` (see the templates
+        // CHANGELOG). `cargo make` and CI both set `MIDENUP_HOME` so the suites can find the
+        // toolchain, which would send this build to whatever `miden` is on `PATH` — the
+        // pinned toolchain carries no compiler — instead of the `cargo-miden` built from this
+        // checkout. Drop it here; the build still finds the toolchain through `MIDEN_SYSROOT`.
+        assert!(
+            std::env::var_os("MIDEN_SYSROOT").is_some(),
+            "MIDEN_SYSROOT must name the toolchain for the scaffolded project's build"
+        );
         let mut cmd = std::process::Command::new("cargo");
         cmd.arg("test")
             .current_dir(&integration_test_dir)
+            .env_remove("MIDENUP_HOME")
             .env("CARGO_MIDEN", cargo_miden_bin.as_os_str());
         let mut child = cmd.spawn().expect("failed to spawn 'cargo test'");
         let exit_status = child.wait().expect("'cargo test' failed");

@@ -1024,12 +1024,14 @@ mod tests {
         );
     }
 
-    /// Rows transcribed from `frontend/wasm/src/miden_abi/{stdlib,tx_kernel}` (signatures) and
-    /// `transform.rs` (strategies). `true` means `ReturnViaPointer`, `false` means `NoTransform`.
-    /// Each group's source comment gives a path relative to `frontend/wasm/src/miden_abi/`.
-    /// Every procedure `get_transform_strategy` recognizes is covered here except
-    /// `tx::execute_foreign_procedure_indirect`, whose `FpiIndirectReturnViaPointer` strategy is a
-    /// compiler intrinsic (raw FPI executor ABI), out of scope for this rule set.
+    /// Rows transcribed from the frontend's former hand tables — `frontend/wasm/src/miden_abi/
+    /// {stdlib,tx_kernel}` (signatures) and `transform.rs` (strategies), deleted in sub-project 2
+    /// once this rule set replaced them — and kept here as the historical oracle. `true` means
+    /// `ReturnViaPointer`, `false` means `NoTransform`. Each group's source comment gives a path
+    /// relative to `frontend/wasm/src/miden_abi/`. Every procedure the deleted `transform.rs`
+    /// recognized is covered here except `tx::execute_foreign_procedure_indirect`, whose
+    /// `FpiIndirectReturnViaPointer` strategy is a compiler intrinsic (raw FPI executor ABI), out
+    /// of scope for this rule set.
     #[test]
     fn the_rule_set_reproduces_the_hand_written_strategy_table() {
         let felt = || Type::Felt;

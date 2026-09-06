@@ -272,7 +272,13 @@ fn batch_kernel() {
     let package = test.compile_package();
 
     // The serialized size of the compiled kernel's MAST forest, with debug info stripped.
-    expect!["116274"].assert_eq(&stripped_mast_size_str(&package));
+    //
+    // 63 bytes more than the hand tables produced: `poseidon2::hash_elements` and `hash_words`
+    // resolve from the core manifest, which types their addresses as element-space pointers, and
+    // the casts that give the stubs' `i32` arguments those types cost each stub a redundant
+    // `swap.1 swap.1` in operand scheduling. No address is changed and nothing else is emitted;
+    // the same two instructions are the two extra cycles per hash in the counts below.
+    expect!["116337"].assert_eq(&stripped_mast_size_str(&package));
 
     // The reference block commitment is dropped by the kernel (verification is still a TODO
     // there), so any word will do.
@@ -326,7 +332,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed by the kernel for this two-transaction batch.
-        expect!["32568"].assert_eq(&cycles.to_string());
+        expect!["32570"].assert_eq(&cycles.to_string());
 
         let input_notes_commitment = read_word(&trace, OUT_ADDR);
         assert_eq!(
@@ -378,7 +384,7 @@ fn batch_kernel() {
             .expect("kernel should accept the batch");
 
         // The VM cycles consumed for a batch that erases a note.
-        expect!["28681"].assert_eq(&cycles.to_string());
+        expect!["28683"].assert_eq(&cycles.to_string());
 
         let expected = expected_input_notes_commitment(&transactions);
         assert_ne!(expected, EMPTY_WORD, "the authenticated note should remain post-erasure");

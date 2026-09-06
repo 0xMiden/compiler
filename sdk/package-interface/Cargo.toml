@@ -1,7 +1,7 @@
 [package]
 name = "midenc-package-interface"
 description = "Package interface model and Miden ABI lowering rules shared by the compiler and binding generators"
-version = "0.15.0-rc.3"
+version = "0.15.0"
 rust-version.workspace = true
 authors.workspace = true
 repository.workspace = true

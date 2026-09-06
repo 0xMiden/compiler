@@ -2615,7 +2615,9 @@ mod tests {
     /// `post_process` must reject the cache miss before it looks at the package at all, so
     /// which package it is does not matter.
     fn any_package() -> MastPackage {
-        (*midenc_codegen_masm::intrinsics::load()).clone()
+        let session = testing::session_linked_to_the_toolchain();
+        (*midenc_codegen_masm::intrinsics::load(&session).expect("the intrinsics should load"))
+            .clone()
     }
 
     /// A minimal build result to seed a frontend's cache with.

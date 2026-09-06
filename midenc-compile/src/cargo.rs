@@ -1149,7 +1149,7 @@ mod tests {
     #[test]
     fn staged_package_reuse_refreshes_the_entry_age() {
         let root = tempfile::TempDir::new().unwrap();
-        let package = midenc_codegen_masm::intrinsics::load();
+        let package = crate::pipeline::testing::some_package();
         let codec_crate = root.path().join("codec");
         fs::create_dir(&codec_crate).unwrap();
 
@@ -1195,7 +1195,7 @@ mod tests {
     #[test]
     fn note_codec_staging_is_content_addressed() {
         let root = tempfile::TempDir::new().unwrap();
-        let package = midenc_codegen_masm::intrinsics::load();
+        let package = crate::pipeline::testing::some_package();
         let codec_crate = root.path().join("codec");
         fs::create_dir(&codec_crate).unwrap();
 

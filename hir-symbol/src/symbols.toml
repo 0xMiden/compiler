@@ -108,30 +108,15 @@ ub = {}
 
 [modules]
 account = {}
-native_account = {}
-active_account = {}
-active_note = {}
-input_note = {}
 asset = {}
-blake3 = {}
-sha256 = {}
 crypto = {}
 debug = {}
-dsa = {}
 felt_module = { value = "felt" }
-hashes = {}
 intrinsics = {}
 advice = {}
 miden = {}
 mem = {}
 note = {}
-output_note = {}
-faucet = {}
-falcon512_poseidon2 = {}
 tx = {}
 execute_foreign_procedure = {}
-poseidon2 = {}
-collections = {}
-smt = {}
 protocol = {}
-core = {}

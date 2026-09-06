@@ -125,6 +125,38 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - &install-midenup-cli
+        name: Install midenup
+        id: install-midenup-cli
+        env:
+          MIDENUP_HOME: ${{ github.workspace }}/.midenup
+        run: |
+          set -euo pipefail
+          mkdir -p "$MIDENUP_HOME/bin"
+          curl -fsSL https://raw.githubusercontent.com/0xMiden/midenup/refs/heads/next/bin/installer.sh \
+            | sh -s -- --install-path "$MIDENUP_HOME/bin" --no-init
+          echo "MIDENUP_HOME=$MIDENUP_HOME" >> "$GITHUB_ENV"
+          echo "version=$("$MIDENUP_HOME/bin/midenup" --version)" >> "$GITHUB_OUTPUT"
+      - &cache-midenup-toolchain
+        name: Cache the Miden toolchain
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.MIDENUP_HOME }}
+          key: midenup-toolchain-${{ hashFiles('miden-toolchain.toml') }}-${{ steps.install-midenup-cli.outputs.version }}
+      - &install-midenup
+        name: Install the Miden toolchain
+        run: |
+          set -euo pipefail
+          CHANNEL=$(sed -n 's/^channel = "\(.*\)"/\1/p' miden-toolchain.toml)
+          if [ -d "$MIDENUP_HOME/toolchains" ]; then
+            echo "Miden toolchain restored from cache"
+          else
+            "$MIDENUP_HOME/bin/midenup" --midenup-home "$MIDENUP_HOME" --cargo-home "$MIDENUP_HOME/cargo" init
+            "$MIDENUP_HOME/bin/midenup" --midenup-home "$MIDENUP_HOME" --cargo-home "$MIDENUP_HOME/cargo" \
+              install "$CHANNEL" --profile empty --component core --component protocol
+          fi
+          echo "MIDEN_SYSROOT=$MIDENUP_HOME/toolchains/$CHANNEL" >> "$GITHUB_ENV"
+          ls "$MIDENUP_HOME/toolchains/$CHANNEL/lib"
       - name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
@@ -144,7 +176,7 @@ jobs:
         # The p2id end-to-end tests drive full nested Cargo builds, so the
         # release-profile job runs them.
         run: |
-          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests) or test(~p2id_schema_builds_and_decodes_account_id_storage) or test(~generated_p2id_bindings_compile_and_run_in_a_consumer_crate))'
+          cargo make test -E 'not (package(midenc-integration-tests) or package(midenc-integration-protocol-tests) or package(midenc-integration-network-tests) or package(cargo-miden) or package(midenc-template-tests) or test(~p2id_schema_builds_and_decodes_account_id_storage) or test(~generated_p2id_bindings_compile_and_run_in_a_consumer_crate))'
 
       - name: Upload test timings and failures
         if: ${{ always() }}
@@ -163,6 +195,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
         with:
@@ -179,7 +214,7 @@ jobs:
         # minutes of work to re-check what they just checked. They have their
         # own job.
         run: |
-          cargo make test-release -E 'not package(midenc-template-tests)'
+          cargo make test-release -E 'not (package(midenc-template-tests) or package(midenc-integration-protocol-tests))'
 
       - name: Upload test timings and failures
         if: ${{ always() }}
@@ -201,6 +236,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - &restore-shared-tests-cache
         name: Cache Cargo
         uses: WarpBuilds/rust-cache@9d0cc3090d9c87de74ea67617b246e978735b1a1 # v2.9.1
@@ -228,6 +266,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -255,12 +296,47 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
         # Skip some tests cause they are a space hog and run them in the separate job
         run: |
           cargo make test -E "${MIDENC_EXAMPLE_TEST_FILTER}"
+
+      - name: Upload test timings and failures
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: test-results-${{ github.job }}
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
+
+  protocol_linked_tests:
+    name: protocol-linked integration tests
+    runs-on: warp-ubuntu-latest-x64-8x
+    # We only want to run the integration tests if the unit tests pass, and that has the added
+    # benefit that we can re-use the cache from the unit test job for all integration tests
+    needs: [unit_tests]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/cleanup-runner
+      - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
+      - *restore-shared-tests-cache
+      - *install-cargo-make
+      - name: Test
+        # This job is not a required status check; branch protection decides that, not this
+        # file. It is expected red only while a VM migration waits on the protocol release to
+        # catch up, and a PR that bumps the VM says so in its description.
+        run: |
+          cargo make test -E 'package(midenc-integration-protocol-tests)'
 
       - name: Upload test timings and failures
         if: ${{ always() }}
@@ -282,6 +358,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -308,6 +387,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - *restore-shared-tests-cache
       - *install-cargo-make
       # Scaffolds a project from each of the five `rust/` templates and builds
@@ -341,6 +423,9 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/cleanup-runner
       - *install-rust
+      - *install-midenup-cli
+      - *cache-midenup-toolchain
+      - *install-midenup
       - *restore-shared-tests-cache
       - *install-cargo-make
       - name: Test
@@ -382,3 +467,36 @@ jobs:
         # unification and avoid surprises on publishing the crates.
         run: |
           cargo make check-each --release --all-features
+
+  dependency_tiers:
+    name: compiler tier has no Miden library crates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+      - *install-rust
+      - name: Check
+        run: |
+          set -euo pipefail
+          # The compiler and its build tooling must not depend on the Miden library crates:
+          # their packages come from the toolchain. Test crates may use miden-core-lib for VM
+          # host event handlers only, so it is allowed there and checked separately.
+          #
+          # `-e normal,build` includes build-dependencies, and `--all-features` every optional
+          # one: a build script is part of what gets built, and the regression this job exists to
+          # catch is exactly that shape — `codegen/masm/build.rs` with `[build-dependencies]
+          # midenc-session` is how a Miden library crate first entered the compiler's build.
+          # Dev-dependencies stay excluded; that is the deliberate spec §10.1 exception.
+          for p in midenc cargo-miden midenc-compile midenc-session midenc-frontend-wasm midenc-frontend-masm midenc-package-interface; do
+            tree=$(cargo tree -p "$p" -e normal,build --all-features)
+            if grep -E "^.*(miden-core-lib|miden-protocol|miden-standards|miden-client|miden-testing) v" <<<"$tree"; then
+              echo "::error::$p depends on a Miden library crate"; exit 1
+            fi
+          done
+          for p in midenc-integration-tests midenc-integration-test-support; do
+            tree=$(cargo tree -p "$p" -e normal,build --all-features)
+            if grep -E "(miden-protocol|miden-standards|miden-client|miden-testing) v" <<<"$tree"; then
+              echo "::error::$p depends on a protocol crate; that belongs in tests/integration-protocol"; exit 1
+            fi
+          done

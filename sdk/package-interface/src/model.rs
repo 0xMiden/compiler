@@ -295,6 +295,25 @@ impl PackageInterface {
         }
         modules.into_iter().collect()
     }
+
+    /// The first component of every path in the package's module tree — the namespaces a path
+    /// into this package can start with. Sorted, without duplicates.
+    ///
+    /// This is the cheap test for "could this name be a binding to this package at all?", which
+    /// is what the Wasm frontend asks before it treats a diverging function as a linker stub: a
+    /// name rooted elsewhere is some other language's symbol, not a stub whose procedure is
+    /// missing. Derived from the same paths as [`Self::module_paths`], so a package that declares
+    /// no modules still contributes the namespaces its exports imply.
+    pub fn root_namespaces(&self) -> BTreeSet<&str> {
+        self.modules
+            .iter()
+            .map(|module| &**module)
+            .chain(self.procedures.iter().map(|p| &*p.path))
+            .chain(self.types.iter().map(|t| &*t.path))
+            .chain(self.constants.iter().map(|c| &*c.path))
+            .filter_map(|path| path.first())
+            .collect()
+    }
 }
 
 /// Classify one export, in the mandated order: role, then library kind, then untyped, then
@@ -537,6 +556,11 @@ mod tests {
         // A declared module with no exports of its own is still part of the module tree.
         iface.modules = alloc::vec![Path::new("::a::b::d").to_path_buf()];
         assert_eq!(paths(&iface), ["::a", "::a::b", "::a::b::d"], "sorted, and deduped");
+
+        // The root namespaces are the first components of that same tree.
+        assert_eq!(iface.root_namespaces().into_iter().collect::<Vec<_>>(), ["a"]);
+        iface.modules.push(Path::new("::z").to_path_buf());
+        assert_eq!(iface.root_namespaces().into_iter().collect::<Vec<_>>(), ["a", "z"]);
     }
 
     #[test]

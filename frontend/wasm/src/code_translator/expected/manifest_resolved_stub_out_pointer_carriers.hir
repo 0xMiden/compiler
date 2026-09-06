@@ -1,0 +1,29 @@
+builtin.module private @noname attributes { reserved_memory = #builtin.u64<65536> } {
+    builtin.function private extern("C") @lib::pair(%0: felt, %1: i32) {
+        %2, %3 = hir.exec ::@lib::@pair(%0) : extern("C") (felt) -> (u16, u16);
+        %4 = arith.zext %2 <{ ty = #builtin.type<u32> }>;
+        %5 = hir.bitcast %4 <{ ty = #builtin.type<i32> }>;
+        %6 = arith.zext %3 <{ ty = #builtin.type<u32> }>;
+        %7 = hir.bitcast %6 <{ ty = #builtin.type<i32> }>;
+        %8 = hir.bitcast %1 <{ ty = #builtin.type<u32> }>;
+        %9 = hir.int_to_ptr %8 <{ ty = #builtin.type<ptr<i32, byte>> }>;
+        hir.store %9, %5 : (ptr<i32, byte>, i32);
+        %10 = arith.constant 4 : u32;
+        %11 = arith.add %8, %10 <{ overflow = #builtin.overflow<checked> }>;
+        %12 = hir.int_to_ptr %11 <{ ty = #builtin.type<ptr<i32, byte>> }>;
+        hir.store %12, %7 : (ptr<i32, byte>, i32);
+        cf.br ^block5;
+    ^block5:
+        builtin.ret;
+    };
+    builtin.function public extern("C") @probe(%13: felt, %14: i32) {
+        hir.store_local %13 <{ local = #builtin.local_variable<0, felt> }> : (felt);
+        hir.store_local %14 <{ local = #builtin.local_variable<1, i32> }> : (i32);
+        %15 = hir.load_local <{ local = #builtin.local_variable<0, felt> }>;
+        %16 = hir.load_local <{ local = #builtin.local_variable<1, i32> }>;
+        hir.exec ::@root_ns:root@1.0.0::@noname::@lib::pair(%15, %16) : extern("C") (felt, i32) -> ();
+        cf.br ^block7;
+    ^block7:
+        builtin.ret;
+    };
+};

@@ -150,6 +150,27 @@ Before submitting a PR, run through the following checklist:
 
 &nbsp;
 
+## Testing
+
+The test suites load the Miden library packages they depend on (the `core` and `protocol`
+components) from a Miden toolchain rather than from crates.io, so running them locally
+requires one installed.
+
+1. Install [`midenup`](https://github.com/0xMiden/midenup) and initialise it (`midenup init`
+   creates its home directory and the `miden` command).
+2. Install the toolchain this repo pins in `miden-toolchain.toml`:
+
+   ```bash
+   midenup install 0.17.0 --profile empty --component core --component protocol
+   ```
+
+`cargo make test` and the other `cargo make` test targets derive `MIDEN_SYSROOT` from
+`MIDENUP_HOME` and `miden-toolchain.toml` automatically when the variable isn't already set.
+If your toolchain lives somewhere `cargo make` can't infer, export `MIDEN_SYSROOT` yourself
+instead.
+
+&nbsp;
+
 ## Write bug reports with detail, background, and sample code
 
 **Great Bug Reports** tend to have:

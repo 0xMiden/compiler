@@ -210,10 +210,48 @@ fn assert_roundtrip_outputs_with_advice(
     );
 }
 
+/// The toolchain these tests resolve their packages from: `MIDEN_SYSROOT` when it is set, and
+/// otherwise whatever `Options::default()` derives from `MIDENUP_HOME` and `MIDENUP_TOOLCHAIN`.
+fn toolchain_sysroot() -> std::path::PathBuf {
+    if let Some(dir) = std::env::var_os("MIDEN_SYSROOT") {
+        return std::path::PathBuf::from(dir);
+    }
+    Options::default().sysroot.expect(
+        "this test needs a Miden toolchain: set MIDEN_SYSROOT to one, or set MIDENUP_HOME and \
+         MIDENUP_TOOLCHAIN so that one can be derived",
+    )
+}
+
+/// `Options::default()` with its sysroot pinned to [`toolchain_sysroot`].
+///
+/// `Options::new` only pushes `sysroot/lib` onto `search_paths` when that directory exists, so a
+/// stale sysroot leaves the search paths empty and the later failure to resolve core surfaces as
+/// the curated "install a Miden toolchain with midenup" error.
+fn toolchain_options() -> Options {
+    let defaults = Options::default();
+    let with_sysroot = Options::new(
+        None,
+        None,
+        defaults.current_dir.clone(),
+        defaults.target_dir.clone(),
+        None,
+        Some(toolchain_sysroot()),
+    );
+    Options {
+        sysroot: with_sysroot.sysroot,
+        search_paths: with_sysroot.search_paths,
+        ..defaults
+    }
+}
+
 fn e2e_context() -> Rc<Context> {
+    // `intrinsics::load` (below, in `assemble_roundtripped_program`) assembles the compiler
+    // intrinsics against the core library the session links, and `core_package` loads the core
+    // package from the same toolchain sysroot, so this session needs a real sysroot to resolve
+    // one from.
     let options = Box::new(Options {
         entrypoint: Some("test::entry".to_owned()),
-        ..Options::default()
+        ..toolchain_options()
     })
     .with_output_types(Default::default(), None);
     let source_manager = Arc::new(DefaultSourceManager::default());
@@ -224,10 +262,21 @@ fn e2e_context() -> Rc<Context> {
     Rc::new(Context::new(session))
 }
 
-/// Links the core library package into the assembler.
-fn link_core_package(assembler: &mut Assembler, core_library: &CoreLibrary) {
+/// The Miden core package, loaded from the toolchain sysroot.
+///
+/// One source for both halves of a round-trip: `link_core_package` links it into the assembler
+/// and `execute_program` loads the same one into the VM host, so the VM executes the MAST the
+/// program was assembled against.
+fn core_package() -> Arc<Package> {
+    midenc_session::LinkLibrary::core()
+        .load(&toolchain_options())
+        .unwrap_or_else(|err| panic!("failed to load 'miden-core': {err}"))
+}
+
+/// Links the Miden core package, loaded from the toolchain sysroot, into the assembler.
+fn link_core_package(assembler: &mut Assembler) {
     assembler
-        .link_package(core_library.package(), miden_project::Linkage::Dynamic)
+        .link_package(core_package(), miden_project::Linkage::Dynamic)
         .expect("core library package should link");
 }
 
@@ -242,9 +291,8 @@ fn assemble_original_program(source: &str, context: &Context) -> Arc<Package> {
         .assemble_library("test", module, None::<Box<Module>>)
         .map(Arc::from)
         .expect("original MASM library should assemble");
-    let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager);
-    link_core_package(&mut assembler, &core_library);
+    link_core_package(&mut assembler);
     assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("original MASM library should link")
@@ -276,11 +324,13 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
         .to_masm_component(analysis_manager)
         .expect("HIR should lower back to MASM");
     let source_manager = context.session().source_manager.clone();
-    let core_library = CoreLibrary::default();
     let mut assembler = Assembler::new(source_manager.clone());
-    link_core_package(&mut assembler, &core_library);
+    link_core_package(&mut assembler);
     assembler
-        .link_package(intrinsics::load(), miden_project::Linkage::Static)
+        .link_package(
+            intrinsics::load(context.session()).expect("the intrinsics should load"),
+            miden_project::Linkage::Static,
+        )
         .expect("intrinsics should link");
     // The namespace is absolutized because that is what a real target's is. `Target::library` does
     // not do it for you, and every site that builds a target the *assembler* will see does it
@@ -312,7 +362,7 @@ fn assemble_roundtripped_program(source: &str, context: Rc<Context>) -> Arc<Pack
             )
         });
     let mut assembler = Assembler::new(source_manager);
-    link_core_package(&mut assembler, &core_library);
+    link_core_package(&mut assembler);
     assembler
         .with_package(library, miden_project::Linkage::Static)
         .expect("round-tripped MASM library should link")
@@ -354,10 +404,16 @@ fn execute_program(
     let advice_stack = AdviceStack::try_from_values(advice.iter().copied())
         .expect("test advice inputs should be canonical field elements");
     let advice_inputs = AdviceInputs::default().with_stack(advice_stack);
+    // The host executes the same package the assembler linked (see `core_package`);
+    // `miden-core-lib` contributes only the VM host event handlers, which are registered
+    // separately because its `HostLibrary` conversion would also bring its own embedded core.
     let mut host = DefaultHost::default();
-    let core_library = CoreLibrary::default();
-    host.load_library(miden_processor::HostLibrary::from(&core_library))
-        .expect("failed to load core library");
+    host.load_library(miden_processor::HostLibrary::from(core_package()))
+        .unwrap_or_else(|err| panic!("failed to load package 'miden-core' into host: {err}"));
+    for (event, handler) in CoreLibrary::default().handlers() {
+        host.register_handler(event, handler)
+            .unwrap_or_else(|err| panic!("failed to register core library event handler: {err}"));
+    }
     let program = program.unwrap_program();
     let output =
         FastProcessor::new_with_options(stack_inputs, advice_inputs, ExecutionOptions::default())

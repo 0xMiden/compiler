@@ -1,7 +1,7 @@
 use miden_core::serde::Serializable;
 use midenc_frontend_wasm::WasmTranslationConfig;
 
-use crate::{CompilerTest, assert_helpers::assert_unique_protocol_export};
+use crate::{CompilerTest, assert_unique_protocol_export};
 
 #[test]
 fn auth_component_rpo_falcon512() {

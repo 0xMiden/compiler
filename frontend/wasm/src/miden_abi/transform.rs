@@ -1,12 +1,13 @@
 use midenc_dialect_arith::ArithOpBuilder;
 use midenc_dialect_hir::{ExecFpi, HirOpBuilder};
 use midenc_hir::{
-    AddressSpace, Builder, Immediate, Op, PointerType, SourceSpan, SymbolNameComponent, SymbolPath,
-    Type, ValueRef, dialects::builtin::FunctionRef, interner::symbols,
+    AddressSpace, Builder, Immediate, Op, PointerType, SourceSpan, Type, ValueRef,
+    dialects::builtin::FunctionRef,
 };
+use midenc_package_interface::LoweredSignature;
 use midenc_session::diagnostics::Report;
 
-use super::{stdlib, tx_kernel};
+use super::resolve::convert_results;
 use crate::{
     error::WasmResult, fpi::store_fpi_prefix_locals,
     module::function_builder_ext::FunctionBuilderExt,
@@ -14,318 +15,6 @@ use crate::{
 
 const RAW_FPI_FLATTENED_ARG_COUNT: u32 = ExecFpi::EXECUTOR_INPUT_FELTS as u32;
 const RAW_FPI_FLATTENED_ARG_COUNT_USIZE: usize = ExecFpi::EXECUTOR_INPUT_FELTS;
-
-/// The strategy to use for transforming a function call
-enum TransformStrategy {
-    /// The Miden ABI function returns on the stack and we want to return via a pointer argument
-    ReturnViaPointer,
-    /// The import is the raw FPI binding, which passes the executor ABI through one pointer.
-    FpiIndirectReturnViaPointer,
-    /// No transformation needed
-    NoTransform,
-}
-
-/// Get the transformation strategy for a function name
-fn get_transform_strategy(path: &SymbolPath) -> Option<TransformStrategy> {
-    let mut components = path.components().peekable();
-    components.next_if_eq(&SymbolNameComponent::Root);
-
-    match components.next()?.as_symbol_name() {
-        symbols::Miden => match components.next()?.as_symbol_name() {
-            symbols::Core => match components.next()?.as_symbol_name() {
-                symbols::Mem => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        stdlib::mem::PIPE_WORDS_TO_MEMORY
-                        | stdlib::mem::PIPE_DOUBLE_WORDS_TO_MEMORY => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        stdlib::mem::PIPE_PREIMAGE_TO_MEMORY => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::Crypto => match components.next()?.as_symbol_name() {
-                    symbols::Hashes => match components.next()?.as_symbol_name() {
-                        symbols::Blake3 => {
-                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::blake3::HASH
-                                | stdlib::crypto::hashes::blake3::MERGE => {
-                                    Some(TransformStrategy::ReturnViaPointer)
-                                }
-                                _ => None,
-                            }
-                        }
-                        symbols::Sha256 => {
-                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::sha256::HASH
-                                | stdlib::crypto::hashes::sha256::MERGE => {
-                                    Some(TransformStrategy::ReturnViaPointer)
-                                }
-                                _ => None,
-                            }
-                        }
-                        symbols::Poseidon2 => {
-                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::hashes::poseidon2::HASH_ELEMENTS
-                                | stdlib::crypto::hashes::poseidon2::HASH_WORDS
-                                | stdlib::crypto::hashes::poseidon2::MERGE => {
-                                    Some(TransformStrategy::ReturnViaPointer)
-                                }
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    },
-                    symbols::Dsa => match components.next()?.as_symbol_name() {
-                        symbols::Falcon512Poseidon2 => {
-                            match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                                stdlib::crypto::dsa::rpo_falcon512::RPO_FALCON512_VERIFY => {
-                                    Some(TransformStrategy::NoTransform)
-                                }
-                                _ => None,
-                            }
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                },
-                symbols::Collections => {
-                    let submodule = components.next()?.as_symbol_name();
-                    if submodule == symbols::Smt {
-                        return match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str()
-                        {
-                            stdlib::collections::smt::GET | stdlib::collections::smt::SET => {
-                                Some(TransformStrategy::ReturnViaPointer)
-                            }
-                            _ => None,
-                        };
-                    }
-                    None
-                }
-                _ => None,
-            },
-            symbols::Protocol => match components.next()?.as_symbol_name() {
-                symbols::NativeAccount => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::native_account::ADD_ASSET
-                        | tx_kernel::native_account::REMOVE_ASSET
-                        | tx_kernel::native_account::GET_ID
-                        | tx_kernel::native_account::COMPUTE_COMMITMENT
-                        | tx_kernel::native_account::COMPUTE_DELTA_COMMITMENT
-                        | tx_kernel::native_account::SET_STORAGE_ITEM
-                        | tx_kernel::native_account::SET_STORAGE_MAP_ITEM
-                        | tx_kernel::native_account::GET_INITIAL_COMMITMENT
-                        | tx_kernel::native_account::GET_INITIAL_STORAGE_COMMITMENT
-                        | tx_kernel::native_account::GET_INITIAL_VAULT_ROOT
-                        | tx_kernel::native_account::GET_INITIAL_ASSET
-                        | tx_kernel::native_account::GET_INITIAL_STORAGE_ITEM
-                        | tx_kernel::native_account::GET_INITIAL_STORAGE_MAP_ITEM => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        tx_kernel::native_account::INCR_NONCE
-                        | tx_kernel::native_account::WAS_PROCEDURE_CALLED
-                        | tx_kernel::native_account::HAS_STATE_CHANGED
-                        | tx_kernel::native_account::HAS_INITIAL_ASSET => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        _ => None,
-                    }
-                }
-                module if module == symbols::Note => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::note::COMPUTE_AND_STORE_RECIPIENT => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        tx_kernel::note::COMPUTE_STORAGE_COMMITMENT
-                        | tx_kernel::note::COMPUTE_RECIPIENT
-                        | tx_kernel::note::METADATA_INTO_SENDER
-                        | tx_kernel::note::METADATA_INTO_ATTACHMENT_SCHEMES
-                        | tx_kernel::note::FIND_ATTACHMENT_IDX => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        tx_kernel::note::METADATA_INTO_NOTE_TYPE
-                        | tx_kernel::note::METADATA_INTO_TAG => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::ActiveAccount => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::active_account::GET_NONCE
-                        | tx_kernel::active_account::GET_NUM_PROCEDURES
-                        | tx_kernel::active_account::HAS_ASSET
-                        | tx_kernel::active_account::HAS_PROCEDURE
-                        | tx_kernel::active_account::HAS_STORAGE_SLOT => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::active_account::GET_ID
-                        | tx_kernel::active_account::GET_CODE_COMMITMENT
-                        | tx_kernel::active_account::COMPUTE_STORAGE_COMMITMENT
-                        | tx_kernel::active_account::GET_STORAGE_ITEM
-                        | tx_kernel::active_account::GET_STORAGE_MAP_ITEM
-                        | tx_kernel::active_account::GET_ASSET
-                        | tx_kernel::active_account::GET_VAULT_ROOT
-                        | tx_kernel::active_account::GET_PROCEDURE_ROOT => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::Asset => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::asset::ID_INTO_COMPOSITION => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::asset::ID_INTO_FAUCET_ID
-                        | tx_kernel::asset::ID_INTO_ASSET_CLASS => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::Faucet => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::faucet::MINT | tx_kernel::faucet::BURN => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::ActiveNote => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::active_note::GET_STORAGE
-                        | tx_kernel::active_note::GET_INITIAL_ASSETS
-                        | tx_kernel::active_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
-                        | tx_kernel::active_note::WRITE_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::active_note::IS_PUBLIC
-                        | tx_kernel::active_note::IS_PRIVATE
-                        | tx_kernel::active_note::GET_INITIAL_NUM_ASSETS => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::active_note::GET_SENDER
-                        | tx_kernel::active_note::GET_RECIPIENT
-                        | tx_kernel::active_note::GET_SCRIPT_ROOT
-                        | tx_kernel::active_note::GET_SERIAL_NUMBER
-                        | tx_kernel::active_note::GET_METADATA
-                        | tx_kernel::active_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::active_note::FIND_ATTACHMENT
-                        | tx_kernel::active_note::GET_INITIAL_ASSETS_INFO
-                        | tx_kernel::active_note::GET_ASSET
-                        | tx_kernel::active_note::REMOVE_ASSET
-                        | tx_kernel::active_note::GET_NOTE_ID
-                        | tx_kernel::active_note::GET_STORAGE_INFO => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::InputNote => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::input_note::GET_INITIAL_ASSETS
-                        | tx_kernel::input_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
-                        | tx_kernel::input_note::WRITE_ATTACHMENT_TO_MEMORY
-                        | tx_kernel::input_note::GET_INITIAL_NUM_ASSETS => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::input_note::GET_INITIAL_ASSETS_INFO
-                        | tx_kernel::input_note::GET_RECIPIENT
-                        | tx_kernel::input_note::GET_METADATA
-                        | tx_kernel::input_note::GET_SENDER
-                        | tx_kernel::input_note::GET_STORAGE_INFO
-                        | tx_kernel::input_note::GET_SCRIPT_ROOT
-                        | tx_kernel::input_note::GET_SERIAL_NUMBER
-                        | tx_kernel::input_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::input_note::FIND_ATTACHMENT
-                        | tx_kernel::input_note::GET_ASSET
-                        | tx_kernel::input_note::REMOVE_ASSET
-                        | tx_kernel::input_note::GET_NOTE_ID
-                        | tx_kernel::input_note::FIND_NOTE => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::OutputNote => {
-                    match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str() {
-                        tx_kernel::output_note::CREATE => Some(TransformStrategy::NoTransform),
-                        tx_kernel::output_note::ADD_ASSET => Some(TransformStrategy::NoTransform),
-                        tx_kernel::output_note::SEAL | tx_kernel::output_note::IS_SEALED => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::output_note::ADD_ATTACHMENT
-                        | tx_kernel::output_note::ADD_WORD_ATTACHMENT
-                        | tx_kernel::output_note::ADD_ATTACHMENT_FROM_MEMORY => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::output_note::GET_ASSETS
-                        | tx_kernel::output_note::WRITE_ATTACHMENT_COMMITMENTS_TO_MEMORY
-                        | tx_kernel::output_note::WRITE_ATTACHMENT_TO_MEMORY => {
-                            Some(TransformStrategy::NoTransform)
-                        }
-                        tx_kernel::output_note::GET_ASSETS_INFO
-                        | tx_kernel::output_note::GET_RECIPIENT
-                        | tx_kernel::output_note::GET_METADATA
-                        | tx_kernel::output_note::GET_ATTACHMENTS_COMMITMENT
-                        | tx_kernel::output_note::FIND_ATTACHMENT
-                        | tx_kernel::output_note::COMPUTE_NOTE_ID => {
-                            Some(TransformStrategy::ReturnViaPointer)
-                        }
-                        _ => None,
-                    }
-                }
-                symbols::Tx => match components.next_if(|c| c.is_leaf())?.as_symbol_name().as_str()
-                {
-                    tx_kernel::tx::GET_REFERENCE_BLOCK_NUMBER
-                    | tx_kernel::tx::GET_BLOCK_TIMESTAMP
-                    | tx_kernel::tx::GET_NUM_INPUT_NOTES
-                    | tx_kernel::tx::GET_NUM_OUTPUT_NOTES
-                    | tx_kernel::tx::GET_EXPIRATION_BLOCK_DELTA
-                    | tx_kernel::tx::UPDATE_EXPIRATION_BLOCK_DELTA
-                    | tx_kernel::tx::COMPUTE_FEE => Some(TransformStrategy::NoTransform),
-                    tx_kernel::tx::GET_INPUT_NOTES_COMMITMENT
-                    | tx_kernel::tx::GET_OUTPUT_NOTES_COMMITMENT
-                    | tx_kernel::tx::GET_REFERENCE_BLOCK_COMMITMENT
-                    | tx_kernel::tx::GET_BLOCK_COMMITMENT
-                    | tx_kernel::tx::GET_TX_SCRIPT_ROOT
-                    | tx_kernel::tx::GET_FEE_ASSET_ID => Some(TransformStrategy::ReturnViaPointer),
-                    tx_kernel::tx::EXECUTE_FOREIGN_PROCEDURE_INDIRECT => {
-                        Some(TransformStrategy::FpiIndirectReturnViaPointer)
-                    }
-                    _ => None,
-                },
-                _ => None,
-            },
-            _ => None,
-        },
-        _ => None,
-    }
-}
-
-/// Transform a Miden ABI function call based on the transformation strategy
-///
-/// `import_func` - import function that we're transforming a call to (think of a MASM function)
-/// `args` - arguments to the generated synthetic function
-/// Returns results that will be returned from the synthetic function
-pub fn transform_miden_abi_call<B: ?Sized + Builder>(
-    import_func_ref: FunctionRef,
-    import_path: &SymbolPath,
-    args: &[ValueRef],
-    builder: &mut FunctionBuilderExt<'_, B>,
-) -> WasmResult<Vec<ValueRef>> {
-    use TransformStrategy::*;
-    match get_transform_strategy(import_path) {
-        Some(ReturnViaPointer) => return_via_pointer(import_func_ref, args, builder),
-        Some(FpiIndirectReturnViaPointer) => {
-            fpi_indirect_return_via_pointer(import_func_ref, args, builder)
-        }
-        Some(NoTransform) => no_transform(import_func_ref, args, builder),
-        None => Err(Report::msg(format!("no transform strategy implemented for '{import_path}'"))),
-    }
-}
 
 /// No transformation needed
 #[inline(always)]
@@ -346,8 +35,13 @@ pub fn no_transform<B: ?Sized + Builder>(
 }
 
 /// The Miden ABI function returns felts on the stack and we want to return via a pointer argument
+///
+/// `lowered` is the shape the Miden ABI rule set derives for the callee: its results are converted
+/// back to their Wasm carrier types before they are stored, so the return area keeps the layout
+/// the stub's Wasm signature implies (see [`super::resolve::convert_results`]).
 pub fn return_via_pointer<B: ?Sized + Builder>(
     import_func_ref: FunctionRef,
+    lowered: &LoweredSignature,
     args: &[ValueRef],
     builder: &mut FunctionBuilderExt<'_, B>,
 ) -> WasmResult<Vec<ValueRef>> {
@@ -360,10 +54,12 @@ pub fn return_via_pointer<B: ?Sized + Builder>(
     let signature = import_func_ref.borrow().get_signature().clone();
     let exec = builder.exec(import_func_ref, signature, args_wo_pointer.to_vec(), span)?;
 
-    let borrow = exec.borrow();
-    let results_storage = borrow.results();
-    let results: Vec<ValueRef> =
-        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect();
+    let results: Vec<ValueRef> = {
+        let borrow = exec.borrow();
+        let results_storage = borrow.results();
+        results_storage.iter().map(|op_res| op_res.borrow().as_value_ref()).collect()
+    };
+    let results = convert_results(lowered, &results, builder, span)?;
 
     store_results_to_pointer(&results, *ptr_arg, builder)?;
 

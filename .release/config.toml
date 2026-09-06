@@ -264,6 +264,10 @@ name = "midenc-integration-network-tests"
 unit = "private"
 
 [[packages]]
+name = "midenc-integration-protocol-tests"
+unit = "private"
+
+[[packages]]
 name = "midenc-integration-test-support"
 unit = "private"
 

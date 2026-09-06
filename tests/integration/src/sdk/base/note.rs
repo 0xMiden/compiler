@@ -227,7 +227,7 @@ fn note_attachment_preimages() {
     use miden_core::{Felt, crypto::hash::Poseidon2};
     use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
 
-    use crate::end_to_end::support::default_host_with_core_lib;
+    use crate::end_to_end::support::default_host_with_core_package;
 
     for (loader, max_words) in [("load_attachment_commitments", 4), ("load_attachment", 256)] {
         let source = format!(
@@ -276,7 +276,7 @@ fn note_attachment_preimages() {
                 ExecutionOptions::default(),
             )
             .expect("test processor should initialize")
-            .execute_sync(&program, &mut default_host_with_core_lib());
+            .execute_sync(&program, &mut default_host_with_core_package());
             if succeeds {
                 let output = result.unwrap_or_else(|error| {
                     panic!("{loader} rejected {num_elements} elements: {error}")

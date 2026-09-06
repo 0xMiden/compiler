@@ -469,7 +469,7 @@ mod tests {
     use miden_package_registry::NoPackageStore;
     use midenc_hir::Context;
     use midenc_session::{
-        InputFile, Options,
+        InputFile,
         diagnostics::{DefaultSourceManager, SourceManager},
         miden_project::TargetType,
     };
@@ -716,7 +716,8 @@ path = "{root}"
 
     /// A session compiling `input`.
     fn session_for(input: InputFile) -> Rc<Session> {
-        let options = Box::new(Options::default()).with_output_types(Default::default(), None);
+        let options = Box::new(testing::options_linked_to_the_toolchain())
+            .with_output_types(Default::default(), None);
         let source_manager: Arc<dyn SourceManager + Send + Sync> =
             Arc::new(DefaultSourceManager::default());
         Rc::new(
@@ -1242,7 +1243,9 @@ path = "{root}"
 
     /// A well-formed assembled package, for a delegated `post_process` to be handed.
     fn any_package() -> MastPackage {
-        (*midenc_codegen_masm::intrinsics::load()).clone()
+        let session = testing::session_linked_to_the_toolchain();
+        (*midenc_codegen_masm::intrinsics::load(&session).expect("the intrinsics should load"))
+            .clone()
     }
 
     #[test]

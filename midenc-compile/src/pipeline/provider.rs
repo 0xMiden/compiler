@@ -251,7 +251,7 @@ mod tests {
         CompilerResult,
         pipeline::{
             ArtifactId, CheckpointId, Goal, Observer, RecordingObserver,
-            testing::{VirtualProject, wat_fixture},
+            testing::{VirtualProject, session_linked_to_the_toolchain, wat_fixture},
         },
     };
 
@@ -356,7 +356,9 @@ mod tests {
     /// intrinsics package. These tests check that the callback is delegated with the right
     /// role, never what it did to the package's code, so which package it is does not matter.
     fn any_package() -> MastPackage {
-        (*midenc_codegen_masm::intrinsics::load()).clone()
+        let session = session_linked_to_the_toolchain();
+        (*midenc_codegen_masm::intrinsics::load(&session).expect("the intrinsics should load"))
+            .clone()
     }
 
     /// A project named `name` with an executable target and a library target.

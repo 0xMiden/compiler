@@ -89,6 +89,10 @@ pub struct Session {
     /// deletes the directory; see the `package_lease` module for the lifecycle.
     #[cfg(feature = "std")]
     package_cache_lease: package_lease::SharedPackageCacheLease,
+    /// The interfaces of every package linked into this session; see
+    /// [`Session::package_interfaces`]. Computed lazily and cached on first access.
+    #[cfg(feature = "std")]
+    package_interfaces: std::sync::OnceLock<Arc<[midenc_package_interface::PackageInterface]>>,
 }
 
 impl fmt::Debug for Session {
@@ -138,6 +142,8 @@ impl Session {
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager + Send + Sync>,
     ) -> Result<Self, Report> {
+        options.derive_sysroot_from_toolchain();
+
         let manifest = if matches!(input.file_type(), FileType::Toml) {
             ProjectManifest::read(&input, source_manager.as_ref())?
         } else {
@@ -241,6 +247,8 @@ impl Session {
         emitter: Option<Arc<dyn Emitter>>,
         source_manager: Arc<dyn SourceManager>,
     ) -> Self {
+        options.derive_sysroot_from_toolchain();
+
         log::debug!(target: "driver", "creating session {name}");
         if log::log_enabled!(target: "driver", log::Level::Debug) {
             if let Some(input) = input.as_ref() {
@@ -319,6 +327,8 @@ impl Session {
             statistics: Default::default(),
             #[cfg(feature = "std")]
             package_cache_lease: Default::default(),
+            #[cfg(feature = "std")]
+            package_interfaces: std::sync::OnceLock::new(),
         }
     }
 
@@ -375,6 +385,35 @@ impl Session {
         #[cfg(feature = "std")]
         registry.retain_session_package_cache(self.package_cache_lease.clone());
         Ok(Box::new(registry))
+    }
+
+    /// The interfaces of every package this session can resolve — the toolchain's `lib/`,
+    /// explicit link libraries and their dependencies — in registry order.
+    ///
+    /// Built once and cached: the Wasm frontend resolves every linker stub against this set. It
+    /// is deliberately the *resolvable* set rather than the link closure, so a stub may resolve
+    /// here against a sysroot package that was never linked; the assembler then reports the
+    /// unresolved procedure, rather than the frontend reporting the missing `-l`.
+    ///
+    /// The registry built here has no filesystem cache: computing interfaces must not republish
+    /// every sysroot package into the session's package exchange, which the pipeline's own
+    /// registry already owns.
+    #[cfg(feature = "std")]
+    pub fn package_interfaces(
+        &self,
+    ) -> Result<Arc<[midenc_package_interface::PackageInterface]>, Report> {
+        if let Some(cached) = self.package_interfaces.get() {
+            return Ok(cached.clone());
+        }
+        let registry =
+            registry::HybridPackageRegistry::new_with_filesystem_cache(&self.options, None)?;
+        let interfaces: alloc::vec::Vec<_> = registry
+            .packages()
+            .map(|package| midenc_package_interface::PackageInterface::from_package(package))
+            .collect();
+        let interfaces: Arc<[_]> = interfaces.into();
+        let _ = self.package_interfaces.set(interfaces.clone());
+        Ok(interfaces)
     }
 
     /// Where compiled dependency packages of this build are published and looked for.
@@ -939,10 +978,24 @@ mod tests {
     #[test]
     fn a_registry_keeps_the_leased_cache_alive_after_the_session_drops() {
         let temp = TempDir::new().unwrap();
+        // The session's registry loads the implicitly linked core library from the sysroot, so
+        // this test needs one, with a fixture package standing in for the real toolchain library.
+        let sysroot = temp.path().join("sysroot");
+        std::fs::create_dir_all(sysroot.join("lib")).unwrap();
+        crate::registry::tests::fixture_package("miden-core")
+            .write_masp_file(sysroot.join("lib"))
+            .unwrap();
         let options = Options {
             current_dir: temp.path().to_path_buf(),
             target_dir: temp.path().join("target"),
-            ..Options::default()
+            ..Options::new(
+                None,
+                None,
+                temp.path().to_path_buf(),
+                temp.path().join("target"),
+                None,
+                Some(sysroot),
+            )
         };
         let input = InputFile::new(FileType::Toml, InputType::Real("Cargo.toml".into()));
         let session = Session::new_project(
@@ -965,5 +1018,85 @@ mod tests {
 
         drop(registry);
         assert!(!cache_dir.exists(), "dropping the last owner must delete the lease");
+    }
+}
+
+#[cfg(all(test, feature = "std"))]
+mod package_interface_tests {
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn package_interfaces_cover_every_package_in_the_sysroot_and_are_cached() {
+        let dir = TempDir::new().unwrap();
+        let sysroot = dir.path().join("toolchain");
+        std::fs::create_dir_all(sysroot.join("lib")).unwrap();
+        crate::registry::tests::fixture_package("miden-core")
+            .write_masp_file(sysroot.join("lib"))
+            .unwrap();
+        crate::registry::tests::fixture_package("other")
+            .write_masp_file(sysroot.join("lib"))
+            .unwrap();
+        let options = Box::new(crate::Options::new(
+            None,
+            None,
+            dir.path().into(),
+            dir.path().into(),
+            None,
+            Some(sysroot),
+        ));
+        let session = Session::new_project(
+            "t".into(),
+            None,
+            options,
+            None,
+            Arc::new(crate::diagnostics::DefaultSourceManager::default()),
+        );
+        let first = session.package_interfaces().unwrap();
+        let mut names: alloc::vec::Vec<&str> =
+            first.iter().map(|p| AsRef::<str>::as_ref(&p.name)).collect();
+        names.sort();
+        assert_eq!(names, ["miden-core", "other"]);
+        assert!(
+            first.iter().all(|p| p.bindable().count() == 1),
+            "the fixture's `id` is bindable"
+        );
+        let second = session.package_interfaces().unwrap();
+        assert!(Arc::ptr_eq(&first, &second), "cached per session");
+    }
+
+    #[test]
+    fn sysroot_is_derived_from_the_midenup_home_and_toolchain_when_unset() {
+        let dir = TempDir::new().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(home.join("toolchains").join("0.16.0").join("lib")).unwrap();
+        let mut options = Box::new(crate::Options::new(
+            None,
+            None,
+            dir.path().into(),
+            dir.path().into(),
+            None,
+            None,
+        ));
+        options.midenup_home = Some(home.clone());
+        options.toolchain = Some("0.16.0".into());
+        let session = Session::new_project(
+            "t".into(),
+            None,
+            options,
+            None,
+            Arc::new(crate::diagnostics::DefaultSourceManager::default()),
+        );
+        assert_eq!(
+            session.options.sysroot.as_deref(),
+            Some(home.join("toolchains").join("0.16.0").as_path())
+        );
+        assert!(
+            session
+                .options
+                .search_paths
+                .contains(&home.join("toolchains").join("0.16.0").join("lib"))
+        );
     }
 }

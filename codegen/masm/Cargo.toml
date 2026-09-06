@@ -18,7 +18,6 @@ doctest = false
 default = ["std"]
 std = [
     "miden-assembly/std",
-    "miden-utils-sync/std",
     "midenc-hir/std",
     "midenc-dialect-hir/std",
     "petgraph/std",
@@ -33,7 +32,6 @@ miden-assembly-syntax.workspace = true
 miden-core.workspace = true
 miden-mast-package.workspace = true
 miden-processor.workspace = true
-miden-utils-sync.workspace = true
 midenc-hir.workspace = true
 midenc-hir-analysis.workspace = true
 midenc-dialect-arith.workspace = true
@@ -54,8 +52,3 @@ miden-debug = { workspace = true, features = ["std"] }
 midenc-expect-test = { path = "../../tools/expect-test" }
 midenc-hir = { path = "../../hir", features = ["logging"] }
 proptest.workspace = true
-
-[build-dependencies]
-miden-assembly = { workspace = true, features = ["std"] }
-midenc-log.workspace = true
-midenc-session = { workspace = true, features = ["std"] }

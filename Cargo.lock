@@ -4213,7 +4213,6 @@ dependencies = [
  "miden-mast-package",
  "miden-processor",
  "miden-thiserror",
- "miden-utils-sync",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
@@ -4223,7 +4222,6 @@ dependencies = [
  "midenc-expect-test",
  "midenc-hir",
  "midenc-hir-analysis",
- "midenc-log",
  "midenc-session",
  "petgraph 0.8.3",
  "proptest",
@@ -4381,6 +4379,7 @@ dependencies = [
  "log",
  "miden-assembly",
  "miden-core",
+ "miden-mast-package",
  "miden-thiserror",
  "midenc-codegen-masm",
  "midenc-dialect-arith",
@@ -4392,6 +4391,7 @@ dependencies = [
  "midenc-frontend-wasm-metadata",
  "midenc-hir",
  "midenc-hir-symbol",
+ "midenc-package-interface",
  "midenc-session",
  "wasm-encoder 0.248.0",
  "wasmparser 0.248.0",
@@ -4565,6 +4565,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "midenc-integration-protocol-tests"
+version = "0.1.0"
+dependencies = [
+ "miden-assembly",
+ "miden-core",
+ "miden-debug",
+ "miden-mast-package",
+ "miden-protocol",
+ "midenc-expect-test",
+ "midenc-frontend-wasm",
+ "midenc-integration-test-support",
+ "midenc-session",
+]
+
+[[package]]
 name = "midenc-integration-test-support"
 version = "0.1.0"
 dependencies = [
@@ -4578,8 +4593,7 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
- "miden-protocol",
- "miden-standards",
+ "miden-thiserror",
  "midenc-compile",
  "midenc-expect-test",
  "midenc-frontend-wasm",
@@ -4607,7 +4621,6 @@ dependencies = [
  "miden-debug",
  "miden-mast-package",
  "miden-processor",
- "miden-protocol",
  "midenc-dialect-arith",
  "midenc-dialect-cf",
  "midenc-dialect-hir",
@@ -4644,7 +4657,7 @@ dependencies = [
 
 [[package]]
 name = "midenc-package-interface"
-version = "0.15.0-rc.3"
+version = "0.15.0"
 dependencies = [
  "miden-assembly",
  "miden-assembly-syntax",
@@ -4662,19 +4675,19 @@ dependencies = [
  "hashbrown 0.17.1",
  "inventory",
  "log",
+ "miden-assembly",
  "miden-assembly-syntax",
  "miden-assembly-syntax-cst",
  "miden-core",
- "miden-core-lib",
  "miden-debug-types",
  "miden-mast-package",
  "miden-package-registry",
  "miden-project",
- "miden-protocol",
  "miden-thiserror",
  "midenc-frontend-wasm-metadata",
  "midenc-hir-macros",
  "midenc-hir-symbol",
+ "midenc-package-interface",
  "parking_lot",
  "rustc-hash",
  "smallvec",

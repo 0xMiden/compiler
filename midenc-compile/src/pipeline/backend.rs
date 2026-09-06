@@ -939,11 +939,12 @@ path = "{root}"
     fn assemble_through_the_backend(dir: &str) -> alloc::sync::Arc<miden_mast_package::Package> {
         use alloc::boxed::Box;
 
-        use midenc_session::{InputFile, Options, Session, diagnostics::DefaultSourceManager};
+        use midenc_session::{InputFile, Session, diagnostics::DefaultSourceManager};
 
         let manifest = lowering_manifest(dir);
         let input = InputFile::from_path(&manifest).expect("a manifest is a valid input");
-        let options = Box::new(Options::default()).with_output_types(Default::default(), None);
+        let options = Box::new(crate::pipeline::testing::options_linked_to_the_toolchain())
+            .with_output_types(Default::default(), None);
         let source_manager = alloc::sync::Arc::new(DefaultSourceManager::default());
         let session = alloc::rc::Rc::new(
             Session::new(input.clone(), options, None, source_manager)

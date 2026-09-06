@@ -1,7 +1,7 @@
 use miden_processor::{ExecutionOptions, FastProcessor, StackInputs, advice::AdviceInputs};
 
 use super::*;
-use crate::end_to_end::support::default_host_with_core_lib;
+use crate::end_to_end::support::default_host_with_core_package;
 
 /// The fixed code that every guest panic reports through the VM assertion error (the same code
 /// `DECODE_PANIC_CODE` pins in the integration-network tests). The panic message is not
@@ -121,7 +121,7 @@ end
     let mut test = test_builder.build();
     let package = test.compile_package();
 
-    let mut host = default_host_with_core_lib();
+    let mut host = default_host_with_core_package();
     let program = package.unwrap_program();
     let result = FastProcessor::new_with_options(
         StackInputs::default(),
