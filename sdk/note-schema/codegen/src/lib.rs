@@ -3,7 +3,7 @@
 #![deny(missing_docs)]
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt,
 };
 
@@ -153,9 +153,10 @@ pub fn generate_host_types(
 
     let root_ident = rust_names.get(root_fqn).cloned().unwrap_or_else(|| type_ident(root_name));
     let helper_traits = generate_helper_traits(runtime);
+    let mut felt_repr_support = FeltReprSupport::default();
     let items = definitions
         .iter()
-        .map(|definition| generate_type(definition, &rust_names, runtime))
+        .map(|definition| generate_type(definition, &rust_names, runtime, &mut felt_repr_support))
         .collect::<Result<Vec<_>, _>>()?;
     let type_idents = definitions
         .iter()
@@ -348,7 +349,7 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
             }
         }
 
-        impl<T> __MidenNoteEncode for Option<T>
+        impl<T> __MidenNoteEncode for ::core::option::Option<T>
         where
             T: __MidenNoteEncode,
         {
@@ -367,7 +368,7 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
             }
         }
 
-        impl<T> __MidenNoteDecode for Option<T>
+        impl<T> __MidenNoteDecode for ::core::option::Option<T>
         where
             T: __MidenNoteDecode,
         {
@@ -396,11 +397,12 @@ fn generate_type(
     definition: &SchemaType,
     rust_names: &BTreeMap<String, Ident>,
     runtime: &RuntimePaths,
+    felt_repr_support: &mut FeltReprSupport,
 ) -> Result<TokenStream, CodegenError> {
     let fqn = definition.fqn().expect("generated type definitions always have a FQN");
     let ident = rust_names.get(fqn).expect("every generated type has a Rust identifier");
     let docs = type_docs(definition, fqn);
-    let derives = if supports_native_felt_repr(definition) {
+    let derives = if felt_repr_support.supports_native_felt_repr(definition) {
         let miden_field_repr = &runtime.miden_field_repr;
         let crate_path = Literal::string(&miden_field_repr.to_string().replace(' ', ""));
         quote! {
@@ -633,7 +635,7 @@ fn rust_type(
         SchemaTypeKind::Primitive(PrimitiveType::Bool) => Ok(quote!(bool)),
         SchemaTypeKind::Option(payload) => {
             let payload = rust_type(payload, rust_names, runtime)?;
-            Ok(quote!(Option<#payload>))
+            Ok(quote!(::core::option::Option<#payload>))
         }
         SchemaTypeKind::Record(_) | SchemaTypeKind::Variant(_) => Err(CodegenError::new(format!(
             "named WIT type `{}` was not collected for Rust generation",
@@ -661,19 +663,43 @@ fn mapped_leaf(ty: &SchemaType, runtime: &RuntimePaths) -> Option<TokenStream> {
     }
 }
 
-/// Returns true when all fields implement the native felt-repr traits without protocol adapters.
-fn supports_native_felt_repr(ty: &SchemaType) -> bool {
-    if matches!(ty.standard_leaf(), Some(StandardLeaf::AccountId | StandardLeaf::AssetAmount)) {
-        return false;
-    }
-    match ty.kind() {
-        SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => true,
-        SchemaTypeKind::Record(fields) => {
-            fields.iter().all(|field| supports_native_felt_repr(field.ty()))
+/// Memoized answers for the felt-repr support walk, keyed by resolved node identity.
+#[derive(Default)]
+struct FeltReprSupport {
+    answers: HashMap<*const SchemaType, bool>,
+}
+
+impl FeltReprSupport {
+    /// Returns true when all fields implement the native felt-repr traits without protocol
+    /// adapters.
+    ///
+    /// The schema model is a DAG that shares one node per resolved WIT type, so the answers are
+    /// memoized by node identity. The walk is then linear in the number of distinct types instead
+    /// of the size of the expanded tree.
+    fn supports_native_felt_repr(&mut self, ty: &SchemaType) -> bool {
+        let key = ty as *const SchemaType;
+        if let Some(answer) = self.answers.get(&key) {
+            return *answer;
         }
-        SchemaTypeKind::Option(payload) => supports_native_felt_repr(payload),
-        SchemaTypeKind::Variant(cases) => {
-            cases.iter().all(|case| case.payload().is_none_or(supports_native_felt_repr))
+        let answer = self.compute(ty);
+        self.answers.insert(key, answer);
+        answer
+    }
+
+    /// Answers the felt-repr question for one node from its children.
+    fn compute(&mut self, ty: &SchemaType) -> bool {
+        if matches!(ty.standard_leaf(), Some(StandardLeaf::AccountId | StandardLeaf::AssetAmount)) {
+            return false;
+        }
+        match ty.kind() {
+            SchemaTypeKind::Felt | SchemaTypeKind::Primitive(_) => true,
+            SchemaTypeKind::Record(fields) => {
+                fields.iter().all(|field| self.supports_native_felt_repr(field.ty()))
+            }
+            SchemaTypeKind::Option(payload) => self.supports_native_felt_repr(payload),
+            SchemaTypeKind::Variant(cases) => cases.iter().all(|case| {
+                case.payload().is_none_or(|payload| self.supports_native_felt_repr(payload))
+            }),
         }
     }
 }

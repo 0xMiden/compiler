@@ -5,8 +5,8 @@ use miden_protocol::{account::AccountId, address::NetworkId};
 
 use crate::{
     ACCOUNT_ID_FQN, CodecRegistry, DecodedValueKind, Felt, MAX_NOTE_STORAGE_SCHEMA_BYTES,
-    MAX_NOTE_STORAGE_SCHEMA_DEPTH, MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_TYPES,
-    NoteStorage, NoteStorageSchema, SchemaTypeKind,
+    MAX_NOTE_STORAGE_SCHEMA_DEPTH, MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_NODES,
+    MAX_NOTE_STORAGE_SCHEMA_TYPES, NoteStorage, NoteStorageSchema, SchemaTypeKind,
 };
 
 const LAYOUT_SCHEMA: &str = r#"
@@ -449,6 +449,45 @@ fn memoized_subtree_reuse_still_enforces_the_depth_limit() {
 }
 
 #[test]
+fn zero_width_record_doubling_fails_at_the_expanded_node_limit() {
+    let error = NoteStorageSchema::from_wit_text(&empty_pair_schema(40))
+        .err()
+        .expect("a doubling chain of empty records must fail")
+        .to_string();
+
+    assert!(error.contains("expands to"), "unexpected expanded-node error: {error}");
+    assert!(
+        error.contains(&MAX_NOTE_STORAGE_SCHEMA_NODES.to_string()),
+        "the node limit must be present in the diagnostic: {error}"
+    );
+    // Level `n` of the chain expands to `2^(n + 1) - 1` nodes, so the first rejected level is the
+    // first one above the budget. The count in the message pins the counting rule.
+    let first_rejected = (1..)
+        .map(|level: u32| (1usize << (level + 1)) - 1)
+        .find(|nodes| *nodes > MAX_NOTE_STORAGE_SCHEMA_NODES)
+        .expect("the doubling chain crosses the node limit");
+    assert!(
+        error.contains(&first_rejected.to_string()),
+        "the expanded node count must be present in the diagnostic: {error}"
+    );
+}
+
+#[test]
+fn nested_records_below_the_expanded_node_limit_still_resolve() {
+    let levels = 11;
+    let schema = NoteStorageSchema::from_wit_text(&empty_pair_schema(levels))
+        .expect("a doubling chain below the node limit must resolve");
+    assert!(
+        (1usize << (levels + 1)) - 1 <= MAX_NOTE_STORAGE_SCHEMA_NODES,
+        "the chain must stay below the node budget"
+    );
+    assert_eq!(schema.layout().maximum(), 0, "empty records have no felts");
+
+    NoteStorageSchema::from_wit_text(LAYOUT_SCHEMA)
+        .expect("the layout schema stays below the node limit");
+}
+
+#[test]
 fn schema_reader_enforces_documented_byte_type_and_root_width_limits() {
     let oversized = " ".repeat(MAX_NOTE_STORAGE_SCHEMA_BYTES + 1);
     let byte_error = NoteStorageSchema::from_wit_text(&oversized)
@@ -483,6 +522,18 @@ fn schema_reader_enforces_documented_byte_type_and_root_width_limits() {
         .to_string();
     assert!(width_error.contains("maximum width"), "unexpected width error: {width_error}");
     assert!(width_error.contains(&MAX_NOTE_STORAGE_SCHEMA_FELTS.to_string()));
+}
+
+/// Builds a linear-size WIT DAG of zero-felt records whose expanded tree doubles at each level.
+fn empty_pair_schema(levels: usize) -> String {
+    let mut wit =
+        String::from("package example:empty-pair@1.0.0; interface note-storage { record t0 { } ");
+    for level in 1..=levels {
+        let previous = level - 1;
+        wit.push_str(&format!("record t{level} {{ left: t{previous}, right: t{previous} }} "));
+    }
+    wit.push_str(&format!("type storage = t{levels}; }}"));
+    wit
 }
 
 /// Builds a linear-size WIT DAG whose resolved layout doubles at each level.

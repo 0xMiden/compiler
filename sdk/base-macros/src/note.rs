@@ -160,7 +160,15 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
         syn::Fields::Named(fields) => {
             let schema_static = match expand_note_storage_schema(&item_struct) {
                 Ok(schema_static) => schema_static,
-                Err(err) => return err.into_compile_error(),
+                // The struct is emitted with the error so that the schema diagnostic is not
+                // buried under "cannot find type" errors from every use site.
+                Err(err) => {
+                    let error = err.into_compile_error();
+                    return quote! {
+                        #item_struct
+                        #error
+                    };
+                }
             };
             let field_inits = fields.named.iter().map(|field| {
                 let ident = field.ident.as_ref().expect("named fields must have identifiers");
@@ -1176,7 +1184,10 @@ mod tests {
     use syn::parse_quote;
 
     use super::*;
-    use crate::types::{lock_export_type_registry_for_tests, reset_export_type_registry_for_tests};
+    use crate::{
+        test_support::compile_rust_source,
+        types::{lock_export_type_registry_for_tests, reset_export_type_registry_for_tests},
+    };
 
     #[test]
     fn named_note_struct_emits_storage_schema_static() {
@@ -1205,6 +1216,61 @@ mod tests {
 
         assert!(!tokens.contains("__MIDEN_NOTE_STORAGE_SCHEMA_BYTES"));
         assert!(tokens.contains(crate::note_schema::NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD_SYMBOL));
+    }
+
+    #[test]
+    fn schema_failure_keeps_the_note_struct_next_to_the_error() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let item_struct: ItemStruct = parse_quote! {
+            struct VecNote {
+                values: Vec<u64>,
+            }
+        };
+
+        let tokens = expand_note_struct(item_struct).to_string();
+
+        assert!(tokens.contains("compile_error"), "the schema error must be reported: {tokens}");
+        assert!(tokens.contains("struct VecNote"), "the struct must survive the error: {tokens}");
+        assert!(
+            !tokens.contains("__MIDEN_NOTE_STORAGE_SCHEMA_BYTES"),
+            "no schema metadata is generated for a failed schema: {tokens}"
+        );
+    }
+
+    #[test]
+    fn schema_failure_reports_only_the_schema_diagnostic() {
+        let _registry_guard = lock_export_type_registry_for_tests();
+        reset_export_type_registry_for_tests();
+        let item_struct: ItemStruct = parse_quote! {
+            struct VecNote {
+                values: Vec<u64>,
+            }
+        };
+        let expansion = expand_note_struct(item_struct);
+        let source = format!(
+            r#"
+mod user {{
+    {expansion}
+    pub fn takes_note(_note: VecNote) {{}}
+}}
+fn main() {{}}
+"#
+        );
+
+        let output = compile_rust_source(&source);
+        assert!(!output.status.success(), "a failed note schema must fail the compilation");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("`Vec` is not supported in note storage schemas yet"),
+            "the schema diagnostic is missing:
+{stderr}"
+        );
+        assert!(
+            !stderr.contains("cannot find type"),
+            "the schema diagnostic must not cascade into missing-type errors:
+{stderr}"
+        );
     }
 
     #[test]

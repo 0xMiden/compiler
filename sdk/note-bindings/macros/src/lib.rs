@@ -123,7 +123,7 @@ fn expand_schema(
                 pub fn to_note_storage(
                     &self,
                 ) -> #runtime::miden_note_schema::Result<#runtime::miden_note_schema::NoteStorage> {
-                    let mut felts = Vec::new();
+                    let mut felts = ::std::vec::Vec::new();
                     self.__write_note_felts(
                         &mut #runtime::miden_field_repr::FeltWriter::new(&mut felts),
                     )?;
@@ -150,7 +150,10 @@ fn expand_schema(
 
                 /// Builds a typed value with a caller-provided codec registry.
                 pub fn from_str_values_with(
-                    values: &::std::collections::BTreeMap<String, String>,
+                    values: &::std::collections::BTreeMap<
+                        ::std::string::String,
+                        ::std::string::String,
+                    >,
                     codecs: &#runtime::miden_note_schema::CodecRegistry,
                 ) -> #runtime::miden_note_schema::Result<Self> {
                     let schema = __miden_note_storage_schema()?;
@@ -164,7 +167,10 @@ fn expand_schema(
 
                 /// Builds a typed value with the standard codec registry.
                 pub fn from_str_values(
-                    values: &::std::collections::BTreeMap<String, String>,
+                    values: &::std::collections::BTreeMap<
+                        ::std::string::String,
+                        ::std::string::String,
+                    >,
                 ) -> #runtime::miden_note_schema::Result<Self> {
                     let codecs =
                         #runtime::miden_note_schema::CodecRegistry::with_standard_codecs();
@@ -192,7 +198,7 @@ fn expand_schema(
                 pub fn display_with(
                     &self,
                     codecs: &#runtime::miden_note_schema::CodecRegistry,
-                ) -> #runtime::miden_note_schema::Result<String> {
+                ) -> #runtime::miden_note_schema::Result<::std::string::String> {
                     let storage = self.to_note_storage()?;
                     let decoded =
                         __miden_note_storage_schema()?.decode_with_registry(&storage, codecs)?;
@@ -200,7 +206,9 @@ fn expand_schema(
                 }
 
                 /// Displays this value with standard codecs and structural fallbacks.
-                pub fn display(&self) -> #runtime::miden_note_schema::Result<String> {
+                pub fn display(
+                    &self,
+                ) -> #runtime::miden_note_schema::Result<::std::string::String> {
                     let codecs =
                         #runtime::miden_note_schema::CodecRegistry::with_standard_codecs();
                     self.display_with(&codecs)

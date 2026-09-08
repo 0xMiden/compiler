@@ -1,13 +1,9 @@
-use std::{
-    collections::HashSet,
-    env,
-    io::Write,
-    process::{Command, Output, Stdio},
-};
+use std::collections::HashSet;
 
 use syn::parse_quote;
 
 use super::*;
+use crate::test_support::compile_rust_source;
 
 #[test]
 fn emits_hint_for_missing_export_type() {
@@ -864,27 +860,4 @@ fn main() {{}}
 {}",
         String::from_utf8_lossy(&output.stderr)
     );
-}
-
-/// Compiles one standalone Rust source string for nominal identity-guard tests.
-fn compile_rust_source(source: &str) -> Output {
-    let output_dir = tempfile::tempdir().expect("failed to create rustc output directory");
-    let output_path = output_dir.path().join("identity_guard.rmeta");
-    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let mut child = Command::new(rustc)
-        .args(["--crate-name", "identity_guard", "--edition=2024", "--emit=metadata", "-o"])
-        .arg(output_path)
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to start rustc for an identity-guard test");
-    child
-        .stdin
-        .take()
-        .expect("rustc stdin must be piped")
-        .write_all(source.as_bytes())
-        .expect("failed to write the identity-guard source");
-    child.wait_with_output().expect("failed to wait for rustc")
 }

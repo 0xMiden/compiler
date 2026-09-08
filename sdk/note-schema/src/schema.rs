@@ -37,14 +37,29 @@ pub const MAX_NOTE_STORAGE_SCHEMA_DEPTH: usize = MAX_NOTE_STORAGE_ITEMS / 8;
 /// Maximum number of felts in the root note storage layout.
 pub const MAX_NOTE_STORAGE_SCHEMA_FELTS: usize = MAX_NOTE_STORAGE_ITEMS;
 
-/// Maximum bytes accepted for one note codec component before Wasmtime compilation.
+/// Maximum number of nodes in the expanded note storage schema tree.
 ///
-/// The compiler enforces the same limit when it attaches a codec, so a package that
-/// builds is a package that consumers accept.
+/// The resolved model is a DAG, but every structural walk over it expands that DAG into a tree:
+/// decoding, builder validation, and Rust code generation all visit a shared type once per
+/// reference. A schema of zero-felt records that names one type per level stays below the byte,
+/// type, depth, and felt limits while the expanded tree doubles at each level, so this budget
+/// bounds the expanded tree directly. It allows four expanded nodes per protocol note-storage
+/// item, which is far above any practical model.
+pub const MAX_NOTE_STORAGE_SCHEMA_NODES: usize = MAX_NOTE_STORAGE_ITEMS * 4;
+
+/// Default maximum bytes accepted for one note codec component before Wasmtime compilation.
+///
+/// This is the producer's cap and the default of `CodecLimits::max_component_bytes`, the
+/// consumer-side policy struct behind the `codec-component` feature, so a package that builds is
+/// a package that consumers accept. A host may tighten its own consumer cap.
 pub const MAX_NOTE_CODEC_COMPONENT_BYTES: usize = 4 * 1024 * 1024;
 
 /// Rustflags the nested codec build pins, so a codec crate's own cargo config cannot enable
-/// a Wasm feature that every consumer rejects. Mirrors the VM event-handler plugin.
+/// `simd128` in the guest. Mirrors the VM event-handler plugin.
+///
+/// The pin covers one target feature only. The full policy is
+/// [`NOTE_CODEC_WASM_FEATURES`](crate::NOTE_CODEC_WASM_FEATURES), which the producer enforces at
+/// build time and every consumer enforces at load time.
 pub const NOTE_CODEC_GUEST_RUSTFLAGS: &str = "-C target-feature=-simd128";
 
 const _: () = assert!(MAX_NOTE_STORAGE_SCHEMA_DEPTH > 0);
@@ -387,6 +402,22 @@ fn ensure_root_layout_limit(layout: FeltLayout) -> Result<()> {
     Ok(())
 }
 
+/// Enforces the expanded-tree budget on one resolved schema type.
+///
+/// The builder memoizes shared types, so resolution stays linear. Every consumer of the model
+/// walks it as a tree, so the budget is applied to the expanded node count of each type as it is
+/// resolved. The check therefore protects decoding, builder validation, and code generation.
+fn ensure_expanded_node_limit(ty: &SchemaType, expanded_nodes: usize) -> Result<()> {
+    let limit = MAX_NOTE_STORAGE_SCHEMA_NODES;
+    if expanded_nodes > limit {
+        let name = ty.fqn().or_else(|| ty.name()).unwrap_or("<anonymous>");
+        return Err(Error::new(format!(
+            "note storage type `{name}` expands to {expanded_nodes} nodes; the limit is {limit}"
+        )));
+    }
+    Ok(())
+}
+
 /// Verifies the raw embedded core-types definitions before the model applies native mappings.
 fn validate_resolved_core_types(resolve: &Resolve) -> Result<()> {
     let Some((_, package_id)) = resolve.package_names.iter().find(|(name, _)| {
@@ -609,11 +640,13 @@ fn collect_custom_type_fqns(
     }
 }
 
-/// One memoized schema node and its maximum depth below that node.
+/// One memoized schema node, its maximum depth, and the size of its expanded subtree.
 #[derive(Clone)]
 struct MemoizedSchemaType {
     ty: Arc<SchemaType>,
     maximum_subtree_depth: usize,
+    /// Number of nodes a structural walk visits below and including this node.
+    expanded_nodes: usize,
 }
 
 /// Builds a memoized schema graph from a resolved WIT graph.
@@ -691,6 +724,7 @@ impl<'a> ModelBuilder<'a> {
                     layout: FeltLayout::fixed(1),
                 }),
                 maximum_subtree_depth: 0,
+                expanded_nodes: 1,
             })
         } else {
             match definition.kind {
@@ -699,10 +733,12 @@ impl<'a> ModelBuilder<'a> {
                     let mut fields = Vec::with_capacity(record.fields.len());
                     let mut layout = FeltLayout::fixed(0);
                     let mut maximum_subtree_depth = 0;
+                    let mut expanded_nodes = 1usize;
                     for field in record.fields {
                         let memoized = self.build_type(field.ty, depth + 1)?;
                         maximum_subtree_depth =
                             maximum_subtree_depth.max(1 + memoized.maximum_subtree_depth);
+                        expanded_nodes = expanded_nodes.saturating_add(memoized.expanded_nodes);
                         layout = layout.concatenate(memoized.ty.layout)?;
                         fields.push(SchemaField {
                             name: field.name,
@@ -719,6 +755,7 @@ impl<'a> ModelBuilder<'a> {
                             layout,
                         }),
                         maximum_subtree_depth,
+                        expanded_nodes,
                     })
                 }
                 TypeDefKind::Option(payload) => {
@@ -729,6 +766,7 @@ impl<'a> ModelBuilder<'a> {
                     let layout = FeltLayout::bounded(1, maximum)?;
                     Ok(MemoizedSchemaType {
                         maximum_subtree_depth: 1 + payload.maximum_subtree_depth,
+                        expanded_nodes: payload.expanded_nodes.saturating_add(1),
                         ty: Arc::new(SchemaType {
                             name,
                             fqn,
@@ -741,12 +779,15 @@ impl<'a> ModelBuilder<'a> {
                 TypeDefKind::Variant(variant) => {
                     let mut cases = Vec::with_capacity(variant.cases.len());
                     let mut maximum_subtree_depth = 0;
+                    let mut expanded_nodes = 1usize;
                     for case in variant.cases {
                         let payload = match case.ty {
                             Some(ty) => {
                                 let memoized = self.build_type(ty, depth + 1)?;
                                 maximum_subtree_depth =
                                     maximum_subtree_depth.max(1 + memoized.maximum_subtree_depth);
+                                expanded_nodes =
+                                    expanded_nodes.saturating_add(memoized.expanded_nodes);
                                 Some(memoized.ty)
                             }
                             None => None,
@@ -767,6 +808,7 @@ impl<'a> ModelBuilder<'a> {
                             layout,
                         }),
                         maximum_subtree_depth,
+                        expanded_nodes,
                     })
                 }
                 TypeDefKind::Enum(enum_) => {
@@ -789,6 +831,7 @@ impl<'a> ModelBuilder<'a> {
                             layout,
                         }),
                         maximum_subtree_depth: 0,
+                        expanded_nodes: 1,
                     })
                 }
                 unsupported => Err(Error::new(format!(
@@ -800,6 +843,7 @@ impl<'a> ModelBuilder<'a> {
         };
         self.active.remove(&id);
         if let Ok(memoized) = &result {
+            ensure_expanded_node_limit(&memoized.ty, memoized.expanded_nodes)?;
             self.memo.insert(id, memoized.clone());
         }
         result
@@ -848,6 +892,7 @@ impl<'a> ModelBuilder<'a> {
                 layout: FeltLayout::fixed(width),
             }),
             maximum_subtree_depth: 0,
+            expanded_nodes: 1,
         })
     }
 

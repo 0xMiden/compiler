@@ -94,3 +94,41 @@ fn custom_record_string_paths_use_the_registry_parameter() {
         }
     );
 }
+
+/// Bindings whose WIT type and field names collide with Rust prelude names.
+///
+/// The generated items shadow the prelude inside the generated module, so the test only compiles
+/// when every prelude name in the generated code is fully qualified.
+mod prelude_names {
+    miden_note_bindings::from_wit_text!(
+        r#"
+package example:prelude-schema@1.0.0;
+
+interface note-storage {
+    record %option {
+        %string: u64,
+    }
+
+    record %vec {
+        %string: u32,
+        %result: %option,
+        maybe: option<u32>,
+    }
+
+    type storage = %vec;
+}
+"#
+    );
+
+    #[test]
+    fn prelude_named_types_round_trip() {
+        let value = Vec {
+            string: 9,
+            result: Option { string: 4 },
+            maybe: ::core::option::Option::Some(1),
+        };
+        let storage = value.to_note_storage().unwrap();
+        assert_eq!(Vec::from_note_storage(&storage).unwrap(), value);
+        value.validate().unwrap();
+    }
+}

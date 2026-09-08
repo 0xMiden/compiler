@@ -44,8 +44,8 @@ pub use miden_field::Felt;
 pub use miden_protocol::note::NoteStorage;
 pub use schema::{
     FeltLayout, MAX_NOTE_CODEC_COMPONENT_BYTES, MAX_NOTE_STORAGE_SCHEMA_BYTES,
-    MAX_NOTE_STORAGE_SCHEMA_DEPTH, MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_TYPES,
-    NOTE_CODEC_GUEST_RUSTFLAGS, NoteStorageSchema, PrimitiveType, SchemaCase, SchemaField,
-    SchemaType, SchemaTypeKind,
+    MAX_NOTE_STORAGE_SCHEMA_DEPTH, MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_NODES,
+    MAX_NOTE_STORAGE_SCHEMA_TYPES, NOTE_CODEC_GUEST_RUSTFLAGS, NoteStorageSchema, PrimitiveType,
+    SchemaCase, SchemaField, SchemaType, SchemaTypeKind,
 };
 pub use value::{DecodedValue, DecodedValueKind};

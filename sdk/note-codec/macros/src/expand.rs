@@ -110,7 +110,7 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
         quote! {
             #fqn => {
                 let value = <#ty as #facade::AuthorTypeCodec>::parse(value)?;
-                let mut felts = Vec::new();
+                let mut felts = ::std::vec::Vec::new();
                 <#ty as __MidenNoteEncode>::__write_note_felts(
                     &value,
                     &mut #facade::__private::miden_field_repr::FeltWriter::new(
@@ -176,12 +176,15 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
             use super::*;
 
             /// Returns all supported canonical WIT FQNs.
-            pub fn supported_types() -> Vec<String> {
+            pub fn supported_types() -> ::std::vec::Vec<::std::string::String> {
                 vec![#(#fqns.to_owned()),*]
             }
 
             /// Parses one value through its marked author codec.
-            pub fn parse(type_fqn: &str, value: &str) -> Result<Vec<u64>, String> {
+            pub fn parse(
+                type_fqn: &str,
+                value: &str,
+            ) -> ::core::result::Result<::std::vec::Vec<u64>, ::std::string::String> {
                 match type_fqn {
                     #(#parse_arms,)*
                     _ => Err(format!(
@@ -191,7 +194,10 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
             }
 
             /// Displays one value through its marked author codec.
-            pub fn display(type_fqn: &str, value: &[u64]) -> Result<String, String> {
+            pub fn display(
+                type_fqn: &str,
+                value: &[u64],
+            ) -> ::core::result::Result<::std::string::String, ::std::string::String> {
                 match type_fqn {
                     #(#display_arms,)*
                     _ => Err(format!(
@@ -201,7 +207,10 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
             }
 
             /// Validates one value through its marked author codec.
-            pub fn validate(type_fqn: &str, value: &[u64]) -> Result<(), String> {
+            pub fn validate(
+                type_fqn: &str,
+                value: &[u64],
+            ) -> ::core::result::Result<(), ::std::string::String> {
                 match type_fqn {
                     #(#validate_arms,)*
                     _ => Err(format!(

@@ -297,7 +297,7 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
                 })
         }
     }
-    impl<T> __MidenNoteEncode for Option<T>
+    impl<T> __MidenNoteEncode for ::core::option::Option<T>
     where
         T: __MidenNoteEncode,
     {
@@ -321,7 +321,7 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
             Ok(())
         }
     }
-    impl<T> __MidenNoteDecode for Option<T>
+    impl<T> __MidenNoteDecode for ::core::option::Option<T>
     where
         T: __MidenNoteDecode,
     {
@@ -401,7 +401,7 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<
             ::miden_note_bindings::__private::miden_note_schema::NoteStorage,
         > {
-            let mut felts = Vec::new();
+            let mut felts = ::std::vec::Vec::new();
             self.__write_note_felts(
                 &mut ::miden_note_bindings::__private::miden_field_repr::FeltWriter::new(
                     &mut felts,
@@ -433,7 +433,10 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         }
         /// Builds a typed value with a caller-provided codec registry.
         pub fn from_str_values_with(
-            values: &::std::collections::BTreeMap<String, String>,
+            values: &::std::collections::BTreeMap<
+                ::std::string::String,
+                ::std::string::String,
+            >,
             codecs: &::miden_note_bindings::__private::miden_note_schema::CodecRegistry,
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<Self> {
             let schema = __miden_note_storage_schema()?;
@@ -446,7 +449,10 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         }
         /// Builds a typed value with the standard codec registry.
         pub fn from_str_values(
-            values: &::std::collections::BTreeMap<String, String>,
+            values: &::std::collections::BTreeMap<
+                ::std::string::String,
+                ::std::string::String,
+            >,
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<Self> {
             let codecs = ::miden_note_bindings::__private::miden_note_schema::CodecRegistry::with_standard_codecs();
             Self::from_str_values_with(values, &codecs)
@@ -471,7 +477,9 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         pub fn display_with(
             &self,
             codecs: &::miden_note_bindings::__private::miden_note_schema::CodecRegistry,
-        ) -> ::miden_note_bindings::__private::miden_note_schema::Result<String> {
+        ) -> ::miden_note_bindings::__private::miden_note_schema::Result<
+            ::std::string::String,
+        > {
             let storage = self.to_note_storage()?;
             let decoded = __miden_note_storage_schema()?
                 .decode_with_registry(&storage, codecs)?;
@@ -480,7 +488,9 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         /// Displays this value with standard codecs and structural fallbacks.
         pub fn display(
             &self,
-        ) -> ::miden_note_bindings::__private::miden_note_schema::Result<String> {
+        ) -> ::miden_note_bindings::__private::miden_note_schema::Result<
+            ::std::string::String,
+        > {
             let codecs = ::miden_note_bindings::__private::miden_note_schema::CodecRegistry::with_standard_codecs();
             self.display_with(&codecs)
         }
