@@ -32,6 +32,9 @@ const NOTE_CODEC_NAMESPACE: &str = "midenc";
 const NOTE_CODEC_TABLE: &str = "note-codec";
 
 /// Defines the dotted metadata table name for the author-side note codec.
+///
+/// The same name is the work directory the codec build creates under the codec crate, so the
+/// build artifacts sit next to the setting that asked for them.
 pub(crate) const NOTE_CODEC_TABLE_NAME: &str = "midenc.note-codec";
 
 /// Names the metadata key that contains the codec crate directory.
@@ -440,8 +443,8 @@ fn build_note_codec_component(
     codec_crate_dir: &Path,
     note_package: &MastPackage,
 ) -> CompilerResult<Vec<u8>> {
-    let work_dir = codec_crate_dir.join("target").join(NOTE_CODEC_TABLE_NAME);
-    let staged_package = stage_note_package(&work_dir, codec_crate_dir, note_package)?;
+    // Check the manifest before staging, or a mis-pointed `crate` path creates a work directory
+    // in a directory that is not a crate.
     let manifest_path = codec_crate_dir.join("Cargo.toml");
     if !manifest_path.is_file() {
         return Err(Report::msg(format!(
@@ -449,6 +452,8 @@ fn build_note_codec_component(
             manifest_path.display()
         )));
     }
+    let work_dir = codec_crate_dir.join("target").join(NOTE_CODEC_TABLE_NAME);
+    let staged_package = stage_note_package(&work_dir, codec_crate_dir, note_package)?;
 
     let cargo_env = env::var_os("CARGO").map(PathBuf::from);
     let cargo_path = cargo_env.as_deref().unwrap_or_else(|| Path::new("cargo"));
@@ -520,6 +525,12 @@ fn build_note_codec_component(
 }
 
 /// Builds the nested Cargo command that compiles one note codec crate.
+///
+/// The command pins `RUSTFLAGS`. That environment variable replaces the rustflags in the codec
+/// crate's own cargo config, so the crate cannot enable a Wasm feature that consumers reject.
+/// Replacing them is safe only because the command always passes `--target`: with a target
+/// selected, Cargo applies these flags to the codec crate alone, and host build scripts and
+/// proc macros keep the flags of the host they build for.
 fn note_codec_cargo_command(
     cargo_path: &Path,
     toolchain: Option<&str>,
@@ -692,17 +703,14 @@ fn note_codec_cargo_error(error: Report, manifest_path: &Path) -> Report {
 
 /// Verifies the component sandbox and the versioned codec interface export.
 fn validate_note_codec_component(component: &[u8]) -> CompilerResult<()> {
-    // Enforce the consumer size limit at the producer, so a package that builds is a
-    // package that consumers accept.
-    if component.len() > miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES {
-        return Err(Report::msg(format!(
-            "note codec component is {} bytes, above the {}-byte limit that consumers enforce",
-            component.len(),
-            miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES,
-        )));
-    }
-    // The structural caps are fixed policy, so the producer applies the consumer rules here.
-    miden_note_schema::validate_note_codec_structure(component).map_err(|error| {
+    // The byte cap, the Wasm feature set, and the structural caps are fixed policy, so the
+    // producer applies the consumer rules here through the one shared entry point: a package
+    // that builds is a package that consumers accept.
+    miden_note_schema::validate_note_codec_component(
+        component,
+        miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES,
+    )
+    .map_err(|error| {
         Report::msg(format!(
             "note codec component fails the structural limits consumers enforce: {error}"
         ))
@@ -1218,11 +1226,35 @@ mod tests {
     fn oversized_codec_components_fail_producer_validation() {
         let oversized = vec![0u8; miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES + 1];
         let error = validate_note_codec_component(&oversized).unwrap_err().to_string();
-        assert!(error.contains("above the"), "unexpected error: {error}");
+        assert!(
+            error.contains("fails the structural limits consumers enforce"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains("pre-compilation limit"), "unexpected error: {error}");
         assert!(
             error.contains(&miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES.to_string()),
             "the limit is not named: {error}"
         );
+    }
+
+    #[test]
+    fn codec_components_outside_the_wasm_feature_policy_fail_producer_validation() {
+        let component = wat::parse_str(
+            r#"(component
+                (core module
+                    (func (export "simd")
+                        v128.const i32x4 0 0 0 0
+                        drop)))"#,
+        )
+        .unwrap();
+
+        let error = validate_note_codec_component(&component).unwrap_err().to_string();
+
+        assert!(
+            error.contains("uses a Wasm feature the policy rejects"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains("SIMD"), "the rejected proposal is not named: {error}");
     }
 
     #[test]

@@ -2,12 +2,16 @@
 
 use core::fmt;
 
-/// Why a bundled codec call did not return a value.
+/// Why a bundled codec did not return a value.
+///
+/// Only the bundled-codec adapter reports a class. It covers the whole life of a codec call:
+/// the load of the component, the instantiation that precedes the call, the call itself, and
+/// the host caps applied to what the call returned.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CodecFailure {
     /// The call used its whole fuel budget.
     OutOfFuel,
-    /// The call hit a memory or table limit.
+    /// A limit the host applies was exceeded, in the guest or in the returned value.
     LimitExceeded,
     /// The component trapped, or the engine rejected the call.
     Trapped,
@@ -44,7 +48,8 @@ impl Error {
 
     /// Returns the failure class of a bundled codec call.
     ///
-    /// Errors from other sources return `None`.
+    /// Errors from other sources return `None`. Without the `codec-component` feature there is
+    /// no bundled-codec adapter, so every error returns `None`.
     pub fn codec_failure(&self) -> Option<CodecFailure> {
         self.codec_failure
     }

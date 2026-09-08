@@ -36,7 +36,9 @@ pub use codec::{
 };
 #[cfg(feature = "codec-component")]
 pub use codec_component::CodecLimits;
-pub use codec_structure::validate_note_codec_structure;
+pub use codec_structure::{
+    NOTE_CODEC_WASM_FEATURES, validate_note_codec_component, validate_note_codec_structure,
+};
 pub use error::{CodecFailure, Error, Result};
 pub use miden_field::Felt;
 pub use miden_protocol::note::NoteStorage;

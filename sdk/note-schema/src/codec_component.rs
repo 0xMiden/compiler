@@ -7,16 +7,39 @@ use miden_mast_package::Package;
 use midenc_frontend_wasm_metadata::{PACKAGE_NOTE_CODEC_SECTION_ID, package_note_codec_section_id};
 use wasmtime::{
     Config, Engine, ResourceLimiter, Store, StoreLimits, StoreLimitsBuilder, Trap,
-    component::{Component, Linker},
+    component::{Component, Instance, Linker, WasmList, WasmStr},
 };
 
 use crate::{
     CodecFailure, CodecRegistry, ConsumerTypeCodec, Error, NoteStorageSchema, Result,
-    validate_note_codec_structure,
+    codec_structure::{MAX_CORE_INSTANCES, MAX_DEFINED_MEMORIES, MAX_DEFINED_TABLES},
+    validate_note_codec_component,
 };
 
-/// Maximum bytes of stack available to one component call.
+/// Maximum bytes of Wasm stack available to one component call.
 const MAX_WASM_STACK_BYTES: usize = 512 * 1024;
+
+/// The versioned interface a note codec component exports.
+const CODEC_INTERFACE: &str = "miden:note-codec/codec@1.0.0";
+
+/// The discovery function of the codec interface.
+const SUPPORTED_TYPES: &str = "supported-types";
+
+/// Maximum instances one codec call store may hold.
+///
+/// The value is the structural budget for core instantiations, so the two cannot drift: a
+/// component that passes the load policy can also instantiate.
+const MAX_STORE_INSTANCES: usize = MAX_CORE_INSTANCES;
+
+/// Maximum tables one codec call store may hold.
+///
+/// The value is the structural budget for defined tables.
+const MAX_STORE_TABLES: usize = MAX_DEFINED_TABLES;
+
+/// Maximum linear memories one codec call store may hold.
+///
+/// The value is the structural budget for defined memories.
+const MAX_STORE_MEMORIES: usize = MAX_DEFINED_MEMORIES;
 
 wasmtime::component::bindgen!({
     path: "wit",
@@ -26,13 +49,21 @@ wasmtime::component::bindgen!({
 /// Runtime limits a host applies to bundled note codecs. Limits are host policy.
 /// A package carries no limit values and cannot raise them. Hosts in one
 /// deployment should run identical limits, so a codec behaves the same everywhere.
+///
+/// The store counts are fixed policy instead of host configuration. One call store admits at
+/// most `MAX_STORE_INSTANCES` instances, `MAX_STORE_TABLES` tables, and `MAX_STORE_MEMORIES`
+/// linear memory, and one call gets `MAX_WASM_STACK_BYTES` of Wasm stack. The structural policy
+/// in [`validate_note_codec_component`] uses the same counts, so a component that loads can also
+/// instantiate.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodecLimits {
     /// Fuel budget for one codec call, about one unit per Wasm instruction.
     pub fuel: u64,
-    /// Cap on the guest linear memory in bytes.
+    /// Cap on one guest linear memory in bytes. Wasmtime applies the cap to each memory, and a
+    /// store admits `MAX_STORE_MEMORIES` of them.
     pub max_memory_bytes: usize,
-    /// Cap on the total table elements.
+    /// Cap on the elements of one table. Wasmtime applies the cap to each table, and a store
+    /// admits `MAX_STORE_TABLES` of them.
     pub max_table_elements: usize,
     /// Cap on the component size in bytes.
     pub max_component_bytes: usize,
@@ -68,11 +99,19 @@ impl CodecRegistry {
     }
 
     /// Loads the note codec component from a package and registers all reported types.
+    ///
+    /// A package without a note codec section is the common case, so it is not an error: the
+    /// registry comes back with the standard codecs alone, the same base the bundled-codec path
+    /// registers on top of. More than one note codec section is still an error.
     pub fn load_from_package_with_limits(package: &Package, limits: CodecLimits) -> Result<Self> {
         let schema = NoteStorageSchema::from_package(package)?;
+        let section_id = package_note_codec_section_id();
+        if !package.sections.iter().any(|section| section.id == section_id) {
+            return Ok(Self::default());
+        }
         let bytes = crate::section::unique_package_section(
             package,
-            package_note_codec_section_id(),
+            section_id,
             PACKAGE_NOTE_CODEC_SECTION_ID,
         )?;
         Self::load_from_component(bytes, &schema.custom_type_fqns(), limits)
@@ -172,22 +211,30 @@ impl ResourceLimiter for ComponentStore {
 /// One isolated codec component call context.
 struct ComponentInstance {
     store: Store<ComponentStore>,
+    /// The raw instance, used by the calls that lift their results lazily.
+    instance: Instance,
     bindings: NoteCodec,
 }
 
 impl ComponentRuntime {
     /// Compiles a component under the explicit engine policy and the given limits.
     fn new(bytes: &[u8], limits: CodecLimits) -> Result<Self> {
-        ensure_component_byte_limit(bytes.len(), limits.max_component_bytes)?;
-        validate_note_codec_structure(bytes)?;
+        // One entry point applies the byte cap, the Wasm feature policy, and the structural
+        // limits. The producer applies the same policy when it attaches a codec.
+        validate_note_codec_component(bytes, limits.max_component_bytes)?;
         let mut config = Config::new();
         config.wasm_component_model(true);
         config.consume_fuel(true);
         // Proposals the wasm32-wasip2 target emits by default.
         config.wasm_bulk_memory(true);
         config.wasm_multi_value(true);
-        // Validation policy: every other proposal is off by name. The engine defaults change
-        // between versions, and they decide which components load on every host.
+        // Validation policy: `NOTE_CODEC_WASM_FEATURES` decides what loads, and the call above
+        // already applied it. The setters below repeat that policy in the engine wherever
+        // wasmtime exposes a setter. Threads, garbage collection, reference types and typed
+        // function references have no setter here, because wasmtime gates those setters behind
+        // Cargo features this crate does not enable. Another crate in the same build can turn
+        // those proposals back on by feature unification, which is why the accepted set is
+        // pinned in wasmparser instead of read back from the engine.
         config.wasm_simd(false);
         config.wasm_relaxed_simd(false);
         config.wasm_multi_memory(false);
@@ -199,6 +246,7 @@ impl ComponentRuntime {
         config.wasm_shared_everything_threads(false);
         config.wasm_stack_switching(false);
         config.wasm_exceptions(false);
+        config.wasm_component_model_error_context(false);
         // Floats stay on: codecs parse and format decimal text. NaN canonicalization keeps
         // float results identical across hosts.
         config.cranelift_nan_canonicalization(true);
@@ -232,29 +280,90 @@ impl ComponentRuntime {
         store
             .set_fuel(self.limits.fuel)
             .map_err(|error| component_error("set the note codec fuel budget", error))?;
-        let bindings = NoteCodec::instantiate(&mut store, &self.component, &linker)
-            .map_err(|error| component_error("instantiate the note codec", error))?;
-        Ok(ComponentInstance { store, bindings })
+        // Instantiation runs the guest `_initialize` and every data-segment initializer under
+        // the same fuel and store limits as an exported call, so it fails in the same classes.
+        let instance = match linker.instantiate(&mut store, &self.component) {
+            Ok(instance) => instance,
+            Err(error) => return Err(start_failure(&store, error)),
+        };
+        let bindings = match NoteCodec::new(&mut store, &instance) {
+            Ok(bindings) => bindings,
+            Err(error) => return Err(start_failure(&store, error)),
+        };
+        Ok(ComponentInstance {
+            store,
+            instance,
+            bindings,
+        })
     }
 
     /// Queries the component's supported FQNs once during registry construction.
+    ///
+    /// The call lifts its result lazily instead of going through the generated bindings. A
+    /// `list<string>` is the one result a codec can inflate far past every limit: the elements
+    /// are pointer and length pairs that may all alias one small region, so lifting the whole
+    /// list into owned strings allocates before any cap applies. The per-value calls return one
+    /// string or one felt list, which guest memory already bounds, so they keep the bindings.
     fn supported_types(&self) -> Result<Vec<String>> {
-        let mut instance = self.instantiate()?;
-        let fqns = instance
-            .bindings
-            .miden_note_codec_codec()
-            .call_supported_types(&mut instance.store)
-            .map_err(|error| component_error("call `supported-types`", error))?;
-        if fqns.len() > self.limits.max_supported_types {
-            return Err(Error::new(format!(
-                "note codec component reported {} types; the limit is {}",
-                fqns.len(),
-                self.limits.max_supported_types
-            )));
+        let ComponentInstance {
+            mut store,
+            instance,
+            ..
+        } = self.instantiate()?;
+        let interface =
+            instance.get_export_index(&mut store, None, CODEC_INTERFACE).ok_or_else(|| {
+                Error::new(format!("note codec component exports no `{CODEC_INTERFACE}`"))
+            })?;
+        let export = instance
+            .get_export_index(&mut store, Some(&interface), SUPPORTED_TYPES)
+            .ok_or_else(|| {
+                Error::new(format!(
+                    "note codec component exports no `{SUPPORTED_TYPES}` in `{CODEC_INTERFACE}`"
+                ))
+            })?;
+        let supported_types = instance
+            .get_typed_func::<(), (WasmList<WasmStr>,)>(&mut store, &export)
+            .map_err(|error| component_error("find `supported-types`", error))?;
+        let (reported,) = match supported_types.call(&mut store, ()) {
+            Ok(reported) => reported,
+            Err(error) => {
+                return Err(Error::codec(
+                    classify_failure(&store, &error),
+                    format!("note codec component failed in `supported-types`: {error:#}"),
+                ));
+            }
+        };
+
+        // Check the list length before any element is read, then take the cursors. A cursor
+        // holds a pointer and a length, so this copies nothing out of guest memory.
+        if reported.len() > self.limits.max_supported_types {
+            return Err(Error::codec(
+                CodecFailure::LimitExceeded,
+                format!(
+                    "note codec component reported {} types; the limit is {}",
+                    reported.len(),
+                    self.limits.max_supported_types
+                ),
+            ));
         }
-        for fqn in &fqns {
-            ensure_returned_string_limit("type FQN", fqn, self.limits.max_fqn_bytes)?;
+        let cursors = reported
+            .iter(&mut store)
+            .collect::<wasmtime::Result<Vec<_>>>()
+            .map_err(|error| component_error("read the reported type FQNs", error))?;
+
+        let mut fqns = Vec::with_capacity(cursors.len());
+        for cursor in cursors {
+            // `to_str` borrows guest memory for UTF-8, so the cap applies before the copy.
+            let fqn = cursor
+                .to_str(&store)
+                .map_err(|error| component_error("decode a reported type FQN", error))?;
+            ensure_returned_string_limit("type FQN", &fqn, self.limits.max_fqn_bytes)?;
+            fqns.push(fqn.into_owned());
         }
+        // The typed-func API requires the post-return call once the results are read.
+        supported_types
+            .post_return(&mut store)
+            .map_err(|error| component_error("finish `supported-types`", error))?;
         Ok(fqns)
     }
 }
@@ -264,21 +373,11 @@ fn component_store_limits(limits: &CodecLimits) -> StoreLimits {
     StoreLimitsBuilder::new()
         .memory_size(limits.max_memory_bytes)
         .table_elements(limits.max_table_elements)
-        .instances(32)
-        .tables(32)
-        .memories(1)
+        .instances(MAX_STORE_INSTANCES)
+        .tables(MAX_STORE_TABLES)
+        .memories(MAX_STORE_MEMORIES)
         .trap_on_grow_failure(true)
         .build()
-}
-
-/// Rejects oversized component bytes before validation or JIT compilation begins.
-fn ensure_component_byte_limit(byte_len: usize, limit: usize) -> Result<()> {
-    if byte_len > limit {
-        return Err(Error::new(format!(
-            "note codec component is {byte_len} bytes; the pre-compilation limit is {limit}"
-        )));
-    }
-    Ok(())
 }
 
 /// A registry entry that dispatches one FQN through isolated component instances.
@@ -301,7 +400,7 @@ impl ComponentCodec {
         }
     }
 
-    /// Classifies why one component call did not return a value.
+    /// Reports why one component call did not return a value.
     fn call_failure(
         &self,
         operation: &str,
@@ -309,21 +408,19 @@ impl ComponentCodec {
         error: wasmtime::Error,
     ) -> Error {
         let fqn = &self.fqn;
-        if store.data().limit_hit {
-            Error::codec(
+        match classify_failure(store, &error) {
+            CodecFailure::LimitExceeded => Error::codec(
                 CodecFailure::LimitExceeded,
                 format!("note codec `{fqn}` exceeded a resource limit in `{operation}`"),
-            )
-        } else if error.downcast_ref::<Trap>() == Some(&Trap::OutOfFuel) {
-            Error::codec(
+            ),
+            CodecFailure::OutOfFuel => Error::codec(
                 CodecFailure::OutOfFuel,
                 format!("note codec `{fqn}` ran out of fuel in `{operation}`"),
-            )
-        } else {
-            Error::codec(
-                CodecFailure::Trapped,
+            ),
+            class => Error::codec(
+                class,
                 format!("note codec `{fqn}` trapped in `{operation}`: {error:#}"),
-            )
+            ),
         }
     }
 
@@ -427,13 +524,38 @@ fn validate_reported_fqns(
     Ok(())
 }
 
+/// Classifies why a component call, or the instantiation that precedes it, failed.
+///
+/// The store records a refused memory or table growth, and it outranks the trap the guest saw:
+/// the trap is only how the refusal surfaced.
+fn classify_failure(store: &Store<ComponentStore>, error: &wasmtime::Error) -> CodecFailure {
+    if store.data().limit_hit {
+        CodecFailure::LimitExceeded
+    } else if error.downcast_ref::<Trap>() == Some(&Trap::OutOfFuel) {
+        CodecFailure::OutOfFuel
+    } else {
+        CodecFailure::Trapped
+    }
+}
+
+/// Reports a component that did not reach its first exported call.
+fn start_failure(store: &Store<ComponentStore>, error: wasmtime::Error) -> Error {
+    Error::codec(
+        classify_failure(store, &error),
+        format!("note codec failed to start: {error:#}"),
+    )
+}
+
 /// Enforces a byte-size cap on one component-returned string.
 fn ensure_returned_string_limit(kind: &str, value: &str, limit: usize) -> Result<()> {
     if value.len() > limit {
-        return Err(Error::new(format!(
-            "note codec component returned a {kind} of {} bytes; the limit is {limit}",
-            value.len()
-        )));
+        return Err(Error::codec(
+            CodecFailure::LimitExceeded,
+            format!(
+                "note codec component returned a {kind} of {} bytes; the limit is {limit}",
+                value.len()
+            ),
+        ));
     }
     Ok(())
 }
@@ -441,9 +563,10 @@ fn ensure_returned_string_limit(kind: &str, value: &str, limit: usize) -> Result
 /// Enforces the structural felt count cap on one `parse` result.
 fn ensure_returned_felt_limit(fqn: &str, count: usize, limit: usize) -> Result<()> {
     if count > limit {
-        return Err(Error::new(format!(
-            "codec `{fqn}` returned {count} felts from `parse`; the limit is {limit}"
-        )));
+        return Err(Error::codec(
+            CodecFailure::LimitExceeded,
+            format!("codec `{fqn}` returned {count} felts from `parse`; the limit is {limit}"),
+        ));
     }
     Ok(())
 }
@@ -599,6 +722,139 @@ package miden:base@1.0.0 {
         assert!(error.contains("growing table"), "unexpected table-limit error: {error}");
     }
 
+    /// Builds a component that exports the note codec interface with a chosen
+    /// `supported-types` body.
+    ///
+    /// `core_declarations` adds core module text, so a test can install a trapping start
+    /// function. The other three interface functions carry their real signatures, which the
+    /// generated bindings check, and share one core function that is never called.
+    fn codec_shaped_component(core_declarations: &str, supported_types_body: &str) -> Vec<u8> {
+        let text = format!(
+            r#"(component
+                (core module $m
+                    (memory (export "memory") 1)
+                    {core_declarations}
+                    (func (export "supported-types") (result i32) {supported_types_body})
+                    (func (export "operation") (param i32 i32 i32 i32) (result i32)
+                        (i32.const 1024))
+                    (func (export "cabi_realloc") (param i32 i32 i32 i32) (result i32)
+                        (i32.const 1024)))
+                (core instance $i (instantiate $m))
+                (func $supported (result (list string))
+                    (canon lift (core func $i "supported-types")
+                        (memory $i "memory")
+                        (realloc (func $i "cabi_realloc"))))
+                (func $parse (param "type-fqn" string) (param "value" string)
+                    (result (result (list u64) (error string)))
+                    (canon lift (core func $i "operation")
+                        (memory $i "memory")
+                        (realloc (func $i "cabi_realloc"))))
+                (func $display (param "type-fqn" string) (param "value" (list u64))
+                    (result (result string (error string)))
+                    (canon lift (core func $i "operation")
+                        (memory $i "memory")
+                        (realloc (func $i "cabi_realloc"))))
+                (func $validate (param "type-fqn" string) (param "value" (list u64))
+                    (result (result (error string)))
+                    (canon lift (core func $i "operation")
+                        (memory $i "memory")
+                        (realloc (func $i "cabi_realloc"))))
+                (instance $codec
+                    (export "supported-types" (func $supported))
+                    (export "parse" (func $parse))
+                    (export "display" (func $display))
+                    (export "validate" (func $validate)))
+                (export "{CODEC_INTERFACE}" (instance $codec)))"#
+        );
+        wat::parse_str(text).unwrap()
+    }
+
+    /// Returns core module text that reports `count` string descriptors, all aliasing one
+    /// four-byte string.
+    fn aliasing_descriptors(count: usize) -> String {
+        let length = (count as u32).to_le_bytes().map(|byte| format!("\\{byte:02x}")).concat();
+        let descriptor = "\\00\\00\\00\\00\\04\\00\\00\\00".repeat(count);
+        format!(
+            r#"(data (i32.const 0) "abcd")
+               (data (i32.const 8) "\10\00\00\00{length}")
+               (data (i32.const 16) "{descriptor}")"#
+        )
+    }
+
+    #[test]
+    fn discovery_checks_the_reported_length_before_it_lifts_a_string() {
+        // Every descriptor points at the same four bytes, so lifting the whole list first would
+        // allocate far past the limit that rejects it.
+        let limits = CodecLimits::default();
+        let reported = limits.max_supported_types + 1;
+        let component = codec_shaped_component(&aliasing_descriptors(reported), "(i32.const 8)");
+
+        let error = ComponentRuntime::new(&component, limits.clone())
+            .unwrap()
+            .supported_types()
+            .expect_err("a component over the supported-type limit must be rejected");
+
+        assert!(
+            error.to_string().contains(&format!("reported {reported} types")),
+            "unexpected limit error: {error}"
+        );
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("the limit is {}", limits.max_supported_types)),
+            "unexpected limit error: {error}"
+        );
+        assert_eq!(error.codec_failure(), Some(CodecFailure::LimitExceeded));
+    }
+
+    #[test]
+    fn a_trapping_start_function_is_classified() {
+        let component = codec_shaped_component(
+            r#"(func $boom unreachable)
+               (start $boom)"#,
+            "(i32.const 8)",
+        );
+
+        let error = ComponentRuntime::new(&component, CodecLimits::default())
+            .unwrap()
+            .supported_types()
+            .expect_err("a trapping start function must fail instantiation");
+
+        assert!(error.to_string().contains("failed to start"), "unexpected error: {error}");
+        assert_eq!(error.codec_failure(), Some(CodecFailure::Trapped));
+    }
+
+    #[test]
+    fn discovery_that_runs_out_of_fuel_is_classified() {
+        let component = codec_shaped_component("", "(loop $spin (br $spin)) (i32.const 8)");
+
+        let error = ComponentRuntime::new(&component, CodecLimits::default())
+            .unwrap()
+            .supported_types()
+            .expect_err("an endless `supported-types` must exhaust its fuel");
+
+        assert!(
+            error.to_string().contains("failed in `supported-types`"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(error.codec_failure(), Some(CodecFailure::OutOfFuel));
+    }
+
+    #[test]
+    fn a_package_without_a_codec_section_keeps_the_standard_codecs() {
+        let mut package = test_package();
+        package.sections.push(Section::new(
+            package_note_storage_schema_section_id(),
+            FIXTURE_SCHEMA.as_bytes().to_vec(),
+        ));
+
+        let registry = CodecRegistry::load_from_package(&package).unwrap();
+
+        assert!(registry.contains(crate::FELT_FQN));
+        assert!(registry.contains(crate::WORD_FQN));
+        assert!(!registry.contains(FIXTURE_FQN));
+    }
+
     #[test]
     fn simd_components_do_not_load() {
         let component = wat::parse_str(
@@ -616,6 +872,40 @@ package miden:base@1.0.0 {
             .to_string();
 
         assert!(error.contains("SIMD"), "unexpected engine policy error: {error}");
+    }
+
+    #[test]
+    fn threads_components_do_not_load() {
+        let component = wat::parse_str(
+            r#"(component
+                (core module
+                    (memory 1 1 shared)))"#,
+        )
+        .unwrap();
+
+        let error = ComponentRuntime::new(&component, CodecLimits::default())
+            .err()
+            .expect("a threads component must not load")
+            .to_string();
+
+        assert!(error.contains("threads"), "unexpected engine policy error: {error}");
+    }
+
+    #[test]
+    fn gc_components_do_not_load() {
+        let component = wat::parse_str(
+            r#"(component
+                (core module
+                    (type (struct))))"#,
+        )
+        .unwrap();
+
+        let error = ComponentRuntime::new(&component, CodecLimits::default())
+            .err()
+            .expect("a GC component must not load")
+            .to_string();
+
+        assert!(error.contains("gc"), "unexpected engine policy error: {error}");
     }
 
     #[test]
@@ -766,16 +1056,14 @@ package miden:base@1.0.0 {
                 .to_string()
                 .contains("the limit is")
         );
-        assert!(
-            ensure_returned_felt_limit(
-                FIXTURE_FQN,
-                limits.max_returned_felts + 1,
-                limits.max_returned_felts
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("the limit is")
-        );
+        let felts = ensure_returned_felt_limit(
+            FIXTURE_FQN,
+            limits.max_returned_felts + 1,
+            limits.max_returned_felts,
+        )
+        .unwrap_err();
+        assert!(felts.to_string().contains("the limit is"), "unexpected error: {felts}");
+        assert_eq!(felts.codec_failure(), Some(CodecFailure::LimitExceeded));
     }
 
     #[test]
@@ -840,7 +1128,7 @@ package miden:base@1.0.0 {
         .expect("failed to create test package")
     }
 
-    /// Builds the minimal author codec used by the Phase 4a component spike.
+    /// Builds the minimal author codec the component adapter tests dispatch through.
     pub(crate) fn build_fixture_component() -> Vec<u8> {
         static COMPONENT: OnceLock<Vec<u8>> = OnceLock::new();
         COMPONENT.get_or_init(build_fixture_component_uncached).clone()
@@ -870,6 +1158,8 @@ package miden:base@1.0.0 {
         for &variable in NESTED_CARGO_SCRUB_ENV {
             command.env_remove(variable);
         }
+        // Pin the guest rustflags after the scrub, the way the compiler builds a codec crate.
+        command.env("RUSTFLAGS", crate::NOTE_CODEC_GUEST_RUSTFLAGS);
         let output = command.output().expect("failed to start fixture build");
         assert_command_succeeded("building the component adapter fixture", &output);
 
