@@ -117,8 +117,9 @@ fn reject_unsupported_constructor_path(
 
 /// Normalizes and validates a dotted field path.
 fn normalize_path(path: &str) -> Result<Vec<String>> {
+    // `split` always yields one segment, so only an empty segment can fail here.
     let segments = path.split('.').map(normalize_name).collect::<Vec<_>>();
-    if segments.is_empty() || segments.iter().any(String::is_empty) {
+    if segments.iter().any(String::is_empty) {
         return Err(Error::new(format!("invalid empty note storage path `{path}`")));
     }
     Ok(segments)

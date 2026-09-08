@@ -5,8 +5,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
-use heck::ToUpperCamelCase;
 use miden_note_schema::{NoteStorageSchema, SchemaCase, SchemaType, SchemaTypeKind};
+use miden_note_schema_codegen::generated_type_ident;
 use proc_macro2::Span;
 
 /// One marked author codec.
@@ -30,12 +30,16 @@ struct RegisteredCodec {
 struct Registry {
     /// Registered schema source and the expansion that supplied it.
     schema: Option<(String, ExpansionLocation)>,
-    /// Generated Rust upper-camel type name to WIT FQN, used by `#[note_codec]` lookup.
+    /// Generated Rust type name to WIT FQN, used by `#[note_codec]` lookup.
     types: BTreeMap<String, String>,
     /// Marked codecs keyed by the WIT FQN they implement.
     codecs: BTreeMap<String, RegisteredCodec>,
 }
 
+/// The registrations of every crate this macro process expanded, keyed by crate.
+///
+/// Procedural macros register as they expand, so `#[note_codec]` and `export_codecs!` read what
+/// an earlier invocation in the same crate wrote.
 static REGISTRY: OnceLock<Mutex<BTreeMap<String, Registry>>> = OnceLock::new();
 
 /// Source location of one macro expansion.
@@ -54,12 +58,16 @@ fn expansion_location(span: Span) -> ExpansionLocation {
 
 /// Returns the key of the crate whose macro expansion is running.
 ///
-/// Long-lived macro hosts such as the rust-analyzer proc-macro server expand many crates in
-/// one process; the key keeps their registrations apart.
+/// Long-lived macro hosts such as the rust-analyzer proc-macro server expand many crates in one
+/// process; the key keeps their registrations apart. One Cargo package builds many crates, such
+/// as a library and its integration tests, so the key names the crate as well as the package
+/// directory.
 fn macro_invocation_crate_key() -> String {
-    std::env::var("CARGO_MANIFEST_DIR")
+    let package = std::env::var("CARGO_MANIFEST_DIR")
         .or_else(|_| std::env::var("CARGO_PKG_NAME"))
-        .unwrap_or_default()
+        .unwrap_or_default();
+    let crate_name = std::env::var("CARGO_CRATE_NAME").unwrap_or_default();
+    format!("{package}\u{1f}{crate_name}")
 }
 
 /// Returns the shared registry map keyed by expanding crate.
@@ -71,6 +79,7 @@ fn registry() -> &'static Mutex<BTreeMap<String, Registry>> {
 pub(crate) fn register_schema(schema: &NoteStorageSchema, span: Span) -> syn::Result<()> {
     let mut bindings = BTreeMap::new();
     collect_type_bindings(schema.root(), &mut BTreeSet::new(), &mut bindings)?;
+    let bindings = index_by_rust_type_name(&bindings, span)?;
 
     let mut registries = registry()
         .lock()
@@ -161,7 +170,27 @@ pub(crate) fn registered_codecs(span: Span) -> syn::Result<Vec<CodecRegistration
     Ok(registry.codecs.values().map(|codec| codec.registration.clone()).collect())
 }
 
-/// Collects reachable generated record and variant bindings.
+/// Indexes WIT FQNs by the Rust type name the generator gives them.
+///
+/// Two WIT types of different interfaces may share a local name. The generator rejects that
+/// collision, and this index rejects it the same way instead of dropping one binding.
+fn index_by_rust_type_name(
+    bindings: &BTreeMap<String, String>,
+    span: Span,
+) -> syn::Result<BTreeMap<String, String>> {
+    let mut index = BTreeMap::new();
+    for (fqn, rust_name) in bindings {
+        if let Some(existing) = index.insert(rust_name.clone(), fqn.clone()) {
+            return Err(syn::Error::new(
+                span,
+                format!("WIT types `{existing}` and `{fqn}` both map to Rust type `{rust_name}`"),
+            ));
+        }
+    }
+    Ok(index)
+}
+
+/// Collects reachable generated record and variant bindings, keyed by WIT FQN.
 fn collect_type_bindings(
     ty: &SchemaType,
     seen: &mut BTreeSet<String>,
@@ -183,7 +212,7 @@ fn collect_type_bindings(
         if !seen.insert(fqn.to_owned()) {
             return Ok(());
         }
-        bindings.insert(name.to_upper_camel_case(), fqn.to_owned());
+        bindings.insert(fqn.to_owned(), generated_type_ident(name));
     }
 
     match ty.kind() {

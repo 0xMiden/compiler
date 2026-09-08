@@ -10,22 +10,32 @@
 //!
 //! - the component fits in the caller's byte budget;
 //! - the component validates under [`NOTE_CODEC_WASM_FEATURES`];
-//! - the component declares no start function;
-//! - each core module stays under its own counts, and its code section keeps a plausible
-//!   average function size;
-//! - the component tree stays under its budgets for core modules, nesting depth, core
-//!   instantiations, component instantiations, defined tables, and defined memories;
-//! - each component-level section stays under its width cap.
+//! - the component declares no component-level start function;
+//! - each core module stays under its own counts, each of its function types stays under the
+//!   parameter and result caps, and its code section keeps a plausible average function size;
+//! - the component tree stays under its budgets for core modules and nesting depth;
+//! - one instantiation of any component in the tree stays under its budgets for core
+//!   instantiations, component instantiations, linear memories, and tables;
+//! - each kind of component-level entry stays under its cap for the whole tree.
+//!
+//! The walk counts what an instantiation creates, not what the tree declares. A core module that
+//! is instantiated twice counts twice, and a nested component contributes what one instantiation
+//! of it creates, once per instantiation. A consumer store admits the same counts, so a component
+//! that passes the walk instantiates inside the store limits.
+//!
+//! The walk rejects only a component-level start function. A core module keeps its own start
+//! function, which runs at instantiation under the consumer fuel budget and store limits.
 //!
 //! Nothing else is checked here. The producer checks the exported codec interface, and a
 //! consumer bounds the run time of a codec call with fuel and store limits.
 
 use wasmparser::{
-    Encoding, FuncValidatorAllocations, Parser, Payload, TypeRef, ValidPayload, Validator,
-    WasmFeatures,
+    ComponentAlias, ComponentExternalKind, ComponentInstance, ComponentOuterAliasKind,
+    ComponentTypeRef, Encoding, FuncValidatorAllocations, Instance, Parser, Payload, TypeRef,
+    ValidPayload, Validator, WasmFeatures,
 };
 
-use crate::{Error, Result};
+use crate::{CodecFailure, Error, Result};
 
 /// Wasm proposals a note codec component may use.
 ///
@@ -52,7 +62,13 @@ const MAX_MODULE_FUNCTIONS: usize = 10_000;
 /// Maximum globals in one core module, imported and defined.
 const MAX_MODULE_GLOBALS: usize = 1_000;
 
+/// Maximum types in one core module.
+const MAX_MODULE_TYPES: usize = 1_000;
+
 /// Maximum tables in one core module, imported and defined.
+///
+/// A module that is instantiated reaches the tighter tree-wide instantiated-table budget first.
+/// This cap constrains imported tables, and the tables of a module that is never instantiated.
 const MAX_MODULE_TABLES: usize = 100;
 
 /// Maximum linear memories in one core module, imported and defined.
@@ -93,30 +109,33 @@ const MAX_CORE_MODULES: usize = 16;
 /// Maximum component nesting depth.
 const MAX_COMPONENT_DEPTH: usize = 4;
 
-/// Maximum entries in one component-level section.
+/// Maximum entries of one kind of component-level item in the whole component tree.
+///
+/// A component may split one kind over many sections, so the cap counts each kind over the
+/// whole tree: core types, component types, aliases, canonical functions, imports, and exports.
 const MAX_COMPONENT_SECTION_ITEMS: usize = 256;
 
-/// Maximum core instantiations in the whole component tree.
+/// Maximum core instances one instantiation of a component creates.
 ///
-/// The consumer store admits the same number of instances. The budget is tree-wide because a
-/// nested component is expanded once per instantiation of its parent, so per-level budgets
-/// multiply.
+/// The consumer store admits the same number of instances.
 pub(crate) const MAX_CORE_INSTANCES: usize = 32;
 
-/// Maximum component instantiations in the whole component tree.
+/// Maximum nested component instances one instantiation of a component creates.
 ///
-/// A `wasm32-wasip2` codec instantiates one component instance per exported interface.
-pub(crate) const MAX_COMPONENT_INSTANCES: usize = 8;
+/// A `wasm32-wasip2` codec builds one nested component instance per exported interface. The
+/// budget has no consumer store counterpart: a component instance holds no core instance,
+/// memory, or table of its own, and what it creates is counted through those budgets.
+const MAX_COMPONENT_INSTANCES: usize = 8;
 
-/// Maximum tables defined in the whole component tree.
+/// Maximum tables one instantiation of a component creates.
 ///
 /// The consumer store admits the same number of tables.
-pub(crate) const MAX_DEFINED_TABLES: usize = 32;
+pub(crate) const MAX_INSTANTIATED_TABLES: usize = 32;
 
-/// Maximum linear memories defined in the whole component tree.
+/// Maximum linear memories one instantiation of a component creates.
 ///
 /// The consumer store admits the same number of memories.
-pub(crate) const MAX_DEFINED_MEMORIES: usize = 1;
+pub(crate) const MAX_INSTANTIATED_MEMORIES: usize = 1;
 
 /// Applies the whole note codec component policy: the byte cap, the Wasm feature set, and the
 /// structural limits.
@@ -144,7 +163,7 @@ pub fn validate_note_codec_structure(component: &[u8]) -> Result<()> {
         // the component is instantiated, before the export call the limits are built around, and
         // the validator reports only that component values are disabled.
         if matches!(payload, Payload::ComponentStartSection { .. }) {
-            return Err(Error::new(
+            return Err(policy_rejection(
                 "note codec component declares a start function; the policy rejects a component \
                  that runs code when it is instantiated",
             ));
@@ -166,15 +185,9 @@ fn ensure_component_byte_limit(byte_len: usize, limit: usize) -> Result<()> {
     if byte_len <= limit {
         return Ok(());
     }
-    let message =
-        format!("note codec component is {byte_len} bytes; the pre-compilation limit is {limit}");
-    // A consumer classifies the byte cap like every other cap it applies to a codec. Without the
-    // consumer adapter there is no failure class to report.
-    #[cfg(feature = "codec-component")]
-    let error = Error::codec(crate::CodecFailure::LimitExceeded, message);
-    #[cfg(not(feature = "codec-component"))]
-    let error = Error::new(message);
-    Err(error)
+    Err(policy_rejection(format!(
+        "note codec component is {byte_len} bytes; the pre-compilation limit is {limit}"
+    )))
 }
 
 /// The state carried while the parser walks one component.
@@ -184,27 +197,86 @@ struct StructureWalk {
     frames: Vec<Frame>,
     /// Core modules seen anywhere in the component.
     core_modules: usize,
-    /// Core instantiations declared anywhere in the component.
-    core_instances: usize,
-    /// Component instantiations declared anywhere in the component.
-    component_instances: usize,
-    /// Tables defined anywhere in the component, excluding imported tables.
-    defined_tables: usize,
-    /// Linear memories defined anywhere in the component, excluding imported memories.
-    defined_memories: usize,
+    /// Component-level items declared anywhere in the component, one count per kind.
+    component_items: ComponentItemCounts,
+}
+
+/// Component-level items counted over the whole component tree.
+#[derive(Default)]
+struct ComponentItemCounts {
+    core_types: usize,
+    types: usize,
+    aliases: usize,
+    canonical_functions: usize,
+    imports: usize,
+    exports: usize,
 }
 
 /// One nesting level of the walk.
 enum Frame {
     /// A core module, with the counters checked when the module ends.
     Module(ModuleCounts),
-    /// A component, counted only for the nesting depth.
-    Component,
+    /// A component, with its index spaces and what one instantiation of it creates.
+    Component(ComponentFrame),
+}
+
+/// One component nesting level.
+///
+/// An index-space entry is `None` for a core module or a component the walk cannot read, such as
+/// an imported or an aliased one. An instantiation of such an entry is rejected.
+#[derive(Default)]
+struct ComponentFrame {
+    /// The core module index space of this component.
+    core_modules: Vec<Option<ModuleRuntimeCounts>>,
+    /// The component index space of this component.
+    components: Vec<Option<CreatedCounts>>,
+    /// What one instantiation of this component creates.
+    created: CreatedCounts,
+}
+
+/// What one core module creates every time it is instantiated.
+#[derive(Clone, Copy, Default)]
+struct ModuleRuntimeCounts {
+    memories: usize,
+    tables: usize,
+}
+
+/// What one instantiation of a component creates.
+#[derive(Clone, Copy, Default)]
+struct CreatedCounts {
+    core_instances: usize,
+    component_instances: usize,
+    memories: usize,
+    tables: usize,
+}
+
+impl CreatedCounts {
+    /// Adds what one nested instantiation creates.
+    fn add(&mut self, other: Self) {
+        self.core_instances = self.core_instances.saturating_add(other.core_instances);
+        self.component_instances =
+            self.component_instances.saturating_add(other.component_instances);
+        self.memories = self.memories.saturating_add(other.memories);
+        self.tables = self.tables.saturating_add(other.tables);
+    }
+
+    /// Checks every budget that bounds one instantiation.
+    fn check(&self) -> Result<()> {
+        ensure_created_cap("core instances", self.core_instances, MAX_CORE_INSTANCES)?;
+        ensure_created_cap(
+            "component instances",
+            self.component_instances,
+            MAX_COMPONENT_INSTANCES,
+        )?;
+        ensure_created_cap("linear memories", self.memories, MAX_INSTANTIATED_MEMORIES)?;
+        ensure_created_cap("tables", self.tables, MAX_INSTANTIATED_TABLES)
+    }
 }
 
 /// Counters collected for one core module.
 #[derive(Default)]
 struct ModuleCounts {
+    types: usize,
     functions: usize,
     globals: usize,
     tables: usize,
@@ -213,11 +285,14 @@ struct ModuleCounts {
     data_segments: usize,
     imports: usize,
     exports: usize,
+    /// The memories and tables one instantiation of this module creates.
+    runtime: ModuleRuntimeCounts,
 }
 
 impl ModuleCounts {
     /// Checks every per-module cap once the module ends.
     fn check(&self) -> Result<()> {
+        ensure_module_cap("types", self.types, MAX_MODULE_TYPES)?;
         ensure_module_cap("functions", self.functions, MAX_MODULE_FUNCTIONS)?;
         ensure_module_cap("globals", self.globals, MAX_MODULE_GLOBALS)?;
         ensure_module_cap("tables", self.tables, MAX_MODULE_TABLES)?;
@@ -236,6 +311,7 @@ impl StructureWalk {
             Payload::Version { encoding, .. } => self.enter(encoding)?,
             Payload::End(_) => self.leave()?,
             Payload::TypeSection(reader) => {
+                self.module_counts()?.types += reader.count() as usize;
                 // The feature validator rejects a GC type before the walk sees the section, so
                 // only a core function type reaches this loop.
                 for ty in reader.into_iter_err_on_gc_types() {
@@ -266,15 +342,15 @@ impl StructureWalk {
             }
             Payload::TableSection(reader) => {
                 let count = reader.count() as usize;
-                self.module_counts()?.tables += count;
-                self.defined_tables += count;
-                ensure_tree_cap("defined tables", self.defined_tables, MAX_DEFINED_TABLES)?;
+                let counts = self.module_counts()?;
+                counts.tables += count;
+                counts.runtime.tables += count;
             }
             Payload::MemorySection(reader) => {
                 let count = reader.count() as usize;
-                self.module_counts()?.memories += count;
-                self.defined_memories += count;
-                ensure_tree_cap("defined memories", self.defined_memories, MAX_DEFINED_MEMORIES)?;
+                let counts = self.module_counts()?;
+                counts.memories += count;
+                counts.runtime.memories += count;
             }
             Payload::ElementSection(reader) => {
                 self.module_counts()?.element_segments += reader.count() as usize;
@@ -289,34 +365,53 @@ impl StructureWalk {
                 ensure_average_function_size(count, size)?;
             }
             Payload::InstanceSection(reader) => {
-                self.core_instances += reader.count() as usize;
-                ensure_tree_cap("core instantiations", self.core_instances, MAX_CORE_INSTANCES)?;
+                for instance in reader {
+                    self.visit_core_instance(instance.map_err(malformed)?)?;
+                }
             }
             Payload::ComponentInstanceSection(reader) => {
-                self.component_instances += reader.count() as usize;
-                ensure_tree_cap(
-                    "component instantiations",
-                    self.component_instances,
-                    MAX_COMPONENT_INSTANCES,
-                )?;
+                for instance in reader {
+                    self.visit_component_instance(instance.map_err(malformed)?)?;
+                }
             }
             Payload::CoreTypeSection(reader) => {
-                ensure_component_section_cap("core types", reader.count() as usize)?;
+                self.component_items.core_types += reader.count() as usize;
+                ensure_component_item_cap("core types", self.component_items.core_types)?;
             }
             Payload::ComponentTypeSection(reader) => {
-                ensure_component_section_cap("types", reader.count() as usize)?;
+                self.component_items.types += reader.count() as usize;
+                ensure_component_item_cap("types", self.component_items.types)?;
             }
             Payload::ComponentAliasSection(reader) => {
-                ensure_component_section_cap("aliases", reader.count() as usize)?;
+                for alias in reader {
+                    let alias = alias.map_err(malformed)?;
+                    self.component_items.aliases += 1;
+                    ensure_component_item_cap("aliases", self.component_items.aliases)?;
+                    self.declare_aliased_item(&alias)?;
+                }
             }
             Payload::ComponentCanonicalSection(reader) => {
-                ensure_component_section_cap("canonical functions", reader.count() as usize)?;
+                self.component_items.canonical_functions += reader.count() as usize;
+                ensure_component_item_cap(
+                    "canonical functions",
+                    self.component_items.canonical_functions,
+                )?;
             }
             Payload::ComponentImportSection(reader) => {
-                ensure_component_section_cap("imports", reader.count() as usize)?;
+                for import in reader {
+                    let import = import.map_err(malformed)?;
+                    self.component_items.imports += 1;
+                    ensure_component_item_cap("imports", self.component_items.imports)?;
+                    match import.ty {
+                        ComponentTypeRef::Module(_) => self.declare_core_module(None)?,
+                        ComponentTypeRef::Component(_) => self.declare_component(None)?,
+                        _ => {}
+                    }
+                }
             }
             Payload::ComponentExportSection(reader) => {
-                ensure_component_section_cap("exports", reader.count() as usize)?;
+                self.component_items.exports += reader.count() as usize;
+                ensure_component_item_cap("exports", self.component_items.exports)?;
             }
             _ => {}
         }
@@ -329,7 +424,7 @@ impl StructureWalk {
             Encoding::Module => {
                 self.core_modules += 1;
                 if self.core_modules > MAX_CORE_MODULES {
-                    return Err(Error::new(format!(
+                    return Err(policy_rejection(format!(
                         "note codec component has {} core modules; the limit is {MAX_CORE_MODULES}",
                         self.core_modules
                     )));
@@ -337,11 +432,11 @@ impl StructureWalk {
                 self.frames.push(Frame::Module(ModuleCounts::default()));
             }
             Encoding::Component => {
-                self.frames.push(Frame::Component);
+                self.frames.push(Frame::Component(ComponentFrame::default()));
                 let depth =
-                    self.frames.iter().filter(|frame| matches!(frame, Frame::Component)).count();
+                    self.frames.iter().filter(|frame| matches!(frame, Frame::Component(_))).count();
                 if depth > MAX_COMPONENT_DEPTH {
-                    return Err(Error::new(format!(
+                    return Err(policy_rejection(format!(
                         "note codec component nests components {depth} deep; the limit is \
                          {MAX_COMPONENT_DEPTH}"
                     )));
@@ -351,13 +446,131 @@ impl StructureWalk {
         Ok(())
     }
 
-    /// Closes one nesting level and checks the counters of a core module.
+    /// Closes one nesting level and records what it creates in the component that declares it.
     fn leave(&mut self) -> Result<()> {
         match self.frames.pop() {
-            Some(Frame::Module(counts)) => counts.check(),
-            // A component frame carries no counters, and an unbalanced end cannot happen:
-            // the parser reports one `End` for every header it accepted.
-            _ => Ok(()),
+            Some(Frame::Module(counts)) => {
+                counts.check()?;
+                // The module now holds an index in the core module index space of the component
+                // that declares it.
+                self.declare_core_module(Some(counts.runtime))
+            }
+            Some(Frame::Component(frame)) => self.declare_component(Some(frame.created)),
+            // An unbalanced end cannot happen: the parser reports one `End` for every header it
+            // accepted.
+            None => Ok(()),
+        }
+    }
+
+    /// Counts one core instantiation and what it creates.
+    fn visit_core_instance(&mut self, instance: Instance<'_>) -> Result<()> {
+        // An instance built from exports names items other instances already created.
+        let created = match instance {
+            Instance::Instantiate { module_index, .. } => {
+                let module = self.instantiated_core_module(module_index)?;
+                CreatedCounts {
+                    core_instances: 1,
+                    component_instances: 0,
+                    memories: module.memories,
+                    tables: module.tables,
+                }
+            }
+            Instance::FromExports(_) => CreatedCounts {
+                core_instances: 1,
+                ..CreatedCounts::default()
+            },
+        };
+        self.record_created(created)
+    }
+
+    /// Counts one component instantiation and what it creates.
+    fn visit_component_instance(&mut self, instance: ComponentInstance<'_>) -> Result<()> {
+        // An instance built from exports names items other instances already created.
+        let ComponentInstance::Instantiate {
+            component_index, ..
+        } = instance
+        else {
+            return Ok(());
+        };
+        let mut created = self.instantiated_component(component_index)?;
+        created.component_instances = created.component_instances.saturating_add(1);
+        self.record_created(created)
+    }
+
+    /// Adds what one instantiation creates to the component the walk is inside.
+    fn record_created(&mut self, created: CreatedCounts) -> Result<()> {
+        let frame = self.component_frame()?;
+        frame.created.add(created);
+        frame.created.check()
+    }
+
+    /// Returns what one instantiation of a core module of the current component creates.
+    fn instantiated_core_module(&mut self, module_index: u32) -> Result<ModuleRuntimeCounts> {
+        let frame = self.component_frame()?;
+        frame.core_modules.get(module_index as usize).copied().flatten().ok_or_else(|| {
+            policy_rejection(format!(
+                "note codec component instantiates core module {module_index}, which the policy \
+                 cannot read; a codec instantiates only the core modules it defines"
+            ))
+        })
+    }
+
+    /// Returns what one instantiation of a nested component of the current component creates.
+    fn instantiated_component(&mut self, component_index: u32) -> Result<CreatedCounts> {
+        let frame = self.component_frame()?;
+        frame
+            .components
+            .get(component_index as usize)
+            .copied()
+            .flatten()
+            .ok_or_else(|| {
+                policy_rejection(format!(
+                    "note codec component instantiates component {component_index}, which the \
+                     policy cannot read; a codec instantiates only the components it defines"
+                ))
+            })
+    }
+
+    /// Adds one core module to the index space of the component the walk is inside.
+    ///
+    /// A core module at the top level belongs to no component index space, so it is dropped.
+    fn declare_core_module(&mut self, created: Option<ModuleRuntimeCounts>) -> Result<()> {
+        if let Some(Frame::Component(frame)) = self.frames.last_mut() {
+            frame.core_modules.push(created);
+        }
+        Ok(())
+    }
+
+    /// Adds one component to the index space of the component the walk is inside.
+    ///
+    /// The root component belongs to no component index space, so it is dropped.
+    fn declare_component(&mut self, created: Option<CreatedCounts>) -> Result<()> {
+        if let Some(Frame::Component(frame)) = self.frames.last_mut() {
+            frame.components.push(created);
+        }
+        Ok(())
+    }
+
+    /// Adds one aliased core module or component to the current index spaces.
+    fn declare_aliased_item(&mut self, alias: &ComponentAlias<'_>) -> Result<()> {
+        match aliased_item_kind(alias) {
+            Some(AliasedItem::CoreModule) => self.declare_core_module(None),
+            Some(AliasedItem::Component) => self.declare_component(None),
+            None => Ok(()),
+        }
+    }
+
+    /// Returns the frame of the component the walk is inside.
+    ///
+    /// Component sections appear only inside a component. A component section anywhere else is a
+    /// malformed layout, and the walk fails closed instead of guessing a frame for it.
+    fn component_frame(&mut self) -> Result<&mut ComponentFrame> {
+        match self.frames.last_mut() {
+            Some(Frame::Component(frame)) => Ok(frame),
+            _ => Err(policy_rejection(
+                "note codec component is malformed: a component section appears outside a \
+                 component",
+            )),
         }
     }
 
@@ -368,28 +581,58 @@ impl StructureWalk {
     fn module_counts(&mut self) -> Result<&mut ModuleCounts> {
         match self.frames.last_mut() {
             Some(Frame::Module(counts)) => Ok(counts),
-            _ => Err(Error::new(
+            _ => Err(policy_rejection(
                 "note codec component is malformed: a core section appears outside a core module",
             )),
         }
     }
 }
 
+/// An index space one alias adds an item to.
+enum AliasedItem {
+    CoreModule,
+    Component,
+}
+
+/// Returns the index space one alias adds an item to, if the walk tracks that space.
+fn aliased_item_kind(alias: &ComponentAlias<'_>) -> Option<AliasedItem> {
+    match alias {
+        ComponentAlias::InstanceExport {
+            kind: ComponentExternalKind::Module,
+            ..
+        }
+        | ComponentAlias::Outer {
+            kind: ComponentOuterAliasKind::CoreModule,
+            ..
+        } => Some(AliasedItem::CoreModule),
+        ComponentAlias::InstanceExport {
+            kind: ComponentExternalKind::Component,
+            ..
+        }
+        | ComponentAlias::Outer {
+            kind: ComponentOuterAliasKind::Component,
+            ..
+        } => Some(AliasedItem::Component),
+        _ => None,
+    }
+}
+
 /// Reports a core module that is over one of its caps.
 fn ensure_module_cap(kind: &str, observed: usize, limit: usize) -> Result<()> {
     if observed > limit {
-        return Err(Error::new(format!(
+        return Err(policy_rejection(format!(
             "note codec component has a core module with {observed} {kind}; the limit is {limit}"
         )));
     }
     Ok(())
 }
 
-/// Reports a component tree that is over one of its whole-tree budgets.
-fn ensure_tree_cap(kind: &str, observed: usize, limit: usize) -> Result<()> {
+/// Reports a component that creates too much when it is instantiated.
+fn ensure_created_cap(kind: &str, observed: usize, limit: usize) -> Result<()> {
     if observed > limit {
-        return Err(Error::new(format!(
-            "note codec component has {observed} {kind}; the limit is {limit}"
+        return Err(policy_rejection(format!(
+            "note codec component creates {observed} {kind} when it is instantiated; the limit is \
+             {limit}"
         )));
     }
     Ok(())
@@ -398,18 +641,18 @@ fn ensure_tree_cap(kind: &str, observed: usize, limit: usize) -> Result<()> {
 /// Reports a core function type that is over its parameter or result cap.
 fn ensure_signature_cap(kind: &str, observed: usize, limit: usize) -> Result<()> {
     if observed > limit {
-        return Err(Error::new(format!(
+        return Err(policy_rejection(format!(
             "note codec component has a function type with {observed} {kind}; the limit is {limit}"
         )));
     }
     Ok(())
 }
 
-/// Reports a component-level section that is over its width cap.
-fn ensure_component_section_cap(kind: &str, observed: usize) -> Result<()> {
+/// Reports a component tree that is over the cap for one kind of component-level item.
+fn ensure_component_item_cap(kind: &str, observed: usize) -> Result<()> {
     if observed > MAX_COMPONENT_SECTION_ITEMS {
-        return Err(Error::new(format!(
-            "note codec component has a section with {observed} component {kind}; the limit is \
+        return Err(policy_rejection(format!(
+            "note codec component has {observed} component {kind}; the limit is \
              {MAX_COMPONENT_SECTION_ITEMS}"
         )));
     }
@@ -423,7 +666,7 @@ fn ensure_average_function_size(count: u32, size: u32) -> Result<()> {
     }
     let average = size / count;
     if average < MIN_AVERAGE_FUNCTION_BYTES {
-        return Err(Error::new(format!(
+        return Err(policy_rejection(format!(
             "note codec component has a core module with {count} functions in {size} bytes of \
              code, an average of {average} bytes; the limit is {MIN_AVERAGE_FUNCTION_BYTES} bytes \
              per function"
@@ -434,12 +677,22 @@ fn ensure_average_function_size(count: u32, size: u32) -> Result<()> {
 
 /// Reports bytes that do not parse as a component.
 fn malformed(error: wasmparser::BinaryReaderError) -> Error {
-    Error::new(format!("note codec component is malformed: {error}"))
+    policy_rejection(format!("note codec component is malformed: {error}"))
 }
 
 /// Reports a component that does not validate under [`NOTE_CODEC_WASM_FEATURES`].
 fn rejected_feature(error: wasmparser::BinaryReaderError) -> Error {
-    Error::new(format!("note codec component uses a Wasm feature the policy rejects: {error}"))
+    policy_rejection(format!(
+        "note codec component uses a Wasm feature the policy rejects: {error}"
+    ))
+}
+
+/// Creates an error for a component the structural load policy does not admit.
+///
+/// Every rejection carries one class, so a consumer reports a codec the policy refused the same
+/// way it reports a codec that ran past a host limit.
+fn policy_rejection(message: impl Into<String>) -> Error {
+    Error::codec(CodecFailure::LimitExceeded, message)
 }
 
 #[cfg(test)]
@@ -602,41 +855,135 @@ mod tests {
     }
 
     #[test]
-    fn nested_component_instantiations_are_rejected() {
-        // Three nesting levels that each instantiate the level below 300 times. A per-level cap
-        // would still admit 300^3 expansions, so the budget counts the whole tree.
-        let instantiate = |name: &str| format!("(instance (instantiate {name}))").repeat(300);
-        let text = format!(
-            "(component
-                (component $outer
-                    (component $middle
-                        (component $inner (core module))
-                        {inner_uses})
-                    {middle_uses})
-                {outer_uses})",
-            inner_uses = instantiate("$inner"),
-            middle_uses = instantiate("$middle"),
-            outer_uses = instantiate("$outer"),
-        );
+    fn what_a_nested_component_creates_is_counted_once_per_instantiation() {
+        // One instantiation of the nested component creates one memory, so two instantiations
+        // reach the memory budget. A nested component that is never instantiated creates
+        // nothing.
+        let text = "(component
+                (component $inner
+                    (core module $m (memory 1))
+                    (core instance (instantiate $m)))
+                (instance (instantiate $inner))
+                (instance (instantiate $inner)))";
         let error = validate(&wat::parse_str(text).unwrap()).unwrap_err().to_string();
 
-        assert!(error.contains("component instantiations"), "unexpected error: {error}");
         assert!(
-            error.contains(&format!("the limit is {MAX_COMPONENT_INSTANCES}")),
+            error.contains("creates 2 linear memories when it is instantiated"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.contains(&format!("the limit is {MAX_INSTANTIATED_MEMORIES}")),
             "unexpected error: {error}"
         );
     }
 
     #[test]
-    fn defined_memories_are_counted_across_core_modules() {
-        let text = "(component (core module (memory 1)) (core module (memory 1)))";
+    fn a_component_that_is_never_instantiated_creates_nothing() {
+        let text = "(component
+                (component $unused
+                    (core module $m (memory 1))
+                    (core instance (instantiate $m)))
+                (core module $m (memory 1))
+                (core instance (instantiate $m)))";
+
+        validate(&wat::parse_str(text).unwrap()).unwrap();
+    }
+
+    #[test]
+    fn too_many_component_instances_are_rejected() {
+        let instantiate = "(instance (instantiate $inner))".repeat(MAX_COMPONENT_INSTANCES + 1);
+        let text = format!("(component (component $inner) {instantiate})");
         let error = validate(&wat::parse_str(text).unwrap()).unwrap_err().to_string();
 
-        assert!(error.contains("2 defined memories"), "unexpected error: {error}");
         assert!(
-            error.contains(&format!("the limit is {MAX_DEFINED_MEMORIES}")),
+            error.contains(&format!("creates {} component instances", MAX_COMPONENT_INSTANCES + 1)),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn instantiated_memories_are_counted_across_core_modules() {
+        let text = "(component
+                (core module $a (memory 1))
+                (core module $b (memory 1))
+                (core instance (instantiate $a))
+                (core instance (instantiate $b)))";
+        let error = validate(&wat::parse_str(text).unwrap()).unwrap_err().to_string();
+
+        assert!(
+            error.contains("creates 2 linear memories when it is instantiated"),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.contains(&format!("the limit is {MAX_INSTANTIATED_MEMORIES}")),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn one_module_instantiated_twice_is_counted_twice() {
+        // The budgets count what instantiation creates, not what the tree declares, so one
+        // memory-defining module reaches the memory budget when it is instantiated twice.
+        let text = r#"(component
+                (core module $m (memory 1) (func (export "f")))
+                (core instance $a (instantiate $m))
+                (core instance $b (instantiate $m)))"#;
+        let error = validate(&wat::parse_str(text).unwrap()).unwrap_err().to_string();
+
+        assert!(
+            error.contains("creates 2 linear memories when it is instantiated"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn a_core_module_the_walk_cannot_read_is_not_instantiable() {
+        let text = r#"(component
+                (import "m" (core module $m))
+                (core instance (instantiate $m)))"#;
+        let error = validate(&wat::parse_str(text).unwrap()).unwrap_err().to_string();
+
+        assert!(error.contains("which the policy cannot read"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn component_items_of_one_kind_are_capped_across_sections() {
+        // Component sections repeat, so the cap counts one kind over the whole tree. A core
+        // module between the two type sections keeps them apart in the encoding.
+        let types = |count: usize| "(type u8)".repeat(count);
+        let text = format!(
+            "(component {first} (core module) {second})",
+            first = types(MAX_COMPONENT_SECTION_ITEMS),
+            second = types(1),
+        );
+        let error = validate(&wat::parse_str(text).unwrap()).unwrap_err().to_string();
+
+        assert!(
+            error.contains(&format!("{} component types", MAX_COMPONENT_SECTION_ITEMS + 1)),
+            "unexpected error: {error}"
+        );
+        assert!(
+            error.contains(&format!("the limit is {MAX_COMPONENT_SECTION_ITEMS}")),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn too_many_module_types_are_rejected() {
+        let types = "(type (func (param i32)))".repeat(MAX_MODULE_TYPES + 1);
+        let error = validate(&component(&types)).unwrap_err().to_string();
+
+        assert!(
+            error.contains(&format!("{} types", MAX_MODULE_TYPES + 1)),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn every_structural_rejection_carries_a_class() {
+        let error = validate(b"not a component").unwrap_err();
+
+        assert_eq!(error.codec_failure(), Some(crate::CodecFailure::LimitExceeded));
     }
 
     #[test]

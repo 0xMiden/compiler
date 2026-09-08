@@ -3649,6 +3649,7 @@ dependencies = [
  "miden-field-repr",
  "miden-note-codec-macros",
  "miden-note-codec-wit",
+ "miden-note-schema",
  "miden-protocol",
  "midenc-frontend-wasm-metadata",
  "tempfile",
@@ -3661,7 +3662,6 @@ dependencies = [
 name = "miden-note-codec-macros"
 version = "0.14.0"
 dependencies = [
- "heck",
  "miden-note-codec-wit",
  "miden-note-schema",
  "miden-note-schema-codegen",

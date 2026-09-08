@@ -93,6 +93,9 @@ pub(crate) fn expand_note_storage_schema(
         )]
         #[doc(hidden)]
         #[allow(clippy::octal_escapes)]
+        // No `#[used]`: the section survives without it, and on this target the
+        // attribute additionally lands the bytes in the module's data segments,
+        // growing every package by the size of its own schema.
         pub static __MIDEN_NOTE_STORAGE_SCHEMA_BYTES: [u8; #bytes_len] = *#encoded_bytes;
     })
 }
@@ -424,7 +427,11 @@ fn map_note_field_type(
     })
 }
 
-/// Returns true when a type contains `Vec` at any nesting depth.
+/// Returns true when a path type names `Vec`, either directly or in an angle-bracketed
+/// type argument at any nesting depth.
+///
+/// The search looks through groups and parentheses. All other type forms, such as
+/// references, arrays, slices, tuples, and pointers, give false.
 fn contains_vec(ty: &Type) -> bool {
     match ty {
         Type::Group(group) => contains_vec(&group.elem),

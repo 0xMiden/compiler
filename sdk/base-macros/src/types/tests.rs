@@ -861,3 +861,39 @@ fn main() {{}}
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn leading_colon_path_round_trips() {
+    let _registry_guard = lock_export_type_registry_for_tests();
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+
+    let ty: Type = syn::parse_str("::core::primitive::u64").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("primitive should resolve");
+    assert!(type_ref.leading_colon);
+    assert_eq!(written_type_text(&type_ref), "::core::primitive::u64");
+    // A fully qualified primitive reconstructs to the canonical text, so the builtin
+    // identity guard compares one type with itself.
+    assert_eq!(
+        builtin_canonical_type_text(&type_ref).as_deref(),
+        Some("::core::primitive::u64")
+    );
+
+    let ty: Type = syn::parse_str("u64").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("primitive should resolve");
+    assert!(!type_ref.leading_colon);
+    assert_eq!(written_type_text(&type_ref), "u64");
+}
+
+#[test]
+fn leading_colon_generic_path_round_trips() {
+    let _registry_guard = lock_export_type_registry_for_tests();
+    reset_export_type_registry_for_tests();
+    let exported = HashMap::new();
+
+    let ty: Type = syn::parse_str("::core::option::Option<::core::primitive::u32>").unwrap();
+    let type_ref = map_type_to_type_ref(&ty, &exported).expect("option should resolve");
+
+    assert!(type_ref.leading_colon);
+    assert_eq!(written_type_text(&type_ref), "::core::option::Option<::core::primitive::u32>");
+}

@@ -12,7 +12,7 @@ use wasmtime::{
 
 use crate::{
     CodecFailure, CodecRegistry, ConsumerTypeCodec, Error, NoteStorageSchema, Result,
-    codec_structure::{MAX_CORE_INSTANCES, MAX_DEFINED_MEMORIES, MAX_DEFINED_TABLES},
+    codec_structure::{MAX_CORE_INSTANCES, MAX_INSTANTIATED_MEMORIES, MAX_INSTANTIATED_TABLES},
     validate_note_codec_component,
 };
 
@@ -27,19 +27,20 @@ const SUPPORTED_TYPES: &str = "supported-types";
 
 /// Maximum instances one codec call store may hold.
 ///
-/// The value is the structural budget for core instantiations, so the two cannot drift: a
-/// component that passes the load policy can also instantiate.
+/// The value is the structural budget for the core instances one instantiation creates. The load
+/// policy counts what instantiation creates, so a component that loads instantiates within this
+/// count.
 const MAX_STORE_INSTANCES: usize = MAX_CORE_INSTANCES;
 
 /// Maximum tables one codec call store may hold.
 ///
-/// The value is the structural budget for defined tables.
-const MAX_STORE_TABLES: usize = MAX_DEFINED_TABLES;
+/// The value is the structural budget for the tables one instantiation creates.
+const MAX_STORE_TABLES: usize = MAX_INSTANTIATED_TABLES;
 
 /// Maximum linear memories one codec call store may hold.
 ///
-/// The value is the structural budget for defined memories.
-const MAX_STORE_MEMORIES: usize = MAX_DEFINED_MEMORIES;
+/// The value is the structural budget for the linear memories one instantiation creates.
+const MAX_STORE_MEMORIES: usize = MAX_INSTANTIATED_MEMORIES;
 
 wasmtime::component::bindgen!({
     path: "wit",
@@ -53,8 +54,8 @@ wasmtime::component::bindgen!({
 /// The store counts are fixed policy instead of host configuration. One call store admits at
 /// most `MAX_STORE_INSTANCES` instances, `MAX_STORE_TABLES` tables, and `MAX_STORE_MEMORIES`
 /// linear memory, and one call gets `MAX_WASM_STACK_BYTES` of Wasm stack. The structural policy
-/// in [`validate_note_codec_component`] uses the same counts, so a component that loads can also
-/// instantiate.
+/// in [`validate_note_codec_component`] counts what one instantiation creates and applies the
+/// same values, so a component that loads instantiates within these counts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CodecLimits {
     /// Fuel budget for one codec call, about one unit per Wasm instruction.
@@ -104,7 +105,8 @@ impl CodecRegistry {
     /// registry comes back with the standard codecs alone, the same base the bundled-codec path
     /// registers on top of. More than one note codec section is still an error.
     pub fn load_from_package_with_limits(package: &Package, limits: CodecLimits) -> Result<Self> {
-        let schema = NoteStorageSchema::from_package(package)?;
+        // The section check comes first. A package without a codec section needs no schema, and
+        // a unit `#[note]` struct emits neither section.
         let section_id = package_note_codec_section_id();
         if !package.sections.iter().any(|section| section.id == section_id) {
             return Ok(Self::default());
@@ -114,10 +116,11 @@ impl CodecRegistry {
             section_id,
             PACKAGE_NOTE_CODEC_SECTION_ID,
         )?;
+        let schema = NoteStorageSchema::from_package(package)?;
         Self::load_from_component(bytes, &schema.custom_type_fqns(), limits)
     }
 
-    /// Loads a note codec component whose only imports are stubbed WASI interfaces.
+    /// Loads a note codec component with every unresolved import stubbed as a trap.
     fn load_from_component(
         bytes: &[u8],
         custom_type_fqns: &HashSet<String>,
@@ -144,13 +147,17 @@ impl CodecRegistry {
 
 /// A compiled component used to create an isolated instance for each operation.
 struct ComponentRuntime {
+    /// The engine that holds the accepted Wasm proposals and the fuel setting.
     engine: Engine,
+    /// The compiled codec component.
     component: Component,
+    /// The host limits applied to every instance and every call.
     limits: CodecLimits,
 }
 
 /// Store state that owns the component resource limits.
 struct ComponentStore {
+    /// The inner limiter that decides every memory and table question.
     limits: StoreLimits,
     /// Set when a memory or table growth was refused, so a failed call reports its class.
     limit_hit: bool,
@@ -210,9 +217,11 @@ impl ResourceLimiter for ComponentStore {
 
 /// One isolated codec component call context.
 struct ComponentInstance {
+    /// The store that holds the fuel budget and the resource limits of this call.
     store: Store<ComponentStore>,
     /// The raw instance, used by the calls that lift their results lazily.
     instance: Instance,
+    /// The generated typed bindings of the codec world.
     bindings: NoteCodec,
 }
 
@@ -312,14 +321,21 @@ impl ComponentRuntime {
         } = self.instantiate()?;
         let interface =
             instance.get_export_index(&mut store, None, CODEC_INTERFACE).ok_or_else(|| {
-                Error::new(format!("note codec component exports no `{CODEC_INTERFACE}`"))
+                Error::codec(
+                    CodecFailure::Trapped,
+                    format!("note codec component exports no `{CODEC_INTERFACE}`"),
+                )
             })?;
         let export = instance
             .get_export_index(&mut store, Some(&interface), SUPPORTED_TYPES)
             .ok_or_else(|| {
-                Error::new(format!(
-                    "note codec component exports no `{SUPPORTED_TYPES}` in `{CODEC_INTERFACE}`"
-                ))
+                Error::codec(
+                    CodecFailure::Trapped,
+                    format!(
+                        "note codec component exports no `{SUPPORTED_TYPES}` in \
+                         `{CODEC_INTERFACE}`"
+                    ),
+                )
             })?;
         let supported_types = instance
             .get_typed_func::<(), (WasmList<WasmStr>,)>(&mut store, &export)
@@ -382,7 +398,9 @@ fn component_store_limits(limits: &CodecLimits) -> StoreLimits {
 
 /// A registry entry that dispatches one FQN through isolated component instances.
 struct ComponentCodec {
+    /// The fully qualified WIT name this entry answers for.
     fqn: String,
+    /// The compiled component shared by every registry entry of one package.
     runtime: Arc<ComponentRuntime>,
 }
 
@@ -530,12 +548,21 @@ fn validate_reported_fqns(
 /// the trap is only how the refusal surfaced.
 fn classify_failure(store: &Store<ComponentStore>, error: &wasmtime::Error) -> CodecFailure {
     if store.data().limit_hit {
-        CodecFailure::LimitExceeded
-    } else if error.downcast_ref::<Trap>() == Some(&Trap::OutOfFuel) {
-        CodecFailure::OutOfFuel
-    } else {
-        CodecFailure::Trapped
+        return CodecFailure::LimitExceeded;
     }
+    match error.downcast_ref::<Trap>() {
+        Some(&Trap::OutOfFuel) => CodecFailure::OutOfFuel,
+        Some(_) => CodecFailure::Trapped,
+        // Wasmtime applies the store instance, table, and memory counts without asking the
+        // limiter, so that failure carries no trap and no recorded refusal.
+        None if reports_store_count_limit(error) => CodecFailure::LimitExceeded,
+        None => CodecFailure::Trapped,
+    }
+}
+
+/// Returns true when one wasmtime error reports a store count that was reached.
+fn reports_store_count_limit(error: &wasmtime::Error) -> bool {
+    format!("{error:#}").contains("resource limit exceeded")
 }
 
 /// Reports a component that did not reach its first exported call.
@@ -588,8 +615,11 @@ fn component_values_to_felts(fqn: &str, values: &[u64]) -> Result<Vec<Felt>> {
 }
 
 /// Creates a host error for a component runtime failure.
+///
+/// The engine, the compilation, the import stubs, and the lifting of a returned value all fail
+/// this way, and a consumer sees one class for a codec the engine did not run.
 fn component_error(action: &str, error: impl core::fmt::Display) -> Error {
-    Error::new(format!("failed to {action}: {error:#}"))
+    Error::codec(CodecFailure::Trapped, format!("failed to {action}: {error:#}"))
 }
 
 /// Creates a host error for an author codec rejection.
@@ -847,6 +877,18 @@ package miden:base@1.0.0 {
             package_note_storage_schema_section_id(),
             FIXTURE_SCHEMA.as_bytes().to_vec(),
         ));
+
+        let registry = CodecRegistry::load_from_package(&package).unwrap();
+
+        assert!(registry.contains(crate::FELT_FQN));
+        assert!(registry.contains(crate::WORD_FQN));
+        assert!(!registry.contains(FIXTURE_FQN));
+    }
+
+    #[test]
+    fn a_package_without_a_schema_or_a_codec_section_keeps_the_standard_codecs() {
+        // A unit `#[note]` struct emits neither section, and a host may probe any package.
+        let package = test_package();
 
         let registry = CodecRegistry::load_from_package(&package).unwrap();
 

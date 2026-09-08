@@ -113,6 +113,9 @@ impl FeltLayout {
     }
 
     /// Creates a layout within the protocol note-storage width.
+    ///
+    /// Every composed layout passes through this function, so no resolved type, and no resolved
+    /// root, is wider than the protocol allows.
     fn bounded(minimum: usize, maximum: usize) -> Result<Self> {
         if maximum > MAX_NOTE_STORAGE_SCHEMA_FELTS {
             return Err(Error::new(format!(
@@ -301,8 +304,6 @@ impl NoteStorageSchema {
                 kind_name(root.kind())
             )));
         }
-        ensure_root_layout_limit(root.layout())?;
-
         let schema = Self {
             wit_text: wit_text.to_owned(),
             root,
@@ -385,18 +386,6 @@ fn ensure_schema_byte_limit(byte_len: usize) -> Result<()> {
         return Err(Error::new(format!(
             "note storage schema section is {byte_len} bytes; the limit is \
              {MAX_NOTE_STORAGE_SCHEMA_BYTES}"
-        )));
-    }
-    Ok(())
-}
-
-/// Enforces the protocol storage-width limit on the resolved root.
-fn ensure_root_layout_limit(layout: FeltLayout) -> Result<()> {
-    if layout.maximum() > MAX_NOTE_STORAGE_SCHEMA_FELTS {
-        return Err(Error::new(format!(
-            "note storage schema root has maximum width {} felts; the protocol limit is \
-             {MAX_NOTE_STORAGE_SCHEMA_FELTS}",
-            layout.maximum()
         )));
     }
     Ok(())
@@ -643,7 +632,12 @@ fn collect_custom_type_fqns(
 /// One memoized schema node, its maximum depth, and the size of its expanded subtree.
 #[derive(Clone)]
 struct MemoizedSchemaType {
+    /// The resolved node.
     ty: Arc<SchemaType>,
+    /// Levels of nesting below this node.
+    ///
+    /// A memoized node is reused at a deeper position than the one it was resolved at, so the
+    /// depth limit is checked again on every reuse with this value added to the new depth.
     maximum_subtree_depth: usize,
     /// Number of nodes a structural walk visits below and including this node.
     expanded_nodes: usize,
@@ -651,8 +645,11 @@ struct MemoizedSchemaType {
 
 /// Builds a memoized schema graph from a resolved WIT graph.
 struct ModelBuilder<'a> {
+    /// The resolved WIT document the schema comes from.
     resolve: &'a Resolve,
+    /// The types the walk is inside, which reports a recursive type.
     active: HashSet<TypeId>,
+    /// The nodes already resolved, keyed by WIT type.
     memo: HashMap<TypeId, MemoizedSchemaType>,
 }
 

@@ -18,7 +18,6 @@ proc-macro = true
 doctest = false
 
 [dependencies]
-heck.workspace = true
 miden-note-codec-wit.workspace = true
 miden-note-schema.workspace = true
 miden-note-schema-codegen.workspace = true

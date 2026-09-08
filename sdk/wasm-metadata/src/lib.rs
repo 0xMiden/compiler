@@ -90,7 +90,9 @@ pub fn trim_trailing_nuls(bytes: &[u8]) -> &[u8] {
 /// The compiler publishes compiled dependency packages — and its recorded dependency
 /// resolution — into the directory named by [`package_cache::PACKAGE_CACHE_ENV`]; the SDK
 /// macros and the build-script support crate consume them. Every spelling of that contract lives
-/// here so the producer and the consumers cannot drift apart.
+/// here so the producer and the consumers cannot drift apart. The one exception is
+/// `miden-sdk-build-script-support`, which spells the variable name inline because it carries no
+/// dependencies.
 pub mod package_cache {
     use alloc::{format, string::String};
 

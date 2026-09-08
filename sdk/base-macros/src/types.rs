@@ -17,14 +17,18 @@ use crate::manifest_paths::SDK_WIT_SOURCE;
 static EXPORTED_TYPES: OnceLock<Mutex<HashMap<String, Vec<RegisteredExportType>>>> =
     OnceLock::new();
 
+/// Guard that serializes tests which share the process-wide exported-type registry.
 #[cfg(test)]
 static EXPORTED_TYPES_TEST_LOCK: Mutex<()> = Mutex::new(());
 
+/// One Rust type as it was written at the expansion site, with its WIT identity.
 #[derive(Clone, Debug)]
 pub(crate) struct TypeRef {
     pub(crate) wit_name: String,
     pub(crate) is_custom: bool,
     pub(crate) path: Vec<String>,
+    /// True when the written path starts with `::`.
+    pub(crate) leading_colon: bool,
     pub(crate) dependencies: Vec<TypeRef>,
 }
 
@@ -361,13 +365,23 @@ fn written_type_text(type_ref: &TypeRef) -> String {
     if type_ref.path.is_empty() {
         return "()".to_string();
     }
-    let path = type_ref.path.join("::");
+    let path = written_path(type_ref);
     match (type_ref.path.last().map(String::as_str), type_ref.dependencies.as_slice()) {
         (Some("Option"), [inner]) => format!("{path}<{}>", written_type_text(inner)),
         (Some("Result"), [ok, err]) => {
             format!("{path}<{}, {}>", written_type_text(ok), written_type_text(err))
         }
         _ => path,
+    }
+}
+
+/// Returns the path of a reference as it was written, keeping any leading `::`.
+fn written_path(type_ref: &TypeRef) -> String {
+    let path = type_ref.path.join("::");
+    if type_ref.leading_colon {
+        format!("::{path}")
+    } else {
+        path
     }
 }
 
@@ -424,7 +438,7 @@ fn collect_sdk_core_type_identity_guard(
         return Ok(());
     }
 
-    let rust_path = type_ref.path.join("::");
+    let rust_path = written_path(type_ref);
     if !guarded.insert((rust_path.clone(), type_ref.wit_name.clone())) {
         return Ok(());
     }
@@ -499,7 +513,7 @@ fn collect_custom_type_shape_assertion(
     if !type_ref.is_custom {
         return Ok(());
     }
-    let written_path = type_ref.path.join("::");
+    let written_path = written_path(type_ref);
     if !asserted.insert(written_path.clone()) {
         return Ok(());
     }
@@ -588,6 +602,7 @@ pub(crate) fn map_type_to_type_ref(
 
             let path_segments: Vec<String> =
                 path.path.segments.iter().map(|segment| segment.ident.to_string()).collect();
+            let leading_colon = path.path.leading_colon.is_some();
 
             reject_unsupported_component_primitive(&ident, last.span())?;
 
@@ -601,6 +616,7 @@ pub(crate) fn map_type_to_type_ref(
                         wit_name,
                         is_custom: false,
                         path: path_segments,
+                        leading_colon,
                         dependencies: vec![inner],
                     });
                 }
@@ -615,6 +631,7 @@ pub(crate) fn map_type_to_type_ref(
                         wit_name,
                         is_custom: false,
                         path: path_segments,
+                        leading_colon,
                         dependencies: vec![ok, err],
                     });
                 }
@@ -632,6 +649,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name: wit_type_name(wit_type).to_string(),
                     is_custom: false,
                     path: path_segments,
+                    leading_colon,
                     dependencies: Vec::new(),
                 });
             }
@@ -641,6 +659,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name,
                     is_custom: true,
                     path: path_segments,
+                    leading_colon,
                     dependencies: Vec::new(),
                 });
             }
@@ -650,6 +669,7 @@ pub(crate) fn map_type_to_type_ref(
                     wit_name,
                     is_custom: false,
                     path: path_segments,
+                    leading_colon,
                     dependencies: Vec::new(),
                 });
             }
@@ -658,6 +678,7 @@ pub(crate) fn map_type_to_type_ref(
                 wit_name,
                 is_custom: true,
                 path: path_segments,
+                leading_colon,
                 dependencies: Vec::new(),
             })
         }
@@ -715,6 +736,7 @@ fn map_result_argument_type_to_type_ref(
             wit_name: "_".to_string(),
             is_custom: false,
             path: Vec::new(),
+            leading_colon: false,
             dependencies: Vec::new(),
         }),
         _ => map_type_to_type_ref(ty, exported_types),

@@ -37,10 +37,17 @@ pub(crate) fn from_wit_text(input: &LitStr) -> syn::Result<TokenStream> {
 fn expand_package_artifact(artifact: &NotePackageArtifact, span: Span) -> syn::Result<TokenStream> {
     let types = expand_schema(artifact.schema(), span)?;
     let tracked_path = artifact.path().to_string_lossy();
+    let tracked_manifests = artifact
+        .tracked_inputs()
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
     let package_cache_env = midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV;
     Ok(quote! {
-        // These constants exist only to register the package file and cache path as proc-macro rebuild inputs.
+        // These constants exist only to register the package file, the manifests that named it,
+        // and the cache path as proc-macro rebuild inputs.
         const _: &[u8] = ::core::include_bytes!(#tracked_path);
+        #(const _: &[u8] = ::core::include_bytes!(#tracked_manifests);)*
         const _: ::core::option::Option<&str> = ::core::option_env!(#package_cache_env);
         #types
     })
@@ -164,6 +171,8 @@ pub(crate) fn export_codecs(input: TokenStream) -> syn::Result<TokenStream> {
         }
     });
     let wit = NOTE_CODEC_WIT;
+    // `quote` prints `::` paths with spaces around each separator. `generate!` reads this value
+    // as one path, so the spaces come out.
     let wit_runtime_path = LitStr::new(
         &format!("{facade}::__private::wit_bindgen::rt", facade = quote!(#facade)).replace(' ', ""),
         Span::call_site(),

@@ -90,6 +90,45 @@ fn schema_and_codec_registration_generate_native_and_wasm_dispatch() {
     assert!(source.contains("exports::miden::note_codec::codec::Guest"));
 }
 
+const RESERVED_NAME_SCHEMA: &str = r#"
+package example:reserved-schema@1.0.0;
+
+interface note-storage {
+    record %self {
+        value: u64,
+    }
+
+    record reserved-note {
+        inner: %self,
+    }
+
+    type storage = reserved-note;
+}
+"#;
+
+#[test]
+fn a_reserved_wit_name_registers_under_the_generated_rust_name() {
+    let _guard = lock_registry();
+    reset_for_tests();
+    let schema = LitStr::new(RESERVED_NAME_SCHEMA, Span::call_site());
+    let generated = expand::from_wit_text(&schema).unwrap();
+    // The generator escapes the Rust reserved word, so the registry key must match `Self_`.
+    let item: ItemImpl = syn::parse2(quote! {
+        impl miden_note_codec::AuthorTypeCodec for Self_ {
+            fn parse(_value: &str) -> Result<Self, String> { todo!() }
+            fn display(&self) -> String { todo!() }
+            fn validate(&self) -> Result<(), String> { todo!() }
+        }
+    })
+    .unwrap();
+    expand::note_codec(quote!(), item).unwrap();
+    let exported = expand::export_codecs(quote!()).unwrap();
+    let source = prettyplease::unparse(&syn::parse2(quote!(#generated #exported)).unwrap());
+
+    assert!(source.contains("pub struct Self_"));
+    assert!(source.contains("example:reserved-schema/note-storage@1.0.0.self"));
+}
+
 #[test]
 fn a_crate_cannot_register_two_distinct_schemas() {
     let _guard = lock_registry();

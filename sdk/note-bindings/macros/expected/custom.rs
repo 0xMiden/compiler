@@ -10,7 +10,7 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<()>;
     }
     #[doc(hidden)]
-    trait __MidenNoteDecode: Sized {
+    trait __MidenNoteDecode: ::core::marker::Sized {
         fn __read_note_felts(
             reader: &mut ::miden_note_bindings::__private::miden_field_repr::FeltReader<
                 '_,
@@ -351,7 +351,12 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
         }
     }
     ///Rust binding for WIT type `example:dex-schema/note-storage@1.0.0.dex-note`.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(
+        ::core::clone::Clone,
+        ::core::fmt::Debug,
+        ::core::cmp::PartialEq,
+        ::core::cmp::Eq,
+    )]
     pub struct DexNote {
         ///Value of the WIT `target` field.
         pub target: ::miden_note_bindings::__private::miden_protocol::account::AccountId,
@@ -390,10 +395,10 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
     }
     ///Selects order execution.
     #[derive(
-        Clone,
-        Debug,
-        PartialEq,
-        Eq,
+        ::core::clone::Clone,
+        ::core::fmt::Debug,
+        ::core::cmp::PartialEq,
+        ::core::cmp::Eq,
         ::miden_note_bindings::__private::miden_field_repr::ToFeltRepr,
         ::miden_note_bindings::__private::miden_field_repr::FromFeltRepr,
     )]
@@ -476,10 +481,10 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
     }
     ///A ratio used as an order limit.
     #[derive(
-        Clone,
-        Debug,
-        PartialEq,
-        Eq,
+        ::core::clone::Clone,
+        ::core::fmt::Debug,
+        ::core::cmp::PartialEq,
+        ::core::cmp::Eq,
         ::miden_note_bindings::__private::miden_field_repr::ToFeltRepr,
         ::miden_note_bindings::__private::miden_field_repr::FromFeltRepr,
     )]
@@ -520,13 +525,24 @@ mod __miden_note_bindings_a3280bdaca3ec21e {
     }
     #[doc(hidden)]
     const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = "\npackage example:dex-schema@1.0.0;\n\nuse miden:base/core-types@1.0.0;\n\ninterface note-storage {\n    use core-types.{account-id};\n\n    /// A ratio used as an order limit.\n    record limit-price {\n        numerator: u64,\n        denominator: u64,\n    }\n\n    /// Selects order execution.\n    variant order-kind {\n        market,\n        limit(limit-price),\n    }\n\n    record dex-note {\n        target: account-id,\n        kind: order-kind,\n    }\n\n    type storage = dex-note;\n}\n\npackage miden:base@1.0.0 {\n    interface core-types {\n        record felt { inner: f32 }\n        record account-id { prefix: felt, suffix: felt }\n    }\n}\n";
+    /// Returns the resolved schema, which is parsed once for the whole process.
     #[doc(hidden)]
     fn __miden_note_storage_schema() -> ::miden_note_bindings::__private::miden_note_schema::Result<
-        ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema,
+        &'static ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema,
     > {
-        ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema::from_wit_text(
-            __MIDEN_NOTE_STORAGE_SCHEMA_WIT,
-        )
+        static __MIDEN_NOTE_STORAGE_SCHEMA: ::std::sync::OnceLock<
+            ::miden_note_bindings::__private::miden_note_schema::Result<
+                ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema,
+            >,
+        > = ::std::sync::OnceLock::new();
+        __MIDEN_NOTE_STORAGE_SCHEMA
+            .get_or_init(|| {
+                ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema::from_wit_text(
+                    __MIDEN_NOTE_STORAGE_SCHEMA_WIT,
+                )
+            })
+            .as_ref()
+            .map_err(::core::clone::Clone::clone)
     }
     impl DexNote {
         /// Encodes this typed value as note storage in WIT declaration order.

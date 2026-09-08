@@ -1464,6 +1464,7 @@ mod tests {
             wit_name: "struct-a".into(),
             is_custom: true,
             path: vec!["StructA".into()],
+            leading_colon: false,
             dependencies: Vec::new(),
         };
 
@@ -1479,6 +1480,7 @@ mod tests {
             wit_name: "struct-a".into(),
             is_custom: true,
             path: vec!["StructA".into()],
+            leading_colon: false,
             dependencies: Vec::new(),
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];
@@ -1498,6 +1500,7 @@ mod tests {
             wit_name: "struct-a".into(),
             is_custom: true,
             path: vec!["super".into(), "StructA".into()],
+            leading_colon: false,
             dependencies: Vec::new(),
         };
         let prefix = vec!["foo".to_string(), "bar".to_string()];

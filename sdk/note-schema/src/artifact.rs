@@ -14,6 +14,7 @@ use crate::{Error, NoteStorageSchema, Result};
 pub struct NotePackageArtifact {
     path: PathBuf,
     schema: NoteStorageSchema,
+    tracked_inputs: Vec<PathBuf>,
 }
 
 impl NotePackageArtifact {
@@ -25,6 +26,15 @@ impl NotePackageArtifact {
     /// Returns the schema loaded from the package.
     pub const fn schema(&self) -> &NoteStorageSchema {
         &self.schema
+    }
+
+    /// Returns every manifest the resolver read to derive the package file name.
+    ///
+    /// A caller registers these files as rebuild inputs next to the package itself. A rename of
+    /// the note package changes a manifest but leaves the old package file in place, so nothing
+    /// else tells the caller that the selection changed.
+    pub fn tracked_inputs(&self) -> &[PathBuf] {
+        &self.tracked_inputs
     }
 }
 
@@ -49,20 +59,21 @@ impl<'a> NotePackageResolver<'a> {
                 project_dir.display()
             )));
         }
-        let stems = project_package_stems(&project_dir);
+        let identity = project_identity(&project_dir);
+        let stems = &identity.stems;
         let cache_dir = package_cache_dir()
             .map_err(|error| Error::new(format!("{}: {error}", self.macro_crate)))?;
-        let package_path = resolve_project_package(&project_dir, &stems, cache_dir.as_deref())
+        let package_path = resolve_project_package(&project_dir, stems, cache_dir.as_deref())
             .map_err(|error| Error::new(format!("{}: {error}", self.macro_crate)))?
             .ok_or_else(|| {
                 Error::new(missing_project_package_message(
                     self.macro_crate,
                     &project_dir,
                     cache_dir.as_deref(),
-                    &stems,
+                    stems,
                 ))
             })?;
-        self.load_package(package_path)
+        self.load_package(package_path, identity.manifests)
     }
 
     /// Loads one exact Miden package path.
@@ -75,7 +86,7 @@ impl<'a> NotePackageResolver<'a> {
                 package_path.display()
             )));
         }
-        self.load_package(package_path)
+        self.load_package(package_path, Vec::new())
     }
 
     /// Resolves one path relative to the consuming crate manifest.
@@ -94,7 +105,11 @@ impl<'a> NotePackageResolver<'a> {
     }
 
     /// Loads the package and its unique schema section.
-    fn load_package(&self, path: PathBuf) -> Result<NotePackageArtifact> {
+    fn load_package(
+        &self,
+        path: PathBuf,
+        tracked_inputs: Vec<PathBuf>,
+    ) -> Result<NotePackageArtifact> {
         let path = path.canonicalize().map_err(|error| {
             Error::new(format!(
                 "{}: failed to resolve Miden package '{}': {error}",
@@ -116,11 +131,18 @@ impl<'a> NotePackageResolver<'a> {
                 path.display()
             ))
         })?;
-        Ok(NotePackageArtifact { path, schema })
+        Ok(NotePackageArtifact {
+            path,
+            schema,
+            tracked_inputs,
+        })
     }
 }
 
 /// Resolves one project package by package identity and output-directory priority.
+///
+/// A set package-cache directory replaces the search: the build owns that directory, so the
+/// output directories of the project are not consulted.
 fn resolve_project_package(
     project_dir: &Path,
     stems: &[String],
@@ -258,19 +280,28 @@ fn find_project_package_in_dir(dir: &Path, stems: &[String]) -> Result<Option<Pa
     Ok(None)
 }
 
-/// Returns ordered package filename stems for one project.
-fn project_package_stems(project_dir: &Path) -> Vec<String> {
+/// The package file name stems of one project and the manifests they came from.
+struct ProjectIdentity {
+    /// Ordered package file name stems, canonical identity first.
+    stems: Vec<String>,
+    /// The manifests that were read, in the order they were read.
+    manifests: Vec<PathBuf>,
+}
+
+/// Returns ordered package filename stems for one project, and the manifests they came from.
+fn project_identity(project_dir: &Path) -> ProjectIdentity {
     let mut stems = Vec::new();
-    if let Some(name) = package_name_from_manifest(&project_dir.join("miden-project.toml")) {
-        push_package_stem(&mut stems, &name);
-    }
-    if let Some(name) = package_name_from_manifest(&project_dir.join("Cargo.toml")) {
-        push_package_stem(&mut stems, &name);
+    let mut manifests = Vec::new();
+    for manifest in [project_dir.join("miden-project.toml"), project_dir.join("Cargo.toml")] {
+        if let Some(name) = package_name_from_manifest(&manifest) {
+            push_package_stem(&mut stems, &name);
+            manifests.push(manifest);
+        }
     }
     if let Some(name) = project_dir.file_name().and_then(|name| name.to_str()) {
         push_package_stem(&mut stems, name);
     }
-    stems
+    ProjectIdentity { stems, manifests }
 }
 
 /// Reads a package name from one TOML manifest.
@@ -354,7 +385,7 @@ mod tests {
 
     use super::{
         find_project_package_in_cache, find_project_package_in_dir,
-        missing_project_package_message, project_output_dirs, project_package_stems,
+        missing_project_package_message, project_identity, project_output_dirs,
     };
 
     #[test]
@@ -372,9 +403,39 @@ mod tests {
         fs::write(output.join("legacy-note.masp"), b"newer legacy package").unwrap();
         fs::write(output.join("canonical-note.masp"), b"canonical package").unwrap();
 
-        let stems = project_package_stems(temp.path());
+        let stems = project_identity(temp.path()).stems;
         let selected = find_project_package_in_dir(&output, &stems).unwrap().unwrap();
         assert_eq!(selected, output.join("canonical-note.masp"));
+    }
+
+    #[test]
+    fn tracked_inputs_name_the_manifests_that_were_read() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(
+            temp.path().join("miden-project.toml"),
+            "[package]\nname='canonical-note'\nversion='0.1.0'",
+        )
+        .unwrap();
+        fs::write(temp.path().join("Cargo.toml"), "[package]\nname='legacy-note'\nversion='0.1.0'")
+            .unwrap();
+
+        let identity = project_identity(temp.path());
+
+        assert_eq!(
+            identity.manifests,
+            [temp.path().join("miden-project.toml"), temp.path().join("Cargo.toml")]
+        );
+    }
+
+    #[test]
+    fn tracked_inputs_skip_a_manifest_that_is_absent() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::write(temp.path().join("Cargo.toml"), "[package]\nname='legacy-note'\nversion='0.1.0'")
+            .unwrap();
+
+        let identity = project_identity(temp.path());
+
+        assert_eq!(identity.manifests, [temp.path().join("Cargo.toml")]);
     }
 
     #[test]
@@ -395,7 +456,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         fs::write(temp.path().join("Cargo.toml"), "[package]\nname='note'\nversion='0.1.0'")
             .unwrap();
-        let stems = project_package_stems(temp.path());
+        let stems = project_identity(temp.path()).stems;
         let message = missing_project_package_message("test-note-macro", temp.path(), None, &stems);
         assert!(message.contains("test-note-macro"));
         assert!(message.contains("cargo miden build --manifest-path"));
@@ -408,7 +469,7 @@ mod tests {
         fs::write(temp.path().join("Cargo.toml"), "[package]\nname='test-note'\nversion='0.1.0'")
             .unwrap();
         let cache_dir = temp.path().join("package-cache");
-        let stems = project_package_stems(temp.path());
+        let stems = project_identity(temp.path()).stems;
 
         let message = missing_project_package_message(
             "test-note-macro",

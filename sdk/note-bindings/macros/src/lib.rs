@@ -69,10 +69,17 @@ fn expand_package_artifact(
     let scope_key = artifact.path().to_string_lossy();
     let bindings = expand_schema(artifact.schema(), span, &scope_key)?;
     let tracked_path = artifact.path().to_string_lossy();
+    let tracked_manifests = artifact
+        .tracked_inputs()
+        .iter()
+        .map(|path| path.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
     let package_cache_env = midenc_frontend_wasm_metadata::package_cache::PACKAGE_CACHE_ENV;
     Ok(quote! {
-        // These constants exist only to register the package file and cache path as proc-macro rebuild inputs.
+        // These constants exist only to register the package file, the manifests that named it,
+        // and the cache path as proc-macro rebuild inputs.
         const _: &[u8] = ::core::include_bytes!(#tracked_path);
+        #(const _: &[u8] = ::core::include_bytes!(#tracked_manifests);)*
         const _: ::core::option::Option<&str> = ::core::option_env!(#package_cache_env);
         #bindings
     })
@@ -110,12 +117,24 @@ fn expand_schema(
             #[doc(hidden)]
             const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = #wit_text;
 
+            /// Returns the resolved schema, which is parsed once for the whole process.
             #[doc(hidden)]
-            fn __miden_note_storage_schema(
-            ) -> #runtime::miden_note_schema::Result<#runtime::miden_note_schema::NoteStorageSchema> {
-                #runtime::miden_note_schema::NoteStorageSchema::from_wit_text(
-                    __MIDEN_NOTE_STORAGE_SCHEMA_WIT,
-                )
+            fn __miden_note_storage_schema() -> #runtime::miden_note_schema::Result<
+                &'static #runtime::miden_note_schema::NoteStorageSchema,
+            > {
+                static __MIDEN_NOTE_STORAGE_SCHEMA: ::std::sync::OnceLock<
+                    #runtime::miden_note_schema::Result<
+                        #runtime::miden_note_schema::NoteStorageSchema,
+                    >,
+                > = ::std::sync::OnceLock::new();
+                __MIDEN_NOTE_STORAGE_SCHEMA
+                    .get_or_init(|| {
+                        #runtime::miden_note_schema::NoteStorageSchema::from_wit_text(
+                            __MIDEN_NOTE_STORAGE_SCHEMA_WIT,
+                        )
+                    })
+                    .as_ref()
+                    .map_err(::core::clone::Clone::clone)
             }
 
             impl #root_ident {

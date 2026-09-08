@@ -10,7 +10,7 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         ) -> ::miden_note_bindings::__private::miden_note_schema::Result<()>;
     }
     #[doc(hidden)]
-    trait __MidenNoteDecode: Sized {
+    trait __MidenNoteDecode: ::core::marker::Sized {
         fn __read_note_felts(
             reader: &mut ::miden_note_bindings::__private::miden_field_repr::FeltReader<
                 '_,
@@ -351,7 +351,12 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
         }
     }
     ///Rust binding for WIT type `example:p2id-schema/note-storage@1.0.0.p2id-note`.
-    #[derive(Clone, Debug, PartialEq, Eq)]
+    #[derive(
+        ::core::clone::Clone,
+        ::core::fmt::Debug,
+        ::core::cmp::PartialEq,
+        ::core::cmp::Eq,
+    )]
     pub struct P2idNote {
         ///Value of the WIT `target-account-id` field.
         pub target_account_id: ::miden_note_bindings::__private::miden_protocol::account::AccountId,
@@ -386,13 +391,24 @@ mod __miden_note_bindings_f74ea5e7a6e77b2d {
     }
     #[doc(hidden)]
     const __MIDEN_NOTE_STORAGE_SCHEMA_WIT: &str = "\npackage example:p2id-schema@1.0.0;\n\nuse miden:base/core-types@1.0.0;\n\ninterface note-storage {\n    use core-types.{account-id};\n\n    record p2id-note {\n        target-account-id: account-id,\n    }\n\n    type storage = p2id-note;\n}\n\npackage miden:base@1.0.0 {\n    interface core-types {\n        record felt { inner: f32 }\n        record account-id { prefix: felt, suffix: felt }\n    }\n}\n";
+    /// Returns the resolved schema, which is parsed once for the whole process.
     #[doc(hidden)]
     fn __miden_note_storage_schema() -> ::miden_note_bindings::__private::miden_note_schema::Result<
-        ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema,
+        &'static ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema,
     > {
-        ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema::from_wit_text(
-            __MIDEN_NOTE_STORAGE_SCHEMA_WIT,
-        )
+        static __MIDEN_NOTE_STORAGE_SCHEMA: ::std::sync::OnceLock<
+            ::miden_note_bindings::__private::miden_note_schema::Result<
+                ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema,
+            >,
+        > = ::std::sync::OnceLock::new();
+        __MIDEN_NOTE_STORAGE_SCHEMA
+            .get_or_init(|| {
+                ::miden_note_bindings::__private::miden_note_schema::NoteStorageSchema::from_wit_text(
+                    __MIDEN_NOTE_STORAGE_SCHEMA_WIT,
+                )
+            })
+            .as_ref()
+            .map_err(::core::clone::Clone::clone)
     }
     impl P2idNote {
         /// Encodes this typed value as note storage in WIT declaration order.

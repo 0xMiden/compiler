@@ -277,7 +277,7 @@ fn generate_helper_traits(runtime: &RuntimePaths) -> TokenStream {
         }
 
         #[doc(hidden)]
-        trait __MidenNoteDecode: Sized {
+        trait __MidenNoteDecode: ::core::marker::Sized {
             fn __read_note_felts(
                 reader: &mut #miden_field_repr::FeltReader<'_>,
             ) -> #miden_note_schema::Result<Self>;
@@ -402,22 +402,33 @@ fn generate_type(
     let fqn = definition.fqn().expect("generated type definitions always have a FQN");
     let ident = rust_names.get(fqn).expect("every generated type has a Rust identifier");
     let docs = type_docs(definition, fqn);
+    // Every trait is named through its absolute path. A generated type takes the name of its
+    // WIT type, so a schema may declare a type called `Clone`, `Debug`, or `Sized`.
     let derives = if felt_repr_support.supports_native_felt_repr(definition) {
         let miden_field_repr = &runtime.miden_field_repr;
+        // `quote` prints `::` paths with spaces around each separator. The attribute value must
+        // be one path the derive macro can parse, so the spaces come out.
         let crate_path = Literal::string(&miden_field_repr.to_string().replace(' ', ""));
         quote! {
             #[derive(
-                Clone,
-                Debug,
-                PartialEq,
-                Eq,
+                ::core::clone::Clone,
+                ::core::fmt::Debug,
+                ::core::cmp::PartialEq,
+                ::core::cmp::Eq,
                 #miden_field_repr::ToFeltRepr,
                 #miden_field_repr::FromFeltRepr,
             )]
             #[felt_repr(crate_path = #crate_path)]
         }
     } else {
-        quote! { #[derive(Clone, Debug, PartialEq, Eq)] }
+        quote! {
+            #[derive(
+                ::core::clone::Clone,
+                ::core::fmt::Debug,
+                ::core::cmp::PartialEq,
+                ::core::cmp::Eq,
+            )]
+        }
     };
 
     let (item, encode_impl, decode_impl) = match definition.kind() {
@@ -729,6 +740,14 @@ fn case_docs(case: &SchemaCase) -> TokenStream {
         .map(str::to_owned)
         .unwrap_or_else(|| format!("WIT `{}` case.", case.name()));
     quote!(#[doc = #docs])
+}
+
+/// Returns the Rust type name the generator gives one WIT type or case name.
+///
+/// A caller that maps generated types back to WIT names uses this function, so the two sides
+/// agree on the upper camel case conversion and on the escape of a Rust reserved word.
+pub fn generated_type_ident(name: &str) -> String {
+    type_ident(name).to_string()
 }
 
 /// Converts a WIT type or case name to a Rust type identifier.

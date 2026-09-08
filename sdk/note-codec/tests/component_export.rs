@@ -42,6 +42,8 @@ fn minimal_codec_crate_builds_to_wasi_only_component() {
     for &variable in NESTED_CARGO_SCRUB_ENV {
         command.env_remove(variable);
     }
+    // Pin the guest rustflags after the scrub, the way the compiler builds a codec crate.
+    command.env("RUSTFLAGS", miden_note_schema::NOTE_CODEC_GUEST_RUSTFLAGS);
     let output = command.output().expect("failed to run cargo for the component fixture");
     assert_command_succeeded("building the component fixture", &output);
 
@@ -49,6 +51,12 @@ fn minimal_codec_crate_builds_to_wasi_only_component() {
         target_dir.join(format!("{WASM_TARGET}/release/note_codec_component_fixture.wasm")),
     )
     .expect("component fixture did not produce a Wasm component");
+    // A codec crate must build to a component every consumer accepts.
+    miden_note_schema::validate_note_codec_component(
+        &component,
+        miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES,
+    )
+    .expect("the built component must pass the note codec load policy");
     let DecodedWasm::Component(resolve, world_id) =
         wit_component::decode(&component).expect("failed to decode the built component")
     else {
