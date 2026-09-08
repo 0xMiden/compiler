@@ -1,3 +1,5 @@
+//! Note script and note storage struct expansion for `#[note]`.
+
 use std::collections::BTreeSet;
 
 use heck::{ToKebabCase, ToSnakeCase};
@@ -158,17 +160,13 @@ fn expand_note_struct(item_struct: ItemStruct) -> TokenStream2 {
             (from_impl, quote! {})
         }
         syn::Fields::Named(fields) => {
+            // A schema error replaces the schema static only. Everything else is computable from
+            // the struct alone, so the macro still emits it. This keeps the schema diagnostic
+            // alone: neither the use sites nor the `#[note]` `impl` block add "cannot find type"
+            // or trait-bound errors on top of it.
             let schema_static = match expand_note_storage_schema(&item_struct) {
                 Ok(schema_static) => schema_static,
-                // The struct is emitted with the error so that the schema diagnostic is not
-                // buried under "cannot find type" errors from every use site.
-                Err(err) => {
-                    let error = err.into_compile_error();
-                    return quote! {
-                        #item_struct
-                        #error
-                    };
-                }
+                Err(err) => err.into_compile_error(),
             };
             let field_inits = fields.named.iter().map(|field| {
                 let ident = field.ident.as_ref().expect("named fields must have identifiers");
@@ -1238,6 +1236,70 @@ mod tests {
         );
     }
 
+    /// Stand-in for the SDK items that a `#[note]` expansion references.
+    ///
+    /// `compile_rust_source` runs a bare `rustc` without external crates, so the compiled source
+    /// declares the SDK surface itself.
+    const MIDEN_SDK_STUB: &str = r#"
+extern crate self as miden;
+
+#[derive(Debug)]
+pub struct Felt;
+
+pub mod felt_repr {
+    use super::Felt;
+
+    #[derive(Debug)]
+    pub struct FeltReprError;
+
+    pub struct FeltReader<'a>(#[allow(dead_code)] &'a [Felt]);
+
+    impl<'a> FeltReader<'a> {
+        pub fn new(felts: &'a [Felt]) -> Self {
+            Self(felts)
+        }
+
+        pub fn ensure_eof(&self) -> Result<(), FeltReprError> {
+            Ok(())
+        }
+    }
+
+    pub struct FeltWriter<'a>(#[allow(dead_code)] &'a mut Vec<Felt>);
+
+    pub trait FromFeltRepr: Sized {
+        fn from_felt_repr(reader: &mut FeltReader<'_>) -> Result<Self, FeltReprError>;
+    }
+
+    pub trait ToFeltRepr {
+        fn write_felt_repr(&self, writer: &mut FeltWriter<'_>);
+    }
+
+    impl<T> FromFeltRepr for Vec<T> {
+        fn from_felt_repr(_reader: &mut FeltReader<'_>) -> Result<Self, FeltReprError> {
+            Ok(Vec::new())
+        }
+    }
+
+    impl<T> ToFeltRepr for Vec<T> {
+        fn write_felt_repr(&self, _writer: &mut FeltWriter<'_>) {}
+    }
+}
+
+pub mod active_note {
+    use super::Felt;
+
+    pub trait ActiveNote {
+        fn get_sender(&self) -> Felt {
+            Felt
+        }
+    }
+
+    pub fn get_storage() -> Vec<Felt> {
+        Vec::new()
+    }
+}
+"#;
+
     #[test]
     fn schema_failure_reports_only_the_schema_diagnostic() {
         let _registry_guard = lock_export_type_registry_for_tests();
@@ -1248,11 +1310,26 @@ mod tests {
             }
         };
         let expansion = expand_note_struct(item_struct);
+        // The whole `#[note]` `impl` expansion cannot compile outside a real SDK crate, because it
+        // calls the `miden::generate!` and `bindings::export!` proc macros. The note-script body
+        // below is built with the same generator that the `impl` expansion uses, so the decoding
+        // and `ActiveNote` use sites are the ones a real note crate gets.
+        let note_ty: syn::TypePath = parse_quote!(VecNote);
+        let note_init = note_instantiation(&note_ty);
         let source = format!(
             r#"
+{MIDEN_SDK_STUB}
 mod user {{
+    use ::miden::active_note::ActiveNote as _;
+
     {expansion}
+
     pub fn takes_note(_note: VecNote) {{}}
+
+    pub fn note_script() {{
+        {note_init}
+        let _ = __miden_note.get_sender();
+    }}
 }}
 fn main() {{}}
 "#
@@ -1269,6 +1346,16 @@ fn main() {{}}
         assert!(
             !stderr.contains("cannot find type"),
             "the schema diagnostic must not cascade into missing-type errors:
+{stderr}"
+        );
+        assert!(
+            !stderr.contains("the trait bound"),
+            "the schema diagnostic must not cascade into trait-bound errors:
+{stderr}"
+        );
+        assert!(
+            !stderr.contains("is not implemented"),
+            "the schema diagnostic must not cascade into missing-impl errors:
 {stderr}"
         );
     }

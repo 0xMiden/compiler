@@ -5,7 +5,7 @@ use miden_core::serde::Serializable;
 use miden_mast_package::{Package, PackageExport, ProcedureExport, QualifiedProcedureName};
 use miden_protocol::note::NoteScript;
 use midenc_frontend_wasm::WasmTranslationConfig;
-use midenc_integration_test_support::write_masp_file_atomic;
+use midenc_integration_test_support::{scrub_nested_cargo_env, write_masp_file_atomic};
 
 use crate::{
     CompilerTest, CompilerTestBuilder,
@@ -359,7 +359,11 @@ fn build_consumer_wat_with_package_cache(
     cargo_target_dir: &Path,
     package_cache_dir: &Path,
 ) -> String {
-    let output = std::process::Command::new("cargo")
+    let mut command = std::process::Command::new("cargo");
+    // Scrub first: the helper also clears `RUSTFLAGS`, which this build sets below. Cargo prefers
+    // the encoded variable, so an inherited value would silently replace those flags.
+    scrub_nested_cargo_env(&mut command);
+    let output = command
         .args(["build", "--release", "--locked", "--manifest-path"])
         .arg(consumer.join("Cargo.toml"))
         .env("CARGO_TARGET_DIR", cargo_target_dir)
@@ -368,7 +372,6 @@ fn build_consumer_wat_with_package_cache(
             package_cache_dir,
         )
         .env("RUSTFLAGS", "--cfg miden -C target-feature=+bulk-memory,+wide-arithmetic")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .current_dir(consumer)
         .output()
         .expect("failed to spawn Cargo for the option_env isolation fixture");

@@ -19,6 +19,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use midenc_integration_test_support::scrub_nested_cargo_env;
+
 use super::basic_wallet_swapp_note_project;
 use crate::cargo_proj::project;
 
@@ -179,21 +181,23 @@ fn main() {
 /// concurrent tests reuse the fixture package names, so a shared cache would
 /// let one test observe another's generations.
 fn plain_cargo_check(consumer: &Path) -> Output {
-    Command::new("cargo")
+    let mut command = Command::new("cargo");
+    scrub_nested_cargo_env(&mut command);
+    command
         .arg("check")
         .env("CARGO_MIDEN", cargo_miden_binary())
         .env_remove("MIDENC_PACKAGE_CACHE")
         .env_remove("CARGO_TARGET_DIR")
         .env_remove("CARGO_BUILD_BUILD_DIR")
-        .env_remove("RUSTFLAGS")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .current_dir(consumer)
         .output()
         .expect("failed to spawn cargo check")
 }
 
 fn counted_plain_cargo_check(consumer: &Path, counter: &Path) -> Output {
-    Command::new("cargo")
+    let mut command = Command::new("cargo");
+    scrub_nested_cargo_env(&mut command);
+    command
         .arg("check")
         .env("CARGO_MIDEN", counting_cargo_miden_binary())
         .env("MIDENC_TEST_REAL_CARGO_MIDEN", cargo_miden_binary())
@@ -201,8 +205,6 @@ fn counted_plain_cargo_check(consumer: &Path, counter: &Path) -> Output {
         .env_remove("MIDENC_PACKAGE_CACHE")
         .env_remove("CARGO_TARGET_DIR")
         .env_remove("CARGO_BUILD_BUILD_DIR")
-        .env_remove("RUSTFLAGS")
-        .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .current_dir(consumer)
         .output()
         .expect("failed to spawn counted cargo check")
@@ -686,7 +688,9 @@ path = "src/lib.rs"
         .file("src/lib.rs", "")
         .build();
 
-    let output = std::process::Command::new("cargo")
+    let mut command = Command::new("cargo");
+    scrub_nested_cargo_env(&mut command);
+    let output = command
         .arg("check")
         .env("CARGO_MIDEN", project.root().join("definitely-missing-cargo-miden"))
         .env_remove("MIDENC_PACKAGE_CACHE")
