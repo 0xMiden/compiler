@@ -3691,7 +3691,9 @@ dependencies = [
  "midenc-integration-test-support",
  "tempfile",
  "toml 1.1.4+spec-1.1.0",
+ "wasmparser 0.248.0",
  "wasmtime",
+ "wat",
  "wit-parser 0.247.0",
 ]
 

@@ -27,6 +27,7 @@ miden-mast-package = { workspace = true, features = ["std"] }
 miden-protocol = { workspace = true, features = ["std"] }
 midenc-frontend-wasm-metadata.workspace = true
 toml.workspace = true
+wasmparser.workspace = true
 wit-parser.workspace = true
 wasmtime = { workspace = true, optional = true }
 
@@ -35,3 +36,4 @@ miden-core.workspace = true
 miden-note-codec-wit.workspace = true
 midenc-integration-test-support.workspace = true
 tempfile.workspace = true
+wat.workspace = true

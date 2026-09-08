@@ -43,6 +43,10 @@ pub const MAX_NOTE_STORAGE_SCHEMA_FELTS: usize = MAX_NOTE_STORAGE_ITEMS;
 /// builds is a package that consumers accept.
 pub const MAX_NOTE_CODEC_COMPONENT_BYTES: usize = 4 * 1024 * 1024;
 
+/// Rustflags the nested codec build pins, so a codec crate's own cargo config cannot enable
+/// a Wasm feature that every consumer rejects. Mirrors the VM event-handler plugin.
+pub const NOTE_CODEC_GUEST_RUSTFLAGS: &str = "-C target-feature=-simd128";
+
 const _: () = assert!(MAX_NOTE_STORAGE_SCHEMA_DEPTH > 0);
 
 /// The minimum and maximum felt count for a schema type.

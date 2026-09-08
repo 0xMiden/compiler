@@ -461,30 +461,14 @@ fn build_note_codec_component(
 
     // Give nested Cargo a separate target directory. Sharing the outer lock can deadlock.
     let cargo_target_dir = work_dir.join("cargo-target");
-    let mut cargo = Command::new(cargo_path);
-    if let Some(toolchain) = toolchain.as_deref() {
-        cargo.arg(format!("+{toolchain}"));
-    }
-    cargo
-        .current_dir(codec_crate_dir)
-        .arg("build")
-        .arg("--manifest-path")
-        .arg(&manifest_path)
-        .arg("--lib")
-        // The codec is a host-side wasmtime artifact; a dev-profile cdylib carries debug
-        // info far past the consumer size limit, so every Miden profile builds it release.
-        .arg("--release")
-        .arg("--target")
-        .arg(NOTE_CODEC_TARGET)
-        .arg("--target-dir")
-        .arg(&cargo_target_dir)
-        .arg("--message-format")
-        .arg("json-render-diagnostics")
-        // Let `from_project!` find the staged note package during codec macro expansion.
-        .env(package_cache::PACKAGE_CACHE_ENV, &staged_package.cache_dir);
-    for &variable in NESTED_CARGO_SCRUB_ENV {
-        cargo.env_remove(variable);
-    }
+    let mut cargo = note_codec_cargo_command(
+        cargo_path,
+        toolchain.as_deref(),
+        codec_crate_dir,
+        &manifest_path,
+        &cargo_target_dir,
+        &staged_package.cache_dir,
+    );
     cargo.stdout(Stdio::piped()).stderr(Stdio::inherit());
 
     let manifest_path = manifest_path.canonicalize().map_err(|error| {
@@ -533,6 +517,45 @@ fn build_note_codec_component(
     })?;
     gc_staged_note_packages(&staged_package.cache_dir);
     Ok(component)
+}
+
+/// Builds the nested Cargo command that compiles one note codec crate.
+fn note_codec_cargo_command(
+    cargo_path: &Path,
+    toolchain: Option<&str>,
+    codec_crate_dir: &Path,
+    manifest_path: &Path,
+    cargo_target_dir: &Path,
+    package_cache_dir: &Path,
+) -> Command {
+    let mut cargo = Command::new(cargo_path);
+    if let Some(toolchain) = toolchain {
+        cargo.arg(format!("+{toolchain}"));
+    }
+    cargo
+        .current_dir(codec_crate_dir)
+        .arg("build")
+        .arg("--manifest-path")
+        .arg(manifest_path)
+        .arg("--lib")
+        // The codec is a host-side wasmtime artifact; a dev-profile cdylib carries debug
+        // info far past the consumer size limit, so every Miden profile builds it release.
+        .arg("--release")
+        .arg("--target")
+        .arg(NOTE_CODEC_TARGET)
+        .arg("--target-dir")
+        .arg(cargo_target_dir)
+        .arg("--message-format")
+        .arg("json-render-diagnostics")
+        // Let `from_project!` find the staged note package during codec macro expansion.
+        .env(package_cache::PACKAGE_CACHE_ENV, package_cache_dir);
+    for &variable in NESTED_CARGO_SCRUB_ENV {
+        cargo.env_remove(variable);
+    }
+    // Pin the guest rustflags after the scrub. A codec crate cannot enable a Wasm feature
+    // that every consumer rejects, whatever its own cargo config says.
+    cargo.env("RUSTFLAGS", miden_note_schema::NOTE_CODEC_GUEST_RUSTFLAGS);
+    cargo
 }
 
 /// Stages the current package in a content-addressed package-cache directory.
@@ -678,6 +701,12 @@ fn validate_note_codec_component(component: &[u8]) -> CompilerResult<()> {
             miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES,
         )));
     }
+    // The structural caps are fixed policy, so the producer applies the consumer rules here.
+    miden_note_schema::validate_note_codec_structure(component).map_err(|error| {
+        Report::msg(format!(
+            "note codec component fails the structural limits consumers enforce: {error}"
+        ))
+    })?;
     let DecodedWasm::Component(resolve, world_id) =
         wit_component::decode(component).map_err(|error| {
             Report::msg(format!("failed to decode the encoded note codec component: {error}"))
@@ -976,6 +1005,8 @@ pub fn parse_cargo_frontmatter(
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsStr;
+
     use miden_assembly_syntax::debuginfo::Span;
 
     use super::*;
@@ -1192,6 +1223,52 @@ mod tests {
             error.contains(&miden_note_schema::MAX_NOTE_CODEC_COMPONENT_BYTES.to_string()),
             "the limit is not named: {error}"
         );
+    }
+
+    #[test]
+    fn structurally_oversized_codec_components_fail_producer_validation() {
+        let globals = "(global i32 (i32.const 0))".repeat(1_001);
+        let component = wat::parse_str(format!("(component (core module {globals}))")).unwrap();
+
+        let error = validate_note_codec_component(&component).unwrap_err().to_string();
+
+        assert!(
+            error.contains("fails the structural limits consumers enforce"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains("1001 globals"), "the observed count is not named: {error}");
+    }
+
+    #[test]
+    fn note_codec_cargo_command_pins_the_guest_build_flags() {
+        let command = note_codec_cargo_command(
+            Path::new("cargo"),
+            None,
+            Path::new("/codec"),
+            Path::new("/codec/Cargo.toml"),
+            Path::new("/codec/target/cargo-target"),
+            Path::new("/codec/target/package-cache"),
+        );
+
+        let environment = command.get_envs().collect::<Vec<_>>();
+        assert!(
+            environment.contains(&(
+                OsStr::new("RUSTFLAGS"),
+                Some(OsStr::new(miden_note_schema::NOTE_CODEC_GUEST_RUSTFLAGS)),
+            )),
+            "the guest rustflags are not pinned: {environment:?}"
+        );
+        assert!(
+            environment.contains(&(OsStr::new("CARGO_ENCODED_RUSTFLAGS"), None)),
+            "the outer rustflags are not scrubbed: {environment:?}"
+        );
+
+        let args = command.get_args().collect::<Vec<_>>();
+        let target = args
+            .windows(2)
+            .find(|window| window[0] == OsStr::new("--target"))
+            .expect("the nested build does not select a target");
+        assert_eq!(target[1], OsStr::new(NOTE_CODEC_TARGET));
     }
 
     /// Resolves the codec interface from one complete WIT document.

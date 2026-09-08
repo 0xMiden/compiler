@@ -19,6 +19,7 @@ mod builder;
 mod codec;
 #[cfg(feature = "codec-component")]
 mod codec_component;
+mod codec_structure;
 mod error;
 mod schema;
 mod section;
@@ -33,12 +34,16 @@ pub use codec::{
     ACCOUNT_ID_FQN, ASSET_AMOUNT_FQN, CodecRegistry, ConsumerTypeCodec, FELT_FQN, StandardLeaf,
     WORD_FQN,
 };
-pub use error::{Error, Result};
+#[cfg(feature = "codec-component")]
+pub use codec_component::CodecLimits;
+pub use codec_structure::validate_note_codec_structure;
+pub use error::{CodecFailure, Error, Result};
 pub use miden_field::Felt;
 pub use miden_protocol::note::NoteStorage;
 pub use schema::{
     FeltLayout, MAX_NOTE_CODEC_COMPONENT_BYTES, MAX_NOTE_STORAGE_SCHEMA_BYTES,
     MAX_NOTE_STORAGE_SCHEMA_DEPTH, MAX_NOTE_STORAGE_SCHEMA_FELTS, MAX_NOTE_STORAGE_SCHEMA_TYPES,
-    NoteStorageSchema, PrimitiveType, SchemaCase, SchemaField, SchemaType, SchemaTypeKind,
+    NOTE_CODEC_GUEST_RUSTFLAGS, NoteStorageSchema, PrimitiveType, SchemaCase, SchemaField,
+    SchemaType, SchemaTypeKind,
 };
 pub use value::{DecodedValue, DecodedValueKind};
