@@ -231,7 +231,7 @@ fn find_project_package_in_dir(dir: &Path, stems: &[String]) -> Result<Option<Pa
         return Ok(None);
     }
 
-    let mut packages = fs::read_dir(dir)
+    let packages = fs::read_dir(dir)
         .map_err(|error| Error::new(format!("failed to read '{}': {error}", dir.display())))?
         .collect::<core::result::Result<Vec<_>, _>>()
         .map_err(|error| {
@@ -243,7 +243,6 @@ fn find_project_package_in_dir(dir: &Path, stems: &[String]) -> Result<Option<Pa
             path.is_file() && path.extension().is_some_and(|extension| extension == "masp")
         })
         .collect::<Vec<_>>();
-    packages.sort();
 
     // The stems are ordered by identity. The canonical miden-project package name comes first,
     // followed by legacy aliases. This matches base-macros/src/dependency_package.rs and prevents

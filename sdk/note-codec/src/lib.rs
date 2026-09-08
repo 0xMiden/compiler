@@ -20,6 +20,14 @@
 //!
 //! miden_note_codec::export_codecs!();
 //! ```
+//!
+//! The note project opts in to the codec build with package-level metadata in its
+//! `miden-project.toml`. The `crate` directory is relative to that manifest:
+//!
+//! ```toml
+//! [package.metadata.midenc.note-codec]
+//! crate = "../my-note-codec"
+//! ```
 
 #![deny(missing_docs)]
 

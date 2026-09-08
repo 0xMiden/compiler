@@ -947,7 +947,7 @@ mod tests {
         );
     }
 
-    /// Cargo resolution policy flags reach every nested build through the session options.
+    /// Cargo resolution policy flags reach the Rust project build through the session options.
     #[test]
     fn cargo_resolution_policy_reaches_the_options() {
         let options = options(&["--locked", "--offline"]);

@@ -203,6 +203,10 @@ fn collect_type_bindings(
     Ok(())
 }
 
+/// Clears the process-wide macro registry between unit tests.
+///
+/// The registry lives for the whole proc-macro process, so a test that expands macros must start
+/// from an empty registry. Tests serialize on the registry test lock before they call this.
 #[cfg(test)]
 pub(crate) fn reset_for_tests() {
     if let Some(registry) = REGISTRY.get() {
