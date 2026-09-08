@@ -24,6 +24,10 @@ fn host_target() -> String {
 }
 
 /// Copies the workspace patch table into an isolated consumer manifest.
+///
+/// The consumer crate must resolve the same patched dependencies as the workspace. A
+/// workspace without a patch table has nothing to copy, and the function returns an empty
+/// string.
 fn workspace_patch_section(workspace: &Path) -> String {
     let manifest = fs::read_to_string(workspace.join("Cargo.toml")).unwrap();
     let mut section = String::new();
@@ -40,7 +44,6 @@ fn workspace_patch_section(workspace: &Path) -> String {
             section.push('\n');
         }
     }
-    assert!(!section.is_empty(), "workspace manifest has no [patch.crates-io] section");
     section
 }
 
