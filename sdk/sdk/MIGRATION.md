@@ -344,12 +344,13 @@ the staged package cache. Use per-checkout target directories for such layouts.
 
 ### Keep one `#[note]` struct in each crate
 
-A crate can now contain only one `#[note]` struct. Two note structs compiled before this change.
-Now the linker rejects the second struct because both structs define the
-`__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
+There can now be only one `#[note]` struct per linked artifact. Two note structs compiled before
+this change. Now the linker rejects the second struct because both structs define the
+`__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol. The guard covers the whole link, so a note
+crate cannot depend on another note crate either.
 
 Keep one note struct in the current crate. Move each extra note struct and its implementation into
-a separate note crate.
+a separate note crate, and do not depend on that crate from a note crate.
 
 ### Rewrite tuple-note and `Vec` storage layouts
 

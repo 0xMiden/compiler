@@ -318,8 +318,9 @@ pub fn export_type(
 /// definition before the `#[note]` struct. Each field must use the exact registered
 /// `#[export_type]` Rust type. A different type with the same name fails the hidden shape check.
 ///
-/// A crate can contain only one `#[note]` struct. A second struct fails at link time because it
-/// defines the duplicate `__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
+/// There can be only one `#[note]` struct per linked artifact, so a note crate cannot depend on
+/// another note crate. A second struct fails at link time because it defines the duplicate
+/// `__MIDEN_NOTE_STORAGE_SCHEMA_UNIQUENESS_GUARD` symbol.
 ///
 /// # Foreign Procedure Invocation (FPI)
 ///
