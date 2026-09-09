@@ -1,3 +1,4 @@
+mod alias;
 mod cast;
 mod component;
 mod function;
@@ -9,6 +10,7 @@ mod segment;
 mod world;
 
 pub use self::{
+    alias::{FunctionAlias, FunctionAliasRef},
     cast::UnrealizedConversionCast,
     component::{
         Component, ComponentBuilder as PrimComponentBuilder, ComponentExport, ComponentId,

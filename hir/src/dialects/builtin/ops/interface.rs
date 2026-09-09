@@ -35,6 +35,10 @@ pub type InterfaceRef = UnsafeIntrusiveEntityRef<Interface>;
 /// Interfaces may only contain [builtin::Function] items, and may only _export_ functions with the
 /// `CanonLift` calling convention. It is expected that these functions will rely on implementation
 /// details defined in a sibling [builtin::Module], though that is not strictly required.
+///
+/// Note: This restriction is a convention rather than a verified rule. While the symbol table does
+/// not explicitly reject other symbol types, [builtin::FunctionAlias] is generally reserved for
+/// core modules (e.g. Wasm `N:1` exports) and does not appear in interfaces.
 #[operation(
     dialect = BuiltinDialect,
     traits(

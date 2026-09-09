@@ -1,3 +1,7 @@
+// TODO remove after moving tests here from `./interface/tests.rs`
+#[cfg(test)]
+mod tests;
+
 use alloc::format;
 use core::fmt;
 
@@ -5,7 +9,7 @@ use super::Component;
 use crate::{
     FxHashMap, Symbol, SymbolName, SymbolNameComponent, SymbolPath, SymbolTable, Type, Visibility,
     diagnostics::{Diagnostic, miette},
-    dialects::builtin::{Function, Module, attributes::Signature},
+    dialects::builtin::{Module, attributes::Signature},
     version::Version,
 };
 
@@ -380,42 +384,59 @@ pub struct ModuleInterface {
 }
 
 impl ModuleInterface {
-    /// Derive a [ModuleInterface] from the given [Module]
+    /// Derive the named interface of a verified module.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an exported callable cannot be resolved.
     pub fn new(module: &Module) -> Self {
+        Self::try_new(module).expect("invalid callable in module interface")
+    }
+
+    /// Derive the interface, returning an error if an export cannot be resolved.
+    pub fn try_new(module: &Module) -> Result<Self, crate::SymbolResolutionError> {
         let mut imports = FxHashMap::default();
         let mut exports = FxHashMap::default();
-        let mut is_abstract = true;
 
-        let symbol_manager = module.symbol_manager();
-        for symbol_ref in symbol_manager.symbols().symbols() {
-            let symbol = symbol_ref.borrow();
-            let name = symbol.name();
-            if let Some(func) = symbol.as_symbol_operation().downcast_ref::<Function>() {
-                let signature = func.get_signature().clone();
-                let visibility = func.visibility();
-                let item = ModuleExport::Function { name, signature };
-                if func.is_declaration() {
-                    // This is an import of an externally-defined function
-                    imports.insert(name, item);
-                } else {
-                    if !visibility.is_private() {
-                        // This is an exported function definition (either internally or globally)
-                        exports.insert(name, item);
-                    }
-                    is_abstract = false;
-                }
+        // Collect imports (i.e. function declarations)
+        for function in module.functions() {
+            let function = function.borrow();
+            if function.is_declaration() {
+                let name = function.name().as_symbol();
+                imports.insert(
+                    name,
+                    ModuleExport::Function {
+                        name,
+                        signature: function.get_signature().clone(),
+                    },
+                );
             }
-
-            // TODO: GlobalVariable
         }
 
-        Self {
+        // Collect exports
+        for callee in module.exported_callables() {
+            let callee = callee?;
+            let name = callee.named_symbol().borrow().name();
+            exports.insert(
+                name,
+                ModuleExport::Function {
+                    name,
+                    signature: callee.signature(),
+                },
+            );
+        }
+
+        // TODO: GlobalVariable
+
+        let is_abstract = module.callable_symbols().all(|symbol| symbol.borrow().is_declaration());
+
+        Ok(Self {
             name: module.name().as_symbol(),
             visibility: *module.get_visibility(),
             is_abstract,
             imports,
             exports,
-        }
+        })
     }
 
     pub fn name(&self) -> SymbolName {
