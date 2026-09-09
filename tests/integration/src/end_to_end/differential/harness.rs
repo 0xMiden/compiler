@@ -103,6 +103,25 @@ pub(super) fn run_case_with_flags(name: &str, source: &str, flags: &[&str]) {
     run_case_inner_with_flags(name, source, Inputs::Random16, flags);
 }
 
+/// Like [`run_case_with_flags`], but compares against an explicit list of
+/// `(input1, input2)` pairs instead of random fuzzing.
+///
+/// Use this to pin a configuration-dependent divergence on exactly the inputs
+/// that flagged it (flags and inputs together), so the reproducer needs
+/// neither environment setup nor a source variant with baked-in operands.
+pub(super) fn run_case_with_flags_and_inputs(
+    name: &str,
+    source: &str,
+    flags: &[&str],
+    inputs: &[(u32, u32)],
+) {
+    assert!(
+        !inputs.is_empty(),
+        "run_case_with_flags_and_inputs requires at least one input pair"
+    );
+    run_case_inner_with_flags(name, source, Inputs::Explicit(inputs), flags);
+}
+
 /// Shared body of [`run_case`] / [`run_case_with_inputs`]: build the case both
 /// natively and to MASM, then compare `entrypoint` outputs for the requested
 /// inputs.

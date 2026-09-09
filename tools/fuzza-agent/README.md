@@ -71,8 +71,9 @@ cases come in three flavors:
 - **Compile-time compiler panics** — the case *is* the reproducer; the panic
   message and source location are in the ignore reason.
 - **Configuration-dependent findings** — a `<case>_<config>` twin (e.g.
-  `spill_loop_mix_oz`) pins the compiler flags via `run_case_with_flags`, so
-  the finding reproduces without any environment setup.
+  `spill_loop_mix_oz`) pins the compiler flags via `run_case_with_flags`
+  (or `run_case_with_flags_and_inputs` when the divergence also needs its
+  exact inputs), so the finding reproduces without any environment setup.
 - **Out-of-scope artifacts** — kept for coverage/documentation (e.g.
   `mem_grow`); the ignore reason explains why they will not be "fixed".
 

@@ -1,6 +1,8 @@
 //! u64/u128/i128 runtime arithmetic through wide-arithmetic ops and compiler-builtins.
 
-use super::super::harness::{run_case, run_case_with_flags, run_case_with_inputs};
+use super::super::harness::{
+    run_case, run_case_with_flags, run_case_with_flags_and_inputs, run_case_with_inputs,
+};
 
 /// u64-returning helper with early returns, trap exit, and loop exit —
 /// multi-word successor operands through branch lowering.
@@ -703,22 +705,22 @@ fn chk_add_u128_o1() {
     );
 }
 
-/// Deterministic reproducer for the `chk_add_u128_o1` divergence. The
-/// harness cannot pin explicit inputs together with per-case flags, so this
-/// twin runs `case_chk_add_u128_o1_pin.rs`: the same loop with the (1, 1)
-/// row's operands (a = 2^96 + 2^64 + 1, b | 1 = 2^96 + 2^32 + 1, two trips;
-/// no overflow, but the wasm takes the `None` arm on the first trip because
-/// the stale high limb reads 0 < a's) made opaque through
-/// `core::hint::black_box`, so every fuzzed input pair computes exactly that
-/// case (native 3584 vs masm 1536).
+/// Deterministic reproducer for the `chk_add_u128_o1` divergence: the same
+/// case pinned to the (1, 1) and (3, 3) rows at `--optimize=basic`. On (1, 1)
+/// the operands are a = 2^96 + 2^32 + 1 and y | 1 = 2^96 + 2^64 + 2^32 + 1
+/// over two trips — no overflow, but the wasm takes the `None` arm on the
+/// first trip because the stale high limb reads 0 < a's (native 512 vs masm
+/// 1536).
 #[test]
-#[ignore = "guest LLVM miscompile at --optimize=basic on the pinned (1, 1) row: native 3584 vs \
-            masm 1536; u128::checked_add loop, see chk_add_u128_o1"]
+#[ignore = "guest LLVM miscompile at --optimize=basic on the pinned rows: (1, 1) native 512 vs \
+            masm 1536, (3, 3) native 11898 vs masm 8826; u128::checked_add loop, see \
+            chk_add_u128_o1"]
 fn chk_add_u128_o1_repro() {
-    run_case_with_flags(
+    run_case_with_flags_and_inputs(
         "chk_add_u128_o1_repro",
-        include_str!("../cases/case_chk_add_u128_o1_pin.rs"),
+        include_str!("../cases/case_chk_add_u128_o1.rs"),
         &["--optimize=basic"],
+        &[(1, 1), (3, 3)],
     );
 }
 
