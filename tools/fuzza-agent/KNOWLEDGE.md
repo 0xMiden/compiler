@@ -739,19 +739,20 @@ pipeline in midenc-compile/src/stages/rewrite.rs):
   `join_with_inputs::<ValueRange>` monomorphization and
   `mark_entry_blocks_live`) never executes. Module-scoped SCCP/liveness would
   be required, and the pipeline never schedules it.
-- `WhileRemoveDuplicatedResults`' interior is unreachable from wasm-derived
-  IR: it keys on duplicated **scf.condition forwarded operands** (the
-  before-region terminator) — not on yields and not on results directly. But
-  cfg-to-scf conditions forward either nothing (locals-only loops, the common
-  case) or the results of its own exit-dispatch `index_switch` chain —
-  distinct SSA values by construction. The repeated-operand lists cfg-to-scf
-  synthesizes (`scf.yield %v, %v, %v, %v, %d`, placeholder reuse) live only
-  in switch/yield ARM terminators, which the pattern ignores; no
-  canonicalization dedups switch RESULT columns (only unused-result and
-  constant-selector switch patterns exist), so the duplication never
-  propagates up to a condition; and a direct duplicate would need one
-  stack-resident value used twice on one exit edge — killed by the locals
-  argument.
+- `WhileRemoveDuplicatedResults` DOES fire (REFUTED 2026-09-09, campaign 19;
+  the 2026-07-23 argument below said its interior was unreachable from
+  wasm-derived IR). It keys on duplicated **scf.condition forwarded
+  operands** (the before-region terminator) — not on yields and not on
+  results directly — and cfg-to-scf's exit-dispatch chain does synthesize a
+  duplicate pair in a three-level TRIANGLE nest (`control_flow::triangle`,
+  one rewrite at the default level). Removing either of that case's exits
+  (the labeled `continue`, the inner `break`) still fires it, so the nest
+  itself is the producer; a four-level triangle and every -Oz variant fire
+  zero. The original argument — conditions forward either nothing
+  (locals-only loops) or distinct `index_switch` results, and the repeated
+  operand lists cfg-to-scf synthesizes (`scf.yield %v, %v, %v, %v, %d`) live
+  only in switch/yield ARM terminators, which the pattern ignores — holds for
+  everything except that shape.
 
 ## cf/scf canonicalization & cfg-to-scf closures (verified 2026-08-27)
 
@@ -787,18 +788,27 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   target whose only pred is the passthrough block would be a frame nothing
   branches to. What actually happens: `SplitCriticalEdges` inserts fresh
   single-predecessor blocks, and the guard becomes satisfiable on the
-  rewritten CFG, so the two patterns alternate to a fixpoint. Producer
-  (`deadfall_oz`, -Oz): an inner loop whose only exits are several in-loop
-  `return`s plus a `break`, nested in an outer loop — twelve
-  `SplitCriticalEdges` rewrites interleaved with ten
-  `SimplifyPassthroughCondBr` rewrites. Nothing else in the corpus reaches
-  it (0 fires in the state-machine, switch and count-band cases probed).
+  rewritten CFG, so the two patterns alternate to a fixpoint. Producer: an
+  inner loop whose only exits are several in-loop `return`s plus a `break`,
+  nested in an outer loop — twelve `SplitCriticalEdges` rewrites interleaved
+  with ten `SimplifyPassthroughCondBr` rewrites (`deadfall_oz`). Ladder
+  2026-09-09 (campaign 19, `canon::passthru_frame`): the pattern fires if and
+  only if at least one in-loop `return` comes AFTER the `break` — with the
+  `break` last it never fires, at any number of return sites — and it fires at
+  the DEFAULT opt-level exactly as at -Oz (the -Oz attribution was an artifact
+  of only tracing -Oz cases). The count is ten on every firing rung regardless
+  of the number of return sites (2..5) or the break's position, so it is a
+  property of the two-level frame; six return sites stops it entirely (LLVM
+  restructures the body).
   The plain-br variant (`SimplifyPassthroughBr`) skips the guard for
-  1-successor preds and was warm in the 2026-08-27 coverage profile, yet
-  the 2026-09-09 pattern traces saw it fire 0 times in every case probed
-  (`SimplifyBrToBlockWithSinglePred`, same MAX benefit and registered
-  first, claims the shapes) — not swept corpus-wide, so neither claim is a
-  closure. A frame-end passthrough to a *self-loop* is producible: a bare
+  1-successor preds and DOES fire (REFUTED 2026-09-09, campaign 19): a
+  corpus-wide trace found it in `do_while` (four rewrites) and `cf_shapes`
+  (one). The producer inside `do_while` is its `carried_bool` helper alone — a
+  `while go` loop whose condition is a loop-carried bool updated in several
+  match arms; `do_while_cont` alone fires zero, `nested_do_while` alone fires
+  zero at O2 and one at -Oz. Everywhere else `SimplifyBrToBlockWithSinglePred`
+  (same MAX benefit, registered first) claims the shapes.
+  A frame-end passthrough to a *self-loop* is producible: a bare
   `loop {}` behind an impossible guard leaves a header block containing only
   its own back-edge `cf.br`, taking `collapse_branch`'s
   collapse-into-self-loop bail (`case_spin_guard.rs`; `unreachable_exits`
@@ -817,13 +827,17 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   nothing but `rotate_left(32)`/`rotate_right(32)`/`(x << 32) | (x >> 32)`
   on u64 — zero rewrites at every opt-level. This is the same `arith.band`
   that makes count bands the corpus's cross-block spill freight.
-- **`SimplifyCondBrLikeSwitch` has no producer**: it needs a `cf.switch`
-  with exactly two successors. LLVM emits compares rather than a two-target
-  `br_table`, and fallback-overlap merging never gets a switch that far
-  down — 57 attempts on the 64-arm `sm16` state machine (which does fire
-  `SimplifySwitchFallbackOverlap` fourteen times) and 3 on a purpose-built
-  eight-arm match whose seven duplicate arms all share the fallback body:
-  zero rewrites (2026-09-09).
+- **`SimplifyCondBrLikeSwitch` DOES fire** (REFUTED 2026-09-09, campaign 19;
+  the campaign-18 "no producer" claim came from probing switch shapes with no
+  trapping arm). It needs a `cf.switch` with exactly two successors, and TRAP
+  or impossible-guard arms are what get a switch that low: six producers among
+  the committed control-flow cases (`unreachable_exits` twice;
+  `switch_loop_mix`, `switch_trap_arm`, `trap_branch`, `spin_guard`,
+  `ret_args` once each), and it is deliberately reproducible with a sixteen-arm
+  `match` carrying impossible `panic!()` arms or a wasm `unreachable` arm
+  (`canon::trap_dispatch`, one rewrite at every opt-level). A plain many-armed
+  `match` with duplicate arms still does not reach it — the 64-arm `sm16`
+  fires `SimplifySwitchFallbackOverlap` fourteen times and this pattern zero.
 - **`IfRemoveUnusedResults` has no producer, and `WhileConditionTruth` has
   none either** (2026-09-09): cfg-to-scf builds a payload column only for a
   value that HAS a use outside the region, so an `scf.if` result with no
@@ -832,13 +846,54 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   `scf.condition` to forward its own condition value into the after region
   AND the corresponding block argument to be used, which LLVM forecloses by
   folding any in-body read of the loop condition to `true` before lifting.
-  Confirmed firing in the same sweep: `IndexSwitchRemoveUnusedResults` and
-  `WhileUnusedResult` (`loop_keep_oz`), `FoldRedundantYields` (`sm_bits`),
-  `SimplifySwitchFallbackOverlap` (`sm16`), `ConvertTrivialIfToSelect`,
-  `WhileRemoveUnusedArgs` and `SplitCriticalEdges` (many cases).
-  `SimplifyPassthroughBr` and `SimplifyBrToReturn` fired ZERO times in
-  every case probed — `SimplifyBrToBlockWithSinglePred` (same MAX benefit,
-  registered first) claims their shapes.
+- **The `WhileUnusedResult` -> `IndexSwitchRemoveUnusedResults` column-removal
+  cascade has exactly one producer shape: a loop whose only in-body branch is
+  an EMPTY `continue` arm** (2026-09-09, campaign 19, bisect of
+  `loop_keep_oz`). cfg-to-scf gives such a loop an exit-dispatch payload
+  column with no consumer; `WhileUnusedResult` drops the loop result, its
+  yield operand dies and `IndexSwitchRemoveUnusedResults` rebuilds the
+  `scf.index_switch` without that column. The cascade is LINEAR in the number
+  of such loops (K copies -> K rewrites of each pattern, verified to K = 8 in
+  `canon::col_cascade`) and fires at the DEFAULT opt-level as well as at -Oz.
+  Emptiness is load-bearing: a `continue` arm that updates any carried
+  variable fires neither pattern (verified over K x C = {1,2,4} x {1,2,3}
+  loops x continue-edges), and neither does an early-`break` scan loop or a
+  nested counted-loop pair.
+- **`SimplifySwitchFallbackOverlap` rewrites ONCE per switch, however many
+  arms it merges**: the pattern rebuilds the `cf.switch` without ALL of the
+  overlapping cases in a single rewrite, so its fire count measures the number
+  of distinct switches, not merged arms (`sm16`'s fourteen fires are fourteen
+  switches). Arm count (8/16/32), duplicate count (3/5/9) and duplicate
+  placement (contiguous/scattered/tail) leave the count at one
+  (`canon::arms_merge`).
+- **Corpus-wide firing table** (2026-09-09, campaign 19: the whole
+  `control_flow` module traced in one run): `FoldRedundantYields`
+  (`sm16`/`wide_exits`, sixteen each), `SimplifySwitchFallbackOverlap`
+  (`sm16`, fourteen), `ConvertTrivialIfToSelect`
+  (44 producers, max sixteen in `diamond_nest`), `SplitCriticalEdges` (44
+  producers, max forty in `wide_exits`), `WhileRemoveUnusedArgs` (33
+  producers, max six in `nest8`; a chain of K loops with an early `break`
+  gives exactly K rewrites at -Oz). `SimplifyBrToReturn` fires ZERO times
+  corpus-wide — `SimplifyBrToBlockWithSinglePred` (same MAX benefit,
+  registered first) claims its shapes.
+- **`RemoveUnusedSinglePredBlockArgs` DOES fire**, but only in trap/br_table
+  shapes (`switch_loop_mix`, `switch_trap_arm`, once each; 2026-09-09,
+  campaign 19 — the campaign-18 "0 fires" claim was based on ~12 cases, none
+  of them from the control-flow module). Four purpose-built scaled-up
+  variants failed to reproduce it, so it stays rare. Source note: the
+  pattern's loop reads `br_op.successors()[0]` for BOTH the then- and the
+  else-destination (dialects/cf/src/canonicalization/simplify_successor_
+  arguments.rs), so the else successor's arguments are never removed.
+- **All cfg-to-scf payload columns are 1-felt `u32`** (2026-09-09, HIR dumps
+  of `nest8`, `wide_exits`, `exit_values`, `sm_wide`, `loop_keep_oz` and
+  campaign-19 shapes, with guest DWARF on AND off): every `scf.yield` /
+  `scf.condition` / `scf.index_switch` / `scf.if` signature carries only
+  `u32` discriminators and `ub.poison` placeholders, plus the `i32` function
+  result and `i1` conditions. User state crosses region boundaries in wasm
+  LOCALS (`hir.load_local` inside the consuming region), so multi-felt
+  (u64 = 2-felt, u128 = 4-felt) columns are NOT producible from plain Rust —
+  column-remap and if-to-select rungs that need wide columns are unproducible
+  at every opt-level.
 - **Cheapest pattern-firing evidence**:
   `MIDENC_TRACE='pattern-rewrite-driver=trace'` prints
   `trying to match '<pattern>'` (debug) immediately before each attempt and
@@ -1682,6 +1737,15 @@ at the test site.
   (cargo caching only affects the Rust→wasm step), so no cache-busting is
   needed to re-probe an unchanged case. `cargo make fuzza-probe` handles all
   of this and writes to `target/fuzza-probe/<case>/`.
+- **Tracing a whole module in ONE `cargo test` run needs care with test
+  attribution**: with `--test-threads=1 --nocapture`, libtest prints
+  `test <name> ... ` BEFORE the test runs, so log lines that follow a name
+  belong to THAT test and everything before the first name belongs to nothing.
+  A parser that flushes counters when it sees a name attributes every test's
+  output to its successor (campaign 19; `scratch/c19pat.sh` + `c19pat.py` get
+  it right, and single-test `--exact` runs have no such hazard). The
+  `pattern-rewrite-driver` trace lines also carry `dialect=`/`op=` fields, so
+  a fired count can be split by the op kind it rewrote.
 - `cargo test <filter> -- --exact` needs the FULL test path
   (`end_to_end::differential::tests::<module>::<name>`); a partial path
   with `--exact` silently runs zero tests. Also, extra names after `--`
