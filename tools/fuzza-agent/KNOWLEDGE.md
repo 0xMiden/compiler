@@ -838,8 +838,15 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   (`canon::trap_dispatch`, one rewrite at every opt-level). A plain many-armed
   `match` with duplicate arms still does not reach it — the 64-arm `sm16`
   fires `SimplifySwitchFallbackOverlap` fourteen times and this pattern zero.
-- **`IfRemoveUnusedResults` has no producer, and `WhileConditionTruth` has
-  none either** (2026-09-09): cfg-to-scf builds a payload column only for a
+- **`IfRemoveUnusedResults` DOES fire** (REFUTED 2026-09-09, campaign 20; the
+  2026-09-09 campaign-19 closure below held only for freight-free shapes).
+  Producer: a three-level diamond nest crossed by CSE-merged count bands whose
+  only consumer is the deepest arm — three rewrites at both opt levels with 4, 8
+  or 12 bands, ZERO with the same nest and no bands (`interact::sink_spill`), so
+  the band traffic is what leaves an `scf.if` result with no real use. Original
+  argument, still correct for the shapes it was derived from, and
+  **`WhileConditionTruth` still has no producer** (2026-09-09): cfg-to-scf
+  builds a payload column only for a
   value that HAS a use outside the region, so an `scf.if` result with no
   real uses cannot arise from partly-used join columns nor from a diamond
   inside a multi-continuation kept loop; and `WhileConditionTruth` needs
@@ -873,7 +880,9 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   (44 producers, max sixteen in `diamond_nest`), `SplitCriticalEdges` (44
   producers, max forty in `wide_exits`), `WhileRemoveUnusedArgs` (33
   producers, max six in `nest8`; a chain of K loops with an early `break`
-  gives exactly K rewrites at -Oz). `SimplifyBrToReturn` fires ZERO times
+  gives exactly K rewrites at -Oz, and K at the DEFAULT level too once the
+  loop bodies carry count-band traffic that stops LLVM unrolling them —
+  campaign 20, `interact::scan_spill`). `SimplifyBrToReturn` fires ZERO times
   corpus-wide — `SimplifyBrToBlockWithSinglePred` (same MAX benefit,
   registered first) claims its shapes.
 - **`RemoveUnusedSinglePredBlockArgs` DOES fire**, but only in trap/br_table
@@ -1336,6 +1345,77 @@ spill shape BEFORE paying a coverage step.
   (`enumerate().any(|(i, _)| i > 1)`) — so phi insertion never happens at
   two-predecessor joins, and the unroll-family shapes (epilogue joins with
   3+ predecessors) are the ones that reach it.
+
+## Spill freight x canonicalization: pass interactions (verified 2026-09-09, campaign 20)
+
+Composing the canonicalization producers of campaign 19 with the spill freight
+of campaign 18, every rung value-checked at the default level and at
+`--optimize=size-min` (corpus cases in `tests/interact.rs`).
+
+- **Count bands alone rarely request a spill; a u64 CLUSTER does.** Up to about
+  nine shared masked rotate counts the spills trace logs zero spills (the
+  analysis counts LIVE felts). The lever that makes the analysis actually spill
+  is the `case_spill_split` recipe generalized: H u64 values defined before the
+  region, consumed inside it in ONE wide expression (so they are all live at a
+  single program point) and used again after it. Eight bands plus an eight-value
+  cluster across two loops gives 57 spills / 84 reloads / two "edges to split" /
+  six split edges. The two axes are not independent: with four bands the cluster
+  caps at seven values, with eight bands an eight-value cluster still compiles.
+- **`TransformSpills` leaves no spill/reload ops behind.** Each reload is
+  rewritten into a `hir.load_local` of a spill slot — the pass trace logs
+  "convert reload to load" once per reload — so post-lift passes and print-IR
+  dumps show spill freight as `load_local`, never as `hir.reload`. Searching a
+  post-lift IR dump for reload ops will always find zero.
+- **Freight does not change how often a canonicalization pattern fires.** The
+  column-removal cascade stays linear in the number of empty-`continue` loops
+  (1/2/4 loops -> 1/2/4 of each pattern) for every band count from 2 to 12;
+  `SimplifyPassthroughCondBr` still fires exactly ten times (with 13 / 12
+  `SplitCriticalEdges` at O2 / -Oz) with twelve bands crossing both loops;
+  `SimplifySwitchFallbackOverlap` still fires once per switch. What freight
+  changes is the operand-scheduling outcome, not the rewrite.
+- **Two exceptions, both new producers:** (a) `IfRemoveUnusedResults`, recorded
+  as having NO producer, fires three times on a three-level diamond nest whose
+  deepest arm is the only consumer of the crossing bands — bisected against the
+  same nest with zero bands, which fires it zero times, so the BAND TRAFFIC is
+  the producer; (b) a chain of K early-`break` scan loops fires
+  `WhileRemoveUnusedArgs` K times at the DEFAULT level once its bodies carry
+  band traffic (campaign 19 measured K at -Oz and zero at O2, because LLVM
+  unrolls freight-free scans).
+- **The band-count boundary is not monotone.** The empty-`continue` cascade
+  shape compiles at 2, 4, 6, 8, 9, 12, 13, 14 bands and panics at 10, 11, 15,
+  16, identically at O2 and -Oz and identically for one, two and four loops.
+  Do not infer "N-1 passes" from "N fails" on this axis.
+- **Freight tolerance ranking of the canonicalization shapes** (bands crossing,
+  at both opt levels unless noted): a chain of early-`break` scan loops and a
+  three-level diamond take 12+; the fallback-overlap dispatch takes 10 (12 at
+  O2 only); the cond-br-like-switch dispatch takes 8; the asymmetric if-to-select
+  diamond takes 6 (8 at O2 only) and its symmetric twin two rungs fewer; the
+  passthrough frame takes 16 at O2 but only 12 at -Oz. On the cluster axis the
+  passthrough frame is the weakest (four values break it) and the scan chain the
+  strongest (ten). The PREDICATE of a scan loop's `break` moves that number: an
+  accumulator-derived condition tolerates ten cluster values where an
+  input-bit-derived one fails at six.
+- **The `frontier.rs:123` unwrap does not need a zero-trip-capable loop.** It
+  needs a join with three or more predecessors reached through one of the spill
+  transform's own split edges; a sixteen-arm `match` inside a bottom-tested loop
+  and a pair of sequential loops whose bands are used only in the second both
+  reach it with `(input % k) + 2` bounds. Both are DEFAULT-level-only failures
+  that compile at `--optimize=size-min` — the opposite direction from the
+  documented -Oz-earlier rule.
+- **Erased split-edge reloads and dead "unused phi" block arguments are present
+  in programs that compute the right answer.** Four of the six committed
+  interaction guards carry erased split reloads (2 to 32 of them) and two carry
+  "unused phi" warnings, and every one of them agrees with the native build on
+  its pinned grid. Neither marker on its own predicts a miscompile; they predict
+  how close the shape is to the pressure cliff.
+- **Print-IR between passes:** `-Z print-ir-after-pass=<pass>` is an unstable
+  option whose printer emits through `log::trace!` with target `pass:<pass>`
+  (hir/src/pass.rs), so it needs BOTH the flag and
+  `MIDENC_TRACE='pass:<pass>=trace'`; `print-ir-after-all` and
+  `print-ir-after-pass` are mutually exclusive. Pass names: `canonicalizer`,
+  `cse`, `sparse-conditional-constant-propagation`, `sink-operand-defs`,
+  `local2reg`, `transform-spills`, `lift-control-flow`. Both canonicalizer runs
+  and both spill runs share one name, so the dumps are told apart by order.
 
 ## Compiler-configuration axes (verified 2026-09-02, campaign 8)
 

@@ -113,6 +113,18 @@ fn zero_trip_guard_repro() {
 /// `% 97 + 3` bounds (no bypass edge; `spill_loop_mix`, sixteen counts)
 /// passes. Compile-time — no inputs involved. Un-ignore when this case
 /// compiles (the transform recomputes dominance after splitting edges).
+///
+/// Producer-set correction (campaign 20): a zero-trip-capable loop is NOT
+/// necessary for this unwrap, only a join with three or more predecessors
+/// reached through one of the transform's own split edges. Two shapes with
+/// bottom-tested `(input % k) + 2` bounds reach it: a sixteen-arm `match`
+/// inside a kept loop with nine or ten shared count bands crossing it (the
+/// arms are the many-predecessor join), and two sequential loops where the
+/// bands are used before the first and again only inside the SECOND. Both are
+/// also opt-level-dependent in the other direction from the documented rungs —
+/// they panic at the DEFAULT guest opt-level and compile at
+/// `--optimize=size-min`. The passing compositions of those shapes are
+/// `interact::dispatch_spill` (ten bands) and `interact::sink_spill`.
 #[test]
 #[ignore = "compiler panic: 'called Option::unwrap() on a None value' at \
             hir/src/ir/dominance/frontier.rs:123 (DominanceFrontier::new from \
