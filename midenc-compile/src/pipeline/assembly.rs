@@ -64,11 +64,15 @@ pub(crate) fn prepare_assembler(
 }
 
 /// Attaches frontend metadata, advice-map data, and target-specific sections after assembly.
+///
+/// The author codec is attached only when the note is the root target of the build, as
+/// [`attaches_note_codec`] decides. Every other section is attached for every role.
 pub(crate) fn post_process_package(
     package: &mut Package,
     component: &MasmComponent,
     sections: &midenc_frontend_wasm_metadata::PackageSections,
     context: &TargetAssemblyContext<'_>,
+    role: crate::pipeline::observer::TargetRole,
 ) -> Result<(), Report> {
     use miden_assembly::serde::Serializable;
     use miden_mast_package::{Section, SectionId};
@@ -103,12 +107,31 @@ pub(crate) fn post_process_package(
             .push(Section::new(SectionId::KERNEL, kernel_package.to_bytes()));
     }
 
-    if has_note_codec && context.target.ty == TargetType::Note {
+    if attaches_note_codec(has_note_codec, context.target.ty, role) {
         // Run after schema and kernel attachment. The codec stages this package state and hashes it.
         attach_note_codec(package, context)?;
     }
 
     Ok(())
+}
+
+/// Returns true when the assembled package must carry an author codec section.
+///
+/// The codec is built only for a note that is the root target of the build. A note that is a
+/// source dependency of another project gets no codec section, for two reasons. The codec
+/// crate's inputs are outside the build provenance, so a dependency copy that is kept in a
+/// package store can carry a stale codec after the codec crate changes. And every dependency
+/// assembly would otherwise run a nested cargo build. A consumer that needs the codec loads the
+/// note's own package. This is also the behavior of the package post-processor that will take
+/// over the codec build, because a post-processor never runs on a dependency.
+fn attaches_note_codec(
+    has_note_codec: bool,
+    target_type: midenc_session::miden_project::TargetType,
+    role: crate::pipeline::observer::TargetRole,
+) -> bool {
+    use midenc_session::miden_project::TargetType;
+
+    has_note_codec && target_type == TargetType::Note && role.is_root()
 }
 
 /// Validates the target and schema required by an author codec declaration.
@@ -330,5 +353,16 @@ interface note-storage {
         validate_note_codec_declaration(true, true, TargetType::Note, true, "note").unwrap();
         validate_note_codec_declaration(false, false, TargetType::Library, false, "library")
             .unwrap();
+    }
+
+    #[test]
+    fn codec_attaches_only_to_a_root_note_that_declares_one() {
+        use crate::pipeline::observer::TargetRole;
+
+        assert!(attaches_note_codec(true, TargetType::Note, TargetRole::Root));
+        assert!(!attaches_note_codec(true, TargetType::Note, TargetRole::Dependency));
+        assert!(!attaches_note_codec(true, TargetType::Note, TargetRole::RequiredLibrary));
+        assert!(!attaches_note_codec(true, TargetType::Library, TargetRole::Root));
+        assert!(!attaches_note_codec(false, TargetType::Note, TargetRole::Root));
     }
 }

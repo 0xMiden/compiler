@@ -28,6 +28,11 @@
 //! [package.metadata.midenc.note-codec]
 //! crate = "../my-note-codec"
 //! ```
+//!
+//! The codec is embedded only when the note is built as its own project. A note that another
+//! project pulls in as a source dependency carries no codec section, because the codec crate's
+//! inputs are outside the build provenance, so a stored dependency copy could keep a stale codec
+//! after the codec crate changes. Load the note's own package to get the codec.
 
 #![deny(missing_docs)]
 

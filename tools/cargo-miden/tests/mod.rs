@@ -1,5 +1,6 @@
 mod build_forwarding;
 mod dex_note_codec_build;
+mod dex_note_dependency_build;
 mod masm_dependency;
 mod miden_build;
 mod p2id_cargo_miden_build;
