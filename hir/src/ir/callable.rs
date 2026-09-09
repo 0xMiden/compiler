@@ -26,11 +26,17 @@ pub trait CallOpInterface: Op {
     /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
     /// if a valid callable was not resolved, using the provided symbol table.
     ///
+    /// Symbol aliases must be followed to their canonical target, resolving each alias in its
+    /// own symbol table. This does not change the symbol reference stored on the call.
+    ///
     /// This method is used to perform callee resolution using a cached symbol table, rather than
     /// traversing the operation hierarchy looking for symbol tables to try resolving with.
     fn resolve_in_symbol_table(&self, symbols: &dyn crate::SymbolTable) -> Option<SymbolRef>;
     /// Resolve the callable operation for the current callee to a `CallableOpInterface`, or `None`
     /// if a valid callable was not resolved.
+    ///
+    /// Symbol aliases must be followed to their canonical target so calls and returns agree on
+    /// the operation that owns the callable body. The stored callee remains unchanged.
     fn resolve(&self) -> Option<SymbolRef>;
     /// Enumerate every callable this operation may transfer control to, or `None` if the set of
     /// possible callees is not statically known.
@@ -40,6 +46,8 @@ pub trait CallOpInterface: Op {
     /// through a function table) override this to enumerate that set, which interprocedural
     /// analyses join over; an empty set means the call can never transfer control (every
     /// dispatch traps).
+    ///
+    /// Returned targets must be canonical (with symbol aliases resolved) and deduplicated.
     fn possible_callees(&self) -> Option<crate::SmallVec<[SymbolRef; 2]>> {
         self.resolve().map(|callee| crate::smallvec![callee])
     }
@@ -64,7 +72,7 @@ pub trait CallOpInterface: Op {
 ///
 /// These operations may only contain a single region.
 pub trait CallableOpInterface: Op {
-    /// Returns the region on the current operation that is callable.
+    /// Returns the region executed by this callable.
     ///
     /// This may return `None` in the case of an external callable object, e.g. an externally-
     /// defined function reference.
@@ -73,10 +81,9 @@ pub trait CallableOpInterface: Op {
     fn signature(&self) -> Signature;
 }
 
-/// A marker trait for all operations which are callable symbols
-pub trait CallableSymbol: Symbol + CallableOpInterface {}
-
-impl<T: Symbol + CallableOpInterface> CallableSymbol for T {}
+/// A marker trait for all operations which are callable symbols (i.e. symbols that can be
+/// targeted by a call-like operation).
+pub trait CallableSymbol: Symbol {}
 
 /// An alias for [`UnsafeIntrusiveEntityRef<dyn CallableSymbol>`]
 pub type CallableSymbolRef = UnsafeIntrusiveEntityRef<dyn CallableSymbol>;
