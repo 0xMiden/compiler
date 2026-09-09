@@ -1319,7 +1319,9 @@ spill shape BEFORE paying a coverage step.
 - **Configuration knobs summary:** `MIDENC_DIFF_FLAGS` (midenc flags,
   per-case flags win per option), `FUZZA_INPUT_PAIRS=N` (random pairs
   per case), `FUZZA_GUEST_DEBUG=0|1|2` (guest debug-info level; default
-  2), `run_case_with_flags` (pin a configuration in-repo).
+  2), `run_case_with_flags` (pin a configuration in-repo),
+  `run_case_with_flags_and_inputs` (pin a configuration together with the
+  exact input pairs).
 
 ## Debug-info (DWARF) cluster facts (verified 2026-09-02, campaign 7)
 

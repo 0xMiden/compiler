@@ -201,7 +201,9 @@ fn <name>() {
      `sext_shapes_repro` in the test modules). A finding that appears only
      under a compiler configuration (a `MIDENC_DIFF_FLAGS` sweep) is pinned
      the same way with `run_case_with_flags` and the flags in the twin (see
-     `spill_loop_mix_oz`). If the case mixes several constructs,
+     `spill_loop_mix_oz`), or with `run_case_with_flags_and_inputs` when the
+     configuration-dependent divergence has exact failing inputs to pin (see
+     `chk_add_u128_o1_repro`). If the case mixes several constructs,
      split it so each divergence gets its own minimal reproducer — the passing
      siblings *bound* the bug for free. The test's doc comment and ignore
      reason are the bug's **only** documentation (nothing goes in README or
