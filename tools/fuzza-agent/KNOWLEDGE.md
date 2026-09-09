@@ -777,18 +777,76 @@ gap-check pass; wat probes `tail_funnel` (deleted), `spin_guard`):
   branch-region entry-argument replacement in
   `transform_to_structured_cf_branches` (transform.rs ~725) are all
   unproducible.
-- **`SimplifyPassthroughCondBr` can never rewrite**: collapsing an arm of a
-  multi-successor predecessor requires the passthrough's target to have a
-  UNIQUE predecessor (critical-edge guard), but a wasm frame is emitted only
-  because something branches to it — a target whose only pred is the
-  passthrough block would be a frame nothing branches to. The plain-br
-  variant (`SimplifyPassthroughBr`) fires routinely (1-successor preds skip
-  the guard). A frame-end passthrough to a *self-loop* is producible: a bare
+- **`SimplifyPassthroughCondBr` DOES rewrite** (REFUTED 2026-09-09,
+  campaign 18; the 2026-08-27 closure below was an argument about the IR as
+  the frontend emits it, and missed that the greedy driver runs
+  `SplitCriticalEdges` in the same fixpoint). Original argument: collapsing
+  an arm of a multi-successor predecessor requires the passthrough's target
+  to have a UNIQUE predecessor (critical-edge guard in `collapse_branch`),
+  but a wasm frame is emitted only because something branches to it — a
+  target whose only pred is the passthrough block would be a frame nothing
+  branches to. What actually happens: `SplitCriticalEdges` inserts fresh
+  single-predecessor blocks, and the guard becomes satisfiable on the
+  rewritten CFG, so the two patterns alternate to a fixpoint. Producer
+  (`deadfall_oz`, -Oz): an inner loop whose only exits are several in-loop
+  `return`s plus a `break`, nested in an outer loop — twelve
+  `SplitCriticalEdges` rewrites interleaved with ten
+  `SimplifyPassthroughCondBr` rewrites. Nothing else in the corpus reaches
+  it (0 fires in the state-machine, switch and count-band cases probed).
+  The plain-br variant (`SimplifyPassthroughBr`) skips the guard for
+  1-successor preds and was warm in the 2026-08-27 coverage profile, yet
+  the 2026-09-09 pattern traces saw it fire 0 times in every case probed
+  (`SimplifyBrToBlockWithSinglePred`, same MAX benefit and registered
+  first, claims the shapes) — not swept corpus-wide, so neither claim is a
+  closure. A frame-end passthrough to a *self-loop* is producible: a bare
   `loop {}` behind an impossible guard leaves a header block containing only
   its own back-edge `cf.br`, taking `collapse_branch`'s
   collapse-into-self-loop bail (`case_spin_guard.rs`; `unreachable_exits`
   deliberately keeps its infinite loop body non-empty, which hides this
   shape).
+- **`CanonicalizeI64RotateBy32ToSwap` (dialects/arith) is structurally
+  unreachable from wasm-derived IR** (closed by source + probe,
+  2026-09-09): the pattern resolves its shift operand to a constant through
+  `hir.cast`/`hir.bitcast`/`arith.trunc`/`arith.sext`/`arith.zext` only,
+  but the frontend wraps EVERY rotate/shift count in
+  `arith.band(trunc(count), width - 1)` (`mask_movement_count`,
+  frontend/wasm/src/code_translator/mod.rs) and `arith.Band` has no `fold`
+  impl (the arith dialect defines folders only for constants and
+  coercions), so the walk bails on the band and never sees the 32. Probed
+  111 attempts on a rotate-heavy -Oz case and 24 on a case that does
+  nothing but `rotate_left(32)`/`rotate_right(32)`/`(x << 32) | (x >> 32)`
+  on u64 — zero rewrites at every opt-level. This is the same `arith.band`
+  that makes count bands the corpus's cross-block spill freight.
+- **`SimplifyCondBrLikeSwitch` has no producer**: it needs a `cf.switch`
+  with exactly two successors. LLVM emits compares rather than a two-target
+  `br_table`, and fallback-overlap merging never gets a switch that far
+  down — 57 attempts on the 64-arm `sm16` state machine (which does fire
+  `SimplifySwitchFallbackOverlap` fourteen times) and 3 on a purpose-built
+  eight-arm match whose seven duplicate arms all share the fallback body:
+  zero rewrites (2026-09-09).
+- **`IfRemoveUnusedResults` has no producer, and `WhileConditionTruth` has
+  none either** (2026-09-09): cfg-to-scf builds a payload column only for a
+  value that HAS a use outside the region, so an `scf.if` result with no
+  real uses cannot arise from partly-used join columns nor from a diamond
+  inside a multi-continuation kept loop; and `WhileConditionTruth` needs
+  `scf.condition` to forward its own condition value into the after region
+  AND the corresponding block argument to be used, which LLVM forecloses by
+  folding any in-body read of the loop condition to `true` before lifting.
+  Confirmed firing in the same sweep: `IndexSwitchRemoveUnusedResults` and
+  `WhileUnusedResult` (`loop_keep_oz`), `FoldRedundantYields` (`sm_bits`),
+  `SimplifySwitchFallbackOverlap` (`sm16`), `ConvertTrivialIfToSelect`,
+  `WhileRemoveUnusedArgs` and `SplitCriticalEdges` (many cases).
+  `SimplifyPassthroughBr` and `SimplifyBrToReturn` fired ZERO times in
+  every case probed — `SimplifyBrToBlockWithSinglePred` (same MAX benefit,
+  registered first) claims their shapes.
+- **Cheapest pattern-firing evidence**:
+  `MIDENC_TRACE='pattern-rewrite-driver=trace'` prints
+  `trying to match '<pattern>'` (debug) immediately before each attempt and
+  `pattern matched successfully` (trace) after a successful rewrite, so
+  pairing each success with the preceding attempt line gives an exact
+  fired/not-fired table per case. Useful sibling target for the emitter:
+  `codegen:operand-scheduling=trace` ("there are N used operands out of M",
+  "dropping dead instruction result %v at index i", "dropping N operands").
 - **`cf.Switch`/`cf.CondBr::get_successor_for_operands` interiors are
   closed**: the only callers workspace-wide are DCA's
   `visit_branch_operation` (dce.rs) and the spill analysis'
@@ -915,6 +973,31 @@ corroborate each closure below):
   scf.yield` with every arg dead and dropped at index 0 — the swap/movup arms
   of `drop_operand_at_position` have no producer (dead scf results are
   canonicalized away, selectors sit on top, argc>=2 rets are impossible).
+- **All three arms of the post-op drop now have committed producers**
+  (verified 2026-09-09, campaign 18, `codegen:operand-scheduling=trace`).
+  Which arm `drop_unused_operands_at` takes is decided purely by
+  `unused.len()` vs `num_used` at that program point, and with count bands
+  both counts are dialable: N bands used before a loop and on its
+  loop-carried accumulator die inside the loop, M bands also used after it
+  stay live. `N > M` gives the pathological manual interleave
+  (`band_guard_oz`, "2 used operands out of 11"); `M == 0` gives the
+  all-unused batch arm, whose `assert_eq!(batch_size, self.stack.len())`
+  then holds (`drop_batch_oz`, "0 used operands out of 11" → one `dropn`);
+  and `N < M` gives the SOLVER arm — `schedule_operands` with an all-`Move`
+  constraint list followed by `dropn` (`drop_solver_oz`, "6 used operands
+  out of 9"), which nothing in the corpus reached before. A wrong schedule
+  in any of them is a silent miscompile, so these are value-checked
+  differentially, not just compiled.
+- **The dead-instruction-result drop only ever fires at index 0**, and its
+  single plain-Rust producer is the unused LOW half of `i64.mul_wide_u/_s`
+  — a Rust `mulhi`, `((a as u128) * (b as u128)) >> 64` (`mulhi_dead_oz`,
+  four two-felt drops). The mirror shape (dead HIGH half) has no producer:
+  whenever the high half is dead LLVM emits the narrow `i64.mul` instead of
+  the wide op, and a u128 accumulator loop that reads only the low half
+  afterwards keeps both halves live as loop-carried values. Hence the
+  `swap+drop` / `movup+drop` arms of `drop_operand_at_position` are
+  unreachable *from the dead-result site* (they are still reached from the
+  block-entry unused-parameter loop).
 - **`truncate_stack` only ever takes its `num_to_drop == 0` fast path**: Ret
   argc <= 1 (no multivalue) and the pre-terminator/dead-result drops leave
   exactly the ret operands on the stack; a leftover duplicate would need a
@@ -1282,6 +1365,34 @@ spill shape BEFORE paying a coverage step.
   K = 16 compiles at O2 and O3 — -Oz keeps the bands un-hoisted, so the
   Copy-constrained count sits deeper in the window. `case_band_guard_oz`
   (K = 9) is the passing guard beside the ignored `spill_loop_mix_oz`.
+  Ladder mapped 2026-09-09 (campaign 18, every rung value-checked): with N
+  bands dying inside the loop and M bands also used after it, the boundary
+  tracks N + M, not the shape of the post-loop code — `N + M <= 11`
+  compiles for every M in 1..4 and `N + M >= 12` panics. The KIND of the
+  first post-loop op (an arith op, a call to a kept helper, a
+  runtime-indexed store, a `select`, a second loop, a bare `return`) does
+  not move it by a single rung. The pre-loop DEFINITION ORDER of the bands
+  does: dying-bands-first reaches 11, live-first and alternating cap at 10,
+  a live/dead/live sandwich at 9. With M = 0 there is no boundary at all —
+  twenty bands compile and pass (`drop_batch_oz`), because nothing after
+  the loop needs a Copy-constrained count from the bottom of the window.
+- **The arity-2 `TwoArgs` gap has four arms, not two**: the tactic
+  dispatches on `(a.is_alias(), b.is_alias())` into `copy_copy` /
+  `copy_move` / `move_copy` / `move_move`, and `copy_copy` fails
+  identically — `[Copy, Copy]` on an `arith.shl` at -Oz, where
+  `dup(b_index)` pushes the copied word and the following
+  `dup(a_index + 1)` then needs felt index 16 (campaign 18, count-band
+  ladder in live-first or alternating band order). Bug specifics live at
+  `rotl_window` in tests/spills.rs.
+- **The "a NoSolution over more than 16 felts is a spill defect" rule of
+  thumb does NOT discriminate at -Oz** (campaign 18): the documented -Oz
+  reference `spill_loop_mix_oz` itself dumps a 16-operand / 18-felt stack
+  and its ladder siblings dump 15 operands / 17 felts. Use the spills
+  trace instead — `MIDENC_TRACE='analysis:spills=trace,pass:spills=trace'`
+  over the whole count-band ladder logs zero spills, zero edge splits and
+  zero unused-phi warnings, because `max_block_pressure` counts LIVE felts
+  and operands that are dead-but-not-yet-dropped are invisible to it. No
+  spill was requested, so the scheduling problem is in-contract.
 - `--test-harness` (codegen emits extra VM test-harness code) is a distinct
   codegen arm that was NOT swept: its executor-side semantics are unclear,
   so a divergence there could be a false finding — investigate before use.

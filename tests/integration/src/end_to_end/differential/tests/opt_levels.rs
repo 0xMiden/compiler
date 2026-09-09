@@ -13,7 +13,7 @@
 //! `memory.copy`/`memory.fill`. These cases keep those guest shapes in the
 //! committed suite (see KNOWLEDGE.md, "Compiler-configuration axes").
 
-use super::super::harness::run_case_with_flags;
+use super::super::harness::{run_case_with_flags, run_case_with_flags_and_inputs};
 
 /// Flags shared by every case in this module: LLVM `-Oz` for the guest.
 const SIZE_MIN: &[&str] = &["--optimize=size-min"];
@@ -27,6 +27,18 @@ const SIZE_MIN: &[&str] = &["--optimize=size-min"];
 /// that compiles, and the same source also passes at O2. At -Oz the count
 /// bands stay un-hoisted, so the nine dead bands are dropped AFTER the loop
 /// (the post-op drop site's used/unused interleave arms).
+///
+/// Campaign-18 ladder around this shape (all rungs value-checked at -Oz):
+/// the boundary tracks the TOTAL number of shared bands, not the shape of the
+/// post-loop code. With `M` bands used after the loop and `N` dying inside
+/// it, `N + M <= 11` compiles and `N + M >= 12` panics for `M = 1..4`; the
+/// KIND of the first post-loop op (an arith op, a call to a kept helper, a
+/// runtime-indexed store, a `select`, a second loop) does not move the
+/// boundary by a single rung. The pre-loop DEFINITION ORDER of the bands
+/// does: defining the dying bands first (as here) reaches 11, while
+/// live-first and alternating orders cap at 10 and a live/dead/live sandwich
+/// at 9. With `M = 0` there is no boundary at all (`drop_batch_oz`, twenty
+/// bands).
 #[test]
 fn band_guard_oz() {
     run_case_with_flags("band_guard_oz", include_str!("../cases/case_band_guard_oz.rs"), SIZE_MIN);
@@ -114,4 +126,89 @@ fn nest8_oz() {
 #[test]
 fn u64_checks_oz() {
     run_case_with_flags("u64_checks_oz", include_str!("../cases/case_u64_checks_oz.rs"), SIZE_MIN);
+}
+
+/// Whole-stack batch drop at the pre-terminator program point: twenty count
+/// bands are live from the pre-loop code through the loop body and dead at
+/// the `return`, so the block emitter finds the ENTIRE operand stack unused
+/// ("0 used operands out of 11") and takes `drop_unused_operands_at`'s
+/// all-unused batch arm, which asserts that the batch covers the whole stack.
+/// Boundary fact (campaign 18): with no post-loop use of any band this ladder
+/// has no window boundary — twenty shared counts compile and pass, whereas
+/// `band_guard_oz` (one band used after the loop) caps out at nine. Passes at
+/// `--optimize=basic`, the default level and `--optimize=max` too.
+#[test]
+fn drop_batch_oz() {
+    run_case_with_flags("drop_batch_oz", include_str!("../cases/case_drop_batch_oz.rs"), SIZE_MIN);
+}
+
+/// The post-op drop's SOLVER path: three dead count bands under six live ones
+/// ("6 used operands out of 9"), so `drop_unused_operands_at` takes its
+/// non-pathological branch and asks the operand scheduler to bring the unused
+/// values to the top under all-`Move` constraints before `dropn`. Every other
+/// drop-bearing case in the corpus has more dead operands than live ones and
+/// takes the manual interleave (`band_guard_oz`) or whole-stack batch
+/// (`drop_batch_oz`) arms instead. A wrong schedule here is a silent
+/// miscompile, not a panic, which is why the shape is value-checked
+/// differentially. Passes at every opt-level.
+#[test]
+fn drop_solver_oz() {
+    run_case_with_flags(
+        "drop_solver_oz",
+        include_str!("../cases/case_drop_solver_oz.rs"),
+        SIZE_MIN,
+    );
+}
+
+/// Dead results of a multi-result op: four `mulhi` rounds lower to
+/// `i64.mul_wide_u` whose LOW result is dead, so the emitter's
+/// dead-instruction-result drop fires four times on a two-felt operand, under
+/// a shelf of eight live u32 values. Closure fact (campaign 18): the dead
+/// result is always at index 0, because the only plain-Rust producer of a
+/// dead result is a wide op's unused low half — LLVM emits the narrow op
+/// instead whenever the HIGH half is the dead one, so the non-zero-index
+/// (swap/movup) arms of `drop_operand_at_position` have no producer at this
+/// site. Passes at every opt-level.
+#[test]
+fn mulhi_dead_oz() {
+    run_case_with_flags("mulhi_dead_oz", include_str!("../cases/case_mulhi_dead_oz.rs"), SIZE_MIN);
+}
+
+/// A helper -Oz keeps as a real call (LLVM's own size arithmetic, no inline
+/// attributes) called from three sites, two of them inside a loop across
+/// which five masked rotate count bands are live, with the arguments reused
+/// after each call and the result consumed at depth. Call marshalling with
+/// un-hoisted count bands under the argument window. Passes at every
+/// opt-level.
+#[test]
+fn call_bands_oz() {
+    run_case_with_flags("call_bands_oz", include_str!("../cases/case_call_bands_oz.rs"), SIZE_MIN);
+}
+
+/// Dead-fallthrough loop frame: an inner loop whose only exits are five
+/// in-loop `return`s plus a `break`, nested in a kept outer loop, with four
+/// count bands crossing both. This is the corpus's only producer of the
+/// `SimplifyPassthroughCondBr` cf canonicalization — it rewrites ten times
+/// here, interleaved with twelve `SplitCriticalEdges` rewrites, which is the
+/// mechanism: splitting a critical edge leaves a passthrough block whose
+/// target has a unique predecessor, satisfying the guard that made the
+/// pattern look unreachable. `deadfall_oz_edges` pins one input per exit.
+/// Passes at every opt-level.
+#[test]
+fn deadfall_oz() {
+    run_case_with_flags("deadfall_oz", include_str!("../cases/case_deadfall_oz.rs"), SIZE_MIN);
+}
+
+/// Pinned exit grid for [`deadfall_oz`]: one native-verified input pair per
+/// return site (tags 1..5 are the five in-loop returns, tag 6 is the outer
+/// loop's normal exit), so every exit is asserted on every run rather than
+/// only when the fuzzer happens to draw it.
+#[test]
+fn deadfall_oz_edges() {
+    run_case_with_flags_and_inputs(
+        "deadfall_oz_edges",
+        include_str!("../cases/case_deadfall_oz.rs"),
+        SIZE_MIN,
+        &[(0, 21), (0, 1), (0, 0), (0, 12), (0, 56), (512, 122)],
+    );
 }

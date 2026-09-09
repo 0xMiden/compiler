@@ -132,6 +132,15 @@ fn spill_switch() {
 /// counts on a multi-use u64 panics identically (`[Move, Copy]`, 15 felts),
 /// eighteen counts pass (`chain_window` in pressure.rs). Un-ignore when
 /// this case compiles (binary problems get a window-aware fallback tactic).
+///
+/// The gap is not limited to the `copy_move`/`move_copy` arms of `TwoArgs`:
+/// its `copy_copy` arm fails the same way. Campaign 18 hit it at -Oz on
+/// `arith.shl` with constraints `[Copy, Copy]` (a count-band ladder with
+/// live-first or alternating band definition order, ten dying plus two
+/// live-through bands): `dup(b_index)` pushes the copied word and the
+/// following `dup(a_index + 1)` then needs felt index 16, one past the MASM
+/// window, again with no fallback tactic. Same site, same root cause — a
+/// window-aware fallback fixes all four arms.
 #[test]
 #[ignore = "compiler panic: 'with error: NoSolution' at codegen/masm/src/lower/lowering.rs:109 \
             scheduling an arity-2 arith.rotl with a Copy-constrained count at the bottom of a full \
