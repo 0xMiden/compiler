@@ -216,10 +216,23 @@ fn select_spill_edges() {
 }
 
 /// Twelve bands defined in the entry block whose only later use is in the
-/// deepest else-arm of a three-level diamond — the shape post-lift
-/// `SinkOperandDefs` is meant to move into the region, carrying the spill
-/// transform's reloads with it. Twenty spills, twenty reloads and four "unused
-/// phi" warnings, with no split edge at all.
+/// deepest else-arm of a three-level diamond, with twenty spills, twenty
+/// reloads and four "unused phi" warnings and no split edge at all.
+///
+/// Mechanism correction (campaign 21): this case does NOT pin reloads being
+/// sunk into a region, and nothing in the pipeline can do that. `SinkOperandDefs`
+/// moves the DEFINING op of an operand next to its use inside the same block;
+/// the pass that moves ops into regions is `ControlFlowSink`, which is
+/// registered but never scheduled (hir-transform/src/sink.rs). And spill-slot
+/// reloads are ineligible either way: `hir.load_local` carries
+/// `MemoryEffect::Read`, so the trace
+/// (`-Z print-ir-after-pass=sink-operand-defs` +
+/// `MIDENC_TRACE='sink-operand-defs=trace'`) logs `defining 'hir.load_local'
+/// cannot be moved: * op has memory effects` SEVENTY-FOUR times on this case
+/// and moves none of them. What the case actually pins is the band traffic
+/// through a deep arm: the `IfRemoveUnusedResults` production below, and that
+/// twelve bands whose only consumer is the deepest arm of a three-level nest
+/// still compute the right answer on every path.
 ///
 /// Closure correction (campaign 20): this case fires
 /// `if-remove-unused-results` THREE times at both opt levels, and THE FREIGHT
